@@ -3,10 +3,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockFetchJSON = vi.hoisted(() => vi.fn())
 const mockFetchWithTimeout = vi.hoisted(() => vi.fn())
+const mockGetMusicArtists = vi.hoisted(() => vi.fn(() => []))
+const mockGetMusicAlbums = vi.hoisted(() => vi.fn(() => []))
+const mockRateLimiter = vi.hoisted(() => ({
+  waitForSlot: vi.fn(),
+  recordError: vi.fn(),
+  recordSuccess: vi.fn(),
+  setDelay: vi.fn(),
+}))
 
 vi.mock('../../src/main/services/utils/httpClient', () => ({
   fetchJSON: mockFetchJSON,
   fetchWithTimeout: mockFetchWithTimeout,
+  isHttpError: (error: unknown) => error instanceof Error && 'status' in error,
   buildUrl: (base: string, params?: Record<string, unknown>) => {
     if (!params) return base
     const qs = Object.entries(params)
@@ -26,15 +35,16 @@ vi.mock('../../src/main/database/getDatabase', () => ({
     upsertArtistCompleteness: vi.fn(),
     upsertAlbumCompleteness: vi.fn(),
     getArtistCompleteness: vi.fn(() => []),
-    getMusicArtists: vi.fn(() => []),
-    getMusicAlbums: vi.fn(() => []),
-    getMusicAlbumsByArtistName: vi.fn(() => []),
+    getMusicArtists: mockGetMusicArtists,
+    getMusicAlbums: mockGetMusicAlbums,
     getMusicTracks: vi.fn(() => []),
+    getMusicAlbumsByArtistName: vi.fn(() => []),
   })),
 }))
 
 vi.mock('../../src/main/services/LoggingService', () => ({
   getLoggingService: vi.fn(() => ({
+    error: vi.fn(),
     verbose: vi.fn(),
   })),
 }))
@@ -42,9 +52,7 @@ vi.mock('../../src/main/services/LoggingService', () => ({
 vi.mock('../../src/main/services/utils/RateLimiter', () => ({
   RateLimiters: {
     createMusicBrainzLimiter: vi.fn(() => ({
-      waitForSlot: vi.fn(),
-      wait: vi.fn(),
-      release: vi.fn(),
+      ...mockRateLimiter,
     })),
   },
   SimpleDelayRateLimiter: vi.fn().mockImplementation(() => ({
@@ -60,6 +68,7 @@ vi.mock('../../src/main/services/utils/retryWithBackoff', () => ({
 vi.mock('../../src/main/services/utils/ProgressTracker', () => ({
   CancellableOperation: class {
     cancelled = false
+    resetCancellation() { this.cancelled = false }
     cancel() { this.cancelled = true }
     isCancelled() { return this.cancelled }
     checkCancellation() { if (this.cancelled) throw new Error('Cancelled') }
@@ -74,7 +83,20 @@ describe('MusicBrainzService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockFetchJSON.mockResolvedValue({ artists: [] })
     service = new MusicBrainzService()
+  })
+
+  it('adapts its request delay to a 503 Retry-After response', async () => {
+    const error = new Error('HTTP 503: Service Unavailable') as Error & { status: number; headers: Headers }
+    error.status = 503
+    error.headers = new Headers({ 'Retry-After': '45' })
+    mockFetchJSON.mockRejectedValueOnce(error)
+
+    await expect(service.searchArtist('test artist')).rejects.toThrow('HTTP 503')
+
+    expect(mockRateLimiter.recordError).toHaveBeenCalledWith(503)
+    expect(mockRateLimiter.setDelay).toHaveBeenCalledWith(45_000)
   })
 
   // ==========================================================================
@@ -182,6 +204,24 @@ describe('MusicBrainzService', () => {
       expect(result).not.toBeNull()
       expect(result!.releaseId).toBe('r1')
       expect(result!.tracks).toHaveLength(2)
+    })
+  })
+
+  describe('analyzeAllMusic', () => {
+    it('reports failed album analysis instead of marking a partial run complete', async () => {
+      mockGetMusicAlbums.mockReturnValue([{
+        id: 1,
+        artist_name: 'Test Artist',
+        title: 'Test Album',
+        musicbrainz_id: 'release-group-id',
+      }])
+      mockFetchJSON.mockRejectedValue(new Error('HTTP 503: Service Temporarily Unavailable'))
+
+      const result = await service.analyzeAllMusic(undefined, 'source-id', { skipRecentlyAnalyzed: false })
+
+      expect(result.completed).toBe(false)
+      expect(result.failedCount).toBe(1)
+      expect(result.errors).toEqual(['album "Test Album": HTTP 503: Service Temporarily Unavailable'])
     })
   })
 })

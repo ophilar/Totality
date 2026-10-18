@@ -1,3 +1,4 @@
+
 import { getErrorMessage } from './utils/errorUtils'
 /**
  * KodiLocalDiscoveryService
@@ -136,7 +137,7 @@ export class KodiLocalDiscoveryService {
         }
       }
     } catch (error) {
-      // If command fails, assume Kodi is not running
+      console.debug('[KodiLocalDiscovery] Could not detect running Kodi process:', error)
       return false
     }
   }
@@ -151,6 +152,7 @@ export class KodiLocalDiscoveryService {
       fs.closeSync(fd)
       return true
     } catch (error) {
+      console.debug(`[KodiLocalDiscovery] Database file is not readable: ${dbPath}`, error)
       return false
     }
   }

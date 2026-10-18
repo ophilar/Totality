@@ -75,6 +75,17 @@ describe('MediaPathAuthorization', () => {
     )
   })
 
+  it('authorizes Plex media under saved server library locations', () => {
+    const plexSource = {
+      source_type: 'plex',
+      connection_config: JSON.stringify({ plexLibraryPaths: ['D:/PlexMedia/Shows'] })
+    }
+    expect(MediaPathAuthorization.assertMediaAuthorized(
+      { file_path: 'D:/PlexMedia/Shows/Andor/Season 01/episode.mkv' },
+      plexSource
+    )).toBe(true)
+  })
+
   it('authorizes local sources with media file paths inside registered roots', () => {
     const localSource = {
       source_type: 'local',

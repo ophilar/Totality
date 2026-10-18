@@ -24,6 +24,7 @@ import {
 import { selectBestAudioTrack, scoreVersion } from '../utils/ProviderUtils'
 import { getFileNameParser } from '../../services/FileNameParser'
 import { extractVersionNames } from '../utils/VersionNaming'
+import { calculateAlbumStats } from '../base/MusicScannerUtils'
 import type {
   MediaProvider,
   ProviderCredentials,
@@ -42,6 +43,7 @@ import type {
   PlexUser,
   PlexServer,
   PlexLibrary,
+  PlexLibraryLocation,
   PlexMediaItem,
   PlexMusicArtist,
   PlexMusicAlbum,
@@ -50,6 +52,7 @@ import type {
 } from '../../types/plex'
 import type { MediaItem, MediaItemVersion, AudioTrack, SubtitleTrack, MusicArtist, MusicAlbum, MusicTrack } from '../../types/database'
 import type { PlexPlaybackDecisionResponse } from './PlexPlaybackDecisionProvider'
+import type { PlaybackTargetDefinition } from '@main/types/playbackTarget'
 
 const PLEX_API_URL = 'https://plex.tv/api/v2'
 const CLIENT_IDENTIFIER = 'totality'
@@ -378,6 +381,28 @@ export class PlexProvider implements MediaProvider {
       const reason = error instanceof Error ? error.message.replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?\b/g, '<server>') : 'unknown error'
       throw new Error(`Failed to fetch Plex libraries: ${reason}`)
     }
+  }
+
+  async getLibraryPaths(libraryIds: string[]): Promise<string[]> {
+    if (!this.selectedServer) {
+      throw new Error('No server selected')
+    }
+    const server = this.selectedServer
+
+    const locationResponses = await Promise.all(libraryIds.map(async libraryId => {
+      const response = await fetchJSON<{ MediaContainer: { Location: PlexLibraryLocation[] } }>(
+        `${server.uri}/library/sections/${encodeURIComponent(libraryId)}/location`,
+        { headers: { ...this.defaultHeaders, 'X-Plex-Token': server.accessToken }, timeoutMs: 30_000 }
+      )
+      return response.MediaContainer.Location.map(({ path }) => {
+        if (!path.trim()) {
+          throw new Error(`Plex returned an empty library path for library ${libraryId}`)
+        }
+        return path
+      })
+    }))
+
+    return [...new Set(locationResponses.flat())]
   }
 
   async getLibraryItems(libraryId: string, _offset?: number, _limit?: number): Promise<MediaMetadata[]> {
@@ -817,7 +842,7 @@ export class PlexProvider implements MediaProvider {
               db.upsertQualityScore(qualityScore)
             }
           } catch (qualityError) {
-            console.warn(`[PlexProvider ${this.sourceId}] Failed to analyze quality for ${mediaItem.title}`)
+            console.warn(`[PlexProvider ${this.sourceId}] Failed to analyze quality for ${mediaItem.title}:`, qualityError)
           }
 
           addedCount++
@@ -944,6 +969,7 @@ export class PlexProvider implements MediaProvider {
       )
       return seasonResult?.MediaContainer?.Metadata?.[0] || null
     } catch (error) {
+      console.debug(`[PlexProvider ${this.sourceId}] Failed to load season metadata ${seasonKey}:`, error)
       return null
     }
   }
@@ -1094,8 +1120,8 @@ export class PlexProvider implements MediaProvider {
       }))
 
       // Find best audio track using shared utility
-      const bestAudioTrack = selectBestAudioTrack(audioTracks) || audioTracks[0]
-      const audioStream = audioStreams[bestAudioTrack.index] || audioStreams[0]
+      const bestAudioTrack = selectBestAudioTrack(audioTracks)!
+      const audioStream = audioStreams[bestAudioTrack.index]
 
       const width = media.width || 0
       const height = media.height || 0
@@ -1649,16 +1675,17 @@ export class PlexProvider implements MediaProvider {
   async setTrackTags(ratingKey: string, tags: string[], sectionId: string, tagType: 'mood' | 'genre' = 'mood'): Promise<boolean> {
     if (!this.selectedServer) throw new Error('No Plex server selected')
 
-    const params = new URLSearchParams()
-    params.set('type', '10')
-    params.set('id', ratingKey)
-    params.set(`${tagType}.locked`, '1')
+    const params: Record<string, string> = {
+      type: '10',
+      id: ratingKey,
+      [`${tagType}.locked`]: '1',
+    }
     tags.forEach((tag, i) => {
-      params.set(`${tagType}[${i}].tag.tag`, tag)
+      params[`${tagType}[${i}].tag.tag`] = tag
     })
 
     await fetchWithTimeout(
-      `${this.selectedServer.uri}/library/sections/${sectionId}/all?${params.toString()}`,
+      buildUrl(`${this.selectedServer.uri}/library/sections/${sectionId}/all`, params),
       {
         method: 'PUT',
         headers: { 'X-Plex-Token': this.selectedServer.accessToken },
@@ -1798,49 +1825,24 @@ export class PlexProvider implements MediaProvider {
         // Get all tracks for this album
         const tracks = await this.getMusicTracks(plexAlbum.ratingKey)
 
-        // Calculate album stats
-        let totalDuration = 0
-        let totalSize = 0
-        let bestBitrate = 0
-        let bestSampleRate = 0
-        let bestBitDepth = 0
-        let bestCodec = ''
-        let totalBitrate = 0
-
         const trackDataList: MusicTrack[] = []
 
         for (const plexTrack of tracks) {
           const trackData = this.convertToMusicTrack(plexTrack, undefined, artistId, libraryId)
           if (trackData) {
             trackDataList.push(trackData)
-            totalDuration += trackData.duration || 0
-            totalSize += trackData.file_size || 0
-
-            if ((trackData.audio_bitrate || 0) > bestBitrate) {
-              bestBitrate = trackData.audio_bitrate || 0
-              bestCodec = trackData.audio_codec
-            }
-            if ((trackData.sample_rate || 0) > bestSampleRate) {
-              bestSampleRate = trackData.sample_rate || 0
-            }
-            if ((trackData.bit_depth || 0) > bestBitDepth) {
-              bestBitDepth = trackData.bit_depth || 0
-            }
-            totalBitrate += trackData.audio_bitrate || 0
           }
         }
 
-        // Update album with aggregated data
-        albumData.track_count = trackDataList.length
-        albumData.total_duration = totalDuration
-        albumData.total_size = totalSize
-        albumData.best_audio_codec = bestCodec
-        albumData.best_audio_bitrate = bestBitrate
-        albumData.best_sample_rate = bestSampleRate
-        albumData.best_bit_depth = bestBitDepth
-        albumData.avg_audio_bitrate = trackDataList.length > 0
-          ? Math.round(totalBitrate / trackDataList.length)
-          : 0
+        const stats = calculateAlbumStats(trackDataList)
+        albumData.track_count = stats.trackCount
+        albumData.total_duration = stats.totalDuration
+        albumData.total_size = stats.totalSize
+        albumData.best_audio_codec = stats.bestCodec
+        albumData.best_audio_bitrate = stats.bestBitrate
+        albumData.best_sample_rate = stats.bestSampleRate
+        albumData.best_bit_depth = stats.bestBitDepth
+        albumData.avg_audio_bitrate = stats.avgBitrate
 
         // Upsert album
         const albumId = await db.upsertMusicAlbum(albumData)
@@ -2096,7 +2098,7 @@ export class PlexProvider implements MediaProvider {
 
   async requestPlaybackDecision(
     plexId: string,
-    client: { clientProduct: string; clientPlatform: string; clientVersion: string }
+    client: NonNullable<PlaybackTargetDefinition['client']>
   ): Promise<PlexPlaybackDecisionResponse> {
     if (!this.selectedServer) throw new Error('No Plex server selected')
     if (!plexId) throw new Error('Plex media identifier is required')
@@ -2117,10 +2119,10 @@ export class PlexProvider implements MediaProvider {
         ...this.defaultHeaders,
         'X-Plex-Token': this.selectedServer.accessToken,
         'X-Plex-Client-Identifier': CLIENT_IDENTIFIER,
-        'X-Plex-Client-Profile-Name': client.clientProduct,
-        'X-Plex-Platform': client.clientPlatform,
-        'X-Plex-Platform-Version': client.clientVersion,
-        'X-Plex-Device': client.clientProduct,
+        'X-Plex-Client-Profile-Name': client.product,
+        'X-Plex-Platform': client.platform,
+        'X-Plex-Platform-Version': client.version,
+        'X-Plex-Device': client.product,
       },
       timeoutMs: 30000,
     })

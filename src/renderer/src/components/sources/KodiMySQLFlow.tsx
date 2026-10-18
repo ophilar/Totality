@@ -8,17 +8,12 @@
 import { useState } from 'react'
 import { Film, Tv, Music, Folder, Database, Server, AlertCircle, CheckCircle } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
+import { useLibrarySelection } from '../../hooks/useLibrarySelection'
+import type { MediaLibraryResponse } from '../../../../preload/index'
 
 interface KodiMySQLFlowProps {
   onSuccess: () => void
   onBack: () => void
-}
-
-interface MediaLibrary {
-  id: string
-  name: string
-  type: 'movie' | 'show' | 'music' | 'unknown'
-  itemCount?: number
 }
 
 type Step = 'connect' | 'libraries'
@@ -55,8 +50,8 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
 
   // Library selection state
   const [sourceId, setSourceId] = useState<string | null>(null)
-  const [libraries, setLibraries] = useState<MediaLibrary[]>([])
-  const [selectedLibraries, setSelectedLibraries] = useState<Set<string>>(new Set())
+  const [libraries, setLibraries] = useState<MediaLibraryResponse[]>([])
+  const { selectedLibraries, setSelectedLibraries, handleToggleLibrary, handleSelectAll, handleDeselectAll } = useLibrarySelection(libraries)
 
   // Test connection
   const handleTestConnection = async () => {
@@ -137,27 +132,6 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
   }
 
   // Toggle library selection
-  const handleToggleLibrary = (libraryId: string) => {
-    setSelectedLibraries(prev => {
-      const next = new Set(prev)
-      if (next.has(libraryId)) {
-        next.delete(libraryId)
-      } else {
-        next.add(libraryId)
-      }
-      return next
-    })
-  }
-
-  // Select/deselect all libraries
-  const handleSelectAll = () => {
-    setSelectedLibraries(new Set(libraries.map(lib => lib.id)))
-  }
-
-  const handleDeselectAll = () => {
-    setSelectedLibraries(new Set())
-  }
-
   // Complete setup with library selection
   const handleComplete = async () => {
     if (!sourceId) return

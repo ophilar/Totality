@@ -1,3 +1,4 @@
+
 /**
  * RateLimiter Utilities
  *
@@ -114,30 +115,60 @@ export class SlidingWindowRateLimiter implements RateLimiter {
  * await fetch(...)
  */
 export class SimpleDelayRateLimiter implements RateLimiter {
-  private lastRequestTime: number = 0
-  private readonly delayMs: number
+  private lastScheduledTime = 0
+  private readonly baseDelayMs: number
+  private currentDelayMs: number
+  private readonly maxDelayMs: number
+  private consecutiveSuccesses = 0
 
   /**
    * @param delayMs Minimum milliseconds between requests
+   * @param maxDelayMs Maximum adaptive delay after service errors
    */
-  constructor(delayMs: number) {
-    this.delayMs = delayMs
+  constructor(delayMs: number, maxDelayMs = 6000) {
+    this.baseDelayMs = delayMs
+    this.currentDelayMs = delayMs
+    this.maxDelayMs = maxDelayMs
   }
 
   async waitForSlot(): Promise<void> {
     const now = Date.now()
-    const elapsed = now - this.lastRequestTime
-    const remainingWait = this.delayMs - elapsed
+    const scheduledTime = Math.max(now, this.lastScheduledTime === 0 ? now : this.lastScheduledTime + this.currentDelayMs)
+    this.lastScheduledTime = scheduledTime
+    const waitMs = scheduledTime - now
 
-    if (remainingWait > 0) {
-      await this.delay(remainingWait)
+    if (waitMs > 0) {
+      await this.delay(waitMs)
     }
+  }
 
-    this.lastRequestTime = Date.now()
+  recordError(status: number): void {
+    if ([429, 502, 503, 504].includes(status)) {
+      this.currentDelayMs = Math.min(this.maxDelayMs, Math.max(this.currentDelayMs * 1.5, 3000))
+      this.consecutiveSuccesses = 0
+    }
+  }
+
+  recordSuccess(): void {
+    this.consecutiveSuccesses++
+    if (this.consecutiveSuccesses >= 5 && this.currentDelayMs > this.baseDelayMs) {
+      this.currentDelayMs = Math.max(this.baseDelayMs, this.currentDelayMs - 500)
+      this.consecutiveSuccesses = 0
+    }
+  }
+
+  setDelay(delayMs: number): void {
+    this.currentDelayMs = Math.max(this.baseDelayMs, delayMs)
+  }
+
+  getCurrentDelay(): number {
+    return this.currentDelayMs
   }
 
   reset(): void {
-    this.lastRequestTime = 0
+    this.lastScheduledTime = 0
+    this.currentDelayMs = this.baseDelayMs
+    this.consecutiveSuccesses = 0
   }
 
   private delay(ms: number): Promise<void> {
@@ -148,7 +179,8 @@ export class SimpleDelayRateLimiter implements RateLimiter {
    * Get current state
    */
   getTimeSinceLastRequest(): number {
-    return Date.now() - this.lastRequestTime
+    if (this.lastScheduledTime === 0) return Infinity
+    return Date.now() - this.lastScheduledTime
   }
 }
 

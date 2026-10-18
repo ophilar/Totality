@@ -15,6 +15,11 @@
  */
 
 import { getDatabase } from '../../database/getDatabase'
+export {
+  normalizeKodiAudioCodec as normalizeAudioCodec,
+  normalizeKodiResolution as normalizeResolution,
+  normalizeVideoCodec,
+} from '../../services/MediaNormalizer'
 
 // ============================================================================
 // NFS MOUNT MAPPINGS
@@ -575,20 +580,6 @@ export function parseHdrType(hdrType: string | null): string {
 }
 
 /**
- * Normalize resolution string from width/height
- */
-export function normalizeResolution(width: number | null, height: number | null): string {
-  const w = width || 0
-  const h = height || 0
-
-  if (h >= 2160 || w >= 3840) return '4K'
-  if (h >= 1080 || w >= 1920) return '1080p'
-  if (h >= 720 || w >= 1280) return '720p'
-  if (h >= 480 || w >= 720) return '480p'
-  return 'SD'
-}
-
-/**
  * Convert Kodi's image:// URL format to a local-artwork protocol URL
  * Kodi stores artwork URLs as: image://encoded_path/
  * This decodes them to local-artwork://file?path=... URLs that Electron can serve
@@ -697,102 +688,6 @@ export function buildFilePath(dirPath: string, filename: string): string {
     return localDirPath + filename
   }
   return localDirPath + separator + filename
-}
-
-/**
- * Normalize video codec name
- */
-export function normalizeVideoCodec(codec: string | null): string {
-  if (!codec) return ''
-
-  const codecLower = codec.toLowerCase()
-
-  if (codecLower.includes('hevc') || codecLower.includes('h265') || codecLower.includes('x265')) {
-    return 'HEVC'
-  }
-  if (codecLower.includes('avc') || codecLower.includes('h264') || codecLower.includes('x264')) {
-    return 'H.264'
-  }
-  if (codecLower.includes('av1')) {
-    return 'AV1'
-  }
-  if (codecLower.includes('vp9')) {
-    return 'VP9'
-  }
-  if (codecLower.includes('mpeg4') || codecLower.includes('xvid') || codecLower.includes('divx')) {
-    return 'MPEG-4'
-  }
-  if (codecLower.includes('mpeg2')) {
-    return 'MPEG-2'
-  }
-  if (codecLower.includes('vc1') || codecLower.includes('wmv')) {
-    return 'VC-1'
-  }
-
-  return codec.toUpperCase()
-}
-
-/**
- * Normalize audio codec name
- */
-export function normalizeAudioCodec(codec: string | null, profile?: string): string {
-  if (!codec) return ''
-
-  const codecLower = codec.toLowerCase()
-  const profileLower = (profile || '').toLowerCase()
-
-  // Plex/FFprobe sends DTS variants as codec 'dca'/'dts' + profile to distinguish
-  if (codecLower === 'dca' || (codecLower === 'dts' && profileLower)) {
-    if (profileLower === 'ma' || profileLower.includes('dts-hd ma')) return 'DTS-HD MA'
-    if (profileLower === 'hra' || profileLower.includes('dts-hd hra')) return 'DTS-HD'
-    if (profileLower.includes('dts:x') || profileLower.includes('dtsx')) return 'DTS:X'
-    if (codecLower === 'dca') return 'DTS'
-  }
-
-  if (codecLower.includes('truehd')) {
-    return 'TrueHD'
-  }
-  if (codecLower.includes('atmos')) {
-    return 'TrueHD Atmos'
-  }
-  if (codecLower.includes('dts-hd ma') || codecLower.includes('dtshd_ma')) {
-    return 'DTS-HD MA'
-  }
-  if (codecLower.includes('dts-hd') || codecLower.includes('dtshd')) {
-    return 'DTS-HD'
-  }
-  if (codecLower.includes('dts:x') || codecLower.includes('dtsx')) {
-    return 'DTS:X'
-  }
-  if (codecLower.includes('dts')) {
-    return 'DTS'
-  }
-  if (codecLower.includes('eac3') || codecLower.includes('e-ac-3') || codecLower.includes('ec3')) {
-    return 'E-AC-3'
-  }
-  if (codecLower.includes('ac3') || codecLower.includes('ac-3')) {
-    return 'AC-3'
-  }
-  if (codecLower.includes('aac')) {
-    return 'AAC'
-  }
-  if (codecLower.includes('flac')) {
-    return 'FLAC'
-  }
-  if (codecLower.includes('pcm') || codecLower.includes('lpcm')) {
-    return 'PCM'
-  }
-  if (codecLower.includes('mp3')) {
-    return 'MP3'
-  }
-  if (codecLower.includes('opus')) {
-    return 'Opus'
-  }
-  if (codecLower.includes('vorbis')) {
-    return 'Vorbis'
-  }
-
-  return codec.toUpperCase()
 }
 
 /**

@@ -7,6 +7,8 @@
 import { useState, useEffect } from 'react'
 import { Film, Tv, Music, Folder, Server, ChevronRight } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
+import { useLibrarySelection } from '../../hooks/useLibrarySelection'
+import type { MediaLibraryResponse } from '../../../../preload/index'
 
 interface JellyfinAuthFlowProps {
   onSuccess: () => void
@@ -22,13 +24,6 @@ interface DiscoveredServer {
 
 type Step = 'discover' | 'server-select' | 'auth-method' | 'libraries'
 
-interface MediaLibrary {
-  id: string
-  name: string
-  type: 'movie' | 'show' | 'music' | 'unknown'
-  itemCount?: number
-}
-
 export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: JellyfinAuthFlowProps) {
   const { getLibraries, refreshSources } = useSources()
 
@@ -43,8 +38,8 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
   const [isConnecting, setIsConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sourceId, setSourceId] = useState<string | null>(null)
-  const [libraries, setLibraries] = useState<MediaLibrary[]>([])
-  const [selectedLibraries, setSelectedLibraries] = useState<Set<string>>(new Set())
+  const [libraries, setLibraries] = useState<MediaLibraryResponse[]>([])
+  const { selectedLibraries, setSelectedLibraries, handleToggleLibrary, handleSelectAll, handleDeselectAll } = useLibrarySelection(libraries)
 
   const providerName = isEmby ? 'Emby' : 'Jellyfin'
   // Emby uses green branding, Jellyfin uses purple
@@ -148,27 +143,6 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
   }
 
   // Toggle library selection
-  const handleToggleLibrary = (libraryId: string) => {
-    setSelectedLibraries(prev => {
-      const next = new Set(prev)
-      if (next.has(libraryId)) {
-        next.delete(libraryId)
-      } else {
-        next.add(libraryId)
-      }
-      return next
-    })
-  }
-
-  // Select/deselect all libraries
-  const handleSelectAll = () => {
-    setSelectedLibraries(new Set(libraries.map(lib => lib.id)))
-  }
-
-  const handleDeselectAll = () => {
-    setSelectedLibraries(new Set())
-  }
-
   // Complete setup with library selection
   const handleComplete = async () => {
     if (!sourceId) return

@@ -1,3 +1,4 @@
+
 /**
  * SourceManager Service
  *
@@ -6,7 +7,6 @@
  */
 
 import { getDatabase } from '../database/getDatabase'
-import { getPlexService } from './PlexService'
 import { getLiveMonitoringService } from './LiveMonitoringService'
 import { getTaskQueueService } from './TaskQueueService'
 import { getLoggingService } from './LoggingService'
@@ -154,6 +154,21 @@ export class SourceManager {
           )
           if (!restored) {
             unavailableSources.push({ name: source.display_name, type: source.source_type })
+          } else {
+            try {
+              await this.refreshPlexLibraryPaths(provider as PlexProvider, source.source_id, db)
+            } catch (error) {
+              const persistedSource = db.getMediaSourceById(source.source_id)
+              if (persistedSource) {
+                const persistedConfig = JSON.parse(persistedSource.connection_config) as Record<string, unknown>
+                delete persistedConfig.plexLibraryPaths
+                await db.upsertMediaSource({
+                  ...persistedSource,
+                  connection_config: JSON.stringify(persistedConfig),
+                })
+              }
+              getLoggingService().warn('[SourceManager]', `Could not refresh Plex library paths for ${source.display_name}:`, error)
+            }
           }
         } catch (error) {
           console.warn(`[SourceManager] Could not restore server for ${source.display_name}:`, error)
@@ -183,8 +198,9 @@ export class SourceManager {
       const server = plexProvider.getSelectedServer()
       // Update display name to actual server name if it differs
       if (server && server.name && server.name !== source.display_name) {
+        const persistedSource = db.getMediaSourceById(source.source_id) || source
         await db.upsertMediaSource({
-          ...source,
+          ...persistedSource,
           display_name: server.name,
         })
         console.log(`[SourceManager] Restored server selection: ${server.name}`)
@@ -192,15 +208,6 @@ export class SourceManager {
         console.log(`[SourceManager] Restored server selection for ${source.display_name}`)
       }
 
-      // Sync legacy PlexService for backward compatibility (MovieCollectionService uses it)
-      try {
-        const plexService = getPlexService()
-        await plexService.authenticateWithToken(connectionConfig.token as string)
-        await plexService.selectServer(connectionConfig.serverId as string)
-        console.log(`[SourceManager] Synced legacy PlexService with server: ${source.display_name}`)
-      } catch (syncError) {
-        console.warn(`[SourceManager] Could not sync legacy PlexService:`, syncError)
-      }
       return true
     } else {
       console.warn(`[SourceManager] Failed to restore server selection for ${source.display_name}`)
@@ -349,8 +356,7 @@ export class SourceManager {
       await fs.rm(artworkPath, { recursive: true, force: true })
       console.log(`[SourceManager] Cleaned up artwork cache for ${sourceId}`)
     } catch (error) {
-      // Ignore if folder doesn't exist or other errors
-      console.log(`[SourceManager] No artwork cache to clean up for ${sourceId}`)
+      console.warn(`[SourceManager] Failed to clean artwork cache for ${sourceId}:`, error)
     }
   }
 
@@ -615,6 +621,10 @@ export class SourceManager {
       return { success: false }
     }
 
+    // Get libraries and their server-side locations
+    const libraries = await provider.getLibraries()
+    const libraryPaths = await provider.getLibraryPaths(libraries.map(library => library.id))
+
     // Update connection config and display name with selected server
     const server = provider.getSelectedServer()
     if (server) {
@@ -624,6 +634,7 @@ export class SourceManager {
         const config = JSON.parse(source.connection_config)
         config.serverId = server.machineIdentifier
         config.serverUrl = server.uri
+        config.plexLibraryPaths = libraryPaths
 
         await db.upsertMediaSource({
           ...source,
@@ -633,10 +644,24 @@ export class SourceManager {
       }
     }
 
-    // Get libraries
-    const libraries = await provider.getLibraries()
-
     return { success: true, libraries }
+  }
+
+  private async refreshPlexLibraryPaths(
+    provider: PlexProvider,
+    sourceId: string,
+    db: ReturnType<typeof getDatabase>
+  ): Promise<void> {
+    const libraries = await provider.getLibraries()
+    const paths = await provider.getLibraryPaths(libraries.map(library => library.id))
+    const source = db.getMediaSourceById(sourceId)
+    if (!source) throw new Error(`Plex source not found: ${sourceId}`)
+
+    const config = JSON.parse(source.connection_config) as Record<string, unknown>
+    if (JSON.stringify(config.plexLibraryPaths) === JSON.stringify(paths)) return
+
+    config.plexLibraryPaths = paths
+    await db.upsertMediaSource({ ...source, connection_config: JSON.stringify(config) })
   }
 
   /**

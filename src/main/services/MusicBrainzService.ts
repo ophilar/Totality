@@ -1,3 +1,4 @@
+
 import { getErrorMessage, isNodeError } from './utils/errorUtils'
 import { retryWithBackoff } from './utils/retryWithBackoff'
 /**
@@ -15,7 +16,7 @@ import { retryWithBackoff } from './utils/retryWithBackoff'
  * - No rate limiting but be respectful
  */
 
-import { fetchJSON, fetchWithTimeout, buildUrl } from './utils/httpClient'
+import { fetchJSON, fetchWithTimeout, buildUrl, isHttpError } from './utils/httpClient'
 import { getDatabase } from '../database/getDatabase'
 import { getLoggingService } from './LoggingService'
 import { RateLimiters, SimpleDelayRateLimiter } from './utils/RateLimiter'
@@ -169,6 +170,7 @@ export class MusicBrainzService extends CancellableOperation {
   private isRetryableConnectionError(error: unknown): boolean {
     const errorCode = isNodeError(error) ? error.code : undefined
     const errorMessage = getErrorMessage(error) || ''
+    const status = isHttpError(error) ? error.status : undefined
 
     return (
       errorCode === 'ECONNRESET' ||
@@ -177,8 +179,7 @@ export class MusicBrainzService extends CancellableOperation {
       errorCode === 'ENOTFOUND' ||
       errorMessage.includes('socket') ||
       errorMessage.includes('network') ||
-      errorMessage.includes('503') ||
-      errorMessage.includes('429')
+      status === 429 || status === 500 || status === 502 || status === 503 || status === 504
     )
   }
 
@@ -193,8 +194,22 @@ export class MusicBrainzService extends CancellableOperation {
       async () => {
         await this.rateLimit()
         try {
-          return await requestFn()
+          const result = await requestFn()
+          this.rateLimiter.recordSuccess()
+          return result
         } catch (error: unknown) {
+          if (isHttpError(error) && [429, 502, 503, 504].includes(error.status)) {
+            this.rateLimiter.recordError(error.status)
+            const retryAfter = error.headers?.get('retry-after')
+            if (retryAfter) {
+              const seconds = Number(retryAfter)
+              const retryAt = Date.parse(retryAfter)
+              const retryAfterMs = Number.isFinite(seconds)
+                ? seconds * 1000
+                : Number.isNaN(retryAt) ? undefined : Math.max(0, retryAt - Date.now())
+              if (retryAfterMs !== undefined) this.rateLimiter.setDelay(retryAfterMs)
+            }
+          }
           // Re-throw retryable errors so retry logic can handle them
           if (this.isRetryableConnectionError(error)) {
             throw error
@@ -208,8 +223,7 @@ export class MusicBrainzService extends CancellableOperation {
       {
         maxRetries: this.MAX_RETRIES,
         initialDelay: this.RETRY_DELAY_MS,
-        maxDelay: 30000,
-        backoffFactor: 2,
+        maxDelay: 30_000,
         retryableStatuses: [429, 500, 502, 503, 504],
         onRetry: (attempt, error, delay) => {
           getLoggingService().verbose('[MusicBrainzService]', `${context} — retry ${attempt}/${this.MAX_RETRIES} after ${delay}ms: ${error.message}`)
@@ -275,7 +289,7 @@ export class MusicBrainzService extends CancellableOperation {
       return false
     } catch (error) {
       // On error, include the release group (don't exclude based on failed API call)
-      console.warn(`[MusicBrainzService] Failed to check format for ${releaseGroupId}, including by default`)
+      console.warn(`[MusicBrainzService] Failed to check format for ${releaseGroupId}, including by default:`, error)
       return true
     }
   }
@@ -479,14 +493,13 @@ export class MusicBrainzService extends CancellableOperation {
       console.log(`[MusicBrainzService] Total tracks extracted: ${tracks.length}`)
       return { releaseId, tracks }
     } catch (error) {
-      // 404 is expected when album isn't in MusicBrainz — log as warning without stack trace
+      // 404 is expected when a candidate has no MusicBrainz track list.
       const is404 = error instanceof Error && error.message.includes('404')
       if (is404) {
-        console.warn('[MusicBrainzService] Track list not found in MusicBrainz (404)')
-      } else {
-        console.error('[MusicBrainzService] Track list fetch failed:', error)
+        getLoggingService().verbose('[MusicBrainzService]', 'Track list not found in MusicBrainz (404)')
+        return null
       }
-      return null
+      throw error
     }
   }
 
@@ -516,40 +529,35 @@ export class MusicBrainzService extends CancellableOperation {
     country?: string
     score: number
   }>> {
-    try {
-      // Clean the album title to improve MusicBrainz matching
-      const cleanedTitle = this.cleanAlbumTitleForSearch(albumTitle)
-      if (cleanedTitle !== albumTitle) {
-        console.log(`[MusicBrainzService] Cleaned title for search: "${albumTitle}" -> "${cleanedTitle}"`)
-      }
-      const query = `release:"${cleanedTitle}" AND artist:"${artistName}"`
-      const releaseGroups = await this.requestWithRetry(async () => {
-        interface MBReleaseGroupsResponse { 'release-groups'?: Array<{
-          id: string
-          title: string
-          'first-release-date'?: string
-          score?: number
-          'artist-credit'?: Array<{ name?: string; artist?: { country?: string } }>
-        }> }
-        const data = await fetchJSON<MBReleaseGroupsResponse>(
-          buildUrl(`${this.MB_BASE_URL}/release-group`, { query, fmt: 'json', limit: 5 }),
-          { headers: this.mbHeaders, timeoutMs: 30_000 }
-        )
-        return data?.['release-groups'] || []
-      }, `searchRelease(${artistName} - ${albumTitle})`)
-
-      return releaseGroups.map((rg) => ({
-        id: rg.id,  // MusicBrainz release group ID
-        title: rg.title,
-        artist_credit: rg['artist-credit']?.[0]?.name || artistName,
-        date: rg['first-release-date'] || undefined,
-        country: rg['artist-credit']?.[0]?.artist?.country || undefined,
-        score: rg.score || 0,
-      }))
-    } catch (error) {
-      console.error('[MusicBrainzService] Release search failed:', error)
-      return []
+    // Clean the album title to improve MusicBrainz matching
+    const cleanedTitle = this.cleanAlbumTitleForSearch(albumTitle)
+    if (cleanedTitle !== albumTitle) {
+      console.log(`[MusicBrainzService] Cleaned title for search: "${albumTitle}" -> "${cleanedTitle}"`)
     }
+    const query = `release:"${cleanedTitle}" AND artist:"${artistName}"`
+    const releaseGroups = await this.requestWithRetry(async () => {
+      interface MBReleaseGroupsResponse { 'release-groups'?: Array<{
+        id: string
+        title: string
+        'first-release-date'?: string
+        score?: number
+        'artist-credit'?: Array<{ name?: string; artist?: { country?: string } }>
+      }> }
+      const data = await fetchJSON<MBReleaseGroupsResponse>(
+        buildUrl(`${this.MB_BASE_URL}/release-group`, { query, fmt: 'json', limit: 5 }),
+        { headers: this.mbHeaders, timeoutMs: 30_000 }
+      )
+      return data?.['release-groups'] || []
+    }, `searchRelease(${artistName} - ${albumTitle})`)
+
+    return releaseGroups.map((rg) => ({
+      id: rg.id,  // MusicBrainz release group ID
+      title: rg.title,
+      artist_credit: rg['artist-credit']?.[0]?.name || artistName,
+      date: rg['first-release-date'] || undefined,
+      country: rg['artist-credit']?.[0]?.artist?.country || undefined,
+      score: rg.score || 0,
+    }))
   }
 
   /**
@@ -832,7 +840,7 @@ export class MusicBrainzService extends CancellableOperation {
     onProgress?: (progress: MusicAnalysisProgress) => void,
     sourceId?: string,
     options: MusicAnalysisOptions = {}
-  ): Promise<{ completed: boolean; artistsAnalyzed: number; albumsAnalyzed: number; skipped: number }> {
+  ): Promise<{ completed: boolean; artistsAnalyzed: number; albumsAnalyzed: number; skipped: number; failedCount: number; errors: string[] }> {
     // Apply default options
     const {
       skipRecentlyAnalyzed = true,
@@ -882,6 +890,7 @@ export class MusicBrainzService extends CancellableOperation {
     let artistsAnalyzed = 0
     let albumsAnalyzed = 0
     let skipped = 0
+    const errors: string[] = []
 
     // Send initial progress immediately so UI shows something right away
     onProgress?.({
@@ -905,7 +914,7 @@ export class MusicBrainzService extends CancellableOperation {
     for (const artist of artists) {
       if (this.isCancelled()) {
         console.log(`[MusicBrainzService] Analysis cancelled at artist ${currentItem + 1}/${totalItems}`)
-        return { completed: false, artistsAnalyzed, albumsAnalyzed, skipped }
+        return { completed: false, artistsAnalyzed, albumsAnalyzed, skipped, failedCount: errors.length, errors }
       }
 
       // Check if recently analyzed
@@ -951,12 +960,8 @@ export class MusicBrainzService extends CancellableOperation {
 
         // Cache the found MBID if we discovered one (and artist doesn't already have one)
         if (completeness.foundMbId && !artist.musicbrainz_id && artist.id) {
-          try {
-            await db.updateMusicArtistMbid(artist.id, completeness.foundMbId)
-            console.log(`[MusicBrainzService] Cached MBID for artist "${artist.name}": ${completeness.foundMbId}`)
-          } catch (e) {
-            // Silently ignore - method may not exist yet
-          }
+          await db.updateMusicArtistMbid(artist.id, completeness.foundMbId)
+          console.log(`[MusicBrainzService] Cached MBID for artist "${artist.name}": ${completeness.foundMbId}`)
         }
 
         artistsAnalyzed++
@@ -966,7 +971,9 @@ export class MusicBrainzService extends CancellableOperation {
           db.forceSave?.()
         }
       } catch (error) {
-        console.error(`[MusicBrainzService] Failed to analyze artist "${artist.name}":`, error)
+        const message = `artist "${artist.name}": ${getErrorMessage(error)}`
+        errors.push(message)
+        getLoggingService().error('[MusicBrainzService]', `Failed to analyze ${message}`, error)
       }
 
       currentItem++
@@ -978,7 +985,7 @@ export class MusicBrainzService extends CancellableOperation {
     for (const album of albums) {
       if (this.isCancelled()) {
         console.log(`[MusicBrainzService] Analysis cancelled at album ${currentItem + 1}/${totalItems}`)
-        return { completed: false, artistsAnalyzed, albumsAnalyzed, skipped }
+        return { completed: false, artistsAnalyzed, albumsAnalyzed, skipped, failedCount: errors.length, errors }
       }
 
       // Check if recently analyzed
@@ -1022,12 +1029,8 @@ export class MusicBrainzService extends CancellableOperation {
 
           // Cache the found MBID if we discovered one (and album doesn't already have one)
           if (completeness.foundMbId && !album.musicbrainz_id && album.id) {
-            try {
-              await db.updateMusicAlbumMbid(album.id, completeness.foundMbId)
-              console.log(`[MusicBrainzService] Cached MBID for album "${album.title}": ${completeness.foundMbId}`)
-            } catch (e) {
-              // Silently ignore - method may not exist yet
-            }
+            await db.updateMusicAlbumMbid(album.id, completeness.foundMbId)
+            console.log(`[MusicBrainzService] Cached MBID for album "${album.title}": ${completeness.foundMbId}`)
           }
 
           // Update artwork for local sources if we found a MusicBrainz release group ID
@@ -1042,7 +1045,9 @@ export class MusicBrainzService extends CancellableOperation {
           db.forceSave?.()
         }
       } catch (error) {
-        console.error(`[MusicBrainzService] Failed to analyze album "${album.title}":`, error)
+        const message = `album "${album.title}": ${getErrorMessage(error)}`
+        errors.push(message)
+        getLoggingService().error('[MusicBrainzService]', `Failed to analyze ${message}`, error)
       }
 
       currentItem++
@@ -1065,7 +1070,7 @@ export class MusicBrainzService extends CancellableOperation {
     })
 
     console.log(`[MusicBrainzService] Analysis complete: ${artistsAnalyzed} artists, ${albumsAnalyzed} albums analyzed, ${skipped} skipped (recently analyzed)`)
-    return { completed: true, artistsAnalyzed, albumsAnalyzed, skipped }
+    return { completed: errors.length === 0, artistsAnalyzed, albumsAnalyzed, skipped, failedCount: errors.length, errors }
   }
 
   /**

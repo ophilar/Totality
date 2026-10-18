@@ -19,6 +19,7 @@ import { getLoggingService } from '../../services/LoggingService'
 import { getMusicBrainzService } from '../../services/MusicBrainzService'
 import { getGeminiService } from '../../services/GeminiService'
 import { normalizeVideoCodec, normalizeResolution, normalizeAudioCodec } from '../../services/MediaNormalizer'
+import { MediaConverter } from '../../services/MediaConverter'
 import type {
   MediaProvider,
   ProviderCredentials,
@@ -35,7 +36,8 @@ import type {
 } from '../base/MediaProvider'
 import type { MediaItem, MediaItemVersion, AudioTrack } from '../../types/database'
 import { extractVersionNames } from '../utils/VersionNaming'
-import { scoreVersion } from '../utils/ProviderUtils'
+import { groupByMediaIdentity, scoreVersion } from '../utils/ProviderUtils'
+import { AudioCodecRanker } from '../../services/AudioCodecRanker'
 
 export interface LocalFolderConfig {
   folderPath: string
@@ -379,11 +381,7 @@ export class LocalFolderProvider implements MediaProvider {
     const db = getDatabase()
     const items = db.getMediaItems({ sourceId: this.sourceId }) as MediaItem[]
     const mediaItem = items.find((item: MediaItem) => item.plex_id === itemId)
-
-    if (mediaItem) {
-      return this.convertMediaItemToMetadata(mediaItem)
-    }
-
+    if (mediaItem) return this.convertMediaItemToMetadata(mediaItem)
     throw new Error(`Item not found: ${itemId}. Run a library scan first.`)
   }
 
@@ -646,23 +644,9 @@ export class LocalFolderProvider implements MediaProvider {
         // Phase 2d: Group movies by TMDB ID, then save to DB with versions
         type VersionData = Omit<MediaItemVersion, 'id' | 'media_item_id'>
 
-        const groups: ProcessedItem[][] = []
-        if (scanType === 'movie') {
-          const groupMap = new Map<string, ProcessedItem[]>()
-          for (const item of processedItems) {
-            const tmdbId = item.metadata.tmdbId
-            const groupKey = tmdbId
-              ? `tmdb:${tmdbId}`
-              : `title:${this.normalizeGroupTitle(item.metadata.title || '')}|${item.metadata.year || ''}`
-            if (!groupMap.has(groupKey)) groupMap.set(groupKey, [])
-            groupMap.get(groupKey)!.push(item)
-          }
-          groups.push(...groupMap.values())
-        } else {
-          for (const item of processedItems) {
-            groups.push([item])
-          }
-        }
+        const groups = scanType === 'movie'
+          ? groupByMediaIdentity(processedItems, item => item.metadata)
+          : processedItems.map(item => [item])
 
         const multiVersionGroups = groups.filter(g => g.length > 1).length
         if (multiVersionGroups > 0) {
@@ -684,12 +668,9 @@ export class LocalFolderProvider implements MediaProvider {
               scoreVersion(v) > scoreVersion(versions[bi]) ? i : bi, 0)
             const bestItem = group[bestIdx]
 
-            const mediaItem = this.convertMetadataToMediaItem(bestItem.metadata)
-            if (!mediaItem) continue
+            const mediaItem = MediaConverter.toMediaItem(bestItem.metadata, { sourceId: this.sourceId, sourceType: this.providerType, libraryId })
 
-            mediaItem.source_id = this.sourceId
-            mediaItem.source_type = 'local'
-            mediaItem.library_id = libraryId
+
             mediaItem.file_mtime = bestItem.fileMtime
             mediaItem.version_count = versions.length
             // Use first item's plex_id as canonical (stable across rescans)
@@ -929,11 +910,8 @@ export class LocalFolderProvider implements MediaProvider {
             }
 
             // Convert to MediaItem and save
-            const mediaItem = this.convertMetadataToMediaItem(metadata)
-            if (mediaItem) {
-              mediaItem.source_id = this.sourceId
-              mediaItem.source_type = 'local'
-              mediaItem.library_id = libraryId
+            const mediaItem = MediaConverter.toMediaItem(metadata, { sourceId: this.sourceId, sourceType: this.providerType, libraryId })
+
               mediaItem.file_mtime = fileMtime
 
               const id = await db.upsertMediaItem(mediaItem)
@@ -956,7 +934,7 @@ export class LocalFolderProvider implements MediaProvider {
                 result.itemsUpdated++
                 console.log(`[LocalFolderProvider ${this.sourceId}] Updated: ${metadata.title}`)
               }
-            }
+
           } catch (error: unknown) {
             result.errors.push(`Failed to process ${path.basename(filePath)}: ${getErrorMessage(error)}`)
           }
@@ -1319,7 +1297,7 @@ export class LocalFolderProvider implements MediaProvider {
         }
       } catch (error) {
         // Skip inaccessible directories
-        console.warn(`[LocalFolderProvider] Cannot access directory: ${path.basename(dir)}`)
+        console.warn(`[LocalFolderProvider] Cannot access directory ${path.basename(dir)}:`, error)
       }
     }
 
@@ -1797,7 +1775,7 @@ export class LocalFolderProvider implements MediaProvider {
       }))
 
       // Select the best audio track for primary fields (not just first track)
-      const primary = this.selectBestFFprobeAudioTrack(analysis.audioTracks)
+      const primary = AudioCodecRanker.selectBestTrack(analysis.audioTracks.map(track => ({ ...track, bitrate: track.bitrate ?? 0 })))
       if (primary) {
         // Use profile from the matching raw AnalyzedAudioStream for proper DTS variant detection
         const rawTrack = analysis.audioTracks.find(t => t.codec === primary.codec && t.channels === primary.channels)
@@ -1861,74 +1839,6 @@ export class LocalFolderProvider implements MediaProvider {
     return enhanced
   }
 
-  /**
-   * Select the best audio track from FFprobe analysis results
-   * Prioritizes: Object audio > Lossless > Premium surround > Standard surround > Stereo
-   */
-  private selectBestFFprobeAudioTrack(tracks: Array<{
-    codec: string
-    channels: number
-    bitrate?: number
-    hasObjectAudio: boolean
-  }>): typeof tracks[0] | undefined {
-    if (!tracks || tracks.length === 0) return undefined
-    if (tracks.length === 1) return tracks[0]
-
-    let bestTrack = tracks[0]
-    let bestScore = this.calculateAudioTrackScore(bestTrack)
-
-    for (let i = 1; i < tracks.length; i++) {
-      const score = this.calculateAudioTrackScore(tracks[i])
-      if (score > bestScore) {
-        bestScore = score
-        bestTrack = tracks[i]
-      }
-    }
-
-    return bestTrack
-  }
-
-  /**
-   * Calculate quality score for an audio track (higher = better)
-   */
-  private calculateAudioTrackScore(track: {
-    codec: string
-    channels: number
-    bitrate?: number
-    hasObjectAudio: boolean
-  }): number {
-    let score = 0
-    const codecLower = track.codec.toLowerCase()
-
-    // Object audio (Atmos, DTS:X) - highest priority
-    if (track.hasObjectAudio) {
-      score += 10000
-    }
-
-    // Lossless codecs
-    if (codecLower.includes('truehd') || codecLower.includes('dts-hd') || codecLower === 'dtshd' ||
-        codecLower === 'flac' || codecLower.includes('pcm') || codecLower === 'alac') {
-      score += 5000
-    }
-
-    // Premium lossy codecs
-    if (codecLower.includes('eac3') || codecLower.includes('e-ac-3') || codecLower.includes('dd+')) {
-      score += 3000
-    } else if (codecLower.includes('ac3') || codecLower.includes('ac-3') || codecLower === 'dts') {
-      score += 2000
-    } else if (codecLower === 'aac') {
-      score += 1000
-    }
-
-    // More channels = better
-    score += (track.channels || 2) * 100
-
-    // Higher bitrate = better
-    score += (track.bitrate || 0)
-
-    return score
-  }
-
   private generateItemId(filePath: string): string {
     // Create a stable ID based on the file path
     const hash = this.simpleHash(filePath)
@@ -1946,15 +1856,6 @@ export class LocalFolderProvider implements MediaProvider {
   }
 
   // scoreVersion extracted to ProviderUtils.scoreVersion
-
-  private normalizeGroupTitle(title: string): string {
-    return title
-      .toLowerCase()
-      .trim()
-      .replace(/\s*[-:(]\s*(director'?s?\s*cut|extended|unrated|theatrical|imax|remastered|special\s*edition|ultimate\s*edition|collector'?s?\s*edition)\s*[):]?\s*$/i, '')
-      .replace(/\s*\(\s*\)\s*$/, '')
-      .trim()
-  }
 
   private convertMetadataToVersion(metadata: MediaMetadata, parsed: ParsedMovieInfo | ParsedEpisodeInfo, fileMtime: number): Omit<MediaItemVersion, 'id' | 'media_item_id'> {
     const audioTracks: AudioTrack[] = []
@@ -2019,75 +1920,7 @@ export class LocalFolderProvider implements MediaProvider {
     }
   }
 
-  private convertMetadataToMediaItem(metadata: MediaMetadata): MediaItem | null {
-    const audioTracks: AudioTrack[] = []
-    if (metadata.audioTracks && metadata.audioTracks.length > 0) {
-      metadata.audioTracks.forEach((track, index) => {
-        audioTracks.push({
-          index,
-          codec: track.codec || 'Unknown',
-          channels: track.channels || 2,
-          bitrate: track.bitrate || 0,
-          language: track.language,
-          hasObjectAudio: track.hasObjectAudio || false,
-        })
-      })
-    } else if (metadata.audioCodec) {
-      audioTracks.push({
-        index: 0,
-        codec: metadata.audioCodec,
-        channels: metadata.audioChannels || 2,
-        bitrate: metadata.audioBitrate || 0,
-        hasObjectAudio: false,
-      })
-    }
 
-    return {
-      plex_id: metadata.itemId,
-      title: metadata.title,
-      sort_title: metadata.sortTitle,
-      year: metadata.year,
-      type: metadata.type,
-      series_title: metadata.seriesTitle,
-      season_number: metadata.seasonNumber,
-      episode_number: metadata.episodeNumber,
-      file_path: metadata.filePath || '',
-      file_size: metadata.fileSize || 0,
-      duration: metadata.duration || 0,
-      resolution: metadata.resolution || 'SD',
-      width: metadata.width || 0,
-      height: metadata.height || 0,
-      video_codec: metadata.videoCodec || '',
-      video_bitrate: metadata.videoBitrate || 0,
-      audio_codec: metadata.audioCodec || '',
-      audio_channels: metadata.audioChannels || 2,
-      audio_bitrate: metadata.audioBitrate || 0,
-      hdr_format: metadata.hdrFormat,
-      video_frame_rate: metadata.videoFrameRate,
-      color_bit_depth: metadata.colorBitDepth,
-      color_space: metadata.colorSpace,
-      video_profile: metadata.videoProfile,
-      audio_tracks: JSON.stringify(audioTracks),
-      subtitle_tracks: metadata.subtitleTracks && metadata.subtitleTracks.length > 0
-        ? JSON.stringify(metadata.subtitleTracks.map((t, i) => ({
-            index: i,
-            codec: t.codec || 'unknown',
-            language: t.language,
-            title: t.title,
-            isDefault: t.isDefault || false,
-            isForced: t.isForced || false,
-          })))
-        : undefined,
-      imdb_id: metadata.imdbId,
-      tmdb_id: metadata.tmdbId?.toString(),
-      poster_url: metadata.posterUrl,
-      episode_thumb_url: metadata.episodeThumbUrl,
-      season_poster_url: metadata.seasonPosterUrl,
-      container: metadata.container,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-  }
 
   /**
    * Convert a MediaItem (from database) back to MediaMetadata format
@@ -2569,7 +2402,7 @@ export class LocalFolderProvider implements MediaProvider {
         }
       } catch (error) {
         // Skip inaccessible directories
-        console.warn(`[LocalFolderProvider] Cannot access directory: ${path.basename(dir)}`)
+        console.warn(`[LocalFolderProvider] Cannot access directory ${path.basename(dir)}:`, error)
       }
     }
 

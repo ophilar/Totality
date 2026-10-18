@@ -182,7 +182,7 @@ export function AddSourceModal({ onClose, onSuccess }: AddSourceModalProps) {
               {availableProviders.map((provider, index) => (
                 <button
                   key={provider.type}
-                  ref={el => buttonRefs.current[index] = el}
+                  ref={el => { buttonRefs.current[index] = el }}
                   onClick={() => setSelectedProvider(provider.type)}
                   onFocus={() => setFocusedIndex(index)}
                   className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted transition-colors text-left outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background ${focusedIndex === index ? 'bg-muted' : ''}`}

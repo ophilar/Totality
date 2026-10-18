@@ -7,6 +7,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Server, HardDrive, Film, Tv, Music, Folder } from 'lucide-react'
 import { useSources, type ProviderType } from '../../contexts/SourceContext'
+import { formatRelativeTime } from '../../utils/dateUtils'
+import { providerColors } from '../library/mediaUtils'
 import type { MediaSourceResponse, MediaLibraryResponse } from '../../../../preload/index'
 
 // Extended library type with enabled status and upgrade target
@@ -23,18 +25,6 @@ const UPGRADE_TIER_OPTIONS = [
   { value: '1080p', label: 'Below 1080p' },
   { value: '4K', label: 'Below 4K' },
 ]
-
-// Provider colors
-const providerColors: Record<ProviderType, string> = {
-  plex: 'bg-[#e5a00d]',
-  jellyfin: 'bg-purple-500',
-  emby: 'bg-green-500',
-  kodi: 'bg-blue-500',
-  'kodi-local': 'bg-blue-500',
-  'kodi-mysql': 'bg-blue-500',
-  mediamonkey: 'bg-orange-500',
-  local: 'bg-slate-600',
-}
 
 // Helper to parse connection config and get server URL
 function getServerUrl(source: MediaSourceResponse): string | null {
@@ -341,22 +331,6 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
     }
   }
 
-  // Format last scan time
-  const formatLastScan = (dateStr?: string) => {
-    if (!dateStr) return 'Never'
-    const date = new Date(dateStr)
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffMins = Math.floor(diffMs / 60000)
-    const diffHours = Math.floor(diffMins / 60)
-    const diffDays = Math.floor(diffHours / 24)
-
-    if (diffMins < 1) return 'Just now'
-    if (diffMins < 60) return `${diffMins}m ago`
-    if (diffHours < 24) return `${diffHours}h ago`
-    return `${diffDays}d ago`
-  }
-
   return (
     <div className={`rounded-lg border ${source.is_enabled ? 'border-border' : 'border-border/50 opacity-60'} bg-card overflow-hidden`}>
       {/* Header */}
@@ -386,7 +360,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
           </div>
           <div className="text-xs text-muted-foreground">
             {source.source_type.charAt(0).toUpperCase() + source.source_type.slice(1)} •{' '}
-            Last scan: {formatLastScan(source.last_scan_at)}
+            Last scan: {formatRelativeTime(source.last_scan_at) ?? 'Never'}
           </div>
         </div>
 

@@ -35,7 +35,7 @@ import type {
   ProviderType,
   AudioStreamInfo,
 } from '../base/MediaProvider'
-import type { MediaItem, MediaItemVersion, AudioTrack, MusicArtist, MusicAlbum, MusicTrack, AlbumType } from '../../types/database'
+import type { MediaItemVersion, MusicArtist, MusicAlbum, MusicTrack, AlbumType } from '../../types/database'
 import { extractVersionNames } from '../utils/VersionNaming'
 import {
   KodiMovieWithDetails,
@@ -49,12 +49,12 @@ import {
   KodiMusicSongResult,
   parseTrackNumber,
   buildMusicFilePath,
-  guessCodecFromExtension,
 } from './KodiMusicDatabaseSchema'
 import {
   isLosslessCodec,
   calculateAlbumStats,
   parseKodiMoodString,
+  guessCodecFromExtension,
 } from '../base/MusicScannerUtils'
 import {
   normalizeVideoCodec,
@@ -64,8 +64,8 @@ import {
   normalizeAudioChannels,
   hasObjectAudio,
 } from '../../services/MediaNormalizer'
-import { estimateAudioBitrate, scoreVersion } from '../utils/ProviderUtils'
-import { getFileNameParser } from '../../services/FileNameParser'
+import { MediaConverter } from '../../services/MediaConverter'
+import { estimateAudioBitrate, groupByMediaIdentity, selectBestAudioTrack, scoreVersion } from '../utils/ProviderUtils'
 import type { Pool } from 'mysql2/promise'
 
 // Type for audio stream query result
@@ -494,8 +494,12 @@ export class KodiMySQLProvider implements MediaProvider {
     return streamsByFile
   }
 
-  private async getMovies(): Promise<MediaMetadata[]> {
-    const movies = await this.queryVideo<KodiMovieWithDetails>(QUERY_MOVIES_WITH_DETAILS)
+  private async getMovies(sinceTimestamp?: Date): Promise<MediaMetadata[]> {
+    const query = sinceTimestamp
+      ? `${QUERY_MOVIES_WITH_DETAILS} WHERE f.dateAdded > ?`
+      : QUERY_MOVIES_WITH_DETAILS
+    const params = sinceTimestamp ? [sinceTimestamp.toISOString().replace('T', ' ').split('.')[0]] : undefined
+    const movies = await this.queryVideo<KodiMovieWithDetails>(query, params)
     const audioStreamsByFile = await this.getAudioStreamsByFileId()
 
     return movies.map((movie) => {
@@ -504,8 +508,12 @@ export class KodiMySQLProvider implements MediaProvider {
     })
   }
 
-  private async getEpisodes(): Promise<MediaMetadata[]> {
-    const episodes = await this.queryVideo<KodiEpisodeWithDetails>(QUERY_EPISODES_WITH_DETAILS)
+  private async getEpisodes(sinceTimestamp?: Date): Promise<MediaMetadata[]> {
+    const query = sinceTimestamp
+      ? `${QUERY_EPISODES_WITH_DETAILS} WHERE f.dateAdded > ?`
+      : QUERY_EPISODES_WITH_DETAILS
+    const params = sinceTimestamp ? [sinceTimestamp.toISOString().replace('T', ' ').split('.')[0]] : undefined
+    const episodes = await this.queryVideo<KodiEpisodeWithDetails>(query, params)
     const audioStreamsByFile = await this.getAudioStreamsByFileId()
 
     return episodes.map((episode) => {
@@ -542,7 +550,8 @@ export class KodiMySQLProvider implements MediaProvider {
   // ============================================================================
 
   async scanLibrary(libraryId: string, options?: ScanOptions): Promise<ScanResult> {
-    const { onProgress } = options || {}
+    const { onProgress, sinceTimestamp, forceFullScan } = options || {}
+    const incrementalSince = sinceTimestamp && !forceFullScan ? sinceTimestamp : undefined
 
     const startTime = Date.now()
     const result: ScanResult = {
@@ -564,9 +573,9 @@ export class KodiMySQLProvider implements MediaProvider {
       let items: MediaMetadata[]
 
       if (libraryId === 'movies') {
-        items = await this.getMovies()
+        items = await this.getMovies(incrementalSince)
       } else if (libraryId === 'tvshows') {
-        items = await this.getEpisodes()
+        items = await this.getEpisodes(incrementalSince)
       } else {
         throw new Error(`Unknown library: ${libraryId}`)
       }
@@ -582,26 +591,9 @@ export class KodiMySQLProvider implements MediaProvider {
         type VersionData = Omit<MediaItemVersion, 'id' | 'media_item_id'>
         const isMovieLib = libraryId === 'movies'
 
-        const groups: MediaMetadata[][] = []
-        if (isMovieLib) {
-          const groupMap = new Map<string, MediaMetadata[]>()
-          for (const item of items) {
-            const groupKey = item.tmdbId ? `tmdb:${item.tmdbId}`
-              : item.imdbId ? `imdb:${item.imdbId}`
-              : `title:${this.normalizeGroupTitle(item.title || '')}|${item.year || ''}`
-
-            // Log grouping info for first 10 items or potential multi-versions
-            if (groupMap.size < 10 || groupMap.has(groupKey)) {
-              console.log(`[KodiMySQLProvider] Grouping "${item.title}" → key="${groupKey}" (tmdb=${item.tmdbId || 'none'}, imdb=${item.imdbId || 'none'})`)
-            }
-
-            if (!groupMap.has(groupKey)) groupMap.set(groupKey, [])
-            groupMap.get(groupKey)!.push(item)
-          }
-          groups.push(...groupMap.values())
-        } else {
-          for (const item of items) groups.push([item])
-        }
+        const groups = isMovieLib
+          ? groupByMediaIdentity(items, item => item)
+          : items.map(item => [item])
 
         const multiVersionGroups = groups.filter(g => g.length > 1).length
         if (multiVersionGroups > 0) {
@@ -611,7 +603,7 @@ export class KodiMySQLProvider implements MediaProvider {
         let itemIndex = 0
         for (const group of groups) {
           try {
-            const versions: VersionData[] = group.map(m => this.convertMetadataToVersion(m))
+            const versions: VersionData[] = group.map(m => MediaConverter.toMediaItemVersion(m, 'kodi_mysql'))
 
             if (versions.length > 1) {
               extractVersionNames(versions)
@@ -620,30 +612,25 @@ export class KodiMySQLProvider implements MediaProvider {
             const bestIdx = versions.reduce((bi, v, i) => scoreVersion(v) > scoreVersion(versions[bi]) ? i : bi, 0)
             const bestMetadata = group[bestIdx]
 
-            const mediaItem = this.convertMetadataToMediaItem(bestMetadata)
-            if (mediaItem) {
-              mediaItem.source_id = this.sourceId
-              mediaItem.source_type = 'kodi-mysql'
-              mediaItem.library_id = libraryId
-              mediaItem.version_count = versions.length
-              mediaItem.plex_id = group[0].itemId
+            const mediaItem = MediaConverter.toMediaItem(bestMetadata, { sourceId: this.sourceId, sourceType: this.providerType, libraryId })
 
-              const id = await db.upsertMediaItem(mediaItem)
-              scannedProviderIds.add(mediaItem.plex_id)
+            mediaItem.version_count = versions.length
+            mediaItem.plex_id = group[0].itemId
 
-              // Sync versions: delete stale, upsert current, update best version
-              const scoredVersions = versions.map(version => {
-                const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
-                return { ...version, media_item_id: id, ...vScore } as MediaItemVersion
-              })
-              db.syncMediaItemVersions(id, scoredVersions)
+            const id = await db.upsertMediaItem(mediaItem)
+            scannedProviderIds.add(mediaItem.plex_id)
 
-              mediaItem.id = id
-              const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
-              await db.upsertQualityScore(qualityScore)
+            const scoredVersions = versions.map(version => {
+              const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
+              return { ...version, media_item_id: id, ...vScore } as MediaItemVersion
+            })
+            db.syncMediaItemVersions(id, scoredVersions)
 
-              result.itemsScanned++
-            }
+            mediaItem.id = id
+            const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
+            await db.upsertQualityScore(qualityScore)
+
+            result.itemsScanned++
           } catch (error: unknown) {
             const names = group.map(g => g.title).join(', ')
             result.errors.push(`Failed to process ${names}: ${getErrorMessage(error)}`)
@@ -665,7 +652,7 @@ export class KodiMySQLProvider implements MediaProvider {
       }
 
       // Remove stale items
-      if (scannedProviderIds.size > 0) {
+      if (!incrementalSince && scannedProviderIds.size > 0) {
         const itemType = libraryId === 'movies' ? 'movie' : 'episode'
         const existingItems = db.getMediaItems({ type: itemType, sourceId: this.sourceId, libraryId })
 
@@ -769,18 +756,8 @@ export class KodiMySQLProvider implements MediaProvider {
 
     const audioTracks = this.convertAudioStreams(audioStreams, movie.title)
 
-    let bestAudio = audioTracks[0]
-    let hasAnyObjectAudio = false
-    for (const track of audioTracks) {
-      if (track.hasObjectAudio) {
-        hasAnyObjectAudio = true
-        if (!bestAudio?.hasObjectAudio || (track.bitrate || 0) > (bestAudio?.bitrate || 0)) {
-          bestAudio = track
-        }
-      } else if (!bestAudio?.hasObjectAudio && (track.bitrate || 0) > (bestAudio?.bitrate || 0)) {
-        bestAudio = track
-      }
-    }
+    const bestAudio = selectBestAudioTrack(audioTracks.map((track, index) => ({ ...track, index: track.index ?? index, bitrate: track.bitrate ?? 0 })))
+    const hasAnyObjectAudio = audioTracks.some(track => track.hasObjectAudio)
 
     const audioCodec = bestAudio?.codec || normalizeAudioCodec(movie.audioCodec) || undefined
     const audioChannels = bestAudio?.channels || normalizeAudioChannels(movie.audioChannels, undefined) || undefined
@@ -838,18 +815,8 @@ export class KodiMySQLProvider implements MediaProvider {
 
     const audioTracks = this.convertAudioStreams(audioStreams, episode.title)
 
-    let bestAudio = audioTracks[0]
-    let hasAnyObjectAudio = false
-    for (const track of audioTracks) {
-      if (track.hasObjectAudio) {
-        hasAnyObjectAudio = true
-        if (!bestAudio?.hasObjectAudio || (track.bitrate || 0) > (bestAudio?.bitrate || 0)) {
-          bestAudio = track
-        }
-      } else if (!bestAudio?.hasObjectAudio && (track.bitrate || 0) > (bestAudio?.bitrate || 0)) {
-        bestAudio = track
-      }
-    }
+    const bestAudio = selectBestAudioTrack(audioTracks.map((track, index) => ({ ...track, index: track.index ?? index, bitrate: track.bitrate ?? 0 })))
+    const hasAnyObjectAudio = audioTracks.some(track => track.hasObjectAudio)
 
     const audioCodec = bestAudio?.codec || normalizeAudioCodec(episode.audioCodec) || undefined
     const audioChannels = bestAudio?.channels || normalizeAudioChannels(episode.audioChannels, undefined) || undefined
@@ -886,132 +853,9 @@ export class KodiMySQLProvider implements MediaProvider {
     }
   }
 
-  private convertMetadataToMediaItem(metadata: MediaMetadata): MediaItem | null {
-    const audioTracks: AudioTrack[] = []
-    if (metadata.audioTracks && metadata.audioTracks.length > 0) {
-      metadata.audioTracks.forEach((track, index) => {
-        audioTracks.push({
-          index,
-          codec: track.codec || 'Unknown',
-          channels: track.channels || 2,
-          bitrate: track.bitrate || 0,
-          language: track.language,
-          hasObjectAudio: track.hasObjectAudio || false,
-        })
-      })
-    } else if (metadata.audioCodec) {
-      audioTracks.push({
-        index: 0,
-        codec: metadata.audioCodec,
-        channels: metadata.audioChannels || 2,
-        bitrate: metadata.audioBitrate || 0,
-        hasObjectAudio: metadata.hasObjectAudio || false,
-      })
-    }
 
-    return {
-      plex_id: metadata.itemId,
-      title: metadata.title,
-      sort_title: metadata.sortTitle,
-      year: metadata.year,
-      type: metadata.type,
-      series_title: metadata.seriesTitle,
-      season_number: metadata.seasonNumber,
-      episode_number: metadata.episodeNumber,
-      file_path: metadata.filePath || '',
-      file_size: metadata.fileSize || 0,
-      duration: metadata.duration || 0,
-      resolution: metadata.resolution || 'SD',
-      width: metadata.width || 0,
-      height: metadata.height || 0,
-      video_codec: metadata.videoCodec || '',
-      video_bitrate: metadata.videoBitrate || 0,
-      video_frame_rate: metadata.videoFrameRate,
-      color_bit_depth: metadata.colorBitDepth,
-      color_space: metadata.colorSpace,
-      video_profile: metadata.videoProfile,
-      video_level: metadata.videoLevel ? parseInt(metadata.videoLevel, 10) : undefined,
-      audio_codec: metadata.audioCodec || '',
-      audio_channels: metadata.audioChannels || 2,
-      audio_bitrate: metadata.audioBitrate || 0,
-      has_object_audio: metadata.hasObjectAudio || false,
-      hdr_format: metadata.hdrFormat,
-      audio_tracks: JSON.stringify(audioTracks),
-      imdb_id: metadata.imdbId,
-      tmdb_id: metadata.tmdbId?.toString(),
-      poster_url: metadata.posterUrl,
-      episode_thumb_url: metadata.episodeThumbUrl,
-      season_poster_url: metadata.seasonPosterUrl,
-      tmdb_rating: metadata.tmdbRating || undefined,
-      play_count: metadata.playCount || 0,
-      last_watched_at: metadata.lastWatched || undefined,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-  }
 
   // scoreVersion extracted to ProviderUtils.scoreVersion
-
-  private normalizeGroupTitle(title: string): string {
-    return title
-      .toLowerCase()
-      .trim()
-      .replace(/\s*[-:(]\s*(director'?s?\s*cut|extended|unrated|theatrical|imax|remastered|special\s*edition|ultimate\s*edition|collector'?s?\s*edition)\s*[):]?\s*$/i, '')
-      .replace(/\s*\(\s*\)\s*$/, '')
-      .trim()
-  }
-
-  private convertMetadataToVersion(metadata: MediaMetadata): Omit<MediaItemVersion, 'id' | 'media_item_id'> {
-    const audioTracks: AudioTrack[] = []
-    if (metadata.audioTracks?.length) {
-      metadata.audioTracks.forEach((track, index) => {
-        audioTracks.push({ index, codec: track.codec || 'Unknown', channels: track.channels || 2, bitrate: track.bitrate || 0, language: track.language, hasObjectAudio: track.hasObjectAudio || false })
-      })
-    } else if (metadata.audioCodec) {
-      audioTracks.push({ index: 0, codec: metadata.audioCodec, channels: metadata.audioChannels || 2, bitrate: metadata.audioBitrate || 0, hasObjectAudio: metadata.hasObjectAudio || false })
-    }
-
-    const resolution = metadata.resolution || 'SD'
-    const hdrFormat = metadata.hdrFormat || 'None'
-
-    // Extract source type from filename
-    const parsed = metadata.filePath ? getFileNameParser().parse(metadata.filePath) : null
-    const source = parsed?.type !== 'music' ? parsed?.source : undefined
-    const sourceType = source && /remux/i.test(source) ? 'REMUX'
-      : source && /web-dl|webdl/i.test(source) ? 'WEB-DL'
-      : undefined
-
-    const labelParts = [resolution]
-    if (hdrFormat !== 'None') labelParts.push(hdrFormat)
-    if (sourceType) labelParts.push(sourceType)
-
-    return {
-      version_source: `kodi_mysql_${metadata.itemId}`,
-      source_type: sourceType,
-      label: labelParts.join(' '),
-      file_path: metadata.filePath || '',
-      file_size: metadata.fileSize || 0,
-      duration: metadata.duration || 0,
-      resolution,
-      width: metadata.width || 0,
-      height: metadata.height || 0,
-      video_codec: metadata.videoCodec || '',
-      video_bitrate: metadata.videoBitrate || 0,
-      audio_codec: metadata.audioCodec || '',
-      audio_channels: metadata.audioChannels || 2,
-      audio_bitrate: metadata.audioBitrate || 0,
-      video_frame_rate: metadata.videoFrameRate,
-      color_bit_depth: metadata.colorBitDepth,
-      hdr_format: hdrFormat === 'None' ? undefined : hdrFormat,
-      color_space: metadata.colorSpace,
-      video_profile: metadata.videoProfile,
-      audio_profile: metadata.audioProfile,
-      audio_sample_rate: metadata.audioSampleRate,
-      has_object_audio: metadata.hasObjectAudio,
-      audio_tracks: JSON.stringify(audioTracks),
-      container: metadata.container,
-    }
-  }
 
   // ============================================================================
   // MUSIC LIBRARY SUPPORT

@@ -6,20 +6,10 @@
  */
 
 import { AudioCodecRanker } from '../../services/AudioCodecRanker'
-
-/**
- * Audio track interface for provider utilities
- */
-export interface AudioTrackInfo {
-  index: number
-  codec: string
-  channels: number
-  bitrate: number
-  hasObjectAudio?: boolean
-  language?: string
-  title?: string
-  isDefault?: boolean
-}
+import type { AudioTrackInfo } from '../../services/AudioCodecRanker'
+import { isCommentaryTrack } from '../../services/utils/audioTrackUtils'
+export { isCommentaryTrack } from '../../services/utils/audioTrackUtils'
+export type { AudioTrackInfo } from '../../services/AudioCodecRanker'
 
 /**
  * Select the best audio track from a list based on quality ranking
@@ -41,26 +31,7 @@ export function selectBestAudioTrack<T extends AudioTrackInfo>(audioTracks: T[])
   const nonCommentary = audioTracks.filter(t => !isCommentaryTrack(t))
   const candidates = nonCommentary.length > 0 ? nonCommentary : audioTracks
 
-  return candidates.reduce((best, current) => {
-    const bestTier = AudioCodecRanker.getTier(best.codec, best.hasObjectAudio || false)
-    const currentTier = AudioCodecRanker.getTier(current.codec, current.hasObjectAudio || false)
-
-    if (currentTier > bestTier) return current
-    if (bestTier > currentTier) return best
-    if (current.channels > best.channels) return current
-    if (best.channels > current.channels) return best
-    if (current.bitrate > best.bitrate) return current
-    return best
-  }, candidates[0])
-}
-
-/**
- * Check if an audio track is a commentary track based on its title
- */
-export function isCommentaryTrack(track: { title?: string }): boolean {
-  if (!track.title) return false
-  const t = track.title.toLowerCase()
-  return t.includes('commentary')
+  return AudioCodecRanker.selectBestTrack(candidates)
 }
 
 /**
@@ -170,6 +141,32 @@ export function scoreVersion(v: { resolution: string; video_bitrate: number; hdr
     : 1
   const hdrBonus = v.hdr_format && v.hdr_format !== 'None' ? 1000 : 0
   return tierRank * 100000 + hdrBonus + v.video_bitrate
+}
+
+export function normalizeGroupTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/\s*[-:(]\s*(director'?s?\s*cut|extended|unrated|theatrical|imax|remastered|special\s*edition|ultimate\s*edition|collector'?s?\s*edition)\s*[):]?\s*$/i, '')
+    .replace(/\s*\(\s*\)\s*$/, '')
+    .trim()
+}
+
+export function groupByMediaIdentity<T>(
+  items: readonly T[],
+  getIdentity: (item: T) => { tmdbId?: string | number; imdbId?: string; title?: string; year?: number },
+): T[][] {
+  const groups = new Map<string, T[]>()
+  for (const item of items) {
+    const itemIdentity = getIdentity(item)
+    const identity = itemIdentity.tmdbId ? `tmdb:${itemIdentity.tmdbId}`
+      : itemIdentity.imdbId ? `imdb:${itemIdentity.imdbId}`
+      : `title:${normalizeGroupTitle(itemIdentity.title || '')}|${itemIdentity.year || ''}`
+    const group = groups.get(identity)
+    if (group) group.push(item)
+    else groups.set(identity, [item])
+  }
+  return [...groups.values()]
 }
 
 export function isEstimatedBitrate(bitrate: number): boolean {

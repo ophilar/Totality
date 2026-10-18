@@ -25,7 +25,7 @@ import {
   normalizeContainer,
   hasObjectAudio,
 } from '../../services/MediaNormalizer'
-import { selectBestAudioTrack, scoreVersion } from '../utils/ProviderUtils'
+import { groupByMediaIdentity, selectBestAudioTrack, scoreVersion } from '../utils/ProviderUtils'
 import { getFileNameParser } from '../../services/FileNameParser'
 import { extractVersionNames } from '../utils/VersionNaming'
 import type {
@@ -40,7 +40,7 @@ import type {
   ScanOptions,
   SourceConfig,
 } from '../base/MediaProvider'
-import type { MediaItem, MediaItemVersion, AudioTrack, SubtitleTrack, MusicArtist, MusicAlbum, MusicTrack } from '../../types/database'
+import type { MediaItem, MediaItemVersion, AudioTrack, SubtitleTrack, MusicArtist, MusicAlbum, MusicTrack, MissingMovie } from '../../types/database'
 import {
   isLosslessCodec,
   isHiRes,
@@ -301,20 +301,10 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
     const pathPrefix = this.providerType === 'emby' ? '/emby' : ''
     let url = `${this.serverUrl}${pathPrefix}/Items/${itemId}/Images/${imageType}`
 
-    const params = new URLSearchParams()
-    if (imageTag) {
-      params.set('tag', imageTag)
-    }
     // Add auth token so images load even when server requires authentication
     // (Plex already does this with X-Plex-Token in image URLs)
     const token = this.apiKey || this.accessToken
-    if (token) {
-      params.set('api_key', token)
-    }
-    const qs = params.toString()
-    if (qs) url += `?${qs}`
-
-    return url
+    return buildUrl(url, { tag: imageTag || undefined, api_key: token || undefined })
   }
 
   /**
@@ -328,10 +318,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
     return retryWithBackoff(
       requestFn,
       {
-        maxRetries: 3,
-        initialDelay: 1000,
         maxDelay: 15000,
-        retryableStatuses: [429, 500, 502, 503, 504],
         onRetry: (attempt, error, delay) => {
           console.warn(`[${this.providerType}] ${context || 'Request'} - Retry ${attempt}/3 after ${delay}ms: ${error.message}`)
         }
@@ -838,7 +825,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
             let totalMovies = ownedTmdbIds.length
             let ownedCount = ownedTmdbIds.length
-            let missingMovies: unknown[] = []
+            let missingMovies: MissingMovie[] = []
             let completenessPercentage = 100
             let collectionPosterUrl = boxsetPosterUrl || firstMoviePosterUrl
             let collectionBackdropUrl: string | undefined
@@ -1400,8 +1387,8 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
       }
 
       // Find best audio track using shared utility
-      const bestAudioTrack = selectBestAudioTrack(audioTracks) || audioTracks[0]
-      const audioStream = audioStreams[bestAudioTrack.index] || audioStreams[0]
+      const bestAudioTrack = selectBestAudioTrack(audioTracks)!
+      const audioStream = audioStreams[bestAudioTrack.index]
 
       const width = videoStream.Width || 0
       const height = videoStream.Height || 0
@@ -1596,15 +1583,6 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
   // scoreVersion extracted to ProviderUtils.scoreVersion
 
-  private normalizeGroupTitle(title: string): string {
-    return title
-      .toLowerCase()
-      .trim()
-      .replace(/\s*[-:(]\s*(director'?s?\s*cut|extended|unrated|theatrical|imax|remastered|special\s*edition|ultimate\s*edition|collector'?s?\s*edition)\s*[):]?\s*$/i, '')
-      .replace(/\s*\(\s*\)\s*$/, '')
-      .trim()
-  }
-
   /**
    * Group movie items by TMDB ID (or title+year fallback) so that multiple
    * versions of the same movie (e.g. colorized vs B&W, Director's Cut vs Theatrical)
@@ -1616,21 +1594,12 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
       return items.map(item => [item])
     }
 
-    const groups = new Map<string, JellyfinMediaItem[]>()
-
-    for (const item of items) {
-      const tmdbId = item.ProviderIds?.Tmdb
-      const groupKey = tmdbId
-        ? `tmdb:${tmdbId}`
-        : `title:${this.normalizeGroupTitle(item.Name || '')}|${item.ProductionYear || ''}`
-
-      if (!groups.has(groupKey)) {
-        groups.set(groupKey, [])
-      }
-      groups.get(groupKey)!.push(item)
-    }
-
-    return Array.from(groups.values())
+    return groupByMediaIdentity(items, item => ({
+      tmdbId: item.ProviderIds?.Tmdb,
+      imdbId: item.ProviderIds?.Imdb,
+      title: item.Name,
+      year: item.ProductionYear,
+    }))
   }
 
   // NOTE: normalizeResolution, detectHdrFormat, and detectObjectAudio are now

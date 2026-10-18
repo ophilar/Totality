@@ -7,6 +7,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Film, Tv, Music, Folder } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
+import { useLibrarySelection } from '../../hooks/useLibrarySelection'
 import type { ServerInstanceResponse, MediaLibraryResponse } from '../../../../preload/index'
 
 interface PlexAuthFlowProps {
@@ -33,7 +34,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
   const [servers, setServers] = useState<ServerInstanceResponse[]>([])
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null)
   const [libraries, setLibraries] = useState<MediaLibraryResponse[]>([])
-  const [selectedLibraries, setSelectedLibraries] = useState<Set<string>>(new Set())
+  const { selectedLibraries, setSelectedLibraries, handleToggleLibrary, handleSelectAll, handleDeselectAll } = useLibrarySelection(libraries)
   const [sourceId, setSourceId] = useState<string | null>(null)
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -125,27 +126,6 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
   }
 
   // Toggle library selection
-  const handleToggleLibrary = (libraryId: string) => {
-    setSelectedLibraries(prev => {
-      const next = new Set(prev)
-      if (next.has(libraryId)) {
-        next.delete(libraryId)
-      } else {
-        next.add(libraryId)
-      }
-      return next
-    })
-  }
-
-  // Select/deselect all libraries
-  const handleSelectAll = () => {
-    setSelectedLibraries(new Set(libraries.map(lib => lib.id)))
-  }
-
-  const handleDeselectAll = () => {
-    setSelectedLibraries(new Set())
-  }
-
   // Complete setup
   const handleComplete = async () => {
     if (!sourceId) return
