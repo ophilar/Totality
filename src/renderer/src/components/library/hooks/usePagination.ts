@@ -1,5 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
 
+export const LIBRARY_PAGE_SIZE = 10_000
+
 interface UsePaginationOptions<T> {
   pageSize: number
   fetchItems: (filters: Record<string, unknown>) => Promise<T[]>
@@ -38,7 +40,7 @@ export function usePagination<T>({
   const requestIdRef = useRef(0)
 
   const load = useCallback(async (reset = true, startOffset?: number) => {
-    if (loadingRef.current) return
+    if (loadingRef.current && !reset) return
     loadingRef.current = true
     setLoading(true)
     const thisRequestId = ++requestIdRef.current

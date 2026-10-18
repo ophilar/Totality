@@ -4,26 +4,8 @@ import { X, CircleFadingArrowUp, EyeOff } from 'lucide-react'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { MissingItemPopup } from './MissingItemPopup'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
-
-interface MissingMovie {
-  tmdb_id: string
-  title: string
-  year?: number
-  poster_path?: string
-  release_date?: string
-}
-
-interface MovieCollectionData {
-  id: number
-  tmdb_collection_id: string
-  collection_name: string
-  total_movies: number
-  owned_movies: number
-  missing_movies: MissingMovie[]
-  owned_movie_ids: string[]
-  completeness_percentage: number
-  poster_url?: string
-}
+import { ScopedOptimizationSummary } from './ScopedOptimizationSummary'
+import type { MovieCollectionData, MissingMovie } from './types'
 
 interface OwnedMovie {
   id: number
@@ -33,6 +15,7 @@ interface OwnedMovie {
   tmdb_id?: string
   needs_upgrade?: boolean
   tier_quality?: string
+  estimated_savings_bytes?: number | null
 }
 
 interface CollectionModalProps {
@@ -142,6 +125,12 @@ export const CollectionModal = memo(function CollectionModal({
                   {Math.round(collection.completeness_percentage)}% complete
                 </span>
               </p>
+              <ScopedOptimizationSummary
+                totalCount={ownedMovies.length}
+                estimatedSavingsBytes={ownedMovies.some(movie => movie.estimated_savings_bytes != null)
+                  ? ownedMovies.reduce((sum, movie) => sum + (movie.estimated_savings_bytes ?? 0), 0)
+                  : null}
+              />
             </div>
             <div className="flex items-center gap-1">
               {onDismissAllMissingInCollection && missingMovies.length > 1 && (

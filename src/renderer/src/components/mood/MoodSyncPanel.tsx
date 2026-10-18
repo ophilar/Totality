@@ -57,7 +57,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
   const [syncing, setSyncing] = useState(false)
   const [syncingTarget, setSyncingTarget] = useState<string | null>(null)
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; currentTrack: string } | null>(null)
-  const [syncResult, setSyncResult] = useState<{ synced: number; failed: number; errors: string[] } | null>(null)
+  const [syncResult, setSyncResult] = useState<{ synced: number; failed: number; cacheFailed: number; errors: string[] } | null>(null)
   const [syncedTrackIds, setSyncedTrackIds] = useState<Set<number>>(new Set())
   const [syncingTrackId, setSyncingTrackId] = useState<number | null>(null)
   const [failedTrackIds, setFailedTrackIds] = useState<Set<number>>(new Set())
@@ -191,6 +191,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
 
     let totalSynced = 0
     let totalFailed = 0
+    let totalCacheFailed = 0
     const allErrors: string[] = []
 
     try {
@@ -207,13 +208,14 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
         })
         totalSynced += result.synced
         totalFailed += result.failed
+        totalCacheFailed += result.cacheFailed
         allErrors.push(...result.errors)
       }
 
-      setSyncResult({ synced: totalSynced, failed: totalFailed, errors: allErrors })
+      setSyncResult({ synced: totalSynced, failed: totalFailed, cacheFailed: totalCacheFailed, errors: allErrors })
       await loadComparison(true)
     } catch (err) {
-      setSyncResult({ synced: totalSynced, failed: totalFailed, errors: [...allErrors, (err as Error).message] })
+      setSyncResult({ synced: totalSynced, failed: totalFailed, cacheFailed: totalCacheFailed, errors: [...allErrors, (err as Error).message] })
     } finally {
       setSyncing(false)
       setSyncingTarget(null)
@@ -617,9 +619,14 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
       {syncResult && (
         <div className="px-3 py-2 border-b border-border/30">
           <div className="flex items-center gap-1.5 text-xs">
-            {syncResult.failed === 0 ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
-            <span className="text-muted-foreground">{syncResult.synced} synced{syncResult.failed > 0 ? `, ${syncResult.failed} failed` : ''}</span>
+            {syncResult.failed === 0 && syncResult.cacheFailed === 0 ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
+            <span className="text-muted-foreground">{syncResult.synced} synced{syncResult.failed > 0 ? `, ${syncResult.failed} failed` : ''}{syncResult.cacheFailed > 0 ? `, ${syncResult.cacheFailed} local cache updates failed` : ''}</span>
           </div>
+          {syncResult.errors.length > 0 && (
+            <ul className="mt-1 text-xs text-muted-foreground">
+              {syncResult.errors.slice(0, 3).map((error, index) => <li key={`${index}-${error}`}>{error}</li>)}
+            </ul>
+          )}
         </div>
       )}
 

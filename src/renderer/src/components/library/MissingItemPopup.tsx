@@ -2,11 +2,7 @@ import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { X, EyeOff, Copy, Check } from 'lucide-react'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
-
-// Helper function to format season label (Season 0 = Specials)
-const formatSeasonLabel = (seasonNumber: number): string => {
-  return seasonNumber === 0 ? 'Specials' : `Season ${seasonNumber}`
-}
+import { formatSeasonLabel } from './mediaUtils'
 
 interface SeasonDetails {
   overview: string | null

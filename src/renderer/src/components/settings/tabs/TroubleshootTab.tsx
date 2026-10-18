@@ -12,7 +12,7 @@
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { FixedSizeList as VirtualList } from 'react-window'
+import { List, useListRef } from 'react-window'
 import {
   Loader2,
   Download,
@@ -66,7 +66,7 @@ export function TroubleshootTab() {
     retentionDays: number
   }>({ enabled: true, minLevel: 'info', retentionDays: 7 })
   const lastClickedIndex = useRef<number | null>(null)
-  const listRef = useRef<VirtualList>(null)
+  const listRef = useListRef(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const logViewerRef = useRef<HTMLDivElement>(null)
   const lastScrollOffset = useRef(0)
@@ -106,13 +106,13 @@ export function TroubleshootTab() {
   useEffect(() => {
     if (autoScroll && listRef.current && filteredLogs.length > 0) {
       isAutoScrolling.current = true
-      listRef.current.scrollToItem(filteredLogs.length - 1, 'end')
+      listRef.current.scrollToRow({ index: filteredLogs.length - 1, align: 'end' })
       // Reset flag after scroll completes
       setTimeout(() => {
         isAutoScrolling.current = false
       }, 50)
     }
-  }, [filteredLogs.length, autoScroll])
+  }, [filteredLogs.length, autoScroll, listRef])
 
   // Handle scroll events to detect manual scrolling
   const handleScroll = useCallback(
@@ -137,9 +137,9 @@ export function TroubleshootTab() {
   const jumpToLatest = useCallback(() => {
     setAutoScroll(true)
     if (listRef.current && filteredLogs.length > 0) {
-      listRef.current.scrollToItem(filteredLogs.length - 1, 'end')
+      listRef.current.scrollToRow({ index: filteredLogs.length - 1, align: 'end' })
     }
-  }, [filteredLogs.length])
+  }, [filteredLogs.length, listRef])
 
   // Measure container height with ResizeObserver
   useEffect(() => {
@@ -505,18 +505,16 @@ export function TroubleshootTab() {
           <>
             {/* Virtualized log list - absolute positioning to fill parent */}
             <div ref={containerRef} className="absolute inset-0 overflow-hidden">
-              <VirtualList
-                ref={listRef}
-                height={listHeight}
-                width="100%"
-                itemCount={filteredLogs.length}
-                itemSize={LOG_ROW_HEIGHT}
+              <List<object>
+                listRef={listRef}
+                style={{ height: listHeight, width: '100%' }}
+                rowCount={filteredLogs.length}
+                rowHeight={LOG_ROW_HEIGHT}
                 className="scrollbar-visible"
-                style={{ width: '100%' }}
-                onScroll={handleScroll}
-              >
-                {LogRow}
-              </VirtualList>
+                onScroll={event => handleScroll({ scrollOffset: event.currentTarget.scrollTop })}
+                rowProps={{}}
+                rowComponent={LogRow}
+              />
             </div>
 
             {/* Jump to latest button - overlay */}

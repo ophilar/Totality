@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { X, Star, Check, Play } from 'lucide-react'
 import { formatFileSize, formatBitrate, formatDuration } from '../library/mediaUtils'
 import { getResolutionColors } from '../../utils/qualityColors'
+import type { AudioTrack as DatabaseAudioTrack, QualityScore as DatabaseQualityScore } from '@main/types/database'
 
 interface MediaDetail {
   id: number
@@ -30,11 +31,7 @@ interface MediaDetail {
   source_type?: string
 }
 
-interface QualityScore {
-  quality_tier: string
-  tier_quality: string
-  tier_score: number
-}
+type QualityScore = Pick<DatabaseQualityScore, 'quality_tier' | 'tier_quality' | 'tier_score'>
 
 interface MediaVersion {
   id: number
@@ -54,13 +51,7 @@ interface MediaVersion {
   is_best?: boolean
 }
 
-interface AudioTrack {
-  codec?: string
-  channels?: number
-  bitrate?: number
-  language?: string
-  title?: string
-}
+type AudioTrack = Partial<Pick<DatabaseAudioTrack, 'codec' | 'channels' | 'bitrate' | 'language' | 'title'>>
 
 interface MobileMediaDetailProps {
   mediaId: number
@@ -123,6 +114,8 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
         year: media.year,
         tmdb_id: media.tmdb_id,
         reason: 'upgrade',
+        priority: 3,
+        status: 'active',
         media_item_id: media.id,
         poster_url: media.poster_url,
       })
@@ -251,9 +244,9 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
                 {displayQuality && (
                   <div className="flex items-center gap-2 mt-2">
                     <span className={`text-xs font-medium px-2 py-0.5 rounded ${getResolutionColors(displayQuality)}`}>
-                      {displayQuality} · {displayTierQuality}
+                      {displayQuality === 'UNKNOWN' ? 'Unknown' : displayQuality} · {displayTierQuality === 'UNKNOWN' ? 'Insufficient evidence' : displayTierQuality}
                     </span>
-                    {displayScore != null && <span className="text-xs text-muted-foreground">Score {displayScore}</span>}
+                    {displayScore != null && displayTierQuality !== 'UNKNOWN' && <span className="text-xs text-muted-foreground">Score {displayScore}</span>}
                   </div>
                 )}
                 {/* Play count */}

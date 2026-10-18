@@ -161,6 +161,7 @@ export function DuplicatesView() {
       })
       setReloadTick((prev) => prev + 1)
     } catch (err) {
+      console.error('Duplicate scan failed:', err)
       addToast({ title: 'Scan Failed', message: 'Failed to scan for duplicates', type: 'error' })
     } finally {
       scanRequestIdRef.current = null

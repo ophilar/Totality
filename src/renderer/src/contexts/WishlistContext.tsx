@@ -7,64 +7,25 @@
  */
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react'
+import type {
+  WishlistItem as DatabaseWishlistItem,
+  WishlistFilters as DatabaseWishlistFilters,
+  WishlistMediaType,
+  WishlistPriority,
+  WishlistReason,
+  WishlistStatus,
+} from '@main/types/database'
+import type { StoreLink as SearchStoreLink, StoreRegion } from '@main/services/StoreSearchService'
 
 // Types for wishlist
-export type WishlistMediaType = 'movie' | 'episode' | 'season' | 'album' | 'track'
-export type WishlistPriority = 1 | 2 | 3 | 4 | 5
-export type WishlistReason = 'missing' | 'upgrade'
-export type WishlistStatus = 'active' | 'completed'
+export type { WishlistMediaType, WishlistPriority, WishlistReason, WishlistStatus }
+export type WishlistItem = Omit<DatabaseWishlistItem, 'id'> & { id: number }
+export type WishlistFilters = Pick<DatabaseWishlistFilters,
+  'media_type' | 'priority' | 'reason' | 'status' | 'searchQuery' | 'sortBy' | 'sortOrder'
+>
 
-export interface WishlistItem {
-  id: number
-  media_type: WishlistMediaType
-  title: string
-  subtitle?: string
-  year?: number
-  reason: WishlistReason
-  tmdb_id?: string
-  imdb_id?: string
-  musicbrainz_id?: string
-  series_title?: string
-  season_number?: number
-  episode_number?: number
-  collection_name?: string
-  artist_name?: string
-  album_title?: string
-  poster_url?: string
-  priority: WishlistPriority
-  notes?: string
-  // Status tracking
-  status: WishlistStatus
-  completed_at?: string
-  // Upgrade-specific fields
-  current_quality_tier?: string
-  current_quality_level?: string
-  current_resolution?: string
-  current_video_codec?: string
-  current_audio_codec?: string
-  media_item_id?: number
-  added_at: string
-  updated_at: string
-}
-
-export interface WishlistFilters {
-  media_type?: WishlistMediaType
-  priority?: WishlistPriority
-  reason?: WishlistReason
-  status?: WishlistStatus
-  searchQuery?: string
-  sortBy?: 'added_at' | 'priority' | 'title' | 'year' | 'completed_at'
-  sortOrder?: 'asc' | 'desc'
-}
-
-export interface StoreLink {
-  name: string
-  url: string
-  icon: string
-  category: 'aggregator' | 'digital' | 'physical'
-}
-
-export type StoreRegion = 'us' | 'uk' | 'de' | 'fr' | 'ca' | 'au'
+export type StoreLink = SearchStoreLink
+export type { StoreRegion }
 
 export interface WishlistCounts {
   missing: number

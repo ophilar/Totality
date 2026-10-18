@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { SETTING_KEYS } from '../../shared/settingKeys'
 import { Sidebar } from './components/layout/Sidebar'
 import { TopBar } from './components/layout/TopBar'
-import { MediaBrowser } from './components/library/MediaBrowser'
-import { Dashboard } from './components/dashboard'
+const MediaBrowser = lazy(() => import('./components/library/MediaBrowser').then(module => ({ default: module.MediaBrowser })))
+const Dashboard = lazy(() => import('./components/dashboard').then(module => ({ default: module.Dashboard })))
 import { WishlistPanel } from './components/wishlist/WishlistPanel'
 import { CompletenessPanel } from './components/library/CompletenessPanel'
 import { ChatPanel } from './components/chat/ChatPanel'
@@ -15,14 +15,14 @@ import { WishlistProvider } from './contexts/WishlistContext'
 import { NavigationProvider, useNavigation } from './contexts/NavigationContext'
 import { ToastProvider } from './contexts/ToastContext'
 import { ThemeProvider } from './contexts/ThemeContext'
-import { AddSourceModal } from './components/sources/AddSourceModal'
-import { AboutModal } from './components/ui/AboutModal'
-import { SettingsPanel } from './components/settings'
+const AddSourceModal = lazy(() => import('./components/sources/AddSourceModal').then(module => ({ default: module.AddSourceModal })))
+const AboutModal = lazy(() => import('./components/ui/AboutModal').then(module => ({ default: module.AboutModal })))
+const SettingsPanel = lazy(() => import('./components/settings').then(module => ({ default: module.SettingsPanel })))
 import { SplashScreen } from './components/layout/SplashScreen'
 import { ToastContainer } from './components/ui/Toast'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { SectionErrorBoundary } from './components/ui/SectionErrorBoundary'
-import { TimelinesView } from './components/timelines/TimelinesView'
+const TimelinesView = lazy(() => import('./components/timelines/TimelinesView').then(module => ({ default: module.TimelinesView })))
 import type { MediaViewType, SeriesStats, CollectionStats, MusicCompletenessStats, AnalysisProgress } from './components/library/types'
 import { isWebMode, isAuthenticated, authenticate } from './services/webTransport'
 import { useMobileLayout } from './hooks/useMobileLayout'
@@ -186,9 +186,8 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
     })
 
     // Listen for task queue updates to detect completion
-    const cleanupTaskQueue = window.electronAPI.onTaskQueueUpdated((state: unknown) => {
-      const queueState = state as { currentTask: { status: string } | null }
-      if (!queueState.currentTask || queueState.currentTask.status === 'completed') {
+    const cleanupTaskQueue = window.electronAPI.onTaskQueueUpdated((state) => {
+      if (!state.currentTask || state.currentTask.status === 'completed') {
         setIsAnalyzing(false)
         setAnalysisProgress(null)
         setAnalysisType(null)
@@ -389,6 +388,7 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
         {!isMobile && (
           <Sidebar
             onOpenAbout={() => setShowAboutModal(true)}
+            onAddSource={() => setShowAddSourceModal(true)}
             isCollapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
           />
@@ -423,6 +423,7 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
           isMobile={isMobile}
         />}
 
+        <Suspense fallback={<main className="fixed inset-x-0 bottom-0 top-[76px]" aria-busy="true" />}>
         {currentView === 'timelines' ? (
           <main className="fixed top-[76px] bottom-0 transition-[left,right] duration-300 ease-out" style={{ left: sidebarCollapsed ? '96px' : '288px', right: '16px' }}>
             <SectionErrorBoundary section="Timelines">
@@ -491,21 +492,32 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
             </SectionErrorBoundary>
           </main>
         )}
+        </Suspense>
         {showAddSourceModal && (
+          <Suspense fallback={null}>
           <AddSourceModal
             onClose={() => setShowAddSourceModal(false)}
             onSuccess={handleAddSourceSuccess}
           />
+          </Suspense>
         )}
-        <AboutModal isOpen={showAboutModal} onClose={() => setShowAboutModal(false)} />
-        <SettingsPanel
-          isOpen={showSettingsModal}
-          onClose={() => {
-            setShowSettingsModal(false)
-            setSettingsInitialTab(undefined)
-          }}
-          initialTab={settingsInitialTab as 'library' | 'quality' | 'services' | 'appearance' | 'data' | 'update' | 'troubleshoot' | undefined}
-        />
+        {showAboutModal && (
+          <Suspense fallback={null}>
+            <AboutModal isOpen={showAboutModal} onClose={() => setShowAboutModal(false)} />
+          </Suspense>
+        )}
+        {showSettingsModal && (
+          <Suspense fallback={null}>
+            <SettingsPanel
+              isOpen={showSettingsModal}
+              onClose={() => {
+                setShowSettingsModal(false)
+                setSettingsInitialTab(undefined)
+              }}
+              initialTab={settingsInitialTab as 'library' | 'quality' | 'services' | 'appearance' | 'data' | 'update' | 'troubleshoot' | undefined}
+            />
+          </Suspense>
+        )}
         {/* Panels - rendered at App level for Dashboard view */}
         {currentView === 'dashboard' && (
           <>

@@ -1,42 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { ChevronDown, ChevronRight, Loader2, RefreshCw, Plus, Film, Tv, Music, Folder, Trash2, Pencil, Info, Square, Server, HardDrive, Settings, Eye, EyeOff, Clock, PanelLeftClose, PanelLeft } from 'lucide-react'
 import { useSources, type ProviderType } from '../../contexts/SourceContext'
-import { AddSourceModal } from '../sources/AddSourceModal'
 import type { MediaSourceResponse, MediaLibraryResponse } from '../../../../preload/index'
-
-// Task queue types
-interface QueuedTask {
-  id: string
-  type: string
-  label: string
-  sourceId?: string
-  libraryId?: string
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-  progress?: {
-    current: number
-    total: number
-    percentage: number
-    phase: string
-    currentItem?: string
-  }
-}
-
-interface TaskQueueState {
-  currentTask: QueuedTask | null
-  queue: QueuedTask[]
-  isPaused: boolean
-}
-
-const PROVIDER_COLORS: Record<ProviderType, string> = {
-  plex: 'bg-[#e5a00d]',
-  jellyfin: 'bg-purple-500',
-  emby: 'bg-green-500',
-  kodi: 'bg-blue-500',
-  'kodi-local': 'bg-blue-500',
-  'kodi-mysql': 'bg-blue-500',
-  mediamonkey: 'bg-orange-500',
-  local: 'bg-slate-600',
-}
+import type { QueueState, QueuedTask } from '@main/types/taskQueue'
+import { formatRelativeTime } from '../../utils/dateUtils'
+import { providerColors } from '../library/mediaUtils'
 
 const LIBRARY_ICONS: Record<string, typeof Film> = {
   movie: Film,
@@ -44,26 +12,14 @@ const LIBRARY_ICONS: Record<string, typeof Film> = {
   music: Music,
 }
 
-function formatRelativeTime(dateStr?: string): string | null {
-  if (!dateStr) return null
-  const diffMs = Date.now() - new Date(dateStr).getTime()
-  const diffMins = Math.floor(diffMs / 60000)
-  const diffHours = Math.floor(diffMins / 60)
-  const diffDays = Math.floor(diffHours / 24)
-
-  if (diffMins < 1) return 'Just now'
-  if (diffMins < 60) return `${diffMins}m ago`
-  if (diffHours < 24) return `${diffHours}h ago`
-  return `${diffDays}d ago`
-}
-
 interface SidebarProps {
   onOpenAbout: () => void
+  onAddSource: () => void
   isCollapsed: boolean
   onToggleCollapse: () => void
 }
 
-export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarProps) {
+export function Sidebar({ onOpenAbout, onAddSource, isCollapsed, onToggleCollapse }: SidebarProps) {
   const {
     sources,
     isLoading,
@@ -81,7 +37,6 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
     refreshLibraryTypes,
   } = useSources()
 
-  const [showAddModal, setShowAddModal] = useState(false)
   const [expandedSourceId, setExpandedSourceId] = useState<string | null>(null)
   const [sourceLibraries, setSourceLibraries] = useState<Map<string, MediaLibraryResponse[]>>(new Map())
   const [allSourceLibraries, setAllSourceLibraries] = useState<Map<string, Array<MediaLibraryResponse & { isEnabled: boolean }>>>(new Map())
@@ -97,7 +52,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
   const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number; percentage: number; currentItem?: string } | null>(null)
   const [musicScanProgress, setMusicScanProgress] = useState<Map<string, { current: number; total: number; percentage: number; currentItem?: string; phase?: string }>>(new Map())
   const [renamingSourceId, setRenamingSourceId] = useState<string | null>(null)
-  const [taskQueueState, setTaskQueueState] = useState<TaskQueueState | null>(null)
+  const [taskQueueState, setTaskQueueState] = useState<QueueState | null>(null)
   const addSourceButtonRef = useRef<HTMLButtonElement>(null)
   const aboutButtonRef = useRef<HTMLButtonElement>(null)
   // Listen for library updates to refresh sidebar when libraries are toggled
@@ -178,13 +133,13 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
   // Listen for task queue updates to show scanning/queued status
   useEffect(() => {
     // Load initial state
-    window.electronAPI.taskQueueGetState?.().then((state: unknown) => {
-      setTaskQueueState(state as TaskQueueState)
+    window.electronAPI.taskQueueGetState?.().then((state) => {
+      setTaskQueueState(state)
     }).catch(console.error)
 
     // Subscribe to updates
-    const unsubscribe = window.electronAPI.onTaskQueueUpdated?.((state: unknown) => {
-      setTaskQueueState(state as TaskQueueState)
+    const unsubscribe = window.electronAPI.onTaskQueueUpdated?.((state) => {
+      setTaskQueueState(state)
     })
     return () => unsubscribe?.()
   }, [])
@@ -344,11 +299,6 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
     }
   }
 
-  const handleSourceAdded = () => {
-    setShowAddModal(false)
-    refreshSources()
-  }
-
   const handleRenameSource = async (sourceId: string, newName: string) => {
     try {
       await window.electronAPI.sourcesUpdate(sourceId, { displayName: newName })
@@ -401,7 +351,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
           )}
 
           {sources.map((source) => {
-            const color = PROVIDER_COLORS[source.source_type as ProviderType] || 'bg-gray-500'
+            const color = providerColors[source.source_type as ProviderType] || 'bg-gray-500'
             const isActive = activeSourceId === source.source_id
 
             return (
@@ -428,7 +378,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
           })}
 
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={onAddSource}
             className="w-12 h-12 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
             title="Add Source"
             aria-label="Add media source"
@@ -458,7 +408,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
               No media sources configured
             </p>
             <button
-              onClick={() => setShowAddModal(true)}
+              onClick={onAddSource}
               className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
               aria-label="Add media source"
             >
@@ -520,7 +470,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
         {sources.length > 0 && (
           <button
             ref={addSourceButtonRef}
-            onClick={() => setShowAddModal(true)}
+            onClick={onAddSource}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
             aria-label="Add media source"
           >
@@ -544,14 +494,6 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
           {!isCollapsed && 'About Totality'}
         </button>
       </div>
-
-      {/* Add Source Modal */}
-      {showAddModal && (
-        <AddSourceModal
-          onClose={() => setShowAddModal(false)}
-          onSuccess={handleSourceAdded}
-        />
-      )}
 
     </aside>
   )
@@ -582,7 +524,7 @@ interface SourceItemProps {
   onCancelRename: () => void
   onStopScan: () => void
   onScanAll: () => void
-  taskQueueState: TaskQueueState | null
+  taskQueueState: QueueState | null
   newItemCounts: Map<string, number>
   onClearNewItems: (libraryKey: string) => void
 }
@@ -621,7 +563,7 @@ function SourceItem({
   newItemCounts,
   onClearNewItems,
 }: SourceItemProps) {
-  const color = PROVIDER_COLORS[source.source_type as ProviderType] || 'bg-gray-500'
+  const color = providerColors[source.source_type as ProviderType] || 'bg-gray-500'
 
   // Helper to check if a library is being scanned via task queue
   const getTaskQueueStatus = (libraryId: string): { isScanning: boolean; isQueued: boolean; queuePosition?: number; progress?: QueuedTask['progress'] } => {

@@ -12,7 +12,7 @@ import { MoviesView } from './MoviesView'
 import { TVShowsView } from './TVShowsView'
 import { MusicView } from './MusicView'
 import { DuplicatesView } from './DuplicatesView'
-import { Grid3x3, List, Search, X, Library, Layers, Music, Disc3, User, RefreshCw, Film, Tv, CircleFadingArrowUp, Settings, Star, Home } from 'lucide-react'
+import { Grid3x3, List, Search, X, Library, Layers, Music, Disc3, User, RefreshCw, Film, Tv, Settings, Star, Home } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
 import { useNavigation } from '../../contexts/NavigationContext'
 import { useWishlist } from '../../contexts/WishlistContext'
@@ -34,7 +34,7 @@ import {
   useMoviePagination,
   useTVShowPagination,
 } from './hooks'
-import { usePagination } from './hooks/usePagination'
+import { LIBRARY_PAGE_SIZE, usePagination } from './hooks/usePagination'
 import {
   emitDismissUpgrade,
 } from '../../utils/dismissEvents'
@@ -157,8 +157,11 @@ export function MediaBrowser({
   const [searchQuery, _setSearchQuery] = useState('')
   const [showSearchResults, setShowSearchResults] = useState(false)
   const [searchResultIndex, setSearchResultIndex] = useState(-1)
-  const [searchTrackResults, setSearchTrackResults] = useState<Array<{ id: number; title: string; album_id: number; album_title?: string; artist_name?: string; thumb_url?: string; needs_upgrade: boolean; type: 'track' }>>([])
-  const searchTrackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [searchData, setSearchData] = useState<Awaited<ReturnType<typeof window.electronAPI.mediaSearch>>>(
+    { movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: [] }
+  )
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const searchRequestIdRef = useRef(0)
   const searchContainerRef = useRef<HTMLDivElement>(null)
   const searchDropdownRef = useRef<HTMLDivElement>(null)
   const searchPortalRef = useRef<HTMLDivElement>(null)
@@ -202,7 +205,7 @@ export function MediaBrowser({
     totalCount: totalArtistCount, loading: artistsLoading,
     load: loadPaginatedArtists, loadMore: loadMoreArtists,
   } = usePagination<MusicArtist>({
-    pageSize: 10000,
+    pageSize: LIBRARY_PAGE_SIZE,
     fetchItems: (f) => window.electronAPI.musicGetArtists(f) as Promise<MusicArtist[]>,
     fetchCount: (f) => window.electronAPI.musicCountArtists(f) as Promise<number>,
     buildFilters: () => {
@@ -238,7 +241,7 @@ export function MediaBrowser({
     totalCount: totalAlbumCount, loading: albumsLoading,
     load: loadPaginatedAlbums, loadMore: loadMoreAlbums,
   } = usePagination<MusicAlbum>({
-    pageSize: 10000,
+    pageSize: LIBRARY_PAGE_SIZE,
     fetchItems: (f) => window.electronAPI.musicGetAlbums(f) as Promise<MusicAlbum[]>,
     fetchCount: (f) => window.electronAPI.musicCountAlbums(f) as Promise<number>,
     buildFilters: () => {
@@ -900,7 +903,7 @@ export function MediaBrowser({
 
     // Quality filter (use debounced value)
     if (debouncedQualityFilter !== 'all') {
-      const tierQuality = (item.tier_quality || 'MEDIUM').toLowerCase()
+      const tierQuality = (item.tier_quality || 'UNKNOWN').toLowerCase()
       if (tierQuality !== debouncedQualityFilter) return false
     }
 
@@ -986,125 +989,46 @@ export function MediaBrowser({
   // Movies are now loaded from the server pre-filtered/sorted/paginated
   const movies = paginatedMovies
 
-  // Global search results for live preview (searches all content types)
+  // Normalize the existing database search API for the dropdown's navigation and display shape.
   const globalSearchResults = useMemo(() => {
-    if (!searchInput.trim() || searchInput.length < 2) return { movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: [] }
-
-    const query = searchInput.toLowerCase()
-    const maxResults = 5 // Max results per category
-
-    // Search movies (from loaded pages)
-    const movieResults = paginatedMovies
-      .filter(item => item.title.toLowerCase().includes(query))
-      .slice(0, maxResults)
-      .map(item => ({
-        id: item.id,
-        title: item.title,
-        year: item.year,
-        poster_url: item.poster_url,
-        needs_upgrade: item.needs_upgrade || item.tier_quality === 'LOW',
-        type: 'movie' as const
-      }))
-
-    // Search TV shows (from loaded pages)
-    const tvResults = paginatedShows
-      .filter(show => show.series_title.toLowerCase().includes(query))
-      .slice(0, maxResults)
-      .map(show => ({
-        id: show.series_title,
-        title: show.series_title,
-        poster_url: show.poster_url,
-        type: 'tv' as const
-      }))
-
-    // Search episodes (from currently selected show only)
-    const episodeResults = selectedShowEpisodes
-      .filter(item => (
-        item.title.toLowerCase().includes(query) ||
-        (item.series_title && item.series_title.toLowerCase().includes(query))
-      ))
-      .slice(0, maxResults)
-      .map(item => ({
-        id: item.id,
-        title: item.title,
-        series_title: item.series_title,
-        season_number: item.season_number,
-        episode_number: item.episode_number,
-        thumb_url: item.episode_thumb_url || item.season_poster_url || item.poster_url,
-        needs_upgrade: item.needs_upgrade || item.tier_quality === 'LOW',
-        type: 'episode' as const
-      }))
-
-    // Search music artists
-    const artistResults = musicArtists
-      .filter(artist => artist.name.toLowerCase().includes(query))
-      .slice(0, maxResults)
-      .map(artist => ({
-        id: artist.id,
-        title: artist.name,
-        thumb_url: artist.thumb_url,
-        type: 'artist' as const
-      }))
-
-    // Search music albums
-    const albumResults = musicAlbums
-      .filter(album =>
-        album.title.toLowerCase().includes(query) ||
-        album.artist_name.toLowerCase().includes(query)
-      )
-      .slice(0, maxResults)
-      .map(album => ({
-        id: album.id,
-        title: album.title,
-        subtitle: album.artist_name,
-        year: album.year,
-        thumb_url: album.thumb_url,
-        needs_upgrade: false,
-        type: 'album' as const
-      }))
-
     return {
-      movies: movieResults,
-      tvShows: tvResults,
-      episodes: episodeResults,
-      artists: artistResults,
-      albums: albumResults,
-      tracks: searchTrackResults
+      movies: searchData.movies.map(movie => ({ ...movie, type: 'movie' as const })),
+      tvShows: searchData.tvShows.map(show => ({ ...show, id: show.title, type: 'tv' as const })),
+      episodes: searchData.episodes.map(episode => ({ ...episode, thumb_url: episode.poster_url, type: 'episode' as const })),
+      artists: searchData.artists.map(artist => ({ id: artist.id, title: artist.name, thumb_url: artist.thumb_url, type: 'artist' as const })),
+      albums: searchData.albums.map(album => ({ id: album.id, title: album.title, subtitle: album.artist_name, year: album.year, thumb_url: album.thumb_url, type: 'album' as const })),
+      tracks: searchData.tracks.map(track => ({ ...track, thumb_url: track.album_thumb_url, type: 'track' as const }))
     }
-  }, [searchInput, paginatedMovies, paginatedShows, selectedShowEpisodes, musicArtists, musicAlbums, searchTrackResults])
+  }, [searchData])
 
-  // Async track search for global search dropdown (server-side query since tracks are paginated)
+  // Search all media types through the existing database search API.
   useEffect(() => {
-    if (searchTrackTimerRef.current) clearTimeout(searchTrackTimerRef.current)
-    const query = searchInput.trim().toLowerCase()
+    const requestId = ++searchRequestIdRef.current
+    const query = searchInput.trim()
     if (!query || query.length < 2) {
-      setSearchTrackResults([])
+      setSearchData({ movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: [] })
+      setSearchError(null)
       return
     }
-    searchTrackTimerRef.current = setTimeout(async () => {
+    setSearchData({ movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: [] })
+    setSearchError(null)
+    let active = true
+    const timer = setTimeout(async () => {
       try {
-        const filters: Record<string, unknown> = { searchQuery: query, limit: 5, offset: 0 }
-        if (activeSourceId) filters.sourceId = activeSourceId
-        const tracks = await window.electronAPI.musicGetTracks(filters) as MusicTrack[]
-        setSearchTrackResults(tracks.map(track => {
-          const album = musicAlbums.find(a => a.id === track.album_id)
-          return {
-            id: track.id,
-            title: track.title,
-            album_id: track.album_id || 0,
-            album_title: album?.title,
-            artist_name: album?.artist_name,
-            thumb_url: album?.thumb_url,
-            needs_upgrade: !track.is_lossless && !track.is_hi_res,
-            type: 'track' as const
-          }
-        }))
-      } catch {
-        setSearchTrackResults([])
+        const result = await window.electronAPI.mediaSearch(query)
+        if (active && requestId === searchRequestIdRef.current) setSearchData(result)
+      } catch (error) {
+        if (active && requestId === searchRequestIdRef.current) {
+          console.error('Failed to search library:', error)
+          setSearchError(error instanceof Error ? error.message : String(error))
+        }
       }
     }, 200)
-    return () => { if (searchTrackTimerRef.current) clearTimeout(searchTrackTimerRef.current) }
-  }, [searchInput, activeSourceId, musicAlbums])
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [searchInput])
 
   const hasSearchResults = globalSearchResults.movies.length > 0 ||
     globalSearchResults.tvShows.length > 0 ||
@@ -1276,9 +1200,8 @@ export function MediaBrowser({
       // For tracks, we need to find the track first to get its album
       const numId = typeof id === 'string' ? parseInt(id, 10) : id
       // Look up the track to find its album
-      window.electronAPI.musicGetTracks({ limit: 10000 }).then(result => {
-        const tracks = result as MusicTrack[]
-        const track = tracks.find(t => t.id === numId)
+      window.electronAPI.musicGetTrackById(numId).then(result => {
+        const track = result as MusicTrack | null
         if (track?.album_id) {
           const album = musicAlbums.find(a => a.id === track.album_id)
           if (album) {
@@ -1411,9 +1334,6 @@ export function MediaBrowser({
                             <div className="text-sm font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{movie.title}</div>
                             {movie.year && <div className="text-xs text-muted-foreground">{movie.year}</div>}
                           </div>
-                          {movie.needs_upgrade && (
-                            <CircleFadingArrowUp className="w-5 h-5 text-red-500 shrink-0" aria-label="Upgrade recommended" />
-                          )}
                         </div>
                       )
                     })}
@@ -1493,9 +1413,6 @@ export function MediaBrowser({
                               {episode.series_title} • S{episode.season_number}E{episode.episode_number}
                             </div>
                           </div>
-                          {episode.needs_upgrade && (
-                            <CircleFadingArrowUp className="w-4 h-4 text-red-500 shrink-0" aria-label="Upgrade recommended" />
-                          )}
                         </div>
                       )
                     })}
@@ -1575,9 +1492,6 @@ export function MediaBrowser({
                               {album.subtitle}{album.year ? ` • ${album.year}` : ''}
                             </div>
                           </div>
-                          {album.needs_upgrade && (
-                            <CircleFadingArrowUp className="w-5 h-5 text-red-500 shrink-0" aria-label="Upgrade recommended" />
-                          )}
                         </div>
                       )
                     })}
@@ -1619,9 +1533,6 @@ export function MediaBrowser({
                               {track.album_title}{track.artist_name ? ` • ${track.artist_name}` : ''}
                             </div>
                           </div>
-                          {track.needs_upgrade && (
-                            <CircleFadingArrowUp className="w-5 h-5 text-red-500 shrink-0" aria-label="Upgrade recommended" />
-                          )}
                         </div>
                       )
                     })}
@@ -1634,7 +1545,7 @@ export function MediaBrowser({
             {/* No results message (portal to theme-aware container) */}
             {showSearchResults && searchInput.length >= 2 && !hasSearchResults && searchPortalRef.current && createPortal(
               <div className="bg-card border border-border rounded-lg shadow-2xl p-4 text-foreground" style={getSearchDropdownStyle()}>
-                <div className="text-sm text-muted-foreground text-center">No results found</div>
+                <div className="text-sm text-muted-foreground text-center">{searchError || 'No results found'}</div>
               </div>,
               searchPortalRef.current
             )}
@@ -2125,7 +2036,7 @@ export function MediaBrowser({
             onLoadMoreShows={loadMoreShows}
             tvSortBy={tvSortBy}
             onTvSortChange={(sort) => {
-              setTvSortBy(sort as 'title' | 'play_count' | 'last_watched_at')
+              setTvSortBy(sort as 'title' | 'play_count' | 'last_watched_at' | 'estimated_savings_bytes')
               setTimeout(() => loadPaginatedShows(true), 0)
             }}
             isMobile={isMobile}

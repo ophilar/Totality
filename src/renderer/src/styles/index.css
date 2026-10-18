@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+@source not "../../../main";
+@source not "../../../preload";
 
 @theme {
   --color-border: hsl(var(--border));
@@ -856,6 +858,12 @@
     font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  option,
+  optgroup {
+    color: hsl(var(--popover-foreground));
+    background-color: hsl(var(--popover));
   }
 
   h1, h2, h3, h4, h5, h6 {
