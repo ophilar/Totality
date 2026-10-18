@@ -1,4 +1,5 @@
-import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
+import { shell, dialog, BrowserWindow } from 'electron'
 import { promises as fs } from 'fs'
 import { getDatabase } from '../database/getDatabase'
 import { safeSend } from './utils/safeSend'
@@ -8,6 +9,8 @@ import type { WishlistItem } from '../types/database'
 import type { StoreRegion } from '../services/StoreSearchService'
 import { validateInput, PositiveIntSchema, WishlistItemSchema, WishlistFiltersSchema, SafeUrlSchema, StoreRegionSchema } from '../validation/schemas'
 import { z } from 'zod'
+import { createIpcHandler, createIpcHandlerWithEvent } from './utils/createHandler'
+
 
 /**
  * Register all wishlist-related IPC handlers
@@ -23,7 +26,7 @@ export function registerWishlistHandlers() {
   /**
    * Add an item to the wishlist
    */
-  ipcMain.handle('wishlist:add', async (_event, item: unknown) => {
+  createIpcHandler(IPC_CHANNELS.wishlistAdd, async (item: unknown) => {
     try {
       const validItem = validateInput(WishlistItemSchema, item, 'wishlist:add')
       console.log('[IPC wishlist:add]', validItem.media_type, `"${validItem.title}"`)
@@ -46,7 +49,7 @@ export function registerWishlistHandlers() {
       if (id === -1) {
         return { id: -1, duplicate: true }
       }
-      safeSend(BrowserWindow.getAllWindows()[0] || null, 'wishlist:changed')
+      safeSend(BrowserWindow.getAllWindows()[0] || null, IPC_CHANNELS.wishlistChanged)
       return id
     } catch (error) {
       console.error('Error adding wishlist item:', error)
@@ -57,13 +60,13 @@ export function registerWishlistHandlers() {
   /**
    * Update a wishlist item
    */
-  ipcMain.handle('wishlist:update', async (_event, id: unknown, updates: unknown) => {
+  createIpcHandler(IPC_CHANNELS.wishlistUpdate, async (id: unknown, updates: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'wishlist:update')
       const validUpdates = validateInput(WishlistItemSchema.partial(), updates, 'wishlist:update')
       console.log('[IPC wishlist:update] id:', validId)
       await db.updateWishlistItem(validId, validUpdates)
-      safeSend(BrowserWindow.getAllWindows()[0] || null, 'wishlist:changed')
+      safeSend(BrowserWindow.getAllWindows()[0] || null, IPC_CHANNELS.wishlistChanged)
       return { success: true }
     } catch (error) {
       console.error('Error updating wishlist item:', error)
@@ -74,12 +77,12 @@ export function registerWishlistHandlers() {
   /**
    * Remove an item from the wishlist
    */
-  ipcMain.handle('wishlist:remove', async (_event, id: unknown) => {
+  createIpcHandler(IPC_CHANNELS.wishlistRemove, async (id: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'wishlist:remove')
       console.log('[IPC wishlist:remove] id:', validId)
       await db.removeWishlistItem(validId)
-      safeSend(BrowserWindow.getAllWindows()[0] || null, 'wishlist:changed')
+      safeSend(BrowserWindow.getAllWindows()[0] || null, IPC_CHANNELS.wishlistChanged)
       return { success: true }
     } catch (error) {
       console.error('Error removing wishlist item:', error)
@@ -90,7 +93,7 @@ export function registerWishlistHandlers() {
   /**
    * Get all wishlist items with optional filters
    */
-  ipcMain.handle('wishlist:getAll', async (_event, filters?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.wishlistGetAll, async (filters?: unknown) => {
     try {
       const validFilters = validateInput(WishlistFiltersSchema, filters, 'wishlist:getAll')
       return db.getWishlistItems(validFilters)
@@ -103,7 +106,7 @@ export function registerWishlistHandlers() {
   /**
    * Get a single wishlist item by ID
    */
-  ipcMain.handle('wishlist:getById', async (_event, id: unknown) => {
+  createIpcHandler(IPC_CHANNELS.wishlistGetById, async (id: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'wishlist:getById')
       return db.getWishlistItemById(validId)
@@ -116,7 +119,7 @@ export function registerWishlistHandlers() {
   /**
    * Get the total count of wishlist items
    */
-  ipcMain.handle('wishlist:getCount', async () => {
+  createIpcHandler(IPC_CHANNELS.wishlistGetCount, async () => {
     try {
       return db.getWishlistCount()
     } catch (error) {
@@ -128,7 +131,7 @@ export function registerWishlistHandlers() {
   /**
    * Check if an item already exists in the wishlist
    */
-  ipcMain.handle('wishlist:checkExists', async (_event, tmdbId?: unknown, musicbrainzId?: unknown, mediaItemId?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.wishlistCheckExists, async (tmdbId?: unknown, musicbrainzId?: unknown, mediaItemId?: unknown) => {
     try {
       const validTmdbId = tmdbId !== undefined ? validateInput(z.string().max(20), tmdbId, 'wishlist:checkExists') : undefined
       const validMusicbrainzId = musicbrainzId !== undefined ? validateInput(z.string().max(100), musicbrainzId, 'wishlist:checkExists') : undefined
@@ -143,7 +146,7 @@ export function registerWishlistHandlers() {
   /**
    * Get wishlist counts by reason (missing vs upgrade)
    */
-  ipcMain.handle('wishlist:getCountsByReason', async () => {
+  createIpcHandler(IPC_CHANNELS.wishlistGetCountsByReason, async () => {
     try {
       return db.getWishlistCountsByReason()
     } catch (error) {
@@ -155,7 +158,7 @@ export function registerWishlistHandlers() {
   /**
    * Add multiple items to the wishlist (bulk operation)
    */
-  ipcMain.handle('wishlist:addBulk', async (_event, items: unknown) => {
+  createIpcHandler(IPC_CHANNELS.wishlistAddBulk, async (items: unknown) => {
     try {
       const validItems = validateInput(z.array(WishlistItemSchema), items, 'wishlist:addBulk')
       console.log('[IPC wishlist:addBulk]', validItems.length, 'items')
@@ -177,7 +180,7 @@ export function registerWishlistHandlers() {
       }
 
       const added = await db.addWishlistItemsBulk(validItems)
-      if (added > 0) safeSend(BrowserWindow.getAllWindows()[0] || null, 'wishlist:changed')
+      if (added > 0) safeSend(BrowserWindow.getAllWindows()[0] || null, IPC_CHANNELS.wishlistChanged)
       return { success: true, added }
     } catch (error) {
       console.error('Error bulk adding wishlist items:', error)
@@ -192,7 +195,7 @@ export function registerWishlistHandlers() {
   /**
    * Get store search links for a wishlist item
    */
-  ipcMain.handle('wishlist:getStoreLinks', async (_event, item: unknown) => {
+  createIpcHandler(IPC_CHANNELS.wishlistGetStoreLinks, async (item: unknown) => {
     try {
       const validItem = validateInput(WishlistItemSchema, item, 'wishlist:getStoreLinks')
       return storeService.getStoreLinks(validItem as WishlistItem)
@@ -206,7 +209,7 @@ export function registerWishlistHandlers() {
    * Open a store link in the default browser
    * SECURITY: Only allows https:// and http:// URLs to prevent malicious schemes
    */
-  ipcMain.handle('wishlist:openStoreLink', async (_event, url: unknown) => {
+  createIpcHandler(IPC_CHANNELS.wishlistOpenStoreLink, async (url: unknown) => {
     try {
       const validUrl = validateInput(SafeUrlSchema, url, 'wishlist:openStoreLink')
 
@@ -221,7 +224,7 @@ export function registerWishlistHandlers() {
   /**
    * Set the store region preference
    */
-  ipcMain.handle('wishlist:setRegion', async (_event, region: unknown) => {
+  createIpcHandler(IPC_CHANNELS.wishlistSetRegion, async (region: unknown) => {
     try {
       const validRegion = validateInput(StoreRegionSchema, region, 'wishlist:setRegion')
       storeService.setRegion(validRegion as StoreRegion)
@@ -237,7 +240,7 @@ export function registerWishlistHandlers() {
   /**
    * Get the current store region
    */
-  ipcMain.handle('wishlist:getRegion', async () => {
+  createIpcHandler(IPC_CHANNELS.wishlistGetRegion, async () => {
     try {
       const region = db.getSetting('store_region')
       return region || 'us'
@@ -254,7 +257,7 @@ export function registerWishlistHandlers() {
   /**
    * Export wishlist to CSV file
    */
-  ipcMain.handle('wishlist:exportCsv', async (event) => {
+  createIpcHandlerWithEvent(IPC_CHANNELS.wishlistExportCsv, async (event) => {
     try {
       const win = BrowserWindow.fromWebContents(event.sender)
       if (!win) throw new Error('No window found')

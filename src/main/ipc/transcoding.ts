@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
 import { z } from 'zod'
 import { shell } from 'electron'
 import { getTranscodingService } from '@main/services/TranscodingService'
@@ -8,6 +9,7 @@ import { operationRequestRegistry } from '@main/ipc/utils/OperationRequestRegist
 import type { TranscodeOptions } from '@main/services/TranscodingService'
 import { getDatabase } from '@main/database/getDatabase'
 import { MediaPathAuthorization } from '@main/services/MediaPathAuthorization'
+import { getErrorMessage } from './utils'
 
 const ShowQuarantineIdentitySchema = z.tuple([
   NonEmptyStringSchema,
@@ -27,32 +29,32 @@ async function authorizedMediaPath(mediaItemId: number): Promise<string> {
 }
 
 export function registerTranscodingHandlers(): void {
-  createIpcHandler('transcoding:checkAvailability', async () => {
+  createIpcHandler(IPC_CHANNELS.transcodingCheckAvailability, async () => {
     return await getTranscodingService().checkAvailability()
   })
 
-  createIpcHandler('transcoding:getCapabilities', async () => {
+  createIpcHandler(IPC_CHANNELS.transcodingGetCapabilities, async () => {
     return await getTranscodingService().getCapabilities()
   })
 
-  createIpcHandler('transcoding:refreshCapabilities', async () => {
+  createIpcHandler(IPC_CHANNELS.transcodingRefreshCapabilities, async () => {
     return await getTranscodingService().getCapabilities({ refresh: true })
   })
 
-  createValidatedIpcHandler('transcoding:setSelectedGpu', SetSelectedGpuSchema, async (gpuId) => {
+  createValidatedIpcHandler(IPC_CHANNELS.transcodingSetSelectedGpu, SetSelectedGpuSchema, async (gpuId) => {
     return await getTranscodingService().setSelectedGpu(gpuId)
   })
 
-  createValidatedIpcHandler('transcoding:getParameters', GetTranscodeParamsByMediaItemSchema, async (mediaItemId, options) => {
+  createValidatedIpcHandler(IPC_CHANNELS.transcodingGetParameters, GetTranscodeParamsByMediaItemSchema, async (mediaItemId, options) => {
     const filePath = await authorizedMediaPath(mediaItemId)
     return await getTranscodingService().getTranscodeParameters(filePath, options as TranscodeOptions)
   })
 
-  createValidatedIpcHandler('transcoding:cancel', CancelTranscodeSchema, async (mediaItemId) => {
+  createValidatedIpcHandler(IPC_CHANNELS.transcodingCancel, CancelTranscodeSchema, async (mediaItemId) => {
     return getTranscodingService().cancelTranscode(mediaItemId)
   })
 
-  createValidatedIpcHandlerWithEvent('transcoding:preflightShow', PreflightShowTranscodeSchema, async (event, request) => {
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.transcodingPreflightShow, PreflightShowTranscodeSchema, async (event, request) => {
     const { requestId, ...preflightRequest } = request
     const operation = operationRequestRegistry.register(event.sender, requestId)
     try {
@@ -63,16 +65,16 @@ export function registerTranscodingHandlers(): void {
       operation.complete('completed', 'Optimization review is ready')
       return result
     } catch (error) {
-      operation.complete(operation.signal.aborted ? 'cancelled' : 'failed', error instanceof Error ? error.message : String(error))
+      operation.complete(operation.signal.aborted ? 'cancelled' : 'failed', getErrorMessage(error))
       throw error
     } finally {
       operation.dispose()
     }
   })
-  createValidatedIpcHandler('transcoding:preflightRemux', z.number().int().positive(), async (mediaItemId) => getTranscodingService().preflightRemux(mediaItemId))
+  createValidatedIpcHandler(IPC_CHANNELS.transcodingPreflightRemux, z.number().int().positive(), async (mediaItemId) => getTranscodingService().preflightRemux(mediaItemId))
 
-  createValidatedIpcHandler('transcoding:discardShow', QueueShowTranscodeSchema, async (preflightId) => getTranscodingService().discardShowPreflight(preflightId))
-  createValidatedIpcHandler('transcoding:openShowSample', z.tuple([NonEmptyStringSchema, z.number().int().positive(), z.number().int().nonnegative()]), async (preflightId, mediaItemId, index) => {
+  createValidatedIpcHandler(IPC_CHANNELS.transcodingDiscardShow, QueueShowTranscodeSchema, async (preflightId) => getTranscodingService().discardShowPreflight(preflightId))
+  createValidatedIpcHandler(IPC_CHANNELS.transcodingOpenShowSample, z.tuple([NonEmptyStringSchema, z.number().int().positive(), z.number().int().nonnegative()]), async (preflightId, mediaItemId, index) => {
     const saved = await getDatabase().config.getSetting(`transcoding.preflight.${preflightId}`)
     if (!saved) throw new Error('Sample plan no longer exists')
     const plan = JSON.parse(saved) as { result: import('@main/services/TranscodingService').ShowTranscodePreflight }
@@ -82,16 +84,16 @@ export function registerTranscodingHandlers(): void {
     if (error) throw new Error(error)
   })
 
-  createValidatedIpcHandler('transcoding:queueShow', QueueShowTranscodeSchema, async (preflightId) => {
+  createValidatedIpcHandler(IPC_CHANNELS.transcodingQueueShow, QueueShowTranscodeSchema, async (preflightId) => {
     return await getTranscodingService().queueShowTranscode(preflightId)
   })
 
-  createValidatedIpcHandler('transcoding:approveShow', QueueShowTranscodeSchema, async (preflightId) => {
+  createValidatedIpcHandler(IPC_CHANNELS.transcodingApproveShow, QueueShowTranscodeSchema, async (preflightId) => {
     return await getTranscodingService().approveShowTranscode(preflightId)
   })
 
-  createValidatedIpcHandler('transcoding:listShowQuarantine', ShowQuarantineIdentitySchema, async (seriesTitle, sourceId, seriesIdentityKey, libraryId) => getTranscodingService().listShowQuarantine(seriesTitle, sourceId, seriesIdentityKey, libraryId))
-  createValidatedIpcHandler('transcoding:purgeShowQuarantine', ShowQuarantineIdentitySchema, async (seriesTitle, sourceId, seriesIdentityKey, libraryId) => getTranscodingService().purgeShowQuarantine(seriesTitle, sourceId, seriesIdentityKey, libraryId))
+  createValidatedIpcHandler(IPC_CHANNELS.transcodingListShowQuarantine, ShowQuarantineIdentitySchema, async (seriesTitle, sourceId, seriesIdentityKey, libraryId) => getTranscodingService().listShowQuarantine(seriesTitle, sourceId, seriesIdentityKey, libraryId))
+  createValidatedIpcHandler(IPC_CHANNELS.transcodingPurgeShowQuarantine, ShowQuarantineIdentitySchema, async (seriesTitle, sourceId, seriesIdentityKey, libraryId) => getTranscodingService().purgeShowQuarantine(seriesTitle, sourceId, seriesIdentityKey, libraryId))
 
   getLoggingService().info('[transcoding]', 'Transcoding IPC handlers registered')
 }
