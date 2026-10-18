@@ -22,70 +22,26 @@ import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
-  useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 import {
   Bell,
   X,
   Pause,
   Play,
-  GripVertical,
   XCircle,
   Clock,
   Loader2,
   Scaling,
 } from 'lucide-react'
+import { SortableQueueItem } from './SortableQueueItem'
+import type { QueueState } from '@main/types/taskQueue'
+import { getActiveThemeClass } from '../../contexts/ThemeContext'
+import { useMenuClose } from '../../hooks/useMenuClose'
 
 // ============================================================================
 // Types
 // ============================================================================
-
-type TaskType =
-  | 'library-scan'
-  | 'source-scan'
-  | 'series-completeness'
-  | 'collection-completeness'
-  | 'music-completeness'
-  | 'music-scan'
-
-type TaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-
-interface TaskProgress {
-  current: number
-  total: number
-  percentage: number
-  phase: string
-  currentItem?: string
-}
-
-interface QueuedTask {
-  id: string
-  type: TaskType
-  label: string
-  sourceId?: string
-  libraryId?: string
-  status: TaskStatus
-  progress?: TaskProgress
-  createdAt: string
-  startedAt?: string
-  completedAt?: string
-  error?: string
-  result?: {
-    itemsScanned?: number
-    itemsAdded?: number
-    itemsUpdated?: number
-    itemsRemoved?: number
-  }
-}
-
-interface QueueState {
-  currentTask: QueuedTask | null
-  queue: QueuedTask[]
-  isPaused: boolean
-  completedTasks: QueuedTask[]
-}
 
 interface AppNotification {
   id: number
@@ -111,60 +67,6 @@ const MIN_WIDTH = 350
 const MIN_HEIGHT = 300
 const MAX_WIDTH = 700
 const MAX_HEIGHT = 800
-
-// ============================================================================
-// Sortable Queue Item Component
-// ============================================================================
-
-function SortableQueueItem({
-  task,
-  onRemove,
-}: {
-  task: QueuedTask
-  onRemove: (id: string) => void
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: task.id })
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : 1,
-  }
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`flex items-center gap-2 px-4 py-2.5 ${isDragging ? 'bg-primary/5' : 'hover:bg-muted/30'}`}
-      {...attributes}
-    >
-      <GripVertical
-        className={`w-4 h-4 shrink-0 cursor-grab active:cursor-grabbing transition-colors ${
-          isDragging ? 'text-primary' : 'text-muted-foreground/50'
-        }`}
-        {...listeners}
-      />
-      <span className="text-sm flex-1 truncate">{task.label}</span>
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          onRemove(task.id)
-        }}
-        className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-red-400 shrink-0"
-        title="Remove"
-      >
-        <X className="w-3.5 h-3.5" />
-      </button>
-    </div>
-  )
-}
 
 // ============================================================================
 // Main Component
@@ -194,8 +96,8 @@ export function ActivityPanel() {
   const [isResizing, setIsResizing] = useState(false)
   const resizeStartRef = useRef({ x: 0, y: 0, width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT })
 
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const buttonRef = useRef<HTMLButtonElement>(null)
+  const closePanel = useCallback(() => setIsOpen(false), [])
+  const panelRef = useMenuClose({ isOpen, onClose: closePanel })
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Calculate total pending tasks (queue + current)
@@ -203,21 +105,6 @@ export function ActivityPanel() {
 
   // Get the active theme from the document root so the dropdown can override
   // the top bar's forced dark scoping and follow the user's chosen theme
-  const getActiveTheme = () => {
-    const themes = [
-      'frost',
-      'slate-light', 'ember-light', 'midnight-light',
-      'velvet-light', 'emerald-light', 'cobalt-light', 'carbon-light',
-      'matrix-light', 'fury-light', 'gotham-light', 'neon-light', 'whimsy-light',
-      'slate', 'ember', 'midnight', 'oled', 'velvet', 'emerald', 'cobalt', 'carbon',
-      'matrix', 'fury', 'gotham', 'neon', 'whimsy', 'dark',
-    ]
-    for (const theme of themes) {
-      if (document.documentElement.classList.contains(theme)) return theme
-    }
-    return 'dark'
-  }
-
   // ============================================================================
   // Effects
   // ============================================================================
@@ -225,7 +112,7 @@ export function ActivityPanel() {
   // Subscribe to task queue updates
   useEffect(() => {
     const unsubscribeQueue = window.electronAPI.onTaskQueueUpdated?.((state) => {
-      setQueueState(state as unknown as QueueState)
+      setQueueState(state)
     })
 
     window.electronAPI.taskQueueGetState?.().then(setQueueState)
@@ -263,39 +150,6 @@ export function ActivityPanel() {
     })
     return () => unsubscribe?.()
   }, [loadNotifications])
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node) &&
-        buttonRef.current &&
-        !buttonRef.current.contains(event.target as Node)
-      ) {
-        setIsOpen(false)
-      }
-    }
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside)
-      return () => document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [isOpen])
-
-  // Close on escape
-  useEffect(() => {
-    function handleEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        setIsOpen(false)
-      }
-    }
-
-    if (isOpen) {
-      document.addEventListener('keydown', handleEscape)
-      return () => document.removeEventListener('keydown', handleEscape)
-    }
-  }, [isOpen])
 
   // Resize handlers - using requestAnimationFrame for smooth updates
   useEffect(() => {
@@ -437,10 +291,9 @@ export function ActivityPanel() {
   // ============================================================================
 
   return (
-    <div className="relative">
+    <div ref={panelRef} className="relative">
       {/* Activity Button */}
       <button
-        ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
         className={`relative p-2 rounded-md transition-colors shrink-0 focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-black ${
           isOpen
@@ -464,8 +317,7 @@ export function ActivityPanel() {
 
       {/* Activity Panel Dropdown */}
       <div
-        ref={dropdownRef}
-        className={`${getActiveTheme()} absolute right-0 top-full mt-2 bg-card rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden ${
+        className={`${getActiveThemeClass()} absolute right-0 top-full mt-2 bg-card rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden ${
           isResizing ? 'select-none' : 'transition-all duration-300 ease-out'
         } ${
           isOpen ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0 pointer-events-none'

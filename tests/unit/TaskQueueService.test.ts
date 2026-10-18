@@ -63,6 +63,7 @@ describe('TaskQueueService', () => {
 
   beforeEach(() => {
     service = new TaskQueueService()
+    service.pauseQueue()
   })
 
   afterEach(() => {
@@ -140,13 +141,18 @@ describe('TaskQueueService', () => {
     })
 
     it('should track paused state', () => {
-      expect(service.getQueueState().isPaused).toBe(false)
-
-      service.pauseQueue()
       expect(service.getQueueState().isPaused).toBe(true)
 
       service.resumeQueue()
       expect(service.getQueueState().isPaused).toBe(false)
+
+      service.pauseQueue()
+      expect(service.getQueueState().isPaused).toBe(true)
+    })
+
+    it('should start unpaused', () => {
+      const newService = new TaskQueueService()
+      expect(newService.getQueueState().isPaused).toBe(false)
     })
   })
 

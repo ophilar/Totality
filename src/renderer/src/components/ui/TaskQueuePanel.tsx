@@ -16,88 +16,24 @@ import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
-  useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 import {
   X,
   Pause,
   Play,
-  GripVertical,
   XCircle,
   Clock,
   Loader2,
   Activity,
   CheckCircle2,
 } from 'lucide-react'
-
-type TaskType =
-  | 'library-scan'
-  | 'source-scan'
-  | 'series-completeness'
-  | 'collection-completeness'
-  | 'music-completeness'
-  | 'music-scan'
-
-type TaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-
-interface TaskProgress {
-  current: number
-  total: number
-  percentage: number
-  phase: string
-  currentItem?: string
-}
-
-interface QueuedTask {
-  id: string
-  type: TaskType
-  label: string
-  sourceId?: string
-  libraryId?: string
-  status: TaskStatus
-  progress?: TaskProgress
-  createdAt: string
-  startedAt?: string
-  completedAt?: string
-  error?: string
-  result?: {
-    itemsScanned?: number
-    itemsAdded?: number
-    itemsUpdated?: number
-    itemsRemoved?: number
-  }
-}
-
-interface QueueState {
-  currentTask: QueuedTask | null
-  queue: QueuedTask[]
-  isPaused: boolean
-  completedTasks: QueuedTask[]
-}
+import { SortableQueueItem } from './SortableQueueItem'
+import type { QueueState } from '@main/types/taskQueue'
 
 interface TaskQueuePanelProps {
   isOpen: boolean
   onClose: () => void
-}
-
-function SortableQueueItem({ task, onRemove }: { task: QueuedTask; onRemove: (id: string) => void }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id })
-  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }
-
-  return (
-    <div ref={setNodeRef} style={style}
-      className={`flex items-center gap-2 px-4 py-2.5 ${isDragging ? 'bg-primary/5' : 'hover:bg-muted/30'}`}
-      {...attributes}>
-      <GripVertical className={`w-4 h-4 shrink-0 cursor-grab active:cursor-grabbing transition-colors ${isDragging ? 'text-primary' : 'text-muted-foreground/50'}`} {...listeners} />
-      <span className="text-sm flex-1 truncate">{task.label}</span>
-      <button onClick={(e) => { e.stopPropagation(); onRemove(task.id) }}
-        className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-red-400 shrink-0" title="Remove">
-        <X className="w-3.5 h-3.5" />
-      </button>
-    </div>
-  )
 }
 
 export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
@@ -120,7 +56,7 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
 
   useEffect(() => {
     const unsubscribe = window.electronAPI.onTaskQueueUpdated?.((state) => {
-      setQueueState(state as unknown as QueueState)
+      setQueueState(state)
     })
     window.electronAPI.taskQueueGetState?.().then(setQueueState)
     return () => unsubscribe?.()

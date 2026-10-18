@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
 import { getErrorMessage } from './utils/errorUtils'
 /**
  * TaskQueueService - Manages background task queue for scans and analysis
@@ -27,85 +28,31 @@ import { KodiLocalProvider } from '../providers/kodi/KodiLocalProvider'
 import type { ScanResult } from '../providers/base/MediaProvider'
 import { getWishlistCompletionService } from './WishlistCompletionService'
 import { getTMDBService } from './TMDBService'
+import { getTranscodingService } from './TranscodingService'
+import { analyzeAlbumQuality } from './MusicQualityAnalyzer'
+import { getArtistAlbumsCombined } from './utils/musicUtils'
+import type {
+  ActivityLogEntry,
+  QueueState,
+  QueuedTask,
+  TaskDefinition,
+  TaskStatus,
+  TaskType,
+} from '../types/taskQueue'
+
+export type {
+  ActivityLogEntry,
+  QueueState,
+  QueuedTask,
+  TaskDefinition,
+  TaskProgress,
+  TaskStatus,
+  TaskType,
+} from '../types/taskQueue'
 
 // ============================================================================
 // Types
 // ============================================================================
-
-export type TaskType =
-  | import('@main/types/database').TaskType
-  | 'library-scan'
-  | 'source-scan'
-  | 'series-completeness'
-  | 'collection-completeness'
-  | 'music-completeness'
-  | 'music-scan'
-  | 'transcode'
-
-export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
-
-export interface TaskProgress {
-  current: number
-  total: number
-  percentage: number
-  phase: string
-  currentItem?: string
-}
-
-export interface QueuedTask {
-  id: string
-  type: TaskType
-  label: string
-  sourceId?: string
-  libraryId?: string
-  artistId?: number
-  mediaItemId?: number
-  batchId?: string
-  options?: any
-  status: TaskStatus
-  progress?: TaskProgress
-  createdAt: string
-  startedAt?: string
-  completedAt?: string
-  error?: string
-  result?: {
-    itemsScanned?: number
-    itemsAdded?: number
-    itemsUpdated?: number
-    itemsRemoved?: number
-    isFirstScan?: boolean
-    encodedReductionBytes?: number
-    retainedOriginalBytes?: number
-    physicallyReclaimedBytes?: number
-  }
-}
-
-export interface TaskDefinition {
-  type: TaskType
-  label: string
-  sourceId?: string
-  libraryId?: string
-  artistId?: number
-  mediaItemId?: number
-  batchId?: string
-  options?: any
-}
-
-export interface QueueState {
-  currentTask: QueuedTask | null
-  queue: QueuedTask[]
-  isPaused: boolean
-  completedTasks: QueuedTask[]
-}
-
-export interface ActivityLogEntry {
-  id: string
-  timestamp: string
-  type: 'task-complete' | 'task-failed' | 'task-cancelled' | 'task-interrupted' | 'monitoring'
-  message: string
-  taskId?: string
-  taskType?: TaskType
-}
 
 // ============================================================================
 // TaskQueueService
@@ -291,7 +238,7 @@ export class TaskQueueService {
         getMovieCollectionService().cancel()
         break
       case 'transcode':
-        import('./TranscodingService').then(m => m.getTranscodingService().cancel()).catch(() => {})
+        getTranscodingService().cancel()
         break
     }
   }
@@ -761,7 +708,6 @@ export class TaskQueueService {
 
   private async executeTranscode(task: QueuedTask, onProgress: (p: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void): Promise<void> {
     if (!task.mediaItemId) throw new Error('Missing mediaItemId for transcode task')
-    const { getTranscodingService } = await import('./TranscodingService')
     const service = getTranscodingService()
 
     onProgress({
@@ -777,7 +723,7 @@ export class TaskQueueService {
       task.options || {},
       (p) => {
         if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-          safeSend(this.mainWindow, 'transcoding:progress', { mediaItemId: task.mediaItemId, ...p })
+          safeSend(this.mainWindow, IPC_CHANNELS.transcodingProgress, { mediaItemId: task.mediaItemId, ...p })
         }
         onProgress({
           current: Math.round(p.percent),
@@ -921,7 +867,6 @@ export class TaskQueueService {
       if (!artist) throw new Error(`Artist not found: ${task.artistId}`)
 
       // Get albums by FK and name (same logic as music:analyzeArtistCompleteness IPC handler)
-      const { getArtistAlbumsCombined } = await import('./utils/musicUtils')
       const albums = getArtistAlbumsCombined(db, task.artistId, artist.name)
 
       onProgress({ phase: 'Analyzing artist', currentItem: artist.name, percentage: 5 })
@@ -964,6 +909,8 @@ export class TaskQueueService {
 
     task.result = {
       itemsScanned: (result.artistsAnalyzed || 0) + (result.albumsAnalyzed || 0),
+      failedCount: result.failedCount,
+      errors: result.errors,
     }
 
     if (!result.completed && !this.cancelRequested) {
@@ -1017,7 +964,6 @@ export class TaskQueueService {
 
     // Analyze quality for all albums after scan
     const db = getDatabase()
-    const { analyzeAlbumQuality } = await import('./MusicQualityAnalyzer')
     console.log(`[TaskQueue] Analyzing music quality for source ${task.sourceId}...`)
     await analyzeAlbumQuality(db, task.sourceId)
     console.log(`[TaskQueue] Music quality analysis complete`)
@@ -1034,7 +980,7 @@ export class TaskQueueService {
   private sendLibraryUpdated(type: 'media' | 'music' = 'media'): void {
     const win = BrowserWindow.getAllWindows()[0]
     if (win) {
-      safeSend(win, 'library:updated', { type })
+      safeSend(win, IPC_CHANNELS.libraryUpdated, { type })
     }
   }
 
@@ -1251,7 +1197,6 @@ export class TaskQueueService {
   private autoRunMusicQualityAnalysis(sourceId: string, libraryName: string): void {
     const doAnalysis = async () => {
       const db = getDatabase()
-      const { analyzeAlbumQuality } = await import('./MusicQualityAnalyzer')
       console.log(`[TaskQueue] Auto-analyzing music quality for ${libraryName}...`)
       await analyzeAlbumQuality(db, sourceId)
 
@@ -1283,33 +1228,35 @@ export class TaskQueueService {
       const service = getSeriesCompletenessService()
 
       // Get distinct series in this library from media_items
-      const episodes = db.getMediaItems({ type: 'episode' as const, sourceId, libraryId }) as Array<{ series_title?: string }>
-      const currentSeries = new Map<string, number>()
+      const episodes = db.getMediaItems({ type: 'episode' as const, sourceId, libraryId }) as Array<{ series_title?: string; series_identity_key?: string | null }>
+      const currentSeries = new Map<string, { title: string; count: number }>()
       for (const ep of episodes) {
-        if (!ep.series_title) continue
-        currentSeries.set(ep.series_title, (currentSeries.get(ep.series_title) || 0) + 1)
+        const identityKey = ep.series_identity_key
+        if (!identityKey) throw new Error('Episode is missing its canonical series identity key')
+        const series = currentSeries.get(identityKey)
+        currentSeries.set(identityKey, { title: ep.series_title || identityKey, count: (series?.count || 0) + 1 })
       }
 
       // Get existing completeness records for this library
       const existing = db.getAllSeriesCompleteness(sourceId, libraryId)
       const existingMap = new Map<string, { owned_episodes: number }>(
-        existing.map((sc: { series_title: string; owned_episodes: number }) => [sc.series_title, { owned_episodes: sc.owned_episodes }])
+        existing.filter(sc => sc.series_identity_key).map(sc => [sc.series_identity_key!, { owned_episodes: sc.owned_episodes }])
       )
 
       // Find affected series:
       // 1. New series (in media_items but no completeness record)
       // 2. Changed series (owned_episodes mismatch)
-      const affectedSeries: string[] = []
-      for (const [title, count] of currentSeries) {
-        const record = existingMap.get(title)
+      const affectedSeries: Array<{ identityKey: string; title: string }> = []
+      for (const [identityKey, { title, count }] of currentSeries) {
+        const record = existingMap.get(identityKey)
         if (!record || record.owned_episodes !== count) {
-          affectedSeries.push(title)
+          affectedSeries.push({ identityKey, title })
         }
       }
 
       // 3. Removed series (in completeness but no longer in media_items)
       for (const sc of existing) {
-        if (!currentSeries.has(sc.series_title) && sc.id) {
+        if (sc.series_identity_key && !currentSeries.has(sc.series_identity_key) && sc.id) {
           // Series completely removed — delete the completeness record
           db.deleteSeriesCompleteness(sc.id)
           console.log(`[TaskQueue] Removed completeness for deleted series: ${sc.series_title}`)
@@ -1321,16 +1268,16 @@ export class TaskQueueService {
         return
       }
 
-      console.log(`[TaskQueue] Analyzing ${affectedSeries.length} affected series in ${libraryName}: ${affectedSeries.join(', ')}`)
+      console.log(`[TaskQueue] Analyzing ${affectedSeries.length} affected series in ${libraryName}: ${affectedSeries.map(series => series.title).join(', ')}`)
 
       // Initialize TMDB service
       const tmdb = getTMDBService()
       await tmdb.initialize()
 
       // Analyze each affected series
-      for (const title of affectedSeries) {
+      for (const { identityKey, title } of affectedSeries) {
         try {
-          await service.analyzeSeries(title, sourceId, libraryId)
+          await service.analyzeSeries(identityKey, sourceId, libraryId)
           console.log(`[TaskQueue] Completed series analysis: ${title}`)
         } catch (err) {
           console.error(`[TaskQueue] Failed to analyze series "${title}":`, getErrorMessage(err))
