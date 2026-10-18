@@ -17,6 +17,7 @@ import {
   Circle,
   Bot,
 } from 'lucide-react'
+import { TranscodingHardwareCard } from '../TranscodingHardwareCard'
 import { Toggle } from '../../ui/Toggle'
 import { Button, Input, Select } from '../../ui'
 
@@ -441,6 +442,7 @@ export function ServicesTab() {
 
   return (
     <div className="p-6 space-y-5 overflow-y-auto">
+      <TranscodingHardwareCard />
       {/* Header */}
       <div className="mb-4">
         <p className="text-caption text-muted-foreground">
