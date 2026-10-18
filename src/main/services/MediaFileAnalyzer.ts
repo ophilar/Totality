@@ -1,3 +1,4 @@
+
 import { getErrorMessage } from './utils/errorUtils'
 /**
  * MediaFileAnalyzer Service
@@ -20,6 +21,7 @@ import { createWriteStream, mkdirSync, readFileSync } from 'fs'
 import { pipeline } from 'stream/promises'
 import { StreamByteAccumulator } from './transcoding/StreamByteAccounting'
 import { PathUtils } from './utils/PathUtils'
+import { detectHdrFormat, estimateAudioBitrate, extractBitDepth, parseFrameRate } from './utils/ffprobeMetadata'
 
 // FFprobe JSON output types
 interface FFprobeStream {
@@ -1477,9 +1479,9 @@ export class MediaFileAnalyzer {
 
   private parseVideoStream(stream: FFprobeStream, durationMs?: number): AnalyzedVideoStream {
     const bitrate = this.extractBitrate(stream, durationMs)
-    const frameRate = this.parseFrameRate(stream.avg_frame_rate || stream.r_frame_rate)
-    const bitDepth = this.extractBitDepth(stream)
-    const hdrFormat = this.detectHdrFormat(stream)
+    const frameRate = parseFrameRate(stream.avg_frame_rate || stream.r_frame_rate)
+    const bitDepth = extractBitDepth(stream)
+    const hdrFormat = detectHdrFormat(stream)
     const dvProfile = stream.side_data_list?.find(sideData => sideData.side_data_type.toLowerCase().includes('dolby vision'))?.dv_profile
     const dolbyVisionProfile = typeof dvProfile === 'number' ? dvProfile : typeof dvProfile === 'string' && /^\d+$/.test(dvProfile) ? Number(dvProfile) : undefined
 
@@ -1510,7 +1512,7 @@ export class MediaFileAnalyzer {
 
     // Estimate bitrate for codecs that don't report it
     if (!bitrate) {
-      bitrate = this.estimateAudioBitrate(codec, channels, stream.profile, stream.sample_rate)
+      bitrate = estimateAudioBitrate(codec, channels, stream.profile, stream.sample_rate)
     }
 
     return {
@@ -1527,77 +1529,6 @@ export class MediaFileAnalyzer {
       isDefault: stream.disposition?.default === 1,
       hasObjectAudio,
     }
-  }
-
-  /**
-   * Estimate audio bitrate for codecs that don't report it in metadata
-   */
-  private estimateAudioBitrate(codec: string, channels: number, profile?: string, sampleRateStr?: string): number | undefined {
-    const codecLower = codec.toLowerCase()
-    const sampleRate = sampleRateStr ? parseInt(sampleRateStr, 10) : 48000
-
-    // AC3 (Dolby Digital) - standard bitrates based on channels
-    if (codecLower === 'ac3') {
-      if (channels <= 2) return 192
-      if (channels <= 6) return 448  // 5.1
-      return 640  // Max AC3 bitrate
-    }
-
-    // EAC3 (Dolby Digital Plus) - higher bitrates
-    if (codecLower === 'eac3') {
-      if (channels <= 2) return 256
-      if (channels <= 6) return 640  // 5.1
-      if (channels <= 8) return 1024  // 7.1
-      return 1536  // Atmos object audio
-    }
-
-    // TrueHD - lossless, estimate based on channels and sample rate
-    if (codecLower === 'truehd') {
-      // TrueHD typical bitrates: ~2500-4500 kbps for 5.1, 4000-8000+ for 7.1/Atmos
-      const baseRate = sampleRate > 48000 ? 4000 : 2500
-      if (channels <= 2) return Math.round(baseRate * 0.4)
-      if (channels <= 6) return baseRate  // 5.1
-      if (channels <= 8) return Math.round(baseRate * 1.6)  // 7.1
-      return Math.round(baseRate * 2)  // Atmos with many objects
-    }
-
-    // DTS - standard bitrates
-    if (codecLower === 'dts') {
-      const profileLower = profile?.toLowerCase() || ''
-      // DTS-HD MA (lossless)
-      if (profileLower.includes('ma') || profileLower.includes('hd ma')) {
-        if (channels <= 2) return 1500
-        if (channels <= 6) return 3000  // 5.1
-        if (channels <= 8) return 4500  // 7.1
-        return 6000  // DTS:X
-      }
-      // DTS-HD HRA (high resolution)
-      if (profileLower.includes('hra') || profileLower.includes('hd hra')) {
-        if (channels <= 6) return 1500
-        return 2000
-      }
-      // Standard DTS
-      if (channels <= 2) return 768
-      if (channels <= 6) return 1509  // 5.1 typical
-      return 1509
-    }
-
-    // FLAC - lossless, estimate based on sample rate and bit depth
-    if (codecLower === 'flac') {
-      // FLAC typically compresses to 50-70% of uncompressed
-      // Estimate: channels * sampleRate * 16bits * 0.6 / 1000 for kbps
-      const bitDepth = 16  // Assume 16-bit if unknown
-      const compressionRatio = 0.6
-      return Math.round((channels * sampleRate * bitDepth * compressionRatio) / 1000)
-    }
-
-    // PCM - uncompressed
-    if (codecLower.includes('pcm')) {
-      const bitDepth = 16
-      return Math.round((channels * sampleRate * bitDepth) / 1000)
-    }
-
-    return undefined
   }
 
   private parseSubtitleStream(stream: FFprobeStream): AnalyzedSubtitleStream {
@@ -1639,88 +1570,6 @@ export class MediaFileAnalyzer {
     }
 
     console.log(`[MediaFileAnalyzer] No bitrate found in stream metadata`)
-    return undefined
-  }
-
-  private parseFrameRate(frameRateStr?: string): number | undefined {
-    if (!frameRateStr || frameRateStr === '0/0') return undefined
-
-    const parts = frameRateStr.split('/')
-    if (parts.length === 2) {
-      const num = parseInt(parts[0], 10)
-      const den = parseInt(parts[1], 10)
-      if (den !== 0) {
-        return Math.round((num / den) * 100) / 100
-      }
-    }
-
-    const parsed = parseFloat(frameRateStr)
-    return isNaN(parsed) ? undefined : Math.round(parsed * 100) / 100
-  }
-
-  private extractBitDepth(stream: FFprobeStream): number | undefined {
-    // Try bits_per_raw_sample first
-    if (stream.bits_per_raw_sample) {
-      return parseInt(stream.bits_per_raw_sample, 10)
-    }
-
-    // Infer from pixel format
-    const pixFmt = stream.pix_fmt?.toLowerCase() || ''
-
-    if (pixFmt.includes('12le') || pixFmt.includes('12be')) return 12
-    if (pixFmt.includes('10le') || pixFmt.includes('10be') || pixFmt.includes('p010')) return 10
-    if (pixFmt.includes('yuv420p') || pixFmt.includes('yuv422p') || pixFmt.includes('yuv444p')) return 8
-
-    return undefined
-  }
-
-  private detectHdrFormat(stream: FFprobeStream): string | undefined {
-    const colorTransfer = stream.color_transfer?.toLowerCase() || ''
-    const colorPrimaries = stream.color_primaries?.toLowerCase() || ''
-    const colorSpace = stream.color_space?.toLowerCase() || ''
-
-    // Check side data for HDR metadata
-    const sideData = stream.side_data_list || []
-    const hasDolbyVision = sideData.some(sd =>
-      sd.side_data_type?.toLowerCase().includes('dolby vision')
-    )
-    const hasHdr10Plus = sideData.some(sd =>
-      sd.side_data_type?.toLowerCase().includes('hdr10+') ||
-      sd.side_data_type?.toLowerCase().includes('dynamic hdr')
-    )
-    const hasMasteringDisplay = sideData.some(sd =>
-      sd.side_data_type?.toLowerCase().includes('mastering display')
-    )
-    const hasContentLight = sideData.some(sd =>
-      sd.side_data_type?.toLowerCase().includes('content light')
-    )
-
-    // Dolby Vision (check side data and profile)
-    if (hasDolbyVision) {
-      return 'Dolby Vision'
-    }
-
-    // HDR10+ (dynamic metadata)
-    if (hasHdr10Plus) {
-      return 'HDR10+'
-    }
-
-    // HDR10 (static metadata with BT.2020 + PQ)
-    if (
-      (colorTransfer.includes('smpte2084') || colorTransfer.includes('pq')) &&
-      (colorPrimaries.includes('bt2020') || colorSpace.includes('bt2020'))
-    ) {
-      if (hasMasteringDisplay || hasContentLight) {
-        return 'HDR10'
-      }
-      return 'PQ'
-    }
-
-    // HLG
-    if (colorTransfer.includes('arib-std-b67') || colorTransfer.includes('hlg')) {
-      return 'HLG'
-    }
-
     return undefined
   }
 

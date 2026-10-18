@@ -1,3 +1,4 @@
+
 /**
  * MediaConverter
  *
@@ -7,7 +8,7 @@
  */
 
 import type { MediaMetadata, AudioStreamInfo, SubtitleStreamInfo, ProviderType } from '../providers/base/MediaProvider'
-import type { MediaItem, AudioTrack, SubtitleTrack } from '../types/database'
+import type { MediaItem, MediaItemVersion, AudioTrack, SubtitleTrack } from '../types/database'
 import {
   normalizeVideoCodec,
   normalizeAudioCodec,
@@ -19,7 +20,8 @@ import {
   normalizeSampleRate,
   normalizeContainer,
 } from './MediaNormalizer'
-import { AudioCodecRanker, AudioTrackInfo } from './AudioCodecRanker'
+import { selectBestAudioTrack } from '../providers/utils/ProviderUtils'
+import { getFileNameParser } from './FileNameParser'
 
 export interface ConversionOptions {
   sourceId: string
@@ -28,6 +30,71 @@ export interface ConversionOptions {
 }
 
 export class MediaConverter {
+  static toMediaItemVersion(
+    metadata: MediaMetadata,
+    versionSourcePrefix: string
+  ): Omit<MediaItemVersion, 'id' | 'media_item_id'> {
+    const audioTracks: AudioTrack[] = []
+    if (metadata.audioTracks?.length) {
+      metadata.audioTracks.forEach((track, index) => {
+        audioTracks.push({
+          index,
+          codec: track.codec || 'Unknown',
+          channels: track.channels || 2,
+          bitrate: track.bitrate || 0,
+          language: track.language,
+          hasObjectAudio: track.hasObjectAudio || false,
+        })
+      })
+    } else if (metadata.audioCodec) {
+      audioTracks.push({
+        index: 0,
+        codec: metadata.audioCodec,
+        channels: metadata.audioChannels || 2,
+        bitrate: metadata.audioBitrate || 0,
+        hasObjectAudio: metadata.hasObjectAudio || false,
+      })
+    }
+
+    const resolution = metadata.resolution || 'SD'
+    const hdrFormat = metadata.hdrFormat || 'None'
+    const parsed = metadata.filePath ? getFileNameParser().parse(metadata.filePath) : null
+    const source = parsed?.type !== 'music' ? parsed?.source : undefined
+    const sourceType = source && /remux/i.test(source) ? 'REMUX'
+      : source && /web-dl|webdl/i.test(source) ? 'WEB-DL'
+      : undefined
+    const labelParts = [resolution]
+    if (hdrFormat !== 'None') labelParts.push(hdrFormat)
+    if (sourceType) labelParts.push(sourceType)
+
+    return {
+      version_source: `${versionSourcePrefix}_${metadata.itemId}`,
+      source_type: sourceType,
+      label: labelParts.join(' '),
+      file_path: metadata.filePath || '',
+      file_size: metadata.fileSize || 0,
+      duration: metadata.duration || 0,
+      resolution,
+      width: metadata.width || 0,
+      height: metadata.height || 0,
+      video_codec: metadata.videoCodec || '',
+      video_bitrate: metadata.videoBitrate || 0,
+      audio_codec: metadata.audioCodec || '',
+      audio_channels: metadata.audioChannels || 2,
+      audio_bitrate: metadata.audioBitrate || 0,
+      video_frame_rate: metadata.videoFrameRate,
+      color_bit_depth: metadata.colorBitDepth,
+      hdr_format: hdrFormat === 'None' ? undefined : hdrFormat,
+      color_space: metadata.colorSpace,
+      video_profile: metadata.videoProfile,
+      audio_profile: metadata.audioProfile,
+      audio_sample_rate: metadata.audioSampleRate,
+      has_object_audio: metadata.hasObjectAudio,
+      audio_tracks: JSON.stringify(audioTracks),
+      container: metadata.container,
+    }
+  }
+
   /**
    * Convert MediaMetadata to MediaItem for database storage
    *
@@ -57,6 +124,7 @@ export class MediaConverter {
 
       // Core metadata
       title: metadata.title,
+      sort_title: metadata.sortTitle,
       year: metadata.year,
       type: metadata.type,
 
@@ -82,6 +150,7 @@ export class MediaConverter {
       hdr_format: metadata.hdrFormat ? normalizeHdrFormat(metadata.hdrFormat, undefined, undefined, metadata.colorBitDepth, metadata.videoProfile) : undefined,
       color_space: metadata.colorSpace,
       video_profile: metadata.videoProfile,
+      video_level: metadata.videoLevel ? parseInt(metadata.videoLevel, 10) : undefined,
 
       // Audio quality (from best track or primary)
       audio_codec: bestTrack?.codec || (metadata.audioCodec ? normalizeAudioCodec(metadata.audioCodec) : ''),
@@ -101,6 +170,9 @@ export class MediaConverter {
       imdb_id: metadata.imdbId,
       tmdb_id: metadata.tmdbId?.toString(),
       series_tmdb_id: metadata.seriesTmdbId?.toString(),
+      tmdb_rating: metadata.tmdbRating,
+      play_count: metadata.playCount || 0,
+      last_watched_at: metadata.lastWatched,
 
       // Artwork
       poster_url: metadata.posterUrl,
@@ -175,26 +247,7 @@ export class MediaConverter {
       return undefined
     }
 
-    // Convert to AudioTrackInfo for the ranker
-    const trackInfos: AudioTrackInfo[] = audioTracks.map(track => ({
-      index: track.index,
-      codec: track.codec,
-      channels: track.channels,
-      bitrate: track.bitrate,
-      sampleRate: track.sampleRate,
-      language: track.language,
-      title: track.title,
-      hasObjectAudio: track.hasObjectAudio,
-      isDefault: track.isDefault,
-    }))
-
-    const bestInfo = AudioCodecRanker.selectBestTrack(trackInfos)
-    if (!bestInfo) {
-      return audioTracks[0]
-    }
-
-    // Return the AudioTrack with matching index
-    return audioTracks.find(t => t.index === bestInfo.index) || audioTracks[0]
+    return selectBestAudioTrack(audioTracks)
   }
 
   /**

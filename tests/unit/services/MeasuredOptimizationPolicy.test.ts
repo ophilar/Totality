@@ -7,6 +7,7 @@ describe('selectMeasuredCandidate', () => {
     preset: 'medium',
     quality: 20,
     outputBytes: 90,
+    sampledDurationSeconds: 30,
     vmafMean: 95,
     vmafP5: 92,
     cambiMean: 0,

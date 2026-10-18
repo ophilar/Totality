@@ -1,3 +1,4 @@
+
 /**
  * FFprobe Worker Pool
  *
@@ -8,7 +9,6 @@
 import { Worker } from 'worker_threads'
 import * as os from 'os'
 import * as path from 'path'
-import { app } from 'electron'
 import type { FileAnalysisResult } from './MediaFileAnalyzer'
 
 interface WorkerTask {
@@ -59,18 +59,10 @@ export class FFprobeWorkerPool {
   private workerScriptPath: string
   private isShuttingDown = false
 
-  constructor() {
+  constructor(workerScriptPath = path.join(__dirname, 'ffprobe-worker.cjs')) {
     // Default to CPU cores - 1, minimum 1, maximum 8
     this.maxWorkers = Math.min(4, Math.max(1, os.cpus().length - 1))
-
-    // Determine worker script path based on environment
-    if (app.isPackaged) {
-      // Production: worker is in resources/app.asar/dist-electron/main/
-      this.workerScriptPath = path.join(__dirname, 'ffprobe-worker.cjs')
-    } else {
-      // Development: worker is in dist-electron/main/
-      this.workerScriptPath = path.join(__dirname, 'ffprobe-worker.cjs')
-    }
+    this.workerScriptPath = workerScriptPath
   }
 
   /**
@@ -259,7 +251,7 @@ export class FFprobeWorkerPool {
 
       worker.on('error', (error) => {
         console.error('[FFprobeWorkerPool] Worker error:', error)
-        this.handleWorkerError(workerInfo, error)
+        this.handleWorkerError(workerInfo, error as Error)
       })
 
       worker.on('exit', (code) => {
@@ -393,20 +385,20 @@ export class FFprobeWorkerPool {
     this.taskQueue = []
 
     // Terminate all workers
-    const terminationPromises = this.workers.map(workerInfo => {
-      return new Promise<void>((resolve) => {
-        const timeout = setTimeout(() => {
-          workerInfo.worker.terminate()
-          resolve()
-        }, 5000)
-
-        workerInfo.worker.once('exit', () => {
-          clearTimeout(timeout)
-          resolve()
-        })
-
-        workerInfo.worker.terminate()
+    const terminationPromises = this.workers.map(async workerInfo => {
+      if (workerInfo.taskTimeout) {
+        clearTimeout(workerInfo.taskTimeout)
+        workerInfo.taskTimeout = null
+      }
+      workerInfo.currentTask?.resolve({
+        success: false,
+        error: 'Worker pool shutting down',
+        filePath: workerInfo.currentTask.filePath,
+        audioTracks: [],
+        subtitleTracks: [],
       })
+      workerInfo.currentTask = null
+      await workerInfo.worker.terminate()
     })
 
     await Promise.all(terminationPromises)

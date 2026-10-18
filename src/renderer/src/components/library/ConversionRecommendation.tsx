@@ -3,29 +3,9 @@ import { AlertCircle, Loader2, Zap } from 'lucide-react'
 import { TranscodeModal } from '@/components/library/TranscodeModal'
 import type { MediaItem } from '@/components/library/types'
 import type { OptimizationDecision, OptimizationDecisionMechanism } from '@main/services/OptimizationDecisionService'
+import { EstimatedSavingsDisplay } from '@/components/library/EstimatedSavingsDisplay'
 
-const formatBytes = (value: number | null) => {
-  if (value == null) return 'Estimate unavailable'
-  if (value < 1024) return `${Math.round(value)} B`
-  if (value < 1024 ** 2) return `${Math.round(value / 1024)} KB`
-  return value < 1024 ** 3 ? `${Math.round(value / 1024 ** 2)} MB` : `${(value / 1024 ** 3).toFixed(1)} GB`
-}
-
-type EvidenceKind = 'measured' | 'estimated' | 'insufficient'
-type EvidenceMechanism = OptimizationDecisionMechanism & { evidence?: EvidenceKind }
 type DecisionState = { mediaId: number; decision: OptimizationDecision | null; error: string | null }
-
-const getEvidenceKind = (mechanism: EvidenceMechanism): EvidenceKind => {
-  if (mechanism.evidence) return mechanism.evidence
-  return mechanism.estimatedSavingsBytes != null && Number.isFinite(mechanism.estimatedSavingsBytes)
-    ? 'estimated'
-    : 'insufficient'
-}
-
-const evidenceLabel = (mechanism: EvidenceMechanism) => {
-  const evidence = getEvidenceKind(mechanism)
-  return evidence === 'measured' ? 'Measured' : evidence === 'estimated' ? 'Estimated savings' : 'Insufficient evidence'
-}
 
 function MechanismRow({ label, mechanism }: { label: string; mechanism: OptimizationDecisionMechanism }) {
   return <div className="flex items-center gap-3 border-t border-border/30 py-2 first:border-t-0">
@@ -33,7 +13,7 @@ function MechanismRow({ label, mechanism }: { label: string; mechanism: Optimiza
       <div className="font-medium">{label}</div>
       <div className="text-muted-foreground">{mechanism.reason}</div>
     </div>
-    <span className="shrink-0 text-muted-foreground" title={evidenceLabel(mechanism)}>{mechanism.estimatedSavingsBytes == null ? evidenceLabel(mechanism) : `${evidenceLabel(mechanism)} · ${formatBytes(mechanism.estimatedSavingsBytes)}`}</span>
+    <span className="shrink-0 text-muted-foreground">Est. savings <EstimatedSavingsDisplay bytes={mechanism.estimatedSavingsBytes} /></span>
   </div>
 }
 

@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod'
+import { PROVIDER_TYPES, WISHLIST_MEDIA_TYPES, WISHLIST_REASONS, WISHLIST_STATUSES } from '../types/database'
 
 // ============================================================================
 // COMMON SCHEMAS
@@ -14,16 +15,7 @@ import { z } from 'zod'
 /**
  * Provider types supported by the application
  */
-export const ProviderTypeSchema = z.enum([
-  'plex',
-  'jellyfin',
-  'emby',
-  'kodi',
-  'kodi-local',
-  'kodi-mysql',
-  'local',
-  'mediamonkey'
-])
+export const ProviderTypeSchema = z.enum(PROVIDER_TYPES)
 
 /**
  * Media types
@@ -110,7 +102,7 @@ export const TVShowFiltersSchema = z.object({
   libraryId: z.string().optional(),
   alphabetFilter: z.string().max(1).optional(),
   searchQuery: z.string().max(500).optional(),
-  sortBy: z.enum(['title', 'episode_count', 'season_count', 'play_count', 'last_watched_at']).optional(),
+  sortBy: z.enum(['title', 'episode_count', 'season_count', 'play_count', 'last_watched_at', 'estimated_savings_bytes']).optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
   limit: z.number().int().positive().max(10000).optional(),
   offset: z.number().int().nonnegative().optional(),
@@ -123,7 +115,7 @@ export const MusicFiltersSchema = z.object({
   artistId: z.number().int().positive().optional(),
   artistName: z.string().max(500).optional(),
   albumId: z.number().int().positive().optional(),
-  qualityTier: z.enum(['LOSSY_LOW', 'LOSSY_MID', 'LOSSY_HIGH', 'LOSSLESS', 'HI_RES']).optional(),
+  qualityTier: z.enum(['LOSSY_LOW', 'LOSSY_MID', 'LOSSY_HIGH', 'LOSSLESS', 'HI_RES', 'UNKNOWN']).optional(),
   needsUpgrade: z.boolean().optional(),
   searchQuery: z.string().max(500).optional(),
   limit: z.number().int().positive().max(10000).optional(),
@@ -139,16 +131,16 @@ export const MusicFiltersSchema = z.object({
 /**
  * Wishlist item media types
  */
-export const WishlistMediaTypeSchema = z.enum(['movie', 'episode', 'season', 'album', 'track'])
+export const WishlistMediaTypeSchema = z.enum(WISHLIST_MEDIA_TYPES)
 
 /**
  * Wishlist filter options
  */
 export const WishlistFiltersSchema = z.object({
   media_type: WishlistMediaTypeSchema.optional(),
-  priority: z.number().int().min(1).max(5).optional(),
-  reason: z.enum(['missing', 'upgrade']).optional(),
-  status: z.enum(['active', 'completed']).optional(),
+  priority: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]).optional(),
+  reason: z.enum(WISHLIST_REASONS).optional(),
+  status: z.enum(WISHLIST_STATUSES).optional(),
   searchQuery: z.string().max(500).optional(),
   series_title: z.string().max(500).optional(),
   artist_name: z.string().max(500).optional(),
@@ -188,10 +180,10 @@ export const TaskDefinitionSchema = z.object({
  * CSV export options
  */
 export const ExportCSVOptionsSchema = z.object({
-  includeUpgrades: z.boolean().optional(),
-  includeMissingMovies: z.boolean().optional(),
-  includeMissingEpisodes: z.boolean().optional(),
-  includeMissingAlbums: z.boolean().optional(),
+  includeUpgrades: z.boolean(),
+  includeMissingMovies: z.boolean(),
+  includeMissingEpisodes: z.boolean(),
+  includeMissingAlbums: z.boolean(),
   includeMusicUpgrades: z.boolean().optional(),
 })
 
@@ -332,7 +324,7 @@ export const MediaItemSchema = z.object({
   provider_item_id: z.string().min(1),
   type: MediaTypeSchema,
   title: z.string().min(1).max(500),
-  year: z.number().int().min(1800).max(2100).optional().nullable(),
+  year: z.number().int().min(1800).max(2100).optional().nullable().transform(value => value ?? undefined),
   file_path: z.string().optional().nullable(),
   file_size: z.number().int().nonnegative().optional().nullable(),
   duration: z.number().int().nonnegative().optional().nullable(),
@@ -363,7 +355,7 @@ export const MediaItemSchema = z.object({
   episode_thumb_url: z.string().url().optional().nullable(),
   season_poster_url: z.string().url().optional().nullable(),
   user_fixed_match: z.boolean().optional().nullable(),
-})
+}).transform(({ provider_item_id, ...item }) => ({ ...item, plex_id: provider_item_id }))
 
 /**
  * Quality score for upsert operations
@@ -373,10 +365,20 @@ export const QualityScoreSchema = z.object({
   media_item_id: z.number().int().positive(),
   overall_score: z.number().min(0).max(100),
   needs_upgrade: z.boolean(),
-  quality_tier: QualityTierSchema.optional(),
-  tier_quality: TierQualitySchema.optional(),
-  tier_score: z.number().min(0).max(100).optional(),
-  issues: z.string().optional().nullable(),
+  quality_tier: QualityTierSchema,
+  tier_quality: TierQualitySchema,
+  tier_score: z.number().min(0).max(100),
+  bitrate_tier_score: z.number().min(0).max(100),
+  audio_tier_score: z.number().min(0).max(100),
+  resolution_score: z.number().min(0).max(100),
+  bitrate_score: z.number().min(0).max(100),
+  audio_score: z.number().min(0).max(100),
+  is_low_quality: z.boolean(),
+  evidence_status: z.enum(['measured', 'estimated', 'insufficient']).optional(),
+  estimated_savings_bytes: z.number().nonnegative().nullable().optional(),
+  confidence: z.enum(['high', 'medium', 'low', 'none']).optional(),
+  savings_basis: z.enum(['audio_stream_removal', 'audio_stream_removal_and_transcode_model', 'audio_transcode_model', 'video_sample_encode', 'video_bitrate_estimate', 'audio_bitrate_estimate', 'mixed_estimates', 'mixed_measured_and_estimated', 'insufficient_data']).optional(),
+  issues: z.string(),
 })
 
 // ============================================================================
@@ -397,7 +399,7 @@ export const MediaItemFiltersSchema = z.object({
   sourceId: z.string().optional(),
   sourceType: ProviderTypeSchema.optional(),
   libraryId: z.string().optional(),
-  sortBy: z.enum(['title', 'year', 'updated_at', 'created_at', 'tier_score', 'overall_score', 'play_count', 'last_watched_at', 'tmdb_rating']).optional(),
+  sortBy: z.enum(['title', 'year', 'updated_at', 'created_at', 'tier_score', 'overall_score', 'play_count', 'last_watched_at', 'tmdb_rating', 'estimated_savings_bytes']).optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
   includeDisabledLibraries: z.boolean().optional(),
   alphabetFilter: z.string().max(1).optional(),
@@ -416,11 +418,11 @@ export const WishlistItemSchema = z.object({
   id: z.number().int().positive().optional(),
   title: z.string().min(1, 'Title is required').max(500).trim(),
   media_type: WishlistMediaTypeSchema,
-  priority: z.number().int().min(1).max(5).optional().default(3),
-  reason: z.enum(['missing', 'upgrade']).optional(),
-  status: z.enum(['active', 'completed']).optional(),
+  priority: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]).optional().default(3),
+  reason: z.enum(WISHLIST_REASONS).optional(),
+  status: z.enum(WISHLIST_STATUSES).optional(),
   notes: z.string().max(1000).trim().optional().nullable(),
-  year: z.number().int().min(1800).max(2100).optional().nullable(),
+  year: z.number().int().min(1800).max(2100).optional(),
   series_title: z.string().max(500).optional().nullable(),
   season_number: z.number().int().min(0).optional().nullable(),
   episode_number: z.number().int().min(0).optional().nullable(),
@@ -595,9 +597,6 @@ function preprocessFilterKeys(input: unknown): unknown {
   if ('search' in clone && !('searchQuery' in clone)) {
     clone.searchQuery = clone.search
     delete clone.search
-  }
-  if (clone.sortBy === 'waste') {
-    clone.sortBy = 'storage_debt'
   }
   return clone
 }

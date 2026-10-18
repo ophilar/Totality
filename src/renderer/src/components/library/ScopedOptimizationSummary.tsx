@@ -1,19 +1,16 @@
-import { RecoverableWasteDisplay } from './RecoverableWasteDisplay'
+import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
 
 interface ScopedOptimizationSummaryProps {
   totalCount: number
-  analyzedCount?: number
-  recoverableBytes?: number | null
+  estimatedSavingsBytes?: number | null
   className?: string
 }
 
-export function ScopedOptimizationSummary({ totalCount, analyzedCount = 0, recoverableBytes, className = '' }: ScopedOptimizationSummaryProps) {
+export function ScopedOptimizationSummary({ totalCount, estimatedSavingsBytes, className = '' }: ScopedOptimizationSummaryProps) {
   if (totalCount <= 0) return null
   return (
     <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground ${className}`}>
-      <span>{analyzedCount}/{totalCount} analyzed</span>
-      {recoverableBytes != null && recoverableBytes > 0 && <span className="flex items-center gap-1">Recoverable <RecoverableWasteDisplay bytes={recoverableBytes} /></span>}
-      {analyzedCount < totalCount && <span className="text-amber-300">{totalCount - analyzedCount} not analyzed</span>}
+      <span className="flex items-center gap-1">Est. savings <EstimatedSavingsDisplay bytes={estimatedSavingsBytes} /></span>
     </div>
   )
 }

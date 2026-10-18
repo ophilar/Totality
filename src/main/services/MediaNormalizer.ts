@@ -1,3 +1,4 @@
+
 /**
  * MediaNormalizer Service
  *
@@ -119,7 +120,11 @@ export function normalizeVideoCodec(codec: string | null | undefined): string {
  * Normalize audio codec to a standard display name
  * Maps various codec identifiers to consistent names
  */
-export function normalizeAudioCodec(codec: string | null | undefined, profile?: string): string {
+export function normalizeAudioCodec(
+  codec: string | null | undefined,
+  profile?: string,
+  normalizationProfile: 'standard' | 'kodi' = 'standard'
+): string {
   if (!codec) return ''
 
   const codecLower = codec.toLowerCase().trim()
@@ -136,6 +141,10 @@ export function normalizeAudioCodec(codec: string | null | undefined, profile?: 
   // TrueHD (with or without Atmos)
   if (codecLower.includes('truehd')) {
     return 'TrueHD'
+  }
+
+  if (normalizationProfile === 'kodi' && codecLower.includes('atmos')) {
+    return 'TrueHD Atmos'
   }
 
   // DTS-HD Master Audio
@@ -180,7 +189,7 @@ export function normalizeAudioCodec(codec: string | null | undefined, profile?: 
     codecLower.includes('eac3') ||
     codecLower.includes('dolby digital plus')
   ) {
-    return 'EAC3'
+    return normalizationProfile === 'kodi' ? 'E-AC-3' : 'EAC3'
   }
 
   // AC-3 / Dolby Digital
@@ -190,7 +199,7 @@ export function normalizeAudioCodec(codec: string | null | undefined, profile?: 
     codecLower === 'a52' ||
     codecLower.includes('dolby digital')
   ) {
-    return 'AC3'
+    return normalizationProfile === 'kodi' ? 'AC-3' : 'AC3'
   }
 
   // AAC
@@ -318,6 +327,14 @@ export function normalizeResolution(
   if (h >= 480 || w >= 720) return '480p'
   if (h > 0 || w > 0) return 'SD'
   return ''
+}
+
+export function normalizeKodiResolution(width: number | null, height: number | null): string {
+  return normalizeResolution(width, height) || 'SD'
+}
+
+export function normalizeKodiAudioCodec(codec: string | null, profile?: string): string {
+  return normalizeAudioCodec(codec, profile, 'kodi')
 }
 
 // ============================================================================

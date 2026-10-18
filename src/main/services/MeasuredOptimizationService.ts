@@ -1,3 +1,4 @@
+
 import { spawn } from 'node:child_process'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
@@ -113,7 +114,7 @@ export class MeasuredOptimizationService {
         }
         if (!scores.length || scores.some(score => !Number.isFinite(score)) || banding.some(score => !Number.isFinite(score))) throw new Error('Measured frame scores are incomplete')
         scores.sort((a, b) => a - b)
-        measured.push({ encoder: candidate.encoder, quality: candidate.quality, preset: candidate.preset, outputBytes, vmafMean: scores.reduce((a, b) => a + b, 0) / scores.length, vmafP5: scores[Math.floor(scores.length * 0.05)], cambiMean: banding.reduce((a, b) => a + b, 0) / banding.length, samplePaths })
+        measured.push({ encoder: candidate.encoder, quality: candidate.quality, preset: candidate.preset, outputBytes, sampledDurationSeconds: length * starts.length, vmafMean: scores.reduce((a, b) => a + b, 0) / scores.length, vmafP5: scores[Math.floor(scores.length * 0.05)], cambiMean: banding.reduce((a, b) => a + b, 0) / banding.length, samplePaths })
       }
       for (const candidate of measured) for (const samplePath of candidate.samplePaths!) retainedPaths.add(samplePath)
       result = { candidates: measured, vmafAvailable: true, cambiAvailable: true }

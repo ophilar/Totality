@@ -1,18 +1,19 @@
 /**
  * QualityBadges Component
  *
- * Displays quality indicator badges (HDR, 10-bit, Atmos, HFR) for media items.
+ * Displays estimated savings and media-quality badges.
  */
 
-import { Trash2, HardDrive } from 'lucide-react'
+import { HardDrive } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { MediaItem } from './types'
 import { normalizeHdrFormatValue } from '@main/types/mediaContracts'
+import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
 
 interface QualityBadgesProps {
   item: MediaItem
   whiteBg?: boolean
-  showEfficiency?: boolean
+  showSavings?: boolean
 }
 
 /** Keep dynamic HDR formats distinct from the base HDR10 label. */
@@ -21,27 +22,11 @@ export function formatHdrLabel(value?: string | null): string | undefined {
   return normalized === 'SDR' ? undefined : normalized
 }
 
-export function QualityBadges({ item, whiteBg = false, showEfficiency = true }: QualityBadgesProps) {
+export function QualityBadges({ item, whiteBg = false, showSavings = true }: QualityBadgesProps) {
   const badges: Array<{ label: string; coloredClass: string; icon?: LucideIcon }> = []
 
-  // Efficiency "Trash" badge - show if score is below threshold (60%)
-  if (showEfficiency && item.efficiency_score != null && item.efficiency_score > 0 && item.efficiency_score < 60) {
-    badges.push({
-      label: 'Bloated',
-      coloredClass: 'bg-orange-600/90 text-white',
-      icon: Trash2
-    })
-  }
-
-  // Storage Debt badge - show if over 5GB for movies, 2GB for episodes
-  const debtThreshold = item.type === 'movie' ? 5 * 1024 * 1024 * 1024 : 2 * 1024 * 1024 * 1024
-  if (showEfficiency && item.storage_debt_bytes && item.storage_debt_bytes > debtThreshold) {
-    const gb = Math.round(item.storage_debt_bytes / (1024 * 1024 * 1024))
-    badges.push({
-      label: `${gb}GB Waste`,
-      coloredClass: 'bg-red-600/90 text-white',
-      icon: HardDrive
-    })
+  if (item.tier_quality === 'UNKNOWN') {
+    badges.push({ label: 'Quality unknown', coloredClass: 'bg-muted text-muted-foreground' })
   }
 
   // HDR badges - use same terminology as details page
@@ -71,7 +56,8 @@ export function QualityBadges({ item, whiteBg = false, showEfficiency = true }: 
     badges.push({ label: `${Math.round(item.video_frame_rate)}fps`, coloredClass: 'bg-red-600/90 text-white' })
   }
 
-  if (badges.length === 0) return null
+  const hasOptimizationMetrics = showSavings && item.estimated_savings_bytes != null
+  if (badges.length === 0 && !hasOptimizationMetrics) return null
 
   const badgeClass = whiteBg
     ? 'bg-foreground text-background border border-border'
@@ -79,6 +65,12 @@ export function QualityBadges({ item, whiteBg = false, showEfficiency = true }: 
 
   return (
     <div className={`flex flex-wrap gap-1 ${whiteBg ? '' : 'mt-1'}`}>
+      {showSavings && item.estimated_savings_bytes != null && (
+        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${whiteBg ? 'bg-foreground text-background border border-border' : 'bg-orange-600/90 text-white'}`} title="Estimated storage savings">
+          <HardDrive className="w-3 h-3" />
+          Est. savings <EstimatedSavingsDisplay bytes={item.estimated_savings_bytes} className={whiteBg ? 'text-background' : 'text-white'} />
+        </span>
+      )}
       {badges.map((badge, idx) => (
         <span
           key={idx}

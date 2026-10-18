@@ -8,6 +8,10 @@ import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors } from './mediaUtils'
 import type { MediaItem, MovieCollectionData } from './types'
 import { TranscodeModal } from './TranscodeModal'
+import { QualityBadges } from './QualityBadges'
+import { OptimizationMetrics } from './OptimizationMetrics'
+import { calculateOptimizationSummary } from './optimizationSummary'
+import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
 
 // Display item type for grouped movies view
 type MovieDisplayItem =
@@ -55,6 +59,14 @@ export function MoviesView({
   isMobile?: boolean
   isTablet?: boolean
 }) {
+  const [optimizationSummary, setOptimizationSummary] = useState<ReturnType<typeof calculateOptimizationSummary>>(null)
+  useEffect(() => {
+    let cancelled = false
+    window.electronAPI.getMediaItems({ type: 'movie' }).then(items => {
+      if (!cancelled) setOptimizationSummary(calculateOptimizationSummary(items as MediaItem[]))
+    })
+    return () => { cancelled = true }
+  }, [totalMovieCount])
   // On mobile: fixed 3 columns. On tablet: fixed 4 columns. Desktop: auto-fill with scale.
   const posterMinWidth = useMemo(() => {
     const widthMap: Record<number, number> = {
@@ -244,11 +256,13 @@ export function MoviesView({
     { value: 'tmdb_rating', label: 'Rating' },
     { value: 'play_count', label: 'Most Watched' },
     { value: 'last_watched_at', label: 'Recently Watched' },
+    { value: 'estimated_savings_bytes', label: 'Est. Savings' },
   ]
 
   const statsBar = (
-    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+    <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
       <span><AnimatedNumber value={totalMovieCount} locale /> Movies</span>
+      <OptimizationMetrics summary={optimizationSummary} />
       {onMovieSortChange && (
         <div className="flex items-center gap-1.5 ml-auto">
           <ArrowUpDown className="w-3.5 h-3.5 shrink-0" />
@@ -621,6 +635,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
         <div className="flex-1 min-w-0">
           <h4 className="font-medium text-sm truncate">{movie.title}</h4>
           {movie.year && <p className="text-xs text-muted-foreground">{movie.year}</p>}
+          <QualityBadges item={movie} />
         </div>
         <div className="shrink-0 flex items-center gap-1">
           {/* Collection Badge - shown when movie is part of a collection */}
@@ -658,6 +673,8 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
          prevProps.movie.quality_tier === nextProps.movie.quality_tier &&
          prevProps.movie.source_type === nextProps.movie.source_type &&
          prevProps.movie.version_count === nextProps.movie.version_count &&
+         prevProps.movie.estimated_savings_bytes === nextProps.movie.estimated_savings_bytes &&
+         prevProps.movie.evidence_status === nextProps.movie.evidence_status &&
          prevProps.showSourceBadge === nextProps.showSourceBadge &&
          prevProps.collectionData?.id === nextProps.collectionData?.id &&
          prevProps.collectionData?.completeness_percentage === nextProps.collectionData?.completeness_percentage
@@ -762,6 +779,12 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
             </span>
           )}
         </div>
+        <QualityBadges item={movie} showSavings={false} />
+      </div>
+
+      <div className="hidden lg:flex shrink-0 text-xs min-w-32 items-center gap-1.5" aria-label="Estimated savings">
+        <span className="text-muted-foreground">Est. savings</span>
+        <EstimatedSavingsDisplay bytes={movie.estimated_savings_bytes} />
       </div>
 
       {/* 3-dot menu */}
@@ -815,5 +838,7 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
          prevProps.movie.quality_tier === nextProps.movie.quality_tier &&
          prevProps.movie.source_type === nextProps.movie.source_type &&
          prevProps.movie.version_count === nextProps.movie.version_count &&
+         prevProps.movie.estimated_savings_bytes === nextProps.movie.estimated_savings_bytes &&
+         prevProps.movie.evidence_status === nextProps.movie.evidence_status &&
          prevProps.showSourceBadge === nextProps.showSourceBadge
 })

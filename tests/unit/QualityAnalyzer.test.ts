@@ -26,6 +26,58 @@ describe('QualityAnalyzer', () => {
     analyzer = new QualityAnalyzer()
   })
 
+  it('keeps measured removable-audio bytes separate from video savings', async () => {
+    const item = createMediaItem({
+      file_size: 1_000_000_000,
+      duration: 3_600_000,
+      original_language: 'en',
+    })
+    const analysis = {
+      success: true,
+      filePath: '/test/file.mkv',
+      duration: 3_600_000,
+      fileSize: 3_000_000_000,
+      video: { index: 0, codec: 'h264', width: 1920, height: 1080, bitrate: 10_000 },
+      audioTracks: [
+        { index: 1, codec: 'aac', channels: 2, bitrate: 192, language: 'en', isDefault: true, hasObjectAudio: false },
+        { index: 2, codec: 'aac', channels: 2, bitrate: 800, language: 'fr', isDefault: false, hasObjectAudio: false },
+      ],
+      subtitleTracks: [],
+      streamBytes: { 1: 86_400_000, 2: 360_000_000 },
+    }
+    const breakdown = analyzer.getOptimizationSavingsBreakdown(item, analysis)
+
+    expect(breakdown.videoSavingsBytes).toBe(2_250_000_000)
+    expect(breakdown.audioPruningBytes).toBe(360_000_000)
+    const score = await analyzer.analyzeMediaItem(item, analysis)
+    expect(score.storage_debt_bytes).toBe(2_250_000_000)
+  })
+
+  it('retains the distinct bitrate efficiency score and issue', async () => {
+    const score = await analyzer.analyzeMediaItem(createMediaItem({
+      video_bitrate: 12_000,
+      duration: 3_600_000,
+      resolution: '1080p',
+      hdr_format: 'None',
+      color_bit_depth: 8,
+    }))
+
+    expect(score.efficiency_score).toBe(48)
+    expect(score.issues).toContain('Low efficiency score (48%): bitrate is high for this tier')
+  })
+
+  it('scores efficiency continuously at configured target and bloat boundaries', async () => {
+    const scoreAt = async (video_bitrate: number) => (await analyzer.analyzeMediaItem(createMediaItem({
+      resolution: '1080p', video_codec: 'h264', video_bitrate, duration: 3_600_000, hdr_format: 'None', color_bit_depth: 8,
+    }))).efficiency_score
+
+    expect(await scoreAt(5_000)).toBe(100)
+    expect(await scoreAt(5_001)).toBe(100)
+    expect(await scoreAt(7_500)).toBe(80)
+    expect(await scoreAt(10_000)).toBe(60)
+    expect(await scoreAt(20_000)).toBe(0)
+  })
+
   // ============================================================================
   // RESOLUTION TIER DETECTION
   // ============================================================================
@@ -61,10 +113,19 @@ describe('QualityAnalyzer', () => {
       expect(score.quality_tier).toBe('1080p')
     })
 
-    it('should default to SD for unknown resolution', async () => {
+    it('should preserve unknown resolution without assigning a quality score', async () => {
       const item = createMediaItem({ resolution: 'unknown', video_bitrate: 2000 })
       const score = await analyzer.analyzeMediaItem(item)
-      expect(score.quality_tier).toBe('SD')
+      expect(score.quality_tier).toBe('UNKNOWN')
+      expect(score.tier_quality).toBe('UNKNOWN')
+      expect(score.overall_score).toBe(0)
+    })
+
+    it('does not infer overall quality from audio when video bitrate is missing', async () => {
+      const score = await analyzer.analyzeMediaItem(createMediaItem({ video_bitrate: null }))
+      expect(score.tier_quality).toBe('UNKNOWN')
+      expect(score.overall_score).toBe(0)
+      expect(score.audio_tier_score).toBeGreaterThan(0)
     })
   })
 
@@ -853,6 +914,15 @@ describe('QualityAnalyzer', () => {
 
   describe('music quality analysis', () => {
     describe('determineMusicQualityTier (via analyzeMusicAlbum)', () => {
+      it('should preserve unknown quality when the album has no tracks', () => {
+        const album = createMusicAlbum()
+        const score = analyzer.analyzeMusicAlbum(album, [])
+        expect(score.quality_tier).toBe('UNKNOWN')
+        expect(score.tier_quality).toBe('UNKNOWN')
+        expect(score.needs_upgrade).toBe(false)
+        expect(analyzer.getRecommendedMusicFormat(album, score)).toBe('Insufficient evidence')
+      })
+
       it('should classify HI_RES when tracks have hi-res flag', () => {
         const album = createMusicAlbum({ avg_audio_bitrate: 2000 })
         const tracks = [
@@ -872,7 +942,7 @@ describe('QualityAnalyzer', () => {
         expect(score.quality_tier).toBe('LOSSLESS')
       })
 
-      it('should classify LOSSLESS when more than half tracks are lossless', () => {
+      it('should keep the lowest tier when some tracks are lossy', () => {
         const album = createMusicAlbum({ avg_audio_bitrate: 500 })
         const tracks = [
           createMusicTrack({ is_lossless: true, audio_codec: 'flac' }),
@@ -880,7 +950,7 @@ describe('QualityAnalyzer', () => {
           createMusicTrack({ is_lossless: false, audio_codec: 'mp3' }),
         ]
         const score = analyzer.analyzeMusicAlbum(album, tracks)
-        expect(score.quality_tier).toBe('LOSSLESS')
+        expect(score.quality_tier).toBe('LOSSY_HIGH')
       })
 
       it('should classify LOSSY_HIGH for high bitrate lossy', () => {
@@ -938,16 +1008,26 @@ describe('QualityAnalyzer', () => {
         expect(hiResScore.codec_score).toBeGreaterThan(normalScore.codec_score)
       })
 
-      it('should average codec scores across multiple tracks', () => {
+      it('should use the lowest codec score across multiple tracks', () => {
         const album = createMusicAlbum({ avg_audio_bitrate: 200 })
         const tracks = [
           createMusicTrack({ audio_codec: 'flac', is_lossless: true }),  // 95
           createMusicTrack({ audio_codec: 'mp3', is_lossless: false }),  // 60
         ]
         const score = analyzer.analyzeMusicAlbum(album, tracks)
-        // Should be ~78 (average of 95 and 60)
-        expect(score.codec_score).toBeGreaterThan(60)
-        expect(score.codec_score).toBeLessThan(95)
+        expect(score.codec_score).toBe(60)
+      })
+
+      it('should not let one hi-res track hide low-quality tracks in an album', () => {
+        const album = createMusicAlbum({ avg_audio_bitrate: 320 })
+        const tracks = [
+          createMusicTrack({ audio_codec: 'flac', is_lossless: true, is_hi_res: true, audio_bitrate: 2000 }),
+          ...Array.from({ length: 9 }, () => createMusicTrack({ audio_codec: 'mp3', is_lossless: false, is_hi_res: false, audio_bitrate: 128 })),
+        ]
+        const score = analyzer.analyzeMusicAlbum(album, tracks)
+        expect(score.quality_tier).toBe('LOSSY_LOW')
+        expect(score.tier_quality).not.toBe('HIGH')
+        expect(score.needs_upgrade).toBe(true)
       })
     })
 
@@ -1166,7 +1246,7 @@ function createMusicTrack(overrides: Partial<MusicTrack> = {}): MusicTrack {
     artist_name: 'Test Artist',
     title: 'Test Track',
     audio_codec: 'mp3',
-    audio_bitrate: 320,
+    audio_bitrate: undefined,
     is_lossless: false,
     is_hi_res: false,
     created_at: new Date().toISOString(),

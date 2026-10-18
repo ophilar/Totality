@@ -3,16 +3,12 @@ export type LibrarySortType = 'movie' | 'tv' | 'music'
 export interface SortOption { key: string; label: string }
 
 export const descendingSortColumns = new Set([
-  'efficiency',
-  'efficiency_score',
-  'weighted_efficiency',
-  'waste',
-  'storage_debt',
-  'storage_debt_bytes',
-  'recoverable',
-  'recoverable_waste_bytes',
   'size',
-  'completeness'
+  'completeness',
+  'play_count',
+  'last_watched_at',
+  'tmdb_rating',
+  'estimated_savings_bytes',
 ])
 
 export function nextSortDirection(
@@ -24,9 +20,9 @@ export function nextSortDirection(
   return descendingSortColumns.has(nextColumn) ? 'desc' : 'asc'
 }
 
-export const movieSortColumns = ['title', 'year', 'efficiency', 'recoverable', 'size'] as const
-export const tvSortColumns = ['title', 'recoverable', 'weighted_efficiency'] as const
-export const mediaSortColumns = ['title', 'efficiency', 'recoverable', 'size'] as const
+export const movieSortColumns = ['title', 'year', 'size'] as const
+export const tvSortColumns = ['title'] as const
+export const mediaSortColumns = ['title', 'size'] as const
 
 export const musicSortColumns = ['title', 'artist', 'album', 'year', 'size', 'quality'] as const
 
@@ -34,14 +30,10 @@ const sortOptions: Record<LibrarySortType, SortOption[]> = {
   movie: [
     { key: 'title', label: 'Title' },
     { key: 'year', label: 'Year' },
-    { key: 'efficiency', label: 'Efficiency' },
-    { key: 'recoverable', label: 'Recoverable' },
     { key: 'size', label: 'Size' },
   ],
   tv: [
     { key: 'title', label: 'Title' },
-    { key: 'recoverable', label: 'Total Debt' },
-    { key: 'weighted_efficiency', label: 'Weighted efficiency' },
   ],
   music: [
     { key: 'title', label: 'Title' },

@@ -7,7 +7,7 @@ describe('buildOptimizationDecision', () => {
       originalLanguage: 'en',
       fileSize: 10_000,
       durationSeconds: 8,
-      videoStorageDebtBytes: 2_000,
+      videoSavingsBytes: 2_000,
       audioTranscodeSavingsBytes: 1_000,
       audioTracks: [
         { index: 1, language: 'en', title: 'Original', codec: 'aac', channels: 2, bitrate: 100, isDefault: true, hasObjectAudio: false, reliableTag: true },
@@ -18,9 +18,9 @@ describe('buildOptimizationDecision', () => {
     expect(result.primaryAction).toBe('remove-audio-tracks')
     expect(result.trackRemoval.status).toBe('executable')
     expect(result.trackRemoval.estimatedSavingsBytes).toBe(100_000)
-    expect(result.trackRemoval.evidence_status).toBe('measured')
-    expect(result.trackRemoval.confidence).toBe('high')
-    expect(result.trackRemoval.savings_basis).toBe('audio_stream_removal')
+    expect(result.trackRemoval.evidence_status).toBe('estimated')
+    expect(result.trackRemoval.confidence).toBe('medium')
+    expect(result.trackRemoval.savings_basis).toBe('audio_bitrate_estimate')
     expect(result.audioTranscode.estimatedSavingsBytes).toBe(1_000)
     expect(result.videoTranscode.estimatedSavingsBytes).toBe(2_000)
   })
@@ -30,7 +30,7 @@ describe('buildOptimizationDecision', () => {
       originalLanguage: 'en',
       fileSize: 10_000,
       durationSeconds: 8,
-      videoStorageDebtBytes: 2_000,
+      videoSavingsBytes: 2_000,
       audioTranscodeSavingsBytes: null,
       audioTracks: [{ index: 1, language: undefined, codec: 'aac', channels: 2, bitrate: 100, isDefault: true, hasObjectAudio: false }],
     })
@@ -47,7 +47,7 @@ describe('buildOptimizationDecision', () => {
       originalLanguage: 'en',
       fileSize: 10_000,
       durationSeconds: 8,
-      videoStorageDebtBytes: 0,
+      videoSavingsBytes: 0,
       audioTranscodeSavingsBytes: null,
       audioTracks: [
         { index: 1, language: 'en', codec: 'truehd', channels: 8, bitrate: 500, isDefault: true, hasObjectAudio: true, reliableTag: true },
@@ -65,7 +65,7 @@ describe('buildOptimizationDecision', () => {
       originalLanguage: 'en',
       fileSize: 50_000_000,
       durationSeconds: 3600,
-      videoStorageDebtBytes: 0,
+      videoSavingsBytes: 0,
       audioTranscodeSavingsBytes: null,
       audioTracks: [
         { index: 1, language: 'en', codec: 'truehd', channels: 8, bitrate: 4800, isDefault: true, hasObjectAudio: false, reliableTag: true },
@@ -82,7 +82,7 @@ describe('buildOptimizationDecision', () => {
       originalLanguage: 'en',
       fileSize: 50_000_000,
       durationSeconds: 3600,
-      videoStorageDebtBytes: null,
+      videoSavingsBytes: null,
       audioTranscodeSavingsBytes: null,
       audioTracks: [
         { index: 1, language: 'en', codec: 'truehd', channels: 8, isDefault: true, hasObjectAudio: false, reliableTag: true },
@@ -101,7 +101,7 @@ describe('buildOptimizationDecision', () => {
       originalLanguage: 'en',
       fileSize: 50_000_000,
       durationSeconds: 3600,
-      videoStorageDebtBytes: null,
+      videoSavingsBytes: null,
       audioTranscodeSavingsBytes: null,
       audioTracks: [],
     })
@@ -116,21 +116,21 @@ describe('buildOptimizationDecision', () => {
   it('keeps a positive storage estimate available for review', () => {
     const result = buildOptimizationDecision({
       originalLanguage: 'en', fileSize: 50_000_000, durationSeconds: 3600,
-      videoStorageDebtBytes: 12_000_000, audioTranscodeSavingsBytes: null, audioTracks: [],
+      videoSavingsBytes: 12_000_000, audioTranscodeSavingsBytes: null, audioTracks: [],
     })
 
     expect(result.videoTranscode.status).toBe('review-required')
     expect(result.videoTranscode.evidence_status).toBe('estimated')
     expect(result.videoTranscode.estimatedSavingsBytes).toBe(12_000_000)
-    expect(result.videoTranscode.savings_basis).toBe('video_sample_encode')
+    expect(result.videoTranscode.savings_basis).toBe('video_bitrate_estimate')
   })
 
-  it('uses video transcode as the primary action when video is the only recoverable mechanism', () => {
+  it('uses video transcode as the primary action when it has estimated savings', () => {
     const result = buildOptimizationDecision({
       originalLanguage: 'en',
       fileSize: 50_000_000,
       durationSeconds: 3600,
-      videoStorageDebtBytes: 12_000_000,
+      videoSavingsBytes: 12_000_000,
       audioTranscodeSavingsBytes: null,
       audioTracks: [],
     })
@@ -146,7 +146,7 @@ describe('buildOptimizationDecision', () => {
       originalLanguage: 'en',
       fileSize: 50_000_000,
       durationSeconds: 3600,
-      videoStorageDebtBytes: 0,
+      videoSavingsBytes: 0,
       audioTranscodeSavingsBytes: null,
       audioTracks: [retainedTrack],
     })
@@ -154,7 +154,7 @@ describe('buildOptimizationDecision', () => {
       originalLanguage: 'en',
       fileSize: 100_000_000,
       durationSeconds: 3600,
-      videoStorageDebtBytes: 0,
+      videoSavingsBytes: 0,
       audioTranscodeSavingsBytes: null,
       audioTracks: [retainedTrack, removableTrack],
     })
@@ -163,13 +163,12 @@ describe('buildOptimizationDecision', () => {
     expect(mixed.audioTranscode.estimatedSavingsBytes).toBe(retainedOnly.audioTranscode.estimatedSavingsBytes)
   })
 
-  it('derives video debt as the residual of legacy combined recoverable bytes', () => {
+  it('uses video savings directly without subtracting estimated audio removal again', () => {
     const result = buildOptimizationDecision({
       originalLanguage: 'en',
       fileSize: 1_000_000_000,
       durationSeconds: 1_000,
-      videoStorageDebtBytes: null,
-      legacyTotalRecoverableBytes: 200_000_000,
+      videoSavingsBytes: 200_000_000,
       audioTranscodeSavingsBytes: null,
       audioTracks: [
         { index: 1, language: 'en', codec: 'aac', channels: 2, bitrate: 192, isDefault: true, hasObjectAudio: false, reliableTag: true },
@@ -178,7 +177,7 @@ describe('buildOptimizationDecision', () => {
     })
 
     expect(result.trackRemoval.estimatedSavingsBytes).toBe(100_000_000)
-    expect(result.videoTranscode.estimatedSavingsBytes).toBe(100_000_000)
+    expect(result.videoTranscode.estimatedSavingsBytes).toBe(200_000_000)
     expect(result.primaryAction).toBe('remove-audio-tracks')
   })
 

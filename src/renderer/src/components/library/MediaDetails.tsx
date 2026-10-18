@@ -9,6 +9,8 @@ import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import type { WishlistMediaType } from '../../contexts/WishlistContext'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
+import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
+import type { AudioTrack, SubtitleTrack } from '@main/types/database'
 
 interface MediaDetailsProps {
   mediaId: number
@@ -17,28 +19,6 @@ interface MediaDetailsProps {
   onFixMatch?: (mediaItemId: number, title: string, year?: number, filePath?: string) => void
   onDismissUpgrade?: (mediaId: number, title: string) => void
   isMobile?: boolean
-}
-
-interface AudioTrack {
-  index: number
-  codec: string
-  channels: number
-  bitrate: number
-  language?: string
-  title?: string
-  profile?: string
-  sampleRate?: number
-  isDefault?: boolean
-  hasObjectAudio?: boolean
-}
-
-interface SubtitleTrack {
-  index: number
-  codec: string
-  language?: string
-  title?: string
-  isDefault?: boolean
-  isForced?: boolean
 }
 
 interface MediaVersion {
@@ -117,11 +97,15 @@ interface MediaWithQuality {
   audio_tracks?: string
   subtitle_tracks?: string
   version_count?: number
-  quality_tier?: 'SD' | '720p' | '1080p' | '4K'
-  tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH'
+  quality_tier?: 'SD' | '720p' | '1080p' | '4K' | 'UNKNOWN'
+  tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
   tier_score?: number
   bitrate_tier_score?: number
   audio_tier_score?: number
+  evidence_status?: 'measured' | 'estimated' | 'insufficient' | null
+  estimated_savings_bytes?: number | null
+  confidence?: string | null
+  savings_basis?: string | null
   overall_score?: number
   needs_upgrade?: boolean
   issues?: string
@@ -247,11 +231,15 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
       }
 
       const qualityScore = await window.electronAPI.getQualityScoreByMediaId(mediaId) as {
-        quality_tier?: 'SD' | '720p' | '1080p' | '4K'
-        tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH'
+        quality_tier?: 'SD' | '720p' | '1080p' | '4K' | 'UNKNOWN'
+        tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
         tier_score?: number
         bitrate_tier_score?: number
         audio_tier_score?: number
+        evidence_status?: 'measured' | 'estimated' | 'insufficient' | null
+        estimated_savings_bytes?: number | null
+        confidence?: string | null
+        savings_basis?: string | null
         overall_score?: number
         needs_upgrade?: boolean
         issues?: string
@@ -264,6 +252,10 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
         tier_score: qualityScore?.tier_score,
         bitrate_tier_score: qualityScore?.bitrate_tier_score,
         audio_tier_score: qualityScore?.audio_tier_score,
+        evidence_status: qualityScore?.evidence_status,
+        estimated_savings_bytes: qualityScore?.estimated_savings_bytes,
+        confidence: qualityScore?.confidence,
+        savings_basis: qualityScore?.savings_basis,
         overall_score: qualityScore?.overall_score,
         needs_upgrade: qualityScore?.needs_upgrade,
         issues: qualityScore?.issues
@@ -610,7 +602,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
 
               {/* Action buttons — round icon buttons */}
               <div className="flex items-center gap-3 mt-3">
-                {media.tier_quality && media.tier_quality !== 'HIGH' && (
+                {media.tier_quality && media.tier_quality !== 'HIGH' && media.tier_quality !== 'UNKNOWN' && (
                   <AddToWishlistButton
                     mediaType={media.type as WishlistMediaType}
                     title={media.title}
@@ -652,7 +644,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                   </button>
                 )}
 
-                {onDismissUpgrade && media.tier_quality !== 'HIGH' && (
+                {onDismissUpgrade && media.tier_quality !== 'HIGH' && media.tier_quality !== 'UNKNOWN' && (
                   <button
                     onClick={handleDismissUpgrade}
                     className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
@@ -709,7 +701,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                     )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    {media.tier_quality && media.tier_quality !== 'HIGH' && (
+                {media.tier_quality && media.tier_quality !== 'HIGH' && media.tier_quality !== 'UNKNOWN' && (
                       <AddToWishlistButton
                         mediaType={media.type as WishlistMediaType}
                         title={media.title}
@@ -729,7 +721,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                         currentAudioCodec={media.audio_codec}
                       />
                     )}
-                    {(onRescan || onFixMatch || (onDismissUpgrade && media.tier_quality !== 'HIGH')) && (
+                    {(onRescan || onFixMatch || (onDismissUpgrade && media.tier_quality !== 'HIGH' && media.tier_quality !== 'UNKNOWN')) && (
                       <div ref={menuRef} className="relative">
                         <button onClick={() => setShowMenu(!showMenu)} className="text-muted-foreground hover:text-foreground p-1.5" title="More options">
                           {isRescanning ? <RefreshCw className="w-5 h-5 animate-spin" /> : <MoreVertical className="w-5 h-5" />}
@@ -738,7 +730,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                           <DropdownMenu className="min-w-[140px] z-50">
                             {onRescan && media.file_path && <DropdownMenuItem onClick={handleRescan} icon={<RefreshCw className="w-3.5 h-3.5" />}>Rescan File</DropdownMenuItem>}
                             {onFixMatch && media.type === 'movie' && <DropdownMenuItem onClick={handleFixMatch} icon={<Pencil className="w-3.5 h-3.5" />}>Fix Match</DropdownMenuItem>}
-                            {onDismissUpgrade && media.tier_quality !== 'HIGH' && <DropdownMenuItem onClick={handleDismissUpgrade} icon={<EyeOff className="w-3.5 h-3.5" />}>Dismiss Upgrade</DropdownMenuItem>}
+                            {onDismissUpgrade && media.tier_quality !== 'HIGH' && media.tier_quality !== 'UNKNOWN' && <DropdownMenuItem onClick={handleDismissUpgrade} icon={<EyeOff className="w-3.5 h-3.5" />}>Dismiss Upgrade</DropdownMenuItem>}
                           </DropdownMenu>
                         )}
                       </div>
@@ -788,7 +780,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                       >
                         {v.is_best && <Star className="w-3 h-3 inline-block mr-1 -mt-0.5" />}
                         {v.edition || v.label || `${v.resolution} ${v.video_codec}`}
-                        {v.tier_score != null && <span className={`ml-1.5 ${isSelected ? 'text-primary-foreground/70' : 'opacity-70'}`}>· {v.tier_score}</span>}
+                        {v.tier_score != null && v.tier_quality !== 'UNKNOWN' && <span className={`ml-1.5 ${isSelected ? 'text-primary-foreground/70' : 'opacity-70'}`}>· {v.tier_score}</span>}
                       </button>
                     )
                   })}
@@ -834,7 +826,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                                 </div>
                               </td>
                               <td className="px-2 py-1.5 text-muted-foreground">
-                                {v.quality_tier || '--'} {v.tier_score != null && <span className="opacity-70">{v.tier_score}</span>}
+                                {v.quality_tier === 'UNKNOWN' ? 'Unknown' : v.quality_tier || '--'} {v.tier_score != null && v.tier_quality !== 'UNKNOWN' && <span className="opacity-70">{v.tier_score}</span>}
                               </td>
                               <td className="px-2 py-1.5 text-muted-foreground">
                                 <span className="font-mono">{v.video_codec}</span> {formatBitrate(v.video_bitrate)}
@@ -874,10 +866,10 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                 <div className={`flex ${isMobile ? 'flex-col gap-3' : 'items-center justify-between gap-4'}`}>
                   <div className={`flex items-center gap-4 bg-muted/30 ${isMobile ? 'px-3 py-2 rounded-lg' : '-ml-3 -mt-3 -mb-3 px-4 py-3 rounded-l-lg'}`}>
                     <div className="text-center">
-                      <div className="text-2xl font-bold">{sv?.quality_tier ?? media.quality_tier}</div>
-                      <div className="text-xs font-medium text-muted-foreground">{sv?.tier_quality ?? media.tier_quality}</div>
+                      <div className="text-2xl font-bold">{(sv?.quality_tier ?? media.quality_tier) === 'UNKNOWN' ? 'Unknown' : sv?.quality_tier ?? media.quality_tier}</div>
+                      <div className="text-xs font-medium text-muted-foreground">{(sv?.tier_quality ?? media.tier_quality) === 'UNKNOWN' ? 'Insufficient evidence' : sv?.tier_quality ?? media.tier_quality}</div>
                     </div>
-                    {(sv?.tier_score ?? media.tier_score) != null && (
+                    {(sv?.tier_score ?? media.tier_score) != null && (sv?.tier_quality ?? media.tier_quality) !== 'UNKNOWN' && (
                       <>
                         <div className="h-10 w-px bg-border" />
                         <div className="text-center">
@@ -889,7 +881,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                   </div>
 
                   {/* Score Bars — Side by Side */}
-                  {((sv?.bitrate_tier_score ?? media.bitrate_tier_score) != null || (sv?.audio_tier_score ?? media.audio_tier_score) != null) && (
+                  {(sv?.tier_quality ?? media.tier_quality) !== 'UNKNOWN' && ((sv?.bitrate_tier_score ?? media.bitrate_tier_score) != null || (sv?.audio_tier_score ?? media.audio_tier_score) != null) && (
                     <div className={`flex-1 flex ${isMobile ? 'flex-col' : ''} gap-4`}>
                       {(sv?.bitrate_tier_score ?? media.bitrate_tier_score) != null && (
                         <div className="flex-1">
@@ -931,6 +923,12 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
               </div>
             )}
           </div>
+
+          {media.estimated_savings_bytes != null && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-muted/20 px-3 py-2 text-xs">
+              <span className="flex items-center gap-1.5"><span className="text-muted-foreground">Est. savings</span><EstimatedSavingsDisplay bytes={media.estimated_savings_bytes} /></span>
+            </div>
+          )}
 
 
           {/* Insight Banner */}
