@@ -17,6 +17,7 @@ import {
   Circle,
   Bot,
 } from 'lucide-react'
+import { TranscodingHardwareCard } from '../TranscodingHardwareCard'
 import { Toggle } from '../../ui/Toggle'
 
 interface ServiceCardProps {
@@ -440,6 +441,7 @@ export function ServicesTab() {
 
   return (
     <div className="p-6 space-y-5 overflow-y-auto">
+      <TranscodingHardwareCard />
       {/* Header */}
       <div className="mb-4">
         <p className="text-xs text-muted-foreground">

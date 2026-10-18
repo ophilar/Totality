@@ -2019,10 +2019,10 @@ interface ExistingElectronAPI {
   listShowQuarantine: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<any[]>
   purgeShowQuarantine: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<{ purged: number }>
   getMediaItem: (id: number) => Promise<any>
-  getCapabilities: () => Promise<any>
-  refreshCapabilities: () => Promise<any>
+  getCapabilities: () => Promise<TranscodingCapabilities>
+  refreshCapabilities: () => Promise<TranscodingCapabilities>
   checkAvailability: () => Promise<any>
-  setSelectedGpu: (gpuId: string | null) => Promise<void>
+  setSelectedGpu: (gpuId: string | null) => Promise<TranscodingCapabilities>
   getParameters: (mediaItemId: number, options?: any) => Promise<any>
   cancel: (mediaItemId?: number) => Promise<boolean>
   onProgress: (callback: (data: any) => void) => () => void
