@@ -169,7 +169,7 @@ export function TimelinesView() {
 
     return () => {
       isMounted = false
-      void window.electronAPI.timelinesCancel(requestId)
+      void window.electronAPI.dbCancelOperation(requestId)
     }
   }, [selectedRecipeId, resolveSourceId, addToast, recipeRefreshToken])
 

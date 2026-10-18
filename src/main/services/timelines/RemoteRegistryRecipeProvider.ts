@@ -1,5 +1,8 @@
+
 import type { ITimelineRecipeProvider, TimelineDefinition, TimelineRecipeSummary, TimelineFetchOptions } from './ITimelineRecipeProvider'
 import { getTimelineCacheService, TimelineCacheService } from './TimelineCacheService'
+import { fetchWithTimeout } from '../utils/httpClient'
+import { validateTimelineDefinition } from './TimelineValidation'
 
 export class RemoteRegistryRecipeProvider implements ITimelineRecipeProvider {
   constructor(
@@ -11,7 +14,7 @@ export class RemoteRegistryRecipeProvider implements ITimelineRecipeProvider {
     if (!this.registryBaseUrl) return []
     const cachedManifest = await this.cacheService.getManifest(this.registryBaseUrl)
     if (cachedManifest) return cachedManifest
-    const response = await fetch(`${this.registryBaseUrl}/manifest.json`, { signal: AbortSignal.timeout(6000) })
+    const response = await fetchWithTimeout(`${this.registryBaseUrl}/manifest.json`, {}, 6000)
     if (!response.ok) throw new Error(`Cannot fetch timeline registry: ${response.status} ${response.statusText}`)
     const remoteManifest: TimelineRecipeSummary[] = await response.json()
     const list = remoteManifest.map(item => ({ ...item, sourceType: 'remote' as const }))
@@ -28,26 +31,15 @@ export class RemoteRegistryRecipeProvider implements ITimelineRecipeProvider {
     const cached = await this.cacheService.getRecipe(id)
     if (cached && !options.refresh) return cached
 
-    const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000)
-    const response = await fetch(`${this.registryBaseUrl}/recipes/${id}.json`, { signal })
+    const response = await fetchWithTimeout(`${this.registryBaseUrl}/recipes/${id}.json`, { signal: options.signal }, 10000)
     if (!response.ok) {
       throw new Error(`Failed to fetch timeline '${id}' from remote registry (${response.status}: ${response.statusText}).`)
     }
 
-    const recipe: TimelineDefinition = await response.json()
-    this.validateRecipe(recipe)
+    const validation = validateTimelineDefinition(await response.json())
+    if (!validation.valid) throw new Error(`Invalid timeline recipe: ${validation.reason}`)
+    const recipe = validation.value
     await this.cacheService.setRecipe(id, recipe)
     return recipe
-  }
-
-  private validateRecipe(recipe: TimelineDefinition): void {
-    if (!recipe.id || !recipe.name || !Array.isArray(recipe.items)) {
-      throw new Error(`Invalid timeline recipe structure: missing id, name, or items array.`)
-    }
-    for (const item of recipe.items) {
-      if (!item.identifiers || (!item.identifiers.tmdbId && !item.identifiers.tvdbId && !item.identifiers.imdbId)) {
-        throw new Error(`Invalid timeline item '${item.title}' at order ${item.order}: must contain at least one valid external identifier (tmdbId, tvdbId, or imdbId).`)
-      }
-    }
   }
 }

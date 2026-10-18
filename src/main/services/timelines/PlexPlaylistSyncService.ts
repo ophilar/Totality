@@ -1,7 +1,8 @@
-import axios, { type AxiosInstance } from 'axios'
+
 import type { ResolvedTimelineItem } from './TimelineResolutionEngine'
 import { randomUUID } from 'node:crypto'
 import { getDatabase } from '../../database/getDatabase'
+import { fetchJSON, fetchResponse } from '../utils/httpClient'
 
 export interface PlexPlaylistSyncOptions {
   serverUri: string
@@ -67,25 +68,17 @@ interface PlexCreatePlaylistResponse {
 }
 
 export class PlexPlaylistSyncService {
-  private readonly client: AxiosInstance
-
-  constructor(timeoutMs = 15000) {
-    this.client = axios.create({
-      timeout: timeoutMs,
-      headers: {
-        Accept: 'application/json',
-      },
-    })
-  }
+  constructor(private readonly timeoutMs = 15000) {}
 
   async getExistingPlaylists(serverUri: string, accessToken: string, signal?: AbortSignal): Promise<PlexPlaylistSummary[]> {
     const cleanBaseUri = serverUri.replace(/\/+$/, '')
     try {
-      const response = await this.client.get<PlexPlaylistsResponse>(`${cleanBaseUri}/playlists`, {
-        headers: { 'X-Plex-Token': accessToken },
+      const response = await fetchJSON<PlexPlaylistsResponse>(`${cleanBaseUri}/playlists`, {
+        headers: { Accept: 'application/json', 'X-Plex-Token': accessToken },
         signal,
+        timeoutMs: this.timeoutMs,
       })
-      const list = response.data?.MediaContainer?.Metadata || []
+      const list = response.MediaContainer?.Metadata || []
       return list.map((p) => ({
         ratingKey: p.ratingKey,
         title: p.title,
@@ -184,9 +177,14 @@ export class PlexPlaylistSyncService {
     const actual: string[] = []
     let total = 0
     do {
-      const response = await this.client.get<PlexPlaylistsResponse>(`${serverUri}/playlists/${ratingKey}/items`, { headers: { 'X-Plex-Token': accessToken }, params: { 'X-Plex-Container-Start': actual.length, 'X-Plex-Container-Size': expected.length + 1 - actual.length }, signal })
+      const response = await fetchJSON<PlexPlaylistsResponse>(`${serverUri}/playlists/${ratingKey}/items`, {
+        headers: { Accept: 'application/json', 'X-Plex-Token': accessToken },
+        params: { 'X-Plex-Container-Start': actual.length, 'X-Plex-Container-Size': expected.length + 1 - actual.length },
+        signal,
+        timeoutMs: this.timeoutMs,
+      })
       signal?.throwIfAborted()
-      const container = response.data.MediaContainer
+      const container = response.MediaContainer
       if (!container?.Metadata) throw new Error('Plex did not return the staged playlist sequence')
       total = container.totalSize ?? container.Metadata.length
       if (!container.Metadata.length && actual.length < total) throw new Error('Plex returned an incomplete playlist page')
@@ -197,7 +195,12 @@ export class PlexPlaylistSyncService {
   }
 
   private async publish(serverUri: string, accessToken: string, key: string, state: PublicationState): Promise<void> {
-    await this.client.put(`${serverUri}/playlists/${state.newKey}`, null, { headers: { 'X-Plex-Token': accessToken }, params: { title: state.title } })
+    await fetchResponse(`${serverUri}/playlists/${state.newKey}`, {
+      method: 'PUT',
+      headers: { Accept: 'application/json', 'X-Plex-Token': accessToken },
+      params: { title: state.title },
+      timeoutMs: this.timeoutMs,
+    })
     state.phase = 'published'
     await getDatabase().setSetting(key, JSON.stringify(state))
     if (state.oldKey) await this.deletePlaylist(serverUri, accessToken, state.oldKey)
@@ -228,7 +231,11 @@ export class PlexPlaylistSyncService {
   }
 
   private async deletePlaylist(serverUri: string, accessToken: string, playlistRatingKey: string): Promise<void> {
-    await this.client.delete(`${serverUri}/playlists/${playlistRatingKey}`, { headers: { 'X-Plex-Token': accessToken } })
+    await fetchResponse(`${serverUri}/playlists/${playlistRatingKey}`, {
+      method: 'DELETE',
+      headers: { Accept: 'application/json', 'X-Plex-Token': accessToken },
+      timeoutMs: this.timeoutMs,
+    })
   }
 
   private async createPlaylist(
@@ -238,22 +245,20 @@ export class PlexPlaylistSyncService {
     firstItemUri: string,
     signal: AbortSignal
   ): Promise<string> {
-    const response = await this.client.post<PlexCreatePlaylistResponse>(
-      `${serverUri}/playlists`,
-      null,
-      {
-        headers: { 'X-Plex-Token': accessToken },
-        signal,
-        params: {
-          type: 'video',
-          title,
-          smart: 0,
-          uri: firstItemUri,
-        },
-      }
-    )
+    const response = await fetchJSON<PlexCreatePlaylistResponse>(`${serverUri}/playlists`, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'X-Plex-Token': accessToken },
+      signal,
+      params: {
+        type: 'video',
+        title,
+        smart: 0,
+        uri: firstItemUri,
+      },
+      timeoutMs: this.timeoutMs,
+    })
 
-    const createdRatingKey = response.data?.MediaContainer?.Metadata?.[0]?.ratingKey
+    const createdRatingKey = response.MediaContainer?.Metadata?.[0]?.ratingKey
     if (!createdRatingKey) {
       throw new Error(`Plex returned empty metadata when creating playlist '${title}'.`)
     }
@@ -268,17 +273,13 @@ export class PlexPlaylistSyncService {
     itemUri: string,
     signal: AbortSignal
   ): Promise<void> {
-    await this.client.put(
-      `${serverUri}/playlists/${playlistRatingKey}/items`,
-      null,
-      {
-        headers: { 'X-Plex-Token': accessToken },
-        signal,
-        params: {
-          uri: itemUri,
-        },
-      }
-    )
+    await fetchResponse(`${serverUri}/playlists/${playlistRatingKey}/items`, {
+      method: 'PUT',
+      headers: { Accept: 'application/json', 'X-Plex-Token': accessToken },
+      signal,
+      params: { uri: itemUri },
+      timeoutMs: this.timeoutMs,
+    })
   }
 }
 
