@@ -14,6 +14,7 @@ const mockDb = {
 
 const mockTMDB = {
   initialize: vi.fn(),
+  isConfigured: vi.fn(() => true),
   getTVShowDetails: vi.fn(),
   getTVShowWithSeasons: vi.fn(),
   buildImageUrl: vi.fn(),

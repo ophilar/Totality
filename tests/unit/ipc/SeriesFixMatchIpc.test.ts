@@ -63,7 +63,7 @@ describe('series:fixMatch IPC Handler', () => {
     expect(handler).toBeDefined()
 
     const result = await handler!(
-      {} as any,
+      { senderFrame: { url: 'file:///test' } } as any,
       'tmdb:99999',
       'plex-src-1',
       'lib-tv-1',
@@ -102,7 +102,7 @@ describe('series:fixMatch IPC Handler', () => {
     expect(handler).toBeDefined()
 
     await expect(
-      handler!({} as any, 'Breaking Bad', 'src-1', 'lib-1', 1396)
+      handler!({ senderFrame: { url: 'file:///test' } } as any, 'Breaking Bad', 'src-1', 'lib-1', 1396)
     ).rejects.toThrow(/seriesIdentityKey must be a canonical key starting with tmdb:, tvdb:, or unresolved:/)
   })
 
@@ -111,7 +111,7 @@ describe('series:fixMatch IPC Handler', () => {
     expect(handler).toBeDefined()
 
     await expect(
-      handler!({} as any, '', 'src-1', 'lib-1', 1396)
+      handler!({ senderFrame: { url: 'file:///test' } } as any, '', 'src-1', 'lib-1', 1396)
     ).rejects.toThrow(/seriesIdentityKey/)
   })
 
@@ -120,7 +120,7 @@ describe('series:fixMatch IPC Handler', () => {
     expect(handler).toBeDefined()
 
     const result = await handler!(
-      {} as any,
+      { senderFrame: { url: 'file:///test' } } as any,
       'tmdb:99999',
       'plex-src-1',
       undefined,
@@ -149,7 +149,7 @@ describe('series:fixMatch IPC Handler', () => {
     expect(handler).toBeDefined()
 
     await expect(
-      handler!({} as any, 'tmdb:12345', '', 'lib-1', 1396)
+      handler!({ senderFrame: { url: 'file:///test' } } as any, 'tmdb:12345', '', 'lib-1', 1396)
     ).rejects.toThrow(/sourceId/)
   })
 
@@ -158,11 +158,11 @@ describe('series:fixMatch IPC Handler', () => {
     expect(handler).toBeDefined()
 
     await expect(
-      handler!({} as any, 'tmdb:12345', 'src-1', 'lib-1', -1)
+      handler!({ senderFrame: { url: 'file:///test' } } as any, 'tmdb:12345', 'src-1', 'lib-1', -1)
     ).rejects.toThrow(/tmdbId/)
 
     await expect(
-      handler!({} as any, 'tmdb:12345', 'src-1', 'lib-1', '1396')
+      handler!({ senderFrame: { url: 'file:///test' } } as any, 'tmdb:12345', 'src-1', 'lib-1', '1396')
     ).rejects.toThrow(/tmdbId/)
   })
 })

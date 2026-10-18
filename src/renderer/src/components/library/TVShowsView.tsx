@@ -10,6 +10,9 @@ import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors, formatSeasonLabel, getStatusBadge } from './mediaUtils'
 import type { MediaItem, TVShow, TVShowSummary, SeasonInfo, TVSeason, SeriesCompletenessData, MissingEpisode } from './types'
 import type { ProviderType } from '../../contexts/SourceContext'
+import { QualityBadges } from './QualityBadges'
+import { ScopedOptimizationSummary } from './ScopedOptimizationSummary'
+import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
 
 // List item component for TV shows
 const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizeSeries }: {
@@ -155,12 +158,12 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
 })
 
 // Episode row component with keyboard navigation
-const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onAddToWishlist, isMobile = false }: {
+const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onOptimizeEpisode, isMobile = false }: {
   episode: MediaItem
   onClick: () => void
   onRescan?: (episode: MediaItem) => Promise<void>
   onDismissUpgrade?: (episode: MediaItem) => void
-  onAddToWishlist?: (episode: MediaItem) => void
+  onOptimizeEpisode?: (episode: MediaItem) => void
   isMobile?: boolean
 }) => {
   const cardRef = useRef<HTMLDivElement>(null)
@@ -190,7 +193,7 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onAddTo
   }
 
   const needsUpgrade = episode.tier_quality === 'LOW' || !!episode.needs_upgrade
-  const showMenuButton = (onRescan && episode.file_path) || (onDismissUpgrade && needsUpgrade)
+  const showMenuButton = (onRescan && episode.file_path) || (onDismissUpgrade && needsUpgrade) || (onOptimizeEpisode && episode.id && episode.file_path && episode.source_id && episode.series_identity_key)
 
   // Format audio channels to standard labels (6ch = 5.1, 8ch = 7.1, etc.)
   const formatChannels = (ch: number): string => {
@@ -246,12 +249,17 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onAddTo
             <span title="Quality upgrade recommended"><CircleFadingArrowUp className="w-3.5 h-3.5 text-destructive shrink-0 ml-0.5" /></span>
           )}
         </div>
+        <QualityBadges item={episode} showSavings={false} />
       </div>
 
-      {/* Actions */}
-      <div className="flex items-center gap-0.5 shrink-0">
-        {/* Add to wishlist shortcut for upgrade items */}
-        {needsUpgrade && onAddToWishlist && (
+      {!isMobile && <div className="hidden lg:flex shrink-0 text-xs min-w-32 items-center gap-1.5" aria-label="Estimated savings">
+        <span className="text-muted-foreground">Est. savings</span>
+        <EstimatedSavingsDisplay bytes={episode.estimated_savings_bytes} />
+      </div>}
+
+      {/* 3-dot menu */}
+      {showMenuButton && (
+        <div ref={menuRef} className="relative shrink-0">
           <button
             onClick={(e) => { e.stopPropagation(); onAddToWishlist(episode) }}
             className={`${isMobile ? 'min-h-[44px] min-w-[44px]' : 'p-1.5'} flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground transition-colors`}
@@ -261,20 +269,24 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onAddTo
           </button>
         )}
 
-        {/* 3-dot menu */}
-        {showMenuButton && (
-          <div ref={menuRef} className="relative">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setShowMenu(!showMenu)
-              }}
-              className={`${isMobile ? 'min-h-[44px] min-w-[44px]' : 'p-1.5'} flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors`}
-            >
-              {isRescanning ? (
-                <RefreshCw className={`${isMobile ? 'w-5 h-5' : 'w-4 h-4'} animate-spin`} />
-              ) : (
-                <MoreVertical className={isMobile ? 'w-5 h-5' : 'w-4 h-4'} />
+          {showMenu && !isRescanning && (
+            <DropdownMenu>
+              {onOptimizeEpisode && episode.id && episode.file_path && episode.source_id && episode.series_identity_key && (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowMenu(false)
+                    onOptimizeEpisode(episode)
+                  }}
+                  icon={<Zap className="w-3.5 h-3.5 text-purple-400" />}
+                >
+                  Optimize Episode
+                </DropdownMenuItem>
+              )}
+              {onRescan && episode.file_path && (
+                <DropdownMenuItem onClick={handleRescan} icon={<RefreshCw className="w-3.5 h-3.5" />}>
+                  Rescan File
+                </DropdownMenuItem>
               )}
             </button>
 
@@ -406,33 +418,57 @@ export function TVShowsView({
   // Show detail view menu
   const [showDetailMenu, setShowDetailMenu] = useState(false)
   const [showOverviewExpanded, setShowOverviewExpanded] = useState(false)
+  const [showOverviewToggle, setShowOverviewToggle] = useState(false)
+  const showOverviewRef = useRef<HTMLParagraphElement>(null)
   const [copiedTitle, setCopiedTitle] = useState(false)
   useEffect(() => { setShowOverviewExpanded(false); setCopiedTitle(false) }, [selectedShow])
-  const showDetailMenuRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!showDetailMenu) return
-    const handleClick = (e: MouseEvent) => {
-      if (showDetailMenuRef.current && !showDetailMenuRef.current.contains(e.target as Node)) {
-        setShowDetailMenu(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [showDetailMenu])
+  const closeShowDetailMenu = useCallback(() => setShowDetailMenu(false), [])
+  const showDetailMenuRef = useMenuClose({ isOpen: showDetailMenu, onClose: closeShowDetailMenu })
 
   // Fetch show summary from TMDB when a show is selected
   const [showOverview, setShowOverview] = useState<string | null>(null)
   useEffect(() => {
-    setShowOverview(null)
-    if (selectedShow && !selectedSeason) {
-      const completenessData = seriesCompleteness.get(selectedShow)
-      if (completenessData?.tmdb_id) {
-        window.electronAPI.tmdbGetTVShowDetails(completenessData.tmdb_id)
-          .then(details => { if (details?.overview) setShowOverview(details.overview) })
-          .catch(() => { /* ignore */ })
-      }
+    if (showOverviewExpanded) return
+    const element = showOverviewRef.current
+    if (!element) {
+      setShowOverviewToggle(false)
+      return
     }
-  }, [selectedShow, selectedSeason, seriesCompleteness])
+    const measureOverflow = () => setShowOverviewToggle(element.scrollHeight > element.clientHeight + 1)
+    measureOverflow()
+    const observer = new ResizeObserver(measureOverflow)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [showOverview, showOverviewExpanded])
+  useEffect(() => {
+    setShowOverview(null)
+    if (!selectedShow || selectedSeason !== null) return
+
+    let cancelled = false
+    const show = shows.find(item => item.series_identity_key === selectedShow || item.series_title === selectedShow)
+    const completenessData = seriesCompleteness.get(selectedShow)
+    const identityTmdbId = show?.series_identity_key?.startsWith('tmdb:')
+      ? show.series_identity_key.slice('tmdb:'.length)
+      : undefined
+    const tmdbId = completenessData?.tmdb_id || show?.tmdb_id?.toString() || identityTmdbId
+
+    const loadOverview = async () => {
+      if (tmdbId) {
+        const details = await window.electronAPI.tmdbGetTVShowDetails(tmdbId)
+        if (!cancelled) setShowOverview(details?.overview || null)
+        return
+      }
+
+      const matches = await window.electronAPI.seriesSearchTMDB(show?.series_title || selectedShow)
+      const exactMatch = matches.find(result => result.name.trim().toLocaleLowerCase() === (show?.series_title || selectedShow).trim().toLocaleLowerCase())
+      if (!cancelled) setShowOverview(exactMatch?.overview || null)
+    }
+
+    loadOverview().catch(error => {
+      if (!cancelled) console.error('Failed to load TV show overview:', error)
+    })
+    return () => { cancelled = true }
+  }, [selectedShow, selectedSeason, seriesCompleteness, shows])
 
   // IntersectionObserver for infinite scroll
   const showSentinelRef = useRef<HTMLDivElement>(null)
@@ -448,8 +484,10 @@ export function TVShowsView({
 
   // Optimization modal state
   const [optimizingShow, setOptimizingShow] = useState<TVShowSummary | null>(null)
+  const [optimizingEpisode, setOptimizingEpisode] = useState<MediaItem | null>(null)
 
   const handleOpenOptimize = useCallback((showSummary?: TVShowSummary | null) => {
+    setOptimizingEpisode(null)
     if (showSummary) {
       if (!showSummary.series_identity_key) return
       setOptimizingShow(showSummary)
@@ -473,6 +511,27 @@ export function TVShowsView({
       })
     }
   }, [selectedShowData, shows])
+
+  const handleOpenOptimizeEpisode = useCallback((episode: MediaItem) => {
+    if (!episode.id || !episode.file_path || !episode.source_id || !episode.series_identity_key) return
+    const show = shows.find(candidate => candidate.series_identity_key === episode.series_identity_key && candidate.source_id === episode.source_id && candidate.library_id === episode.library_id)
+    setOptimizingShow(show ?? {
+      series_title: episode.series_title || episode.title,
+      episode_count: 1,
+      season_count: 1,
+      poster_url: episode.poster_url,
+      source_id: episode.source_id,
+      source_type: episode.source_type,
+      library_id: episode.library_id,
+      series_identity_key: episode.series_identity_key,
+    })
+    setOptimizingEpisode(episode)
+  }, [shows])
+
+  const closeOptimization = useCallback(() => {
+    setOptimizingShow(null)
+    setOptimizingEpisode(null)
+  }, [])
   const posterMinWidth = useMemo(() => {
     const widthMap: Record<number, number> = {
       1: 120, 2: 140, 3: 160, 4: 180, 5: 200, 6: 240, 7: 300
@@ -548,6 +607,7 @@ export function TVShowsView({
               <option value="title">Title</option>
               <option value="play_count">Most Watched</option>
               <option value="last_watched_at">Recently Watched</option>
+              <option value="estimated_savings_bytes">Est. Savings</option>
             </select>
           </div>
         )}
@@ -587,7 +647,8 @@ export function TVShowsView({
           {optimizingShow && (
             <ShowTranscodeModal
               show={optimizingShow}
-              onClose={() => setOptimizingShow(null)}
+              episode={optimizingEpisode ?? undefined}
+              onClose={closeOptimization}
             />
           )}
         </>
@@ -626,7 +687,8 @@ export function TVShowsView({
         {optimizingShow && (
           <ShowTranscodeModal
             show={optimizingShow}
-            onClose={() => setOptimizingShow(null)}
+            episode={optimizingEpisode ?? undefined}
+            onClose={closeOptimization}
           />
         )}
       </>
@@ -780,19 +842,22 @@ export function TVShowsView({
             {/* Overview */}
             {showOverview && (
               <div className="mt-3 max-w-2xl">
-                <p className={`text-sm text-muted-foreground leading-relaxed ${showOverviewExpanded ? '' : 'line-clamp-3'}`}>
+                <p ref={showOverviewRef} className={`text-sm text-muted-foreground leading-relaxed ${showOverviewExpanded ? '' : 'line-clamp-3'}`}>
                   {showOverview}
                 </p>
-                <button
-                  onClick={() => setShowOverviewExpanded(!showOverviewExpanded)}
-                  className="flex items-center gap-1 text-sm text-primary hover:text-primary/80 mt-1 transition-colors"
-                >
-                  {showOverviewExpanded ? (
-                    <><span>Less</span><ChevronUp className="w-4 h-4" /></>
-                  ) : (
-                    <><span>More</span><ChevronDown className="w-4 h-4" /></>
-                  )}
-                </button>
+                {showOverviewToggle && (
+                  <button
+                    aria-expanded={showOverviewExpanded}
+                    onClick={() => setShowOverviewExpanded(expanded => !expanded)}
+                    className="flex items-center gap-1 text-sm text-primary hover:text-primary/80 mt-1 transition-colors"
+                  >
+                    {showOverviewExpanded ? (
+                      <><span>Less</span><ChevronUp className="w-4 h-4" /></>
+                    ) : (
+                      <><span>More</span><ChevronDown className="w-4 h-4" /></>
+                    )}
+                  </button>
+                )}
               </div>
             )}
             {/* Breadcrumb — inside backdrop on mobile */}
@@ -1008,7 +1073,8 @@ export function TVShowsView({
         {optimizingShow && (
           <ShowTranscodeModal
             show={optimizingShow}
-            onClose={() => setOptimizingShow(null)}
+            episode={optimizingEpisode ?? undefined}
+            onClose={closeOptimization}
           />
         )}
       </div>
@@ -1024,7 +1090,7 @@ export function TVShowsView({
     const allOwnedEpisodes = season ? season.episodes : []
     const ownedEpisodes = allOwnedEpisodes.filter(ep => {
       if (episodeTierFilter !== 'all' && ep.quality_tier !== episodeTierFilter) return false
-      if (episodeQualityFilter !== 'all' && (ep.tier_quality || 'MEDIUM').toLowerCase() !== episodeQualityFilter) return false
+      if (episodeQualityFilter !== 'all' && (ep.tier_quality || 'UNKNOWN').toLowerCase() !== episodeQualityFilter) return false
       return true
     })
     const ownedEpisodeNumbers = new Set(allOwnedEpisodes.map(e => e.episode_number))
@@ -1168,6 +1234,7 @@ export function TVShowsView({
                 onClick={() => onSelectEpisode(item.episode.id)}
                 onRescan={onRescanEpisode}
                 onDismissUpgrade={onDismissUpgrade}
+                onOptimizeEpisode={handleOpenOptimizeEpisode}
                 isMobile={isMobile}
                              />
             ) : (
@@ -1195,7 +1262,8 @@ export function TVShowsView({
         {optimizingShow && (
           <ShowTranscodeModal
             show={optimizingShow}
-            onClose={() => setOptimizingShow(null)}
+            episode={optimizingEpisode ?? undefined}
+            onClose={closeOptimization}
           />
         )}
       </div>
@@ -1328,11 +1396,33 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
       </div>
 
       {/* Title and info below poster */}
-      <div className="pt-2">
-        <h4 className="font-medium text-label truncate">{show.series_title}</h4>
-        <p className="text-caption text-muted-foreground">
-          {show.season_count} {show.season_count === 1 ? 'season' : 'seasons'} · {totalEpisodes} episodes
-        </p>
+      <div className="pt-2 flex gap-2 items-start">
+        <div className="flex-1 min-w-0">
+          <h4 className="font-medium text-sm truncate">{show.series_title}</h4>
+          <p className="text-xs text-muted-foreground">
+            {show.season_count} {show.season_count === 1 ? 'Season' : 'Seasons'} • {totalEpisodes} Episodes
+          </p>
+          <ScopedOptimizationSummary totalCount={totalEpisodes} estimatedSavingsBytes={show.estimated_savings_bytes} />
+        </div>
+        {completenessData && (
+          <div
+            className="shrink-0"
+            title={`${completenessData.owned_episodes} of ${completenessData.total_episodes} episodes`}
+          >
+            {completenessData.completeness_percentage === 100 ? (
+              <div className="bg-green-500 text-white text-xs font-bold px-2 py-1 rounded shadow-md flex items-center gap-1">
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                100%
+              </div>
+            ) : (
+              <div className="bg-foreground text-background text-xs font-bold px-2 py-1 rounded shadow-md border border-border">
+                {Math.round(completenessData.completeness_percentage)}%
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

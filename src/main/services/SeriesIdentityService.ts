@@ -1,3 +1,4 @@
+
 import { getFileNameParser } from '@main/services/FileNameParser'
 
 export type MediaMatchStatus = 'manual' | 'conflicting' | 'verified' | 'unresolved'

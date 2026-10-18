@@ -1,4 +1,7 @@
-import type { TranscodeOptions as MainTranscodeOptions } from '@main/services/TranscodingService'
+import type {
+  TranscodeOptions as MainTranscodeOptions,
+  TranscodeProgress as MainTranscodeProgress,
+} from '@main/services/TranscodingService'
 
 export type TranscodeOptions = MainTranscodeOptions & Required<Pick<MainTranscodeOptions,
   'targetCodec' | 'outputMode' | 'useGpu' | 'gpuId' | 'encoder' | 'preset' | 'customArgs' | 'transcodingEngine' | 'targetSize'
@@ -29,13 +32,10 @@ export interface PresetTemplate {
   options: TranscodeOptions
 }
 
-export interface TranscodeProgress {
-  percent: number
-  fps?: number
-  speed?: string
-  eta?: string
-  error?: string
-  status?: 'encoding' | 'initializing' | 'muxing' | 'verifying' | 'complete' | 'failed' | 'cancelled'
+export type TranscodeProgress = Pick<MainTranscodeProgress,
+  'percent' | 'fps' | 'speed' | 'eta' | 'error'
+> & {
+  status?: MainTranscodeProgress['status']
   mediaItemId?: number
   logs?: string[]
 }
