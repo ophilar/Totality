@@ -9,7 +9,6 @@ import aiPrompts from '@main/config/ai_prompts.json'
  */
 
 export const APP_CONFIG = {
-  initialSettings: defaults.initialSettings as [string, string][],
   audioCodecs: defaults.audioCodecs,
   tmdb: defaults.tmdb,
   logging: defaults.logging,

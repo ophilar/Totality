@@ -1,14 +1,12 @@
 /**
- * Test database adapter — mimics better-sqlite3 API using sql.js (WASM SQLite).
+ * Test database adapter using the official SQLite Wasm build.
  *
- * better-sqlite3 can't run in Vitest (compiled for Electron's Node ABI),
- * so tests use sql.js which is pure WASM and works in any Node environment.
- *
- * This adapter translates better-sqlite3's prepare/run/get/all API to sql.js equivalents,
- * allowing BetterSQLiteService SQL queries to be tested against real SQLite.
+ * SQLite Wasm runs in Node.js with in-memory databases and includes FTS5,
+ * allowing database services to be exercised against SQLite itself.
  */
 
-import initSqlJs, { type Database as SqlJsDatabase } from 'sql.js'
+import sqlite3InitModule from '@sqlite.org/sqlite-wasm'
+import type { Database as SqliteDatabase, SqlValue } from '@sqlite.org/sqlite-wasm'
 import { DATABASE_SCHEMA } from '../../src/main/database/schema'
 
 interface RunResult {
@@ -30,48 +28,50 @@ export interface TestDatabase {
   close(): void
 }
 
-function rowsToObjects(columns: string[], values: unknown[][]): Record<string, unknown>[] {
-  return values.map(row => {
-    const obj: Record<string, unknown> = {}
-    columns.forEach((col, i) => { obj[col] = row[i] })
-    return obj
-  })
+function bindValues(params: unknown[]): SqlValue[] {
+  return params as SqlValue[]
 }
 
-function createAdapter(db: SqlJsDatabase): TestDatabase {
+function createAdapter(db: SqliteDatabase): TestDatabase {
   return {
     prepare(sql: string): PreparedStatement {
       return {
         run(...params: unknown[]): RunResult {
-          db.run(sql, params as (string | number | null | Uint8Array)[])
-          // Get last insert rowid
-          const idResult = db.exec('SELECT last_insert_rowid() as id')
-          const lastId = idResult.length > 0 ? (idResult[0].values[0][0] as number) : 0
-          return {
-            changes: db.getRowsModified(),
-            lastInsertRowid: lastId,
+          const statement = db.prepare(sql)
+          try {
+            if (params.length > 0) statement.bind(bindValues(params))
+            statement.step()
+            return {
+              changes: Number(db.changes()),
+              lastInsertRowid: Number(db.exec('SELECT last_insert_rowid()', {
+                rowMode: 0,
+                returnValue: 'resultRows',
+              })[0]),
+            }
+          } finally {
+            statement.finalize()
           }
         },
         get(...params: unknown[]): Record<string, unknown> | undefined {
-          const stmt = db.prepare(sql)
-          if (params.length > 0) {
-            stmt.bind(params as (string | number | null | Uint8Array)[])
+          const statement = db.prepare(sql)
+          try {
+            if (params.length > 0) statement.bind(bindValues(params))
+            if (!statement.step()) return undefined
+            return statement.get({})
+          } finally {
+            statement.finalize()
           }
-          if (stmt.step()) {
-            const columns = stmt.getColumnNames()
-            const values = stmt.get()
-            stmt.free()
-            const obj: Record<string, unknown> = {}
-            columns.forEach((col, i) => { obj[col] = values[i] })
-            return obj
-          }
-          stmt.free()
-          return undefined
         },
         all(...params: unknown[]): Record<string, unknown>[] {
-          const results = db.exec(sql, params as (string | number | null | Uint8Array)[])
-          if (results.length === 0) return []
-          return rowsToObjects(results[0].columns, results[0].values)
+          const statement = db.prepare(sql)
+          try {
+            if (params.length > 0) statement.bind(bindValues(params))
+            const rows: Record<string, unknown>[] = []
+            while (statement.step()) rows.push(statement.get({}))
+            return rows
+          } finally {
+            statement.finalize()
+          }
         },
       }
     },
@@ -81,28 +81,19 @@ function createAdapter(db: SqlJsDatabase): TestDatabase {
     },
 
     pragma(str: string): unknown {
-      // Handle common pragmas used in tests
-      if (str.startsWith('integrity_check')) {
-        return [{ integrity_check: 'ok' }]
-      }
-      if (str.startsWith('foreign_keys')) {
-        db.run(`PRAGMA ${str}`)
-        return
-      }
-      // Most pragmas are no-ops in test context
-      return undefined
+      return db.exec(`PRAGMA ${str}`, { rowMode: 'object', returnValue: 'resultRows' })
     },
 
     transaction<T>(fn: (...args: unknown[]) => T): (...args: unknown[]) => T {
       return (...args: unknown[]) => {
-        db.run('BEGIN TRANSACTION')
+        db.exec('BEGIN TRANSACTION')
         try {
           const result = fn(...args)
-          db.run('COMMIT')
+          db.exec('COMMIT')
           return result
-        } catch (e) {
-          db.run('ROLLBACK')
-          throw e
+        } catch (error) {
+          db.exec('ROLLBACK')
+          throw error
         }
       }
     },
@@ -113,28 +104,18 @@ function createAdapter(db: SqlJsDatabase): TestDatabase {
   }
 }
 
-/**
- * Create an in-memory test database with the full schema applied.
- * Returns a better-sqlite3-compatible API powered by sql.js.
- */
+/** Create an in-memory SQLite database with the full application schema. */
 export async function createTestDatabase(): Promise<TestDatabase> {
-  const SQL = await initSqlJs()
-  const db = new SQL.Database()
-
-  // Enable foreign keys
-  db.run('PRAGMA foreign_keys = ON')
-
-  // Apply full schema
+  const sqlite3 = await sqlite3InitModule()
+  const db = new sqlite3.oo1.DB(':memory:')
+  db.exec('PRAGMA foreign_keys = ON')
   db.exec(DATABASE_SCHEMA)
 
   return createAdapter(db)
 }
 
 /**
- * Create a mock for the better-sqlite3 module that returns sql.js-backed adapters.
- * Usage in tests: vi.mock('better-sqlite3', () => ({ default: mockConstructor }))
- *
- * The returned constructor ignores the file path and returns an in-memory database.
+ * Create a constructor for tests that need to inject the in-memory database.
  * Must be called before importing BetterSQLiteService.
  */
 export async function createBetterSqliteMock(): Promise<{
@@ -148,7 +129,6 @@ export async function createBetterSqliteMock(): Promise<{
     return this
   } as unknown as new (...args: unknown[]) => TestDatabase
 
-  // Copy prototype methods so instanceof-like checks work
   Object.setPrototypeOf(mockConstructor.prototype, Object.getPrototypeOf(testDb))
 
   return { testDb, mockConstructor }
