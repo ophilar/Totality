@@ -1,3 +1,4 @@
+
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
 
 export interface MeasuredCandidate {
@@ -5,6 +6,7 @@ export interface MeasuredCandidate {
   preset: string
   quality: number
   outputBytes: number
+  sampledDurationSeconds: number
   vmafMean: number
   vmafP5: number
   samplePaths?: string[]

@@ -1,7 +1,9 @@
+
 import { LanguageDecisionService, type AudioTrackForDecision } from './LanguageDecisionService'
 import { AudioCodecRanker } from './AudioCodecRanker'
 import { APP_CONFIG } from '@main/config'
 import type { EvidenceConfidence, EvidenceStatus, SavingsBasis } from '@main/types/database'
+import { calculateBitrateSavingsBytes } from './OptimizationSavingsService'
 
 export type OptimizationMechanismStatus = 'executable' | 'eligible-awaiting-opt-in' | 'review-required' | 'blocked' | 'unavailable'
 export type OptimizationPrimaryAction = 'remove-audio-tracks' | 'transcode-audio' | 'transcode-video' | 'review-language' | 'no-action'
@@ -22,9 +24,7 @@ export interface OptimizationDecisionInput {
   originalLanguage: string | null | undefined
   durationSeconds?: number
   fileSize: number
-  videoStorageDebtBytes?: number | null
-  /** Legacy combined recovery estimate that may already include removable audio. */
-  legacyTotalRecoverableBytes?: number | null
+  videoSavingsBytes?: number | null
   audioTranscodeSavingsBytes?: number | null
   audioTracks: OptimizationDecisionAudioTrack[]
 }
@@ -78,9 +78,11 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
     : removableTracks.length === 0 ? 'blocked'
     : hasMeasuredTrackSavings ? 'executable' : 'unavailable'
   const trackSavings = trackRemovalStatus === 'executable'
-    ? removableTracks.reduce((sum, track) => sum + ((track.bitrate! * 1000 / 8) * input.durationSeconds!), 0)
+    ? removableTracks.reduce((sum, track) => sum + calculateBitrateSavingsBytes(track.bitrate!, 0, input.durationSeconds!), 0)
     : null
-  const trackRemovalEvidenceStatus: EvidenceStatus = languageDecision.confidence === 'high' && (removableTracks.length === 0 || hasMeasuredTrackSavings) ? 'measured' : 'insufficient'
+  const trackRemovalEvidenceStatus: EvidenceStatus = languageDecision.confidence !== 'high' || (removableTracks.length > 0 && !hasMeasuredTrackSavings)
+    ? 'insufficient'
+    : removableTracks.length > 0 ? 'estimated' : 'measured'
 
   const trackRemoval: OptimizationDecisionTrackRemoval = {
     status: trackRemovalStatus,
@@ -92,8 +94,8 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
     tracks: input.audioTracks,
     originalLanguage: languageDecision.originalLanguage,
     evidence_status: trackRemovalEvidenceStatus,
-    confidence: trackRemovalEvidenceStatus === 'measured' ? 'high' : 'none',
-    savings_basis: trackRemovalEvidenceStatus === 'measured' ? 'audio_stream_removal' : 'insufficient_data',
+    confidence: trackRemovalEvidenceStatus === 'measured' ? 'high' : trackRemovalEvidenceStatus === 'estimated' ? 'medium' : 'none',
+    savings_basis: trackRemovalEvidenceStatus === 'measured' ? 'audio_stream_removal' : trackRemovalEvidenceStatus === 'estimated' ? 'audio_bitrate_estimate' : 'insufficient_data',
     evidenceSources: languageDecision.evidenceSources,
   }
   const retainedTrackIndexes = new Set(languageDecision.retainedTrackIndexes)
@@ -112,8 +114,7 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
         const currentBitrateKbps = track.bitrate!
         const targetBitrateKbps = track.channels >= 6 ? APP_CONFIG.transcoding.audioSurroundTargetBitrateKbps : APP_CONFIG.transcoding.audioStereoTargetBitrateKbps
         if (currentBitrateKbps > targetBitrateKbps && (tier >= AudioCodecRanker.TIER_LOSSLESS || currentBitrateKbps >= APP_CONFIG.transcoding.audioHeavyBitrateThresholdKbps)) {
-          const savingsPerSecBytes = ((currentBitrateKbps - targetBitrateKbps) * 1000) / 8
-          return sum + Math.round(savingsPerSecBytes * input.durationSeconds!)
+          return sum + calculateBitrateSavingsBytes(currentBitrateKbps, targetBitrateKbps, input.durationSeconds!)
         }
         return sum
       }, 0)
@@ -122,16 +123,7 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
   const audioSavings = hasMeasuredAudioEvidence
     ? nonNegative(input.audioTranscodeSavingsBytes ?? (computedAudioSavings && computedAudioSavings > 0 ? computedAudioSavings : null))
     : null
-  const explicitVideoSavings = nonNegative(input.videoStorageDebtBytes)
-  const legacyRecoverable = nonNegative(input.legacyTotalRecoverableBytes)
-  const knownAudioRemovalSavings = trackRemovalStatus === 'executable'
-    ? trackSavings
-    : trackRemovalEvidenceStatus === 'measured' ? 0 : null
-  const videoSavings = explicitVideoSavings ?? (
-    legacyRecoverable != null && knownAudioRemovalSavings != null
-      ? Math.max(0, legacyRecoverable - knownAudioRemovalSavings)
-      : null
-  )
+  const videoSavings = nonNegative(input.videoSavingsBytes)
   const audioTranscode: OptimizationDecisionMechanism = {
     status: audioSavings != null && audioSavings > 0 ? 'executable' : 'unavailable',
     estimatedSavingsBytes: audioSavings,
@@ -144,10 +136,10 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
   const videoTranscode: OptimizationDecisionMechanism = {
     status: estimatedVideoSavings != null ? 'review-required' : 'unavailable',
     estimatedSavingsBytes: estimatedVideoSavings,
-    reason: estimatedVideoSavings != null ? 'Estimated video-stream analysis found recoverable space; review before transcoding' : videoSavings === 0 ? 'Estimated video-stream analysis found no recoverable space' : 'Video-stream savings evidence is unavailable',
+    reason: estimatedVideoSavings != null ? 'Estimated video-stream analysis found potential savings; review before transcoding' : videoSavings === 0 ? 'Estimated video-stream analysis found no savings' : 'Video-stream savings evidence is unavailable',
     evidence_status: videoSavings == null ? 'insufficient' : 'estimated',
     confidence: videoSavings == null ? 'none' : 'medium',
-    savings_basis: estimatedVideoSavings != null ? 'video_sample_encode' : 'insufficient_data',
+    savings_basis: estimatedVideoSavings != null ? 'video_bitrate_estimate' : 'insufficient_data',
   }
   const primaryAction = resolveOptimizationPrimaryAction({
     trackRemovalStatus,

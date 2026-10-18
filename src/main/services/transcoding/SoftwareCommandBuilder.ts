@@ -1,3 +1,4 @@
+
 import * as os from 'os'
 import type { ITranscodeCommandBuilder, TranscodeOptions } from './types'
 import type { FileAnalysisResult } from '../MediaFileAnalyzer'

@@ -1,3 +1,4 @@
+
 export type MediaSourceTier = 'Remux' | 'BluRay' | 'WEB-DL' | 'WEBRip' | 'HDTV' | 'SDTV' | 'Unknown'
 
 const PATTERNS = {

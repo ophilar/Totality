@@ -1,3 +1,4 @@
+
 import type { FileAnalysisResult } from '../MediaFileAnalyzer'
 
 export interface TranscodeOptions {

@@ -11,6 +11,8 @@ import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import type { WishlistMediaType } from '../../contexts/WishlistContext'
 // useMenuClose no longer needed — desktop uses individual icon buttons like mobile
 import { useFocusTrap } from '../../hooks/useFocusTrap'
+import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
+import type { AudioTrack, SubtitleTrack } from '@main/types/database'
 
 interface MediaDetailsProps {
   mediaId: number
@@ -19,28 +21,6 @@ interface MediaDetailsProps {
   onFixMatch?: (mediaItemId: number, title: string, year?: number, filePath?: string) => void
   onDismissUpgrade?: (mediaId: number, title: string) => void
   isMobile?: boolean
-}
-
-interface AudioTrack {
-  index: number
-  codec: string
-  channels: number
-  bitrate: number
-  language?: string
-  title?: string
-  profile?: string
-  sampleRate?: number
-  isDefault?: boolean
-  hasObjectAudio?: boolean
-}
-
-interface SubtitleTrack {
-  index: number
-  codec: string
-  language?: string
-  title?: string
-  isDefault?: boolean
-  isForced?: boolean
 }
 
 interface MediaVersion {
@@ -119,11 +99,15 @@ interface MediaWithQuality {
   audio_tracks?: string
   subtitle_tracks?: string
   version_count?: number
-  quality_tier?: 'SD' | '720p' | '1080p' | '4K'
-  tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH'
+  quality_tier?: 'SD' | '720p' | '1080p' | '4K' | 'UNKNOWN'
+  tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
   tier_score?: number
   bitrate_tier_score?: number
   audio_tier_score?: number
+  evidence_status?: 'measured' | 'estimated' | 'insufficient' | null
+  estimated_savings_bytes?: number | null
+  confidence?: string | null
+  savings_basis?: string | null
   overall_score?: number
   needs_upgrade?: boolean
   issues?: string
@@ -257,11 +241,15 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
       }
 
       const qualityScore = await window.electronAPI.getQualityScoreByMediaId(mediaId) as {
-        quality_tier?: 'SD' | '720p' | '1080p' | '4K'
-        tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH'
+        quality_tier?: 'SD' | '720p' | '1080p' | '4K' | 'UNKNOWN'
+        tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
         tier_score?: number
         bitrate_tier_score?: number
         audio_tier_score?: number
+        evidence_status?: 'measured' | 'estimated' | 'insufficient' | null
+        estimated_savings_bytes?: number | null
+        confidence?: string | null
+        savings_basis?: string | null
         overall_score?: number
         needs_upgrade?: boolean
         issues?: string
@@ -274,6 +262,10 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
         tier_score: qualityScore?.tier_score,
         bitrate_tier_score: qualityScore?.bitrate_tier_score,
         audio_tier_score: qualityScore?.audio_tier_score,
+        evidence_status: qualityScore?.evidence_status,
+        estimated_savings_bytes: qualityScore?.estimated_savings_bytes,
+        confidence: qualityScore?.confidence,
+        savings_basis: qualityScore?.savings_basis,
         overall_score: qualityScore?.overall_score,
         needs_upgrade: qualityScore?.needs_upgrade,
         issues: qualityScore?.issues
@@ -675,7 +667,163 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                 {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
                   <p className="text-label text-muted-foreground font-medium">{sv?.edition || versions[0]?.edition}</p>
                 )}
-                <div className="flex flex-wrap items-center gap-2 text-label text-muted-foreground mt-2">
+              </div>
+            </div>
+
+            {/* Metadata + actions — seamless with card background */}
+            <div className="px-4 pt-2 pb-3">
+              {/* Stats row */}
+              <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+                {media.year && <span>{media.year}</span>}
+                {(sv?.duration ?? media.duration) > 0 && <><span className="mx-0.5">·</span><span>{formatDuration(sv?.duration ?? media.duration)}</span></>}
+                {(sv?.file_size ?? media.file_size) > 0 && <><span className="mx-0.5">·</span><span>{formatFileSize(sv?.file_size ?? media.file_size)}</span></>}
+                {media.tmdb_rating != null && media.tmdb_rating > 0 && (
+                  <><span className="mx-0.5">·</span><span>★ {media.tmdb_rating.toFixed(1)}</span></>
+                )}
+                {(media.play_count ?? 0) > 0 && (
+                  <><span className="mx-0.5">·</span><span>Played {media.play_count}×</span></>
+                )}
+              </div>
+
+              {/* Action buttons — round icon buttons */}
+              <div className="flex items-center gap-3 mt-3">
+                {media.tier_quality && media.tier_quality !== 'HIGH' && media.tier_quality !== 'UNKNOWN' && (
+                  <AddToWishlistButton
+                    mediaType={media.type as WishlistMediaType}
+                    title={media.title}
+                    year={media.year}
+                    tmdbId={media.tmdb_id}
+                    imdbId={media.imdb_id}
+                    seriesTitle={media.series_title}
+                    seasonNumber={media.season_number}
+                    episodeNumber={media.episode_number}
+                    posterUrl={media.poster_url}
+                    reason="upgrade"
+                    mediaItemId={media.id}
+                    currentQualityTier={media.quality_tier}
+                    currentQualityLevel={media.tier_quality}
+                    currentResolution={media.resolution}
+                    currentVideoCodec={media.video_codec}
+                    currentAudioCodec={media.audio_codec}
+                  />
+                )}
+
+                {onRescan && media.file_path && (
+                  <button
+                    onClick={handleRescan}
+                    disabled={isRescanning}
+                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
+                    title="Rescan File"
+                  >
+                    <RefreshCw className={`w-5 h-5 ${isRescanning ? 'animate-spin' : ''}`} />
+                  </button>
+                )}
+
+                {onFixMatch && media.type === 'movie' && (
+                  <button
+                    onClick={handleFixMatch}
+                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
+                    title="Fix Match"
+                  >
+                    <Pencil className="w-5 h-5" />
+                  </button>
+                )}
+
+                {onDismissUpgrade && media.tier_quality !== 'HIGH' && media.tier_quality !== 'UNKNOWN' && (
+                  <button
+                    onClick={handleDismissUpgrade}
+                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
+                    title="Dismiss Upgrade"
+                  >
+                    <EyeOff className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Summary */}
+              {media.summary && (
+                <p className="mt-3 text-sm text-muted-foreground leading-relaxed line-clamp-3">{media.summary}</p>
+              )}
+            </div>
+          </div>
+        ) : (
+          // ── Desktop: side-by-side poster + info ──
+          <div className="p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl shrink-0">
+            <div className="flex gap-4">
+              {(media.poster_url || media.episode_thumb_url) && (
+                <img
+                  src={media.type === 'episode' && media.episode_thumb_url ? media.episode_thumb_url : media.poster_url}
+                  alt=""
+                  className={`rounded-lg object-cover shrink-0 shadow-lg shadow-black/30 ${
+                    media.type === 'episode' && media.episode_thumb_url ? 'w-44 h-28' : 'w-24 h-36'
+                  }`}
+                  onError={(e) => { e.currentTarget.style.display = 'none' }}
+                />
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <h2 className="text-xl font-medium truncate">{displayTitle}</h2>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          navigator.clipboard.writeText(displayTitle)
+                          setCopied(true)
+                          setTimeout(() => setCopied(false), 1500)
+                        }}
+                        className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                        title="Copy title"
+                      >
+                        {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                    {media.type === 'episode' && (
+                      <p className="text-sm text-muted-foreground">S{media.season_number}E{media.episode_number} · {media.title}</p>
+                    )}
+                    {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
+                      <p className="text-sm text-muted-foreground">{sv?.edition || versions[0]?.edition}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                {media.tier_quality && media.tier_quality !== 'HIGH' && media.tier_quality !== 'UNKNOWN' && (
+                      <AddToWishlistButton
+                        mediaType={media.type as WishlistMediaType}
+                        title={media.title}
+                        year={media.year}
+                        tmdbId={media.tmdb_id}
+                        imdbId={media.imdb_id}
+                        seriesTitle={media.series_title}
+                        seasonNumber={media.season_number}
+                        episodeNumber={media.episode_number}
+                        posterUrl={media.poster_url}
+                        reason="upgrade"
+                        mediaItemId={media.id}
+                        currentQualityTier={media.quality_tier}
+                        currentQualityLevel={media.tier_quality}
+                        currentResolution={media.resolution}
+                        currentVideoCodec={media.video_codec}
+                        currentAudioCodec={media.audio_codec}
+                      />
+                    )}
+                    {(onRescan || onFixMatch || (onDismissUpgrade && media.tier_quality !== 'HIGH' && media.tier_quality !== 'UNKNOWN')) && (
+                      <div ref={menuRef} className="relative">
+                        <button onClick={() => setShowMenu(!showMenu)} className="text-muted-foreground hover:text-foreground p-1.5" title="More options">
+                          {isRescanning ? <RefreshCw className="w-5 h-5 animate-spin" /> : <MoreVertical className="w-5 h-5" />}
+                        </button>
+                        {showMenu && !isRescanning && (
+                          <DropdownMenu className="min-w-[140px] z-50">
+                            {onRescan && media.file_path && <DropdownMenuItem onClick={handleRescan} icon={<RefreshCw className="w-3.5 h-3.5" />}>Rescan File</DropdownMenuItem>}
+                            {onFixMatch && media.type === 'movie' && <DropdownMenuItem onClick={handleFixMatch} icon={<Pencil className="w-3.5 h-3.5" />}>Fix Match</DropdownMenuItem>}
+                            {onDismissUpgrade && media.tier_quality !== 'HIGH' && media.tier_quality !== 'UNKNOWN' && <DropdownMenuItem onClick={handleDismissUpgrade} icon={<EyeOff className="w-3.5 h-3.5" />}>Dismiss Upgrade</DropdownMenuItem>}
+                          </DropdownMenu>
+                        )}
+                      </div>
+                    )}
+                    <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-1"><X className="w-5 h-5" /></button>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 mt-2 text-sm text-muted-foreground">
                   {media.year && <span>{media.year}</span>}
                   {(sv?.duration ?? media.duration) > 0 && <><span className="mx-0.5">·</span><span>{formatDuration(sv?.duration ?? media.duration)}</span></>}
                   {(sv?.file_size ?? media.file_size) > 0 && <><span className="mx-0.5">·</span><span>{formatFileSize(sv?.file_size ?? media.file_size)}</span></>}
@@ -734,77 +882,100 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
             </div>
           )}
 
-          {/* Mobile header — restructured for sticky collapsing behavior */}
-          {isMobile && (
-            <>
-              {/* Hero artwork */}
-              <div data-hero-wrap className="rounded-t-[2rem] overflow-hidden">
-                <div className="relative overflow-hidden">
-                  {(() => {
-                    const heroSrc = media.type === 'episode'
-                      ? (media.episode_thumb_url || backdropUrl || media.poster_url)
-                      : (backdropUrl || media.poster_url)
-                    const isWide = !!(media.type === 'episode' ? (media.episode_thumb_url || backdropUrl) : backdropUrl)
-                    return heroSrc ? (
-                      <img
-                        data-hero-img
-                        src={heroSrc}
-                        alt=""
-                        className={`w-full object-cover will-change-transform ${isWide ? 'aspect-video' : 'aspect-[3/2]'}`}
-                        onError={(e) => { e.currentTarget.style.display = 'none' }}
-                      />
-                    ) : null
-                  })()}
-                  <div className="absolute inset-0 bg-gradient-to-t from-card via-card/60 to-black/20" />
+            {/* Summary */}
+            {media.summary && (
+              <p className="mt-2 text-sm text-muted-foreground leading-relaxed max-h-20 overflow-y-auto">{media.summary}</p>
+            )}
+
+          {/* Version Selector Pills */}
+          {versions.length > 1 && (
+            <div className="mt-2 space-y-2">
+                <div className="flex gap-1.5 overflow-x-auto">
+                  {versions.map((v) => {
+                    const isSelected = selectedVersionId === v.id
+                    const qualityColor = getQualityLevelColors(v.tier_quality || '')
+                    return (
+                      <button
+                        key={v.id}
+                        onClick={() => setSelectedVersionId(v.id)}
+                        className={`shrink-0 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                          isSelected
+                            ? 'bg-primary text-primary-foreground'
+                            : `${qualityColor || 'bg-muted/50'} text-muted-foreground hover:text-foreground hover:bg-muted`
+                        }`}
+                      >
+                        {v.is_best && <Star className="w-3 h-3 inline-block mr-1 -mt-0.5" />}
+                        {v.edition || v.label || `${v.resolution} ${v.video_codec}`}
+                        {v.tier_score != null && v.tier_quality !== 'UNKNOWN' && <span className={`ml-1.5 ${isSelected ? 'text-primary-foreground/70' : 'opacity-70'}`}>· {v.tier_score}</span>}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
 
-              {/* Blur scrim — covers top of sheet behind sticky title/actions, fades in on scroll */}
-              <div
-                data-sticky-scrim
-                className="sticky top-0 z-[9] -mb-[140px] pointer-events-none"
-                style={{ opacity: 0, height: '140px' }}
-              >
-                <div
-                  className="w-full h-full backdrop-blur-md"
-                  style={{
-                    background: 'linear-gradient(to bottom, hsl(var(--card) / 0.5), hsl(var(--card) / 0.3), transparent)',
-                    maskImage: 'linear-gradient(to bottom, black 40%, transparent)',
-                    WebkitMaskImage: 'linear-gradient(to bottom, black 40%, transparent)',
-                  }}
-                />
-              </div>
-
-              {/* Sticky header — title + actions as one unit, overlaps hero via negative margin */}
-              <div
-                data-sticky-header
-                className="sticky top-[12px] z-10 -mt-14 px-4 pb-2 pr-16"
-              >
-                {media.type === 'episode' ? (
-                  <>
-                    {/* Episode full title — dissolves out via scroll */}
-                    <div data-title-full>
-                      <h2 className="font-semibold text-foreground leading-tight tracking-tight" style={{ fontSize: '24px' }}>{displayTitle}</h2>
-                      <p className="text-label text-foreground/80 mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
-                      {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
-                        <p className="text-label text-foreground/70 font-medium">{sv?.edition || versions[0]?.edition}</p>
-                      )}
-                    </div>
-                    {/* Episode compact title — dissolves in via scroll */}
-                    <div data-title-compact className="absolute top-0 left-0 right-16 px-4" style={{ opacity: 0, pointerEvents: 'none' }}>
-                      <h2 className="text-title font-semibold text-foreground leading-tight tracking-tight truncate">
-                        {displayTitle}
-                        <span className="text-muted-foreground font-medium"> · S{media.season_number}E{media.episode_number}</span>
-                      </h2>
-                    </div>
-                  </>
-                ) : (
-                  /* Non-episode: single title element, font-size scales smoothly */
-                  <div data-title-scale>
-                    <h2 className="font-semibold text-foreground leading-tight tracking-tight" style={{ fontSize: '24px' }}>{displayTitle}</h2>
-                    {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
-                      <p className="text-label text-foreground/70 font-medium">{sv?.edition || versions[0]?.edition}</p>
-                    )}
+                {/* Version Comparison Table */}
+                <button
+                  onClick={() => setShowVersionTable(prev => !prev)}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <ChevronDown className={`w-3 h-3 transition-transform ${showVersionTable ? '' : '-rotate-90'}`} />
+                  Compare Versions ({versions.length})
+                </button>
+                {showVersionTable && (
+                  <div className={`rounded-md border border-border/50 overflow-hidden text-xs ${isMobile ? 'overflow-x-auto' : ''}`}>
+                    <table className={`${isMobile ? 'min-w-[500px]' : ''} w-full`}>
+                      <thead>
+                        <tr className="bg-muted/40 text-muted-foreground">
+                          <th className="px-2 py-1.5 text-left font-medium">Version</th>
+                          <th className="px-2 py-1.5 text-left font-medium">Quality</th>
+                          <th className="px-2 py-1.5 text-left font-medium">Video</th>
+                          <th className="px-2 py-1.5 text-left font-medium">Audio</th>
+                          <th className="px-2 py-1.5 text-right font-medium">Size</th>
+                          <th className="px-2 py-1.5 text-right font-medium">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {versions.map((v) => {
+                          const insight = getVersionInsight(v)
+                          const isSelected = selectedVersionId === v.id
+                          return (
+                            <tr
+                              key={v.id}
+                              onClick={() => setSelectedVersionId(v.id)}
+                              className={`cursor-pointer border-t border-border/30 transition-colors hover:bg-muted/30 ${
+                                isSelected ? 'bg-primary/10' : ''
+                              }`}
+                            >
+                              <td className="px-2 py-1.5">
+                                <div className="flex items-center gap-1">
+                                  {v.is_best && <Star className="w-3 h-3 text-primary shrink-0" />}
+                                  <span className="font-medium truncate max-w-[120px]">{v.edition || v.label || v.resolution}</span>
+                                </div>
+                              </td>
+                              <td className="px-2 py-1.5 text-muted-foreground">
+                                {v.quality_tier === 'UNKNOWN' ? 'Unknown' : v.quality_tier || '--'} {v.tier_score != null && v.tier_quality !== 'UNKNOWN' && <span className="opacity-70">{v.tier_score}</span>}
+                              </td>
+                              <td className="px-2 py-1.5 text-muted-foreground">
+                                <span className="font-mono">{v.video_codec}</span> {formatBitrate(v.video_bitrate)}
+                              </td>
+                              <td className="px-2 py-1.5 text-muted-foreground">
+                                <span className="font-mono">{v.audio_codec}</span> {v.audio_channels > 0 ? `${v.audio_channels}ch` : ''}
+                              </td>
+                              <td className="px-2 py-1.5 text-right text-muted-foreground">{formatFileSize(v.file_size)}</td>
+                              <td className="px-2 py-1.5 text-right">
+                                {v.is_best ? (
+                                  <span className="text-primary font-medium">Best</span>
+                                ) : insight ? (
+                                  <span className={insight.type === 'redundant' ? 'text-amber-500' : 'text-yellow-500'}>
+                                    {insight.label}
+                                  </span>
+                                ) : null}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 )}
 
@@ -979,10 +1150,10 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                 <div className={`flex ${isMobile ? 'flex-col gap-3' : 'items-center justify-between gap-4'}`}>
                   <div className={`flex items-center gap-4 bg-muted/30 ${isMobile ? 'px-3 py-2 rounded-lg' : 'px-4 py-3 rounded-lg'}`}>
                     <div className="text-center">
-                      <div className="text-h2 font-semibold">{sv?.quality_tier ?? media.quality_tier}</div>
-                      <div className="text-caption font-medium text-muted-foreground">{sv?.tier_quality ?? media.tier_quality}</div>
+                      <div className="text-2xl font-bold">{(sv?.quality_tier ?? media.quality_tier) === 'UNKNOWN' ? 'Unknown' : sv?.quality_tier ?? media.quality_tier}</div>
+                      <div className="text-xs font-medium text-muted-foreground">{(sv?.tier_quality ?? media.tier_quality) === 'UNKNOWN' ? 'Insufficient evidence' : sv?.tier_quality ?? media.tier_quality}</div>
                     </div>
-                    {(sv?.tier_score ?? media.tier_score) != null && (
+                    {(sv?.tier_score ?? media.tier_score) != null && (sv?.tier_quality ?? media.tier_quality) !== 'UNKNOWN' && (
                       <>
                         <div className="h-10 w-px bg-border" />
                         <div className="text-center">
@@ -994,7 +1165,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                   </div>
 
                   {/* Score Bars — Side by Side */}
-                  {((sv?.bitrate_tier_score ?? media.bitrate_tier_score) != null || (sv?.audio_tier_score ?? media.audio_tier_score) != null) && (
+                  {(sv?.tier_quality ?? media.tier_quality) !== 'UNKNOWN' && ((sv?.bitrate_tier_score ?? media.bitrate_tier_score) != null || (sv?.audio_tier_score ?? media.audio_tier_score) != null) && (
                     <div className={`flex-1 flex ${isMobile ? 'flex-col' : ''} gap-4`}>
                       {(sv?.bitrate_tier_score ?? media.bitrate_tier_score) != null && (
                         <div className="flex-1">
@@ -1036,6 +1207,12 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
               </div>
             )}
           </div>
+
+          {media.estimated_savings_bytes != null && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-muted/20 px-3 py-2 text-xs">
+              <span className="flex items-center gap-1.5"><span className="text-muted-foreground">Est. savings</span><EstimatedSavingsDisplay bytes={media.estimated_savings_bytes} /></span>
+            </div>
+          )}
 
 
           {/* Insight Banner */}

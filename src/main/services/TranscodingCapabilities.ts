@@ -1,3 +1,4 @@
+
 import type { GpuInfo } from './utils/GpuDetector'
 
 export interface TranscodingAvailability {
@@ -55,8 +56,6 @@ export function buildTranscodingCapabilities(
     encoders: Array.from(new Set(encoders)),
     verifiedEncoders: Array.from(new Set(verifiedEncoders)),
     probeFailures,
-    engines: [
-      ...(availability.ffmpeg ? ['ffmpeg' as const] : [])
-    ]
+    engines: availability.ffmpeg ? ['ffmpeg'] : []
   }
 }

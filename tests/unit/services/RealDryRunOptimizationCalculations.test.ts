@@ -64,22 +64,9 @@ describe('RealDryRunOptimizationCalculations', () => {
       expect(bytes).toBe(43200000)
     })
 
-    it('falls back to proportional container audio slice when track bitrate is absent', () => {
-      const stream: TrackStreamInfo = {
-        index: 1,
-        codec_name: 'ac3',
-        channels: 6,
-      }
-      const durationSeconds = 3600
-      const containerContext = {
-        totalBitrate: 10000000, // 10 Mbps container
-        totalStreams: 4,
-        fileSize: 4500000000,
-      }
-      const bytes = calculateTrackByteSize(stream, durationSeconds, containerContext)
-      expect(bytes).toBeGreaterThan(0)
-      // Proportional slice based on channels / total container streams
-      expect(bytes).toBe(Math.round(((10000000 * 3600) / 8) * (6 / 4)))
+    it('does not estimate stream bytes from unrelated container totals', () => {
+      const bytes = calculateTrackByteSize({ index: 1, codec_name: 'ac3', channels: 6 })
+      expect(bytes).toBeNull()
     })
 
     it('returns 0 if no size, bitrate, or container info is available', () => {
@@ -88,7 +75,7 @@ describe('RealDryRunOptimizationCalculations', () => {
         codec_name: 'unknown',
       }
       const bytes = calculateTrackByteSize(stream)
-      expect(bytes).toBe(0)
+      expect(bytes).toBeNull()
     })
   })
 
@@ -172,8 +159,7 @@ describe('RealDryRunOptimizationCalculations', () => {
       const episodes = [
         {
           sizeBytes: 4000000000, // 4 GB
-          videoDebtBytes: 0,
-          efficiency: 85,
+          videoSavingsBytes: 0,
           audioStreams: [
             { index: 1, codec: 'dts', language: 'en', channels: 6, bit_rate: '1509000', tags: { NUMBER_OF_BYTES: '679050000' } },
             { index: 2, codec: 'ac3', language: 'de', channels: 6, bit_rate: '640000', tags: { NUMBER_OF_BYTES: '288000000' } },
@@ -183,8 +169,7 @@ describe('RealDryRunOptimizationCalculations', () => {
         },
         {
           sizeBytes: 6000000000, // 6 GB
-          videoDebtBytes: 0,
-          efficiency: 90,
+          videoSavingsBytes: 0,
           audioStreams: [
             { index: 1, codec: 'truehd', language: 'en', channels: 8, bit_rate: '4000000', tags: { NUMBER_OF_BYTES: '1800000000' } },
             { index: 2, codec: 'ac3', language: 'es', channels: 6, bit_rate: '640000', tags: { NUMBER_OF_BYTES: '288000000' } },
@@ -193,8 +178,6 @@ describe('RealDryRunOptimizationCalculations', () => {
         },
         {
           sizeBytes: 2000000000, // 2 GB unparsed / unscored
-          videoDebtBytes: null,
-          efficiency: null,
           audioStreams: [],
           durationSeconds: 3600,
         },
@@ -205,16 +188,11 @@ describe('RealDryRunOptimizationCalculations', () => {
       expect(result.totalBytes).toBe(12000000000)
       // Removable tracks in ep 1: de (288,000,000) + fr (288,000,000) = 576,000,000
       // Removable tracks in ep 2: es (288,000,000) = 288,000,000
-      // Total recoverable: 864,000,000 bytes
-      expect(result.recoverableBytes).toBe(864000000)
-      expect(result.totalRecoverableBytes).toBe(864000000)
+      // Total estimated savings: 864,000,000 bytes
+      expect(result.totalEstimatedSavingsBytes).toBe(864000000)
       // Percentage: (864,000,000 / 12,000,000,000) * 100 = 7.2%
       expect(result.percentageSavings).toBeCloseTo(7.2)
       expect(result.totalEpisodes).toBe(3)
-      expect(result.scoredEpisodes).toBe(2)
-      expect(result.unscoredEpisodes).toBe(1)
-      // Size-weighted efficiency for scored episodes: (85 * 4GB + 90 * 6GB) / 10GB = (340 + 540) / 10 = 88
-      expect(result.weightedEfficiency).toBe(88)
       expect(result.trackDecisions.length).toBe(5)
 
       // Verify track decisions
@@ -232,26 +210,20 @@ describe('RealDryRunOptimizationCalculations', () => {
     it('handles 0 total size gracefully without dividing by zero', () => {
       const result = calculateDryRunMetrics([], 'en')
       expect(result.totalBytes).toBe(0)
-      expect(result.recoverableBytes).toBe(0)
-      expect(result.totalRecoverableBytes).toBe(0)
+      expect(result.totalEstimatedSavingsBytes).toBe(0)
       expect(result.percentageSavings).toBe(0)
       expect(result.totalEpisodes).toBe(0)
-      expect(result.scoredEpisodes).toBe(0)
-      expect(result.unscoredEpisodes).toBe(0)
-      expect(result.weightedEfficiency).toBeNull()
       expect(result.trackDecisions).toEqual([])
     })
 
-    it('does not double-count video debt for episodes without audio streams', () => {
+    it('preserves estimated savings for episodes without audio streams', () => {
       const result = calculateDryRunMetrics([
-        { sizeBytes: 2_000_000_000, recoverableBytes: 300_000_000, audioStreams: [] },
+        { sizeBytes: 2_000_000_000, estimatedSavingsBytes: 300_000_000, audioStreams: [] },
       ], 'en')
 
-      expect(result.recoverableBytes).toBe(300_000_000)
-      expect(result.totalRecoverableBytes).toBe(300_000_000)
+      expect(result.totalEstimatedSavingsBytes).toBe(300_000_000)
       expect(result.audioPruningBytes).toBe(0)
-      expect(result.videoDebtBytes).toBe(300_000_000)
-      expect(result.totalCombinedSavingsBytes).toBe(300_000_000)
+      expect(result.videoSavingsBytes).toBe(300_000_000)
     })
   })
 })
