@@ -1,3 +1,4 @@
+
 import type { TimelineDefinition, TimelineRecipeSummary } from './ITimelineRecipeProvider'
 
 export const CURRENT_TIMELINE_RECIPE_VERSION = 2

@@ -1,5 +1,7 @@
+
 import type { ITimelineRecipeProvider, TimelineDefinition, TimelineItem, TimelineRecipeSummary, TimelineFetchOptions } from './ITimelineRecipeProvider'
 import { getTimelineCacheService, TimelineCacheService } from './TimelineCacheService'
+import { fetchWithTimeout } from '../utils/httpClient'
 
 interface TraktItemResponse {
   rank: number
@@ -87,14 +89,14 @@ export class TraktRecipeProvider implements ITimelineRecipeProvider {
       return cachedByCanonical
     }
 
-    const response = await fetch(`https://api.trakt.tv/users/${username}/lists/${listSlug}/items`, {
+    const response = await fetchWithTimeout(`https://api.trakt.tv/users/${username}/lists/${listSlug}/items`, {
       headers: {
         'Content-Type': 'application/json',
         'trakt-api-version': '2',
         'trakt-api-key': this.traktClientId,
       },
-      signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
-    })
+      signal: options.signal,
+    }, 10000)
 
     if (!response.ok) {
       throw new Error(`Trakt API error (${response.status}): Failed to fetch list '${username}/${listSlug}'.`)
