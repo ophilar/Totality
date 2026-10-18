@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const commonAliases = {
   '@': path.resolve(__dirname, './src/renderer/src'),
@@ -134,6 +137,7 @@ export default defineConfig({
   root: './src/renderer',
   build: {
     outDir: '../../dist',
+    emptyOutDir: true,
     minify: 'esbuild',
     sourcemap: false,
     esbuild: {
@@ -142,9 +146,9 @@ export default defineConfig({
     },
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom'],
-          ui: ['react-window']
+        manualChunks(id) {
+          if (id.includes('/node_modules/react-window/')) return 'ui'
+          if (id.includes('/node_modules/react/') || id.includes('/node_modules/react-dom/')) return 'vendor'
         }
       }
     }
