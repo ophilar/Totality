@@ -132,6 +132,10 @@ export function appendStreamMappingArgs(args: string[], analysis: FileAnalysisRe
   for (const index of plan.subtitleStreamIndexes) args.push('-map', `0:${index}`)
   if (plan.audioStreamIndexes.length > 0) args.push('-c:a', 'copy')
   if (plan.subtitleStreamIndexes.length > 0) args.push('-c:s', 'copy')
+  for (const [outputIndex, sourceIndex] of plan.audioStreamIndexes.entries()) {
+    const conversion = options.audioConversions?.find(item => item.sourceIndex === sourceIndex)
+    if (conversion) args.push(`-c:a:${outputIndex}`, conversion.codec, `-b:a:${outputIndex}`, `${conversion.bitrateKbps}k`)
+  }
   args.push('-map', '0:t?', '-map_chapters', '0', '-map_metadata', '0')
 
   if (plan.defaultSubtitle !== 'preserve') {

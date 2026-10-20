@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildStreamSelectionPlan } from '../../../../src/main/services/transcoding/StreamSelectionPlan'
+import { appendStreamMappingArgs, buildStreamSelectionPlan } from '../../../../src/main/services/transcoding/StreamSelectionPlan'
 import type { FileAnalysisResult } from '../../../../src/main/services/MediaFileAnalyzer'
 
 const analysis = {
@@ -35,6 +35,19 @@ describe('buildStreamSelectionPlan', () => {
       subtitleStreamIndexes: [4, 5, 6, 7],
       defaultSubtitle: 'preserve'
     })
+  })
+
+  it('applies selected audio conversions to the output stream mapping', () => {
+    const args: string[] = []
+
+    appendStreamMappingArgs(args, analysis, {
+      audioConversions: [{ sourceIndex: 2, codec: 'aac', bitrateKbps: 192 }],
+    })
+
+    expect(args).toContain('-c:a:1')
+    expect(args).toContain('aac')
+    expect(args).toContain('-b:a:1')
+    expect(args).toContain('192k')
   })
 
   it('sets one selected subtitle as the output default', () => {
