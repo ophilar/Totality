@@ -73,20 +73,15 @@ async function generateIcons() {
 
   for (const icon of ICON_SIZES) {
     const outputPath = path.join(OUTPUT_DIR, icon.name);
+    await sharp(SOURCE_ICON)
+      .resize(icon.width, icon.height, {
+        fit: 'contain',
+        background: { r: 20, g: 21, b: 26, alpha: 1 } // #14151a - matches app background
+      })
+      .png()
+      .toFile(outputPath);
 
-    try {
-      await sharp(SOURCE_ICON)
-        .resize(icon.width, icon.height, {
-          fit: 'contain',
-          background: { r: 20, g: 21, b: 26, alpha: 1 } // #14151a - matches app background
-        })
-        .png()
-        .toFile(outputPath);
-
-      console.log(`Generated: ${icon.name} (${icon.width}x${icon.height})`);
-    } catch (err) {
-      console.error(`Failed to generate ${icon.name}: ${err.message}`);
-    }
+    console.log(`Generated: ${icon.name} (${icon.width}x${icon.height})`);
   }
 
   console.log('\nIcon generation complete!');
