@@ -38,23 +38,11 @@ import { SortableQueueItem } from './SortableQueueItem'
 import type { QueueState } from '@main/types/taskQueue'
 import { getActiveThemeClass } from '../../contexts/ThemeContext'
 import { useMenuClose } from '../../hooks/useMenuClose'
+import { useNotifications } from '../../hooks/useNotifications'
 
 // ============================================================================
 // Types
 // ============================================================================
-
-interface AppNotification {
-  id: number
-  type: string
-  title: string
-  message: string
-  sourceId?: string
-  sourceName?: string
-  itemCount?: number
-  isRead: boolean
-  createdAt: string
-  readAt?: string
-}
 
 // ============================================================================
 // Component
@@ -80,8 +68,7 @@ export function ActivityPanel() {
     isPaused: false,
     completedTasks: [],
   })
-  const [notifications, setNotifications] = useState<AppNotification[]>([])
-  const [unreadCount, setUnreadCount] = useState(0)
+  const { notifications, unreadCount, error: notificationError, markAllRead: handleMarkAllRead, markRead: handleMarkRead, clear: handleClearNotifications } = useNotifications({ limit: 50, isOpen, refreshIntervalMs: 10000 })
 
   // Configure dnd-kit sensors
   const sensors = useSensors(
@@ -121,35 +108,6 @@ export function ActivityPanel() {
       unsubscribeQueue?.()
     }
   }, [])
-
-  // Load notifications
-  const loadNotifications = useCallback(async () => {
-    try {
-      const [items, counts] = await Promise.all([
-        window.electronAPI.notificationsGetAll({ limit: 50 }),
-        window.electronAPI.notificationsGetCount(),
-      ])
-      setNotifications(items as AppNotification[])
-      setUnreadCount(counts.unread)
-    } catch { /* ignore */ }
-  }, [])
-
-  useEffect(() => {
-    loadNotifications()
-    // Refresh notifications periodically when panel is open
-    if (isOpen) {
-      const interval = setInterval(loadNotifications, 10000)
-      return () => clearInterval(interval)
-    }
-  }, [isOpen, loadNotifications])
-
-  // Subscribe to push notifications for immediate reload
-  useEffect(() => {
-    const unsubscribe = window.electronAPI.onNotificationsNew?.(() => {
-      loadNotifications()
-    })
-    return () => unsubscribe?.()
-  }, [loadNotifications])
 
   // Resize handlers - using requestAnimationFrame for smooth updates
   useEffect(() => {
@@ -229,21 +187,6 @@ export function ActivityPanel() {
   const handleClearQueue = useCallback(() => {
     window.electronAPI.taskQueueClearQueue?.()
   }, [])
-
-  const handleMarkAllRead = useCallback(async () => {
-    await window.electronAPI.notificationsMarkAllRead()
-    loadNotifications()
-  }, [loadNotifications])
-
-  const handleMarkRead = useCallback(async (id: number) => {
-    await window.electronAPI.notificationsMarkRead([id])
-    loadNotifications()
-  }, [loadNotifications])
-
-  const handleClearNotifications = useCallback(async () => {
-    await window.electronAPI.notificationsClear()
-    loadNotifications()
-  }, [loadNotifications])
 
   // dnd-kit drag handler
   const handleDragEnd = useCallback((event: DragEndEvent) => {
@@ -487,6 +430,7 @@ export function ActivityPanel() {
             </div>
           </div>
           <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 pb-6 p-2">
+            {notificationError && <p role="alert" className="px-2 py-2 text-xs text-destructive">Notification update failed: {notificationError}</p>}
             {notifications.length === 0 ? (
               <div className="py-6 text-center">
                 <Bell className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />

@@ -2,69 +2,17 @@
  * NotificationBell - Simple dropdown for app notifications in the TopBar.
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { Bell, X } from 'lucide-react'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { getActiveThemeClass } from '../../contexts/ThemeContext'
-
-interface AppNotification {
-  id: number
-  type: string
-  title: string
-  message: string
-  isRead: boolean
-  createdAt: string
-}
+import { useNotifications } from '../../hooks/useNotifications'
 
 export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false)
-  const [notifications, setNotifications] = useState<AppNotification[]>([])
-  const [unreadCount, setUnreadCount] = useState(0)
+  const { notifications, unreadCount, error: notificationError, markAllRead: handleMarkAllRead, markRead: handleMarkRead, clear: handleClear } = useNotifications({ limit: 30, isOpen })
   const closeMenu = useCallback(() => setIsOpen(false), [])
   const menuRef = useMenuClose({ isOpen, onClose: closeMenu })
-
-  const loadNotifications = useCallback(async () => {
-    try {
-      const [items, counts] = await Promise.all([
-        window.electronAPI.notificationsGetAll({ limit: 30 }),
-        window.electronAPI.notificationsGetCount(),
-      ])
-      setNotifications(items as AppNotification[])
-      setUnreadCount(counts.unread)
-    } catch { /* ignore */ }
-  }, [])
-
-  useEffect(() => {
-    loadNotifications()
-  }, [loadNotifications])
-
-  // Refresh when panel opens
-  useEffect(() => {
-    if (isOpen) loadNotifications()
-  }, [isOpen, loadNotifications])
-
-  // Subscribe to push notifications
-  useEffect(() => {
-    const unsubscribe = window.electronAPI.onNotificationsNew?.(() => {
-      loadNotifications()
-    })
-    return () => unsubscribe?.()
-  }, [loadNotifications])
-
-  const handleMarkAllRead = useCallback(async () => {
-    await window.electronAPI.notificationsMarkAllRead()
-    loadNotifications()
-  }, [loadNotifications])
-
-  const handleMarkRead = useCallback(async (id: number) => {
-    await window.electronAPI.notificationsMarkRead([id])
-    loadNotifications()
-  }, [loadNotifications])
-
-  const handleClear = useCallback(async () => {
-    await window.electronAPI.notificationsClear()
-    loadNotifications()
-  }, [loadNotifications])
 
   const getIconStyle = (type: string) => {
     switch (type) {
@@ -121,6 +69,7 @@ export function NotificationBell() {
 
         {/* Notifications list */}
         <div className="flex-1 overflow-y-auto p-2">
+          {notificationError && <p role="alert" className="px-2 py-2 text-xs text-destructive">Notification update failed: {notificationError}</p>}
           {notifications.length === 0 ? (
             <div className="py-6 text-center">
               <Bell className="w-6 h-6 text-muted-foreground/30 mx-auto mb-2" />
