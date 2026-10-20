@@ -85,6 +85,26 @@ describe('ShowOptimizationQueueAndExpiration', () => {
     expect(mockAddTasks).not.toHaveBeenCalled()
   })
 
+  it('preflights a single movie without requiring a series identity', async () => {
+    const transcodingService = getTranscodingService()
+    mockDb.media.getItemById.mockResolvedValue({
+      id: 101,
+      title: 'Movie',
+      source_id: 'src1',
+      series_identity_key: null,
+    })
+
+    const result = await transcodingService.preflightShowTranscode({
+      mediaItemId: 101,
+      sourceId: 'src1',
+      options: { targetProfileId: 'prof-1' },
+    })
+
+    expect(result.episodes).toHaveLength(1)
+    expect(result.episodes[0].compatible).toBe(false)
+    expect(result.episodes[0].reason).toContain('no local source identity')
+  })
+
   it('queues authorized episodes in sequence when preflight is valid', async () => {
     const transcodingService = getTranscodingService()
     const preflightId = 'valid_preflight_1'

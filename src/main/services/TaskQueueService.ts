@@ -560,6 +560,9 @@ export class TaskQueueService {
       if (this.cancelRequested) {
         task.status = 'cancelled'
         this.addTaskHistoryEntry(task, 'task-cancelled', `Cancelled: ${task.label}`)
+      } else if ((task.result?.failedCount ?? 0) > 0 && (task.result?.itemsScanned ?? 0) > 0) {
+        task.status = 'partial'
+        this.addTaskHistoryEntry(task, 'task-partial', this.formatCompletionMessage(task))
       } else {
         task.status = 'completed'
         this.addTaskHistoryEntry(task, 'task-complete', this.formatCompletionMessage(task))
@@ -913,8 +916,8 @@ export class TaskQueueService {
       errors: result.errors,
     }
 
-    if (!result.completed && !this.cancelRequested) {
-      throw new Error('Music completeness analysis did not complete')
+    if (!result.completed && !this.cancelRequested && result.failedCount > 0 && result.artistsAnalyzed + result.albumsAnalyzed === 0) {
+      throw new Error(result.errors.join('; '))
     }
   }
 
@@ -999,6 +1002,7 @@ export class TaskQueueService {
     if (result.itemsAdded) parts.push(`${result.itemsAdded} added`)
     if (result.itemsUpdated) parts.push(`${result.itemsUpdated} updated`)
     if (result.itemsRemoved) parts.push(`${result.itemsRemoved} removed`)
+    if (result.failedCount) parts.push(`${result.failedCount} item${result.failedCount === 1 ? '' : 's'} failed`)
 
     if (parts.length === 0) {
       return `Completed: ${task.label}`

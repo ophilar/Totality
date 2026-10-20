@@ -347,8 +347,11 @@ describe('SourceManager', () => {
         providerType: 'plex',
         selectServer: vi.fn(() => Promise.resolve(true)),
         getSelectedServer: vi.fn(() => ({ machineIdentifier: 'server-id', uri: 'http://plex:32400', name: 'Plex Server' })),
-        getLibraries: vi.fn(() => Promise.resolve([{ id: '1', name: 'Shows', type: 'show' as const }])),
-        getLibraryPaths: vi.fn(() => Promise.resolve(['D:/Media/Shows'])),
+        getLibrariesWithPaths: vi.fn(() => Promise.resolve({
+          libraries: [{ id: '1', name: 'Shows', type: 'show' as const }],
+          paths: ['D:/Media/Shows'],
+          errors: [],
+        })),
       })
 
       await manager.plexSelectServer('plex-source', 'server-id')
@@ -356,7 +359,7 @@ describe('SourceManager', () => {
       const savedSource = mockMediaSources.find(source => source.source_id === 'plex-source')!
       const savedConfig = JSON.parse(String(savedSource.connection_config)) as Record<string, unknown>
       expect(savedConfig.plexLibraryPaths).toEqual(['D:/Media/Shows'])
-      expect(provider.getLibraryPaths).toHaveBeenCalledWith(['1'])
+      expect(provider.getLibrariesWithPaths).toHaveBeenCalledOnce()
     })
   })
 

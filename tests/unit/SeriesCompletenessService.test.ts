@@ -66,6 +66,16 @@ describe('SeriesCompletenessService', () => {
       expect(result).toBeNull()
     })
 
+    it('propagates TMDB configuration errors to the caller', async () => {
+      mockDb.getEpisodes.mockReturnValue([
+        { season_number: 1, episode_number: 1, series_title: 'Test Show', series_identity_key: 'tmdb:1234' },
+      ])
+      mockTmdb.getTVShowDetails.mockRejectedValue(new Error('TMDB API key not configured. Please add your API key in Settings.'))
+
+      await expect(service.analyzeSeries('tmdb:1234', 'src1', 'lib1', '1234'))
+        .rejects.toThrow('TMDB API key not configured. Please add your API key in Settings.')
+    })
+
     it('creates unmatched result when TMDB ID not found', async () => {
       mockDb.getEpisodes.mockReturnValue([
         { season_number: 1, episode_number: 1, series_tmdb_id: null, title: 'Ep1', series_title: 'No Match Show', series_identity_key: 'unresolved:src1:lib1:no-match-show' },

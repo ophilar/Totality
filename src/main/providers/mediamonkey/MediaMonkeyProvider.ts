@@ -494,8 +494,7 @@ export class MediaMonkeyProvider implements MediaProvider {
     _totalTracks?: number,
   ): Promise<void> {
     const fileAnalyzer = getMediaFileAnalyzer()
-    await fileAnalyzer.isAvailable() // Ensure FFprobe path is resolved
-    const ffmpegAvailable = fileAnalyzer.isFFmpegAvailable()
+    const ffmpegAvailable = await fileAnalyzer.isFFmpegAvailable()
 
     const albums = db.getMusicAlbums({ sourceId: this.sourceId })
     if (!albums || albums.length === 0) return

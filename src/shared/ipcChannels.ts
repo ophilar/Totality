@@ -53,6 +53,7 @@ export const IPC_CHANNELS = {
   dbBatchAddExclusions: 'db:batchAddExclusions',
   dbCancelOperation: 'db:cancelOperation',
   dbCountMediaItems: 'db:countMediaItems',
+  dbGetOptimizationMetrics: 'db:getOptimizationMetrics',
   dbCountTVEpisodes: 'db:countTVEpisodes',
   dbCountTVShows: 'db:countTVShows',
   dbDeleteMediaItem: 'db:deleteMediaItem',

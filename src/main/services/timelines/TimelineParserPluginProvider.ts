@@ -132,8 +132,10 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
     const groupOrders = isGroupedOrder ? this.readGroupOrders(document, plugin.id, grouping!) : undefined
     const tieBreakIndex = isGroupedOrder ? headerIndex(grouping!.tieBreakHeader) : -1
 
-    return selectAll<AnyNode, Element>(plugin.rowSelector!, table)
-        .filter(row => !this.isStructuralTableRow(row, headerRow, plugin, headers))
+    const tableRows = selectAll<AnyNode, Element>(plugin.rowSelector!, table)
+    const contentRows = tableRows.filter(row => !this.isStructuralTableRow(row, headerRow, plugin, headers))
+    let rowsWithTitle = 0
+    const items = contentRows
         .flatMap((row, rowIndex) => {
         const cells = selectAll<AnyNode, Element>(':scope > th, :scope > td', row)
         const cell = (field: string): string | undefined => {
@@ -142,6 +144,7 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
         }
         const title = cell('title')
         if (!title) return []
+        rowsWithTitle++
         const columnOrder = orderIndex >= 0 ? Number.parseFloat(this.readCellText(cells[orderIndex]) ?? '') : undefined
         const broadcast = cell('broadcastNumber')
         const seriesTitle = cell('seriesTitle') ?? this.seriesTitle(plugin, title)
@@ -184,6 +187,11 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
           return left.tieBreak! - right.tieBreak!
         })
         .map(({ item }, index) => ({ ...item, order: index + 1 }))
+
+    if (items.length === 0) {
+      throw new Error(`Parser '${plugin.id}' found no timeline items in the matched table (${tableRows.length} rows, ${contentRows.length} non-structural rows, ${rowsWithTitle} rows with a title).`)
+    }
+    return items
   }
 
   private isStructuralTableRow(

@@ -319,6 +319,7 @@ const electronAPI = {
   // Database - Media Items
   getMediaItems: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.dbGetMediaItems, filters),
   countMediaItems: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.dbCountMediaItems, filters),
+  getOptimizationMetrics: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.dbGetOptimizationMetrics, filters),
   getTVShows: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.dbGetTVShows, filters),
   countTVShows: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.dbCountTVShows, filters),
   countTVEpisodes: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.dbCountTVEpisodes, filters),
@@ -1389,6 +1390,7 @@ interface ExistingElectronAPI {
   // Database - Media Items
   getMediaItems: (filters?: unknown) => Promise<unknown[]>
   countMediaItems: (filters?: unknown) => Promise<number>
+  getOptimizationMetrics: (filters?: unknown) => Promise<{ estimatedSavingsBytes: number | null }>
   getTVShows: (filters?: unknown) => Promise<unknown[]>
   countTVShows: (filters?: unknown) => Promise<number>
   countTVEpisodes: (filters?: unknown) => Promise<number>

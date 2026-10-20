@@ -43,7 +43,6 @@ import type {
   PlexUser,
   PlexServer,
   PlexLibrary,
-  PlexLibraryLocation,
   PlexMediaItem,
   PlexMusicArtist,
   PlexMusicAlbum,
@@ -309,6 +308,7 @@ export class PlexProvider implements MediaProvider {
           .filter((c) => c.local)
           .map((c) => c.address)
           .join(',') || '',
+        connectionType: workingConnection.local && !workingConnection.relay ? 'local' : workingConnection.relay ? 'relay' : 'remote',
         owned: server.owned === true || server.owned === 1,
         accessToken: server.accessToken || '',
       }
@@ -360,49 +360,63 @@ export class PlexProvider implements MediaProvider {
   // ============================================================================
 
   async getLibraries(): Promise<MediaLibrary[]> {
-    if (!this.selectedServer) {
+    const { directories } = await this.fetchLibrarySections()
+    return this.toMediaLibraries(directories)
+  }
+
+  async getLibrariesWithPaths(): Promise<{ libraries: MediaLibrary[]; paths: string[]; errors: Error[] }> {
+    const { server, directories } = await this.fetchLibrarySections()
+    const videoLibraries = directories.filter(directory => directory.type === 'movie' || directory.type === 'show')
+    const paths: string[] = []
+    const errors: Error[] = []
+
+    for (const library of videoLibraries) {
+      if (!library.Location?.length) {
+        const fields = Object.keys(library).sort().join(', ')
+        errors.push(new Error(
+          `Plex library ${library.title} (${library.key}) on ${new URL(server.uri).origin} returned no filesystem locations in /library/sections; connection: ${server.connectionType}; server owned: ${server.owned}; library fields: ${fields}`
+        ))
+        continue
+      }
+
+      for (const [index, location] of library.Location.entries()) {
+        if (!location.path?.trim()) {
+          errors.push(new Error(`Plex library ${library.title} (${library.key}) returned an empty filesystem location at index ${index}`))
+          continue
+        }
+        paths.push(location.path)
+      }
+    }
+
+    return { libraries: this.toMediaLibraries(directories), paths: [...new Set(paths)], errors }
+  }
+
+  private async fetchLibrarySections(): Promise<{ server: PlexServer; directories: PlexLibrary[] }> {
+    const server = this.selectedServer
+    if (!server) {
       throw new Error('No server selected')
     }
 
     try {
       const sectionsData = await fetchJSON<{ MediaContainer?: { Directory?: PlexLibrary[] } }>(
-        `${this.selectedServer.uri}/library/sections`,
-        { headers: { ...this.defaultHeaders, 'X-Plex-Token': this.selectedServer.accessToken }, timeoutMs: 30_000 }
+        `${server.uri}/library/sections`,
+        { headers: { ...this.defaultHeaders, 'X-Plex-Token': server.accessToken }, timeoutMs: 30_000 }
       )
-      const directories = sectionsData?.MediaContainer?.Directory || []
-      return directories.map((dir: PlexLibrary) => ({
-        id: dir.key,
-        name: dir.title,
-        type: dir.type === 'show' ? 'show' : dir.type === 'movie' ? 'movie' : dir.type === 'artist' ? 'music' : 'unknown',
-        itemCount: dir.count,
-        scannedAt: dir.scannedAt ? new Date(dir.scannedAt * 1000).toISOString() : undefined,
-      }))
+      return { server, directories: sectionsData?.MediaContainer?.Directory || [] }
     } catch (error: unknown) {
       const reason = error instanceof Error ? error.message.replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?\b/g, '<server>') : 'unknown error'
       throw new Error(`Failed to fetch Plex libraries: ${reason}`)
     }
   }
 
-  async getLibraryPaths(libraryIds: string[]): Promise<string[]> {
-    if (!this.selectedServer) {
-      throw new Error('No server selected')
-    }
-    const server = this.selectedServer
-
-    const locationResponses = await Promise.all(libraryIds.map(async libraryId => {
-      const response = await fetchJSON<{ MediaContainer: { Location: PlexLibraryLocation[] } }>(
-        `${server.uri}/library/sections/${encodeURIComponent(libraryId)}/location`,
-        { headers: { ...this.defaultHeaders, 'X-Plex-Token': server.accessToken }, timeoutMs: 30_000 }
-      )
-      return response.MediaContainer.Location.map(({ path }) => {
-        if (!path.trim()) {
-          throw new Error(`Plex returned an empty library path for library ${libraryId}`)
-        }
-        return path
-      })
+  private toMediaLibraries(directories: PlexLibrary[]): MediaLibrary[] {
+    return directories.map((dir) => ({
+      id: dir.key,
+      name: dir.title,
+      type: dir.type === 'show' ? 'show' : dir.type === 'movie' ? 'movie' : dir.type === 'artist' ? 'music' : 'unknown',
+      itemCount: dir.count,
+      scannedAt: dir.scannedAt ? new Date(dir.scannedAt * 1000).toISOString() : undefined,
     }))
-
-    return [...new Set(locationResponses.flat())]
   }
 
   async getLibraryItems(libraryId: string, _offset?: number, _limit?: number): Promise<MediaMetadata[]> {
@@ -1082,13 +1096,11 @@ export class PlexProvider implements MediaProvider {
 
     for (const media of allMedia) {
       const part = media.Part?.[0]
-      if (!part) continue
+      if (!part?.file) continue
 
       const videoStream = part.Stream?.find((s) => s.streamType === 1)
       const audioStreams = part.Stream?.filter((s) => s.streamType === 2) || []
       const subtitleStreams = part.Stream?.filter((s) => s.streamType === 3) || []
-
-      if (!videoStream || audioStreams.length === 0) continue
 
       // Build audio tracks array with normalized values
       const audioTracks: AudioTrack[] = audioStreams.map((stream, index) => ({
@@ -1120,19 +1132,21 @@ export class PlexProvider implements MediaProvider {
       }))
 
       // Find best audio track using shared utility
-      const bestAudioTrack = selectBestAudioTrack(audioTracks)!
-      const audioStream = audioStreams[bestAudioTrack.index]
+      const bestAudioTrack = selectBestAudioTrack(audioTracks)
+      const audioStream = bestAudioTrack ? audioStreams[bestAudioTrack.index] : undefined
 
       const width = media.width || 0
       const height = media.height || 0
       const resolution = normalizeResolution(width, height)
-      const hdrFormat = normalizeHdrFormat(
-        undefined,
-        videoStream.colorTrc,
-        videoStream.colorPrimaries,
-        videoStream.bitDepth,
-        videoStream.profile
-      ) || 'None'
+      const hdrFormat = videoStream
+        ? normalizeHdrFormat(
+          undefined,
+          videoStream.colorTrc,
+          videoStream.colorPrimaries,
+          videoStream.bitDepth,
+          videoStream.profile
+        ) || 'None'
+        : undefined
 
       // Extract edition and source type from file path
       const parsed = getFileNameParser().parse(part.file)
@@ -1144,7 +1158,7 @@ export class PlexProvider implements MediaProvider {
 
       // Generate label: "4K Dolby Vision REMUX", "1080p WEB-DL", etc.
       const labelParts = [resolution]
-      if (hdrFormat !== 'None') labelParts.push(hdrFormat)
+      if (hdrFormat && hdrFormat !== 'None') labelParts.push(hdrFormat)
       if (sourceType) labelParts.push(sourceType)
       if (edition) labelParts.push(edition)
       const label = labelParts.join(' ')
@@ -1162,26 +1176,26 @@ export class PlexProvider implements MediaProvider {
         height,
         video_codec: normalizeVideoCodec(media.videoCodec),
         video_bitrate: normalizeBitrate(
-          getReliableVideoBitrate(videoStream.bitrate, media.bitrate, audioStreams),
+          videoStream ? getReliableVideoBitrate(videoStream.bitrate, media.bitrate, audioStreams) : 0,
           'kbps'
         ),
-        audio_codec: normalizeAudioCodec(media.audioCodec, audioStream?.profile),
-        audio_channels: normalizeAudioChannels(media.audioChannels, audioStream.audioChannelLayout),
-        audio_bitrate: normalizeBitrate(audioStream.bitrate, 'kbps'),
-        video_frame_rate: normalizeFrameRate(videoStream.frameRate),
-        color_bit_depth: videoStream.bitDepth,
+        audio_codec: audioStream ? normalizeAudioCodec(media.audioCodec, audioStream.profile) : '',
+        audio_channels: audioStream ? normalizeAudioChannels(media.audioChannels, audioStream.audioChannelLayout) : 0,
+        audio_bitrate: audioStream ? normalizeBitrate(audioStream.bitrate, 'kbps') : 0,
+        video_frame_rate: normalizeFrameRate(videoStream?.frameRate),
+        color_bit_depth: videoStream?.bitDepth,
         hdr_format: hdrFormat,
-        color_space: videoStream.colorSpace,
-        video_profile: videoStream.profile,
-        video_level: videoStream.level,
-        audio_profile: audioStream.profile,
-        audio_sample_rate: normalizeSampleRate(audioStream.samplingRate),
-        has_object_audio: hasObjectAudio(
+        color_space: videoStream?.colorSpace,
+        video_profile: videoStream?.profile,
+        video_level: videoStream?.level,
+        audio_profile: audioStream?.profile,
+        audio_sample_rate: audioStream ? normalizeSampleRate(audioStream.samplingRate) : undefined,
+        has_object_audio: audioStream ? hasObjectAudio(
           audioStream.codec,
           audioStream.profile,
           audioStream.displayTitle || audioStream.title,
           audioStream.audioChannelLayout
-        ),
+        ) : false,
         audio_tracks: JSON.stringify(audioTracks),
         subtitle_tracks: subtitleTracks.length > 0 ? JSON.stringify(subtitleTracks) : undefined,
         container: normalizeContainer(part.container || media.container),
@@ -1190,7 +1204,7 @@ export class PlexProvider implements MediaProvider {
 
     if (versions.length === 0) {
       if (!this.warnedSkippedItems.has(item.ratingKey)) {
-        console.warn(`[PlexProvider] Skipping ${item.title}: no valid media entries found`)
+        console.warn(`[PlexProvider] Skipping ${item.title}: no media parts with file paths found`)
         this.warnedSkippedItems.add(item.ratingKey)
       }
       return null

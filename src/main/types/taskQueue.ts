@@ -29,6 +29,7 @@ export interface TaskResult {
   status?: AnalysisStatus
   completedCount?: number
   failedCount?: number
+  errors?: string[]
   deferredCount?: number
   skippedCount?: number
   reconciliation?: { merged: number; removed: number; preservedLocked: number; ambiguous: number }
@@ -90,7 +91,7 @@ export type TaskQueueState = QueueState
 export interface ActivityLogEntry {
   id: string
   timestamp: string
-  type: 'task-complete' | 'task-failed' | 'task-cancelled' | 'task-interrupted' | 'monitoring'
+  type: 'task-complete' | 'task-partial' | 'task-failed' | 'task-cancelled' | 'task-interrupted' | 'monitoring'
   message: string
   taskId?: string
   taskType?: TaskType

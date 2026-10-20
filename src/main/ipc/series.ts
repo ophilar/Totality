@@ -71,13 +71,8 @@ export function registerSeriesHandlers() {
     const validIdentityKey = validateInput(NonEmptyStringSchema, seriesIdentityKey, 'series:analyzeByIdentity.seriesIdentityKey')
     const validSourceId = sourceId !== undefined ? validateInput(NonEmptyStringSchema, sourceId, 'series:analyzeByIdentity.sourceId') : undefined
     const validLibraryId = libraryId !== undefined ? validateInput(NonEmptyStringSchema, libraryId, 'series:analyzeByIdentity.libraryId') : undefined
-    try {
-      const service = getSeriesCompletenessService()
-      return await service.analyzeSeries(validIdentityKey, validSourceId, validLibraryId)
-    } catch (error) {
-      console.error(`Error analyzing series by identity "${validIdentityKey}":`, error)
-      throw error
-    }
+    const service = getSeriesCompletenessService()
+    return service.analyzeSeries(validIdentityKey, validSourceId, validLibraryId)
   })
 
   /**
@@ -87,13 +82,8 @@ export function registerSeriesHandlers() {
     const validKey = validateInput(NonEmptyStringSchema, seriesIdentityKey, 'series:analyze.seriesIdentityKey')
     const validSourceId = sourceId !== undefined ? validateInput(NonEmptyStringSchema, sourceId, 'series:analyze.sourceId') : undefined
     const validLibraryId = libraryId !== undefined ? validateInput(NonEmptyStringSchema, libraryId, 'series:analyze.libraryId') : undefined
-    try {
-      const service = getSeriesCompletenessService()
-      return await service.analyzeSeries(validKey, validSourceId, validLibraryId)
-    } catch (error) {
-      console.error(`Error analyzing series "${validKey}":`, error)
-      throw error
-    }
+    const service = getSeriesCompletenessService()
+    return service.analyzeSeries(validKey, validSourceId, validLibraryId)
   })
 
   // ============================================================================

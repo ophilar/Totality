@@ -27,6 +27,7 @@ import {
   Loader2,
   Activity,
   CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react'
 import { SortableQueueItem } from './SortableQueueItem'
 import type { QueueState } from '@main/types/taskQueue'
@@ -205,10 +206,13 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
             </div>
             <div className="divide-y divide-border/10">
               {queueState.completedTasks.slice(0, 5).map((task) => (
-                <div key={task.id} className="flex items-center gap-2 px-4 py-2 text-muted-foreground/60">
-                  <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${task.status === 'failed' ? 'text-red-400' : 'text-green-400'}`} />
+                <div key={task.id} title={task.result?.errors?.join('\n')} className="flex items-center gap-2 px-4 py-2 text-muted-foreground/60">
+                  {task.status === 'partial'
+                    ? <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                    : <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${task.status === 'failed' ? 'text-red-400' : 'text-green-400'}`} />}
                   <span className="text-xs flex-1 truncate">{task.label}</span>
                   {task.status === 'failed' && <span className="text-[10px] text-red-400">Failed</span>}
+                  {task.status === 'partial' && <span className="text-[10px] text-amber-400">{task.result?.failedCount} item failures</span>}
                 </div>
               ))}
             </div>

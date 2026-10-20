@@ -1009,8 +1009,7 @@ export function registerSourceHandlers(): void {
   createIpcHandler(IPC_CHANNELS.ffmpegIsAvailable, async () => {
     try {
       const analyzer = getMediaFileAnalyzer()
-      await analyzer.isAvailable()
-      return analyzer.isFFmpegAvailable()
+      return await analyzer.isFFmpegAvailable()
     } catch {
       return false
     }

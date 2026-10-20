@@ -108,6 +108,7 @@ export const RPC_CHANNEL_MAP: Record<string, string> = {
   // Database - Media Items
   getMediaItems: IPC_CHANNELS.dbGetMediaItems,
   countMediaItems: IPC_CHANNELS.dbCountMediaItems,
+  getOptimizationMetrics: IPC_CHANNELS.dbGetOptimizationMetrics,
   getTVShows: IPC_CHANNELS.dbGetTVShows,
   countTVShows: IPC_CHANNELS.dbCountTVShows,
   countTVEpisodes: IPC_CHANNELS.dbCountTVEpisodes,

@@ -10,6 +10,7 @@ export interface PlexServer {
   address: string
   uri: string
   localAddresses?: string
+  connectionType: 'local' | 'remote' | 'relay'
   owned: boolean
   accessToken: string
 }
@@ -30,6 +31,7 @@ export interface PlexLibrary {
   contentChangedAt: number
   hidden: number
   count?: number  // Number of items in the library (optional)
+  Location?: PlexLibraryLocation[]
 }
 
 export interface PlexLibraryLocation {
