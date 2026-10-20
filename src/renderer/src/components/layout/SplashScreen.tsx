@@ -87,8 +87,7 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
           className="absolute inset-0 w-full h-full object-contain"
           style={{
             opacity: videoReady && !videoEnded ? 1 : 0,
-            filter: effectiveIsDark ? undefined : 'invert(1)',
-            mixBlendMode: effectiveIsDark ? 'normal' : 'multiply',
+            filter: effectiveIsDark ? undefined : 'invert(1) contrast(1.15)',
           }}
         />
         <img
