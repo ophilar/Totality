@@ -146,7 +146,15 @@ export class LanguageRemuxService {
       rename: (from: string, to: string) => fs.rename(from, to),
       remove: (value: string) => fs.rm(value, { force: true }),
       copy: (from: string, to: string) => fs.copyFile(from, to),
-      exists: async (value: string) => { try { await fs.access(value); return true } catch { return false } },
+      exists: async (value: string) => {
+        try {
+          await fs.access(value)
+          return true
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+          throw error
+        }
+      },
     }
     await fileOps.mkdir(options.quarantineDirectory)
     try {

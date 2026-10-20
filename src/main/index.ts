@@ -96,7 +96,7 @@ process.on('uncaughtException', (error) => {
   try {
     const db = getDatabaseServiceSync()
     if (db.isInitialized) {
-      try { db.endBatch() } catch { /* ignore */ }
+      db.endBatch()
       console.log('[CRASH] better-sqlite3 data already persisted (WAL mode)')
     }
   } catch (e) {
@@ -110,7 +110,7 @@ process.on('unhandledRejection', (reason, promise) => {
   try {
     const db = getDatabaseServiceSync()
     if (db.isInitialized) {
-      try { db.endBatch() } catch { /* ignore */ }
+      db.endBatch()
       // better-sqlite3: no action needed, WAL mode auto-persists
     }
   } catch (e) {

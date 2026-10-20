@@ -155,7 +155,10 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
   // Parse audio tracks
   const audioTracks: AudioTrack[] = (() => {
     if (!media?.audio_tracks) return []
-    try { return JSON.parse(media.audio_tracks) } catch { return [] }
+    try { return JSON.parse(media.audio_tracks) } catch (error) {
+      console.error(`[MobileMediaDetail] Invalid audio-track data for media ${media.id}:`, error)
+      return []
+    }
   })()
 
   // Active version data (for display)

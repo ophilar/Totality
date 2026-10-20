@@ -566,7 +566,9 @@ export function MusicView({
           if (albumCompleteness) {
             try {
               missingTracks = JSON.parse(albumCompleteness.missing_tracks || '[]')
-            } catch { /* ignore */ }
+            } catch (error) {
+              console.error(`[MusicView] Invalid missing-track data for album ${albumCompleteness.album_id}:`, error)
+            }
           }
 
           // Create unified track list with type marker
@@ -934,11 +936,39 @@ export function MusicView({
                     </div>
                   )}
 
-                  {/* Header: album art + track title + stats */}
-                  <div className="flex gap-4 pr-12 relative z-[1]">
-                    {selectedAlbum?.thumb_url && (
-                      <div className="w-28 h-28 shrink-0 rounded-lg overflow-hidden shadow-lg shadow-black/30">
-                        <img src={selectedAlbum.thumb_url} alt={selectedAlbum?.title} className="w-full h-full object-cover" />
+                  {/* Title & Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h2 className="text-lg font-medium truncate">{selectedTrackForQuality.title}</h2>
+                        {(selectedTrackForQuality.artist_name || selectedTrackForQuality.album_title) && (
+                          <p className="text-sm text-muted-foreground truncate">
+                            {[selectedTrackForQuality.artist_name, selectedTrackForQuality.album_title].filter(Boolean).join(' · ')}
+                          </p>
+                        )}
+                        {(() => {
+                          let genres: string[] = []
+                          let moods: string[] = []
+                          try { genres = selectedTrackForQuality.genres ? JSON.parse(selectedTrackForQuality.genres) : [] } catch (error) { console.warn('[MusicView] Invalid track genre data:', error) }
+                          try { moods = selectedTrackForQuality.mood ? JSON.parse(selectedTrackForQuality.mood) : [] } catch (error) { console.warn('[MusicView] Invalid track mood data:', error) }
+                          if (genres.length === 0 && moods.length === 0) return null
+                          return (
+                            <div className="mt-1.5 space-y-0.5">
+                              {genres.length > 0 && (
+                                <p className="text-xs text-muted-foreground truncate">
+                                  <span className="text-muted-foreground/60">Genre: </span>
+                                  {genres.join(', ')}
+                                </p>
+                              )}
+                              {moods.length > 0 && (
+                                <p className="text-xs text-muted-foreground truncate">
+                                  <span className="text-muted-foreground/60">Mood: </span>
+                                  {moods.join(', ')}
+                                </p>
+                              )}
+                            </div>
+                          )
+                        })()}
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
@@ -1066,9 +1096,65 @@ export function MusicView({
                 <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
               </div>
             )}
-            <div className="relative z-[1]">
-              <div className="flex items-center gap-1.5 ">
-                <h3 className="text-h2 font-semibold">{selectedArtist.name}</h3>
+          </div>
+
+          {/* Info */}
+          <div className="flex-1 min-w-0">
+            {/* Title */}
+            <div className="flex items-center gap-1.5">
+              <h3 className="text-3xl font-bold">{selectedArtist.name}</h3>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  navigator.clipboard.writeText(selectedArtist.name)
+                  setCopiedTitle(true)
+                  setTimeout(() => setCopiedTitle(false), 1500)
+                }}
+                className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                title="Copy title"
+              >
+                {copiedTitle ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+
+            {/* Metadata line */}
+            <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+              {selectedArtist.country && (
+                <>
+                  <span>{selectedArtist.country}</span>
+                  <span>•</span>
+                </>
+              )}
+              {selectedArtist.genres && (
+                <>
+                  <span>{(() => { try { const g = JSON.parse(selectedArtist.genres); return Array.isArray(g) ? g.join(', ') : selectedArtist.genres } catch (error) { console.warn('[MusicView] Invalid artist genre data:', error); return selectedArtist.genres } })()}</span>
+                  <span>•</span>
+                </>
+              )}
+              <span>{selectedArtist.album_count} albums</span>
+              <span>•</span>
+              <span>{selectedArtist.track_count} tracks</span>
+            </div>
+
+            {/* Completeness */}
+            {artistCompleteness.has(selectedArtist.name) && (
+              <p className="text-sm text-muted-foreground mt-1">
+                {artistCompleteness.get(selectedArtist.name)!.owned_albums} of {artistCompleteness.get(selectedArtist.name)!.total_albums} albums in discography
+              </p>
+            )}
+
+            {/* Action buttons row */}
+            <div className="flex items-center gap-3 mt-3" ref={artistMenuRef}>
+              <button
+                onClick={() => { handleAnalyzeArtist(selectedArtist.id) }}
+                disabled={isAnalyzingArtist}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+                title="Analyze Completeness"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isAnalyzingArtist ? 'animate-spin' : ''}`} />
+                {isAnalyzingArtist ? 'Analyzing...' : 'Analyze Completeness'}
+              </button>
+              {onFixArtistMatch && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
@@ -1286,7 +1372,9 @@ export function MusicView({
             missingAlbums = JSON.parse(completeness.missing_albums || '[]')
             missingEps = JSON.parse(completeness.missing_eps || '[]')
             missingSingles = JSON.parse(completeness.missing_singles || '[]')
-          } catch { /* ignore */ }
+          } catch (error) {
+            console.error(`[MusicView] Invalid missing-album data for artist ${selectedArtist.name}:`, error)
+          }
 
           const allMissing = [
             ...missingAlbums,

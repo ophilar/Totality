@@ -6,6 +6,7 @@
 import { getDatabase } from '../database/getDatabase'
 import { getTMDBService } from './TMDBService'
 import { fetchJSON } from './utils/httpClient'
+import { getLoggingService } from './LoggingService'
 
 interface TraktWatchlistItem {
   type: 'movie' | 'show'
@@ -93,7 +94,11 @@ export class WatchlistSyncService {
 
     // Auto-fetch posters from TMDB
     const tmdb = getTMDBService()
-    try { await tmdb.initialize() } catch { /* continue without posters */ }
+    try {
+      await tmdb.initialize()
+    } catch (error) {
+      getLoggingService().warn('[WatchlistSyncService]', 'Could not initialize TMDB poster enrichment:', error)
+    }
     for (const item of items) {
       if (item.tmdb_id && !item.poster_url) {
         try {
@@ -104,7 +109,9 @@ export class WatchlistSyncService {
             const details = await tmdb.getTVShowDetails(item.tmdb_id)
             if (details.poster_path) item.poster_url = `https://image.tmdb.org/t/p/w300${details.poster_path}`
           }
-        } catch { /* continue without poster */ }
+        } catch (error) {
+          getLoggingService().warn('[WatchlistSyncService]', `Could not fetch poster for ${item.title}:`, error)
+        }
       }
     }
 
@@ -155,7 +162,12 @@ export class WatchlistSyncService {
     }).filter((item): item is NonNullable<typeof item> => item !== null && !!item.title)
 
     const tmdb = getTMDBService()
-    try { await tmdb.initialize() } catch { return items }
+    try {
+      await tmdb.initialize()
+    } catch (error) {
+      getLoggingService().warn('[WatchlistSyncService]', 'Could not initialize TMDB poster enrichment:', error)
+      return items
+    }
     for (const item of items) {
       try {
         if (item.tmdb_id) {
@@ -164,7 +176,9 @@ export class WatchlistSyncService {
             : await tmdb.getTVShowDetails(item.tmdb_id)
           if (details.poster_path) item.poster_url = `https://image.tmdb.org/t/p/w300${details.poster_path}`
         }
-      } catch { /* continue */ }
+      } catch (error) {
+        getLoggingService().warn('[WatchlistSyncService]', `Could not enrich ${item.title} from TMDB:`, error)
+      }
     }
     return items
   }
@@ -216,7 +230,12 @@ export class WatchlistSyncService {
     }).filter(item => item.title)
 
     const tmdb = getTMDBService()
-    try { await tmdb.initialize() } catch { return items }
+    try {
+      await tmdb.initialize()
+    } catch (error) {
+      getLoggingService().warn('[WatchlistSyncService]', 'Could not initialize TMDB poster enrichment:', error)
+      return items
+    }
     for (const item of items) {
       try {
         if (item.tmdb_id) {
@@ -234,7 +253,9 @@ export class WatchlistSyncService {
             if (best.poster_path) item.poster_url = `https://image.tmdb.org/t/p/w300${best.poster_path}`
           }
         }
-      } catch { /* continue */ }
+      } catch (error) {
+        getLoggingService().warn('[WatchlistSyncService]', `Could not enrich ${item.title} from TMDB:`, error)
+      }
     }
     return items
   }
@@ -311,7 +332,11 @@ export class WatchlistSyncService {
 
     // Fetch posters from TMDB
     const tmdb = getTMDBService()
-    try { await tmdb.initialize() } catch { /* continue */ }
+    try {
+      await tmdb.initialize()
+    } catch (error) {
+      getLoggingService().warn('[WatchlistSyncService]', 'Could not initialize TMDB poster enrichment:', error)
+    }
     for (const item of items) {
       try {
         if (item.tmdb_id) {
@@ -334,7 +359,9 @@ export class WatchlistSyncService {
             if (best.poster_path) item.poster_url = `https://image.tmdb.org/t/p/w300${best.poster_path}`
           }
         }
-      } catch { /* continue without poster */ }
+      } catch (error) {
+        getLoggingService().warn('[WatchlistSyncService]', `Could not enrich ${item.title} from TMDB:`, error)
+      }
     }
 
     const db = getDatabase()

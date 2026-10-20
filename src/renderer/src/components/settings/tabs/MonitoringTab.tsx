@@ -201,18 +201,14 @@ export function MonitoringTab() {
               <div className="flex items-center justify-between px-4 py-3">
                 <span className="text-label text-foreground">Check for upcoming releases</span>
                 <div className="flex items-center gap-2">
-                  {alertStatus && <span className="text-caption text-muted-foreground">{alertStatus}</span>}
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={async () => {
-                      setAlertStatus(null)
-                      try {
-                        const c = await window.electronAPI.releaseAlertsCheck()
-                        setAlertStatus(c > 0 ? `${c} found` : 'None found')
-                      } catch { setAlertStatus('Error') }
-                    }}
-                  >
+                  {alertStatus && <span className="text-xs text-muted-foreground">{alertStatus}</span>}
+                  <button onClick={async () => {
+                    setAlertStatus(null)
+                    try {
+                      const c = await window.electronAPI.releaseAlertsCheck()
+                      setAlertStatus(c > 0 ? `${c} found` : 'None found')
+                    } catch (error) { setAlertStatus(`Error: ${error instanceof Error ? error.message : String(error)}`) }
+                  }} className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">
                     Check Now
                   </Button>
                 </div>

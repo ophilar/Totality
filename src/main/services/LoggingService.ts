@@ -133,23 +133,31 @@ class LoggingService {
   private interceptConsole(): void {
     console.log = (...args: unknown[]) => {
       this.originalConsole.log(...args)
-      try { this.captureLog('info', args) } catch { /* never crash caller */ }
+      this.captureLogSafely('info', args)
     }
     console.warn = (...args: unknown[]) => {
       this.originalConsole.warn(...args)
-      try { this.captureLog('warn', args) } catch { /* never crash caller */ }
+      this.captureLogSafely('warn', args)
     }
     console.error = (...args: unknown[]) => {
       this.originalConsole.error(...args)
-      try { this.captureLog('error', args) } catch { /* never crash caller */ }
+      this.captureLogSafely('error', args)
     }
     console.info = (...args: unknown[]) => {
       this.originalConsole.info(...args)
-      try { this.captureLog('info', args) } catch { /* never crash caller */ }
+      this.captureLogSafely('info', args)
     }
     console.debug = (...args: unknown[]) => {
       this.originalConsole.debug(...args)
-      try { this.captureLog('debug', args) } catch { /* never crash caller */ }
+      this.captureLogSafely('debug', args)
+    }
+  }
+
+  private captureLogSafely(level: LogLevel, args: unknown[]): void {
+    try {
+      this.captureLog(level, args)
+    } catch (error) {
+      this.originalConsole.error('[LoggingService] Failed to store intercepted console entry:', error)
     }
   }
 
@@ -239,12 +247,9 @@ class LoggingService {
     this.verboseEnabled = enabled
     this.addEntry('info', '[LoggingService]', `Verbose logging ${enabled ? 'enabled' : 'disabled'}`)
     // Persist to database
-    try {
-      if (this.dbGetter) {
-        const db = this.dbGetter()
-        db.setSetting('verbose_logging_enabled', String(enabled))
-      }
-    } catch { /* DB may not be ready */ }
+    if (!this.dbGetter) return
+    const db = this.dbGetter()
+    db.setSetting('verbose_logging_enabled', String(enabled))
   }
 
   isVerboseEnabled(): boolean {

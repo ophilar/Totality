@@ -18,7 +18,7 @@ interface UseViewPreferencesReturn {
  *
  * @param view Current active media view tab
  */
-export function useViewPreferences(view: MediaViewType): UseViewPreferencesReturn {
+export function useViewPreferences(view: MediaViewType, onError: (error: unknown) => void): UseViewPreferencesReturn {
   const [viewType, setViewTypeState] = useState<'grid' | 'list'>('grid')
   const [gridScale, setGridScaleState] = useState(4)
   const viewPrefsRef = useRef<Record<string, { viewType: 'grid' | 'list', gridScale: number }>>({})
@@ -28,9 +28,9 @@ export function useViewPreferences(view: MediaViewType): UseViewPreferencesRetur
   const saveViewPrefs = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(() => {
-      window.electronAPI.setSetting(SETTING_KEYS.library_view_prefs, JSON.stringify(viewPrefsRef.current))
+      void window.electronAPI.setSetting(SETTING_KEYS.library_view_prefs, JSON.stringify(viewPrefsRef.current)).catch(onError)
     }, 300)
-  }, [])
+  }, [onError])
 
   const setViewType = useCallback((vt: 'grid' | 'list') => {
     setViewTypeState(vt)
@@ -47,12 +47,10 @@ export function useViewPreferences(view: MediaViewType): UseViewPreferencesRetur
   }, [view, saveViewPrefs])
 
   const loadViewPrefs = useCallback(async (currentView: MediaViewType) => {
-    try {
-      const saved = await window.electronAPI.getSetting(SETTING_KEYS.library_view_prefs)
-      if (saved) {
-        viewPrefsRef.current = JSON.parse(saved as string) as Record<string, { viewType: 'grid' | 'list', gridScale: number }>
-      }
-    } catch { /* use defaults */ }
+    const saved = await window.electronAPI.getSetting(SETTING_KEYS.library_view_prefs)
+    if (saved) {
+      viewPrefsRef.current = JSON.parse(saved as string) as Record<string, { viewType: 'grid' | 'list', gridScale: number }>
+    }
     viewPrefsLoadedRef.current = true
     const prefs = viewPrefsRef.current[currentView]
     if (prefs) {

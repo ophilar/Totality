@@ -713,7 +713,12 @@ export class PlexProvider implements MediaProvider {
       await db.updateSourceScanTime(this.sourceId)
 
       // Clean up any orphaned data (collections, series, music validated inside)
-      try { db.cleanupOrphanedMediaData() } catch { /* non-critical */ }
+      try {
+        db.cleanupOrphanedMediaData()
+      } catch (error) {
+        result.errors.push(`Failed to clean orphaned media data: ${getErrorMessage(error)}`)
+        console.warn(`[PlexProvider ${this.sourceId}] Failed to clean orphaned media data:`, error)
+      }
 
       result.success = true
       result.durationMs = Date.now() - startTime
@@ -2027,26 +2032,15 @@ export class PlexProvider implements MediaProvider {
 
       // Reconcile music: remove tracks not in scanned set
       const existingTracks = db.getMusicTracks({ sourceId: this.sourceId }) as MusicTrack[]
-      const existingTrackCount = existingTracks.length
-
-      // Safety guard: refuse bulk deletion when scan appears incomplete (API failures, timeouts)
-      if (scannedTrackIds.size === 0 && existingTrackCount > 0) {
-        console.warn(`[PlexProvider ${this.sourceId}] Scan found 0 tracks but DB has ${existingTrackCount} — skipping reconciliation (possible API failure)`)
-      } else if (existingTrackCount > 0 && scannedTrackIds.size < existingTrackCount * 0.5) {
-        console.warn(`[PlexProvider ${this.sourceId}] Scan found only ${scannedTrackIds.size}/${existingTrackCount} tracks — skipping reconciliation (possible partial scan failure)`)
-      } else {
-        let musicRemoved = 0
-        for (const track of existingTracks) {
-          if (track.provider_id && !scannedTrackIds.has(track.provider_id) && track.id) {
-            try {
-              db.deleteMusicTrack(track.id)
-              musicRemoved++
-            } catch { /* best effort */ }
+      let musicRemoved = 0
+      for (const track of existingTracks) {
+        if (track.provider_id && !scannedTrackIds.has(track.provider_id) && track.id) {
+          try {
+            db.deleteMusicTrack(track.id)
+            musicRemoved++
+          } catch (error) {
+            console.warn(`[PlexProvider ${this.sourceId}] Failed to remove stale music track ${track.id}:`, getErrorMessage(error))
           }
-        }
-        if (musicRemoved > 0) {
-          result.itemsRemoved = musicRemoved
-          console.log(`[PlexProvider ${this.sourceId}] Removed ${musicRemoved} stale music tracks`)
         }
       }
 

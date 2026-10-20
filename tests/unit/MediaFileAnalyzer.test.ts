@@ -126,4 +126,21 @@ describe('MediaFileAnalyzer', () => {
       expect(result.error).toContain('FFprobe is not installed')
     })
   })
+
+  describe('analyzeCompleteFile', () => {
+    it('returns packet-analysis failures instead of a successful partial analysis', async () => {
+      vi.spyOn(analyzer, 'analyzeFile').mockResolvedValue({
+        success: true,
+        filePath: 'test.mkv',
+        audioTracks: [],
+        subtitleTracks: [],
+      })
+      vi.spyOn(analyzer, 'measurePacketMetrics').mockRejectedValue(new Error('FFprobe packet analysis failed'))
+
+      await expect(analyzer.analyzeCompleteFile('test.mkv')).resolves.toMatchObject({
+        success: false,
+        error: 'Packet analysis failed: FFprobe packet analysis failed',
+      })
+    })
+  })
 })
