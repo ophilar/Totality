@@ -25,6 +25,33 @@ const ICON_SIZES = [
   { name: 'Wide310x150Logo.png', width: 310, height: 150 },
 ];
 
+async function generateWindowsIcon() {
+  const sizes = [16, 32, 48, 64, 128, 256];
+  const images = [];
+  for (const size of sizes) {
+    images.push(await sharp(SOURCE_ICON).resize(size, size, { fit: 'contain' }).png().toBuffer());
+  }
+
+  const header = Buffer.alloc(6 + sizes.length * 16);
+  header.writeUInt16LE(1, 2);
+  header.writeUInt16LE(sizes.length, 4);
+  let imageOffset = header.length;
+  sizes.forEach((size, index) => {
+    const entryOffset = 6 + index * 16;
+    header.writeUInt8(size === 256 ? 0 : size, entryOffset);
+    header.writeUInt8(size === 256 ? 0 : size, entryOffset + 1);
+    header.writeUInt16LE(1, entryOffset + 4);
+    header.writeUInt16LE(32, entryOffset + 6);
+    header.writeUInt32LE(images[index].length, entryOffset + 8);
+    header.writeUInt32LE(imageOffset, entryOffset + 12);
+    imageOffset += images[index].length;
+  });
+
+  const outputPath = path.join(__dirname, '..', 'resources', 'icon.ico');
+  await fs.promises.writeFile(outputPath, Buffer.concat([header, ...images]));
+  console.log(`Generated: icon.ico (${sizes.join(', ')}px)`);
+}
+
 async function generateIcons() {
   // Ensure output directory exists
   if (!fs.existsSync(OUTPUT_DIR)) {
@@ -38,6 +65,8 @@ async function generateIcons() {
     console.error('Please ensure resources/icon.png exists (1024x1024 recommended)');
     process.exit(1);
   }
+
+  await generateWindowsIcon();
 
   console.log(`Source icon: ${SOURCE_ICON}`);
   console.log(`Output directory: ${OUTPUT_DIR}\n`);
@@ -65,7 +94,8 @@ async function generateIcons() {
   console.log('the design to better fill the wide aspect ratio.');
 }
 
-generateIcons().catch(err => {
+const generation = process.argv.includes('--windows-only') ? generateWindowsIcon() : generateIcons();
+generation.catch(err => {
   console.error('Icon generation failed:', err);
   process.exit(1);
 });
