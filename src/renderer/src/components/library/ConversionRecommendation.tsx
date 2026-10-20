@@ -34,32 +34,30 @@ function getOptimizationDecision(mediaId: number): Promise<OptimizationDecision>
   return request
 }
 
-export function ConversionRecommendation({ item, compact = false }: { item: MediaItem; compact?: boolean }) {
+export function ConversionRecommendation({ item, compact = false, onOptimizationCompleted }: { item: MediaItem; compact?: boolean; onOptimizationCompleted?: () => void }) {
   const [decisionState, setDecisionState] = useState<DecisionState | null>(null)
   const [showTranscodeModal, setShowTranscodeModal] = useState(false)
   const mediaId = item.id
-  const currentState = mediaId != null && decisionState?.mediaId === mediaId ? decisionState : null
+  const currentState = decisionState?.mediaId === mediaId ? decisionState : null
   const decision = currentState?.decision ?? null
   const error = currentState?.error ?? null
-  const loading = mediaId != null && currentState == null
+  const loading = currentState == null
 
   useEffect(() => {
-    if (!item.id) return
-    const requestMediaId = item.id
     let active = true
-    void getOptimizationDecision(requestMediaId).then(nextDecision => {
-      if (active) setDecisionState({ mediaId: requestMediaId, decision: nextDecision, error: null })
+    void getOptimizationDecision(mediaId).then(nextDecision => {
+      if (active) setDecisionState({ mediaId, decision: nextDecision, error: null })
     }).catch(reason => {
       if (active) {
         setDecisionState({
-          mediaId: requestMediaId,
+          mediaId,
           decision: null,
           error: reason instanceof Error ? reason.message : String(reason),
         })
       }
     })
     return () => { active = false }
-  }, [item.id])
+  }, [mediaId])
 
   if (loading) return <div className="flex items-center gap-2 p-3 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Analyzing optimization options</div>
   if (error) return <div className="flex items-center gap-2 p-3 text-destructive"><AlertCircle className="h-4 w-4" />{error}</div>
@@ -88,6 +86,6 @@ export function ConversionRecommendation({ item, compact = false }: { item: Medi
     </div>}
     {!hasSupportedOperation && <div className="pt-2 text-muted-foreground">No supported optimization action is available.</div>}
     {hasSupportedOperation && <button type="button" onClick={() => setShowTranscodeModal(true)} className="mt-3 rounded bg-primary px-3 py-1.5 font-semibold text-primary-foreground">Review optimization</button>}
-    {showTranscodeModal && mediaId && <TranscodeModal mediaId={mediaId} initialOptimizationMode={transcodeVideo ? 'transcode' : 'remux_only'} initialStreamPruning={pruneStreams} initialAudioTranscode={transcodeAudio} onClose={() => setShowTranscodeModal(false)} />}
+    {showTranscodeModal && <TranscodeModal mediaId={mediaId} initialOptimizationMode={transcodeVideo ? 'transcode' : 'remux_only'} initialStreamPruning={pruneStreams} initialAudioTranscode={transcodeAudio} onOptimizationCompleted={onOptimizationCompleted} onClose={() => setShowTranscodeModal(false)} />}
   </div>
 }

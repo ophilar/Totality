@@ -12,6 +12,7 @@ import type { WishlistMediaType } from '../../contexts/WishlistContext'
 // useMenuClose no longer needed — desktop uses individual icon buttons like mobile
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
+import { ConversionRecommendation } from './ConversionRecommendation'
 import type { AudioTrack, SubtitleTrack } from '@main/types/database'
 
 interface MediaDetailsProps {
@@ -1213,6 +1214,8 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
               <span className="flex items-center gap-1.5"><span className="text-muted-foreground">Est. savings</span><EstimatedSavingsDisplay bytes={media.estimated_savings_bytes} /></span>
             </div>
           )}
+
+          <ConversionRecommendation item={media} onOptimizationCompleted={loadMediaDetails} />
 
 
           {/* Insight Banner */}

@@ -5,6 +5,7 @@ import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { MissingItemPopup } from './MissingItemPopup'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import { ScopedOptimizationSummary } from './ScopedOptimizationSummary'
+import { calculateOptimizationSummary } from './optimizationSummary'
 import type { MovieCollectionData, MissingMovie } from './types'
 
 interface OwnedMovie {
@@ -127,9 +128,7 @@ export const CollectionModal = memo(function CollectionModal({
               </p>
               <ScopedOptimizationSummary
                 totalCount={ownedMovies.length}
-                estimatedSavingsBytes={ownedMovies.some(movie => movie.estimated_savings_bytes != null)
-                  ? ownedMovies.reduce((sum, movie) => sum + (movie.estimated_savings_bytes ?? 0), 0)
-                  : null}
+                estimatedSavingsBytes={calculateOptimizationSummary(ownedMovies)?.estimatedSavingsBytes ?? null}
               />
             </div>
             <div className="flex items-center gap-1">

@@ -785,12 +785,11 @@ export class MediaFileAnalyzer {
   /**
    * Check if FFmpeg is available (needed for artwork extraction)
    */
-  isFFmpegAvailable(): boolean {
-    if (!this.ffprobePath) return false
-    const ffmpegPath = this.ffprobePath.replace(/ffprobe(\.exe)?$/i, (match) =>
-      match.toLowerCase().includes('.exe') ? 'ffmpeg.exe' : 'ffmpeg'
-    )
-    return fs.existsSync(ffmpegPath)
+  async isFFmpegAvailable(): Promise<boolean> {
+    if (!this.ffprobePath) await this.isAvailable()
+    const ffmpegPath = this.getFFmpegPath()
+    if (ffmpegPath !== 'ffmpeg' && fs.existsSync(ffmpegPath)) return true
+    return this.isFFmpegInPath()
   }
 
   async uninstallFFprobe(): Promise<boolean> {
@@ -1041,7 +1040,7 @@ export class MediaFileAnalyzer {
   /**
    * Get the current FFmpeg executable path
    */
-  getFFmpegPath(): string | null {
+  getFFmpegPath(): string {
     if (this.ffprobePath) {
       const ffmpegPath = this.ffprobePath.replace(/ffprobe(\.exe)?$/i, (match) =>
         match.toLowerCase().endsWith('.exe') ? 'ffmpeg.exe' : 'ffmpeg'
@@ -1400,13 +1399,8 @@ export class MediaFileAnalyzer {
       return false
     }
 
-    // Derive ffmpeg path from ffprobe path
-    const ffmpegPath = this.ffprobePath.replace(/ffprobe(\.exe)?$/i, (match) => {
-      return match.toLowerCase().includes('.exe') ? 'ffmpeg.exe' : 'ffmpeg'
-    })
-
-    // Check if ffmpeg exists
-    if (!fs.existsSync(ffmpegPath) && !await this.isFFmpegInPath()) {
+    const ffmpegPath = this.getFFmpegPath()
+    if (!await this.isFFmpegAvailable()) {
       console.warn('[MediaFileAnalyzer] FFmpeg not found, cannot extract artwork')
       return false
     }
