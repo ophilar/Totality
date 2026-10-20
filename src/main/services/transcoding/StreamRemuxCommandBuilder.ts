@@ -6,13 +6,7 @@ import { appendStreamMappingArgs } from './StreamSelectionPlan'
 export class StreamRemuxCommandBuilder implements ITranscodeCommandBuilder {
   buildFFmpegArgs(input: string, output: string, options: TranscodeOptions, analysis: FileAnalysisResult): string[] {
     const args: string[] = ['-y', '-i', input, '-c:v', 'copy']
-    const plan = appendStreamMappingArgs(args, analysis, options)
-    for (const [outputIndex, sourceIndex] of plan.audioStreamIndexes.entries()) {
-      const conversion = options.audioConversions?.find(item => item.sourceIndex === sourceIndex)
-      if (conversion) {
-        args.push(`-c:a:${outputIndex}`, conversion.codec, `-b:a:${outputIndex}`, `${conversion.bitrateKbps}k`)
-      }
-    }
+    appendStreamMappingArgs(args, analysis, options)
     if (output.toLowerCase().endsWith('.mp4') && analysis.video?.hdrFormat?.toLowerCase() === 'dolby vision') {
       if (analysis.video.dolbyVisionProfile !== 5) {
         throw new Error('Dolby Vision MP4 remux is supported only when FFprobe identifies Profile 5; the source profile is unknown or unsupported.')

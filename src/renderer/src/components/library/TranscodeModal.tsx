@@ -14,7 +14,7 @@ import { useToast } from '@/contexts/ToastContext'
 import type { MediaItem } from '@main/types/database'
 import type { OptimizationDecision } from '@main/services/OptimizationDecisionService'
 
-import type { TranscodeOptions, TranscodingParams, Availability, TranscodeProgress } from './transcoding'
+import type { TranscodeOptions, TranscodingParams, Availability, TranscodeProgress, ShowTranscodePreflight } from './transcoding'
 import { QuickPresetsTab, AdvancedTab, LiveEncodingTab, EncoderPolicySelector } from './transcoding'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
@@ -40,7 +40,7 @@ export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, init
   const [generating, setGenerating] = useState(false)
   const [params, setParams] = useState<TranscodingParams | null>(null)
   const [activeTab, setActiveTab] = useState<'presets' | 'advanced' | 'monitor' | 'review'>('presets')
-  const [preflight, setPreflight] = useState<{ preflightId: string; episodes: Array<{ mediaItemId: number; label: string; compatible: boolean; reason?: string; decisionStatus?: string; params?: TranscodingParams; samplePaths?: string[]; adviceReason?: string }> } | null>(null)
+  const [preflight, setPreflight] = useState<ShowTranscodePreflight | null>(null)
   const [samplesReviewed, setSamplesReviewed] = useState(false)
   const [audioTranscodeEnabled, setAudioTranscodeEnabled] = useState(initialAudioTranscode)
   const [analysisRequired, setAnalysisRequired] = useState(false)
@@ -511,8 +511,9 @@ export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, init
               <button className="text-sm underline" onClick={() => { setPreflight(null); setSamplesReviewed(false); setActiveTab('advanced') }}>Change optimization settings</button>
               {preflight.episodes.map(item => <div key={item.mediaItemId} className="space-y-2 text-sm">
                 <p className="font-semibold">{item.label}: {item.compatible ? item.decisionStatus?.replace(/_/g, ' ') : item.reason}</p>
+                {!item.targetCompatibility && <p className="text-muted-foreground">Playback compatibility was not evaluated because no target profile is selected.</p>}
                 {item.params?.summary && <p className="text-muted-foreground">{item.params.summary}</p>}
-                {item.samplePaths?.map((sample, index) => <button key={sample} className="mr-3 underline" onClick={() => void window.electronAPI.openShowSample(preflight.preflightId, item.mediaItemId, index)}>Open measured sample {index + 1}</button>)}
+                {item.samplePaths?.map((sample, index) => <button key={sample} className="mr-3 underline" onClick={() => void window.electronAPI.openShowSample(preflight.preflightId, item.mediaItemId, index).catch(error => addToast({ title: 'Could not open measured sample', message: error instanceof Error ? error.message : String(error), type: 'error' }))}>Open measured sample {index + 1}</button>)}
               </div>)}
               {options.streamSelection?.audio === 'original-and-protected' && <p className="text-muted-foreground">This plan keeps original-language and protected audio tracks, removing other audio tracks.</p>}
               {audioTranscodeEnabled && options.targetAudioCodec && <p className="text-muted-foreground">Eligible retained audio tracks will be converted to {options.targetAudioCodec.toUpperCase()}.</p>}

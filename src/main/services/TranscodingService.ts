@@ -33,6 +33,7 @@ import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { evaluatePlaybackTarget, type PlaybackTargetEvaluation, type PlaybackTargetProfile } from '@main/types/playbackTarget'
 import { getTaskQueueService } from './TaskQueueService'
 import { calculateBitrateSavingsBytes, projectMeasuredSavingsBytes } from './OptimizationSavingsService'
+import { normalizeVideoCodec } from './MediaNormalizer'
 
 export class TranscodeError extends Error {
   constructor(message: string, public readonly exitCode?: number, public readonly stderr?: string) {
@@ -59,7 +60,7 @@ export interface TranscodeOptions {
   optimizationMode?: 'smart' | 'remux_only' | 'transcode'
   qualityProfile?: 'transparent' | 'balanced' | 'maximum_savings'
   encoderPolicy?: 'hardware' | 'software' | 'compare'
-  targetProfileId?: string
+  targetProfileId?: string | null
   targetContainer?: 'mkv' | 'mp4'
   targetAudioCodec?: 'aac' | 'ac3' | 'eac3'
   audioConversions?: Array<{ sourceIndex: number; codec: string; bitrateKbps: number }>
@@ -251,10 +252,12 @@ export class TranscodingService {
     operation?.signal.throwIfAborted()
     if (!request.sourceId.trim()) throw new Error('Source ID is required')
     if (request.mediaItemId === undefined && (!request.seriesTitle?.trim() || !request.seriesIdentityKey?.trim() || !request.libraryId?.trim())) throw new Error('TV series identity and library are required')
-    const profileId = request.options.targetProfileId || await getDatabase().config.getSetting('optimization_default_target_profile_id')
-    if (!profileId) throw new Error('A default playback profile is required before show optimization can run')
-    const targetProfile = await getDatabase().playbackTargetProfiles.get(profileId)
-    if (!targetProfile) throw new Error(`Playback target profile ${profileId} was not found`)
+    const profileId = request.options.targetProfileId === undefined
+      ? await getDatabase().config.getSetting('optimization_default_target_profile_id')
+      : request.options.targetProfileId
+    const targetProfile = profileId == null ? undefined : (await getDatabase().playbackTargetProfiles.get(profileId) ?? undefined)
+    if (profileId != null && !targetProfile) throw new Error(`Playback target profile ${profileId} was not found`)
+    if (!targetProfile && request.options.targetHdrFormat && request.options.optimizationMode !== 'remux_only') throw new Error('HDR format conversion requires a selected playback target.')
     const episodes = request.mediaItemId === undefined
       ? await getDatabase().tvShows.getEpisodes(request.seriesTitle!, request.sourceId, request.seriesIdentityKey!, request.libraryId!)
       : [await getDatabase().media.getItemById(request.mediaItemId)].filter((item): item is MediaItem => item !== null)
@@ -293,7 +296,7 @@ export class TranscodingService {
         const sourcePlan = buildStreamSelectionPlan(analysis, request.options)
         const streamsChanged = sourcePlan.audioStreamIndexes.length !== analysis.audioTracks.length || sourcePlan.subtitleStreamIndexes.length !== analysis.subtitleTracks.length
         const selectedAnalysis = { ...analysis, audioTracks: analysis.audioTracks.filter(track => sourcePlan.audioStreamIndexes.includes(track.index)), subtitleTracks: analysis.subtitleTracks.filter(track => sourcePlan.subtitleStreamIndexes.includes(track.index)) }
-        if (request.options.targetAudioCodec && !targetProfile.definition.audio.codecs.includes(request.options.targetAudioCodec)) {
+        if (request.options.targetAudioCodec && targetProfile && !targetProfile.definition.audio.codecs.includes(request.options.targetAudioCodec)) {
           throw new Error(`Audio codec ${request.options.targetAudioCodec} is not supported by ${targetProfile.name}`)
         }
         const plannedAudioConversions = buildAudioConversions(selectedAnalysis, request.options)
@@ -303,16 +306,18 @@ export class TranscodingService {
         })
         const plannedContainer = request.options.targetContainer === 'mp4' ? 'mp4' : request.options.targetContainer === 'mkv' ? 'matroska' : analysis.container
         const containerChanged = !analysis.container?.split(',').includes(plannedContainer!)
-        const sourceCompatibility = evaluatePlaybackTarget(targetProfile, { ...selectedAnalysis, audioTracks: compatibleAudioTracks, container: plannedContainer })
-        const shouldEncode = request.options.optimizationMode === 'transcode' || (request.options.optimizationMode === 'smart' && (advice.action === 'video_transcode' || sourceCompatibility.overall === 'incompatible'))
-        const options: TranscodeOptions = { ...request.options, optimizationMode: shouldEncode ? 'transcode' : 'remux_only', audioConversions: shouldEncode ? undefined : plannedAudioConversions, encoderPolicy: request.options.encoderPolicy, useGpu: shouldEncode && request.options.encoderPolicy !== 'software', gpuId: shouldEncode && request.options.encoderPolicy !== 'software' ? request.options.gpuId : undefined }
+        const sourceCompatibility = targetProfile
+          ? evaluatePlaybackTarget(targetProfile, { ...selectedAnalysis, audioTracks: compatibleAudioTracks, container: plannedContainer })
+          : undefined
+        const shouldEncode = request.options.optimizationMode === 'transcode' || (request.options.optimizationMode === 'smart' && (advice.action === 'video_transcode' || sourceCompatibility?.overall === 'incompatible'))
+        const options: TranscodeOptions = { ...request.options, optimizationMode: shouldEncode ? 'transcode' : 'remux_only', audioConversions: shouldEncode && targetProfile ? undefined : plannedAudioConversions, encoderPolicy: request.options.encoderPolicy, useGpu: shouldEncode && request.options.encoderPolicy !== 'software', gpuId: shouldEncode && request.options.encoderPolicy !== 'software' ? request.options.gpuId : undefined }
         if (!shouldEncode && !streamsChanged && !containerChanged && plannedAudioConversions.length === 0) {
-          const compatible = sourceCompatibility.overall === 'compatible'
+          const compatible = sourceCompatibility?.overall !== 'incompatible'
           return { mediaItemId: episode.id, label, compatible, reason: compatible ? undefined : 'Retained streams do not satisfy the selected playback profile', hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, operations: [], decisionStatus: compatible ? 'already_optimized' : 'incompatible', targetCompatibility: sourceCompatibility, sourceTier: advice.sourceTier, adviceReason: advice.reason }
         }
         if (shouldEncode) {
-          options.maxOutputBytes = (await this.resolveMaximumOutputBytes(stat.size, options, getDatabase()))!
-          options.targetConversion = buildTargetTranscodePlan(analysis, targetProfile, options)
+          options.maxOutputBytes = stat.size
+          if (targetProfile) options.targetConversion = buildTargetTranscodePlan(analysis, targetProfile, options)
         }
         const audioConversions = options.targetConversion?.audio.flatMap(track => track.bitrateKbps === undefined ? [] : [{ sourceIndex: track.sourceIndex, codec: track.codec, bitrateKbps: track.bitrateKbps }]) ?? options.audioConversions ?? []
         const audioConversionSavings = shouldEncode ? 0 : estimateAudioConversionSavings(analysis, audioConversions)
@@ -345,15 +350,21 @@ export class TranscodingService {
               operation?.signal.throwIfAborted()
               const sample = await getMediaFileAnalyzer().analyzeFile(samplePath)
               this.verifyPlannedStreams(analysis, sample, options, params)
-              targetCompatibility = evaluatePlaybackTarget(targetProfile, sample)
-              if (targetCompatibility.overall !== 'compatible') throw new Error(`Measured sample is incompatible: ${Object.values(targetCompatibility.findings).filter(finding => finding.status === 'incompatible').map(finding => finding.rule).join('; ')}`)
+              if (targetProfile) {
+                targetCompatibility = evaluatePlaybackTarget(targetProfile, sample)
+                if (targetCompatibility.overall !== 'compatible') throw new Error(`Measured sample is incompatible: ${Object.values(targetCompatibility.findings).filter(finding => finding.status === 'incompatible').map(finding => finding.rule).join('; ')}`)
+              }
             }
           }
         } catch (error) {
           await fs.rm(sampleDirectory, { recursive: true, force: true })
           throw error
         }
-        if (targetCompatibility.overall !== 'compatible') throw new Error('Selected retained streams are incompatible with the playback target')
+        const measuredVideoSavingsBytes = shouldEncode
+          ? projectMeasuredSavingsBytes(stat.size, analysis.duration! / 1000, params.measuredCandidate!.outputBytes, params.measuredCandidate!.sampledDurationSeconds)
+          : undefined
+        if (shouldEncode && measuredVideoSavingsBytes === 0) throw new Error('Measured output does not project storage savings; no video optimization is available.')
+        if (targetCompatibility?.overall === 'incompatible') throw new Error('Selected retained streams are incompatible with the playback target')
         const samplePaths = params.measuredCandidate?.samplePaths
         return {
           mediaItemId: episode.id, label, compatible: true, hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256,
@@ -364,7 +375,7 @@ export class TranscodingService {
             ...(audioConversions.length > 0 ? ['audio_transcode' as const] : []),
           ],
           decisionStatus: shouldEncode ? 'sample_required' : 'actionable', evidenceStatus: shouldEncode ? 'measured' : audioConversions.length > 0 ? 'estimated' : advice.evidence_status, confidence: shouldEncode ? 'high' : audioConversions.length > 0 ? 'medium' : advice.confidence,
-          estimatedSavingsBytes: shouldEncode ? null : audioConversions.length > 0 ? combinedAudioSavings : advice.estimatedSavingsBytes,
+          estimatedSavingsBytes: shouldEncode ? measuredVideoSavingsBytes : audioConversions.length > 0 ? combinedAudioSavings : advice.estimatedSavingsBytes,
           savingsBasis: shouldEncode ? 'video_sample_encode' : audioConversions.length > 0 ? removedAudioTracks.length > 0 ? 'audio_stream_removal_and_transcode_model' : 'audio_transcode_model' : advice.savings_basis, sourceTier: advice.sourceTier, adviceReason: shouldEncode ? 'Measured encoding passed the selected quality gates. Review all three samples before approval.' : audioConversions.length > 0 ? `Measured audio tracks can be converted to ${request.options.targetAudioCodec?.toUpperCase()}${removedAudioTracks.length > 0 ? ' and selected audio tracks removed' : ''}.` : advice.reason,
           targetCompatibility, options, params, sourceAnalysis: analysis, targetProfile, samplePaths, sampleHashes: samplePaths ? await Promise.all(samplePaths.map(sha256File)) : undefined, changes: [...(options.targetConversion?.changes ?? []), ...audioConversions.map(track => `Convert audio stream ${track.sourceIndex} to ${track.codec.toUpperCase()} at ${track.bitrateKbps} kbps`)],
           measuredParameters: { encoder: params.encoder, crf: params.crf, preset: params.preset },
@@ -400,19 +411,6 @@ export class TranscodingService {
       if (rejected) throw rejected.reason
       results.push(...chunkResults.map(result => (result as PromiseFulfilledResult<ShowTranscodePreflight['episodes'][0]>).value))
       operation?.signal.throwIfAborted()
-    }
-
-    for (const episode of results) {
-      const candidate = episode.params?.measuredCandidate
-      const duration = episode.sourceAnalysis?.duration
-      if (episode.compatible && episode.operations.includes('video_transcode') && candidate && duration) {
-        episode.estimatedSavingsBytes = projectMeasuredSavingsBytes(
-          episode.sourceSize,
-          duration / 1000,
-          candidate.outputBytes,
-          candidate.sampledDurationSeconds,
-        )
-      }
     }
 
     const result = { preflightId, batchId, seriesTitle: request.seriesTitle || episodes[0]?.title || 'Selected media', episodeCount: episodes.length, compatible: results.some(episode => episode.compatible), expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), userApproved: false, episodes: results }
@@ -980,7 +978,11 @@ export class TranscodingService {
       })
       await db.mediaRemuxJobs.update(optimizationJobId, { status: 'running' })
 
-      const outputExt = (options.targetConversion?.container ?? options.targetContainer) === 'mp4' ? '.mp4' : '.mkv'
+      const outputExt = options.targetConversion?.container
+        ? options.targetConversion.container === 'mp4' ? '.mp4' : '.mkv'
+        : options.targetContainer
+          ? options.targetContainer === 'mp4' ? '.mp4' : '.mkv'
+          : path.extname(inputPath)
       let tempBaseDir = path.dirname(inputPath)
       const configuredTempDir = options.tempDirectory || (await db.config.getSetting('transcoding_temp_directory'))
       if (configuredTempDir && typeof configuredTempDir === 'string' && configuredTempDir.trim() !== '') {
@@ -1007,19 +1009,17 @@ export class TranscodingService {
         const tempVolume = (await fs.stat(tempBaseDir)).dev
         if (sourceVolume !== tempVolume) throw new Error('Replacement transcoding requires the temporary directory to be on the same volume as the source file.')
       }
-      const maximumOutputBytes = params.encoder === 'copy' ? sourceStat.size : await this.resolveMaximumOutputBytes(sourceStat.size, options, db)
-      if (maximumOutputBytes !== null) {
-        const available = await fs.statfs(tempBaseDir)
-        const availableBytes = Number(available.bavail) * Number(available.bsize)
-        const sameVolumeCopy = effectiveOutputMode === 'copy' && (await fs.stat(tempBaseDir)).dev === sourceStat.dev
-        const requiredBytes = maximumOutputBytes * (sameVolumeCopy ? 2 : 1)
-        if (availableBytes < requiredBytes) throw new Error(`Insufficient free space for the output ceiling and activation: ${requiredBytes} bytes required, ${availableBytes} bytes available.`)
-        if (effectiveOutputMode === 'copy' && !sameVolumeCopy) {
-          const destination = await fs.statfs(path.dirname(inputPath))
-          if (Number(destination.bavail) * Number(destination.bsize) < maximumOutputBytes) throw new Error('Insufficient destination space for the sibling copy')
-        }
-        options = { ...options, maxOutputBytes: maximumOutputBytes }
+      const maximumOutputBytes = options.maxOutputBytes ?? sourceStat.size
+      const available = await fs.statfs(tempBaseDir)
+      const availableBytes = Number(available.bavail) * Number(available.bsize)
+      const sameVolumeCopy = effectiveOutputMode === 'copy' && (await fs.stat(tempBaseDir)).dev === sourceStat.dev
+      const requiredBytes = maximumOutputBytes * (sameVolumeCopy ? 2 : 1)
+      if (availableBytes < requiredBytes) throw new Error(`Insufficient free space for the output ceiling and activation: ${requiredBytes} bytes required, ${availableBytes} bytes available.`)
+      if (effectiveOutputMode === 'copy' && !sameVolumeCopy) {
+        const destination = await fs.statfs(path.dirname(inputPath))
+        if (Number(destination.bavail) * Number(destination.bsize) < maximumOutputBytes) throw new Error('Insufficient destination space for the sibling copy')
       }
+      options = { ...options, maxOutputBytes: maximumOutputBytes }
 
       getLoggingService().info('[TranscodingService]', `Starting FFmpeg transcode: ${inputPath} -> ${tempPath}`)
       const success = await this.runFFmpeg(inputPath, tempPath, params, options, (p) => {
@@ -1158,34 +1158,6 @@ export class TranscodingService {
     }
   }
 
-  private async resolveMaximumOutputBytes(
-    sourceSize: number,
-    options: TranscodeOptions,
-    db: ReturnType<typeof getDatabase>
-  ): Promise<number | null> {
-    if (options.maxOutputBytes !== undefined) {
-      if (!Number.isSafeInteger(options.maxOutputBytes) || options.maxOutputBytes <= 0) {
-        throw new Error('Maximum output size must be a positive integer number of bytes.')
-      }
-      return options.maxOutputBytes
-    }
-    const rawPolicy = await db.config.getSetting('transcoding.global_min_savings')
-    if (!rawPolicy) throw new Error('Global minimum savings policy is not configured.')
-    let policy: { kind: 'percent' | 'bytes'; value: number }
-    try {
-      policy = JSON.parse(rawPolicy) as { kind: 'percent' | 'bytes'; value: number }
-    } catch (error) {
-      throw new Error(`Global minimum savings policy is invalid: ${error instanceof Error ? error.message : String(error)}`)
-    }
-    if (!['percent', 'bytes'].includes(policy.kind) || !Number.isFinite(policy.value) || policy.value <= 0) {
-      throw new Error('Global minimum savings policy must define a positive percent or byte value.')
-    }
-    const savings = policy.kind === 'percent' ? Math.floor(sourceSize * policy.value / 100) : Math.floor(policy.value)
-    const maximumOutputBytes = sourceSize - savings
-    if (maximumOutputBytes <= 0) throw new Error('Global minimum savings policy exceeds the source file size.')
-    return maximumOutputBytes
-  }
-
   private verifyPlannedStreams(sourceAnalysis: FileAnalysisResult, outputAnalysis: FileAnalysisResult, options: TranscodeOptions, params: TranscodingParams): void {
     if (!outputAnalysis.success || !outputAnalysis.video) throw new Error(outputAnalysis.error || 'Verified output has no video stream')
     const expectedAudioCount = params.expectedAudioCount !== undefined ? params.expectedAudioCount : params.audioTracks?.length
@@ -1198,6 +1170,7 @@ export class TranscodingService {
     }
     const conversion = options.targetConversion
     if (conversion && (outputAnalysis.video.codec !== options.targetCodec || outputAnalysis.video.width !== conversion.width || outputAnalysis.video.height !== conversion.height || outputAnalysis.video.bitDepth !== conversion.bitDepth || outputAnalysis.video.hdrFormat !== conversion.hdrFormat)) throw new Error('Verified output does not match the approved video conversion')
+    if (!conversion && options.optimizationMode === 'transcode' && options.targetCodec && normalizeVideoCodec(outputAnalysis.video.codec) !== normalizeVideoCodec(options.targetCodec)) throw new Error('Verified output codec does not match the approved video codec')
     const streamPlan = buildStreamSelectionPlan(sourceAnalysis, options)
     for (const [index, sourceIndex] of streamPlan.audioStreamIndexes.entries()) {
       const source = sourceAnalysis.audioTracks.find(track => track.index === sourceIndex)!
@@ -1239,7 +1212,9 @@ export class TranscodingService {
       const referenceBytes = options.targetConversion?.inputArgs.length ? options.targetConversion.width * options.targetConversion.height * (options.targetConversion.bitDepth > 8 ? 3 : 1.5) * analysis.video.frameRate! * sampleSeconds : 0
       const requiredBytes = Math.ceil((plannedBitrate ? plannedBitrate / 8 * sampleSeconds : options.maxOutputBytes ?? stat.size) * candidates.length + referenceBytes + (options.targetConversion?.maximumVideoBitrate ?? 0) / 4)
       if (Number(space.bavail) * Number(space.bsize) < requiredBytes) throw new Error('Insufficient disk headroom for episode sampling')
-      const measured = await this.measuredOptimizationService.measure({ inputPath: filePath, outputDirectory, durationMs: analysis.duration, outputExtension: options.targetConversion?.container === 'mp4' ? '.mp4' : '.mkv', referenceFilter: options.targetConversion?.videoFilter, referenceInputArgs: options.targetConversion?.inputArgs, candidates, signal })
+      const outputContainer = options.targetConversion?.container ?? options.targetContainer
+      const outputExtension = outputContainer === 'mp4' ? '.mp4' : outputContainer === 'mkv' ? '.mkv' : path.extname(filePath)
+      const measured = await this.measuredOptimizationService.measure({ inputPath: filePath, outputDirectory, durationMs: analysis.duration, outputExtension, referenceFilter: options.targetConversion?.videoFilter, referenceInputArgs: options.targetConversion?.inputArgs, candidates, signal })
       signal?.throwIfAborted()
       const selected = selectMeasuredCandidate(options.qualityProfile, measured.candidates)
       for (const candidate of measured.candidates) if (candidate !== selected) for (const sample of candidate.samplePaths!) await fs.unlink(sample)

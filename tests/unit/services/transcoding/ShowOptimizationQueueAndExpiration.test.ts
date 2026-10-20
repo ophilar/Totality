@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { getTranscodingService } from '../../../../src/main/services/TranscodingService'
+import { PreflightShowTranscodeSchema } from '../../../../src/main/validation/schemas'
 
 vi.mock('@main/database/getDatabase')
 vi.mock('@main/services/LoggingService', () => ({
@@ -103,6 +104,29 @@ describe('ShowOptimizationQueueAndExpiration', () => {
     expect(result.episodes).toHaveLength(1)
     expect(result.episodes[0].compatible).toBe(false)
     expect(result.episodes[0].reason).toContain('no local source identity')
+  })
+
+  it('accepts an explicit no-target optimization without consulting the saved default', async () => {
+    const transcodingService = getTranscodingService()
+    mockDb.config.getSetting.mockResolvedValue('saved-default')
+    mockDb.media.getItemById.mockResolvedValue({
+      id: 101,
+      title: 'Movie',
+      source_id: 'src1',
+    })
+    const request = {
+      requestId: 'request-no-target',
+      mediaItemId: 101,
+      sourceId: 'src1',
+      options: { targetProfileId: null },
+    }
+
+    expect(PreflightShowTranscodeSchema.safeParse([request]).success).toBe(true)
+    const result = await transcodingService.preflightShowTranscode(request)
+
+    expect(result.episodes[0].reason).toContain('no local source identity')
+    expect(mockDb.config.getSetting).not.toHaveBeenCalledWith('optimization_default_target_profile_id')
+    expect(mockDb.playbackTargetProfiles.get).not.toHaveBeenCalled()
   })
 
   it('queues authorized episodes in sequence when preflight is valid', async () => {

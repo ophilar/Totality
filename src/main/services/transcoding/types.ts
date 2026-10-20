@@ -19,7 +19,7 @@ export interface TranscodeOptions {
   optimizationMode?: 'smart' | 'remux_only' | 'transcode'
   qualityProfile?: 'transparent' | 'balanced' | 'maximum_savings'
   encoderPolicy?: 'hardware' | 'software' | 'compare'
-  targetProfileId?: string
+  targetProfileId?: string | null
   targetContainer?: 'mkv' | 'mp4'
   targetAudioCodec?: 'aac' | 'ac3' | 'eac3'
   audioConversions?: Array<{ sourceIndex: number; codec: string; bitrateKbps: number }>

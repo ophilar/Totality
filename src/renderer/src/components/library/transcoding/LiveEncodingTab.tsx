@@ -74,10 +74,14 @@ export function LiveEncodingTab({
     }
   }, [logLines, showLogs])
 
-  const copyLogs = () => {
+  const copyLogs = async () => {
     if (logLines.length === 0) return
-    navigator.clipboard.writeText(logLines.join('\n'))
-    addToast({ title: 'Logs copied to clipboard', type: 'success' })
+    try {
+      await navigator.clipboard.writeText(logLines.join('\n'))
+      addToast({ title: 'Logs copied to clipboard', type: 'success' })
+    } catch (error) {
+      addToast({ title: 'Could not copy logs', message: error instanceof Error ? error.message : String(error), type: 'error' })
+    }
   }
 
   const percent = progress?.percent ?? 0
