@@ -45,6 +45,7 @@ export function GeneralTab() {
   const [webRunning, setWebRunning] = useState(false)
   const [webUrl, setWebUrl] = useState<string | null>(null)
   const [webClients, setWebClients] = useState(0)
+  const [webAccessError, setWebAccessError] = useState<string | null>(null)
   const [urlCopied, setUrlCopied] = useState(false)
   const [webSessionTimeout, setWebSessionTimeout] = useState('86400000')
 
@@ -54,7 +55,9 @@ export function GeneralTab() {
       setWebRunning(status.running)
       setWebUrl(status.localUrl)
       setWebClients(status.connectedClients)
-    } catch { /* web access not available */ }
+    } catch (error) {
+      setWebAccessError(error instanceof Error ? error.message : String(error))
+    }
   }, [])
 
   useEffect(() => {
@@ -79,6 +82,9 @@ export function GeneralTab() {
         setWebEnabled(weVal === 'true')
         if (wpVal) setWebPort(wpVal)
         if (wpinVal) setWebPin(wpinVal)
+        if (weVal === 'true' && !wpinVal?.trim()) {
+          setWebAccessError('Web access is enabled, but a PIN is required before the server can start.')
+        }
         if (wtVal) setWebSessionTimeout(wtVal)
         await loadWebStatus()
       } catch (error) {
@@ -257,21 +263,24 @@ export function GeneralTab() {
             <Toggle
               checked={webEnabled}
               onChange={async (checked) => {
-                setWebEnabled(checked)
-                await window.electronAPI.setSetting(SETTING_KEYS.web_access_enabled, String(checked))
-                if (checked) {
-                  try {
-                    await window.electronAPI.webAccessStart()
-                  } catch (err) {
-                    console.error('Failed to start web server:', err)
+                setWebAccessError(null)
+                try {
+                  await window.electronAPI.setSetting(SETTING_KEYS.web_access_enabled, String(checked))
+                  setWebEnabled(checked)
+                  if (checked && !webPin.trim()) {
+                    setWebAccessError('Set a PIN before the web server can start.')
+                    return
                   }
-                } else {
-                  await window.electronAPI.webAccessStop()
+                  if (checked) await window.electronAPI.webAccessStart()
+                  else await window.electronAPI.webAccessStop()
+                  await loadWebStatus()
+                } catch (error) {
+                  setWebAccessError(error instanceof Error ? error.message : String(error))
                 }
-                await loadWebStatus()
               }}
             />
           </div>
+          {webAccessError && <p role="alert" className="px-4 py-2 text-xs text-destructive">{webAccessError}</p>}
 
           {webEnabled && (
             <>
@@ -330,7 +339,7 @@ export function GeneralTab() {
               <div className="flex items-center justify-between px-4 py-3">
                 <div>
                   <p className="text-sm text-foreground">PIN</p>
-                  <p className="text-xs text-muted-foreground">Required to access from browser (leave empty for no PIN)</p>
+                  <p className="text-xs text-muted-foreground">Required whenever web access is enabled.</p>
                 </div>
                 <div className="flex items-center gap-1">
                   <input
@@ -338,9 +347,22 @@ export function GeneralTab() {
                     value={webPin}
                     onChange={(e) => setWebPin(e.target.value)}
                     onBlur={async () => {
-                      await window.electronAPI.setSetting(SETTING_KEYS.web_access_pin, webPin)
+                      setWebAccessError(null)
+                      if (webEnabled && !webPin.trim()) {
+                        setWebAccessError('A PIN is required while web access is enabled.')
+                        return
+                      }
+                      try {
+                        await window.electronAPI.setSetting(SETTING_KEYS.web_access_pin, webPin)
+                        if (webEnabled && !webRunning) {
+                          await window.electronAPI.webAccessStart()
+                          await loadWebStatus()
+                        }
+                      } catch (error) {
+                        setWebAccessError(error instanceof Error ? error.message : String(error))
+                      }
                     }}
-                    placeholder="No PIN"
+                    placeholder={webEnabled ? 'Required' : 'No PIN'}
                     className="w-28 px-2 py-1 text-sm bg-muted/50 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
                     autoComplete="off"
                   />
