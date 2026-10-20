@@ -2,6 +2,8 @@
 import type { ITranscodeCommandBuilder, TranscodeOptions } from './types'
 import { NvidiaCommandBuilder } from './NvidiaCommandBuilder'
 import { IntelCommandBuilder } from './IntelCommandBuilder'
+import { AmdCommandBuilder } from './AmdCommandBuilder'
+import { AppleCommandBuilder } from './AppleCommandBuilder'
 import { SoftwareCommandBuilder } from './SoftwareCommandBuilder'
 import { StreamRemuxCommandBuilder } from './StreamRemuxCommandBuilder'
 
@@ -9,6 +11,8 @@ export class TranscodeCommandFactory {
   private static readonly GPU_BUILDERS: Record<string, () => ITranscodeCommandBuilder> = {
     'NVIDIA': () => new NvidiaCommandBuilder(),
     'Intel': () => new IntelCommandBuilder(),
+    'AMD': () => new AmdCommandBuilder(),
+    'Apple': () => new AppleCommandBuilder(),
   }
 
   static resolveOutputMode(

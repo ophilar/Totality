@@ -18,8 +18,12 @@ export interface TranscodingCapabilities extends TranscodingAvailability {
 
 const SOFTWARE_ENCODERS = ['svt_av1', 'x265', 'libx264']
 
-export function selectDefaultGpu(gpus: GpuInfo[]): GpuInfo | undefined {
-  return gpus.find(gpu => gpu.vendor === 'NVIDIA') ?? gpus.find(gpu => gpu.vendor === 'Intel') ?? gpus[0]
+export function getHardwareEncoder(vendor: GpuInfo['vendor'], codec: 'av1' | 'hevc'): string | undefined {
+  if (vendor === 'NVIDIA') return codec === 'av1' ? 'nvenc_av1' : 'nvenc_h265'
+  if (vendor === 'Intel') return codec === 'av1' ? 'qsv_av1' : 'qsv_h265'
+  if (vendor === 'AMD') return codec === 'av1' ? 'av1_amf' : 'hevc_amf'
+  if (vendor === 'Apple' && codec === 'hevc') return 'vt_h265'
+  return undefined
 }
 
 export function resolveSelectedGpuId(gpus: GpuInfo[], persistedGpuId?: string | null): string | null {
@@ -42,6 +46,8 @@ export function buildTranscodingCapabilities(
     vendors.push(gpu.vendor)
     if (gpu.vendor === 'NVIDIA') encoders.push('nvenc_av1', 'nvenc_h265')
     if (gpu.vendor === 'Intel') encoders.push('qsv_av1', 'qsv_h265')
+    if (gpu.vendor === 'AMD') encoders.push('av1_amf', 'hevc_amf')
+    if (gpu.vendor === 'Apple') encoders.push('vt_h265')
   }
 
   vendors.push('Software')

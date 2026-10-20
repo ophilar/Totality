@@ -1,6 +1,5 @@
 export * from './types'
-export { TranscodingDeviceSelector } from './TranscodingDeviceSelector'
-export type { TranscodingDeviceSelectorProps } from './TranscodingDeviceSelector'
+export { EncoderPolicySelector } from './EncoderPolicySelector'
 export { QuickPresetsTab } from './QuickPresetsTab'
 export type { QuickPresetsTabProps } from './QuickPresetsTab'
 export { AdvancedTab } from './AdvancedTab'

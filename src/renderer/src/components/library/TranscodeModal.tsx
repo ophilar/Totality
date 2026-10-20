@@ -12,26 +12,33 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
 import type { MediaItem } from '@main/types/database'
+import type { OptimizationDecision } from '@main/services/OptimizationDecisionService'
 
-import type { TranscodeOptions, TranscodingParams, GpuInfo, Availability, TranscodeProgress } from './transcoding'
-import { QuickPresetsTab, AdvancedTab, LiveEncodingTab } from './transcoding'
+import type { TranscodeOptions, TranscodingParams, Availability, TranscodeProgress } from './transcoding'
+import { QuickPresetsTab, AdvancedTab, LiveEncodingTab, EncoderPolicySelector } from './transcoding'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
+import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
+import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
+import { getHardwareEncoder } from '@main/services/TranscodingCapabilities'
 
 interface TranscodeModalProps {
   mediaId: number
   onClose: () => void
+  onOptimizationCompleted?: () => void
   initialOptimizationMode?: 'remux_only' | 'transcode'
   initialStreamPruning?: boolean
   initialAudioTranscode?: boolean
 }
 
-export function TranscodeModal({ mediaId, onClose, initialOptimizationMode = 'transcode', initialStreamPruning = false, initialAudioTranscode = false }: TranscodeModalProps) {
+export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, initialOptimizationMode = 'transcode', initialStreamPruning = false, initialAudioTranscode = false }: TranscodeModalProps) {
   const [media, setMedia] = useState<MediaItem | null>(null)
+  const [optimizationDecision, setOptimizationDecision] = useState<OptimizationDecision | null>(null)
+  const [optimizationDecisionError, setOptimizationDecisionError] = useState<string | null>(null)
   const [availability, setAvailability] = useState<Availability | null>(null)
+  const [capabilities, setCapabilities] = useState<TranscodingCapabilities | null>(null)
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [params, setParams] = useState<TranscodingParams | null>(null)
-  const [gpus, setGpus] = useState<GpuInfo[]>([])
   const [activeTab, setActiveTab] = useState<'presets' | 'advanced' | 'monitor' | 'review'>('presets')
   const [preflight, setPreflight] = useState<{ preflightId: string; episodes: Array<{ mediaItemId: number; label: string; compatible: boolean; reason?: string; decisionStatus?: string; params?: TranscodingParams; samplePaths?: string[]; adviceReason?: string }> } | null>(null)
   const [samplesReviewed, setSamplesReviewed] = useState(false)
@@ -62,6 +69,18 @@ export function TranscodeModal({ mediaId, onClose, initialOptimizationMode = 'tr
   const modalRef = useRef<HTMLDivElement | null>(null)
   useFocusTrap(!!media, modalRef)
   const failureReportedRef = useRef(false)
+  const selectedGpu = capabilities?.gpus.find(gpu => gpu.id === options.gpuId)
+  const hardwareEncoder = selectedGpu && options.targetCodec ? getHardwareEncoder(selectedGpu.vendor, options.targetCodec) : undefined
+  const hardwareAvailable = Boolean(hardwareEncoder && capabilities?.verifiedEncoders.includes(hardwareEncoder))
+
+  const selectEncoderPolicy = (encoderPolicy: TranscodeOptions['encoderPolicy']) => {
+    setOptions(prev => ({
+      ...prev,
+      encoderPolicy,
+      useGpu: encoderPolicy === 'hardware' || encoderPolicy === 'compare',
+      gpuId: encoderPolicy === 'hardware' || encoderPolicy === 'compare' ? capabilities?.selectedGpuId ?? '' : ''
+    }))
+  }
 
   const loadInitialData = useCallback(async () => {
     try {
@@ -86,18 +105,26 @@ export function TranscodeModal({ mediaId, onClose, initialOptimizationMode = 'tr
         }
       }
       const avail = capabilities || { ffmpeg: false }
-      const detectedGpus = capabilities?.gpus || []
       setAvailability(avail)
-      setGpus(detectedGpus)
+      setCapabilities(capabilities)
+      try {
+        setOptimizationDecision(await window.electronAPI.optimizationGetDecision(mediaId) as OptimizationDecision)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        setOptimizationDecisionError(message)
+        console.error('Failed to load optimization savings:', error)
+      }
 
       const defaultEngine = capabilities?.engines?.[0] || 'ffmpeg'
-      const firstGpu = detectedGpus.find((gpu: GpuInfo) => gpu.id === capabilities?.selectedGpuId)
+      const selectedGpuId = capabilities?.gpus?.some(gpu => gpu.id === capabilities.selectedGpuId)
+        ? capabilities.selectedGpuId
+        : ''
 
       setOptions(prev => ({
         ...prev,
         transcodingEngine: defaultEngine,
-        gpuId: firstGpu ? firstGpu.id : '',
-        useGpu: Boolean(firstGpu)
+        gpuId: selectedGpuId || '',
+        useGpu: false
       }))
     } catch (err) {
       console.error('Failed to load transcode data:', err)
@@ -122,6 +149,7 @@ export function TranscodeModal({ mediaId, onClose, initialOptimizationMode = 'tr
         if (p.status === 'complete') {
           setStatus('complete')
           setActiveTab('monitor')
+          onOptimizationCompleted?.()
         }
         if (p.status === 'cancelled') {
           setStatus('idle')
@@ -141,7 +169,7 @@ export function TranscodeModal({ mediaId, onClose, initialOptimizationMode = 'tr
     return () => {
       if (typeof unsub === 'function') unsub()
     }
-  }, [mediaId, addToast])
+  }, [mediaId, addToast, onOptimizationCompleted])
 
   const paramSequenceRef = useRef(0)
 
@@ -198,7 +226,14 @@ export function TranscodeModal({ mediaId, onClose, initialOptimizationMode = 'tr
       if (audioTranscodeEnabled && !options.targetAudioCodec) throw new Error('Choose an output audio codec before reviewing this optimization.')
       if (!preflight) {
         const preflightOptions = { ...options, targetAudioCodec: audioTranscodeEnabled ? options.targetAudioCodec : undefined }
-        const result = await window.electronAPI.preflightShow({ mediaItemId: media.id, sourceId: media.source_id, libraryId: media.library_id, options: preflightOptions }) as typeof preflight
+        const result = await window.electronAPI.preflightShow({
+          requestId: crypto.randomUUID(),
+          mediaItemId: media.id,
+          seriesIdentityKey: media.series_identity_key || undefined,
+          sourceId: media.source_id,
+          libraryId: media.library_id,
+          options: preflightOptions
+        }) as typeof preflight
         if (!result) throw new Error('Optimization review could not be created')
         setPreflight(result)
         setStatus('idle')
@@ -279,9 +314,6 @@ export function TranscodeModal({ mediaId, onClose, initialOptimizationMode = 'tr
             <div>
               <h3 id="transcode-modal-title" className="text-lg font-bold leading-tight flex items-center gap-2">
                 AI Transcoder & Optimizer
-                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-primary/20 text-primary">
-                  VRAM Passthrough
-                </span>
               </h3>
               <p className="text-xs text-muted-foreground truncate max-w-[450px]">{media.title}</p>
             </div>
@@ -353,6 +385,28 @@ export function TranscodeModal({ mediaId, onClose, initialOptimizationMode = 'tr
             </div>
           )}
 
+          {optimizationDecision && (
+            <section className="space-y-2 rounded-xl border border-border/40 bg-muted/20 p-4" aria-label="Estimated optimization savings">
+              <h4 className="text-sm font-semibold">Estimated savings</h4>
+              {([
+                ['Remove audio tracks', optimizationDecision.trackRemoval],
+                ['Transcode audio', optimizationDecision.audioTranscode],
+                ['Transcode video', optimizationDecision.videoTranscode]
+              ] as const).map(([label, mechanism]) => (
+                <div key={label} className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 border-t border-border/30 pt-2 text-sm first:border-t-0 first:pt-0">
+                  <span className="text-muted-foreground">{label}</span>
+                  <EstimatedSavingsDisplay bytes={mechanism.estimatedSavingsBytes} />
+                  {mechanism.estimatedSavingsBytes == null && <span className="col-span-2 text-xs text-muted-foreground">{mechanism.reason}</span>}
+                </div>
+              ))}
+            </section>
+          )}
+          {optimizationDecisionError && (
+            <p role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+              Estimated savings could not be calculated: {optimizationDecisionError}
+            </p>
+          )}
+
           {/* Active Tab Content */}
           {(activeTab === 'presets' || activeTab === 'advanced') && <div className="space-y-2">
             <label className="flex items-start gap-3 rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
@@ -418,12 +472,15 @@ export function TranscodeModal({ mediaId, onClose, initialOptimizationMode = 'tr
             </label>
           </div>}
 
+          {(activeTab === 'presets' || activeTab === 'advanced') && (
+            <EncoderPolicySelector value={options.encoderPolicy ?? ''} hardwareAvailable={hardwareAvailable} onChange={selectEncoderPolicy} />
+          )}
+
           {activeTab === 'presets' && (
             <QuickPresetsTab
               options={options}
               setOptions={setOptions}
               params={params}
-              gpus={gpus}
             />
           )}
 
@@ -432,7 +489,6 @@ export function TranscodeModal({ mediaId, onClose, initialOptimizationMode = 'tr
               options={options}
               setOptions={setOptions}
               params={params}
-              gpus={gpus}
               availability={availability}
             />
           )}

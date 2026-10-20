@@ -36,12 +36,12 @@ describe('TranscodeCommandFactory builder resolution', () => {
     expect(builder.constructor.name).toBe('StreamRemuxCommandBuilder')
   })
 
-  it('throws when GPU is requested with unsupported AMD vendor', () => {
-    expect(() => TranscodeCommandFactory.getBuilder('AMD', { useGpu: true })).toThrow(/GPU transcoding is not supported for vendor: "AMD"/)
+  it('returns AmdCommandBuilder for AMD vendor', () => {
+    expect(TranscodeCommandFactory.getBuilder('AMD', { useGpu: true }).constructor.name).toBe('AmdCommandBuilder')
   })
 
-  it('throws when GPU is requested with unsupported Apple vendor', () => {
-    expect(() => TranscodeCommandFactory.getBuilder('Apple', { useGpu: true })).toThrow(/GPU transcoding is not supported for vendor: "Apple"/)
+  it('returns AppleCommandBuilder for Apple vendor', () => {
+    expect(TranscodeCommandFactory.getBuilder('Apple', { useGpu: true }).constructor.name).toBe('AppleCommandBuilder')
   })
 
   it('throws when GPU is requested without a valid vendor', () => {

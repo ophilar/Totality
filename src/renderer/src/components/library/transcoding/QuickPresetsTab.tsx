@@ -10,14 +10,12 @@ import {
   TrendingDown
 } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
-import type { TranscodeOptions, TranscodingParams, GpuInfo } from './types'
-import { TranscodingDeviceSelector } from './TranscodingDeviceSelector'
+import type { TranscodeOptions, TranscodingParams } from './types'
 
 export interface QuickPresetsTabProps {
   options: TranscodeOptions
   setOptions: React.Dispatch<React.SetStateAction<TranscodeOptions>>
   params: TranscodingParams | null
-  gpus: GpuInfo[]
 }
 
 interface PresetProfile {
@@ -57,8 +55,7 @@ const PRESET_PROFILES: PresetProfile[] = [
 export function QuickPresetsTab({
   options,
   setOptions,
-  params,
-  gpus
+  params
 }: QuickPresetsTabProps) {
   const { addToast } = useToast()
   const [selectedProfileId, setSelectedProfileId] = useState<string>('')
@@ -161,19 +158,6 @@ export function QuickPresetsTab({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Encoder policy</label>
-            <select
-              value={options.encoderPolicy ?? ''}
-              onChange={event => setOptions(prev => ({ ...prev, encoderPolicy: event.target.value as TranscodeOptions['encoderPolicy'] }))}
-              className="w-full py-2 px-3 rounded-xl border border-border/40 bg-muted/40 text-xs font-bold"
-            >
-              <option value="">Select encoder policy</option>
-              <option value="hardware">Selected hardware</option>
-              <option value="software">Software</option>
-              <option value="compare">Compare both</option>
-            </select>
-          </div>
           {/* Target Codec */}
           <div className="space-y-1.5">
             <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Target Codec</label>
@@ -203,15 +187,6 @@ export function QuickPresetsTab({
             </div>
           </div>
 
-          {/* Canonical Transcoding Device Selector */}
-          <TranscodingDeviceSelector
-            useGpu={options.useGpu}
-            onUseGpuChange={(useGpu) => setOptions(prev => ({ ...prev, useGpu }))}
-            selectedGpuId={options.gpuId}
-            onSelectedGpuIdChange={(gpuId) => setOptions(prev => ({ ...prev, gpuId, useGpu: Boolean(gpuId) }))}
-            gpus={gpus}
-            variant="compact"
-          />
         </div>
       </div>
 
