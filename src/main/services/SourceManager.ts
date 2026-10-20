@@ -622,8 +622,10 @@ export class SourceManager {
     }
 
     // Get libraries and their server-side locations
-    const libraries = await provider.getLibraries()
-    const libraryPaths = await provider.getLibraryPaths(libraries.map(library => library.id))
+    const { libraries, paths: libraryPaths, errors: pathErrors } = await provider.getLibrariesWithPaths()
+    for (const error of pathErrors) {
+      getLoggingService().warn('[SourceManager]', `Could not load Plex library path for ${sourceId}:`, error)
+    }
 
     // Update connection config and display name with selected server
     const server = provider.getSelectedServer()
@@ -652,8 +654,10 @@ export class SourceManager {
     sourceId: string,
     db: ReturnType<typeof getDatabase>
   ): Promise<void> {
-    const libraries = await provider.getLibraries()
-    const paths = await provider.getLibraryPaths(libraries.map(library => library.id))
+    const { paths, errors } = await provider.getLibrariesWithPaths()
+    for (const error of errors) {
+      getLoggingService().warn('[SourceManager]', `Could not load Plex library path for ${sourceId}:`, error)
+    }
     const source = db.getMediaSourceById(sourceId)
     if (!source) throw new Error(`Plex source not found: ${sourceId}`)
 

@@ -268,37 +268,32 @@ export class SeriesCompletenessService extends CancellableOperation {
     }
 
     // Analyze completeness against TMDB data
-    try {
-      const analysis = await this.calculateMissing(tmdbId, ownedEpisodes, updateArtwork ? episodes : undefined, updateArtwork ? sourceId : undefined)
+    const analysis = await this.calculateMissing(tmdbId, ownedEpisodes, updateArtwork ? episodes : undefined, updateArtwork ? sourceId : undefined)
 
-      // Store result with source/library scope
-      const data: Omit<SeriesCompleteness, 'id' | 'created_at' | 'updated_at'> = {
-        series_title: seriesTitle,
-        source_id: sourceId,
-        library_id: libraryId,
-        total_seasons: analysis.totalSeasons,
-        total_episodes: analysis.totalEpisodes,
-        owned_seasons: analysis.ownedSeasons,
-        owned_episodes: analysis.ownedEpisodes,
-        missing_seasons: analysis.missingSeasons,
-        missing_episodes: analysis.missingEpisodes,
-        completeness_percentage: analysis.completenessPercentage,
-        tmdb_id: analysis.tmdbId,
-        poster_url: analysis.posterUrl,
-        backdrop_url: analysis.backdropUrl,
-        status: analysis.status,
-        series_identity_key: seriesIdentityKey,
-      } as any
+    // Store result with source/library scope
+    const data: Omit<SeriesCompleteness, 'id' | 'created_at' | 'updated_at'> = {
+      series_title: seriesTitle,
+      source_id: sourceId,
+      library_id: libraryId,
+      total_seasons: analysis.totalSeasons,
+      total_episodes: analysis.totalEpisodes,
+      owned_seasons: analysis.ownedSeasons,
+      owned_episodes: analysis.ownedEpisodes,
+      missing_seasons: analysis.missingSeasons,
+      missing_episodes: analysis.missingEpisodes,
+      completeness_percentage: analysis.completenessPercentage,
+      tmdb_id: analysis.tmdbId,
+      poster_url: analysis.posterUrl,
+      backdrop_url: analysis.backdropUrl,
+      status: analysis.status,
+      series_identity_key: seriesIdentityKey,
+    } as any
 
-      getLoggingService().verbose('[SeriesCompletenessService]',
-        `"${seriesTitle}" (${seriesIdentityKey}) — ${analysis.ownedEpisodes}/${analysis.totalEpisodes} episodes, ${analysis.missingEpisodes.length} missing, ${analysis.completenessPercentage}% complete`)
+    getLoggingService().verbose('[SeriesCompletenessService]',
+      `"${seriesTitle}" (${seriesIdentityKey}) — ${analysis.ownedEpisodes}/${analysis.totalEpisodes} episodes, ${analysis.missingEpisodes.length} missing, ${analysis.completenessPercentage}% complete`)
 
-      await db.upsertSeriesCompleteness(data)
-      return db.getSeriesCompletenessByIdentity(seriesIdentityKey, sourceId, libraryId)
-    } catch (error) {
-      console.error(`Error analyzing ${seriesTitle}:`, error)
-      return null
-    }
+    await db.upsertSeriesCompleteness(data)
+    return db.getSeriesCompletenessByIdentity(seriesIdentityKey, sourceId, libraryId)
   }
 
   /**

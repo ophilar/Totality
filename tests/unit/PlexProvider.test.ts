@@ -69,6 +69,7 @@ const TEST_SERVER: PlexServer = {
   scheme: 'http',
   address: '192.168.1.100',
   uri: 'http://192.168.1.100:32400',
+  connectionType: 'local',
   owned: true,
   accessToken: 'test-token-123',
 }
@@ -451,6 +452,20 @@ describe('PlexProvider', () => {
       expect(result.versions).toHaveLength(1)
     })
 
+    it('retains the media file path when Plex omits stream metadata', () => {
+      const item = makeMovieItem()
+      item.Media![0].Part![0].Stream = []
+
+      const provider = createProviderWithServer()
+      const result = (provider as any).convertToMediaItem(item)
+
+      expect(result.mediaItem.file_path).toBe('/movies/Test Movie (2024)/Test.Movie.2024.1080p.mkv')
+      expect(result.versions[0].audio_codec).toBe('')
+      expect(result.versions[0].audio_channels).toBe(0)
+      expect(result.versions[0].audio_bitrate).toBe(0)
+      expect(result.versions[0].audio_tracks).toBe('[]')
+    })
+
     it('picks best version from multiple Media entries', () => {
       const item = makeMovieItem({
         Media: [
@@ -781,20 +796,48 @@ describe('PlexProvider', () => {
       expect(libraries[2]).toEqual(expect.objectContaining({ id: '3', name: 'Music', type: 'music' }))
     })
 
-    it('loads and deduplicates filesystem locations for selected libraries', async () => {
-      mockFetchJSON
-        .mockResolvedValueOnce({ MediaContainer: { Location: [{ id: 1, path: 'D:/Media/Movies' }] } })
-        .mockResolvedValueOnce({ MediaContainer: { Location: [{ id: 2, path: 'D:/Media/Shows' }, { id: 3, path: 'D:/Media/Movies' }] } })
+    it('loads and deduplicates video roots from Plex library sections', async () => {
+      mockFetchJSON.mockResolvedValue({
+        MediaContainer: {
+          Directory: [
+            { key: '1', title: 'Movies', type: 'movie', Location: [{ path: 'D:/Media/Movies' }] },
+            { key: '2', title: 'TV Shows', type: 'show', Location: [{ path: 'D:/Media/Shows' }, { path: 'D:/Media/Movies' }] },
+            { key: '3', title: 'Music', type: 'artist', Location: [{ path: 'D:/Media/Music' }] },
+          ],
+        },
+      })
 
       const provider = createProviderWithServer()
-      const paths = await provider.getLibraryPaths(['1', '2'])
+      const result = await provider.getLibrariesWithPaths()
 
-      expect(paths).toEqual(['D:/Media/Movies', 'D:/Media/Shows'])
-      expect(mockFetchJSON).toHaveBeenNthCalledWith(
-        1,
-        expect.stringContaining('/library/sections/1/location'),
+      expect(result.paths).toEqual(['D:/Media/Movies', 'D:/Media/Shows'])
+      expect(result.errors).toEqual([])
+      expect(result.libraries.map(library => library.id)).toEqual(['1', '2', '3'])
+      expect(mockFetchJSON).toHaveBeenCalledTimes(1)
+      expect(mockFetchJSON).toHaveBeenCalledWith(
+        expect.stringContaining('/library/sections'),
         expect.objectContaining({ timeoutMs: 30_000 })
       )
+    })
+
+    it('reports missing section locations with server and response-field diagnostics', async () => {
+      mockFetchJSON.mockResolvedValue({
+        MediaContainer: {
+          Directory: [
+            { key: '7', title: 'Movies', type: 'movie', count: 10 },
+          ],
+        },
+      })
+
+      const provider = createProviderWithServer()
+      const result = await provider.getLibrariesWithPaths()
+
+      expect(result.paths).toEqual([])
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0].message).toContain('Movies (7)')
+      expect(result.errors[0].message).toContain('http://192.168.1.100:32400')
+      expect(result.errors[0].message).toContain('connection: local; server owned: true')
+      expect(result.errors[0].message).toContain('library fields: count, key, title, type')
     })
   })
 })

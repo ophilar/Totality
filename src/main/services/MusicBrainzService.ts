@@ -577,33 +577,12 @@ export class MusicBrainzService extends CancellableOperation {
     // If no MusicBrainz ID, try to find one
     if (!mbId) {
       const searchResults = await this.searchArtist(artistName)
-      if (searchResults.length > 0) {
-        const exactMatch = searchResults.find(a =>
-          a.name.toLowerCase() === artistName.toLowerCase()
-        )
-        mbId = exactMatch?.id || searchResults[0].id
-        foundMbId = mbId  // Mark that we found a new MBID to cache
+      const exactMatches = searchResults.filter(artist => artist.name.toLowerCase() === artistName.toLowerCase())
+      if (exactMatches.length !== 1) {
+        throw new Error(`MusicBrainz artist match for "${artistName}" returned ${exactMatches.length} exact matches; assign a MusicBrainz ID before analyzing completeness.`)
       }
-    }
-
-    if (!mbId) {
-      // Cannot find artist in MusicBrainz
-      return {
-        artist_name: artistName,
-        total_albums: 0,
-        owned_albums: ownedAlbumTitles.length,
-        total_singles: 0,
-        owned_singles: 0,
-        total_eps: 0,
-        owned_eps: 0,
-        missing_albums: '[]',
-        missing_singles: '[]',
-        missing_eps: '[]',
-        completeness_percentage: 100,
-        last_sync_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }
+      mbId = exactMatches[0].id
+      foundMbId = mbId
     }
 
     // Get discography (vinyl filtering disabled by default for speed)
@@ -779,7 +758,7 @@ export class MusicBrainzService extends CancellableOperation {
 
     if (!tracklist || tracklist.tracks.length === 0) {
       console.log(`[MusicBrainzService] No tracklist found for "${artistName}" - "${albumTitle}"`)
-      return null
+      throw new Error(`No MusicBrainz release with track data was found for "${artistName}" - "${albumTitle}".`)
     }
     console.log(`[MusicBrainzService] Using tracklist with ${tracklist.tracks.length} tracks`)
 
@@ -971,7 +950,7 @@ export class MusicBrainzService extends CancellableOperation {
           db.forceSave?.()
         }
       } catch (error) {
-        const message = `artist "${artist.name}": ${getErrorMessage(error)}`
+        const message = `artist "${artist.name}" (MusicBrainz ID: ${artist.musicbrainz_id ?? 'not set'}): ${getErrorMessage(error)}`
         errors.push(message)
         getLoggingService().error('[MusicBrainzService]', `Failed to analyze ${message}`, error)
       }
