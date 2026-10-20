@@ -11,6 +11,7 @@ export default defineConfig({
     setupFiles: ['./tests/setup.ts'],
     include: ['tests/**/*.test.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**'],
+    maxWorkers: 4,
     coverage: {
       provider: 'istanbul',
       reporter: ['text', 'html', 'lcov'],
