@@ -675,7 +675,10 @@ export function Dashboard({
         try {
           const parsed = JSON.parse(json || '[]') as Array<{ musicbrainz_id?: string; title?: string }>
           return JSON.stringify(parsed.filter(item => item.musicbrainz_id !== album.musicbrainz_id))
-        } catch { return json || '[]' }
+          } catch (error) {
+            console.error('[Dashboard] Invalid artist completeness data:', error)
+            return json || '[]'
+          }
       }
       if (album.album_type === 'album') return { ...a, missing_albums: removeFromJson(a.missing_albums) }
       if (album.album_type === 'ep') return { ...a, missing_eps: removeFromJson(a.missing_eps) }
@@ -1314,7 +1317,10 @@ export function Dashboard({
       try {
         const results = await window.electronAPI.personSearchTMDB(query.trim())
         setPersonSearchResults(results)
-      } catch { setPersonSearchResults([]) }
+      } catch (error) {
+        console.warn('[Dashboard] TMDB person search failed:', error)
+        setPersonSearchResults([])
+      }
       finally { setPersonSearching(false) }
     }, 300)
   }, [])
@@ -1960,7 +1966,10 @@ export function Dashboard({
                         {personCompleteness.map(person => {
                           const isExpanded = expandedPersons.has(person.id)
                           const allMissing: Array<{ tmdb_id: string; title: string; year: number | null; poster_path?: string }> = (() => {
-                            try { return JSON.parse(person.missing_movies || '[]') } catch { return [] }
+                            try { return JSON.parse(person.missing_movies || '[]') } catch (error) {
+                              console.error(`[Dashboard] Invalid missing-movie data for ${person.person_name}:`, error)
+                              return []
+                            }
                           })()
                           const personKey = String(person.tmdb_person_id)
                           const missingMovies = allMissing.filter(m => !excludedPersonMovieSet.has(`${personKey}:${m.tmdb_id}`))

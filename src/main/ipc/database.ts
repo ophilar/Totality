@@ -625,7 +625,9 @@ export function registerDatabaseHandlers() {
             const best = physical || digital
             if (best) physical_release_date = best.release_date.split('T')[0]
           }
-        } catch { /* continue without release date */ }
+        } catch (error) {
+          console.warn(`[movie:searchTMDB] Could not load release dates for "${movie.title}":`, error)
+        }
         return {
           id: movie.id,
           title: movie.title,

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { X, Filter, ArrowUpDown, Film, Tv, Music, Loader2, ListTodo, CircleFadingArrowUp, Download, CheckCircle2, Circle, RefreshCw, Search, Plus, Check, Star } from 'lucide-react'
 import { useWishlist, WishlistMediaType, WishlistPriority, WishlistReason, WishlistStatus } from '../../contexts/WishlistContext'
+import { useToast } from '../../contexts/ToastContext'
 import { WishlistItemCard } from './WishlistItemCard'
 import { WishlistEmptyState } from './WishlistEmptyState'
 import { SETTING_KEYS } from '../../../../shared/settingKeys'
@@ -19,9 +20,11 @@ interface SearchResult {
 
 function WishlistSearch() {
   const { addItem, items } = useWishlist()
+  const { addToast } = useToast()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set())
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -35,15 +38,24 @@ function WishlistSearch() {
     if (q.length < 2) { setResults([]); return }
     setIsSearching(true)
     try {
-      const [movies, tvShows, local] = await Promise.all([
-        window.electronAPI.movieSearchTMDB(q).catch(() => []),
-        window.electronAPI.seriesSearchTMDB(q).catch(() => []),
-        window.electronAPI.mediaSearch(q).catch(() => ({ movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: [] })),
+      const [movieSearch, tvSearch, localSearch] = await Promise.allSettled([
+        window.electronAPI.movieSearchTMDB(q),
+        window.electronAPI.seriesSearchTMDB(q),
+        window.electronAPI.mediaSearch(q),
       ])
+      const failures = [movieSearch, tvSearch, localSearch]
+        .map((result, index) => result.status === 'rejected'
+          ? `${['Movie', 'TV show', 'Library'][index]} search: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`
+          : null)
+        .filter((message): message is string => message !== null)
+      setSearchError(failures.length > 0 ? failures.join(' · ') : null)
+      const movies = movieSearch.status === 'fulfilled' ? movieSearch.value : []
+      const tvShows = tvSearch.status === 'fulfilled' ? tvSearch.value : []
+      const local = localSearch.status === 'fulfilled' ? localSearch.value : null
 
       // Build sets of owned titles for ownership tagging
-      const ownedMovieTitles = new Set(local.movies.map(m => m.title.toLowerCase()))
-      const ownedTVTitles = new Set(local.tvShows.map(s => s.title.toLowerCase()))
+      const ownedMovieTitles = new Set(local?.movies.map(m => m.title.toLowerCase()))
+      const ownedTVTitles = new Set(local?.tvShows.map(s => s.title.toLowerCase()))
 
       const combined: SearchResult[] = []
 
@@ -55,7 +67,7 @@ function WishlistSearch() {
           type: 'movie',
           poster_url: m.poster_url || undefined,
           tmdb_id: m.id,
-          owned: ownedMovieTitles.has(m.title.toLowerCase()),
+          owned: local ? ownedMovieTitles.has(m.title.toLowerCase()) : undefined,
           release_date: m.release_date || undefined,
           physical_release_date: m.physical_release_date || undefined,
         })
@@ -69,14 +81,15 @@ function WishlistSearch() {
           type: 'tv',
           poster_url: s.poster_url || undefined,
           tmdb_id: s.id,
-          owned: ownedTVTitles.has(s.name.toLowerCase()),
+          owned: local ? ownedTVTitles.has(s.name.toLowerCase()) : undefined,
           release_date: s.first_air_date || undefined,
         })
       }
 
       setResults(combined)
-    } catch {
+    } catch (error) {
       setResults([])
+      setSearchError(error instanceof Error ? error.message : String(error))
     } finally {
       setIsSearching(false)
     }
@@ -96,20 +109,23 @@ function WishlistSearch() {
   }, [items])
 
   const handleAdd = useCallback(async (result: SearchResult) => {
-    const mediaType: WishlistMediaType = result.type === 'tv' ? 'season' : 'movie'
-
-    await addItem({
-      title: result.title,
-      year: result.year,
-      tmdb_id: result.tmdb_id ? String(result.tmdb_id) : undefined,
-      poster_url: result.poster_url,
-      media_type: mediaType,
-      reason: 'missing' as WishlistReason,
-      priority: 3 as WishlistPriority,
-      status: 'active' as WishlistStatus,
-    })
-    setAddedIds(prev => new Set(prev).add(result.id))
-  }, [addItem])
+    try {
+      const mediaType: WishlistMediaType = result.type === 'tv' ? 'season' : 'movie'
+      await addItem({
+        title: result.title,
+        year: result.year,
+        tmdb_id: result.tmdb_id ? String(result.tmdb_id) : undefined,
+        poster_url: result.poster_url,
+        media_type: mediaType,
+        reason: 'missing' as WishlistReason,
+        priority: 3 as WishlistPriority,
+        status: 'active' as WishlistStatus,
+      })
+      setAddedIds(prev => new Set(prev).add(result.id))
+    } catch (error) {
+      addToast({ type: 'error', title: 'Could not add wishlist item', message: error instanceof Error ? error.message : String(error) })
+    }
+  }, [addItem, addToast])
 
   const typeIcon = (type: string) =>
     type === 'tv'
@@ -119,6 +135,7 @@ function WishlistSearch() {
   const clearSearch = useCallback(() => {
     setQuery('')
     setResults([])
+    setSearchError(null)
     setAddedIds(new Set())
     if (debounceRef.current) clearTimeout(debounceRef.current)
   }, [])
@@ -143,6 +160,8 @@ function WishlistSearch() {
           </button>
         )}
       </div>
+
+      {searchError && <p role="alert" className="mt-2 text-xs text-destructive">Search incomplete: {searchError}</p>}
 
       {results.length > 0 && (
         <div className="mt-1.5 max-h-60 overflow-y-auto rounded-lg border border-border/30 bg-background">
@@ -210,6 +229,7 @@ type CategoryType = WishlistReason | 'all'
 type StatusType = WishlistStatus | 'all'
 
 export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = false }: WishlistPanelProps) {
+  const { addToast } = useToast()
   const {
     items,
     counts,
@@ -442,13 +462,13 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
                 if (items.length === 0) { setPlexResult('Empty'); return }
                 setSyncPreview(items); setSyncPreviewSource('plex')
                 setSyncPreviewSelected(new Set(items.map((_item: unknown, i: number) => i)))
-              } catch { setPlexResult('Error') }
+              } catch (error) { setPlexResult(`Error: ${error instanceof Error ? error.message : String(error)}`) }
               finally { setSyncingPlex(false) }
             }} disabled={syncingPlex}
               className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-50 shrink-0" title="Sync Plex watchlist">
               {syncingPlex ? <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" /> : <RefreshCw className="w-3 h-3 text-muted-foreground" />}
             </button>
-            {plexResult && <span className={`text-xs shrink-0 ${plexResult === 'Error' ? 'text-destructive' : 'text-primary'}`}>{plexResult}</span>}
+            {plexResult && <span className={`text-xs shrink-0 ${plexResult.startsWith('Error:') ? 'text-destructive' : 'text-primary'}`}>{plexResult}</span>}
           </div>
         )}
         {/* Trakt sync */}
@@ -464,7 +484,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
                   if (items.length === 0) { setTraktResult('Empty'); return }
                   setSyncPreview(items); setSyncPreviewSource('trakt')
                   setSyncPreviewSelected(new Set(items.map((_item: unknown, i: number) => i)))
-                } catch { setTraktResult('Error') }
+                } catch (error) { setTraktResult(`Error: ${error instanceof Error ? error.message : String(error)}`) }
                 finally { setSyncingTrakt(false) }
               }
             }}
@@ -479,13 +499,13 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
               if (items.length === 0) { setTraktResult('Empty'); return }
               setSyncPreview(items); setSyncPreviewSource('trakt')
               setSyncPreviewSelected(new Set(items.map((_item: unknown, i: number) => i)))
-            } catch { setTraktResult('Error') }
+            } catch (error) { setTraktResult(`Error: ${error instanceof Error ? error.message : String(error)}`) }
             finally { setSyncingTrakt(false) }
           }} disabled={syncingTrakt || !traktUser.trim()}
             className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-50 shrink-0" title="Sync Trakt watchlist">
             {syncingTrakt ? <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" /> : <RefreshCw className="w-3 h-3 text-muted-foreground" />}
           </button>
-          {traktResult && <span className={`text-xs shrink-0 ${traktResult === 'Error' ? 'text-destructive' : 'text-primary'}`}>{traktResult}</span>}
+          {traktResult && <span className={`text-xs shrink-0 ${traktResult.startsWith('Error:') ? 'text-destructive' : 'text-primary'}`}>{traktResult}</span>}
         </div>
       </div>}
 
@@ -548,7 +568,9 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
                   setSyncPreview(null); setSyncPreviewSource(null)
                   if (source === 'plex') setPlexResult(`+${selected.length}`)
                   else setTraktResult(`+${selected.length}`)
-                } catch { /* ignore */ }
+                } catch (error) {
+                  addToast({ type: 'error', title: 'Wishlist import failed', message: error instanceof Error ? error.message : String(error) })
+                }
                 finally { setSyncPreviewAdding(false) }
               }}
               disabled={syncPreviewSelected.size === 0 || syncPreviewAdding}

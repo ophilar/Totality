@@ -42,7 +42,9 @@ export function registerWishlistHandlers() {
             const details = await tmdb.getTVShowDetails(validItem.tmdb_id)
             validItem.poster_url = tmdb.buildImageUrl(details.poster_path, 'w300') ?? undefined
           }
-        } catch { /* continue without poster */ }
+        } catch (error) {
+          console.warn(`[wishlist:add] Could not fetch poster for "${validItem.title}":`, error)
+        }
       }
 
       const id = await db.addWishlistItem(validItem)
@@ -175,7 +177,9 @@ export function registerWishlistHandlers() {
               const details = await tmdb.getTVShowDetails(item.tmdb_id)
               item.poster_url = tmdb.buildImageUrl(details.poster_path, 'w300') ?? undefined
             }
-          } catch { /* continue without poster */ }
+          } catch (error) {
+            console.warn(`[wishlist:addBulk] Could not fetch poster for "${item.title}":`, error)
+          }
         }
       }
 

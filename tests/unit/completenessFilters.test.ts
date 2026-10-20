@@ -23,8 +23,8 @@ describe('completenessFilters', () => {
       expect(parseAutoRules('')).toEqual([])
     })
 
-    it('returns empty array for invalid JSON', () => {
-      expect(parseAutoRules('not json')).toEqual([])
+    it('rejects invalid JSON', () => {
+      expect(() => parseAutoRules('not json')).toThrow(SyntaxError)
     })
 
     it('parses valid JSON array', () => {

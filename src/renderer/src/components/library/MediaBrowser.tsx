@@ -83,6 +83,9 @@ export function MediaBrowser({
 }: MediaBrowserProps) {
   const { sources, activeSourceId, scanProgress, setActiveSource, markLibraryAsNew } = useSources()
   const { addToast } = useToast()
+  const reportViewPreferenceError = useCallback((error: unknown) => {
+    addToast({ type: 'error', title: 'View preference failed', message: error instanceof Error ? error.message : String(error) })
+  }, [addToast])
   const { count: wishlistCount } = useWishlist()
   const { pendingNavigation, clearNavigation, pushNavState } = useNavigation()
 
@@ -183,7 +186,7 @@ export function MediaBrowser({
   const [selectedMediaId, setSelectedMediaId] = useState<number | null>(null)
   const [optimizingMovieId, setOptimizingMovieId] = useState<number | null>(null)
   const [detailRefreshKey, setDetailRefreshKey] = useState(0) // Increment to force detail view refresh
-  const { viewType, gridScale, setViewType, setGridScale, viewPrefsLoadedRef, loadViewPrefs } = useViewPreferences(view)
+  const { viewType, gridScale, setViewType, setGridScale, viewPrefsLoadedRef, loadViewPrefs } = useViewPreferences(view, reportViewPreferenceError)
 
   // Library filter within current view (declared early — needed by pagination hooks)
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null)
@@ -561,7 +564,9 @@ export function MediaBrowser({
         const artists = await window.electronAPI.musicGetArtists({ sourceId: activeSourceId || undefined })
         const fresh = (artists as MusicArtist[]).find(a => a.id === selectedArtist.id)
         if (fresh) setSelectedArtist(fresh)
-      } catch { /* ignore */ }
+      } catch (error) {
+        console.warn('Failed to refresh selected artist after music update:', error)
+      }
     }
   }
 
@@ -730,7 +735,10 @@ export function MediaBrowser({
         try {
           const parsed = JSON.parse(json || '[]') as Array<{ musicbrainz_id?: string }>
           return JSON.stringify(parsed.filter(item => !excludedAlbumIds.has(item.musicbrainz_id ?? null)))
-        } catch { return json || '[]' }
+        } catch (error) {
+          console.error('[MediaBrowser] Invalid artist completeness data:', error)
+          return json || '[]'
+        }
       }
 
       // Index by artist name, filtering exclusions
@@ -849,7 +857,7 @@ export function MediaBrowser({
     checkTmdbApiKey()
     // Load per-tab view preferences (delegated to useViewPreferences hook)
     if (!viewPrefsLoadedRef.current) {
-      loadViewPrefs(view)
+      void loadViewPrefs(view).catch(reportViewPreferenceError)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSourceId])
@@ -857,7 +865,7 @@ export function MediaBrowser({
   // Apply per-tab view preferences when switching tabs
   useEffect(() => {
     if (!viewPrefsLoadedRef.current) return
-    loadViewPrefs(view)
+    void loadViewPrefs(view).catch(reportViewPreferenceError)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view])
 

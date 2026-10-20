@@ -1225,10 +1225,8 @@ export async function executeTool(
       }
 
       // Parse audio tracks
-      let audioTracks: Array<Record<string, unknown>> = []
-      try {
-        if (item.audio_tracks) {
-          audioTracks = JSON.parse(item.audio_tracks as string).map((t: Record<string, unknown>) => compact({
+      const audioTracks: Array<Record<string, unknown>> = item.audio_tracks
+        ? JSON.parse(item.audio_tracks as string).map((t: Record<string, unknown>) => compact({
             codec: t.codec,
             channels: t.channels,
             language: t.language,
@@ -1237,18 +1235,14 @@ export async function executeTool(
             profile: t.profile,
             object_audio: t.has_object_audio || undefined,
           }))
-        }
-      } catch { /* empty */ }
+        : []
 
       // Parse subtitle tracks
-      let subtitleTracks: string[] = []
-      try {
-        if (item.subtitle_tracks) {
-          subtitleTracks = JSON.parse(item.subtitle_tracks as string).map(
+      const subtitleTracks: string[] = item.subtitle_tracks
+        ? JSON.parse(item.subtitle_tracks as string).map(
             (t: Record<string, unknown>) => t.language || t.title || 'Unknown',
           )
-        }
-      } catch { /* empty */ }
+        : []
 
       // Get quality score
       const qualityScore = db.getQualityScoreByMediaId(item.id as number) as Record<string, unknown> | null
@@ -1349,7 +1343,9 @@ export async function executeTool(
                 resolvedTitle = releases[0].title || resolvedTitle
               }
             }
-          } catch { /* continue without MusicBrainz data */ }
+          } catch (error) {
+            console.warn(`[GeminiTools] MusicBrainz enrichment failed for wishlist item "${item.title}":`, error)
+          }
         } else {
           // Movie/TV: look up TMDB for poster
           try {
@@ -1382,7 +1378,9 @@ export async function executeTool(
                 }
               }
             }
-          } catch { /* continue without TMDB data */ }
+          } catch (error) {
+            console.warn(`[GeminiTools] TMDB enrichment failed for wishlist item "${item.title}":`, error)
+          }
         }
 
         // Map chat media types to wishlist media types
@@ -1567,22 +1565,15 @@ export async function executeTool(
 
       const limited = artists.slice(0, limit)
       const simplified = limited.map((a: Record<string, unknown>) => {
-        let missingCount = 0
-        let missingSample: string[] = []
-        try {
-          const parsed = JSON.parse((a.missing_albums as string) || '[]')
-          missingCount = parsed.length
-          missingSample = parsed.slice(0, 5).map((m: Record<string, unknown>) =>
-            m.year ? `${m.title} (${m.year})` : `${m.title}`,
-          )
-        } catch { /* empty */ }
+        const missingAlbums = JSON.parse(a.missing_albums as string) as Array<Record<string, unknown>>
+        const missingSample = missingAlbums.slice(0, 5).map(m => m.year ? `${m.title} (${m.year})` : `${m.title}`)
         return compact({
           artist_name: a.artist_name,
           total_albums: a.total_albums,
           owned_albums: a.owned_albums,
           completeness_percentage: a.completeness_percentage,
           country: a.country,
-          missing_album_count: missingCount,
+          missing_album_count: missingAlbums.length,
           missing_sample: missingSample.length > 0 ? missingSample : undefined,
         })
       })
@@ -1736,8 +1727,7 @@ export async function executeTool(
       const persons = db.getPersonCompleteness(personType)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return JSON.stringify(persons.map((p: any) => {
-        let missingMovies: Array<{ title: string; year?: number }> = []
-        try { missingMovies = JSON.parse(p.missing_movies).slice(0, 10) } catch { /* ignore */ }
+        const missingMovies = (JSON.parse(p.missing_movies) as Array<{ title: string; year?: number }>).slice(0, 10)
         return {
           person_name: p.person_name, person_type: p.person_type,
           total_movies: p.total_movies, owned_movies: p.owned_movies,
@@ -1789,10 +1779,7 @@ export async function executeTool(
       }
 
       const comp = completeness as unknown as Record<string, unknown>
-      let missingAlbums: Array<Record<string, unknown>> = []
-      try {
-        missingAlbums = JSON.parse((comp.missing_albums as string) || '[]')
-      } catch { /* empty */ }
+      const missingAlbums = JSON.parse(comp.missing_albums as string) as Array<Record<string, unknown>>
 
       // Get owned albums
       const ownedAlbums = db.getMusicAlbumsByArtistName(artistName, limit) as unknown as Record<string, unknown>[]

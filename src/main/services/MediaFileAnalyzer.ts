@@ -528,12 +528,7 @@ export class MediaFileAnalyzer {
       this.ffprobePath = finalPath
       this.ffprobeChecked = true
 
-      // Cleanup temp directory
-      try {
-        fs.rmSync(tempDir, { recursive: true, force: true })
-      } catch {
-        // Ignore cleanup errors
-      }
+      this.removeTemporaryDirectory(tempDir)
 
       onProgress?.({ stage: 'Installation complete!', percent: 100 })
 
@@ -546,12 +541,7 @@ export class MediaFileAnalyzer {
     } catch (error: unknown) {
       console.error('[MediaFileAnalyzer] FFprobe installation failed:', error)
 
-      // Cleanup on error
-      try {
-        fs.rmSync(tempDir, { recursive: true, force: true })
-      } catch {
-        // Ignore cleanup errors
-      }
+      this.removeTemporaryDirectory(tempDir)
 
       return {
         success: false,
@@ -656,18 +646,6 @@ export class MediaFileAnalyzer {
         throw new Error('ffprobe.exe not found in archive')
       }
       fs.copyFileSync(ffprobeSource, destPath)
-
-      // Also extract ffmpeg.exe if present (same archive on Windows)
-      try {
-        const ffmpegSource = await this.findFileInDir(tempDir, 'ffmpeg.exe')
-        if (ffmpegSource) {
-          const ffmpegDest = destPath.replace(/ffprobe\.exe$/i, 'ffmpeg.exe')
-          fs.copyFileSync(ffmpegSource, ffmpegDest)
-          console.log('[MediaFileAnalyzer] Also extracted ffmpeg.exe alongside ffprobe')
-        }
-      } catch {
-        // FFmpeg extraction is best-effort — ffprobe is the primary binary
-      }
     } else if (platform === 'darwin') {
       // Use unzip on macOS
       await this.runCommand('unzip', ['-o', archivePath, '-d', tempDir])
@@ -679,17 +657,6 @@ export class MediaFileAnalyzer {
       }
       fs.copyFileSync(ffprobeSource, destPath)
       fs.chmodSync(destPath, 0o755) // Make executable
-
-      // Also extract ffmpeg if present
-      try {
-        const ffmpegSource = await this.findFileInDir(tempDir, 'ffmpeg')
-        if (ffmpegSource && !ffmpegSource.includes('ffprobe')) {
-          const ffmpegDest = destPath.replace(/ffprobe$/, 'ffmpeg')
-          fs.copyFileSync(ffmpegSource, ffmpegDest)
-          fs.chmodSync(ffmpegDest, 0o755)
-          console.log('[MediaFileAnalyzer] Also extracted ffmpeg alongside ffprobe')
-        }
-      } catch { /* best-effort */ }
     } else {
       // Use tar on Linux
       await this.runCommand('tar', ['-xf', archivePath, '-C', tempDir])
@@ -701,17 +668,33 @@ export class MediaFileAnalyzer {
       }
       fs.copyFileSync(ffprobeSource, destPath)
       fs.chmodSync(destPath, 0o755) // Make executable
+    }
+    await this.extractFFmpegIfPresent(tempDir, destPath)
+  }
 
-      // Also extract ffmpeg if present
-      try {
-        const ffmpegSource = await this.findFileInDir(tempDir, 'ffmpeg')
-        if (ffmpegSource && !ffmpegSource.includes('ffprobe')) {
-          const ffmpegDest = destPath.replace(/ffprobe$/, 'ffmpeg')
-          fs.copyFileSync(ffmpegSource, ffmpegDest)
-          fs.chmodSync(ffmpegDest, 0o755)
-          console.log('[MediaFileAnalyzer] Also extracted ffmpeg alongside ffprobe')
-        }
-      } catch { /* best-effort */ }
+  private async extractFFmpegIfPresent(tempDir: string, ffprobePath: string): Promise<void> {
+    const isWindows = process.platform === 'win32'
+    const executableName = isWindows ? 'ffmpeg.exe' : 'ffmpeg'
+    const ffmpegSource = await this.findFileInDir(tempDir, executableName)
+    if (!ffmpegSource) return
+
+    const ffmpegPath = isWindows
+      ? ffprobePath.replace(/ffprobe\.exe$/i, 'ffmpeg.exe')
+      : ffprobePath.replace(/ffprobe$/, 'ffmpeg')
+    try {
+      fs.copyFileSync(ffmpegSource, ffmpegPath)
+      if (!isWindows) fs.chmodSync(ffmpegPath, 0o755)
+      console.log(`[MediaFileAnalyzer] Also extracted ${executableName} alongside ffprobe`)
+    } catch (error) {
+      console.warn(`[MediaFileAnalyzer] Failed to extract optional ${executableName}:`, error)
+    }
+  }
+
+  private removeTemporaryDirectory(tempDir: string): void {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    } catch (error) {
+      console.warn(`[MediaFileAnalyzer] Failed to remove temporary directory ${tempDir}:`, error)
     }
   }
 
@@ -922,16 +905,12 @@ export class MediaFileAnalyzer {
         stderr += data.toString()
       })
 
-      proc.on('close', (code) => {
+      proc.on('close', (code, signal) => {
         if (outputError) return reject(outputError)
-        if (code === 0 || code === null) {
-          try {
-            resolve(packetAccumulator.finishWithBitrate())
-          } catch {
-            resolve({ streamBytes: packetAccumulator.finish() })
-          }
+        if (code === 0) {
+          resolve(packetAccumulator.finishWithBitrate())
         } else {
-          reject(new Error(stderr || `FFprobe packet analysis exited with code ${code}`))
+          reject(new Error(stderr || `FFprobe packet analysis exited with code ${code ?? `signal ${signal}`}`))
         }
       })
 
@@ -964,8 +943,12 @@ export class MediaFileAnalyzer {
         streamBytes: packetMetrics.streamBytes,
         deepAnalysis: packetMetrics.bitrate ? { ...packetMetrics.bitrate } : undefined,
       }
-    } catch {
-      return fileAnalysis
+    } catch (error) {
+      return {
+        ...fileAnalysis,
+        success: false,
+        error: `Packet analysis failed: ${error instanceof Error ? error.message : String(error)}`,
+      }
     }
   }
 

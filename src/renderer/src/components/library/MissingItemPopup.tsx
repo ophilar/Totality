@@ -42,18 +42,21 @@ export function MissingItemPopup({
 }: MissingItemPopupProps) {
   const [seasonDetails, setSeasonDetails] = useState<SeasonDetails | null>(null)
   const [movieOverview, setMovieOverview] = useState<string | null>(null)
+  const [detailsError, setDetailsError] = useState<string | null>(null)
+  const [copyError, setCopyError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   // Fetch details from TMDB when popup opens
   useEffect(() => {
+    setDetailsError(null)
     if (type === 'season' && tmdbId && seasonNumber !== undefined) {
       window.electronAPI.seriesGetSeasonDetails(tmdbId, seasonNumber)
         .then(details => { if (details) setSeasonDetails(details) })
-        .catch(() => { /* ignore */ })
+        .catch(error => setDetailsError(error instanceof Error ? error.message : String(error)))
     } else if (type === 'movie' && tmdbId) {
       window.electronAPI.tmdbGetMovieDetails(tmdbId)
         .then(details => { if (details?.overview) setMovieOverview(details.overview) })
-        .catch(() => { /* ignore */ })
+        .catch(error => setDetailsError(error instanceof Error ? error.message : String(error)))
     }
   }, [type, tmdbId, seasonNumber])
 
@@ -78,9 +81,7 @@ export function MissingItemPopup({
   }
   const displayAirDate = seasonDetails?.airDate || airDate
   if (displayAirDate) {
-    try {
-      infoItems.push(new Date(displayAirDate).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }))
-    } catch { /* ignore */ }
+    infoItems.push(new Date(displayAirDate).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }))
   }
 
   return createPortal(
@@ -164,17 +165,23 @@ export function MissingItemPopup({
                 <h3 className="font-semibold text-lg truncate">{title}</h3>
               )}
               <button
-                onClick={(e) => {
+                onClick={async (e) => {
                   e.stopPropagation()
-                  navigator.clipboard.writeText(title)
-                  setCopied(true)
-                  setTimeout(() => setCopied(false), 1500)
+                  setCopyError(null)
+                  try {
+                    await navigator.clipboard.writeText(title)
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 1500)
+                  } catch (error) {
+                    setCopyError(error instanceof Error ? error.message : String(error))
+                  }
                 }}
                 className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
                 title="Copy title"
               >
                 {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
+              {copyError && <span role="alert" className="ml-2 text-xs text-destructive">Could not copy title: {copyError}</span>}
             </div>
             {subtitle && (
               <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>
@@ -184,6 +191,7 @@ export function MissingItemPopup({
                 {infoItems.join(' · ')}
               </p>
             )}
+            {detailsError && <p role="alert" className="mt-2 text-xs text-destructive">Details could not be loaded: {detailsError}</p>}
             {(seasonDetails?.overview || movieOverview) && (
               <p className="text-xs text-muted-foreground mt-2 max-h-24 overflow-y-auto leading-relaxed">
                 {seasonDetails?.overview || movieOverview}

@@ -968,7 +968,9 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       if (purged > 0) {
         console.log(`[BetterSQLite] Purged ${purged} stale TMDB cache entries`)
       }
-    } catch { /* non-critical */ }
+    } catch (error) {
+      console.warn('[BetterSQLite] Failed to purge stale TMDB cache entries:', error)
+    }
   }
 
   // ============================================================================
@@ -5760,12 +5762,10 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         const cols = 'Collection,Movie Title,Year,Release Date,TMDB ID,Collection Completeness %'
         const csvRows: string[] = []
         for (const coll of collections) {
-          try {
-            const movies = JSON.parse(coll.missing_movies || '[]') as Array<{ title: string; year?: number; tmdb_id: string; release_date?: string }>
-            for (const m of movies) {
-              csvRows.push([esc(coll.collection_name), esc(m.title), m.year || '', m.release_date || '', m.tmdb_id || '', coll.completeness_percentage ?? ''].join(','))
-            }
-          } catch { /* skip malformed JSON */ }
+          const movies = JSON.parse(coll.missing_movies) as Array<{ title: string; year?: number; tmdb_id: string; release_date?: string }>
+          for (const m of movies) {
+            csvRows.push([esc(coll.collection_name), esc(m.title), m.year || '', m.release_date || '', m.tmdb_id || '', coll.completeness_percentage ?? ''].join(','))
+          }
         }
         if (csvRows.length > 0) sections.push(['=== MISSING MOVIES (Collections) ===', cols, ...csvRows].join('\n'))
       }
@@ -5783,12 +5783,10 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         const cols = 'Series Title,Season,Episode,Episode Title,Air Date,TMDB ID,Series Completeness %'
         const csvRows: string[] = []
         for (const s of series) {
-          try {
-            const episodes = JSON.parse(s.missing_episodes || '[]') as Array<{ season_number: number; episode_number: number; title?: string; air_date?: string }>
-            for (const ep of episodes) {
-              csvRows.push([esc(s.series_title), ep.season_number, ep.episode_number, esc(ep.title), ep.air_date || '', s.tmdb_id || '', s.completeness_percentage ?? ''].join(','))
-            }
-          } catch { /* skip malformed JSON */ }
+          const episodes = JSON.parse(s.missing_episodes) as Array<{ season_number: number; episode_number: number; title?: string; air_date?: string }>
+          for (const ep of episodes) {
+            csvRows.push([esc(s.series_title), ep.season_number, ep.episode_number, esc(ep.title), ep.air_date || '', s.tmdb_id || '', s.completeness_percentage ?? ''].join(','))
+          }
         }
         if (csvRows.length > 0) sections.push(['=== MISSING TV EPISODES ===', cols, ...csvRows].join('\n'))
       }
@@ -5808,12 +5806,10 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         const csvRows: string[] = []
         for (const a of artists) {
           const parseAlbums = (json: string, type: string) => {
-            try {
-              const items = JSON.parse(json || '[]') as Array<{ title: string; year?: number; musicbrainz_id?: string }>
-              for (const item of items) {
-                csvRows.push([esc(a.artist_name), esc(item.title), item.year || '', type, item.musicbrainz_id || ''].join(','))
-              }
-            } catch { /* skip */ }
+            const items = JSON.parse(json) as Array<{ title: string; year?: number; musicbrainz_id?: string }>
+            for (const item of items) {
+              csvRows.push([esc(a.artist_name), esc(item.title), item.year || '', type, item.musicbrainz_id || ''].join(','))
+            }
           }
           parseAlbums(a.missing_albums, 'Album')
           parseAlbums(a.missing_singles, 'Single')

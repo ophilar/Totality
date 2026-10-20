@@ -197,7 +197,7 @@ export function MonitoringTab() {
                     try {
                       const c = await window.electronAPI.releaseAlertsCheck()
                       setAlertStatus(c > 0 ? `${c} found` : 'None found')
-                    } catch { setAlertStatus('Error') }
+                    } catch (error) { setAlertStatus(`Error: ${error instanceof Error ? error.message : String(error)}`) }
                   }} className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">
                     Check Now
                   </button>

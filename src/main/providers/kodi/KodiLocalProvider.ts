@@ -2150,14 +2150,22 @@ export class KodiLocalProvider implements MediaProvider {
         console.log(`[KodiLocalProvider] Wrote ${result.written} tag updates to ${path.basename(this.musicDatabasePath)}`)
 
       } catch (txError) {
-        try { db.run('ROLLBACK') } catch { /* ignore */ }
+        try {
+          db.run('ROLLBACK')
+        } catch (rollbackError) {
+          console.error('[KodiLocalProvider] Transaction rollback failed:', getErrorMessage(rollbackError))
+        }
         throw txError
       } finally {
         db.close()
       }
 
       // Clean up backup on success
-      try { fs.unlinkSync(backupPath) } catch { /* keep if delete fails */ }
+      try {
+        fs.unlinkSync(backupPath)
+      } catch (error) {
+        console.warn(`[KodiLocalProvider] Could not remove successful-write backup ${backupPath}:`, error)
+      }
 
     } catch (error) {
       console.warn(`[KodiLocalProvider] Write failed: ${getErrorMessage(error)}`)
@@ -2167,7 +2175,11 @@ export class KodiLocalProvider implements MediaProvider {
           fs.copyFileSync(backupPath, this.musicDatabasePath)
           console.warn('[KodiLocalProvider] Restored from backup')
         }
-      } catch { /* backup restore failed */ }
+      } catch (restoreError) {
+        const message = `Database restoration failed: ${getErrorMessage(restoreError)}. Backup remains at ${backupPath}`
+        result.errors.push(message)
+        console.error(`[KodiLocalProvider] ${message}`)
+      }
     }
 
     return result

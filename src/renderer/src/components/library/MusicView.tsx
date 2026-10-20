@@ -476,7 +476,9 @@ export function MusicView({
           if (albumCompleteness) {
             try {
               missingTracks = JSON.parse(albumCompleteness.missing_tracks || '[]')
-            } catch { /* ignore */ }
+            } catch (error) {
+              console.error(`[MusicView] Invalid missing-track data for album ${albumCompleteness.album_id}:`, error)
+            }
           }
 
           // Create unified track list with type marker
@@ -812,8 +814,8 @@ export function MusicView({
                         {(() => {
                           let genres: string[] = []
                           let moods: string[] = []
-                          try { genres = selectedTrackForQuality.genres ? JSON.parse(selectedTrackForQuality.genres) : [] } catch { /* malformed */ }
-                          try { moods = selectedTrackForQuality.mood ? JSON.parse(selectedTrackForQuality.mood) : [] } catch { /* malformed */ }
+                          try { genres = selectedTrackForQuality.genres ? JSON.parse(selectedTrackForQuality.genres) : [] } catch (error) { console.warn('[MusicView] Invalid track genre data:', error) }
+                          try { moods = selectedTrackForQuality.mood ? JSON.parse(selectedTrackForQuality.mood) : [] } catch (error) { console.warn('[MusicView] Invalid track mood data:', error) }
                           if (genres.length === 0 && moods.length === 0) return null
                           return (
                             <div className="mt-1.5 space-y-0.5">
@@ -1013,7 +1015,7 @@ export function MusicView({
               )}
               {selectedArtist.genres && (
                 <>
-                  <span>{(() => { try { const g = JSON.parse(selectedArtist.genres); return Array.isArray(g) ? g.join(', ') : selectedArtist.genres } catch { return selectedArtist.genres } })()}</span>
+                  <span>{(() => { try { const g = JSON.parse(selectedArtist.genres); return Array.isArray(g) ? g.join(', ') : selectedArtist.genres } catch (error) { console.warn('[MusicView] Invalid artist genre data:', error); return selectedArtist.genres } })()}</span>
                   <span>•</span>
                 </>
               )}
@@ -1124,7 +1126,9 @@ export function MusicView({
             missingAlbums = JSON.parse(completeness.missing_albums || '[]')
             missingEps = JSON.parse(completeness.missing_eps || '[]')
             missingSingles = JSON.parse(completeness.missing_singles || '[]')
-          } catch { /* ignore */ }
+          } catch (error) {
+            console.error(`[MusicView] Invalid missing-album data for artist ${selectedArtist.name}:`, error)
+          }
 
           const allMissing = [
             ...missingAlbums,

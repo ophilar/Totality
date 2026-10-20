@@ -36,7 +36,9 @@ export function safeSend(win: BrowserWindow | null, channel: string, ...args: un
     if (webServer?.isRunning()) {
       webServer.broadcastEvent(channel, ...args)
     }
-  } catch { /* web server not initialized yet */ }
+  } catch (error) {
+    process.stderr.write(`[IPC] Failed to broadcast ${channel} to web clients: ${error instanceof Error ? error.message : String(error)}\n`)
+  }
 
   return false
 }

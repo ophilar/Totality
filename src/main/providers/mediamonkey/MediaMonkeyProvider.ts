@@ -807,14 +807,22 @@ export class MediaMonkeyProvider implements MediaProvider {
 
       } catch (txError) {
         console.warn(`[MediaMonkeyProvider] Transaction error: ${getErrorMessage(txError)}`)
-        try { db.run('ROLLBACK') } catch { /* ignore rollback error */ }
+        try {
+          db.run('ROLLBACK')
+        } catch (rollbackError) {
+          console.error('[MediaMonkeyProvider] Transaction rollback failed:', getErrorMessage(rollbackError))
+        }
         throw txError
       } finally {
         db.close()
       }
 
       // Clean up backup on success
-      try { fs.unlinkSync(backupPath) } catch { /* keep backup if delete fails */ }
+      try {
+        fs.unlinkSync(backupPath)
+      } catch (error) {
+        console.warn(`[MediaMonkeyProvider] Could not remove successful-write backup ${backupPath}:`, error)
+      }
 
     } catch (error) {
       console.warn(`[MediaMonkeyProvider] Write failed: ${getErrorMessage(error)}`)
@@ -825,7 +833,11 @@ export class MediaMonkeyProvider implements MediaProvider {
           fs.copyFileSync(backupPath, this.databasePath)
           console.warn('[MediaMonkeyProvider] Restored database from backup after write failure')
         }
-      } catch { /* backup restore failed */ }
+      } catch (restoreError) {
+        const message = `Database restoration failed: ${getErrorMessage(restoreError)}. Backup remains at ${backupPath}`
+        result.errors.push(message)
+        console.error(`[MediaMonkeyProvider] ${message}`)
+      }
     }
 
     return result

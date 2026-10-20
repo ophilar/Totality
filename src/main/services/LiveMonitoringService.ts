@@ -16,7 +16,7 @@ import { BrowserWindow } from 'electron'
 import * as chokidar from 'chokidar'
 import * as path from 'path'
 import * as fs from 'fs'
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { getDatabase } from '../database/getDatabase'
 import { getSourceManager } from './SourceManager'
@@ -50,50 +50,46 @@ const MEDIA_EXTENSIONS = new Set([
   '.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav', '.wma', '.alac', '.aiff', '.opus',
 ])
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
-/**
- * Cache of Windows network drive letters, detected once at startup via wmic.
- * DriveType 4 = "Network Drive" in Win32_LogicalDisk.
- */
+/** Cache of mapped Windows network drives, detected once at startup. */
 let networkDriveLetters: Set<string> = new Set()
+let networkDriveDetectionError: unknown = null
 
 async function detectWindowsNetworkDrivesAsync(): Promise<void> {
   if (process.platform !== 'win32') return
   try {
-    const { stdout } = await execAsync('wmic logicaldisk get DeviceID,DriveType', {
-      encoding: 'utf-8',
-      timeout: 5000,
-      windowsHide: true,
-    })
-    // Output looks like:
-    // DeviceID  DriveType
-    // C:        3
-    // Z:        4
-    const detected = new Set<string>()
-    for (const line of stdout.split('\n')) {
-      const match = line.match(/^([A-Z]):?\s+(\d+)/)
-      if (match && match[2] === '4') {
-        detected.add(match[1])
-      }
-    }
-    networkDriveLetters = detected
-  } catch {
-    // wmic unavailable or timed out — fall back to empty set (treat all drives as local)
+    const { stdout } = await execFileAsync('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      'Get-PSDrive -PSProvider FileSystem | Select-Object -Property Name,DisplayRoot | ConvertTo-Json -Compress',
+    ], { encoding: 'utf-8', timeout: 5000, windowsHide: true })
+    const drives = JSON.parse(stdout) as Array<{ Name: string; DisplayRoot: string | null }> | { Name: string; DisplayRoot: string | null }
+    networkDriveLetters = new Set((Array.isArray(drives) ? drives : [drives])
+      .filter(drive => Boolean(drive.DisplayRoot))
+      .map(drive => drive.Name.toUpperCase()))
+    networkDriveDetectionError = null
+  } catch (error) {
+    networkDriveDetectionError = error
+    getLoggingService().warn('[LiveMonitoring]', 'Could not determine Windows drive types; drive-letter sources will not be watched until detection succeeds:', error)
   }
 }
 
 /**
  * Detect if a path is likely a network/NAS path where native watchers are unreliable.
- * On Windows, uses wmic to detect actual mapped network drives instead of guessing by letter.
+ * On Windows, uses the current user session's mapped filesystem drives.
  */
 export function isNetworkPath(filePath: string): boolean {
   // Windows UNC paths: \\server\share
   if (filePath.startsWith('\\\\')) return true
 
-  // Windows mapped drives — check actual drive type from cached wmic result
+  // Windows mapped drives — check actual drive type from cached CIM result
   if (process.platform === 'win32') {
     const driveLetter = filePath.match(/^([A-Za-z]):/)?.[1]?.toUpperCase()
+    if (driveLetter && networkDriveDetectionError) {
+      throw new Error(`Cannot classify Windows drive ${driveLetter}: while drive type detection is unavailable`)
+    }
     if (driveLetter && networkDriveLetters.has(driveLetter)) {
       return true
     }
@@ -625,13 +621,7 @@ export class LiveMonitoringService {
             const isMusic = libraryType === 'music'
 
             // Only look up files that still exist (added/updated, not deleted)
-            const existingFiles = filePaths.filter(fp => {
-              try {
-                return fs.existsSync(fp)
-              } catch {
-                return false
-              }
-            })
+            const existingFiles = filePaths.filter(filePath => fs.existsSync(filePath))
 
             if (isMusic) {
               // Look up each track by its file path
@@ -738,7 +728,9 @@ export class LiveMonitoringService {
                 itemCount: totalChanges,
               })
               emitNotificationCreated()
-            } catch { /* ignore */ }
+            } catch (error) {
+              getLoggingService().warn('[LiveMonitoring]', `Library-change notification could not be created for ${library.libraryName}:`, error)
+            }
           }
         }
       } catch (error) {
@@ -1013,7 +1005,9 @@ export class LiveMonitoringService {
           itemCount: totalAdded + totalUpdated + totalRemoved,
         })
         emitNotificationCreated()
-      } catch { /* ignore */ }
+      } catch (error) {
+        getLoggingService().warn('[LiveMonitoring]', `Library-change notification could not be created for ${source.display_name}:`, error)
+      }
     }
 
     // Emit library:updated for each event type so Dashboard/MediaBrowser refresh
@@ -1090,32 +1084,24 @@ export class LiveMonitoringService {
    * Returns true if counts differ (scan needed), false if unchanged.
    */
   private async musicLibraryHasChanges(sourceId: string, libraryId: string, sourceType: ProviderType): Promise<boolean> {
-    try {
-      const db = getDatabase()
-      const dbTrackCount = db.countMusicTracks({ sourceId })
+    const db = getDatabase()
+    const dbTrackCount = db.countMusicTracks({ sourceId })
 
-      // For Plex, query the library section to get total track count
-      if (sourceType === 'plex') {
-        const sourceManager = getSourceManager()
-        const provider = sourceManager.getProvider(sourceId)
-        if (!provider) return false
+    // For Plex, query the library section to get total track count
+    if (sourceType === 'plex') {
+      const provider = getSourceManager().getProvider(sourceId)
+      if (!(provider instanceof PlexProvider)) throw new Error(`Plex provider is unavailable for source ${sourceId}`)
 
-        if (provider instanceof PlexProvider) {
-          const plexTrackCount = await provider.getMusicTrackCount(libraryId)
-          if (plexTrackCount !== dbTrackCount) {
-            console.log(`[LiveMonitoring] Music library track count changed: Plex=${plexTrackCount}, DB=${dbTrackCount}`)
-            return true
-          }
-          return false
-        }
+      const plexTrackCount = await provider.getMusicTrackCount(libraryId)
+      if (plexTrackCount !== dbTrackCount) {
+        console.log(`[LiveMonitoring] Music library track count changed: Plex=${plexTrackCount}, DB=${dbTrackCount}`)
+        return true
       }
-
-      // For other providers, always scan (no lightweight check available)
-      return true
-    } catch {
-      // On error, skip scan rather than doing expensive full scan
       return false
     }
+
+    // For other providers, always scan (no lightweight check available)
+    return true
   }
 
   /**

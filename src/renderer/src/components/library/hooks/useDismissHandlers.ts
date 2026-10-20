@@ -106,7 +106,9 @@ export function useDismissHandlers({
                 e.id === item.id ? { ...e, needs_upgrade: true } : e
               ))
               window.dispatchEvent(new CustomEvent('exclusions-changed'))
-            } catch { /* ignore */ }
+            } catch (error) {
+              addToast({ type: 'error', title: 'Could not restore upgrade recommendation', message: error instanceof Error ? error.message : String(error) })
+            }
           },
         },
       })
@@ -209,7 +211,10 @@ export function useDismissHandlers({
           try {
             const parsed = JSON.parse(json || '[]') as Array<{ musicbrainz_id?: string }>
             return JSON.stringify(parsed.filter(item => item.musicbrainz_id !== album.musicbrainz_id))
-          } catch { return json || '[]' }
+          } catch (error) {
+            console.error(`[useDismissHandlers] Invalid missing-album data for ${artistName}:`, error)
+            return json ?? '[]'
+          }
         }
         const updated = { ...data }
         if (album.album_type === 'album') updated.missing_albums = removeFromJson(data.missing_albums)

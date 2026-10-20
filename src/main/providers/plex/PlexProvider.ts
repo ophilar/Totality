@@ -713,7 +713,12 @@ export class PlexProvider implements MediaProvider {
       await db.updateSourceScanTime(this.sourceId)
 
       // Clean up any orphaned data (collections, series, music validated inside)
-      try { db.cleanupOrphanedMediaData() } catch { /* non-critical */ }
+      try {
+        db.cleanupOrphanedMediaData()
+      } catch (error) {
+        result.errors.push(`Failed to clean orphaned media data: ${getErrorMessage(error)}`)
+        console.warn(`[PlexProvider ${this.sourceId}] Failed to clean orphaned media data:`, error)
+      }
 
       result.success = true
       result.durationMs = Date.now() - startTime
@@ -2023,7 +2028,9 @@ export class PlexProvider implements MediaProvider {
           try {
             db.deleteMusicTrack(track.id)
             musicRemoved++
-          } catch { /* best effort */ }
+          } catch (error) {
+            console.warn(`[PlexProvider ${this.sourceId}] Failed to remove stale music track ${track.id}:`, getErrorMessage(error))
+          }
         }
       }
       if (musicRemoved > 0) {

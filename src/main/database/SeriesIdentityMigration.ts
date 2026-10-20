@@ -43,27 +43,21 @@ const SERIES_UNIQUENESS_INDEXES = [
   },
 ] as const
 
+function addColumnIfMissing(db: Database.Database, table: string, column: string, definition: string): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+  if (columns.some(existing => existing.name === column)) return
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+}
+
 /**
  * Backfill historical series identity keys across all media_items (episodes)
  * and series_completeness records, canonicalizing series across sources.
  */
 export function backfillSeriesIdentityKeys(db: Database.Database): void {
   // Ensure tables and columns exist before proceeding
-  try {
-    db.exec('ALTER TABLE series_completeness ADD COLUMN series_identity_key TEXT')
-  } catch {
-    // Column may already exist
-  }
-  try {
-    db.exec('ALTER TABLE series_completeness ADD COLUMN tvdb_id TEXT')
-  } catch {
-    // Column may already exist
-  }
-  try {
-    db.exec('ALTER TABLE media_items ADD COLUMN series_identity_key TEXT')
-  } catch {
-    // Column may already exist
-  }
+  addColumnIfMissing(db, 'series_completeness', 'series_identity_key', 'TEXT')
+  addColumnIfMissing(db, 'series_completeness', 'tvdb_id', 'TEXT')
+  addColumnIfMissing(db, 'media_items', 'series_identity_key', 'TEXT')
 
   // 1. Drop existing indexes so backfill updates do not cause transient conflicts
   for (const index of SERIES_UNIQUENESS_INDEXES) {

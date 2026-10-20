@@ -270,7 +270,9 @@ export class SourceManager {
     try {
       db.createNotification({ type: 'info', title: 'Source added', message: `${config.displayName} (${config.sourceType})`, sourceId, sourceName: config.displayName })
       emitNotificationCreated()
-    } catch { /* ignore */ }
+    } catch (error) {
+      getLoggingService().warn('[SourceManager]', `Source ${config.displayName} was added, but its notification could not be created:`, error)
+    }
     return source
   }
 
@@ -343,7 +345,9 @@ export class SourceManager {
     try {
       db.createNotification({ type: 'info', title: 'Source removed', message: sourceName })
       emitNotificationCreated()
-    } catch { /* ignore */ }
+    } catch (error) {
+      getLoggingService().warn('[SourceManager]', `Source ${sourceName} was removed, but its notification could not be created:`, error)
+    }
     console.log(`[SourceManager] Removed source: ${sourceId}`)
   }
 

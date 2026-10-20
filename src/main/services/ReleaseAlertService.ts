@@ -140,7 +140,9 @@ export class ReleaseAlertService {
                 }
               }
             }
-          } catch { /* TV details fetch failed, skip */ }
+          } catch (error) {
+            getLoggingService().warn('[ReleaseAlertService]', `Failed to fetch TV release details for ${item.title}:`, error)
+          }
         }
       } catch (err) {
         getLoggingService().verbose('[ReleaseAlertService]', `Failed to check ${item.title}: ${(err as Error).message}`)
