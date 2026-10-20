@@ -24,6 +24,7 @@ import {
   type MediaItemUpsert,
   type QualityScore,
   type MediaItemFilters,
+  type OptimizationMetricsSummary,
   type MediaSource,
   type MusicArtist,
   type MusicAlbum,
@@ -74,6 +75,15 @@ export class BetterSQLiteService {
   private static readonly MAX_READ_NOTIFICATIONS = 500
   private static readonly MAX_TASK_HISTORY = 500
   private static readonly MAX_ACTIVITY_LOG = 500
+
+  private mapMediaItem(row: Record<string, unknown>): MediaItem {
+    return {
+      ...row,
+      has_object_audio: row.has_object_audio == null ? undefined : Boolean(row.has_object_audio),
+      needs_upgrade: row.needs_upgrade == null ? undefined : Boolean(row.needs_upgrade),
+      user_fixed_match: row.user_fixed_match == null ? undefined : Boolean(row.user_fixed_match),
+    } as MediaItem
+  }
 
   private pruneReadNotifications(): void {
     if (!this.db) return
@@ -257,7 +267,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       params.push(libraryId)
     }
     sql += ' ORDER BY m.season_number ASC, m.episode_number ASC'
-    return this.db.prepare(sql).all(...params) as MediaItem[]
+    return this.db.prepare(sql).all(...params).map((row) => this.mapMediaItem(row as Record<string, unknown>))
   }
 
   constructor(customDbPath?: string) {
@@ -1534,6 +1544,8 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   getMediaItems(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): MediaItem[] {
     if (!this.db) throw new Error('Database not initialized')
 
+    const { whereClause, params } = this.buildMediaItemWhere(filters)
+
     let sql = `
       SELECT m.*,
              q.overall_score, q.needs_upgrade,
@@ -1542,63 +1554,8 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       FROM media_items m
       LEFT JOIN quality_scores q ON m.id = q.media_item_id
       LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE 1=1
+      ${whereClause}
     `
-    const params: unknown[] = []
-
-    // Filter out items from disabled libraries (unless explicitly requested)
-    if (!filters?.includeDisabledLibraries) {
-      sql += ' AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)'
-    }
-
-    if (filters?.type) {
-      sql += ' AND m.type = ?'
-      params.push(filters.type)
-    }
-    if (filters?.sourceId) {
-      sql += ' AND m.source_id = ?'
-      params.push(filters.sourceId)
-    }
-    if (filters?.sourceType) {
-      sql += ' AND m.source_type = ?'
-      params.push(filters.sourceType)
-    }
-    if (filters?.libraryId) {
-      sql += ' AND m.library_id = ?'
-      params.push(filters.libraryId)
-    }
-    if (filters?.searchQuery) {
-      sql += ' AND m.id IN (SELECT rowid FROM media_fts WHERE media_fts MATCH ?)'
-      params.push(BetterSQLiteService.buildFtsQuery(filters.searchQuery))
-    }
-    if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') {
-        sql += " AND m.title NOT GLOB '[A-Za-z]*'"
-      } else {
-        sql += ' AND UPPER(SUBSTR(m.title, 1, 1)) = ?'
-        params.push(filters.alphabetFilter.toUpperCase())
-      }
-    }
-    if (filters?.qualityTier) {
-      sql += ' AND q.quality_tier = ?'
-      params.push(filters.qualityTier)
-    }
-    if (filters?.tierQuality) {
-      sql += ' AND q.tier_quality = ?'
-      params.push(filters.tierQuality)
-    }
-    if (filters?.needsUpgrade !== undefined) {
-      if (filters.needsUpgrade) {
-        // Flag items that are LOW quality OR below the library's minimum tier target
-        sql += ` AND (q.needs_upgrade = 1 OR (ls.upgrade_min_tier IS NOT NULL AND
-          CASE q.quality_tier WHEN '4K' THEN 4 WHEN '1080p' THEN 3 WHEN '720p' THEN 2 ELSE 1 END
-          < CASE ls.upgrade_min_tier WHEN '4K' THEN 4 WHEN '1080p' THEN 3 WHEN '720p' THEN 2 ELSE 1 END))`
-        sql += ` AND m.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'media_upgrade' AND reference_id IS NOT NULL)`
-      } else {
-        sql += ' AND q.needs_upgrade = ?'
-        params.push(0)
-      }
-    }
 
     // Dynamic sorting with validated column names (prevent SQL injection)
     const sortColumnMap: Record<string, string> = {
@@ -1635,7 +1592,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     }
 
     const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as MediaItem[]
+    return stmt.all(...params).map((row) => this.mapMediaItem(row as Record<string, unknown>))
   }
 
   /**
@@ -1645,7 +1602,8 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     if (!this.db) throw new Error('Database not initialized')
 
     const stmt = this.db.prepare('SELECT * FROM media_items WHERE id = ?')
-    return (stmt.get(id) as MediaItem) || null
+    const row = stmt.get(id) as Record<string, unknown> | undefined
+    return row ? this.mapMediaItem(row) : null
   }
 
   /**
@@ -1655,7 +1613,8 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     if (!this.db) throw new Error('Database not initialized')
 
     const stmt = this.db.prepare('SELECT * FROM media_items WHERE file_path = ?')
-    return (stmt.get(filePath) as MediaItem) || null
+    const row = stmt.get(filePath) as Record<string, unknown> | undefined
+    return row ? this.mapMediaItem(row) : null
   }
 
   /**
@@ -1687,7 +1646,8 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     }
 
     const stmt = this.db.prepare(sql)
-    return (stmt.get(...params) as MediaItem) || null
+    const row = stmt.get(...params) as Record<string, unknown> | undefined
+    return row ? this.mapMediaItem(row) : null
   }
 
   /**
@@ -1697,72 +1657,88 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   countMediaItems(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): number {
     if (!this.db) throw new Error('Database not initialized')
 
+    const { whereClause, params } = this.buildMediaItemWhere(filters)
+
     let sql = `
       SELECT COUNT(*) as count
       FROM media_items m
       LEFT JOIN quality_scores q ON m.id = q.media_item_id
       LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE 1=1
+      ${whereClause}
     `
-    const params: unknown[] = []
-
-    // Filter out items from disabled libraries (unless explicitly requested)
-    if (!filters?.includeDisabledLibraries) {
-      sql += ' AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)'
-    }
-
-    if (filters?.type) {
-      sql += ' AND m.type = ?'
-      params.push(filters.type)
-    }
-    if (filters?.sourceId) {
-      sql += ' AND m.source_id = ?'
-      params.push(filters.sourceId)
-    }
-    if (filters?.sourceType) {
-      sql += ' AND m.source_type = ?'
-      params.push(filters.sourceType)
-    }
-    if (filters?.libraryId) {
-      sql += ' AND m.library_id = ?'
-      params.push(filters.libraryId)
-    }
-    if (filters?.searchQuery) {
-      sql += ' AND m.id IN (SELECT rowid FROM media_fts WHERE media_fts MATCH ?)'
-      params.push(BetterSQLiteService.buildFtsQuery(filters.searchQuery))
-    }
-    if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') {
-        sql += " AND m.title NOT GLOB '[A-Za-z]*'"
-      } else {
-        sql += ' AND UPPER(SUBSTR(m.title, 1, 1)) = ?'
-        params.push(filters.alphabetFilter.toUpperCase())
-      }
-    }
-    if (filters?.qualityTier) {
-      sql += ' AND q.quality_tier = ?'
-      params.push(filters.qualityTier)
-    }
-    if (filters?.tierQuality) {
-      sql += ' AND q.tier_quality = ?'
-      params.push(filters.tierQuality)
-    }
-    if (filters?.needsUpgrade !== undefined) {
-      if (filters.needsUpgrade) {
-        // Flag items that are LOW quality OR below the library's minimum tier target
-        sql += ` AND (q.needs_upgrade = 1 OR (ls.upgrade_min_tier IS NOT NULL AND
-          CASE q.quality_tier WHEN '4K' THEN 4 WHEN '1080p' THEN 3 WHEN '720p' THEN 2 ELSE 1 END
-          < CASE ls.upgrade_min_tier WHEN '4K' THEN 4 WHEN '1080p' THEN 3 WHEN '720p' THEN 2 ELSE 1 END))`
-        sql += ` AND m.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'media_upgrade' AND reference_id IS NOT NULL)`
-      } else {
-        sql += ' AND q.needs_upgrade = ?'
-        params.push(0)
-      }
-    }
 
     const stmt = this.db.prepare(sql)
     const result = stmt.get(...params) as { count: number }
     return result.count
+  }
+
+  getOptimizationMetrics(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): OptimizationMetricsSummary {
+    if (!this.db) throw new Error('Database not initialized')
+
+    const { whereClause, params } = this.buildMediaItemWhere(filters)
+    const result = this.db.prepare(`
+      SELECT SUM(q.estimated_savings_bytes) AS estimatedSavingsBytes
+      FROM media_items m
+      LEFT JOIN quality_scores q ON m.id = q.media_item_id
+      LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
+      ${whereClause}
+    `).get(...params) as { estimatedSavingsBytes: number | null }
+
+    return { estimatedSavingsBytes: result.estimatedSavingsBytes }
+  }
+
+  private buildMediaItemWhere(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): { whereClause: string; params: unknown[] } {
+    let whereClause = 'WHERE 1=1'
+    const params: unknown[] = []
+
+    if (!filters?.includeDisabledLibraries) {
+      whereClause += ' AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)'
+    }
+    if (filters?.type) {
+      whereClause += ' AND m.type = ?'
+      params.push(filters.type)
+    }
+    if (filters?.sourceId) {
+      whereClause += ' AND m.source_id = ?'
+      params.push(filters.sourceId)
+    }
+    if (filters?.sourceType) {
+      whereClause += ' AND m.source_type = ?'
+      params.push(filters.sourceType)
+    }
+    if (filters?.libraryId) {
+      whereClause += ' AND m.library_id = ?'
+      params.push(filters.libraryId)
+    }
+    if (filters?.searchQuery) {
+      whereClause += ' AND m.id IN (SELECT rowid FROM media_fts WHERE media_fts MATCH ?)'
+      params.push(BetterSQLiteService.buildFtsQuery(filters.searchQuery))
+    }
+    if (filters?.alphabetFilter === '#') {
+      whereClause += " AND m.title NOT GLOB '[A-Za-z]*'"
+    } else if (filters?.alphabetFilter) {
+      whereClause += ' AND UPPER(SUBSTR(m.title, 1, 1)) = ?'
+      params.push(filters.alphabetFilter.toUpperCase())
+    }
+    if (filters?.qualityTier) {
+      whereClause += ' AND q.quality_tier = ?'
+      params.push(filters.qualityTier)
+    }
+    if (filters?.tierQuality) {
+      whereClause += ' AND q.tier_quality = ?'
+      params.push(filters.tierQuality)
+    }
+    if (filters?.needsUpgrade === true) {
+      whereClause += ` AND (q.needs_upgrade = 1 OR (ls.upgrade_min_tier IS NOT NULL AND
+        CASE q.quality_tier WHEN '4K' THEN 4 WHEN '1080p' THEN 3 WHEN '720p' THEN 2 ELSE 1 END
+        < CASE ls.upgrade_min_tier WHEN '4K' THEN 4 WHEN '1080p' THEN 3 WHEN '720p' THEN 2 ELSE 1 END))`
+      whereClause += ` AND m.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'media_upgrade' AND reference_id IS NOT NULL)`
+    } else if (filters?.needsUpgrade === false) {
+      whereClause += ' AND q.needs_upgrade = ?'
+      params.push(0)
+    }
+
+    return { whereClause, params }
   }
 
   /**
@@ -6382,7 +6358,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       const batch = tmdbIds.slice(i, i + batchSize)
       const placeholders = batch.map(() => '?').join(',')
       const stmt = this.db.prepare(`SELECT * FROM media_items WHERE tmdb_id IN (${placeholders})`)
-      const rows = stmt.all(...batch) as MediaItem[]
+      const rows = stmt.all(...batch).map((row) => this.mapMediaItem(row as Record<string, unknown>))
       for (const row of rows) {
         if (row.tmdb_id) result.set(row.tmdb_id, row)
       }

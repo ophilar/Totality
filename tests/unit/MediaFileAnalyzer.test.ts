@@ -71,6 +71,22 @@ describe('MediaFileAnalyzer', () => {
     })
   })
 
+  describe('isFFmpegAvailable', () => {
+    it('detects FFmpeg on PATH before FFprobe has been resolved', async () => {
+      mockSpawn.mockImplementation((executable: string) => {
+        if (executable === 'ffmpeg') return createMockProcess('ffmpeg version 7.0', 0)
+        const proc = createMockProcess('', 1)
+        proc.on = vi.fn((event: string, callback: (error: Error) => void) => {
+          if (event === 'error') setTimeout(() => callback(new Error('ENOENT')), 0)
+        })
+        return proc
+      })
+
+      await expect(analyzer.isFFmpegAvailable()).resolves.toBe(true)
+      expect(mockSpawn).toHaveBeenCalledWith('ffmpeg', ['-version'], expect.objectContaining({ timeout: 5000 }))
+    })
+  })
+
   describe('isAvailable', () => {
     it('returns false when no ffprobe found', async () => {
       mockSpawn.mockImplementation(() => {

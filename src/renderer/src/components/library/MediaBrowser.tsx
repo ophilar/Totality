@@ -9,6 +9,7 @@ import { MatchFixModal } from './MatchFixModal'
 import { WishlistPanel } from '../wishlist/WishlistPanel'
 import { ActivityPanel } from '../ui/ActivityPanel'
 import { MoviesView } from './MoviesView'
+import { TranscodeModal } from './TranscodeModal'
 import { TVShowsView } from './TVShowsView'
 import { MusicView } from './MusicView'
 import { DuplicatesView } from './DuplicatesView'
@@ -180,6 +181,7 @@ export function MediaBrowser({
   const gridViewRef = useRef<HTMLButtonElement>(null)
   const listViewRef = useRef<HTMLButtonElement>(null)
   const [selectedMediaId, setSelectedMediaId] = useState<number | null>(null)
+  const [optimizingMovieId, setOptimizingMovieId] = useState<number | null>(null)
   const [detailRefreshKey, setDetailRefreshKey] = useState(0) // Increment to force detail view refresh
   const { viewType, gridScale, setViewType, setGridScale, viewPrefsLoadedRef, loadViewPrefs } = useViewPreferences(view)
 
@@ -188,9 +190,16 @@ export function MediaBrowser({
 
   // Movie and TV show pagination (extracted hooks)
   const {
-    paginatedMovies, setPaginatedMovies, totalMovieCount, moviesLoading,
+    paginatedMovies, setPaginatedMovies, totalMovieCount, moviesLoading, optimizationSummary, refreshOptimizationSummary,
     movieSortBy, setMovieSortBy, loadPaginatedMovies, loadMoreMovies,
   } = useMoviePagination({ activeSourceId, activeLibraryId, tierFilter: debouncedTierFilter, qualityFilter: debouncedQualityFilter, searchQuery })
+
+  const refreshMovieOptimizationData = useCallback(async () => {
+    await Promise.all([loadPaginatedMovies(true), refreshOptimizationSummary()])
+  }, [loadPaginatedMovies, refreshOptimizationSummary])
+  const handleMovieOptimizationCompleted = useCallback(() => {
+    void refreshMovieOptimizationData()
+  }, [refreshMovieOptimizationData])
 
   const {
     paginatedShows, totalShowCount, totalEpisodeCount, showsLoading,
@@ -1969,6 +1978,8 @@ export function MediaBrowser({
               onRescan={handleRescanItem}
               onDismissUpgrade={handleDismissUpgrade}
               totalMovieCount={totalMovieCount}
+              optimizationSummary={optimizationSummary}
+              onOptimizeMovie={setOptimizingMovieId}
               moviesLoading={moviesLoading}
               movieSortBy={movieSortBy}
               onMovieSortChange={(sort) => {
@@ -2213,6 +2224,14 @@ export function MediaBrowser({
             }
             emitDismissUpgrade({ mediaId })
           }}
+        />
+      )}
+
+      {optimizingMovieId !== null && (
+        <TranscodeModal
+          mediaId={optimizingMovieId}
+          onClose={() => setOptimizingMovieId(null)}
+          onOptimizationCompleted={handleMovieOptimizationCompleted}
         />
       )}
 

@@ -227,6 +227,24 @@ describe('BetterSQLiteService — Media Items', () => {
     expect(item?.type).toBe('movie')
   })
 
+  it('hydrates persisted media flags as booleans for single and joined queries', () => {
+    const id = service.upsertMediaItem(makeMediaItem({
+      has_object_audio: true,
+      user_fixed_match: true,
+    }))
+    service.upsertQualityScores([makeQualityScore(id, 0)])
+
+    const item = service.getMediaItem(id)
+    const listedItem = service.getMediaItems()[0]
+
+    expect(item?.has_object_audio).toBe(true)
+    expect(item?.user_fixed_match).toBe(true)
+    expect(listedItem.has_object_audio).toBe(true)
+    expect(listedItem.needs_upgrade).toBe(true)
+    expect(listedItem.user_fixed_match).toBe(true)
+    expect(typeof listedItem.has_object_audio).toBe('boolean')
+  })
+
   it('getMediaItem returns null for non-existent', () => {
     expect(service.getMediaItem(99999)).toBeNull()
   })
@@ -252,6 +270,20 @@ describe('BetterSQLiteService — Media Items', () => {
 
     expect(movies.map(movie => movie.title)).toEqual(['Higher', 'Lower', 'Unknown'])
     expect(movies.map(movie => movie.estimated_savings_bytes)).toEqual([2_400_000_000, 900_000_000, null])
+  })
+
+  it('aggregates estimated savings using the same media filters as the movie list', () => {
+    const matchingId = service.upsertMediaItem(makeMediaItem({ plex_id: 'matching', source_id: 'src-1', title: 'Search Match' }))
+    const otherSourceId = service.upsertMediaItem(makeMediaItem({ plex_id: 'other-source', source_id: 'src-2', title: 'Search Match' }))
+    service.upsertQualityScores([
+      makeQualityScore(matchingId, 640_000_000),
+      makeQualityScore(otherSourceId, 2_000_000_000),
+    ])
+
+    const filters = { type: 'movie' as const, sourceId: 'src-1', searchQuery: 'Search Match' }
+
+    expect(service.getOptimizationMetrics(filters)).toEqual({ estimatedSavingsBytes: 640_000_000 })
+    expect(service.getOptimizationMetrics({ ...filters, sourceId: 'missing-source' })).toEqual({ estimatedSavingsBytes: null })
   })
 
   it('sorts shows by their aggregate numeric estimated savings', () => {

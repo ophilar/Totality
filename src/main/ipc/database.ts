@@ -64,6 +64,16 @@ export function registerDatabaseHandlers() {
     }
   })
 
+  createIpcHandler(IPC_CHANNELS.dbGetOptimizationMetrics, async (filters?: unknown) => {
+    try {
+      const validFilters = filters !== undefined ? validateInput(MediaItemFiltersSchema, filters, 'db:getOptimizationMetrics') : undefined
+      return db.getOptimizationMetrics(validFilters)
+    } catch (error) {
+      console.error('Error getting optimization metrics:', error)
+      throw error
+    }
+  })
+
   // ============================================================================
   // TV SHOWS (grouped by series_title)
   // ============================================================================

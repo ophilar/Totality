@@ -7,11 +7,10 @@ import { DropdownMenu, DropdownMenuItem } from '../ui/DropdownMenu'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors } from './mediaUtils'
 import type { MediaItem, MovieCollectionData } from './types'
-import { TranscodeModal } from './TranscodeModal'
 import { QualityBadges } from './QualityBadges'
 import { OptimizationMetrics } from './OptimizationMetrics'
-import { calculateOptimizationSummary } from './optimizationSummary'
 import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
+import type { OptimizationMetricsSummary } from '@main/types/database'
 
 // Display item type for grouped movies view
 type MovieDisplayItem =
@@ -31,6 +30,8 @@ export function MoviesView({
   onRescan,
   onDismissUpgrade,
   totalMovieCount,
+  optimizationSummary,
+  onOptimizeMovie,
   moviesLoading,
   movieSortBy = 'title',
   onMovieSortChange,
@@ -51,6 +52,8 @@ export function MoviesView({
   onRescan?: (mediaItemId: number, sourceId: string, libraryId: string | null, filePath: string) => Promise<void>
   onDismissUpgrade?: (movie: MediaItem) => void
   totalMovieCount: number
+  optimizationSummary: OptimizationMetricsSummary | null
+  onOptimizeMovie: (mediaItemId: number) => void
   moviesLoading: boolean
   movieSortBy?: MovieSortBy
   onMovieSortChange?: (sort: MovieSortBy) => void
@@ -59,14 +62,6 @@ export function MoviesView({
   isMobile?: boolean
   isTablet?: boolean
 }) {
-  const [optimizationSummary, setOptimizationSummary] = useState<ReturnType<typeof calculateOptimizationSummary>>(null)
-  useEffect(() => {
-    let cancelled = false
-    window.electronAPI.getMediaItems({ type: 'movie' }).then(items => {
-      if (!cancelled) setOptimizationSummary(calculateOptimizationSummary(items as MediaItem[]))
-    })
-    return () => { cancelled = true }
-  }, [totalMovieCount])
   // On mobile: fixed 3 columns. On tablet: fixed 4 columns. Desktop: auto-fill with scale.
   const posterMinWidth = useMemo(() => {
     const widthMap: Record<number, number> = {
@@ -303,6 +298,7 @@ export function MoviesView({
                   onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id, item.movie.title, item.movie.year, item.movie.file_path) : undefined}
                   onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
                   onDismissUpgrade={onDismissUpgrade}
+                  onOptimize={onOptimizeMovie}
                                />
               </div>
             )
@@ -350,6 +346,7 @@ export function MoviesView({
                 onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id, item.movie.title, item.movie.year, item.movie.file_path) : undefined}
                 onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
                 onDismissUpgrade={onDismissUpgrade}
+                onOptimize={onOptimizeMovie}
                              />
             </div>
           )
@@ -487,9 +484,8 @@ function CollectionListItem({ collection, onClick }: { collection: MovieCollecti
   )
 }
 
-const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFixMatch, onRescan, onDismissUpgrade }: { movie: MediaItem; onClick: () => void; collectionData?: MovieCollectionData; showSourceBadge?: boolean; onFixMatch?: (mediaItemId: number) => void; onRescan?: (mediaItemId: number) => Promise<void>; onDismissUpgrade?: (movie: MediaItem) => void }) => {
+const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFixMatch, onRescan, onDismissUpgrade, onOptimize }: { movie: MediaItem; onClick: () => void; collectionData?: MovieCollectionData; showSourceBadge?: boolean; onFixMatch?: (mediaItemId: number) => void; onRescan?: (mediaItemId: number) => Promise<void>; onDismissUpgrade?: (movie: MediaItem) => void; onOptimize: (mediaItemId: number) => void }) => {
   const [showMenu, setShowMenu] = useState(false)
-  const [showTranscode, setShowTranscode] = useState(false)
   const [isRescanning, setIsRescanning] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
   const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
@@ -527,7 +523,6 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
   const showMenuButton = Boolean(movie.id && movie.file_path) || onFixMatch || onRescan || (onDismissUpgrade && needsUpgrade)
 
   return (
-    <>
     <div
       ref={cardRef}
       tabIndex={0}
@@ -571,14 +566,10 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
                     Fix Match
                   </DropdownMenuItem>
                 )}
-                {movie.id && movie.file_path && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setShowMenu(false); setShowTranscode(true) }}
-                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
-                  >
-                    <CircleFadingArrowUp className="w-3.5 h-3.5" />
+                {movie.file_path && (
+                  <DropdownMenuItem onClick={(event) => { event.stopPropagation(); setShowMenu(false); onOptimize(movie.id) }} icon={<CircleFadingArrowUp className="w-3.5 h-3.5" />}>
                     Analyze &amp; Optimize
-                  </button>
+                  </DropdownMenuItem>
                 )}
                 {onDismissUpgrade && needsUpgrade && (
                   <DropdownMenuItem onClick={handleDismissUpgrade} icon={<EyeOff className="w-3.5 h-3.5" />}>
@@ -656,8 +647,6 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
         </div>
       </div>
     </div>
-    {showTranscode && <TranscodeModal mediaId={movie.id} onClose={() => setShowTranscode(false)} />}
-    </>
   )
 }, (prevProps, nextProps) => {
   // Compare all props that affect rendering
@@ -670,12 +659,13 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
          prevProps.movie.version_count === nextProps.movie.version_count &&
          prevProps.movie.estimated_savings_bytes === nextProps.movie.estimated_savings_bytes &&
          prevProps.movie.evidence_status === nextProps.movie.evidence_status &&
+         prevProps.onOptimize === nextProps.onOptimize &&
          prevProps.showSourceBadge === nextProps.showSourceBadge &&
          prevProps.collectionData?.id === nextProps.collectionData?.id &&
          prevProps.collectionData?.completeness_percentage === nextProps.collectionData?.completeness_percentage
 })
 
-const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, onFixMatch, onRescan, onDismissUpgrade }: { movie: MediaItem; onClick: () => void; showSourceBadge?: boolean; collectionData?: MovieCollectionData; onFixMatch?: (mediaItemId: number) => void; onRescan?: (mediaItemId: number) => Promise<void>; onDismissUpgrade?: (movie: MediaItem) => void }) => {
+const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, onFixMatch, onRescan, onDismissUpgrade, onOptimize }: { movie: MediaItem; onClick: () => void; showSourceBadge?: boolean; collectionData?: MovieCollectionData; onFixMatch?: (mediaItemId: number) => void; onRescan?: (mediaItemId: number) => Promise<void>; onDismissUpgrade?: (movie: MediaItem) => void; onOptimize: (mediaItemId: number) => void }) => {
   const [showMenu, setShowMenu] = useState(false)
   const [isRescanning, setIsRescanning] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -711,7 +701,7 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
     }
   }
 
-  const showMenuButton = onFixMatch || onRescan || (onDismissUpgrade && needsUpgrade)
+  const showMenuButton = onFixMatch || onRescan || (onDismissUpgrade && needsUpgrade) || (movie.id && movie.file_path)
 
   return (
     <div
@@ -775,11 +765,12 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
           )}
         </div>
         <QualityBadges item={movie} showSavings={false} />
-      </div>
-
-      <div className="hidden lg:flex shrink-0 text-xs min-w-32 items-center gap-1.5" aria-label="Estimated savings">
-        <span className="text-muted-foreground">Est. savings</span>
-        <EstimatedSavingsDisplay bytes={movie.estimated_savings_bytes} />
+        {movie.estimated_savings_bytes != null && (
+          <div className="mt-1 flex items-center gap-1.5 text-xs" aria-label="Estimated savings">
+            <span className="text-muted-foreground">Est. savings</span>
+            <EstimatedSavingsDisplay bytes={movie.estimated_savings_bytes} />
+          </div>
+        )}
       </div>
 
       {/* 3-dot menu */}
@@ -811,6 +802,11 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
                   Fix Match
                 </DropdownMenuItem>
               )}
+              {movie.id && movie.file_path && (
+                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); setShowMenu(false); onOptimize(movie.id) }} icon={<CircleFadingArrowUp className="w-3.5 h-3.5" />}>
+                  Analyze &amp; Optimize
+                </DropdownMenuItem>
+              )}
               {onDismissUpgrade && needsUpgrade && (
                 <DropdownMenuItem onClick={handleDismissUpgrade} icon={<EyeOff className="w-3.5 h-3.5" />}>
                   Dismiss Upgrade
@@ -835,5 +831,6 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
          prevProps.movie.version_count === nextProps.movie.version_count &&
          prevProps.movie.estimated_savings_bytes === nextProps.movie.estimated_savings_bytes &&
          prevProps.movie.evidence_status === nextProps.movie.evidence_status &&
+         prevProps.onOptimize === nextProps.onOptimize &&
          prevProps.showSourceBadge === nextProps.showSourceBadge
 })

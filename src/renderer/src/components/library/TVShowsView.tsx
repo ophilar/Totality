@@ -137,7 +137,7 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
                 Fix Match
               </DropdownMenuItem>
             )}
-            {onOptimizeSeries && (
+            {onOptimizeSeries && show.series_identity_key?.trim() && (
               <DropdownMenuItem
                 onClick={(e) => {
                   e.stopPropagation()
@@ -242,12 +242,13 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onOptim
           )}
         </div>
         <QualityBadges item={episode} showSavings={false} />
+        {episode.estimated_savings_bytes != null && (
+          <div className="mt-1 flex items-center gap-1.5 text-xs" aria-label="Estimated savings">
+            <span className="text-muted-foreground">Est. savings</span>
+            <EstimatedSavingsDisplay bytes={episode.estimated_savings_bytes} />
+          </div>
+        )}
       </div>
-
-      {!isMobile && <div className="hidden lg:flex shrink-0 text-xs min-w-32 items-center gap-1.5" aria-label="Estimated savings">
-        <span className="text-muted-foreground">Est. savings</span>
-        <EstimatedSavingsDisplay bytes={episode.estimated_savings_bytes} />
-      </div>}
 
       {/* 3-dot menu */}
       {showMenuButton && (
@@ -472,6 +473,14 @@ export function TVShowsView({
   // Optimization modal state
   const [optimizingShow, setOptimizingShow] = useState<TVShowSummary | null>(null)
   const [optimizingEpisode, setOptimizingEpisode] = useState<MediaItem | null>(null)
+  const firstIdentifiedEpisode = useMemo(() => {
+    if (!selectedShowData) return undefined
+    for (const season of selectedShowData.seasons.values()) {
+      const episode = season.episodes.find(candidate => candidate.series_identity_key?.trim())
+      if (episode) return episode
+    }
+    return undefined
+  }, [selectedShowData])
 
   const handleOpenOptimize = useCallback((showSummary?: TVShowSummary | null) => {
     setOptimizingEpisode(null)
@@ -480,7 +489,7 @@ export function TVShowsView({
       setOptimizingShow(showSummary)
       return
     }
-    const firstEp = selectedShowData ? Array.from(selectedShowData.seasons.values())[0]?.episodes[0] : undefined
+    const firstEp = firstIdentifiedEpisode
     if (!firstEp?.series_identity_key) return
 
     const summary = shows.find(s => s.series_identity_key === firstEp.series_identity_key)
@@ -497,7 +506,7 @@ export function TVShowsView({
         series_identity_key: firstEp.series_identity_key
       })
     }
-  }, [selectedShowData, shows])
+  }, [firstIdentifiedEpisode, selectedShowData, shows])
 
   const handleOpenOptimizeEpisode = useCallback((episode: MediaItem) => {
     if (!episode.id || !episode.file_path || !episode.source_id || !episode.series_identity_key) return
@@ -812,8 +821,9 @@ export function TVShowsView({
               </button>
               <button
                 onClick={() => handleOpenOptimize()}
+                disabled={!firstIdentifiedEpisode}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm bg-purple-600/20 text-purple-300 border border-purple-500/30 rounded-md hover:bg-purple-600/30 transition-colors"
-                title="Optimize Series"
+                title={firstIdentifiedEpisode ? 'Optimize Series' : 'Optimization requires a canonical series identity'}
               >
                 <Zap className="w-3.5 h-3.5 text-purple-400" />
                 Optimize Series
@@ -959,8 +969,9 @@ export function TVShowsView({
           </h3>
           <button
             onClick={() => handleOpenOptimize()}
+            disabled={!firstIdentifiedEpisode}
             className="flex items-center gap-2 px-3 py-1.5 text-sm bg-purple-600/20 text-purple-300 border border-purple-500/30 rounded-md hover:bg-purple-600/30 transition-colors"
-            title="Optimize Series"
+            title={firstIdentifiedEpisode ? 'Optimize Series' : 'Optimization requires a canonical series identity'}
           >
             <Zap className="w-3.5 h-3.5 text-purple-400" />
             Optimize Series
@@ -1132,7 +1143,7 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
                   Fix Match
                 </DropdownMenuItem>
               )}
-              {onOptimizeSeries && (
+              {onOptimizeSeries && show.series_identity_key?.trim() && (
                 <DropdownMenuItem
                   onClick={(e) => {
                     e.stopPropagation()
