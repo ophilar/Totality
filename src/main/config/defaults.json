@@ -94,6 +94,7 @@
     "defaultSoftwareCrf": 22,
     "defaultIntelPreset": "slow",
     "defaultIntelQuality": 20,
+    "defaultAmdPreset": "balanced",
     "maxBitrateFallback": 60000000,
     "maxBufsizeFallback": 120000000,
     "audioSurroundTargetBitrateKbps": 640,

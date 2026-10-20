@@ -10,14 +10,12 @@ import {
   Sparkles
 } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
-import type { TranscodeOptions, TranscodingParams, GpuInfo, Availability, PresetTemplate } from './types'
-import { TranscodingDeviceSelector } from './TranscodingDeviceSelector'
+import type { TranscodeOptions, TranscodingParams, Availability, PresetTemplate } from './types'
 
 export interface AdvancedTabProps {
   options: TranscodeOptions
   setOptions: React.Dispatch<React.SetStateAction<TranscodeOptions>>
   params: TranscodingParams | null
-  gpus: GpuInfo[]
   availability: Availability | null
 }
 
@@ -27,7 +25,6 @@ export function AdvancedTab({
   options,
   setOptions,
   params,
-  gpus,
   availability
 }: AdvancedTabProps) {
   const { addToast } = useToast()
@@ -197,7 +194,7 @@ export function AdvancedTab({
             onChange={(e) => setOptions(prev => ({ ...prev, transcodingEngine: e.target.value as TranscodeOptions['transcodingEngine'] }))}
             className="w-full bg-muted border border-border/50 rounded-xl p-2.5 text-sm font-medium outline-hidden focus:border-primary transition-all"
           >
-            {availability?.ffmpeg && <option value="ffmpeg">FFmpeg (Zero-Copy VRAM Pipeline)</option>}
+            {availability?.ffmpeg && <option value="ffmpeg">FFmpeg</option>}
           </select>
         </div>
 
@@ -217,16 +214,6 @@ export function AdvancedTab({
           </select>
         </div>
       </div>
-
-      {/* Canonical Transcoding Device Selector */}
-      <TranscodingDeviceSelector
-        useGpu={options.useGpu}
-        onUseGpuChange={(useGpu) => setOptions(prev => ({ ...prev, useGpu }))}
-        selectedGpuId={options.gpuId}
-        onSelectedGpuIdChange={(gpuId) => setOptions(prev => ({ ...prev, gpuId, useGpu: Boolean(gpuId) }))}
-        gpus={gpus}
-        variant="expanded"
-      />
 
       {/* Quality CQ Slider with Visual Feedback */}
       <div className="space-y-3 p-4 bg-muted/20 border border-border/40 rounded-2xl">

@@ -3,6 +3,8 @@ import type { ITranscodeCommandBuilder, TranscodeOptions } from './types'
 import type { FileAnalysisResult } from '../MediaFileAnalyzer'
 import { buildHdrMetadataArgs } from './HdrTranscodingPolicy'
 import { appendStreamMappingArgs } from './StreamSelectionPlan'
+import { applyTargetTranscodePlan } from './TargetTranscodePlan'
+import { APP_CONFIG } from '@main/config'
 
 export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
   buildFFmpegArgs(input: string, output: string, options: TranscodeOptions, analysis: FileAnalysisResult): string[] {
@@ -16,8 +18,8 @@ export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
       '-fps_mode', 'passthrough'
     ]
     const codec = options.targetCodec === 'av1' ? 'av1_nvenc' : 'hevc_nvenc'
-    const cq = (options.crf ?? 20).toString()
-    const preset = options.preset || 'p6'
+    const cq = (options.crf ?? APP_CONFIG.transcoding.defaultCrf).toString()
+    const preset = options.preset || APP_CONFIG.transcoding.defaultPreset
 
     args.push(
       '-c:v', codec,
@@ -41,10 +43,11 @@ export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
 
     appendStreamMappingArgs(args, analysis, options)
     args.push(...hdrArgs)
-    if (output.toLowerCase().endsWith('.mp4')) {
+    if (!options.targetConversion && output.toLowerCase().endsWith('.mp4')) {
       args.push('-movflags', '+faststart')
     }
     args.push(output)
+    applyTargetTranscodePlan(args, options)
     return args
   }
 }

@@ -23,13 +23,14 @@ import { useToast } from '@/contexts/ToastContext'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
 import type { TVShowSummary, MediaItem } from './types'
 import type { GpuInfo, PlannedOptimizationOperation, ShowTranscodePreflight } from './transcoding/types'
-import { TranscodingDeviceSelector } from './transcoding/TranscodingDeviceSelector'
+import { EncoderPolicySelector } from './transcoding/EncoderPolicySelector'
 import { formatLanguage, isSameLanguage, LANGUAGE_OPTIONS } from './mediaUtils'
 import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
 import { getTVShowIdentity } from './tv/showIdentity'
 import type { QueueState } from '@main/types/taskQueue'
 import type { PlaybackTargetProfile } from '@main/types/playbackTarget'
 import type { OptimizationQualityProfile } from '@main/services/MeasuredOptimizationPolicy'
+import { getHardwareEncoder } from '@main/services/TranscodingCapabilities'
 import { TaskType } from '@main/types/database'
 
 function getSourceTierBadge(tier?: string) {
@@ -158,6 +159,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
   const [targetProfiles, setTargetProfiles] = useState<PlaybackTargetProfile[]>([])
   const [qualityProfile, setQualityProfile] = useState<OptimizationQualityProfile | ''>('')
   const [encoderPolicy, setEncoderPolicy] = useState<'hardware' | 'software' | 'compare' | ''>('')
+  const useHardwareEncoder = encoderPolicy === 'hardware' || encoderPolicy === 'compare'
   const [targetContainer, setTargetContainer] = useState<'mkv' | 'mp4' | ''>('')
   const [targetAudioCodec, setTargetAudioCodec] = useState<'aac' | 'ac3' | 'eac3' | ''>('')
   const [targetHdrFormat, setTargetHdrFormat] = useState<'SDR' | 'HDR10' | ''>('')
@@ -171,7 +173,6 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
   const [detectedLanguages, setDetectedLanguages] = useState<string[]>([])
   const [providerLanguage, setProviderLanguage] = useState<string>('')
   const [outputMode, setOutputMode] = useState<'copy' | 'quarantine-replace' | 'replace'>('quarantine-replace')
-  const [useGpu, setUseGpu] = useState(true)
   const [gpuId, setGpuId] = useState('')
   const [gpus, setGpus] = useState<GpuInfo[]>([])
   const [verifiedEncoders, setVerifiedEncoders] = useState<string[]>([])
@@ -210,8 +211,6 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     return () => { mounted = false }
   }, [addToast])
 
-  const handleUseGpuChange = useCallback((next: boolean) => setUseGpu(next), [])
-  const handleGpuIdChange = useCallback((id: string) => setGpuId(id), [])
 
   const handleClose = useCallback(async () => {
     const requestId = activePreflightRequestId.current
@@ -345,12 +344,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
       setGpus(detectedGpus)
       setVerifiedEncoders(capabilities.verifiedEncoders)
       const selected = detectedGpus.find((gpu: GpuInfo) => gpu.id === capabilities.selectedGpuId)
-      if (selected) {
-        setGpuId(selected.id)
-        setUseGpu(true)
-      } else {
-        setUseGpu(false)
-      }
+      setGpuId(selected?.id || '')
     }).catch(err => {
       addToast({ type: 'error', title: 'Encoder capabilities', message: String(err) })
     })
@@ -408,8 +402,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
       targetHdrFormat: shouldAdjustToTarget ? targetHdrFormat || undefined : undefined,
       transcodingEngine: 'ffmpeg' as const,
       outputMode,
-      useGpu: effectiveOptimizationMode === 'remux_only' ? false : useGpu,
-      gpuId: useGpu && effectiveOptimizationMode !== 'remux_only' ? gpuId : undefined,
+      gpuId: useHardwareEncoder && effectiveOptimizationMode !== 'remux_only' ? gpuId : undefined,
       optimizationMode: effectiveOptimizationMode,
       targetProfileId: overrides.targetProfileId ?? targetProfileId,
       streamSelection: effectiveAudio === 'all'
@@ -538,8 +531,8 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
 
   // Filter tasks belonging to transcoding
   const vendor = gpus.find(gpu => gpu.id === gpuId)?.vendor
-  const hardwareEncoder = vendor === 'NVIDIA' ? (codec === 'av1' ? 'nvenc_av1' : 'nvenc_h265') : vendor === 'Intel' ? (codec === 'av1' ? 'qsv_av1' : 'qsv_h265') : undefined
-  const hardwareAvailable = useGpu && hardwareEncoder !== undefined && verifiedEncoders.includes(hardwareEncoder)
+  const hardwareEncoder = vendor && codec ? getHardwareEncoder(vendor, codec) : undefined
+  const hardwareAvailable = hardwareEncoder !== undefined && verifiedEncoders.includes(hardwareEncoder)
   const verifiedResults = queueState.completedTasks.filter(task => task.batchId === activeBatchId && task.status === 'completed' && typeof task.result?.physicallyReclaimedBytes === 'number').map(task => task.result!)
   const batchQueue = queueState.queue.filter(task => task.batchId === activeBatchId)
   const currentTask = queueState.currentTask?.batchId === activeBatchId ? queueState.currentTask : null
@@ -686,7 +679,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
               <summary className="cursor-pointer list-none text-xs font-bold uppercase tracking-wider text-muted-foreground">Target adjustment details</summary>
             <div className="grid grid-cols-2 gap-3 text-xs">
               <label>Visual quality threshold<select aria-label="Quality" value={qualityProfile} onChange={e => setQualityProfile(e.target.value as OptimizationQualityProfile)}><option value="">Select threshold</option><option value="transparent">Highest measured fidelity</option><option value="balanced">Balanced fidelity and savings</option><option value="maximum_savings">More savings, measured loss allowed</option></select></label>
-              <label>Encoder policy<select aria-label="Encoder policy" value={encoderPolicy} onChange={e => setEncoderPolicy(e.target.value as typeof encoderPolicy)}><option value="">Select policy</option><option value="hardware" disabled={!hardwareAvailable}>Verified hardware</option><option value="software">Software</option><option value="compare" disabled={!hardwareAvailable}>Compare hardware and software</option></select></label>
+              <EncoderPolicySelector value={encoderPolicy} hardwareAvailable={hardwareAvailable} onChange={policy => setEncoderPolicy(policy ?? '')} />
               <label>Container<select aria-label="Container" value={targetContainer} onChange={e => setTargetContainer(e.target.value as typeof targetContainer)}><option value="">Select container</option>{targetProfiles.find(profile => profile.id === targetProfileId)?.definition.containers.filter(container => ['matroska', 'mp4'].includes(container)).map(container => <option key={container} value={container === 'matroska' ? 'mkv' : 'mp4'}>{container}</option>)}</select></label>
               <label>Output color<select aria-label="Output color" value={targetHdrFormat} onChange={e => setTargetHdrFormat(e.target.value as typeof targetHdrFormat)}><option value="">Select color format</option><option value="SDR">SDR</option>{targetProfiles.find(profile => profile.id === targetProfileId)?.definition.hdr.formats.includes('HDR10') && <option value="HDR10">HDR10</option>}</select></label>
               <label>Audio conversion<select aria-label="Audio conversion" value={targetAudioCodec} onChange={e => setTargetAudioCodec(e.target.value as typeof targetAudioCodec)}><option value="">Preserve codec; block incompatible tracks</option>{targetProfiles.find(profile => profile.id === targetProfileId)?.definition.audio.codecs.filter(codec => ['aac', 'ac3', 'eac3'].includes(codec)).map(codec => <option key={codec} value={codec}>{codec.toUpperCase()}</option>)}</select></label>
@@ -907,18 +900,6 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
             </details>
             <details className="space-y-3 rounded-xl border border-border/40 bg-card/20 p-3">
               <summary className="cursor-pointer list-none text-xs font-bold uppercase tracking-wider text-muted-foreground">Execution and output</summary>
-            {/* Transcoding Device Selector */}
-            {optimizationMode !== 'remux_only' && (
-              <TranscodingDeviceSelector
-                useGpu={useGpu}
-                onUseGpuChange={handleUseGpuChange}
-                selectedGpuId={gpuId}
-                onSelectedGpuIdChange={handleGpuIdChange}
-                gpus={gpus}
-                variant="compact"
-              />
-            )}
-
             {/* Output Mode */}
             <div className="space-y-2">
               <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
@@ -1033,7 +1014,10 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
             <button disabled={busy} className="text-xs underline" onClick={() => {
               setBusy(true)
               void window.electronAPI.seriesAnalyzeByIdentity(seriesIdentityKey, sourceId, libraryId)
-                .then(() => setMessage('Series analysis completed. Refresh the plan.'))
+                .then(async () => {
+                  await runPreflight()
+                  setMessage('Series analysis completed and the optimization plan was refreshed.')
+                })
                 .catch(error => setMessage(String(error)))
                 .finally(() => setBusy(false))
             }}>Analyze show using series analysis</button>

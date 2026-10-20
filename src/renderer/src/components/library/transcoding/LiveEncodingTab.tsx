@@ -102,7 +102,7 @@ export function LiveEncodingTab({
           <div className="space-y-2">
             <h4 className="text-2xl font-black">Optimization Complete!</h4>
             <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              {mediaTitle ? `"${mediaTitle}"` : 'Media file'} has been successfully transcoded with zero-copy VRAM pipeline.
+              {mediaTitle ? `"${mediaTitle}"` : 'Media file'} has been successfully transcoded.
             </p>
           </div>
 
@@ -152,8 +152,7 @@ export function LiveEncodingTab({
                 <RefreshCw className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="text-sm font-bold text-foreground">Live Hardware Transcoding Active</h4>
-                <p className="text-xs text-muted-foreground">Streaming GPU VRAM Anti-Stutter Pipeline</p>
+                <h4 className="text-sm font-bold text-foreground">Transcoding in progress</h4>
               </div>
             </div>
             <button
@@ -265,7 +264,7 @@ export function LiveEncodingTab({
             <Zap className="w-8 h-8" />
           </div>
           <div className="space-y-2">
-            <h4 className="text-xl font-bold">Ready to Launch Hardware Transcode</h4>
+            <h4 className="text-xl font-bold">Ready to start transcoding</h4>
             <p className="text-sm text-muted-foreground max-w-md mx-auto">
               Configure options in Quick Presets or Advanced Settings, then press Start Optimization to begin live encoding.
             </p>

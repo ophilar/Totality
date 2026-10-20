@@ -83,7 +83,7 @@ export function buildTargetTranscodePlan(analysis: FileAnalysisResult, profile: 
   return { container, width, height, bitDepth, profile: outputProfile, level, hdrFormat, videoFilter, inputArgs: convertHdr ? ['-init_hw_device', 'vulkan=target', '-filter_hw_device', 'target'] : [], maximumVideoBitrate, audio, changes }
 }
 
-export function applyTargetTranscodePlan(args: string[], options: TranscodeOptions): void {
+export function applyTargetTranscodePlan(args: string[], options: { targetConversion?: unknown; targetCodec?: 'av1' | 'hevc'; encoder?: string }): void {
   const plan = options.targetConversion as TargetTranscodePlan | undefined
   if (!plan) return
   // Target conversion uses software decoding before explicit filter/encoder transfers.

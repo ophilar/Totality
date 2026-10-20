@@ -14,7 +14,7 @@ import { PathUtils } from '@main/services/utils/PathUtils'
 import { GpuDetector, type GpuInfo } from '@main/services/utils/GpuDetector'
 import { TranscodeCommandFactory } from './transcoding/TranscodeCommandFactory'
 import { validateHdrTranscode } from './transcoding/HdrTranscodingPolicy'
-import { buildTranscodingCapabilities, TranscodingCapabilities } from './TranscodingCapabilities'
+import { buildTranscodingCapabilities, getHardwareEncoder, TranscodingCapabilities } from './TranscodingCapabilities'
 import type { FileAnalysisResult } from './MediaFileAnalyzer'
 import type { StreamSelectionPolicy } from './transcoding/StreamSelectionPlan'
 import { buildStreamSelectionPlan } from './transcoding/StreamSelectionPlan'
@@ -259,7 +259,10 @@ export class TranscodingService {
       ? await getDatabase().tvShows.getEpisodes(request.seriesTitle!, request.sourceId, request.seriesIdentityKey!, request.libraryId!)
       : [await getDatabase().media.getItemById(request.mediaItemId)].filter((item): item is MediaItem => item !== null)
     if (episodes.length === 0) throw new Error('No local episodes were found for the selected show')
-    if (request.mediaItemId !== undefined && (episodes[0].source_id !== request.sourceId || episodes[0].series_identity_key !== request.seriesIdentityKey)) {
+    if (request.mediaItemId !== undefined && (
+      episodes[0].source_id !== request.sourceId ||
+      (request.seriesIdentityKey !== undefined && episodes[0].series_identity_key !== request.seriesIdentityKey)
+    )) {
       throw new Error('The selected episode does not belong to the requested series and source')
     }
     const batchId = `batch_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
@@ -658,6 +661,9 @@ export class TranscodingService {
           av1_nvenc: 'nvenc_av1',
           hevc_qsv: 'qsv_h265',
           av1_qsv: 'qsv_av1',
+          hevc_amf: 'hevc_amf',
+          av1_amf: 'av1_amf',
+          hevc_videotoolbox: 'vt_h265',
           libx265: 'x265',
           libsvtav1: 'svt_av1',
           libx264: 'libx264'
@@ -667,25 +673,29 @@ export class TranscodingService {
         resolve({ encoders: names, failures: [] })
       })
     })
-    const hardware: Record<string, { vendor: string; codec: string }> = {
+    const encodersToProbe: Record<string, { vendor?: GpuInfo['vendor']; codec: string; arguments?: string[] }> = {
       nvenc_h265: { vendor: 'NVIDIA', codec: 'hevc_nvenc' }, nvenc_av1: { vendor: 'NVIDIA', codec: 'av1_nvenc' },
-      qsv_h265: { vendor: 'Intel', codec: 'hevc_qsv' }, qsv_av1: { vendor: 'Intel', codec: 'av1_qsv' }
+      qsv_h265: { vendor: 'Intel', codec: 'hevc_qsv' }, qsv_av1: { vendor: 'Intel', codec: 'av1_qsv' },
+      hevc_amf: { vendor: 'AMD', codec: 'hevc_amf' }, av1_amf: { vendor: 'AMD', codec: 'av1_amf' },
+      vt_h265: { vendor: 'Apple', codec: 'hevc_videotoolbox', arguments: ['-allow_sw', '0'] },
+      x265: { codec: 'libx265' }, svt_av1: { codec: 'libsvtav1' }, libx264: { codec: 'libx264' }
     }
     const encoders: string[] = []
+    const failures = [...compiled.failures]
     for (const encoder of compiled.encoders) {
-      const device = hardware[encoder]
-      if (device) {
-        if (!gpus.some(gpu => gpu.vendor === device.vendor)) continue
-        try {
-          await new ChildProcessMeasurementRunner().run(ffmpegPath, ['-v', 'error', '-f', 'lavfi', '-i', `testsrc2=size=${APP_CONFIG.transcoding.encoderProbeWidth}x${APP_CONFIG.transcoding.encoderProbeHeight}`, '-frames:v', '1', '-c:v', device.codec, '-f', 'null', '-'])
-        } catch (error) {
-          getLoggingService().warn('[TranscodingService]', `Encoder ${encoder} cannot run on the detected hardware and is unavailable: ${getErrorMessage(error)}`)
-          continue
-        }
+      const device = encodersToProbe[encoder]
+      if (!device || (device.vendor && !gpus.some(gpu => gpu.vendor === device.vendor))) continue
+      try {
+        await new ChildProcessMeasurementRunner().run(ffmpegPath, ['-v', 'error', '-f', 'lavfi', '-i', `testsrc2=size=${APP_CONFIG.transcoding.encoderProbeWidth}x${APP_CONFIG.transcoding.encoderProbeHeight}`, '-frames:v', '1', '-c:v', device.codec, ...(device.arguments ?? []), '-f', 'null', '-'])
+      } catch (error) {
+        const failure = `Encoder ${encoder}: ${getErrorMessage(error)}`
+        failures.push(failure)
+        getLoggingService().warn('[TranscodingService]', `${failure} It is unavailable.`)
+        continue
       }
       encoders.push(encoder)
     }
-    return { encoders, failures: compiled.failures }
+    return { encoders, failures }
   }
 
   async setSelectedGpu(gpuId: string | null): Promise<TranscodingCapabilities> {
@@ -799,32 +809,26 @@ export class TranscodingService {
       }
       selectedVendor = matchedGpu.vendor
       if (selectedVendor === 'Unknown') {
-        throw new Error(`GPU acceleration is not supported for GPU: "${matchedGpu.name}". Supported vendors are NVIDIA, Intel, AMD, and Apple.`)
+        throw new Error(`GPU acceleration is not supported for GPU: "${matchedGpu.name}".`)
       }
     }
 
     let expectedEncoder = ''
     if (effectiveOptions.useGpu || effectiveOptions.gpuId) {
-      if (targetCodec === 'av1') {
-        if (selectedVendor === 'NVIDIA') expectedEncoder = 'nvenc_av1'
-        else if (selectedVendor === 'Intel') expectedEncoder = 'qsv_av1'
-        else if (selectedVendor === 'AMD') expectedEncoder = 'av1_amf'
-        else if (selectedVendor === 'Apple') {
-          throw new Error('AV1 hardware encoding is not supported on Apple VideoToolbox.')
-        }
-      } else { // hevc
-        if (selectedVendor === 'NVIDIA') expectedEncoder = 'nvenc_h265'
-        else if (selectedVendor === 'Intel') expectedEncoder = 'qsv_h265'
-        else if (selectedVendor === 'AMD') expectedEncoder = 'hevc_amf'
-        else if (selectedVendor === 'Apple') expectedEncoder = 'vt_h265'
-      }
+      expectedEncoder = getHardwareEncoder(selectedVendor, targetCodec) ?? ''
+      if (!expectedEncoder) throw new Error(`${selectedVendor} hardware encoding does not support ${targetCodec.toUpperCase()} in this workflow.`)
     } else {
       expectedEncoder = targetCodec === 'hevc' ? 'x265' : 'svt_av1'
     }
     if (capabilitiesForOptions && capabilitiesForOptions.probeFailures.length > 0) {
-      throw new Error(`FFmpeg encoder verification failed for the selected device: ${capabilitiesForOptions.probeFailures.join('; ')}`)
+      const globalProbeFailures = capabilitiesForOptions.probeFailures.filter(failure => !failure.startsWith('Encoder '))
+      const selectedEncoderFailure = capabilitiesForOptions.probeFailures.find(failure => failure.startsWith(`Encoder ${expectedEncoder}:`))
+      if (globalProbeFailures.length > 0) {
+        throw new Error(`FFmpeg encoder verification failed: ${globalProbeFailures.join('; ')}`)
+      }
+      if (selectedEncoderFailure) throw new Error(selectedEncoderFailure)
     }
-    if (capabilitiesForOptions && capabilitiesForOptions.verifiedEncoders.length > 0 && !capabilitiesForOptions.verifiedEncoders.includes(expectedEncoder)) {
+    if (capabilitiesForOptions && !capabilitiesForOptions.verifiedEncoders.includes(expectedEncoder)) {
       throw new Error(`The selected device cannot produce ${targetCodec.toUpperCase()} with verified FFmpeg encoder ${expectedEncoder}.`)
     }
 
@@ -849,7 +853,7 @@ export class TranscodingService {
       'nvenc_h264', 'nvenc_h265', 'nvenc_h265_10bit', 'nvenc_av1', 'nvenc_av1_10bit', 'av1_nvenc',
       'qsv_av1', 'qsv_h265', 'qsv_h265_10bit', 'qsv_h264',
       'av1_amf', 'hevc_amf', 'vce_h264',
-      'vt_h264', 'vt_h265'
+      'vt_h264', 'vt_h265', 'hevc_videotoolbox'
     ]
     if (!allowedVideoCodecs.includes(videoCodec)) {
       throw new Error(`Invalid or unsupported video encoder: ${videoCodec}`)
@@ -1214,7 +1218,10 @@ export class TranscodingService {
     if (!analysis.success || !analysis.video || !analysis.duration) throw new Error(analysis.error || 'Complete media analysis is required for measurement')
     const capabilities = options.encoderPolicy === 'software' ? undefined : await this.getCapabilities()
     const hardwareVendor = capabilities?.gpus.find(gpu => gpu.id === (options.gpuId || capabilities.selectedGpuId))?.vendor
-    const hardwareEncoder = hardwareVendor === 'NVIDIA' ? (options.targetCodec === 'av1' ? 'nvenc_av1' : 'nvenc_h265') : hardwareVendor === 'Intel' ? (options.targetCodec === 'av1' ? 'qsv_av1' : 'qsv_h265') : undefined
+    const hardwareEncoder = hardwareVendor && options.encoderPolicy !== 'software'
+      ? getHardwareEncoder(hardwareVendor, options.targetCodec)
+      : undefined
+    if (options.encoderPolicy !== 'software' && !hardwareEncoder) throw new Error(`The selected hardware does not support ${options.targetCodec.toUpperCase()} encoding.`)
     if (hardwareEncoder && !capabilities!.verifiedEncoders.includes(hardwareEncoder)) throw new Error(`Encoder ${hardwareEncoder} is not verified`)
     const ladder = buildCandidateLadder(options.targetCodec, options.encoderPolicy, hardwareEncoder)
     const candidates = ladder.map(candidate => {
