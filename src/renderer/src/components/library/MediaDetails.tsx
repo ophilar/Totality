@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { MoreVertical, RefreshCw, Pencil, EyeOff, X, Copy, Check, ChevronDown, Star } from 'lucide-react'
 import { SETTING_KEYS } from '../../../../shared/settingKeys'
@@ -127,6 +127,18 @@ const DEFAULT_THRESHOLDS: Record<string, QualityThresholds> = {
   '4K': { video: { medium: 15000, high: 40000 }, audio: { medium: 320, high: 1000 } },
 }
 
+function parseTrackMetadata<T>(raw: string | null | undefined, mediaItemId: number | undefined, field: string): T[] {
+  if (!raw) return []
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) throw new Error('Expected an array')
+    return parsed as T[]
+  } catch (error) {
+    console.error(`[MediaDetails] Invalid ${field} metadata for media item ${mediaItemId ?? 'unknown'}:`, error)
+    return []
+  }
+}
+
 export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismissUpgrade, isMobile = false }: MediaDetailsProps) {
   const [media, setMedia] = useState<MediaWithQuality | null>(null)
   const [versions, setVersions] = useState<MediaVersion[]>([])
@@ -140,6 +152,23 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
   const [isRescanning, setIsRescanning] = useState(false)
   const [copied, setCopied] = useState(false)
   const [backdropUrl, setBackdropUrl] = useState<string | null>(null)
+  const audioTracks = useMemo(
+    () => parseTrackMetadata<AudioTrack>(media?.audio_tracks, media?.id, 'audio_tracks'),
+    [media?.audio_tracks, media?.id],
+  )
+  const subtitleTracks = useMemo(
+    () => parseTrackMetadata<SubtitleTrack>(media?.subtitle_tracks, media?.id, 'subtitle_tracks'),
+    [media?.subtitle_tracks, media?.id],
+  )
+  const sv = versions.find(version => version.id === selectedVersionId) || null
+  const svAudioTracks = useMemo(
+    () => sv ? parseTrackMetadata<AudioTrack>(sv.audio_tracks, sv.media_item_id, 'version audio_tracks') : audioTracks,
+    [sv, audioTracks],
+  )
+  const svSubtitleTracks = useMemo(
+    () => sv ? parseTrackMetadata<SubtitleTrack>(sv.subtitle_tracks, sv.media_item_id, 'version subtitle_tracks') : subtitleTracks,
+    [sv, subtitleTracks],
+  )
   const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
 
   const handleRescan = async () => {
@@ -418,42 +447,6 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
     return null
   }
 
-  const parseAudioTracks = (): AudioTrack[] => {
-    if (!media?.audio_tracks) return []
-    try {
-      return JSON.parse(media.audio_tracks)
-    } catch {
-      return []
-    }
-  }
-
-  const parseVersionAudioTracks = (v: MediaVersion | null): AudioTrack[] => {
-    if (!v?.audio_tracks) return []
-    try {
-      return JSON.parse(v.audio_tracks) as AudioTrack[]
-    } catch {
-      return []
-    }
-  }
-
-  const parseVersionSubtitleTracks = (v: MediaVersion | null): SubtitleTrack[] => {
-    if (!v?.subtitle_tracks) return []
-    try {
-      return JSON.parse(v.subtitle_tracks) as SubtitleTrack[]
-    } catch {
-      return []
-    }
-  }
-
-  const parseSubtitleTracks = (): SubtitleTrack[] => {
-    if (!media?.subtitle_tracks) return []
-    try {
-      return JSON.parse(media.subtitle_tracks)
-    } catch {
-      return []
-    }
-  }
-
   const isCommentary = (track: AudioTrack): boolean => {
     if (!track.title) return false
     return track.title.toLowerCase().includes('commentary')
@@ -518,14 +511,9 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
     )
   }
 
-  const audioTracks = parseAudioTracks()
-  const subtitleTracks = parseSubtitleTracks()
   const displayTitle = media.type === 'episode' && media.series_title ? media.series_title : media.title
 
   // Selected version derived data
-  const sv = versions.find(v => v.id === selectedVersionId) || null
-  const svAudioTracks = sv ? parseVersionAudioTracks(sv) : audioTracks
-  const svSubtitleTracks = sv ? parseVersionSubtitleTracks(sv) : subtitleTracks
   const svBestTrackIdx = getBestTrackIndex(svAudioTracks)
   const bestAudioTrack = svAudioTracks.find(t => t.index === svBestTrackIdx)
   const bestAudioBitrate = bestAudioTrack?.bitrate ?? sv?.audio_bitrate ?? media.audio_bitrate
