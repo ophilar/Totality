@@ -334,7 +334,7 @@ class LoggingService {
       }
 
       await fs.mkdir(this.logDir, { recursive: true })
-      this.rotateLogFiles().catch(() => {})
+      void this.rotateLogFiles()
       this.flushTimer = setInterval(() => this.flushBuffer(), LoggingService.FLUSH_INTERVAL_MS)
 
       this.originalConsole.log(`[LoggingService] File logging initialized: ${this.logDir}`)
@@ -345,25 +345,21 @@ class LoggingService {
   }
 
   private loadFileLoggingSettings(): void {
-    try {
-      if (!this.dbGetter) return
-      const db = this.dbGetter()
-      const enabled = db.getSetting('file_logging_enabled')
-      const minLevel = db.getSetting('file_logging_min_level')
-      const retention = db.getSetting('log_retention_days')
+    if (!this.dbGetter) throw new Error('Database getter must be configured before file logging')
+    const db = this.dbGetter()
+    const enabled = db.getSetting('file_logging_enabled')
+    const minLevel = db.getSetting('file_logging_min_level')
+    const retention = db.getSetting('log_retention_days')
 
-      if (enabled !== null) this.fileLoggingEnabled = enabled !== 'false'
-      if (minLevel && minLevel in LoggingService.LEVEL_PRIORITY) {
-        this.fileLoggingMinLevel = minLevel as LogLevel
-      }
-      if (retention) this.logRetentionDays = parseInt(retention, 10) || 7
-
-      // Restore verbose setting
-      const verbose = db.getSetting('verbose_logging_enabled')
-      if (verbose === 'true') this.verboseEnabled = true
-    } catch {
-      // DB may not be ready; use defaults (file logging stays disabled)
+    if (enabled !== null) this.fileLoggingEnabled = enabled !== 'false'
+    if (minLevel && minLevel in LoggingService.LEVEL_PRIORITY) {
+      this.fileLoggingMinLevel = minLevel as LogLevel
     }
+    if (retention) this.logRetentionDays = parseInt(retention, 10) || 7
+
+    // Restore verbose setting
+    const verbose = db.getSetting('verbose_logging_enabled')
+    if (verbose === 'true') this.verboseEnabled = true
   }
 
   private appendToFileBuffer(entry: LogEntry): void {
@@ -397,7 +393,7 @@ class LoggingService {
 
       if (today !== this.currentLogDate) {
         this.currentLogDate = today
-        this.rotateLogFiles().catch(() => {})
+        void this.rotateLogFiles()
       }
 
       await fs.appendFile(logFile, lines.join(''), 'utf-8')
