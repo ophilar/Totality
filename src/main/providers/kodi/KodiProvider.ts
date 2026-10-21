@@ -951,19 +951,13 @@ export class KodiProvider implements MediaProvider {
   private isFileAccessible(filePath: string): boolean {
     if (!filePath) return false
 
-    try {
-      // Handle Windows UNC paths and mapped drives
-      // Handle Kodi special protocol paths (e.g., smb://, nfs://)
-      if (filePath.startsWith('smb://') || filePath.startsWith('nfs://') ||
-          filePath.startsWith('upnp://') || filePath.startsWith('ftp://')) {
-        return false // Network protocols not directly accessible via fs
-      }
-
-      // Check if file exists
-      return fs.existsSync(filePath)
-    } catch {
-      return false
+    // Handle Kodi special protocol paths (e.g., smb://, nfs://)
+    if (filePath.startsWith('smb://') || filePath.startsWith('nfs://') ||
+        filePath.startsWith('upnp://') || filePath.startsWith('ftp://')) {
+      return false // Network protocols not directly accessible via fs
     }
+
+    return fs.existsSync(filePath)
   }
 
   /**

@@ -411,10 +411,16 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
     try {
       const response = await fetchWithTimeout(`${this.serverUrl}/QuickConnect/Enabled`, {}, 5000)
-      if (!response.ok) return false
+      if (!response.ok) {
+        if (response.status !== 404) {
+          console.warn(`[${this.providerType}] Quick Connect availability check returned HTTP ${response.status}`)
+        }
+        return false
+      }
       const data = await response.json()
       return data === true
-    } catch {
+    } catch (error) {
+      console.warn(`[${this.providerType}] Quick Connect availability check failed:`, error)
       return false
     }
   }
