@@ -14,25 +14,35 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
   const { messages, isLoading, activeTools, rateLimit, error, sendMessage, clearHistory } = useChat(viewContext)
   const [input, setInput] = useState('')
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null)
+  const [configurationError, setConfigurationError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  // Check if AI is configured
-  useEffect(() => {
-    if (isOpen) {
-      window.electronAPI.aiIsConfigured().then(setIsConfigured).catch(() => setIsConfigured(false))
+  const checkAIConfiguration = useCallback(async () => {
+    try {
+      setIsConfigured(await window.electronAPI.aiIsConfigured())
+      setConfigurationError(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('[ChatPanel] Failed to check AI configuration:', error)
+      setConfigurationError(message)
+      setIsConfigured(null)
     }
-  }, [isOpen])
+  }, [])
+
+  useEffect(() => {
+    if (isOpen) void checkAIConfiguration()
+  }, [isOpen, checkAIConfiguration])
 
   // Listen for settings changes to re-check configuration
   useEffect(() => {
     const cleanup = window.electronAPI.onSettingsChanged((data) => {
       if (data.key === 'gemini_api_key' || data.key === 'ai_enabled') {
-        window.electronAPI.aiIsConfigured().then(setIsConfigured).catch(() => setIsConfigured(false))
+        void checkAIConfiguration()
       }
     })
     return cleanup
-  }, [])
+  }, [checkAIConfiguration])
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -134,7 +144,20 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
       </div>
 
       {/* Not configured state */}
-      {isConfigured === false && (
+      {configurationError && (
+        <div role="alert" className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+          <AlertCircle className="w-8 h-8 text-destructive mb-3" />
+          <p className="text-sm font-medium mb-1">Could not check AI configuration</p>
+          <p className="text-xs text-muted-foreground mb-4">{configurationError}</p>
+          <button
+            onClick={() => void checkAIConfiguration()}
+            className="px-3 py-2 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+      {isConfigured === false && !configurationError && (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
           <Bot className="w-8 h-8 text-muted-foreground mb-3" />
           <p className="text-sm font-medium mb-1">Gemini AI not configured</p>
@@ -154,7 +177,7 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
       )}
 
       {/* Messages area */}
-      {isConfigured !== false && (
+      {isConfigured !== false && !configurationError && (
         <>
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
             {messages.length === 0 && !isLoading && (

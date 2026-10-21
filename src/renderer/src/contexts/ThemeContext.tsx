@@ -83,7 +83,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       setThemeState(baseTheme as BaseTheme)
       setModeState(themeMode)
       setIsLoaded(true)
-    }).catch(() => {
+    }).catch(error => {
+      console.error('[ThemeContext] Failed to load theme settings:', error)
       setIsLoaded(true)
     })
   }, [])
