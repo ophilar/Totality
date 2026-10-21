@@ -134,11 +134,19 @@ export class TimelineResolutionEngine {
           ? row.tmdb_id === String(item.identifiers.tmdbId)
           : normalizeMediaTitle(row.series_title) === normalizeMediaTitle(item.seriesTitle || item.title.replace(/\s*\(?seasons?\s+\d+(?:\s*[-–—]\s*\d+)?\)?/i, ''))
       }).flatMap(row => {
-        try {
-          return (typeof row.missing_episodes === 'string' ? JSON.parse(row.missing_episodes) : row.missing_episodes || []) as MissingEpisode[]
-        } catch {
-          return []
+        if (row.missing_episodes == null) return []
+        let parsed: unknown = row.missing_episodes
+        if (typeof parsed === 'string') {
+          try {
+            parsed = JSON.parse(parsed)
+          } catch (cause) {
+            const error = new Error(`Invalid missing episode data for series "${row.series_title}"`)
+            ;(error as Error & { cause?: unknown }).cause = cause
+            throw error
+          }
         }
+        if (!Array.isArray(parsed)) throw new Error(`Invalid missing episode data for series "${row.series_title}": expected an array`)
+        return parsed as MissingEpisode[]
       }).filter(ep => inRange(ep.season_number))
 
       const coordinates = new Map<string, { season: number; episode: number; title: string }>()
