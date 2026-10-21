@@ -31,7 +31,8 @@ function getServerUrl(source: MediaSourceResponse): string | null {
   try {
     const config = JSON.parse(source.connection_config)
     return config.serverUrl || null
-  } catch {
+  } catch (error) {
+    console.error(`[SourceCard] Invalid connection configuration for source ${source.id}:`, error)
     return null
   }
 }
