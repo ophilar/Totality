@@ -85,7 +85,8 @@ export class MediaMonkeyDiscoveryService {
     try {
       const { stdout } = await execAsync('tasklist /FI "IMAGENAME eq MediaMonkey.exe" /NH')
       return stdout.toLowerCase().includes('mediamonkey.exe')
-    } catch {
+    } catch (error) {
+      console.warn('[MediaMonkeyDiscovery] Failed to check whether MediaMonkey is running:', error)
       return false
     }
   }
