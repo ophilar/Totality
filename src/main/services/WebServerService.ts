@@ -570,7 +570,12 @@ export class WebServerService {
     }
 
     if (msg.type === 'auth') {
-      await this.handleAuth(ws, msg as AuthMessage)
+      try {
+        await this.handleAuth(ws, msg as AuthMessage)
+      } catch (error) {
+        console.error('[WebServer] Failed to process authentication:', error)
+        ws.send(JSON.stringify({ type: 'auth', success: false, error: 'Web access authentication is unavailable' }))
+      }
       return
     }
 
@@ -734,42 +739,26 @@ export class WebServerService {
   // ---------------------------------------------------------------------------
 
   private isPinRequired(): boolean {
-    try {
-      const pin = getDatabase().getSetting(SETTING_KEYS.web_access_pin)
-      return !!pin && pin.trim().length > 0
-    } catch {
-      return false
-    }
+    const pin = getDatabase().getSetting(SETTING_KEYS.web_access_pin)
+    return !!pin && pin.trim().length > 0
   }
 
   private getStoredPin(): string | null {
-    try {
-      const pin = getDatabase().getSetting(SETTING_KEYS.web_access_pin)
-      if (!pin) return null
-      return getCredentialEncryptionService().decryptSetting(SETTING_KEYS.web_access_pin, pin)
-    } catch {
-      return null
-    }
+    const pin = getDatabase().getSetting(SETTING_KEYS.web_access_pin)
+    if (!pin) return null
+    return getCredentialEncryptionService().decryptSetting(SETTING_KEYS.web_access_pin, pin)
   }
 
   private getConfiguredPort(): number {
-    try {
-      const port = getDatabase().getSetting(SETTING_KEYS.web_access_port)
-      const parsed = port ? parseInt(port, 10) : NaN
-      return parsed > 0 && parsed < 65536 ? parsed : DEFAULT_PORT
-    } catch {
-      return DEFAULT_PORT
-    }
+    const port = getDatabase().getSetting(SETTING_KEYS.web_access_port)
+    const parsed = port ? parseInt(port, 10) : NaN
+    return parsed > 0 && parsed < 65536 ? parsed : DEFAULT_PORT
   }
 
   private getSessionTimeout(): number {
-    try {
-      const timeout = getDatabase().getSetting(SETTING_KEYS.web_access_session_timeout)
-      const parsed = timeout ? parseInt(timeout, 10) : NaN
-      return parsed > 0 ? parsed : DEFAULT_SESSION_TIMEOUT_MS
-    } catch {
-      return DEFAULT_SESSION_TIMEOUT_MS
-    }
+    const timeout = getDatabase().getSetting(SETTING_KEYS.web_access_session_timeout)
+    const parsed = timeout ? parseInt(timeout, 10) : NaN
+    return parsed > 0 ? parsed : DEFAULT_SESSION_TIMEOUT_MS
   }
 
   private isValidSession(token: string, clientIp?: string): boolean {
@@ -789,12 +778,8 @@ export class WebServerService {
   }
 
   private isHttpsEnabled(): boolean {
-    try {
-      const setting = getDatabase().getSetting(SETTING_KEYS.web_access_https)
-      return setting !== 'false' // Default to true
-    } catch {
-      return true
-    }
+    const setting = getDatabase().getSetting(SETTING_KEYS.web_access_https)
+    return setting !== 'false' // Default to true
   }
 
   private async ensureTlsCertificate(): Promise<{ key: string; cert: string }> {
