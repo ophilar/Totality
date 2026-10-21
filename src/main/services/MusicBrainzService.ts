@@ -150,6 +150,9 @@ export class MusicBrainzService extends CancellableOperation {
         return this.buildCoverArtUrl(releaseGroupId, '500')
       }
 
+      if (response.status !== 404) {
+        console.warn(`[MusicBrainzService] Cover art lookup returned HTTP ${response.status} for release group ${releaseGroupId}`)
+      }
       return null
     } catch (error) {
       console.warn(`[MusicBrainzService] Cover art lookup failed for release group ${releaseGroupId}:`, error)
