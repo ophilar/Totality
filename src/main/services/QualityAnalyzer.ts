@@ -60,6 +60,7 @@ const DEFAULT_CODEC_EFFICIENCY = APP_CONFIG.quality.codecEfficiency
 const DEFAULT_MUSIC_THRESHOLDS = APP_CONFIG.quality.musicThresholds
 const DEFAULT_EFFICIENCY_TARGETS = APP_CONFIG.quality.efficiencyTargets
 const DEFAULT_BLOAT_THRESHOLDS = APP_CONFIG.quality.bloatThresholds
+const QUALITY_ANALYSIS_BATCH_SIZE = 50
 
 type QualityTier = 'SD' | '720p' | '1080p' | '4K'
 type TierQuality = 'LOW' | 'MEDIUM' | 'HIGH'
@@ -699,19 +700,7 @@ export class QualityAnalyzer {
     const db = getDatabase()
     const logging = getLoggingService()
     const analysisStartedAt = Date.now()
-    logging.info(
-      '[QualityAnalyzer]',
-      `Loading media for analysis: sourceId=${sourceId ?? 'all'}, libraryId=${libraryId ?? 'all'}`
-    )
-    const mediaItems = series
-      ? await db.tvShows.getEpisodes(series.title, sourceId!, series.seriesIdentityKey, libraryId!)
-      : await db.media.getItems(sourceId || libraryId ? { sourceId, libraryId } : undefined)
-
-    const multiVersionItemIds = mediaItems
-      .filter((item: MediaItem): item is MediaItem & { id: number } => Boolean(item.id && item.version_count && item.version_count > 1))
-      .map((item: MediaItem) => item.id!)
-    const versionsByMediaId = await db.media.getItemVersionsForMediaIds(multiVersionItemIds)
-
+    const filters = sourceId || libraryId ? { sourceId, libraryId } : undefined
     let analyzed = 0
     const tierCounts: Record<string, number> = {}
     const qualityCounts: Record<string, number> = {}
@@ -728,70 +717,90 @@ export class QualityAnalyzer {
       }
     }
 
-    logging.info(
-      '[QualityAnalyzer]',
-      `Starting analysis: items=${mediaItems.length}, sourceId=${sourceId ?? 'all'}, libraryId=${libraryId ?? 'all'}`
-    )
     let currentItemId: number | undefined
     let currentItemIndex = 0
-    let currentStage = 'loading media versions'
+    let currentStage = 'loading media batch'
     let currentItemStartedAt = 0
+    let totalItems = 0
 
     try {
-      for (const [index, item] of mediaItems.entries()) {
+      const seriesEpisodes = series
+        ? await db.tvShows.getEpisodes(series.title, sourceId!, series.seriesIdentityKey, libraryId!)
+        : undefined
+      totalItems = seriesEpisodes?.length ?? db.countMediaItems(filters)
+
+      logging.info(
+        '[QualityAnalyzer]',
+        `Starting analysis: items=${totalItems}, sourceId=${sourceId ?? 'all'}, libraryId=${libraryId ?? 'all'}`
+      )
+
+      for (let offset = 0; offset < totalItems; offset += QUALITY_ANALYSIS_BATCH_SIZE) {
+        currentItemIndex = offset + 1
+        currentStage = 'loading media batch'
+        const mediaItems = seriesEpisodes
+          ? seriesEpisodes.slice(offset, offset + QUALITY_ANALYSIS_BATCH_SIZE)
+          : await db.media.getItems({ ...filters, limit: QUALITY_ANALYSIS_BATCH_SIZE, offset })
+        const multiVersionItemIds = mediaItems
+          .filter((item: MediaItem): item is MediaItem & { id: number } => Boolean(item.id && item.version_count && item.version_count > 1))
+          .map((item: MediaItem) => item.id!)
+        currentStage = 'loading media versions'
+        const versionsByMediaId = await db.media.getItemVersionsForMediaIds(multiVersionItemIds)
+
+        for (const [index, item] of mediaItems.entries()) {
           if (isCancelled?.() || signal?.aborted) {
-          await flushQualityScores()
-          logging.info('[QualityAnalyzer]', `Analysis cancelled after ${analyzed}/${mediaItems.length} items`)
-          return analyzed
-        }
-        currentItemId = item.id
-        currentItemIndex = index + 1
-        currentItemStartedAt = Date.now()
-        currentStage = 'media file analysis'
-        logging.debug(
-          '[QualityAnalyzer]',
-          `Analyzing item ${currentItemIndex}/${mediaItems.length}: id=${currentItemId}, type=${item.type}`
-        )
-        currentStage = 'persisting deep analysis'
-        const { qualityScore } = await this.analyzeMediaItemFileEvidence(item, signal)
-        currentStage = 'calculating quality score'
-        qualityScoresBatch.push(qualityScore)
-
-        const tier = qualityScore.quality_tier
-        const quality = qualityScore.tier_quality
-        tierCounts[tier] = (tierCounts[tier] ?? 0) + 1
-        qualityCounts[quality] = (qualityCounts[quality] ?? 0) + 1
-
-        if (item.id && item.version_count && item.version_count > 1) {
-          currentStage = 'persisting quality scores before version analysis'
-          await flushQualityScores()
-          currentStage = 'analyzing alternate versions'
-          const versions = versionsByMediaId.get(item.id) ?? []
-          for (const version of versions) {
-            if (isCancelled?.() || signal?.aborted) {
-              logging.info('[QualityAnalyzer]', `Analysis cancelled after ${analyzed}/${mediaItems.length} items`)
-              return analyzed
-            }
-            if (version.id) {
-              const vScore = this.analyzeVersion(version)
-              db.media.updateVersionQuality(version.id, vScore)
-            }
+            await flushQualityScores()
+            logging.info('[QualityAnalyzer]', `Analysis cancelled after ${analyzed}/${totalItems} items`)
+            return analyzed
           }
-          currentStage = 'selecting best alternate version'
-          db.media.updateBestVersion(item.id)
-        }
+          currentItemId = item.id
+          currentItemIndex = offset + index + 1
+          currentItemStartedAt = Date.now()
+          currentStage = 'media file analysis'
+          logging.debug(
+            '[QualityAnalyzer]',
+            `Analyzing item ${currentItemIndex}/${totalItems}: id=${currentItemId}, type=${item.type}`
+          )
+          currentStage = 'persisting deep analysis'
+          const { qualityScore } = await this.analyzeMediaItemFileEvidence(item, signal)
+          currentStage = 'calculating quality score'
+          qualityScoresBatch.push(qualityScore)
 
-        if (qualityScoresBatch.length >= 50) {
-          currentStage = 'persisting quality scores'
-          await flushQualityScores()
-        }
+          const tier = qualityScore.quality_tier
+          const quality = qualityScore.tier_quality
+          tierCounts[tier] = (tierCounts[tier] ?? 0) + 1
+          qualityCounts[quality] = (qualityCounts[quality] ?? 0) + 1
 
-        analyzed++
-        logging.debug(
-          '[QualityAnalyzer]',
-          `Analyzed item ${currentItemIndex}/${mediaItems.length}: id=${currentItemId}, elapsedMs=${Date.now() - currentItemStartedAt}`
-        )
-        if (onProgress) onProgress(analyzed, mediaItems.length)
+          if (item.id && item.version_count && item.version_count > 1) {
+            currentStage = 'persisting quality scores before version analysis'
+            await flushQualityScores()
+            currentStage = 'analyzing alternate versions'
+            const versions = versionsByMediaId.get(item.id) ?? []
+            for (const version of versions) {
+              if (isCancelled?.() || signal?.aborted) {
+                logging.info('[QualityAnalyzer]', `Analysis cancelled after ${analyzed}/${totalItems} items`)
+                return analyzed
+              }
+              if (version.id) {
+                const vScore = this.analyzeVersion(version)
+                db.media.updateVersionQuality(version.id, vScore)
+              }
+            }
+            currentStage = 'selecting best alternate version'
+            db.media.updateBestVersion(item.id)
+          }
+
+          if (qualityScoresBatch.length >= QUALITY_ANALYSIS_BATCH_SIZE) {
+            currentStage = 'persisting quality scores'
+            await flushQualityScores()
+          }
+
+          analyzed++
+          logging.debug(
+            '[QualityAnalyzer]',
+            `Analyzed item ${currentItemIndex}/${totalItems}: id=${currentItemId}, elapsedMs=${Date.now() - currentItemStartedAt}`
+          )
+          if (onProgress) onProgress(analyzed, totalItems)
+        }
       }
 
       currentStage = 'persisting final quality scores'
@@ -812,8 +821,8 @@ export class QualityAnalyzer {
       if (signal?.aborted && failure instanceof Error && failure.name === 'AbortError') return analyzed
       const failureMessage = failure instanceof Error ? failure.message : String(failure)
       const contextualFailure = new QualityAnalysisError(
-        `Quality analysis failed after ${analyzed}/${mediaItems.length} items during ${failureStage}${currentItemId === undefined ? '' : ` at item ${currentItemIndex} (id=${currentItemId})`}: ${failureMessage}`,
-        { analyzedCount: analyzed, totalCount: mediaItems.length, mediaItemId: currentItemId, itemIndex: currentItemIndex || undefined, stage: failureStage }
+        `Quality analysis failed after ${analyzed}/${totalItems} items during ${failureStage}${currentItemId === undefined ? '' : ` at item ${currentItemIndex} (id=${currentItemId})`}: ${failureMessage}`,
+        { analyzedCount: analyzed, totalCount: totalItems, mediaItemId: currentItemId, itemIndex: currentItemIndex || undefined, stage: failureStage }
       )
       logging.error(
         '[QualityAnalyzer]',
@@ -826,7 +835,7 @@ export class QualityAnalyzer {
     const tierSummary = Object.entries(tierCounts).map(([t, c]) => `${t}:${c}`).join(', ')
     const qualSummary = Object.entries(qualityCounts).map(([q, c]) => `${q}:${c}`).join(', ')
     logging.info('[QualityAnalyzer]',
-      `Analysis complete: ${analyzed}/${mediaItems.length} items in ${Date.now() - analysisStartedAt}ms — Tiers: ${tierSummary} — Quality: ${qualSummary}`)
+      `Analysis complete: ${analyzed}/${totalItems} items in ${Date.now() - analysisStartedAt}ms — Tiers: ${tierSummary} — Quality: ${qualSummary}`)
 
     return analyzed
   }
