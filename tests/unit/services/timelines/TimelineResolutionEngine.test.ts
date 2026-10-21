@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { MediaItem } from '@main/types/database'
+import type { MediaItem, SeriesCompleteness } from '@main/types/database'
 import type { TimelineDefinition } from '@main/services/timelines/ITimelineRecipeProvider'
 import { TimelineResolutionEngine } from '@main/services/timelines/TimelineResolutionEngine'
 
@@ -34,6 +34,22 @@ describe('TimelineResolutionEngine', () => {
     const result = await new TimelineResolutionEngine(() => [media()]).resolveTimeline(timeline)
     expect(result.missingCount).toBe(1)
     expect(result.items[0].reason).toMatch(/select a media source/i)
+  })
+
+  it('reports malformed missing episode data with the affected series', async () => {
+    const showTimeline: TimelineDefinition = {
+      ...timeline,
+      items: [{ order: 1, type: 'show', title: 'The Show', releaseYear: 2020, identifiers: { tmdbId: 120 } }],
+    }
+    const completeness = [{
+      series_title: 'The Show',
+      tmdb_id: '120',
+      missing_episodes: 'invalid JSON',
+    }] as unknown as SeriesCompleteness[]
+    const engine = new TimelineResolutionEngine(() => [], () => completeness)
+
+    await expect(engine.resolveTimeline(showTimeline, 'plex'))
+      .rejects.toThrow('Invalid missing episode data for series "The Show"')
   })
 
   it('honors cancellation while resolving large guides', async () => {
