@@ -1035,7 +1035,8 @@ export function registerSourceHandlers(): void {
     try {
       const analyzer = getMediaFileAnalyzer()
       return await analyzer.isFFmpegAvailable()
-    } catch {
+    } catch (error) {
+      console.error('Error checking FFmpeg availability:', error)
       return false
     }
   })
