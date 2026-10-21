@@ -567,7 +567,10 @@ export class MediaMonkeyProvider implements MediaProvider {
         }
       }
       return null
-    } catch {
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.warn(`[MediaMonkeyProvider] Failed to find artwork in "${folderPath}":`, error)
+      }
       return null
     }
   }
@@ -602,7 +605,8 @@ export class MediaMonkeyProvider implements MediaProvider {
       }
 
       return null
-    } catch {
+    } catch (error) {
+      console.warn(`[MediaMonkeyProvider] Failed to extract artwork from "${audioFilePath}":`, error)
       return null
     }
   }

@@ -424,7 +424,8 @@ export class GeminiService {
     year: number | undefined,
     candidates: Array<{ id: number; title: string; year?: number; overview?: string }>,
   ): Promise<number> {
-    if (!this.isConfigured() || candidates.length <= 1) return 0
+    if (candidates.length <= 1) return 0
+    if (!this.isConfigured()) return -1
 
     try {
       this.checkRateLimit()
@@ -445,10 +446,10 @@ export class GeminiService {
       const text = (response.text || '').trim()
       const num = parseInt(text, 10)
       if (num >= 1 && num <= candidates.length) return num - 1
-      return 0
-    } catch {
-      // On any error (rate limit, etc.), fall back to first result
-      return 0
+      return -1
+    } catch (error) {
+      console.warn('[GeminiService] Title disambiguation failed:', error)
+      return -1
     }
   }
 

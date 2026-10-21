@@ -63,11 +63,7 @@ export class ReleaseAlertService {
     // Get user's region for country-specific release dates
     const region = (db.getSetting('store_region') || 'US').toUpperCase()
 
-    try {
-      await tmdb.initialize()
-    } catch {
-      return 0
-    }
+    await tmdb.initialize()
 
     // Get active wishlist items with TMDB IDs (movies and TV)
     const wishlistItems = db.getWishlistItems({ status: 'active', limit: 200 })
@@ -145,7 +141,7 @@ export class ReleaseAlertService {
           }
         }
       } catch (err) {
-        getLoggingService().verbose('[ReleaseAlertService]', `Failed to check ${item.title}: ${(err as Error).message}`)
+        getLoggingService().warn('[ReleaseAlertService]', `Failed to check ${item.title}:`, err)
       }
     }
 

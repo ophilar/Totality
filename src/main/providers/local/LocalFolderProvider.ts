@@ -1311,27 +1311,19 @@ export class LocalFolderProvider implements MediaProvider {
   }
 
   private async isTMDBConfigured(): Promise<boolean> {
-    try {
-      const db = getDatabase()
-      const apiKey = await db.getSetting('tmdb_api_key')
-      return !!apiKey && apiKey.length > 0
-    } catch {
-      return false
-    }
+    const db = getDatabase()
+    const apiKey = await db.getSetting('tmdb_api_key')
+    return !!apiKey && apiKey.length > 0
   }
 
   /**
    * Check if MusicBrainz name correction is enabled (default: true)
    */
   private async isMusicBrainzNameCorrectionEnabled(): Promise<boolean> {
-    try {
-      const db = getDatabase()
-      const setting = db.getSetting('musicbrainz_name_correction')
-      // Default to true if not set
-      return setting !== 'false'
-    } catch {
-      return true
-    }
+    const db = getDatabase()
+    const setting = db.getSetting('musicbrainz_name_correction')
+    // Default to true if not set
+    return setting !== 'false'
   }
 
   /**
@@ -1607,8 +1599,8 @@ export class LocalFolderProvider implements MediaProvider {
         backdropPath: best.backdrop_path || undefined,
         voteAverage: best.vote_average,
       }
-    } catch {
-      // AI not available or errored — fall through to normal matching
+    } catch (error) {
+      console.warn(`[LocalFolderProvider] AI disambiguation failed for "${filename}":`, error)
       return null
     }
   }

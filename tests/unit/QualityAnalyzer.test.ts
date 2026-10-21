@@ -360,7 +360,7 @@ describe('QualityAnalyzer', () => {
       expect(score.tier_quality).toBe('HIGH')
     })
 
-    it('should handle invalid audio_tracks JSON gracefully', async () => {
+    it('should reject invalid audio_tracks JSON', async () => {
       const item = createMediaItem({
         resolution: '1080p',
         video_bitrate: 15000,
@@ -368,9 +368,8 @@ describe('QualityAnalyzer', () => {
         audio_channels: 6,
         audio_tracks: 'not valid json',
       })
-      // Should not throw
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score).toBeDefined()
+      await expect(analyzer.analyzeMediaItem(item))
+        .rejects.toMatchObject({ code: 'MALFORMED_AUDIO_TRACKS' })
     })
   })
 

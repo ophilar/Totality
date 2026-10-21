@@ -123,15 +123,16 @@ function metadataBoolean(value: unknown, field: string): boolean | null {
 }
 
 function parseAudioTracks(raw: string): AudioTrack[] {
+  let parsed: unknown
   try {
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed) || parsed.some(track => track === null || typeof track !== 'object' || Array.isArray(track))) {
-      return []
-    }
-    return parsed as AudioTrack[]
-  } catch {
-    return []
+    parsed = JSON.parse(raw)
+  } catch (cause) {
+    throw new MediaMetadataError('MALFORMED_AUDIO_TRACKS', 'audio_tracks must contain valid JSON', cause)
   }
+  if (!Array.isArray(parsed) || parsed.some(track => track === null || typeof track !== 'object' || Array.isArray(track))) {
+    throw new MediaMetadataError('MALFORMED_AUDIO_TRACKS', 'audio_tracks must be an array of track objects')
+  }
+  return parsed as AudioTrack[]
 }
 
 function mergeAnalysisIntoMediaItem(item: MediaItem, analysis: FileAnalysisResult): MediaItem {
