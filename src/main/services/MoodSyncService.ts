@@ -189,9 +189,9 @@ export class MoodSyncService {
     const raw = field === 'genre' ? track.genres : track.mood
     if (!raw) return []
     try {
-      const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed)) return parsed.filter(m => m && m !== 'None')
-      return []
+      const parsed: unknown = JSON.parse(raw)
+      if (!Array.isArray(parsed)) throw new Error('Expected an array')
+      return parsed.filter(m => m && m !== 'None')
     } catch (error) {
       console.warn(`[MoodSyncService] Invalid ${field} tags for track "${track.title}" (id=${track.id ?? 'unknown'}):`, error)
       return []

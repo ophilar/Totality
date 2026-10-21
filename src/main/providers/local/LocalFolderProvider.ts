@@ -2498,7 +2498,10 @@ export class LocalFolderProvider implements MediaProvider {
       }
 
       return null
-    } catch {
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.warn(`[LocalFolderProvider] Failed to find artwork in "${folderPath}":`, error)
+      }
       return null
     }
   }
