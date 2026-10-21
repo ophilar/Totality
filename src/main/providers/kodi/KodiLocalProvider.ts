@@ -673,8 +673,10 @@ export class KodiLocalProvider implements MediaProvider {
     try {
       const stats = fs.statSync(filePath)
       return stats.size
-    } catch {
-      // File may not be accessible (network drive, removed, etc.)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.warn(`[KodiLocalProvider] Failed to read file size for "${filePath}":`, error)
+      }
       return 0
     }
   }
