@@ -6,6 +6,7 @@ const mockCreateNotification = vi.hoisted(() => vi.fn())
 const mockGetMovieReleaseDates = vi.hoisted(() => vi.fn())
 const mockGetTVShowDetails = vi.hoisted(() => vi.fn())
 const mockEmitNotificationCreated = vi.hoisted(() => vi.fn())
+const mockTMDBInitialize = vi.hoisted(() => vi.fn())
 
 vi.mock('../../src/main/database/getDatabase', () => ({
   getDatabase: vi.fn(() => ({
@@ -18,7 +19,7 @@ vi.mock('../../src/main/database/getDatabase', () => ({
 
 vi.mock('../../src/main/services/TMDBService', () => ({
   getTMDBService: vi.fn(() => ({
-    initialize: vi.fn(),
+    initialize: mockTMDBInitialize,
     getMovieReleaseDates: mockGetMovieReleaseDates,
     getTVShowDetails: mockGetTVShowDetails,
   })),
@@ -31,6 +32,7 @@ vi.mock('../../src/main/ipc/utils/notificationEmitter', () => ({
 vi.mock('../../src/main/services/LoggingService', () => ({
   getLoggingService: vi.fn(() => ({
     verbose: vi.fn(),
+    warn: vi.fn(),
   })),
 }))
 
@@ -42,6 +44,7 @@ describe('ReleaseAlertService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useFakeTimers()
+    mockTMDBInitialize.mockResolvedValue(undefined)
     service = new ReleaseAlertService()
   })
 
@@ -79,6 +82,13 @@ describe('ReleaseAlertService', () => {
   // checkForReleases
   // ==========================================================================
   describe('checkForReleases', () => {
+    it('propagates TMDB initialization failures', async () => {
+      mockTMDBInitialize.mockRejectedValue(new Error('API key unavailable'))
+
+      await expect(service.checkForReleases()).rejects.toThrow('API key unavailable')
+      expect(mockGetWishlistItems).not.toHaveBeenCalled()
+    })
+
     beforeEach(() => {
       mockGetSetting
         .mockReturnValueOnce('30')   // release_alert_days_ahead

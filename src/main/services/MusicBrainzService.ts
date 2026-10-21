@@ -151,7 +151,8 @@ export class MusicBrainzService extends CancellableOperation {
       }
 
       return null
-    } catch {
+    } catch (error) {
+      console.warn(`[MusicBrainzService] Cover art lookup failed for release group ${releaseGroupId}:`, error)
       return null
     }
   }
