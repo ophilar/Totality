@@ -126,22 +126,23 @@ function connect(): Promise<void> {
       try {
         const data = JSON.parse(event.data)
         handleMessage(data)
-      } catch {
-        console.error('[WebTransport] Failed to parse message')
+      } catch (error) {
+        console.error('[WebTransport] Failed to parse message:', error)
       }
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       ws = null
-      isConnecting = false
-      connectPromise = null
-      // Reconnect with exponential backoff (1s, 1.5s, 2.25s, ... capped at 30s)
-      const delayMs = Math.min(30000, 1000 * Math.pow(1.5, reconnectAttempts))
-      reconnectAttempts++
-      reconnectTimer = setTimeout(() => {
-        reconnectTimer = null
-        connect().catch(() => {})
-      }, delayMs)
+      const error = new Error(`WebSocket connection closed (${event.code})`)
+      reject(error)
+      for (const request of pending.values()) request.reject(error)
+      pending.clear()
+      authPromise?.reject(error)
+      authPromise = null
+      // Reconnect after delay
+      setTimeout(() => {
+        connect().catch(error => console.error('[WebTransport] Reconnection failed:', error))
+      }, 3000)
     }
 
     ws.onerror = () => {
@@ -271,10 +272,14 @@ export async function initWebTransport(): Promise<void> {
     try {
       await sendRpc('app:getVersion', [])
       // Token is valid
-    } catch {
-      // Token expired, clear it
-      sessionToken = null
-      localStorage.removeItem('web_session_token')
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Unauthorized') {
+        sessionToken = null
+        sessionStorage.removeItem('web_session_token')
+        console.info('[WebTransport] Stored web session expired; authentication is required')
+      } else {
+        console.error('[WebTransport] Failed to validate stored web session:', error)
+      }
     }
   }
 
