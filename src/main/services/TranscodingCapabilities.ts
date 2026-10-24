@@ -11,18 +11,22 @@ export interface TranscodingCapabilities extends TranscodingAvailability {
   selectedGpuId: string | null
   vendors: Array<GpuInfo['vendor'] | 'Software'>
   encoders: string[]
-  verifiedEncoders: string[]
-  probeFailures: string[]
+  encodingMatrix: EncodingMatrix
   engines: Array<'ffmpeg'>
 }
 
-const SOFTWARE_ENCODERS = ['svt_av1', 'x265', 'libx264']
+export type EncodingCodec = 'h264' | 'hevc' | 'av1'
 
-export function getHardwareEncoder(vendor: GpuInfo['vendor'], codec: 'av1' | 'hevc'): string | undefined {
-  if (vendor === 'NVIDIA') return codec === 'av1' ? 'nvenc_av1' : 'nvenc_h265'
-  if (vendor === 'Intel') return codec === 'av1' ? 'qsv_av1' : 'qsv_h265'
-  if (vendor === 'AMD') return codec === 'av1' ? 'av1_amf' : 'hevc_amf'
-  if (vendor === 'Apple' && codec === 'hevc') return 'vt_h265'
+export interface EncodingMatrix {
+  devices: Array<{ id: string; name: string; kind: 'software' | 'hardware' }>
+  codecs: Array<{ codec: EncodingCodec; capabilities: boolean[] }>
+}
+
+export function getHardwareEncoder(vendor: GpuInfo['vendor'], codec: EncodingCodec): string | undefined {
+  if (vendor === 'NVIDIA') return codec === 'av1' ? 'nvenc_av1' : codec === 'hevc' ? 'nvenc_h265' : 'nvenc_h264'
+  if (vendor === 'Intel') return codec === 'av1' ? 'qsv_av1' : codec === 'hevc' ? 'qsv_h265' : 'qsv_h264'
+  if (vendor === 'AMD') return codec === 'av1' ? 'av1_amf' : codec === 'hevc' ? 'hevc_amf' : 'h264_amf'
+  if (vendor === 'Apple') return codec === 'av1' ? undefined : codec === 'hevc' ? 'vt_h265' : 'vt_h264'
   return undefined
 }
 
@@ -35,23 +39,46 @@ export function buildTranscodingCapabilities(
   availability: TranscodingAvailability,
   gpus: GpuInfo[],
   selectedGpuId: string | null = null,
-  verifiedEncoders: string[] = [],
-  probeFailures: string[] = []
+  encoders: string[] = []
 ): TranscodingCapabilities {
   const vendors: Array<GpuInfo['vendor'] | 'Software'> = []
-  const encoders: string[] = []
 
   for (const gpu of gpus) {
     if (gpu.vendor === 'Unknown' || vendors.includes(gpu.vendor)) continue
     vendors.push(gpu.vendor)
-    if (gpu.vendor === 'NVIDIA') encoders.push('nvenc_av1', 'nvenc_h265')
-    if (gpu.vendor === 'Intel') encoders.push('qsv_av1', 'qsv_h265')
-    if (gpu.vendor === 'AMD') encoders.push('av1_amf', 'hevc_amf')
-    if (gpu.vendor === 'Apple') encoders.push('vt_h265')
   }
 
   vendors.push('Software')
-  encoders.push(...SOFTWARE_ENCODERS)
+
+  const verifiedEncoders = new Set(encoders)
+  const devices = [
+    { id: 'software', name: 'Software', kind: 'software' as const },
+    ...vendors.filter(vendor => vendor !== 'Software').map(vendor => ({
+      id: `hardware-${vendor.toLowerCase()}`,
+      name: vendor === 'NVIDIA' ? 'NVIDIA NVENC' : vendor === 'Intel' ? 'Intel QSV' : vendor === 'AMD' ? 'AMD AMF' : 'Apple VideoToolbox',
+      kind: 'hardware' as const,
+    })),
+  ]
+  const encodingMatrix: EncodingMatrix = {
+    devices,
+    codecs: [
+      { codec: 'h264', capabilities: [verifiedEncoders.has('libx264'), ...devices.slice(1).map(device => {
+        const vendor = device.name.split(' ')[0] as GpuInfo['vendor']
+        const encoder = getHardwareEncoder(vendor, 'h264')
+        return encoder ? verifiedEncoders.has(encoder) : false
+      })] },
+      { codec: 'hevc', capabilities: [verifiedEncoders.has('x265'), ...devices.slice(1).map(device => {
+        const vendor = device.name.split(' ')[0] as GpuInfo['vendor']
+        const encoder = getHardwareEncoder(vendor, 'hevc')
+        return encoder ? verifiedEncoders.has(encoder) : false
+      })] },
+      { codec: 'av1', capabilities: [verifiedEncoders.has('svt_av1'), ...devices.slice(1).map(device => {
+        const vendor = device.name.split(' ')[0] as GpuInfo['vendor']
+        const encoder = getHardwareEncoder(vendor, 'av1')
+        return encoder ? verifiedEncoders.has(encoder) : false
+      })] },
+    ],
+  }
 
   return {
     ...availability,
@@ -60,8 +87,7 @@ export function buildTranscodingCapabilities(
     selectedGpuId,
     vendors,
     encoders: Array.from(new Set(encoders)),
-    verifiedEncoders: Array.from(new Set(verifiedEncoders)),
-    probeFailures,
+    encodingMatrix,
     engines: availability.ffmpeg ? ['ffmpeg'] : []
   }
 }

@@ -37,6 +37,12 @@ describe('buildStreamSelectionPlan', () => {
     })
   })
 
+  it('retains every subtitle when no language whitelist is selected', () => {
+    expect(buildStreamSelectionPlan(analysis, {
+      streamSelection: { audio: 'all', subtitle: 'all', subtitleLanguageWhitelist: [] },
+    }).subtitleStreamIndexes).toEqual([4, 5, 6, 7])
+  })
+
   it('applies selected audio conversions to the output stream mapping', () => {
     const args: string[] = []
 

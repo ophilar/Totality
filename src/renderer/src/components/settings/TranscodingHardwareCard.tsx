@@ -19,11 +19,13 @@ export function TranscodingHardwareCard() {
   }, [])
 
   const refresh = async () => {
+    console.info('[EncodingCapabilitiesUI] Refresh requested')
     setRefreshing(true)
     setError(null)
     try {
       setCapabilities(await window.electronAPI.refreshCapabilities())
     } catch (reason) {
+      console.error('[EncodingCapabilitiesUI] Refresh failed', reason)
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setRefreshing(false)
@@ -31,11 +33,13 @@ export function TranscodingHardwareCard() {
   }
 
   const selectGpu = async (gpuId: string | null) => {
+    console.info('[EncodingCapabilitiesUI] Hardware selection changed', { gpuId })
     setSelectingGpu(true)
     setError(null)
     try {
       setCapabilities(await window.electronAPI.setSelectedGpu(gpuId))
     } catch (reason) {
+      console.error('[EncodingCapabilitiesUI] Hardware selection failed', { gpuId, reason })
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setSelectingGpu(false)
@@ -73,14 +77,30 @@ export function TranscodingHardwareCard() {
               <option key={gpu.id} value={gpu.id}>{gpu.name} ({gpu.vendor})</option>
             ))}
           </select>
-          <p className="text-xs text-muted-foreground">
-            Verified encoders: {capabilities.verifiedEncoders.length ? capabilities.verifiedEncoders.join(', ') : 'none'}
-          </p>
-          {capabilities.probeFailures.length > 0 && (
-            <div role="status" className="space-y-1 text-xs text-amber-500">
-              {capabilities.probeFailures.map(failure => <p key={failure}>{failure}</p>)}
-            </div>
-          )}
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left text-xs" aria-label="Encoding capability matrix">
+              <thead>
+                <tr>
+                  <th scope="col" className="border-b border-border/30 px-2 py-2">Codec</th>
+                  {capabilities.encodingMatrix.devices.map(device => (
+                    <th key={device.id} scope="col" className="border-b border-border/30 px-2 py-2">{device.name}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {capabilities.encodingMatrix.codecs.map(row => (
+                  <tr key={row.codec}>
+                    <th scope="row" className="border-b border-border/20 px-2 py-2 font-medium">{row.codec === 'hevc' ? 'H.265 / HEVC' : row.codec === 'h264' ? 'H.264 / AVC' : 'AV1'}</th>
+                    {row.capabilities.map((supported, index) => (
+                      <td key={capabilities.encodingMatrix.devices[index].id} className="border-b border-border/20 px-2 py-2" aria-label={`${row.codec} on ${capabilities.encodingMatrix.devices[index].name}: ${supported ? 'available' : 'unavailable'}`}>
+                        {supported ? 'true' : 'false'}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
       {error && <p role="alert" className="mt-3 flex items-start gap-2 text-xs text-destructive"><AlertTriangle className="h-4 w-4 shrink-0" />{error}</p>}

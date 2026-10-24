@@ -12,6 +12,8 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
 import type { MediaItem } from '@main/types/database'
+import type { PlaybackTargetProfile } from '@main/types/playbackTarget'
+import { PlaybackCompatibilityFindings } from './PlaybackCompatibilityPanel'
 import type { OptimizationDecision } from '@main/services/OptimizationDecisionService'
 
 import type { TranscodeOptions, TranscodingParams, Availability, TranscodeProgress, ShowTranscodePreflight } from './transcoding'
@@ -20,6 +22,9 @@ import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
 import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
 import { getHardwareEncoder } from '@main/services/TranscodingCapabilities'
+import { formatLanguage, getOptimizationContainer, isSameLanguage, LANGUAGE_OPTIONS, parseLanguageWhitelist, toIso639_2 } from './mediaUtils'
+import { SETTING_KEYS } from '@shared/settingKeys'
+import { normalizeAudioCodec, normalizeVideoCodec } from '@main/services/MediaNormalizer'
 
 interface TranscodeModalProps {
   mediaId: number
@@ -27,13 +32,17 @@ interface TranscodeModalProps {
   onOptimizationCompleted?: () => void
   initialOptimizationMode?: 'remux_only' | 'transcode'
   initialStreamPruning?: boolean
-  initialAudioTranscode?: boolean
 }
 
-export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, initialOptimizationMode = 'transcode', initialStreamPruning = false, initialAudioTranscode = false }: TranscodeModalProps) {
+export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, initialOptimizationMode = 'transcode', initialStreamPruning = false }: TranscodeModalProps) {
   const [media, setMedia] = useState<MediaItem | null>(null)
   const [optimizationDecision, setOptimizationDecision] = useState<OptimizationDecision | null>(null)
   const [optimizationDecisionError, setOptimizationDecisionError] = useState<string | null>(null)
+  const [targetProfiles, setTargetProfiles] = useState<PlaybackTargetProfile[]>([])
+  const [targetProfileId, setTargetProfileId] = useState('')
+  const [targetProfileError, setTargetProfileError] = useState<string | null>(null)
+  const [targetContainer, setTargetContainer] = useState<'mkv' | 'mp4' | ''>('')
+  const [originalAudioLanguage, setOriginalAudioLanguage] = useState('')
   const [availability, setAvailability] = useState<Availability | null>(null)
   const [capabilities, setCapabilities] = useState<TranscodingCapabilities | null>(null)
   const [loading, setLoading] = useState(true)
@@ -42,7 +51,8 @@ export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, init
   const [activeTab, setActiveTab] = useState<'presets' | 'advanced' | 'monitor' | 'review'>('presets')
   const [preflight, setPreflight] = useState<ShowTranscodePreflight | null>(null)
   const [samplesReviewed, setSamplesReviewed] = useState(false)
-  const [audioTranscodeEnabled, setAudioTranscodeEnabled] = useState(initialAudioTranscode)
+  const [audioTranscodeEnabled, setAudioTranscodeEnabled] = useState(false)
+  const [subtitleWhitelist, setSubtitleWhitelist] = useState('')
   const [analysisRequired, setAnalysisRequired] = useState(false)
   const [analyzingItem, setAnalyzingItem] = useState(false)
 
@@ -71,7 +81,17 @@ export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, init
   const failureReportedRef = useRef(false)
   const selectedGpu = capabilities?.gpus.find(gpu => gpu.id === options.gpuId)
   const hardwareEncoder = selectedGpu && options.targetCodec ? getHardwareEncoder(selectedGpu.vendor, options.targetCodec) : undefined
-  const hardwareAvailable = Boolean(hardwareEncoder && capabilities?.verifiedEncoders.includes(hardwareEncoder))
+  const hardwareAvailable = Boolean(hardwareEncoder && capabilities?.encoders.includes(hardwareEncoder))
+  const targetProfile = targetProfiles.find(profile => profile.id === targetProfileId)
+  const recommendedAudioCodec = targetProfile && media?.audio_codec
+    && media.audio_channels <= targetProfile.definition.audio.maxChannels
+    && (!media.has_object_audio || targetProfile.definition.audio.objectAudio)
+    && !targetProfile.definition.audio.codecs.some(codec => normalizeAudioCodec(codec) === normalizeAudioCodec(media.audio_codec))
+    ? (['eac3', 'ac3', 'aac'] as const).find(codec =>
+      (media.audio_channels >= 6 ? codec !== 'aac' : codec === 'aac')
+      && targetProfile.definition.audio.codecs.some(supportedCodec => normalizeAudioCodec(supportedCodec) === normalizeAudioCodec(codec))
+    )
+    : undefined
 
   const selectEncoderPolicy = (encoderPolicy: TranscodeOptions['encoderPolicy']) => {
     setOptions(prev => ({
@@ -85,20 +105,40 @@ export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, init
   const loadInitialData = useCallback(async () => {
     try {
       setLoading(true)
-      const [item, capabilities] = await Promise.all([
+      const [item, capabilities, targetProfiles, configuredTargetProfileId, configuredSubtitleLanguages] = await Promise.all([
         window.electronAPI.getMediaItem(mediaId),
-        window.electronAPI.getCapabilities()
+        window.electronAPI.getCapabilities(),
+        window.electronAPI.listPlaybackTargetProfiles(),
+        window.electronAPI.getSetting('optimization_default_target_profile_id'),
+        window.electronAPI.getSetting(SETTING_KEYS.subtitle_preferred_languages)
       ])
+
+      setTargetProfiles(targetProfiles)
+      setSubtitleWhitelist(configuredSubtitleLanguages || '')
+      setTargetProfileId(configuredTargetProfileId || '')
+      setTargetProfileError(configuredTargetProfileId && !targetProfiles.some(profile => profile.id === configuredTargetProfileId)
+        ? `Configured playback target ${configuredTargetProfileId} was not found. Choose another target or select no playback target.`
+        : null)
 
       if (item) {
         const loadedMedia = item as MediaItem
         setMedia(loadedMedia)
+        const loadedOriginalAudioLanguage = toIso639_2(loadedMedia.original_language) || loadedMedia.original_language || ''
+        setOriginalAudioLanguage(loadedOriginalAudioLanguage)
+        const sourceContainer = getOptimizationContainer(loadedMedia.container)
+        const sourceVideoCodec = loadedMedia.video_codec?.toLowerCase()
+        const sourceTargetCodec = normalizeVideoCodec(sourceVideoCodec) === 'HEVC' ? 'hevc' : normalizeVideoCodec(sourceVideoCodec) === 'AV1' ? 'av1' : undefined
+        const configuredProfile = targetProfiles.find(profile => profile.id === configuredTargetProfileId)
+        setTargetContainer(sourceContainer && (!configuredProfile || configuredProfile.definition.containers.includes(sourceContainer === 'mkv' ? 'matroska' : 'mp4')) ? sourceContainer : '')
+        if (sourceTargetCodec && (!configuredProfile || configuredProfile.definition.video.codecs.some(codec => normalizeVideoCodec(codec) === normalizeVideoCodec(sourceTargetCodec)))) {
+          setOptions(prev => ({ ...prev, targetCodec: sourceTargetCodec }))
+        }
         if (initialStreamPruning && loadedMedia.original_language) {
           setOptions(prev => ({
             ...prev,
             streamSelection: {
               audio: 'original-and-protected',
-              originalLanguage: loadedMedia.original_language!,
+              originalLanguage: loadedOriginalAudioLanguage,
               subtitle: 'all'
             }
           }))
@@ -108,7 +148,23 @@ export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, init
       setAvailability(avail)
       setCapabilities(capabilities)
       try {
-        setOptimizationDecision(await window.electronAPI.optimizationGetDecision(mediaId) as OptimizationDecision)
+        const decision = await window.electronAPI.optimizationGetDecision(mediaId) as OptimizationDecision
+        const originalLanguage = decision.trackRemoval.originalLanguage
+        if (originalLanguage) {
+          setOriginalAudioLanguage(toIso639_2(originalLanguage) || originalLanguage)
+          setMedia(current => current ? { ...current, original_language: originalLanguage } : current)
+          if (initialStreamPruning) {
+            setOptions(current => ({
+              ...current,
+              streamSelection: {
+                audio: 'original-and-protected',
+                originalLanguage,
+                subtitle: 'all'
+              }
+            }))
+          }
+        }
+        setOptimizationDecision(decision)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         setOptimizationDecisionError(message)
@@ -225,7 +281,20 @@ export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, init
     try {
       if (audioTranscodeEnabled && !options.targetAudioCodec) throw new Error('Choose an output audio codec before reviewing this optimization.')
       if (!preflight) {
-        const preflightOptions = { ...options, targetAudioCodec: audioTranscodeEnabled ? options.targetAudioCodec : undefined }
+        const subtitleLanguageWhitelist = parseLanguageWhitelist(subtitleWhitelist)
+        const preflightOptions = {
+          ...options,
+          targetProfileId: targetProfileId || null,
+          targetContainer: targetProfileId ? targetContainer || undefined : undefined,
+          targetAudioCodec: audioTranscodeEnabled ? options.targetAudioCodec : undefined,
+          streamSelection: {
+            ...(options.streamSelection?.audio === 'original-and-protected'
+              ? options.streamSelection
+              : { audio: 'all' as const }),
+            subtitle: 'all' as const,
+            subtitleLanguageWhitelist: subtitleLanguageWhitelist.length > 0 ? subtitleLanguageWhitelist : undefined,
+          },
+        }
         const result = await window.electronAPI.preflightShow({
           requestId: crypto.randomUUID(),
           mediaItemId: media.id,
@@ -387,10 +456,9 @@ export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, init
 
           {optimizationDecision && (
             <section className="space-y-2 rounded-xl border border-border/40 bg-muted/20 p-4" aria-label="Estimated optimization savings">
-              <h4 className="text-sm font-semibold">Estimated savings</h4>
+              <h4 className="text-sm font-semibold">General potential by operation</h4>
               {([
                 ['Remove audio tracks', optimizationDecision.trackRemoval],
-                ['Transcode audio', optimizationDecision.audioTranscode],
                 ['Transcode video', optimizationDecision.videoTranscode]
               ] as const).map(([label, mechanism]) => (
                 <div key={label} className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 border-t border-border/30 pt-2 text-sm first:border-t-0 first:pt-0">
@@ -421,15 +489,27 @@ export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, init
                 <span className="block text-xs text-muted-foreground">Apply the selected codec and quality settings to the video stream.</span>
               </span>
             </label>
+            <label className="block rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
+              <span className="block font-medium">Keep subtitle languages</span>
+              <span className="mb-2 block text-xs text-muted-foreground">Blank keeps all subtitles. Other subtitle languages are removed.</span>
+              <input
+                type="text"
+                aria-label="Subtitle language whitelist"
+                value={subtitleWhitelist}
+                onChange={event => setSubtitleWhitelist(event.target.value)}
+                placeholder="eng, heb, spa"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
             <label className="flex items-start gap-3 rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
               <input
                 type="checkbox"
                 checked={options.streamSelection?.audio === 'original-and-protected'}
-                disabled={!media.original_language}
+                disabled={!originalAudioLanguage}
                 onChange={event => setOptions(prev => ({
                   ...prev,
-                  streamSelection: event.target.checked && media.original_language
-                    ? { audio: 'original-and-protected', originalLanguage: media.original_language, subtitle: 'all' }
+                  streamSelection: event.target.checked && originalAudioLanguage
+                    ? { audio: 'original-and-protected', originalLanguage: originalAudioLanguage, subtitle: 'all' }
                     : undefined
                 }))}
                 className="mt-0.5"
@@ -437,10 +517,50 @@ export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, init
               <span>
                 <span className="block font-medium">Prune non-original audio tracks</span>
                 <span className="block text-xs text-muted-foreground">
-                  {media.original_language
-                    ? `Keep ${media.original_language} audio and protected tracks; remove other audio in the same operation.`
+                  {originalAudioLanguage
+                    ? `Keep ${formatLanguage(originalAudioLanguage)} (${originalAudioLanguage}) audio and protected tracks; remove other audio in the same operation.`
                     : 'Unavailable because the original audio language is unknown.'}
                 </span>
+              </span>
+            </label>
+            <label className="block rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
+              <span className="mb-2 block font-medium">Original audio language</span>
+              <select
+                aria-label="Original audio language"
+                value={originalAudioLanguage}
+                onChange={event => {
+                  const language = event.target.value
+                  setOriginalAudioLanguage(language)
+                  if (options.streamSelection?.audio === 'original-and-protected') {
+                    setOptions(prev => ({
+                      ...prev,
+                      streamSelection: prev.streamSelection?.audio === 'original-and-protected'
+                        ? { ...prev.streamSelection, originalLanguage: language }
+                        : prev.streamSelection
+                    }))
+                  }
+                }}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+              >
+                {!originalAudioLanguage && <option value="">Select the original language</option>}
+                {optimizationDecision?.trackRemoval.tracks
+                  .map(track => track.language)
+                  .filter((language): language is string => Boolean(language))
+                  .map(language => ({ language, code: toIso639_2(language) || language }))
+                  .filter(({ code }, index, languages) => languages.findIndex(candidate => candidate.code === code) === index)
+                  .map(({ language, code }) => <option key={code} value={code}>{formatLanguage(language)} ({code}) · in file</option>)}
+                {originalAudioLanguage && !optimizationDecision?.trackRemoval.tracks.some(track => track.language && (toIso639_2(track.language) || track.language) === originalAudioLanguage) && (
+                  <option value={originalAudioLanguage}>{formatLanguage(originalAudioLanguage)} ({originalAudioLanguage}) · metadata</option>
+                )}
+                <optgroup label="Other languages">
+                  {LANGUAGE_OPTIONS.filter(option => !optimizationDecision?.trackRemoval.tracks.some(track => track.language && isSameLanguage(track.language, option.code)))
+                    .map(option => <option key={option.code} value={option.code3}>{option.label.replace(`(${option.code})`, `(${option.code3})`)}</option>)}
+                </optgroup>
+              </select>
+              <span className="mt-2 block text-xs text-muted-foreground">
+                {optimizationDecision?.trackRemoval.evidenceSources.length
+                  ? `Detected from media metadata and ${optimizationDecision.trackRemoval.evidenceSources.filter(source => source.startsWith('embedded-audio-tag:')).length} embedded audio tags. Change this for this optimization only.`
+                  : 'No original-language evidence is available. Choose the source language before pruning other audio tracks.'}
               </span>
             </label>
             <label className="flex items-start gap-3 rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
@@ -455,7 +575,10 @@ export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, init
               />
               <span className="min-w-0 flex-1">
                 <span className="block font-medium">Transcode audio</span>
-                <span className="block text-xs text-muted-foreground">Convert eligible retained tracks; protected tracks keep their original codec.</span>
+                <span className="block text-xs text-muted-foreground">
+                  {media.audio_codec ? `Source: ${media.audio_codec}. ` : ''}{media.audio_codec && /dts.?hd|truehd|flac|pcm/i.test(media.audio_codec) ? 'Lossless audio is preserved unless conversion is needed for playback compatibility; conversion to AAC, AC-3, or E-AC-3 is lossy. ' : ''}Convert eligible retained tracks; protected tracks keep their original codec.
+                </span>
+                {audioTranscodeEnabled && optimizationDecision && <span className="block text-xs text-muted-foreground">Estimated audio conversion savings: <EstimatedSavingsDisplay bytes={optimizationDecision.audioTranscode.estimatedSavingsBytes} /></span>}
               </span>
               <select
                 aria-label="Target audio codec"
@@ -464,10 +587,8 @@ export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, init
                 onChange={event => setOptions(prev => ({ ...prev, targetAudioCodec: event.target.value ? event.target.value as NonNullable<TranscodeOptions['targetAudioCodec']> : undefined }))}
                 className="rounded-lg border border-border bg-background px-2 py-1 text-xs text-foreground disabled:opacity-50"
               >
-                <option value="">Choose codec</option>
-                <option value="aac">AAC</option>
-                <option value="ac3">AC-3</option>
-                <option value="eac3">E-AC-3</option>
+                <option value="">Preserve source{media.audio_codec ? ` (${media.audio_codec})` : ''}</option>
+                {(['aac', 'ac3', 'eac3'] as const).filter(codec => !targetProfile || targetProfile.definition.audio.codecs.some(supportedCodec => normalizeAudioCodec(supportedCodec) === normalizeAudioCodec(codec))).map(codec => <option key={codec} value={codec}>{codec.toUpperCase()}{codec === recommendedAudioCodec ? ' (recommended for target compatibility)' : ''}</option>)}
               </select>
             </label>
           </div>}
@@ -485,12 +606,55 @@ export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, init
           )}
 
           {activeTab === 'advanced' && (
-            <AdvancedTab
-              options={options}
-              setOptions={setOptions}
-              params={params}
-              availability={availability}
-            />
+            <>
+              <section className="mb-6 space-y-3 rounded-xl border border-border/40 bg-muted/20 p-4">
+                <h4 className="text-sm font-semibold">Playback target</h4>
+                {targetProfileError && <p role="alert" className="text-xs text-destructive">{targetProfileError}</p>}
+                <label className="block space-y-1.5 text-xs font-semibold text-muted-foreground">
+                  Target device
+                  <select
+                    aria-label="Playback target"
+                    value={targetProfileId}
+                    onChange={event => {
+                      setTargetProfileId(event.target.value)
+                      const profile = targetProfiles.find(candidate => candidate.id === event.target.value)
+                      const sourceContainer = getOptimizationContainer(media?.container)
+                      setTargetContainer(sourceContainer && profile?.definition.containers.includes(sourceContainer === 'mkv' ? 'matroska' : 'mp4') ? sourceContainer : '')
+                      const sourceVideoCodec = normalizeVideoCodec(media?.video_codec)
+                      const sourceTargetCodec = sourceVideoCodec === 'HEVC' ? 'hevc' : sourceVideoCodec === 'AV1' ? 'av1' : undefined
+                      setOptions(prev => ({ ...prev, targetCodec: sourceTargetCodec && (!profile || profile.definition.video.codecs.some(codec => normalizeVideoCodec(codec) === sourceVideoCodec)) ? sourceTargetCodec : '' as TranscodeOptions['targetCodec'] }))
+                      setTargetProfileError(null)
+                    }}
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal text-foreground"
+                  >
+                    <option value="">No playback target</option>
+                    {targetProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+                  </select>
+                </label>
+                {targetProfileId ? (
+                  <label className="block space-y-1.5 text-xs font-semibold text-muted-foreground">
+                    Output container
+                    <select
+                      aria-label="Output container"
+                      value={targetContainer}
+                      onChange={event => setTargetContainer(event.target.value as typeof targetContainer)}
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal text-foreground"
+                    >
+                      {!targetContainer && <option value="">Select a supported container</option>}
+                      {targetProfiles.find(profile => profile.id === targetProfileId)?.definition.containers
+                        .filter(container => container === 'matroska' || container === 'mp4')
+                        .map(container => <option key={container} value={container === 'matroska' ? 'mkv' : 'mp4'}>{container === 'matroska' ? 'MKV (Matroska)' : 'MP4'}</option>)}
+                    </select>
+                  </label>
+                ) : <p className="text-xs text-muted-foreground">Playback compatibility will not be evaluated. Measured quality and output-size checks still apply.</p>}
+              </section>
+              <AdvancedTab
+                options={options}
+                setOptions={setOptions}
+                params={params}
+                availability={availability}
+              />
+            </>
           )}
 
           {activeTab === 'monitor' && (
@@ -508,11 +672,14 @@ export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, init
           {activeTab === 'review' && preflight && (
             <section className="space-y-4 rounded-xl border border-border p-4">
               <h4 className="font-bold">Review optimization plan</h4>
+              <p className="text-sm">Selected plan total: <EstimatedSavingsDisplay bytes={preflight.estimatedSavingsBytes} /> · {preflight.savingsCoverage ?? 'insufficient'} evidence{preflight.savingsBasis === 'sample_based_projection' ? ' · Sample-based projection' : ''}</p>
               <button className="text-sm underline" onClick={() => { setPreflight(null); setSamplesReviewed(false); setActiveTab('advanced') }}>Change optimization settings</button>
               {preflight.episodes.map(item => <div key={item.mediaItemId} className="space-y-2 text-sm">
                 <p className="font-semibold">{item.label}: {item.compatible ? item.decisionStatus?.replace(/_/g, ' ') : item.reason}</p>
-                {!item.targetCompatibility && <p className="text-muted-foreground">Playback compatibility was not evaluated because no target profile is selected.</p>}
+                {!targetProfileId && !item.targetCompatibility && <p className="text-muted-foreground">Playback compatibility was not evaluated because no target profile is selected.</p>}
                 {item.params?.summary && <p className="text-muted-foreground">{item.params.summary}</p>}
+                {item.changes?.map(change => <p key={change} className="text-muted-foreground">{change}</p>)}
+                {item.targetCompatibility && <PlaybackCompatibilityFindings evaluation={item.targetCompatibility} targetName={item.targetProfile?.name} />}
                 {item.samplePaths?.map((sample, index) => <button key={sample} className="mr-3 underline" onClick={() => void window.electronAPI.openShowSample(preflight.preflightId, item.mediaItemId, index).catch(error => addToast({ title: 'Could not open measured sample', message: error instanceof Error ? error.message : String(error), type: 'error' }))}>Open measured sample {index + 1}</button>)}
               </div>)}
               {options.streamSelection?.audio === 'original-and-protected' && <p className="text-muted-foreground">This plan keeps original-language and protected audio tracks, removing other audio tracks.</p>}

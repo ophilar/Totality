@@ -28,7 +28,7 @@ export interface PlaybackTargetEvaluation { profileId: string; overall: 'compati
 export function evaluatePlaybackTarget(profile: PlaybackTargetProfile, analysis: FileAnalysisResult): PlaybackTargetEvaluation {
   if (!analysis.success) throw new Error(analysis.error || 'Media analysis failed')
   const video = analysis.video
-  if (!video || !analysis.container || analysis.overallBitrate == null) throw new Error('Complete media analysis is required')
+  if (!video || !analysis.container || analysis.overallBitrateKbps == null) throw new Error('Complete media analysis is required')
   const finding = (ok: boolean, rule: string, evidence: string): PlaybackFinding => ({ status: ok ? 'compatible' : 'incompatible', rule, evidence, source: 'local-analysis' })
   const matches = (value: string | undefined, expected: string[] | undefined): boolean => !expected || expected.some(candidate => value?.toLowerCase().includes(candidate.toLowerCase()))
   const d = profile.definition
@@ -40,7 +40,7 @@ export function evaluatePlaybackTarget(profile: PlaybackTargetProfile, analysis:
     hdr: finding(!video.hdrFormat || video.hdrFormat === 'SDR' || d.hdr.formats.includes(video.hdrFormat), 'HDR output format supported', video.hdrFormat || 'SDR'),
     audio: finding(analysis.audioTracks.every(t => d.audio.codecs.some(codec => normalizeAudioCodec(codec) === normalizeAudioCodec(t.codec)) && t.channels <= d.audio.maxChannels && (!t.hasObjectAudio || d.audio.objectAudio)), 'all audio tracks supported by codec/channel/object-audio policy', JSON.stringify(analysis.audioTracks)),
     subtitle: finding(analysis.subtitleTracks.every(track => d.subtitles.embedded && d.subtitles.formats.includes(track.codec === 'subrip' ? 'srt' : track.codec) && (!analysis.container!.split(',').includes('mp4') && !analysis.container!.split(',').includes('mov') || track.codec === 'mov_text')), 'subtitle delivery explicitly supported', JSON.stringify(analysis.subtitleTracks)),
-    network: finding(analysis.overallBitrate * 1000 <= d.network.sustainableBitrate, `bitrate <= ${d.network.sustainableBitrate}`, String(analysis.overallBitrate * 1000)),
+    network: finding(analysis.overallBitrateKbps * 1000 <= d.network.sustainableBitrate, `bitrate <= ${d.network.sustainableBitrate}`, String(analysis.overallBitrateKbps * 1000)),
   }
   return { profileId: profile.id, overall: Object.values(findings).every(f => f.status !== 'incompatible') ? 'compatible' : 'incompatible', findings }
 }

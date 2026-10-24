@@ -32,8 +32,9 @@ import { ChildProcessMeasurementRunner, MeasuredOptimizationService } from './Me
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { evaluatePlaybackTarget, type PlaybackTargetEvaluation, type PlaybackTargetProfile } from '@main/types/playbackTarget'
 import { getTaskQueueService } from './TaskQueueService'
-import { calculateBitrateSavingsBytes, projectMeasuredSavingsBytes } from './OptimizationSavingsService'
-import { normalizeVideoCodec } from './MediaNormalizer'
+import { buildOptimizationSavingsBreakdown, calculateBitrateSavingsBytes, projectMeasuredSavingsBytes, sumMeasuredStreamBytes, type OptimizationSavingsCoverage, type OptimizationSavingsOperation } from './OptimizationSavingsService'
+import { normalizeAudioCodec, normalizeVideoCodec } from './MediaNormalizer'
+import { aggregateShowOptimizationMetrics } from './ShowOptimizationMetricsService'
 
 export class TranscodeError extends Error {
   constructor(message: string, public readonly exitCode?: number, public readonly stderr?: string) {
@@ -138,24 +139,24 @@ function buildAudioConversions(analysis: FileAnalysisResult, options: TranscodeO
   const selected = new Set(buildStreamSelectionPlan(analysis, options).audioStreamIndexes)
   return analysis.audioTracks.flatMap(track => {
     const protectedTrack = track.hasObjectAudio || track.isCommentary || track.isAudioDescription || track.isAccessibility
-    if (!selected.has(track.index) || protectedTrack || track.codec === codec) return []
-    if (track.bitrate == null || !Number.isFinite(track.bitrate) || track.bitrate <= 0 || analysis.duration == null || analysis.duration <= 0) {
-      throw new Error(`Audio stream ${track.index} needs measured bitrate and duration before transcoding`)
-    }
+    if (!selected.has(track.index) || protectedTrack || normalizeAudioCodec(track.codec, track.profile) === normalizeAudioCodec(codec)) return []
     const bitrateKbps = track.channels >= 6 ? APP_CONFIG.transcoding.audioSurroundTargetBitrateKbps : APP_CONFIG.transcoding.audioStereoTargetBitrateKbps
     return [{ sourceIndex: track.index, codec, bitrateKbps }]
   })
 }
 
-function estimateAudioConversionSavings(analysis: FileAnalysisResult, conversions: NonNullable<TranscodeOptions['audioConversions']>): number {
-  const durationSeconds = analysis.duration! / 1000
-  return conversions.reduce((total, conversion) => {
-    const source = analysis.audioTracks.find(track => track.index === conversion.sourceIndex)!
-    return total + calculateBitrateSavingsBytes(source.bitrate!, conversion.bitrateKbps, durationSeconds)
-  }, 0)
+function estimateAudioConversionSavings(analysis: FileAnalysisResult, conversions: NonNullable<TranscodeOptions['audioConversions']>): number | null {
+  if (analysis.durationMs == null || analysis.durationMs <= 0) return null
+  let total = 0
+  for (const conversion of conversions) {
+    const source = analysis.audioTracks.find(track => track.index === conversion.sourceIndex)
+    if (source?.bitrateKbps == null || !Number.isFinite(source.bitrateKbps) || source.bitrateKbps <= 0) return null
+    total += calculateBitrateSavingsBytes(source.bitrateKbps, conversion.bitrateKbps, analysis.durationMs / 1000)
+  }
+  return total
 }
 
-export type PlannedOptimizationOperation = 'video_transcode' | 'audio_transcode' | 'stream_pruning' | 'container_change'
+export type PlannedOptimizationOperation = 'video_transcode' | 'audio_transcode' | 'stream_pruning' | 'subtitle_pruning' | 'container_change'
 
 export interface ShowTranscodePreflight {
   preflightId: string
@@ -178,6 +179,7 @@ export interface ShowTranscodePreflight {
     operations: PlannedOptimizationOperation[]
     decisionStatus?: 'actionable' | 'already_optimized' | 'sample_required' | 'insufficient_evidence' | 'incompatible'
     evidenceStatus?: 'measured' | 'estimated' | 'insufficient'
+    savingsCoverage?: OptimizationSavingsCoverage
     confidence?: 'high' | 'medium' | 'low' | 'none'
     estimatedSavingsBytes?: number | null
     savingsBasis?: string
@@ -194,6 +196,9 @@ export interface ShowTranscodePreflight {
     sampleHashes?: string[]
     changes?: string[]
   }>
+  estimatedSavingsBytes?: number | null
+  savingsCoverage?: OptimizationSavingsCoverage
+  savingsBasis?: 'sample_based_projection' | 'mixed_sample_projection' | 'planned_operations'
 }
 
 /**
@@ -250,6 +255,7 @@ export class TranscodingService {
 
   async preflightShowTranscode(request: ShowTranscodeRequest, operation?: { signal: AbortSignal; beginCommit: () => void }): Promise<ShowTranscodePreflight> {
     operation?.signal.throwIfAborted()
+    getLoggingService().info('[TVOptimization]', `Preflight started: scope=${request.mediaItemId === undefined ? 'series' : 'episode'}, series=${request.seriesIdentityKey ?? 'n/a'}, mediaItem=${request.mediaItemId ?? 'all'}, source=${request.sourceId}, library=${request.libraryId ?? 'n/a'}, mode=${request.options.optimizationMode ?? 'unspecified'}, codec=${request.options.targetCodec ?? 'unspecified'}, encoderPolicy=${request.options.encoderPolicy ?? 'unspecified'}, gpu=${request.options.gpuId ?? 'selected'}`)
     if (!request.sourceId.trim()) throw new Error('Source ID is required')
     if (request.mediaItemId === undefined && (!request.seriesTitle?.trim() || !request.seriesIdentityKey?.trim() || !request.libraryId?.trim())) throw new Error('TV series identity and library are required')
     const profileId = request.options.targetProfileId === undefined
@@ -288,15 +294,19 @@ export class TranscodingService {
         await this.assertAuthorizedItem(episode.id)
         const stat = await fs.stat(episode.file_path)
         const { analysis } = await getQualityAnalyzer().analyzeMediaItemFileEvidence(episode, operation?.signal)
-        if (!analysis.success || analysis.filePath !== episode.file_path || analysis.fileSize !== stat.size || !analysis.video) {
+        if (!analysis.success || analysis.filePath !== episode.file_path || analysis.fileSizeBytes !== stat.size || !analysis.video) {
           throw new Error(`File analysis is incomplete or stale for "${label}"`)
         }
         this.analysisCache.set(episode.file_path, analysis)
         const advice = getQualityAnalyzer().getOptimizationAdvice(episode, analysis)
         const sourcePlan = buildStreamSelectionPlan(analysis, request.options)
-        const streamsChanged = sourcePlan.audioStreamIndexes.length !== analysis.audioTracks.length || sourcePlan.subtitleStreamIndexes.length !== analysis.subtitleTracks.length
+        const removedAudioTracks = analysis.audioTracks.filter(track => !sourcePlan.audioStreamIndexes.includes(track.index))
+        const removedSubtitleTracks = analysis.subtitleTracks.filter(track => !sourcePlan.subtitleStreamIndexes.includes(track.index))
+        const audioStreamsChanged = removedAudioTracks.length > 0
+        const subtitleStreamsChanged = removedSubtitleTracks.length > 0
+        const streamsChanged = audioStreamsChanged || subtitleStreamsChanged
         const selectedAnalysis = { ...analysis, audioTracks: analysis.audioTracks.filter(track => sourcePlan.audioStreamIndexes.includes(track.index)), subtitleTracks: analysis.subtitleTracks.filter(track => sourcePlan.subtitleStreamIndexes.includes(track.index)) }
-        if (request.options.targetAudioCodec && targetProfile && !targetProfile.definition.audio.codecs.includes(request.options.targetAudioCodec)) {
+        if (request.options.targetAudioCodec && targetProfile && !targetProfile.definition.audio.codecs.some(codec => normalizeAudioCodec(codec) === normalizeAudioCodec(request.options.targetAudioCodec))) {
           throw new Error(`Audio codec ${request.options.targetAudioCodec} is not supported by ${targetProfile.name}`)
         }
         const plannedAudioConversions = buildAudioConversions(selectedAnalysis, request.options)
@@ -320,18 +330,9 @@ export class TranscodingService {
           if (targetProfile) options.targetConversion = buildTargetTranscodePlan(analysis, targetProfile, options)
         }
         const audioConversions = options.targetConversion?.audio.flatMap(track => track.bitrateKbps === undefined ? [] : [{ sourceIndex: track.sourceIndex, codec: track.codec, bitrateKbps: track.bitrateKbps }]) ?? options.audioConversions ?? []
-        const audioConversionSavings = shouldEncode ? 0 : estimateAudioConversionSavings(analysis, audioConversions)
-        const removedAudioTracks = analysis.audioTracks.filter(track => !sourcePlan.audioStreamIndexes.includes(track.index))
-        const audioPruningSavings = removedAudioTracks.reduce<number | null>((total, track) => {
-          if (total === null) return null
-          const measuredBytes = analysis.streamBytes?.[track.index]
-          if (measuredBytes !== undefined) return total + measuredBytes
-          if (track.bitrate == null || analysis.duration == null) return null
-          return total + calculateBitrateSavingsBytes(track.bitrate, 0, analysis.duration / 1000)
-        }, 0)
-        const combinedAudioSavings = audioConversionSavings == null || audioPruningSavings == null
-          ? null
-          : audioConversionSavings + audioPruningSavings
+        const audioConversionSavings = estimateAudioConversionSavings(analysis, audioConversions)
+        const audioPruningSavings = sumMeasuredStreamBytes(analysis.streamBytes, removedAudioTracks.map(track => track.index))
+        const subtitlePruningSavings = sumMeasuredStreamBytes(analysis.streamBytes, removedSubtitleTracks.map(track => track.index))
         const sourceSha256 = await sha256File(episode.file_path)
         const sampleDirectory = path.join(app.getPath('userData'), 'transcoding-samples', preflightId, String(episode.id))
         let params: TranscodingParams
@@ -360,24 +361,49 @@ export class TranscodingService {
           await fs.rm(sampleDirectory, { recursive: true, force: true })
           throw error
         }
-        const measuredVideoSavingsBytes = shouldEncode
-          ? projectMeasuredSavingsBytes(stat.size, analysis.duration! / 1000, params.measuredCandidate!.outputBytes, params.measuredCandidate!.sampledDurationSeconds)
+        const measuredPlanSavingsBytes = shouldEncode
+          ? projectMeasuredSavingsBytes(stat.size, analysis.durationMs! / 1000, params.measuredCandidate!.outputBytes, params.measuredCandidate!.sampledDurationSeconds)
           : undefined
-        if (shouldEncode && measuredVideoSavingsBytes === 0) throw new Error('Measured output does not project storage savings; no video optimization is available.')
+        if (shouldEncode && measuredPlanSavingsBytes === 0) throw new Error('Measured output does not project storage savings; no video optimization is available.')
         if (targetCompatibility?.overall === 'incompatible') throw new Error('Selected retained streams are incompatible with the playback target')
+        const plannedSavingsOperations: OptimizationSavingsOperation[] = [
+          ...(shouldEncode ? ['video_transcode' as const] : []),
+          ...(audioStreamsChanged ? ['audio_pruning' as const] : []),
+          ...(subtitleStreamsChanged ? ['subtitle_pruning' as const] : []),
+          ...(audioConversions.length > 0 ? ['audio_transcode' as const] : []),
+        ]
+        const savingsBreakdown = buildOptimizationSavingsBreakdown({
+          totalBytes: stat.size,
+          videoSavingsBytes: null,
+          audioPruningBytes: audioPruningSavings,
+          audioTranscodeBytes: audioConversionSavings,
+          subtitlePruningBytes: subtitlePruningSavings,
+          plannedOperations: plannedSavingsOperations,
+          measuredPlanSavingsBytes,
+        })
+        const evidenceStatus = savingsBreakdown.coverage === 'insufficient'
+          ? 'insufficient'
+          : shouldEncode || audioConversions.length > 0 ? 'estimated' : 'measured'
+        const savingsBasis = shouldEncode
+          ? 'video_sample_encode'
+          : plannedSavingsOperations.length === 0 ? 'insufficient_data'
+          : audioConversions.length > 0 ? 'audio_transcode_model'
+          : 'audio_stream_removal'
+        getLoggingService().debug('[TVOptimization]', `Episode planned: mediaItem=${episode.id}, label="${label}", compatible=true, operations=${plannedSavingsOperations.join(',') || 'none'}, decision=${shouldEncode ? 'sample_required' : 'actionable'}, savingsBytes=${savingsBreakdown.totalEstimatedSavingsBytes ?? 'unknown'}, coverage=${savingsBreakdown.coverage}, encoder=${params.encoder}`)
         const samplePaths = params.measuredCandidate?.samplePaths
         return {
           mediaItemId: episode.id, label, compatible: true, hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256,
           operations: [
-            ...(streamsChanged ? ['stream_pruning' as const] : []),
+            ...(audioStreamsChanged ? ['stream_pruning' as const] : []),
+            ...(subtitleStreamsChanged ? ['subtitle_pruning' as const] : []),
             ...(containerChanged ? ['container_change' as const] : []),
             ...(shouldEncode ? ['video_transcode' as const] : []),
             ...(audioConversions.length > 0 ? ['audio_transcode' as const] : []),
           ],
-          decisionStatus: shouldEncode ? 'sample_required' : 'actionable', evidenceStatus: shouldEncode ? 'measured' : audioConversions.length > 0 ? 'estimated' : advice.evidence_status, confidence: shouldEncode ? 'high' : audioConversions.length > 0 ? 'medium' : advice.confidence,
-          estimatedSavingsBytes: shouldEncode ? measuredVideoSavingsBytes : audioConversions.length > 0 ? combinedAudioSavings : advice.estimatedSavingsBytes,
-          savingsBasis: shouldEncode ? 'video_sample_encode' : audioConversions.length > 0 ? removedAudioTracks.length > 0 ? 'audio_stream_removal_and_transcode_model' : 'audio_transcode_model' : advice.savings_basis, sourceTier: advice.sourceTier, adviceReason: shouldEncode ? 'Measured encoding passed the selected quality gates. Review all three samples before approval.' : audioConversions.length > 0 ? `Measured audio tracks can be converted to ${request.options.targetAudioCodec?.toUpperCase()}${removedAudioTracks.length > 0 ? ' and selected audio tracks removed' : ''}.` : advice.reason,
-          targetCompatibility, options, params, sourceAnalysis: analysis, targetProfile, samplePaths, sampleHashes: samplePaths ? await Promise.all(samplePaths.map(sha256File)) : undefined, changes: [...(options.targetConversion?.changes ?? []), ...audioConversions.map(track => `Convert audio stream ${track.sourceIndex} to ${track.codec.toUpperCase()} at ${track.bitrateKbps} kbps`)],
+          decisionStatus: shouldEncode ? 'sample_required' : 'actionable', evidenceStatus, savingsCoverage: savingsBreakdown.coverage, confidence: evidenceStatus === 'measured' ? 'high' : evidenceStatus === 'estimated' ? 'medium' : 'none',
+          estimatedSavingsBytes: savingsBreakdown.totalEstimatedSavingsBytes,
+          savingsBasis, sourceTier: advice.sourceTier, adviceReason: shouldEncode ? 'Measured encoding passed the selected quality gates. Review all three samples before approval.' : advice.reason,
+          targetCompatibility, options, params, sourceAnalysis: analysis, targetProfile, samplePaths, sampleHashes: samplePaths ? await Promise.all(samplePaths.map(sha256File)) : undefined, changes: [...(options.targetConversion?.changes ?? []), ...audioConversions.map(track => `Convert audio stream ${track.sourceIndex} to ${track.codec.toUpperCase()} at ${track.bitrateKbps} kbps`), ...(removedSubtitleTracks.length ? [`Remove ${removedSubtitleTracks.length} subtitle stream${removedSubtitleTracks.length === 1 ? '' : 's'} excluded by the selected language policy`] : [])],
           measuredParameters: { encoder: params.encoder, crf: params.crf, preset: params.preset },
         }
       } catch (error) {
@@ -413,7 +439,31 @@ export class TranscodingService {
       operation?.signal.throwIfAborted()
     }
 
-    const result = { preflightId, batchId, seriesTitle: request.seriesTitle || episodes[0]?.title || 'Selected media', episodeCount: episodes.length, compatible: results.some(episode => episode.compatible), expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), userApproved: false, episodes: results }
+    const planMetrics = aggregateShowOptimizationMetrics(results
+      .filter(episode => episode.compatible && episode.operations.length > 0)
+      .map(episode => ({
+        sizeBytes: episode.sourceSize,
+        estimatedSavingsBytes: episode.estimatedSavingsBytes,
+        savingsCoverage: episode.savingsCoverage,
+      })))
+    const result: ShowTranscodePreflight = {
+      preflightId,
+      batchId,
+      seriesTitle: request.seriesTitle || episodes[0]?.title || 'Selected media',
+      episodeCount: episodes.length,
+      compatible: results.some(episode => episode.compatible),
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      userApproved: false,
+      episodes: results,
+      estimatedSavingsBytes: planMetrics.totalEstimatedSavingsBytes,
+      savingsCoverage: planMetrics.coverage,
+      savingsBasis: results.some(episode => episode.savingsBasis === 'video_sample_encode')
+        ? results.filter(episode => episode.compatible && episode.operations.length > 0).every(episode => episode.savingsBasis === 'video_sample_encode')
+          ? 'sample_based_projection'
+          : 'mixed_sample_projection'
+        : 'planned_operations',
+    }
+    getLoggingService().info('[TVOptimization]', `Preflight completed: preflight=${preflightId}, batch=${batchId}, series=${request.seriesIdentityKey ?? 'episode'}, episodes=${episodes.length}, compatible=${results.filter(episode => episode.compatible).length}, actionable=${results.filter(episode => episode.compatible && episode.operations.length > 0).length}, savingsBytes=${planMetrics.totalEstimatedSavingsBytes ?? 'unknown'}, coverage=${planMetrics.coverage}`)
     operation?.signal.throwIfAborted()
     operation?.beginCommit()
     this.showPreflights.set(preflightId, { request, result })
@@ -430,7 +480,7 @@ export class TranscodingService {
     const stat = await fs.stat(file)
     if (!item.deep_analysis) throw new Error('Persisted file analysis is missing; analyze the item before stream pruning')
     const analysis = JSON.parse(item.deep_analysis) as FileAnalysisResult
-    if (!analysis.success || analysis.filePath !== file || analysis.fileSize !== stat.size || !analysis.audioTracks.length) throw new Error('Persisted file analysis is stale; analyze the item before stream pruning')
+    if (!analysis.success || analysis.filePath !== file || analysis.fileSizeBytes !== stat.size || !analysis.audioTracks.length) throw new Error('Persisted file analysis is stale; analyze the item before stream pruning')
     const retained = analysis.audioTracks.filter(track => track.isDefault || track.isCommentary || track.isAudioDescription || track.isAccessibility || track.hasObjectAudio).map(track => track.index)
     if (retained.length === 0) throw new Error('No audio stream is safe to retain automatically; choose retained streams in the review plan.')
     if (retained.length === analysis.audioTracks.length) throw new Error('No safe stream pruning operation is available; every audio stream must be retained')
@@ -493,9 +543,11 @@ export class TranscodingService {
       libraryId: preflight.request.libraryId,
       options: { ...episode.options, queuePayload: { batchId: preflight.result.batchId, preflightId, expiresAt: preflight.result.expiresAt, sourceSize: episode.sourceSize, sourceMtimeMs: episode.sourceMtimeMs, sourceSha256: episode.sourceSha256, params: episode.params, sourceAnalysis: episode.sourceAnalysis, targetProfile: episode.targetProfile, samplePaths: episode.samplePaths } }
     }))
+    getLoggingService().info('[TVOptimization]', `Queue requested: preflight=${preflightId}, batch=${preflight.result.batchId}, eligibleEpisodes=${queueableEpisodes.length}, userApproved=${preflight.result.userApproved}`)
     if (tasks.length > 0) await getTaskQueueService().addTasks(tasks)
     this.showPreflights.delete(preflightId)
     await getDatabase().config.deleteSetting(`transcoding.preflight.${preflightId}`)
+    getLoggingService().info('[TVOptimization]', `Queue completed: preflight=${preflightId}, batch=${preflight.result.batchId}, queuedMediaItems=${queueableEpisodes.length}`)
     return { batchId: preflight.result.batchId, queuedMediaItemIds: queueableEpisodes.map(episode => episode.mediaItemId) }
   }
 
@@ -581,9 +633,9 @@ export class TranscodingService {
         if (journal.mode === 'replace' && quarantineExists) await fs.unlink(journal.quarantinePath!)
         const job = await db.mediaRemuxJobs.getLatest(journal.mediaItemId)
         if (job && job.sourcePath === journal.inputPath && job.quarantinePath === journal.quarantinePath) {
-          const encodedReductionBytes = job.sourceSize - analysis.fileSize!
+          const encodedReductionBytes = job.sourceSize - analysis.fileSizeBytes!
           const retainedOriginalBytes = journal.mode === 'replace' ? 0 : job.sourceSize
-          await db.mediaRemuxJobs.update(job.id, { status: 'promoted', actualOutputBytes: analysis.fileSize, bytesSaved: encodedReductionBytes, outputDurationMs: analysis.duration, outputAnalysis: JSON.stringify({ ...analysis, filePath: journal.targetPath, encodedReductionBytes, retainedOriginalBytes, physicallyReclaimedBytes: journal.mode === 'replace' ? encodedReductionBytes : -analysis.fileSize! }) })
+          await db.mediaRemuxJobs.update(job.id, { status: 'promoted', actualOutputBytes: analysis.fileSizeBytes, bytesSaved: encodedReductionBytes, outputDurationMs: analysis.durationMs, outputAnalysis: JSON.stringify({ ...analysis, filePath: journal.targetPath, encodedReductionBytes, retainedOriginalBytes, physicallyReclaimedBytes: journal.mode === 'replace' ? encodedReductionBytes : -analysis.fileSizeBytes! }) })
         }
         await db.config.deleteSetting(key)
         getLoggingService().info('[TranscodingService]', `Committed forward activation recovery for media item ${journal.mediaItemId}`)
@@ -630,12 +682,9 @@ export class TranscodingService {
         : null
       const encoderProbe = await this.probeFfmpegEncoders(gpus)
       if (encoderProbe.failures.length > 0) {
-        getLoggingService().error('[TranscodingService]', `FFmpeg encoder verification failed: ${encoderProbe.failures.join('; ')}`)
+        getLoggingService().warn('[TranscodingService]', `FFmpeg capability detection: ${encoderProbe.failures.join('; ')}`)
       }
-      const savedGpuUnavailable = persistedSelection && !gpus.some(gpu => gpu.id === persistedSelection)
-        ? [`Saved GPU selection is unavailable: ${persistedSelection}`]
-        : []
-      const capabilities = buildTranscodingCapabilities(availability, gpus, selectedGpuId, encoderProbe.encoders, [...encoderProbe.failures, ...savedGpuUnavailable])
+      const capabilities = buildTranscodingCapabilities(availability, gpus, selectedGpuId, encoderProbe.encoders)
       getLoggingService().info('[TranscodingService]', `Hardware snapshot captured at ${capabilities.detectedAt}: ${gpus.length} GPU(s), encoders=${capabilities.encoders.join(',') || 'none'}`)
       return capabilities
     })()
@@ -657,11 +706,15 @@ export class TranscodingService {
         const aliases: Record<string, string> = {
           hevc_nvenc: 'nvenc_h265',
           av1_nvenc: 'nvenc_av1',
+          h264_nvenc: 'nvenc_h264',
           hevc_qsv: 'qsv_h265',
           av1_qsv: 'qsv_av1',
+          h264_qsv: 'qsv_h264',
           hevc_amf: 'hevc_amf',
           av1_amf: 'av1_amf',
+          h264_amf: 'h264_amf',
           hevc_videotoolbox: 'vt_h265',
+          h264_videotoolbox: 'vt_h264',
           libx265: 'x265',
           libsvtav1: 'svt_av1',
           libx264: 'libx264'
@@ -672,10 +725,10 @@ export class TranscodingService {
       })
     })
     const encodersToProbe: Record<string, { vendor?: GpuInfo['vendor']; codec: string; arguments?: string[] }> = {
-      nvenc_h265: { vendor: 'NVIDIA', codec: 'hevc_nvenc' }, nvenc_av1: { vendor: 'NVIDIA', codec: 'av1_nvenc' },
-      qsv_h265: { vendor: 'Intel', codec: 'hevc_qsv' }, qsv_av1: { vendor: 'Intel', codec: 'av1_qsv' },
-      hevc_amf: { vendor: 'AMD', codec: 'hevc_amf' }, av1_amf: { vendor: 'AMD', codec: 'av1_amf' },
-      vt_h265: { vendor: 'Apple', codec: 'hevc_videotoolbox', arguments: ['-allow_sw', '0'] },
+      nvenc_h265: { vendor: 'NVIDIA', codec: 'hevc_nvenc' }, nvenc_av1: { vendor: 'NVIDIA', codec: 'av1_nvenc' }, nvenc_h264: { vendor: 'NVIDIA', codec: 'h264_nvenc' },
+      qsv_h265: { vendor: 'Intel', codec: 'hevc_qsv' }, qsv_av1: { vendor: 'Intel', codec: 'av1_qsv' }, qsv_h264: { vendor: 'Intel', codec: 'h264_qsv' },
+      hevc_amf: { vendor: 'AMD', codec: 'hevc_amf' }, av1_amf: { vendor: 'AMD', codec: 'av1_amf' }, h264_amf: { vendor: 'AMD', codec: 'h264_amf' },
+      vt_h265: { vendor: 'Apple', codec: 'hevc_videotoolbox', arguments: ['-allow_sw', '0'] }, vt_h264: { vendor: 'Apple', codec: 'h264_videotoolbox', arguments: ['-allow_sw', '0'] },
       x265: { codec: 'libx265' }, svt_av1: { codec: 'libsvtav1' }, libx264: { codec: 'libx264' }
     }
     const encoders: string[] = []
@@ -730,13 +783,14 @@ export class TranscodingService {
       }
       const itemToAnalyze: Partial<MediaItem> = itemForAdvice || {
         file_path: filePath,
-        file_size: analysis.fileSize,
-        duration: analysis.duration,
+        file_size_bytes: analysis.fileSizeBytes,
+        duration_ms: analysis.durationMs,
         video_codec: analysis.video?.codec,
-        video_bitrate: analysis.video?.bitrate,
+        video_bitrate_kbps: analysis.video?.bitrateKbps,
         resolution: analysis.video ? `${analysis.video.width}x${analysis.video.height}` : undefined,
         height: analysis.video?.height
       }
+      await getQualityAnalyzer().loadThresholdsFromDatabase()
       const advice = getQualityAnalyzer().getOptimizationAdvice(itemToAnalyze as MediaItem, analysis)
       if (advice.action === 'stream_pruning') {
         effectiveOptions.optimizationMode = 'remux_only'
@@ -818,16 +872,8 @@ export class TranscodingService {
     } else {
       expectedEncoder = targetCodec === 'hevc' ? 'x265' : 'svt_av1'
     }
-    if (capabilitiesForOptions && capabilitiesForOptions.probeFailures.length > 0) {
-      const globalProbeFailures = capabilitiesForOptions.probeFailures.filter(failure => !failure.startsWith('Encoder '))
-      const selectedEncoderFailure = capabilitiesForOptions.probeFailures.find(failure => failure.startsWith(`Encoder ${expectedEncoder}:`))
-      if (globalProbeFailures.length > 0) {
-        throw new Error(`FFmpeg encoder verification failed: ${globalProbeFailures.join('; ')}`)
-      }
-      if (selectedEncoderFailure) throw new Error(selectedEncoderFailure)
-    }
-    if (capabilitiesForOptions && !capabilitiesForOptions.verifiedEncoders.includes(expectedEncoder)) {
-      throw new Error(`The selected device cannot produce ${targetCodec.toUpperCase()} with verified FFmpeg encoder ${expectedEncoder}.`)
+    if (capabilitiesForOptions && !capabilitiesForOptions.encoders.includes(expectedEncoder)) {
+      throw new Error(`The selected device does not support ${targetCodec.toUpperCase()} encoding.`)
     }
 
     const measuredParameters = hasManualOverrides
@@ -944,6 +990,7 @@ export class TranscodingService {
       const sourceStat = await fs.stat(inputPath)
       const sourceSha256 = await sha256File(inputPath)
       const queuePayload = (options as TranscodeOptions & { queuePayload?: QueuedTranscodePayload }).queuePayload
+      if (queuePayload) getLoggingService().info('[TVOptimization]', `Episode execution started: batch=${queuePayload.batchId}, preflight=${queuePayload.preflightId}, mediaItem=${mediaItemId}, sourceBytes=${sourceStat.size}, encoder=${queuePayload.params?.encoder ?? options.encoder ?? 'planned'}`)
       if (queuePayload && (sourceStat.size !== queuePayload.sourceSize || Math.abs(sourceStat.mtimeMs - queuePayload.sourceMtimeMs) > 1000)) {
         throw new Error('Source file changed after show preflight')
       }
@@ -968,10 +1015,10 @@ export class TranscodingService {
         predictedOutputBytes,
         actualOutputBytes: null,
         bytesSaved: null,
-        sourceDurationMs: item.duration ?? null,
+        sourceDurationMs: item.duration_ms ?? null,
         outputDurationMs: null,
         encoderProfile,
-        sourceAnalysis: JSON.stringify({ duration: item.duration, fileSize: sourceStat.size }),
+        sourceAnalysis: JSON.stringify({ durationMs: item.duration_ms, fileSizeBytes: sourceStat.size }),
         outputAnalysis: null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -1083,7 +1130,7 @@ export class TranscodingService {
       if ((effectiveOutputMode === 'quarantine-replace' || effectiveOutputMode === 'replace') && stats.size > sourceStat.size) {
         throw new Error(`Transcoded output (${Math.round(stats.size / (1024 * 1024))} MB) is larger than original source (${Math.round(sourceStat.size / (1024 * 1024))} MB). Aborting replacement to protect storage.`)
       }
-      await db.mediaRemuxJobs.update(optimizationJobId!, { status: 'verified', actualOutputBytes: stats.size, outputDurationMs: outputAnalysis.duration, outputAnalysis: JSON.stringify(outputAnalysis) })
+      await db.mediaRemuxJobs.update(optimizationJobId!, { status: 'verified', actualOutputBytes: stats.size, outputDurationMs: outputAnalysis.durationMs, outputAnalysis: JSON.stringify(outputAnalysis) })
 
       const origExt = path.extname(inputPath)
       const origBase = path.basename(inputPath, origExt)
@@ -1123,12 +1170,13 @@ export class TranscodingService {
           status: 'promoted',
           actualOutputBytes: stats.size,
           bytesSaved: sourceStat.size - stats.size,
-          outputDurationMs: outputAnalysis.duration,
+          outputDurationMs: outputAnalysis.durationMs,
           outputAnalysis: JSON.stringify({ ...outputAnalysis, filePath: effectiveOutputMode === 'copy' ? path.join(path.dirname(inputPath), `${origBase} - Transcoded${outputExt}`) : targetSamePath, encodedReductionBytes: sourceStat.size - stats.size, retainedOriginalBytes, physicallyReclaimedBytes: effectiveOutputMode === 'replace' ? sourceStat.size - stats.size : -stats.size }),
         })
       }
 
       onProgress?.({ percent: 100, status: 'complete' })
+      if (queuePayload) getLoggingService().info('[TVOptimization]', `Episode execution completed: batch=${queuePayload.batchId}, mediaItem=${mediaItemId}, sourceBytes=${sourceStat.size}, outputBytes=${stats.size}, savedBytes=${sourceStat.size - stats.size}`)
       return true
 
     } catch (error) {
@@ -1147,6 +1195,8 @@ export class TranscodingService {
         ? `${error.message}: ${error.stderr.slice(-4000).trim()}`
         : error instanceof Error ? error.message : String(error)
       getLoggingService().error('[TranscodingService]', `Transcode failed for item ${mediaItemId}:`, msg)
+      const failedQueuePayload = (options as TranscodeOptions & { queuePayload?: QueuedTranscodePayload }).queuePayload
+      if (failedQueuePayload) getLoggingService().error('[TVOptimization]', `Episode execution failed: batch=${failedQueuePayload.batchId}, preflight=${failedQueuePayload.preflightId}, mediaItem=${mediaItemId}:`, msg)
       if (optimizationJobId !== null) await db.mediaRemuxJobs.update(optimizationJobId, { status: 'failed', error: msg })
 
       onProgress?.({ percent: 0, status: 'failed', error: msg })
@@ -1188,14 +1238,14 @@ export class TranscodingService {
     if (!options.targetCodec || !options.qualityProfile || !options.encoderPolicy) throw new Error('Target codec, quality profile, and encoder policy are required for measurement')
     signal?.throwIfAborted()
     const analysis = this.analysisCache.get(filePath) ?? await getMediaFileAnalyzer().analyzeFile(filePath)
-    if (!analysis.success || !analysis.video || !analysis.duration) throw new Error(analysis.error || 'Complete media analysis is required for measurement')
+    if (!analysis.success || !analysis.video || !analysis.durationMs) throw new Error(analysis.error || 'Complete media analysis is required for measurement')
     const capabilities = options.encoderPolicy === 'software' ? undefined : await this.getCapabilities()
     const hardwareVendor = capabilities?.gpus.find(gpu => gpu.id === (options.gpuId || capabilities.selectedGpuId))?.vendor
     const hardwareEncoder = hardwareVendor && options.encoderPolicy !== 'software'
       ? getHardwareEncoder(hardwareVendor, options.targetCodec)
       : undefined
     if (options.encoderPolicy !== 'software' && !hardwareEncoder) throw new Error(`The selected hardware does not support ${options.targetCodec.toUpperCase()} encoding.`)
-    if (hardwareEncoder && !capabilities!.verifiedEncoders.includes(hardwareEncoder)) throw new Error(`Encoder ${hardwareEncoder} is not verified`)
+    if (hardwareEncoder && !capabilities!.encoders.includes(hardwareEncoder)) throw new Error(`The selected device does not support ${hardwareEncoder} encoding.`)
     const ladder = buildCandidateLadder(options.targetCodec, options.encoderPolicy, hardwareEncoder)
     const candidates = ladder.map(candidate => {
       const useGpu = candidate.encoder !== 'x265' && candidate.encoder !== 'svt_av1'
@@ -1207,14 +1257,14 @@ export class TranscodingService {
       const stat = await fs.stat(filePath)
       await fs.mkdir(outputDirectory, { recursive: true })
       const space = await fs.statfs(outputDirectory)
-      const sampleSeconds = Math.min(analysis.duration / 1000, APP_CONFIG.transcoding.sampleDurationSeconds * APP_CONFIG.transcoding.samplePositions.length)
-      const plannedBitrate = options.targetConversion ? options.targetConversion.maximumVideoBitrate + options.targetConversion.audio.reduce((sum, track) => sum + (track.bitrateKbps ?? analysis.audioTracks.find(audio => audio.index === track.sourceIndex)?.bitrate ?? 0) * 1000, 0) : undefined
+      const sampleSeconds = Math.min(analysis.durationMs / 1000, APP_CONFIG.transcoding.sampleDurationSeconds * APP_CONFIG.transcoding.samplePositions.length)
+      const plannedBitrate = options.targetConversion ? options.targetConversion.maximumVideoBitrate + options.targetConversion.audio.reduce((sum, track) => sum + (track.bitrateKbps ?? analysis.audioTracks.find(audio => audio.index === track.sourceIndex)?.bitrateKbps ?? 0) * 1000, 0) : undefined
       const referenceBytes = options.targetConversion?.inputArgs.length ? options.targetConversion.width * options.targetConversion.height * (options.targetConversion.bitDepth > 8 ? 3 : 1.5) * analysis.video.frameRate! * sampleSeconds : 0
       const requiredBytes = Math.ceil((plannedBitrate ? plannedBitrate / 8 * sampleSeconds : options.maxOutputBytes ?? stat.size) * candidates.length + referenceBytes + (options.targetConversion?.maximumVideoBitrate ?? 0) / 4)
       if (Number(space.bavail) * Number(space.bsize) < requiredBytes) throw new Error('Insufficient disk headroom for episode sampling')
       const outputContainer = options.targetConversion?.container ?? options.targetContainer
       const outputExtension = outputContainer === 'mp4' ? '.mp4' : outputContainer === 'mkv' ? '.mkv' : path.extname(filePath)
-      const measured = await this.measuredOptimizationService.measure({ inputPath: filePath, outputDirectory, durationMs: analysis.duration, outputExtension, referenceFilter: options.targetConversion?.videoFilter, referenceInputArgs: options.targetConversion?.inputArgs, candidates, signal })
+      const measured = await this.measuredOptimizationService.measure({ inputPath: filePath, outputDirectory, durationMs: analysis.durationMs, outputExtension, referenceFilter: options.targetConversion?.videoFilter, referenceInputArgs: options.targetConversion?.inputArgs, candidates, signal })
       signal?.throwIfAborted()
       const selected = selectMeasuredCandidate(options.qualityProfile, measured.candidates)
       for (const candidate of measured.candidates) if (candidate !== selected) for (const sample of candidate.samplePaths!) await fs.unlink(sample)
@@ -1251,6 +1301,7 @@ export class TranscodingService {
     await fs.rm(directory, { recursive: true, force: true })
     this.showPreflights.delete(preflightId)
     await getDatabase().config.deleteSetting(`transcoding.preflight.${preflightId}`)
+    getLoggingService().info('[TVOptimization]', `Preflight discarded: preflight=${preflightId}`)
   }
 
   private preflightFingerprint(result: ShowTranscodePreflight): string {
@@ -1269,6 +1320,7 @@ export class TranscodingService {
       throw new Error('Show transcode preflight has expired; run preflight again')
     }
     const approved = { ...preflight.result, userApproved: true, approvedAt: new Date().toISOString(), approvalFingerprint: this.preflightFingerprint(preflight.result) }
+    getLoggingService().info('[TVOptimization]', `Preflight approved: preflight=${preflightId}, batch=${approved.batchId}, sampleRequiredEpisodes=${approved.episodes.filter(episode => episode.compatible && episode.decisionStatus === 'sample_required').length}`)
     this.showPreflights.set(preflightId, { ...preflight, result: approved })
     await getDatabase().config.setSetting(`transcoding.preflight.${preflightId}`, JSON.stringify({ ...preflight, result: approved }))
     return approved

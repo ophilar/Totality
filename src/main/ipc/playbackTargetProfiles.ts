@@ -5,6 +5,9 @@ import { getDatabase } from '@main/database/getDatabase'
 import type { PlaybackTargetDefinition, PlaybackTargetProfile } from '@main/types/playbackTarget'
 import crypto from 'node:crypto'
 import { playbackTargetProfileInputSchema } from '@shared/playbackTargetValidation'
+import { SETTING_KEYS } from '@shared/settingKeys'
+import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
+import { getTaskQueueService } from '@main/services/TaskQueueService'
 
 const idInput = z.string().min(1)
 
@@ -17,7 +20,17 @@ export function registerPlaybackTargetProfileHandlers(): void {
     await db.playbackTargetProfiles.create(profile)
     return profile
   })
-  createValidatedIpcHandler(IPC_CHANNELS.dbPlaybackTargetProfilesUpdate, z.object({ id: idInput, ...playbackTargetProfileInputSchema.shape }), async input => { const db = getDatabase(); await db.playbackTargetProfiles.update(input.id, input.name, input.definition as PlaybackTargetDefinition, new Date().toISOString()); return db.playbackTargetProfiles.get(input.id) })
+  createValidatedIpcHandler(IPC_CHANNELS.dbPlaybackTargetProfilesUpdate, z.object({ id: idInput, ...playbackTargetProfileInputSchema.shape }), async input => {
+    const db = getDatabase()
+    await db.playbackTargetProfiles.update(input.id, input.name, input.definition as PlaybackTargetDefinition, new Date().toISOString())
+    if (await db.config.getSetting(SETTING_KEYS.optimization_default_target_profile_id) === input.id) {
+      getQualityAnalyzer().invalidateThresholdsCache()
+      const taskId = getTaskQueueService().addTask({ type: 'quality-analysis', label: 'Refresh media quality and savings estimates' })
+      if (taskId) await db.deleteSetting('optimization.savings_reanalysis_pending')
+      else await db.setSetting('optimization.savings_reanalysis_pending', 'true')
+    }
+    return db.playbackTargetProfiles.get(input.id)
+  })
   createValidatedIpcHandler(IPC_CHANNELS.dbPlaybackTargetProfilesDuplicate, z.object({ sourceId: idInput, name: z.string().trim().min(1) }), async input => {
     const db = getDatabase()
     const now = new Date().toISOString()
@@ -29,7 +42,7 @@ export function registerPlaybackTargetProfileHandlers(): void {
   })
   createValidatedIpcHandler(IPC_CHANNELS.dbPlaybackTargetProfilesDelete, idInput, async id => {
     const db = getDatabase()
-    const defaultId = await db.config.getSetting('optimization_default_target_profile_id')
+    const defaultId = await db.config.getSetting(SETTING_KEYS.optimization_default_target_profile_id)
     if (defaultId === id) throw new Error('Choose another default profile before deleting this profile')
     await db.playbackTargetProfiles.delete(id)
     return true

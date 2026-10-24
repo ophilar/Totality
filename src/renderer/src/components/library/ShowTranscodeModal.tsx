@@ -24,14 +24,17 @@ import { useFocusTrap } from '@/hooks/useFocusTrap'
 import type { TVShowSummary, MediaItem } from './types'
 import type { GpuInfo, PlannedOptimizationOperation, ShowTranscodePreflight } from './transcoding/types'
 import { EncoderPolicySelector } from './transcoding/EncoderPolicySelector'
-import { formatLanguage, isSameLanguage, LANGUAGE_OPTIONS } from './mediaUtils'
+import { formatLanguage, getOptimizationContainer, isSameLanguage, LANGUAGE_OPTIONS, parseLanguageWhitelist } from './mediaUtils'
 import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
+import { PlaybackCompatibilityFindings } from './PlaybackCompatibilityPanel'
 import { getTVShowIdentity } from './tv/showIdentity'
 import type { QueueState } from '@main/types/taskQueue'
 import type { PlaybackTargetProfile } from '@main/types/playbackTarget'
 import type { OptimizationQualityProfile } from '@main/services/MeasuredOptimizationPolicy'
 import { getHardwareEncoder } from '@main/services/TranscodingCapabilities'
 import { TaskType } from '@main/types/database'
+import { SETTING_KEYS } from '@shared/settingKeys'
+import { normalizeAudioCodec, normalizeVideoCodec } from '@main/services/MediaNormalizer'
 
 function getSourceTierBadge(tier?: string) {
   switch (tier) {
@@ -121,6 +124,12 @@ function getAdvisoryBadges(operations: PlannedOptimizationOperation[], compatibl
             <Scissors className="w-3 h-3" /> Stream Pruning
           </span>
         )
+      } else if (operation === 'subtitle_pruning') {
+        badges.push(
+          <span key={operation} className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+            <Scissors className="w-3 h-3" /> Subtitle Pruning
+          </span>
+        )
       } else if (operation === 'audio_transcode') {
         badges.push(
           <span key={operation} className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
@@ -159,6 +168,15 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
   const [targetProfiles, setTargetProfiles] = useState<PlaybackTargetProfile[]>([])
   const [targetProfilesLoading, setTargetProfilesLoading] = useState(true)
   const targetProfile = targetProfiles.find(profile => profile.id === targetProfileId)
+  const recommendedAudioCodec = targetProfile && episode?.audio_codec
+    && episode.audio_channels <= targetProfile.definition.audio.maxChannels
+    && (!episode.has_object_audio || targetProfile.definition.audio.objectAudio)
+    && !targetProfile.definition.audio.codecs.some(codec => normalizeAudioCodec(codec) === normalizeAudioCodec(episode.audio_codec))
+    ? (['eac3', 'ac3', 'aac'] as const).find(codec =>
+      (episode.audio_channels >= 6 ? codec !== 'aac' : codec === 'aac')
+      && targetProfile.definition.audio.codecs.some(supportedCodec => normalizeAudioCodec(supportedCodec) === normalizeAudioCodec(codec))
+    )
+    : undefined
   const [qualityProfile, setQualityProfile] = useState<OptimizationQualityProfile | ''>('')
   const [encoderPolicy, setEncoderPolicy] = useState<'hardware' | 'software' | 'compare' | ''>('')
   const useHardwareEncoder = encoderPolicy === 'hardware' || encoderPolicy === 'compare'
@@ -167,17 +185,17 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
   const [targetHdrFormat, setTargetHdrFormat] = useState<'SDR' | 'HDR10' | ''>('')
   const [reviewedEpisodes, setReviewedEpisodes] = useState<number[]>([])
   const [activeBatchId, setActiveBatchId] = useState<string>()
-  const [codec, setCodec] = useState<'hevc' | 'av1'>('av1')
+  const [codec, setCodec] = useState<'hevc' | 'av1' | ''>('')
   const [audio, setAudio] = useState<'all' | 'original-and-protected'>('original-and-protected')
   const [language, setLanguage] = useState('')
-  const [subtitleWhitelist, setSubtitleWhitelist] = useState('eng, heb, spa')
+  const [subtitleWhitelist, setSubtitleWhitelist] = useState('')
   const [newSubtitleInput, setNewSubtitleInput] = useState('')
   const [detectedLanguages, setDetectedLanguages] = useState<string[]>([])
   const [providerLanguage, setProviderLanguage] = useState<string>('')
   const [outputMode, setOutputMode] = useState<'copy' | 'quarantine-replace' | 'replace'>('quarantine-replace')
   const [gpuId, setGpuId] = useState('')
   const [gpus, setGpus] = useState<GpuInfo[]>([])
-  const [verifiedEncoders, setVerifiedEncoders] = useState<string[]>([])
+  const [supportedEncoders, setSupportedEncoders] = useState<string[]>([])
   const [message, setMessage] = useState('')
   const [isSuccess, setIsSuccess] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -202,11 +220,13 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     let mounted = true
     void Promise.all([
       window.electronAPI.listPlaybackTargetProfiles(),
-      window.electronAPI.getSetting('optimization_default_target_profile_id')
-    ]).then(([profiles, configuredId]) => {
+      window.electronAPI.getSetting('optimization_default_target_profile_id'),
+      window.electronAPI.getSetting(SETTING_KEYS.subtitle_preferred_languages)
+    ]).then(([profiles, configuredId, configuredSubtitleLanguages]) => {
       const profile = profiles.find(candidate => candidate.id === configuredId)
       if (mounted) {
         setTargetProfiles(profiles)
+        setSubtitleWhitelist(configuredSubtitleLanguages || '')
         if (profile) { setTargetProfileId(profile.id); setTargetProfileName(profile.name) }
         else if (configuredId) setMessage(`Configured playback target ${configuredId} was not found. Choose another target or select no playback target.`)
       }
@@ -214,6 +234,16 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
       .finally(() => { if (mounted) setTargetProfilesLoading(false) })
     return () => { mounted = false }
   }, [addToast])
+
+  useEffect(() => {
+    const sourceContainer = getOptimizationContainer(episode?.container)
+    const profileSupportsSourceContainer = !targetProfile || targetProfile.definition.containers.includes(sourceContainer === 'mkv' ? 'matroska' : 'mp4')
+    setTargetContainer(sourceContainer && profileSupportsSourceContainer ? sourceContainer : '')
+    const sourceVideoCodec = episode?.video_codec?.toLowerCase()
+    const sourceTargetCodec = normalizeVideoCodec(sourceVideoCodec) === 'HEVC' ? 'hevc' : normalizeVideoCodec(sourceVideoCodec) === 'AV1' ? 'av1' : undefined
+    const targetSupportsSourceCodec = sourceTargetCodec && (!targetProfile || targetProfile.definition.video.codecs.some(codec => normalizeVideoCodec(codec) === normalizeVideoCodec(sourceTargetCodec)))
+    setCodec(targetSupportsSourceCodec ? sourceTargetCodec : '')
+  }, [episode?.id, episode?.container, episode?.video_codec, targetProfile])
 
 
   const handleClose = useCallback(async () => {
@@ -326,27 +356,13 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     return () => { isMounted = false }
   }, [show, sourceId, seriesIdentityKey, libraryId])
 
-  // Load global subtitle preference
-  useEffect(() => {
-    let isMounted = true
-    window.electronAPI.getSetting('subtitle_preferred_languages').then((val) => {
-      if (!isMounted) return
-      if (val && typeof val === 'string' && val.trim()) {
-        setSubtitleWhitelist(val.trim())
-      }
-    }).catch((error) => {
-      console.error('[ShowTranscodeModal] Failed to load subtitle preferences', error)
-    })
-    return () => { isMounted = false }
-  }, [addToast])
-
   useEffect(() => {
     let isMounted = true
     window.electronAPI.transcodingGetCapabilities().then((capabilities) => {
       if (!isMounted || !capabilities) return
       const detectedGpus = capabilities.gpus || []
       setGpus(detectedGpus)
-      setVerifiedEncoders(capabilities.verifiedEncoders)
+      setSupportedEncoders(capabilities.encoders)
       const selected = detectedGpus.find((gpu: GpuInfo) => gpu.id === capabilities.selectedGpuId)
       setGpuId(selected?.id || '')
     }).catch(err => {
@@ -371,10 +387,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     }
   }, [addToast])
 
-  const subtitleList = subtitleWhitelist
-    .split(/[,\s]+/)
-    .map(s => s.trim().toLowerCase())
-    .filter(Boolean)
+  const subtitleList = parseLanguageWhitelist(subtitleWhitelist)
 
   const handleAddSubtitleTag = (code: string) => {
     const clean = code.trim().toLowerCase()
@@ -399,7 +412,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     const effectiveAudio = shouldRemoveStreams ? audio : 'all' as const
     const effectiveOptimizationMode = shouldAdjustToTarget ? optimizationMode : 'remux_only' as const
     return {
-      targetCodec: codec,
+      targetCodec: codec || undefined,
       qualityProfile: qualityProfile || undefined,
       encoderPolicy: encoderPolicy || undefined,
       targetContainer: shouldAdjustToTarget ? targetContainer || undefined : undefined,
@@ -423,7 +436,8 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     if (!outputMode || (shouldRemoveStreams && audio === 'original-and-protected' && !language.trim())) {
       throw new Error('Choose an output mode and, when stream pruning is enabled, an original language.')
     }
-    if (shouldAdjustToTarget && optimizationMode !== 'remux_only' && (!qualityProfile || !encoderPolicy || !targetContainer || (effectiveTargetProfileId && !targetHdrFormat))) throw new Error('Choose quality, encoder policy, container, and, when a playback target is selected, output color format before measuring samples.')
+    if (shouldAdjustToTarget && optimizationMode !== 'remux_only' && (!codec || !qualityProfile || !encoderPolicy || !targetContainer || (effectiveTargetProfileId && !targetHdrFormat))) throw new Error('Choose a video codec, quality, encoder policy, container, and, when a playback target is selected, output color format before measuring samples.')
+    console.info('[TVOptimizationUI] Preflight requested', { seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, optimizationMode, codec, encoderPolicy, gpuId: gpuId || null, removeUnnecessaryStreams: shouldRemoveStreams, adjustToTarget: shouldAdjustToTarget, targetProfileId: effectiveTargetProfileId || null })
     setReviewedEpisodes([])
     if (preflightData) {
       await window.electronAPI.discardShow(preflightData.preflightId)
@@ -443,6 +457,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
         libraryId,
         options: getCleanOptions(overrides)
       }) as ShowTranscodePreflight
+      console.info('[TVOptimizationUI] Preflight returned', { preflightId: preflight.preflightId, batchId: preflight.batchId, episodeCount: preflight.episodeCount, compatible: preflight.episodes.filter(item => item.compatible).length, savingsBytes: preflight.estimatedSavingsBytes, savingsCoverage: preflight.savingsCoverage })
       setPreflightData(preflight)
       return preflight
     } finally {
@@ -510,9 +525,11 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     setMessage('')
     try {
       const requiresApproval = preflightData.episodes.some(episode => episode.compatible && episode.decisionStatus === 'sample_required')
+      console.info('[TVOptimizationUI] Queue requested', { preflightId: preflightData.preflightId, batchId: preflightData.batchId, requiresSampleApproval: requiresApproval, reviewedEpisodeCount: reviewedEpisodes.length })
       if (preflightData.episodes.some(episode => episode.compatible && episode.samplePaths?.length && !reviewedEpisodes.includes(episode.mediaItemId))) throw new Error('Play and approve the winning samples for every eligible episode.')
       if (requiresApproval) await window.electronAPI.approveShow(preflightData.preflightId)
       const queued = await window.electronAPI.queueShow(preflightData.preflightId)
+      console.info('[TVOptimizationUI] Queue completed', { batchId: queued.batchId, queuedMediaItemIds: queued.queuedMediaItemIds })
       setActiveBatchId(queued.batchId)
       setIsSuccess(true)
       setMode('monitoring')
@@ -539,7 +556,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
   // Filter tasks belonging to transcoding
   const vendor = gpus.find(gpu => gpu.id === gpuId)?.vendor
   const hardwareEncoder = vendor && codec ? getHardwareEncoder(vendor, codec) : undefined
-  const hardwareAvailable = hardwareEncoder !== undefined && verifiedEncoders.includes(hardwareEncoder)
+  const hardwareAvailable = hardwareEncoder !== undefined && supportedEncoders.includes(hardwareEncoder)
   const verifiedResults = queueState.completedTasks.filter(task => task.batchId === activeBatchId && task.status === 'completed' && typeof task.result?.physicallyReclaimedBytes === 'number').map(task => task.result!)
   const batchQueue = queueState.queue.filter(task => task.batchId === activeBatchId)
   const currentTask = queueState.currentTask?.batchId === activeBatchId ? queueState.currentTask : null
@@ -698,9 +715,9 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
             <div className="grid grid-cols-2 gap-3 text-xs">
               <label>Visual quality threshold<select aria-label="Quality" value={qualityProfile} onChange={e => setQualityProfile(e.target.value as OptimizationQualityProfile)}><option value="">Select threshold</option><option value="transparent">Highest measured fidelity</option><option value="balanced">Balanced fidelity and savings</option><option value="maximum_savings">More savings, measured loss allowed</option></select></label>
               <EncoderPolicySelector value={encoderPolicy} hardwareAvailable={hardwareAvailable} onChange={policy => setEncoderPolicy(policy ?? '')} />
-              <label>Container<select aria-label="Container" value={targetContainer} onChange={e => setTargetContainer(e.target.value as typeof targetContainer)}><option value="">Select container</option>{(targetProfile?.definition.containers ?? ['matroska', 'mp4']).filter(container => ['matroska', 'mp4'].includes(container)).map(container => <option key={container} value={container === 'matroska' ? 'mkv' : 'mp4'}>{container}</option>)}</select></label>
+              <label>Container<select aria-label="Container" value={targetContainer} onChange={e => setTargetContainer(e.target.value as typeof targetContainer)}>{!targetContainer && <option value="">Select container{episode?.container ? ` (source: ${episode.container})` : ''}</option>}{(targetProfile?.definition.containers ?? ['matroska', 'mp4']).filter(container => ['matroska', 'mp4'].includes(container)).map(container => <option key={container} value={container === 'matroska' ? 'mkv' : 'mp4'}>{container}</option>)}</select></label>
               {targetProfile ? <label>Output color<select aria-label="Output color" value={targetHdrFormat} onChange={e => setTargetHdrFormat(e.target.value as typeof targetHdrFormat)}><option value="">Select color format</option><option value="SDR">SDR</option>{targetProfile.definition.hdr.formats.includes('HDR10') && <option value="HDR10">HDR10</option>}</select></label> : <p className="text-xs text-muted-foreground">Preserve the source color format. HDR conversion requires a playback target.</p>}
-              <label>Audio conversion<select aria-label="Audio conversion" value={targetAudioCodec} onChange={e => setTargetAudioCodec(e.target.value as typeof targetAudioCodec)}><option value="">Preserve codec; block incompatible tracks</option>{(targetProfile?.definition.audio.codecs ?? ['aac', 'ac3', 'eac3']).filter(codec => ['aac', 'ac3', 'eac3'].includes(codec)).map(codec => <option key={codec} value={codec}>{codec.toUpperCase()}</option>)}</select></label>
+              <label>Audio conversion<select aria-label="Audio conversion" value={targetAudioCodec} onChange={e => setTargetAudioCodec(e.target.value as typeof targetAudioCodec)}><option value="">Preserve source{episode?.audio_codec ? ` (${episode.audio_codec})` : ''}; convert only for compatibility</option>{(targetProfile?.definition.audio.codecs ?? ['aac', 'ac3', 'eac3']).filter(codec => ['aac', 'ac3', 'eac3'].includes(codec)).map(codec => <option key={codec} value={codec}>{codec.toUpperCase()}{codec === recommendedAudioCodec ? ' (recommended for target compatibility)' : ''}</option>)}</select>{episode?.audio_codec && /dts.?hd|truehd|flac|pcm/i.test(episode.audio_codec) && <span className="block text-muted-foreground">{episode.audio_codec} is lossless; converting to a listed codec is lossy and should be selected only when the playback target requires it or measured savings justify it.</span>}</label>
             </div>
             {/* Codec Selection */}
             {optimizationMode !== 'remux_only' && (
@@ -712,7 +729,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
                   <button
                     type="button"
                     onClick={() => setCodec('av1')}
-                    disabled={Boolean(targetProfile && !targetProfile.definition.video.codecs.includes('av1'))}
+                    disabled={Boolean(targetProfile && !targetProfile.definition.video.codecs.some(codec => normalizeVideoCodec(codec) === 'AV1'))}
                     className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                       codec === 'av1'
                         ? 'border-primary bg-primary/10 shadow-sm ring-1 ring-primary'
@@ -729,7 +746,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
                   <button
                     type="button"
                     onClick={() => setCodec('hevc')}
-                    disabled={Boolean(targetProfile && !targetProfile.definition.video.codecs.includes('hevc'))}
+                    disabled={Boolean(targetProfile && !targetProfile.definition.video.codecs.some(codec => normalizeVideoCodec(codec) === 'HEVC'))}
                     className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                       codec === 'hevc'
                         ? 'border-primary bg-primary/10 shadow-sm ring-1 ring-primary'
@@ -844,7 +861,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
                 <span className="text-[10px] lowercase font-normal text-muted-foreground">independent of audio</span>
               </label>
               <p className="text-[11px] text-muted-foreground">
-                Preserves subtitles matching these ISO-639 codes (e.g. eng, heb, spa). Non-whitelisted subtitles are pruned to eliminate container bloat.
+                Blank keeps every subtitle. Selecting ISO-639 codes (e.g. eng, heb, spa) removes other subtitle streams.
               </p>
 
               <div className="flex flex-wrap items-center gap-1.5 p-2 bg-background/60 border border-border/40 rounded-xl min-h-[42px]">
@@ -994,6 +1011,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
                 <div>
                   <h4 className="text-sm font-bold text-foreground">Preflight Optimization Plan</h4>
                   <p className="text-xs text-muted-foreground">{preflightData.episodes.length} episodes analyzed; only evidenced actions can be queued</p>
+                  <p className="text-sm font-semibold">Selected series plan total: <EstimatedSavingsDisplay bytes={preflightData.estimatedSavingsBytes} /> · {preflightData.savingsCoverage ?? 'insufficient'} evidence{preflightData.savingsBasis === 'sample_based_projection' ? ' · Sample-based projection' : preflightData.savingsBasis === 'mixed_sample_projection' ? ' · Includes sample-based projections' : ''}</p>
                 </div>
                 <label className="flex items-center gap-2 text-xs text-muted-foreground">Playback target
                   <select value={targetProfileId} onChange={event => { void updatePlan({ targetProfileId: event.target.value }) }} disabled={busy || targetProfilesLoading} className="rounded-lg border border-border bg-background px-2 py-1 text-xs text-foreground">
@@ -1008,7 +1026,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
                 <details open={removeUnnecessaryStreams} className="group">
                   <summary className="flex cursor-pointer list-none items-center gap-3 p-3">
                     <input type="checkbox" checked={removeUnnecessaryStreams} onChange={event => { event.preventDefault(); void updatePlan({ removeUnnecessaryStreams: event.target.checked }) }} className="h-4 w-4 accent-primary" />
-                    <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Remove unnecessary streams</span><span className="block text-xs text-muted-foreground">{preflightData.episodes.filter(e => e.operations.includes('stream_pruning')).length} episodes · preserve only the selected audio and subtitle policy</span></span>
+                    <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Remove unnecessary streams</span><span className="block text-xs text-muted-foreground">{preflightData.episodes.filter(e => e.operations.includes('stream_pruning') || e.operations.includes('subtitle_pruning')).length} episodes · preserve only the selected audio and subtitle policy</span></span>
                   </summary>
                   <div className="border-t border-border/40 px-10 py-3 text-xs text-muted-foreground">Audio: {audio === 'all' ? 'all tracks' : 'original and protected tracks'} · Subtitles: {subtitleList.length ? subtitleList.join(', ') : 'preserve all'}</div>
                 </details>
@@ -1017,7 +1035,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
                     <input type="checkbox" checked={adjustToTarget} onChange={event => { event.preventDefault(); void updatePlan({ adjustToTarget: event.target.checked }) }} className="h-4 w-4 accent-primary" />
                     <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Adjust output</span><span className="block text-xs text-muted-foreground">{preflightData.episodes.filter(e => e.operations.includes('video_transcode') || e.operations.includes('audio_transcode') || e.operations.includes('container_change')).length} episodes · apply the selected output strategy</span></span>
                   </summary>
-                  <div className="border-t border-border/40 px-10 py-3 text-xs text-muted-foreground">Playback target: {targetProfileName || 'none'} · Codec: {codec.toUpperCase()} · Strategy: {optimizationMode}</div>
+                  <div className="border-t border-border/40 px-10 py-3 text-xs text-muted-foreground">Playback target: {targetProfileName || 'none'} · Codec: {codec ? codec.toUpperCase() : 'select codec'} · Strategy: {optimizationMode}</div>
                 </details>
                 <details className="group">
                   <summary className="flex cursor-pointer list-none items-center gap-3 p-3">
@@ -1078,10 +1096,11 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
                       </span>
                     </div>
                     {ep.changes?.map(change => <p key={change} className="text-xs">{change}</p>)}
+                    {ep.targetCompatibility && <PlaybackCompatibilityFindings evaluation={ep.targetCompatibility} targetName={ep.targetProfile?.name} />}
                     {ep.samplePaths?.length && <div className="text-xs space-y-2">{ep.samplePaths.map((sample, index) => <button key={sample} className="mr-2 underline" onClick={() => void window.electronAPI.openShowSample(preflightData.preflightId, ep.mediaItemId, index).catch(error => { const message = error instanceof Error ? error.message : String(error); setMessage(message); addToast({ type: 'error', title: 'Could not open measured sample', message }) })}>Play sample {index + 1}</button>)}<label className="block"><input type="checkbox" checked={reviewedEpisodes.includes(ep.mediaItemId)} onChange={event => setReviewedEpisodes(ids => event.target.checked ? [...ids, ep.mediaItemId] : ids.filter(id => id !== ep.mediaItemId))} /> I approve playback of these samples and the listed conversions</label></div>}
                     <div className="flex items-center justify-between text-[10px] text-muted-foreground/80">
                       <span>{ep.evidenceStatus ? `Evidence: ${ep.evidenceStatus} (${ep.confidence || 'none'})` : 'Evidence: unavailable'}</span>
-                      <span>Est. savings: <EstimatedSavingsDisplay bytes={ep.estimatedSavingsBytes} /></span>
+                      <span>Selected plan: <EstimatedSavingsDisplay bytes={ep.estimatedSavingsBytes} /> · {ep.savingsCoverage ?? 'insufficient'} evidence{ep.savingsBasis === 'video_sample_encode' ? ' · Sample-based projection' : ''}</span>
                     </div>
                   </div>
                 ))}
