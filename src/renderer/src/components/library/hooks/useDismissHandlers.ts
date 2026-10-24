@@ -82,10 +82,10 @@ export function useDismissHandlers({
         : item.title
       const exclusionId = await window.electronAPI.addExclusion('media_upgrade', item.id, undefined, undefined, title)
       setPaginatedMovies(prev => prev.map(m =>
-        m.id === item.id ? { ...m, needs_upgrade: false, tier_quality: m.tier_quality === 'LOW' ? 'MEDIUM' : m.tier_quality } : m
+        m.id === item.id ? { ...m, needs_upgrade: false, tier_quality: 'UNKNOWN' } : m
       ))
       setSelectedShowEpisodes(prev => prev.map(e =>
-        e.id === item.id ? { ...e, needs_upgrade: false, tier_quality: e.tier_quality === 'LOW' ? 'MEDIUM' : e.tier_quality } : e
+        e.id === item.id ? { ...e, needs_upgrade: false, tier_quality: 'UNKNOWN' } : e
       ))
       emitDismissUpgrade({ mediaId: item.id })
       window.dispatchEvent(new CustomEvent('exclusions-changed'))

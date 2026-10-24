@@ -266,8 +266,10 @@ export function ActivityPanel() {
           isOpen ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0 pointer-events-none'
         }`}
         style={{
-          width: panelSize.width,
-          height: panelSize.height,
+          width: `min(${panelSize.width}px, calc(100vw - 1rem))`,
+          height: `min(${panelSize.height}px, calc(100vh - 1rem))`,
+          maxWidth: 'calc(100vw - 1rem)',
+          maxHeight: 'calc(100vh - 1rem)',
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 12px 24px -8px rgba(0, 0, 0, 0.3)'
         }}
       >
