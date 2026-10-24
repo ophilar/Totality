@@ -78,7 +78,29 @@ export function registerTranscodingHandlers(): void {
       operation.dispose()
     }
   })
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.transcodingStartPreflightShow, PreflightShowTranscodeSchema, async (_event, request) => {
+    const { requestId, ...preflightRequest } = request
+    const operation = operationRequestRegistry.registerBackground(requestId, {
+      kind: 'optimization-preflight',
+      label: 'Preflighting TV series',
+      context: preflightRequest.seriesTitle ?? `Episode ${preflightRequest.mediaItemId}`,
+    })
+    getLoggingService().info('[TVOptimization]', `Background preflight accepted: requestId=${requestId}, series=${preflightRequest.seriesIdentityKey ?? 'episode'}, mediaItem=${preflightRequest.mediaItemId ?? 'all'}`)
+    void getTranscodingService().preflightShowTranscode(preflightRequest, {
+      signal: operation.signal,
+      beginCommit: operation.beginCommit,
+      waitUntilRunning: operation.waitUntilRunning,
+      update: operation.update,
+    }).then(result => {
+      operation.complete('completed', 'Optimization review is ready', { preflightId: result.preflightId })
+    }).catch(error => {
+      getLoggingService().error('[TVOptimization]', `Background preflight failed: series=${preflightRequest.seriesIdentityKey ?? 'episode'}, mediaItem=${preflightRequest.mediaItemId ?? 'all'}, source=${preflightRequest.sourceId}, library=${preflightRequest.libraryId ?? 'n/a'}:`, getErrorMessage(error))
+      operation.complete(operation.signal.aborted ? 'cancelled' : 'failed', getErrorMessage(error))
+    })
+    return { requestId }
+  })
   createValidatedIpcHandler(IPC_CHANNELS.transcodingPreflightRemux, z.number().int().positive(), async (mediaItemId) => getTranscodingService().preflightRemux(mediaItemId))
+  createValidatedIpcHandler(IPC_CHANNELS.transcodingGetShowPreflight, NonEmptyStringSchema, async (preflightId) => getTranscodingService().getShowPreflight(preflightId))
 
   createValidatedIpcHandler(IPC_CHANNELS.transcodingDiscardShow, QueueShowTranscodeSchema, async (preflightId) => getTranscodingService().discardShowPreflight(preflightId))
   createValidatedIpcHandler(IPC_CHANNELS.transcodingOpenShowSample, z.tuple([NonEmptyStringSchema, z.number().int().positive(), z.number().int().nonnegative()]), async (preflightId, mediaItemId, index) => {

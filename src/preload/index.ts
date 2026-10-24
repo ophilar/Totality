@@ -879,6 +879,8 @@ const electronAPI = {
   seriesGetAudioLanguagesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke(IPC_CHANNELS.seriesGetAudioLanguagesByIdentity, seriesTitle, sourceId, seriesIdentityKey, libraryId),
   seriesAnalyzeByIdentity: (seriesIdentityKey: string, sourceId?: string, libraryId?: string) => ipcRenderer.invoke(IPC_CHANNELS.seriesAnalyzeByIdentity, seriesIdentityKey, sourceId, libraryId),
   preflightShow: (request: unknown) => ipcRenderer.invoke(IPC_CHANNELS.transcodingPreflightShow, request),
+  startPreflightShow: (request: unknown) => ipcRenderer.invoke(IPC_CHANNELS.transcodingStartPreflightShow, request),
+  getShowPreflight: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingGetShowPreflight, preflightId),
   queueShow: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingQueueShow, preflightId),
   approveShow: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingApproveShow, preflightId),
   discardShow: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingDiscardShow, preflightId),
@@ -2019,6 +2021,8 @@ interface ExistingElectronAPI {
   seriesGetAudioLanguagesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<string[]>
   seriesAnalyzeByIdentity: (seriesIdentityKey: string, sourceId?: string, libraryId?: string) => Promise<any>
   preflightShow: (request: any) => Promise<any>
+  startPreflightShow: (request: any) => Promise<{ requestId: string }>
+  getShowPreflight: (preflightId: string) => Promise<any>
   queueShow: (preflightId: string) => Promise<any>
   approveShow: (preflightId: string) => Promise<any>
   discardShow: (preflightId: string) => Promise<any>

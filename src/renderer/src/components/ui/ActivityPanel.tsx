@@ -36,6 +36,7 @@ import {
 } from 'lucide-react'
 import { SortableQueueItem } from './SortableQueueItem'
 import type { QueueState } from '@main/types/taskQueue'
+import type { ActivityOperation } from '@main/ipc/utils/OperationRequestRegistry'
 import { getActiveThemeClass } from '../../contexts/ThemeContext'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -68,6 +69,7 @@ export function ActivityPanel() {
     isPaused: false,
     completedTasks: [],
   })
+  const [operations, setOperations] = useState<ActivityOperation[]>([])
   const { notifications, unreadCount, error: notificationError, markAllRead: handleMarkAllRead, markRead: handleMarkRead, clear: handleClearNotifications } = useNotifications({ limit: 50, isOpen, refreshIntervalMs: 10000 })
 
   // Configure dnd-kit sensors
@@ -107,6 +109,13 @@ export function ActivityPanel() {
     return () => {
       unsubscribeQueue?.()
     }
+  }, [])
+
+  useEffect(() => {
+    const applySnapshot = (snapshot: { operations: ActivityOperation[] }) => setOperations(snapshot.operations)
+    const unsubscribe = window.electronAPI.onOperationsUpdated?.(applySnapshot)
+    window.electronAPI.operationsGetActivity?.().then(applySnapshot)
+    return () => unsubscribe?.()
   }, [])
 
   // Resize handlers - using requestAnimationFrame for smooth updates
@@ -186,6 +195,18 @@ export function ActivityPanel() {
 
   const handleClearQueue = useCallback(() => {
     window.electronAPI.taskQueueClearQueue?.()
+  }, [])
+
+  const handleOperationPause = useCallback((operation: ActivityOperation) => {
+    void window.electronAPI.operationsSetPaused(operation.requestId, operation.state !== 'paused')
+  }, [])
+
+  const handleOperationCancel = useCallback((operation: ActivityOperation) => {
+    void window.electronAPI.dbCancelOperation(operation.requestId)
+  }, [])
+
+  const handleOperationDismiss = useCallback((operation: ActivityOperation) => {
+    void window.electronAPI.operationsDismiss(operation.requestId)
   }, [])
 
   // dnd-kit drag handler
@@ -402,6 +423,33 @@ export function ActivityPanel() {
             )}
           </div>
         </div>
+
+        {operations.length > 0 && (
+          <div className="max-h-48 overflow-y-auto border-b border-border/30">
+            <div className="px-4 py-2 bg-muted/20 text-xs font-medium text-muted-foreground uppercase tracking-wider">Background operations</div>
+            {operations.map(operation => (
+              <div key={operation.requestId} className="px-4 py-2 border-t border-border/10">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium truncate">{operation.label}</span>
+                  {operation.outcome ? (
+                    <div className="flex gap-2">
+                      {operation.resultId && <button onClick={() => window.dispatchEvent(new CustomEvent('tvOptimization:review', { detail: { preflightId: operation.resultId } }))} className="text-[11px] text-primary hover:text-primary/80">Review</button>}
+                      <button onClick={() => handleOperationDismiss(operation)} className="text-[11px] text-muted-foreground hover:text-foreground">Dismiss</button>
+                    </div>
+                  ) : operation.kind === 'optimization-preflight' ? (
+                    <div className="flex gap-2">
+                      <button onClick={() => handleOperationPause(operation)} className="text-[11px] text-muted-foreground hover:text-foreground">{operation.state === 'paused' ? 'Resume' : 'Pause'}</button>
+                      <button onClick={() => handleOperationCancel(operation)} className="text-[11px] text-destructive hover:text-destructive/80">Stop</button>
+                    </div>
+                  ) : null}
+                </div>
+                <p className="text-[11px] text-muted-foreground truncate">{operation.outcome?.message ?? operation.phase ?? operation.context ?? operation.state}</p>
+                {operation.progress && <div className="mt-1 h-1 overflow-hidden rounded bg-muted"><div className="h-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, operation.progress.percentage))}%` }} /></div>}
+                {operation.progress?.currentItem && <p className="mt-1 text-[10px] text-muted-foreground truncate">{operation.progress.currentItem}</p>}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Notifications Section */}
         <div className="flex-1 min-h-0 flex flex-col">

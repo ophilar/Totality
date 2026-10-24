@@ -1,4 +1,5 @@
 import type { WebContents } from 'electron'
+import { BrowserWindow } from 'electron'
 
 export type ActivityOperationKind = 'duplicate-scan' | 'ai-report' | 'timeline' | 'plex-playlist' | 'update-download' | 'sonarr-wait' | 'optimization-preflight'
 export type ActivityOperationState = 'running' | 'pausing' | 'paused' | 'cancelling' | 'finishing' | 'completed' | 'cancelled' | 'partial' | 'failed'
@@ -12,13 +13,15 @@ export interface ActivityOperation {
   phase?: string
   progress?: { percentage: number; currentItem?: string }
   outcome?: { message: string; hasResult: boolean }
+  resultId?: string
   createdAt: string
   updatedAt: string
 }
 
 interface RequestEntry {
-  owner: WebContents
-  ownerId: number
+  owner: WebContents | null
+  ownerId?: number
+  disposeOwnerListener?: () => void
   controller: AbortController
   state: 'active' | 'committing'
   activity?: ActivityOperation
@@ -67,14 +70,34 @@ export class OperationRequestRegistry {
       owner.removeListener('destroyed', onOwnerDestroyed)
     }
     owner.once('destroyed', onOwnerDestroyed)
+    entry.disposeOwnerListener = () => owner.removeListener('destroyed', onOwnerDestroyed)
     if (entry.activity) this.owners.set(owner.id, owner)
     this.requests.set(key, entry)
     if (entry.activity) this.publish(entry)
 
+    return this.createHandle(entry, key)
+  }
+
+  registerBackground(requestId: string, activity: Pick<ActivityOperation, 'kind' | 'label' | 'context'>): RegisteredOperationRequest {
+    const key = `background:${requestId}`
+    if (this.requests.has(key)) throw new Error(`Background operation ${requestId} is already active`)
+    const now = new Date().toISOString()
+    const entry: RequestEntry = {
+      owner: null,
+      controller: new AbortController(),
+      state: 'active',
+      activity: { ...activity, requestId, state: 'running', createdAt: now, updatedAt: now },
+    }
+    this.requests.set(key, entry)
+    this.publish(entry)
+    return this.createHandle(entry, key)
+  }
+
+  private createHandle(entry: RequestEntry, key: string): RegisteredOperationRequest {
     return {
-      signal: controller.signal,
+      signal: entry.controller.signal,
       beginCommit: () => {
-        controller.signal.throwIfAborted()
+        entry.controller.signal.throwIfAborted()
         entry.state = 'committing'
         entry.paused = false
         entry.resumeWaiter?.()
@@ -94,7 +117,7 @@ export class OperationRequestRegistry {
         this.publish(entry)
       },
       waitUntilRunning: async () => {
-        controller.signal.throwIfAborted()
+        entry.controller.signal.throwIfAborted()
         if (!entry.paused) return
         if (entry.activity?.state === 'pausing') {
           entry.activity.state = 'paused'
@@ -102,12 +125,12 @@ export class OperationRequestRegistry {
           this.publish(entry)
         }
         await new Promise<void>(resolve => { entry.resumeWaiter = resolve })
-        controller.signal.throwIfAborted()
+        entry.controller.signal.throwIfAborted()
       },
       complete: (state, message, result) => this.finishEntry(entry, state, message, result),
       dispose: () => {
-        if (!entry.activity || !entry.activity.outcome || owner.isDestroyed()) {
-          owner.removeListener('destroyed', onOwnerDestroyed)
+        if (!entry.activity || !entry.activity.outcome || !entry.owner || entry.owner.isDestroyed()) {
+          entry.disposeOwnerListener?.()
           this.requests.delete(key)
         }
       },
@@ -115,7 +138,7 @@ export class OperationRequestRegistry {
   }
 
   cancel(ownerId: number, requestId: string): 'cancelling' | 'committing' | 'missing' {
-    const entry = this.requests.get(`${ownerId}:${requestId}`)
+    const entry = this.requests.get(`${ownerId}:${requestId}`) ?? this.requests.get(`background:${requestId}`)
     if (!entry) return 'missing'
     if (entry.activity?.outcome) return 'missing'
     if (entry.state === 'committing') return 'committing'
@@ -132,7 +155,7 @@ export class OperationRequestRegistry {
   }
 
   setPaused(ownerId: number, requestId: string, paused: boolean): 'pausing' | 'paused' | 'running' | 'committing' | 'missing' {
-    const entry = this.requests.get(`${ownerId}:${requestId}`)
+    const entry = this.requests.get(`${ownerId}:${requestId}`) ?? this.requests.get(`background:${requestId}`)
     if (!entry?.activity || entry.activity.outcome || entry.activity.kind !== 'optimization-preflight') return 'missing'
     if (entry.state === 'committing') return 'committing'
     if (paused) {
@@ -155,25 +178,27 @@ export class OperationRequestRegistry {
 
   getSnapshot(ownerId: number): { revision: number; operations: ActivityOperation[] } {
     const operations = [...this.requests.values()]
-      .filter(entry => entry.ownerId === ownerId && entry.activity)
+      .filter(entry => (entry.ownerId === ownerId || entry.ownerId === undefined) && entry.activity)
       .map(entry => structuredClone(entry.activity!))
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
     return { revision: this.revision, operations }
   }
 
   getResult(ownerId: number, requestId: string): unknown {
-    const entry = this.requests.get(`${ownerId}:${requestId}`)
+    const entry = this.requests.get(`${ownerId}:${requestId}`) ?? this.requests.get(`background:${requestId}`)
     if (!entry?.activity) throw new Error(`No background operation exists for request ${requestId}`)
     return entry.result
   }
 
   dismiss(ownerId: number, requestId: string): void {
-    const key = `${ownerId}:${requestId}`
+    const ownerKey = `${ownerId}:${requestId}`
+    const backgroundKey = `background:${requestId}`
+    const key = this.requests.has(ownerKey) ? ownerKey : backgroundKey
     const entry = this.requests.get(key)
     if (!entry?.activity?.outcome) throw new Error(`Operation ${requestId} cannot be dismissed before it finishes`)
     this.requests.delete(key)
     this.revision++
-    this.publishSnapshot(entry.ownerId, entry.owner)
+    this.publishSnapshot(entry.ownerId, entry.owner ?? undefined)
   }
 
   private finishEntry(entry: RequestEntry, state: Extract<ActivityOperationState, 'completed' | 'cancelled' | 'partial' | 'failed'>, message: string, result?: unknown): void {
@@ -182,6 +207,9 @@ export class OperationRequestRegistry {
     entry.activity.phase = undefined
     entry.activity.progress = undefined
     entry.activity.outcome = { message, hasResult: result !== undefined }
+    if (result && typeof result === 'object' && 'preflightId' in result && typeof result.preflightId === 'string') {
+      entry.activity.resultId = result.preflightId
+    }
     entry.activity.updatedAt = new Date().toISOString()
     entry.result = result
     this.publish(entry)
@@ -192,7 +220,13 @@ export class OperationRequestRegistry {
     this.publishSnapshot(entry.ownerId)
   }
 
-  private publishSnapshot(ownerId: number, fallbackOwner?: WebContents): void {
+  private publishSnapshot(ownerId?: number, fallbackOwner?: WebContents): void {
+    if (ownerId === undefined) {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) window.webContents.send('operations:updated', this.getSnapshot(window.webContents.id))
+      }
+      return
+    }
     const owner = this.owners.get(ownerId) ?? fallbackOwner ?? [...this.requests.values()].find(entry => entry.ownerId === ownerId)?.owner
     if (!owner || owner.isDestroyed()) return
     owner.send('operations:updated', this.getSnapshot(ownerId))

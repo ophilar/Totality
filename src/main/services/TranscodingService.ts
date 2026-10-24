@@ -785,6 +785,17 @@ export class TranscodingService {
     return { batchId: preflight.result.batchId, queuedMediaItemIds: queueableEpisodes.map(episode => episode.mediaItemId) }
   }
 
+  async getShowPreflight(preflightId: string): Promise<{ request: ShowTranscodeRequest; result: ShowTranscodePreflight } | undefined> {
+    const raw = await getDatabase().config.getSetting(`transcoding.preflight.${preflightId}`)
+    if (!raw) return undefined
+    const preflight = JSON.parse(raw) as { request: ShowTranscodeRequest; result: ShowTranscodePreflight }
+    if (Date.now() > Date.parse(preflight.result.expiresAt)) {
+      await this.discardShowPreflight(preflightId)
+      return undefined
+    }
+    return preflight
+  }
+
   private async assertAuthorizedItem(mediaItemId: number): Promise<void> {
     const db = getDatabase()
     const item = await db.media.getItemById(mediaItemId)

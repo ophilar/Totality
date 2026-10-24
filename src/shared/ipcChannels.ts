@@ -354,6 +354,8 @@ export const IPC_CHANNELS = {
   transcodingOpenShowSample: 'transcoding:openShowSample',
   transcodingPreflightRemux: 'transcoding:preflightRemux',
   transcodingPreflightShow: 'transcoding:preflightShow',
+  transcodingStartPreflightShow: 'transcoding:startPreflightShow',
+  transcodingGetShowPreflight: 'transcoding:getShowPreflight',
   transcodingProgress: 'transcoding:progress',
   transcodingPurgeShowQuarantine: 'transcoding:purgeShowQuarantine',
   transcodingQueueShow: 'transcoding:queueShow',
