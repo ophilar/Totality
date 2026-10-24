@@ -56,11 +56,16 @@ export function registerTranscodingHandlers(): void {
 
   createValidatedIpcHandlerWithEvent(IPC_CHANNELS.transcodingPreflightShow, PreflightShowTranscodeSchema, async (event, request) => {
     const { requestId, ...preflightRequest } = request
-    const operation = operationRequestRegistry.register(event.sender, requestId)
+    const operation = operationRequestRegistry.register(event.sender, requestId, {
+      kind: 'optimization-preflight',
+      label: 'Preflighting TV series',
+      context: preflightRequest.seriesTitle ?? `Episode ${preflightRequest.mediaItemId}`,
+    })
     try {
       const result = await getTranscodingService().preflightShowTranscode(preflightRequest, {
         signal: operation.signal,
         beginCommit: operation.beginCommit,
+        update: operation.update,
       })
       operation.complete('completed', 'Optimization review is ready')
       return result

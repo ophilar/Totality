@@ -1,6 +1,6 @@
 import type { WebContents } from 'electron'
 
-export type ActivityOperationKind = 'duplicate-scan' | 'ai-report' | 'timeline' | 'plex-playlist' | 'update-download' | 'sonarr-wait'
+export type ActivityOperationKind = 'duplicate-scan' | 'ai-report' | 'timeline' | 'plex-playlist' | 'update-download' | 'sonarr-wait' | 'optimization-preflight'
 export type ActivityOperationState = 'running' | 'cancelling' | 'finishing' | 'completed' | 'cancelled' | 'partial' | 'failed'
 
 export interface ActivityOperation {
