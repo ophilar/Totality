@@ -125,6 +125,44 @@ export interface ShowTranscodeRequest {
   options: TranscodeOptions
 }
 
+function getPreflightSamplingProfileKey(episode: MediaItem, options: TranscodeOptions, analysis?: FileAnalysisResult): string | undefined {
+  const video = analysis?.video
+  const seasonNumber = episode.season_number
+  const codec = video?.codec ?? episode.video_codec
+  const width = video?.width ?? episode.width
+  const height = video?.height ?? episode.height
+  const bitDepth = video?.bitDepth ?? episode.color_bit_depth
+  const frameRate = video?.frameRate ?? episode.video_frame_rate
+  const colorSpace = video?.colorSpace ?? episode.color_space
+  const rawHdrFormat = video?.hdrFormat ?? episode.hdr_format
+  const normalizedHdrFormat = rawHdrFormat?.trim().toLowerCase()
+  const knownSdrTransfer = ['bt709', 'smpte170m', 'gamma22', 'gamma28'].includes(video?.colorTransfer?.toLowerCase() ?? '')
+  const hdrFormat = normalizedHdrFormat && ['none', 'sdr'].includes(normalizedHdrFormat)
+    ? 'sdr'
+    : normalizedHdrFormat ?? (colorSpace?.toLowerCase().includes('bt709') || knownSdrTransfer ? 'sdr' : undefined)
+  const container = analysis?.container ?? episode.container
+  if (!Number.isInteger(seasonNumber) || !codec?.trim() || !width || width <= 0 || !height || height <= 0 || !bitDepth || bitDepth <= 0 || !frameRate || frameRate <= 0 || !hdrFormat || !container?.trim()) return undefined
+
+  const normalizedContainer = container.split(',')[0].trim().toLowerCase()
+  const containerFamily = normalizedContainer === 'mkv' || normalizedContainer === 'matroska' ? 'matroska'
+    : normalizedContainer === 'm4v' || normalizedContainer === 'mov' || normalizedContainer === 'mp4' ? 'mp4'
+      : normalizedContainer
+  return JSON.stringify([
+    seasonNumber,
+    normalizeVideoCodec(codec),
+    (video?.profile ?? episode.video_profile ?? '').toLowerCase(),
+    video?.level ?? episode.video_level ?? null,
+    width,
+    height,
+    bitDepth,
+    Math.round(frameRate * 100) / 100,
+    hdrFormat,
+    (colorSpace ?? '').toLowerCase(),
+    containerFamily,
+    options,
+  ])
+}
+
 export interface QuarantinedShowFile {
   mediaItemId: number
   label: string
@@ -193,13 +231,16 @@ export interface ShowTranscodePreflight {
     params?: TranscodingParams
     sourceAnalysis?: FileAnalysisResult
     targetProfile?: PlaybackTargetProfile
+    samplingRole?: 'measured' | 'projected'
+    sampleRepresentativeMediaItemId?: number
+    sampleRepresentativeLabel?: string
     samplePaths?: string[]
     sampleHashes?: string[]
     changes?: string[]
   }>
   estimatedSavingsBytes?: number | null
   savingsCoverage?: OptimizationSavingsCoverage
-  savingsBasis?: 'sample_based_projection' | 'mixed_sample_projection' | 'planned_operations'
+  savingsBasis?: 'sample_based_projection' | 'mixed_sample_projection' | 'representative_sample_projection' | 'mixed_representative_sample_projection' | 'planned_operations'
 }
 
 /**
@@ -298,6 +339,28 @@ export class TranscodingService {
       })
     }
 
+    const samplingGroups = new Map<string, typeof episodes>()
+    for (const episode of episodes) {
+      const key = getPreflightSamplingProfileKey(episode, request.options) ?? `episode:${episode.id ?? episode.file_path}`
+      samplingGroups.set(key, [...(samplingGroups.get(key) ?? []), episode])
+    }
+    const representativeForGroup = (group: typeof episodes) => [...group].sort((left, right) =>
+      (left.episode_number ?? left.id ?? 0) - (right.episode_number ?? right.id ?? 0)
+    )[Math.floor((group.length - 1) / 2)]
+    const representativeByGroup = [...samplingGroups.values()].map(representativeForGroup)
+    const representativeIds = new Set(representativeByGroup.map(episode => episode.id ?? 0))
+    const representativeIdByEpisodeId = new Map<number, number>()
+    for (const group of samplingGroups.values()) {
+      const representative = representativeForGroup(group)
+      for (const episode of group) representativeIdByEpisodeId.set(episode.id ?? 0, representative.id ?? 0)
+    }
+    const processingOrder = [
+      ...representativeByGroup,
+      ...episodes.filter(episode => !representativeIds.has(episode.id ?? 0)),
+    ]
+    const processedPlans = new Map<number, { plan: ShowTranscodePreflight['episodes'][0]; profileKey?: string }>()
+    getLoggingService().info('[TVOptimization]', `Sampling groups selected: episodes=${episodes.length}, sampleRepresentatives=${representativeByGroup.length}, policy=one-per-season-and-technical-profile`)
+
     const processEpisode = async (episode: typeof episodes[0]): Promise<ShowTranscodePreflight['episodes'][0]> => {
       const label = request.mediaItemId === undefined
         ? `${request.seriesTitle} S${String(episode.season_number || 0).padStart(2, '0')}E${String(episode.episode_number || 0).padStart(2, '0')} ${episode.title}`
@@ -319,6 +382,16 @@ export class TranscodingService {
         if (!analysis.success || analysis.filePath !== episode.file_path || analysis.fileSizeBytes !== stat.size || !analysis.video) {
           throw new Error(`File analysis is incomplete or stale for "${label}"`)
         }
+        const actualSamplingProfileKey = getPreflightSamplingProfileKey(episode, request.options, analysis)
+        const representativeId = representativeIdByEpisodeId.get(episode.id) ?? episode.id
+        const representativePlan = representativeId === episode.id ? undefined : processedPlans.get(representativeId)
+        const reusableRepresentativePlan = representativePlan && actualSamplingProfileKey !== undefined && representativePlan.profileKey === actualSamplingProfileKey &&
+          representativePlan.plan.compatible &&
+          representativePlan.plan.decisionStatus === 'sample_required' &&
+          representativePlan.plan.params?.measuredCandidate &&
+          representativePlan.plan.measuredParameters
+          ? representativePlan.plan
+          : undefined
         this.analysisCache.set(episode.file_path, analysis)
         const advice = getQualityAnalyzer().getOptimizationAdvice(episode, analysis)
         const sourcePlan = buildStreamSelectionPlan(analysis, request.options)
@@ -382,22 +455,29 @@ export class TranscodingService {
         let targetCompatibility = sourceCompatibility
         try {
           if (shouldEncode) {
-          publishPreflightProgress(episode, 'Measuring representative encode samples')
-          const measuredParameters = await this.selectMeasuredParameters(
-            episode.file_path,
-            options,
-            sampleDirectory,
-            operation?.signal,
-            phase => publishPreflightProgress(episode, phase),
-          )
-            Object.assign(options, measuredParameters)
-            options.useGpu = measuredParameters.encoder !== 'x265' && measuredParameters.encoder !== 'svt_av1'
+            if (reusableRepresentativePlan) {
+              publishPreflightProgress(episode, `Using measured settings from ${reusableRepresentativePlan.label}`)
+              Object.assign(options, reusableRepresentativePlan.measuredParameters)
+            } else {
+              publishPreflightProgress(episode, 'Measuring encode samples for this episode')
+              const measuredParameters = await this.selectMeasuredParameters(
+                episode.file_path,
+                options,
+                sampleDirectory,
+                operation?.signal,
+                phase => publishPreflightProgress(episode, phase),
+              )
+              Object.assign(options, measuredParameters)
+            }
+            options.useGpu = options.encoder !== 'x265' && options.encoder !== 'svt_av1'
             if (!options.useGpu) options.gpuId = undefined
           }
           params = await this.getTranscodeParameters(episode.file_path, options)
           if (shouldEncode) {
-            params.measuredCandidate = (options as TranscodeOptions & { measuredCandidate?: MeasuredCandidate }).measuredCandidate
-            const samplePaths = params.measuredCandidate!.samplePaths!
+            params.measuredCandidate = reusableRepresentativePlan
+              ? { ...reusableRepresentativePlan.params!.measuredCandidate!, samplePaths: undefined }
+              : (options as TranscodeOptions & { measuredCandidate?: MeasuredCandidate }).measuredCandidate
+            const samplePaths = params.measuredCandidate!.samplePaths ?? []
             for (let sampleIndex = 0; sampleIndex < samplePaths.length; sampleIndex++) {
               const samplePath = samplePaths[sampleIndex]
               publishPreflightProgress(episode, `Verifying measured sample ${sampleIndex + 1} of ${samplePaths.length}`)
@@ -438,7 +518,7 @@ export class TranscodingService {
           ? 'insufficient'
           : shouldEncode || audioConversions.length > 0 ? 'estimated' : 'measured'
         const savingsBasis = shouldEncode
-          ? 'video_sample_encode'
+          ? reusableRepresentativePlan ? 'representative_video_sample_projection' : 'video_sample_encode'
           : plannedSavingsOperations.length === 0 ? 'insufficient_data'
           : audioConversions.length > 0 ? 'audio_transcode_model'
           : 'audio_stream_removal'
@@ -453,12 +533,20 @@ export class TranscodingService {
             ...(shouldEncode ? ['video_transcode' as const] : []),
             ...(audioConversions.length > 0 ? ['audio_transcode' as const] : []),
           ],
-          decisionStatus: shouldEncode ? 'sample_required' : 'actionable', evidenceStatus, savingsCoverage: savingsBreakdown.coverage, confidence: evidenceStatus === 'measured' ? 'high' : evidenceStatus === 'estimated' ? 'medium' : 'none',
+          decisionStatus: shouldEncode ? 'sample_required' : 'actionable', evidenceStatus, savingsCoverage: reusableRepresentativePlan ? 'partial' : savingsBreakdown.coverage, confidence: evidenceStatus === 'measured' ? 'high' : evidenceStatus === 'estimated' ? 'medium' : 'none',
           estimatedSavingsBytes: savingsBreakdown.totalEstimatedSavingsBytes,
           savingsBasis, sourceTier: advice.sourceTier, adviceReason: preserveDynamicHdr && !shouldEncode
             ? sourceCompatibility?.overall === 'compatible' ? 'Dynamic HDR source video is preserved; only the container or selected streams are remuxed.' : 'Dynamic HDR source video is preserved without re-encoding, but the selected playback target is not fully satisfied by the source and allowed remux operations.'
-            : shouldEncode ? 'Measured encoding passed the selected quality gates. Review all three samples before approval.' : advice.reason,
-          targetCompatibility, options, params, sourceAnalysis: analysis, targetProfile, samplePaths, sampleHashes: samplePaths ? await Promise.all(samplePaths.map(sha256File)) : undefined, changes: [...(options.targetConversion?.changes ?? []), ...audioConversions.map(track => `Convert audio stream ${track.sourceIndex} to ${track.codec.toUpperCase()} at ${track.bitrateKbps} kbps`), ...(removedSubtitleTracks.length ? [`Remove ${removedSubtitleTracks.length} subtitle stream${removedSubtitleTracks.length === 1 ? '' : 's'} excluded by the selected language policy`] : [])],
+            : shouldEncode
+              ? reusableRepresentativePlan
+                ? `Representative sample from ${reusableRepresentativePlan.label} passed the selected quality gates; savings are projected for this episode.`
+                : 'Measured encoding passed the selected quality gates. Review the samples before approval.'
+              : advice.reason,
+          targetCompatibility, options, params, sourceAnalysis: analysis, targetProfile,
+          samplingRole: shouldEncode ? reusableRepresentativePlan ? 'projected' : 'measured' : undefined,
+          sampleRepresentativeMediaItemId: reusableRepresentativePlan?.mediaItemId,
+          sampleRepresentativeLabel: reusableRepresentativePlan?.label,
+          samplePaths, sampleHashes: samplePaths ? await Promise.all(samplePaths.map(sha256File)) : undefined, changes: [...(options.targetConversion?.changes ?? []), ...audioConversions.map(track => `Convert audio stream ${track.sourceIndex} to ${track.codec.toUpperCase()} at ${track.bitrateKbps} kbps`), ...(removedSubtitleTracks.length ? [`Remove ${removedSubtitleTracks.length} subtitle stream${removedSubtitleTracks.length === 1 ? '' : 's'} excluded by the selected language policy`] : [])],
           measuredParameters: { encoder: params.encoder, crf: params.crf, preset: params.preset },
         }
       } catch (error) {
@@ -484,17 +572,27 @@ export class TranscodingService {
 
     // Parallel preflight processing in concurrency batches of 4
     const CONCURRENCY = 4
-    const results: ShowTranscodePreflight['episodes'] = []
-    for (let i = 0; i < episodes.length; i += CONCURRENCY) {
-      const chunk = episodes.slice(i, i + CONCURRENCY)
+    const episodeResults = new Map<number, ShowTranscodePreflight['episodes'][number]>()
+    for (let i = 0; i < processingOrder.length; i += CONCURRENCY) {
+      const chunk = processingOrder.slice(i, i + CONCURRENCY)
       operation?.update({
-        phase: `Starting episodes ${i + 1}–${Math.min(i + chunk.length, episodes.length)} of ${episodes.length}`,
+        phase: `Starting episodes ${i + 1}–${Math.min(i + chunk.length, processingOrder.length)} of ${processingOrder.length}`,
         progress: { percentage: Math.round((completedEpisodes / episodes.length) * 100), currentItem: 'Preparing episode checks' },
       })
-      const chunkResults = await Promise.allSettled(chunk.map((ep: any) => processEpisode(ep)))
+      const chunkResults = await Promise.allSettled(chunk.map(episode => processEpisode(episode)))
       const rejected = chunkResults.find((result): result is PromiseRejectedResult => result.status === 'rejected')
       if (rejected) throw rejected.reason
-      results.push(...chunkResults.map(result => (result as PromiseFulfilledResult<ShowTranscodePreflight['episodes'][0]>).value))
+      chunkResults.forEach((result, index) => {
+        const episode = chunk[index]
+        const plan = (result as PromiseFulfilledResult<ShowTranscodePreflight['episodes'][0]>).value
+        episodeResults.set(episode.id ?? 0, plan)
+        processedPlans.set(episode.id ?? 0, {
+          plan,
+          profileKey: plan.sourceAnalysis
+            ? getPreflightSamplingProfileKey(episode, request.options, plan.sourceAnalysis)
+            : undefined,
+        })
+      })
       completedEpisodes += chunk.length
       for (const episode of chunk) activeEpisodeSteps.delete(episode.id ?? 0)
       operation?.update({
@@ -503,6 +601,12 @@ export class TranscodingService {
       })
       operation?.signal.throwIfAborted()
     }
+
+    const results = episodes.map(episode => {
+      const result = episodeResults.get(episode.id ?? 0)
+      if (!result) throw new Error(`Preflight did not produce a result for episode ${episode.title}`)
+      return result
+    })
 
     const planMetrics = aggregateShowOptimizationMetrics(results
       .filter(episode => episode.compatible && episode.operations.length > 0)
@@ -526,13 +630,17 @@ export class TranscodingService {
       episodes: results,
       estimatedSavingsBytes: planMetrics.totalEstimatedSavingsBytes,
       savingsCoverage: planMetrics.coverage,
-      savingsBasis: results.some(episode => episode.savingsBasis === 'video_sample_encode')
-        ? results.filter(episode => episode.compatible && episode.operations.length > 0).every(episode => episode.savingsBasis === 'video_sample_encode')
-          ? 'sample_based_projection'
-          : 'mixed_sample_projection'
-        : 'planned_operations',
+      savingsBasis: results.some(episode => episode.savingsBasis === 'representative_video_sample_projection')
+        ? results.some(episode => episode.savingsBasis === 'video_sample_encode')
+          ? 'mixed_representative_sample_projection'
+          : 'representative_sample_projection'
+        : results.some(episode => episode.savingsBasis === 'video_sample_encode')
+          ? results.filter(episode => episode.compatible && episode.operations.length > 0).every(episode => episode.savingsBasis === 'video_sample_encode')
+            ? 'sample_based_projection'
+            : 'mixed_sample_projection'
+          : 'planned_operations',
     }
-    getLoggingService().info('[TVOptimization]', `Preflight completed: preflight=${preflightId}, batch=${batchId}, series=${request.seriesIdentityKey ?? 'episode'}, episodes=${episodes.length}, compatible=${results.filter(episode => episode.compatible).length}, actionable=${results.filter(episode => episode.compatible && episode.operations.length > 0).length}, savingsBytes=${planMetrics.totalEstimatedSavingsBytes ?? 'unknown'}, coverage=${planMetrics.coverage}`)
+    getLoggingService().info('[TVOptimization]', `Preflight completed: preflight=${preflightId}, batch=${batchId}, series=${request.seriesIdentityKey ?? 'episode'}, episodes=${episodes.length}, sampleRepresentatives=${results.filter(episode => episode.samplingRole === 'measured').length}, projectedEpisodes=${results.filter(episode => episode.samplingRole === 'projected').length}, compatible=${results.filter(episode => episode.compatible).length}, actionable=${results.filter(episode => episode.compatible && episode.operations.length > 0).length}, savingsBytes=${planMetrics.totalEstimatedSavingsBytes ?? 'unknown'}, coverage=${planMetrics.coverage}`)
     operation?.signal.throwIfAborted()
     operation?.beginCommit()
     this.showPreflights.set(preflightId, { request, result })
