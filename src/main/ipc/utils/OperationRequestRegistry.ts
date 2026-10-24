@@ -1,7 +1,7 @@
 import type { WebContents } from 'electron'
 
 export type ActivityOperationKind = 'duplicate-scan' | 'ai-report' | 'timeline' | 'plex-playlist' | 'update-download' | 'sonarr-wait' | 'optimization-preflight'
-export type ActivityOperationState = 'running' | 'cancelling' | 'finishing' | 'completed' | 'cancelled' | 'partial' | 'failed'
+export type ActivityOperationState = 'running' | 'pausing' | 'paused' | 'cancelling' | 'finishing' | 'completed' | 'cancelled' | 'partial' | 'failed'
 
 export interface ActivityOperation {
   requestId: string
@@ -23,6 +23,8 @@ interface RequestEntry {
   state: 'active' | 'committing'
   activity?: ActivityOperation
   result?: unknown
+  paused?: boolean
+  resumeWaiter?: () => void
 }
 
 export interface RegisteredOperationRequest {
@@ -30,6 +32,7 @@ export interface RegisteredOperationRequest {
   beginCommit: () => void
   setResult: (result: unknown) => void
   update: (update: { phase?: string; progress?: ActivityOperation['progress'] }) => void
+  waitUntilRunning: () => Promise<void>
   complete: (state: Extract<ActivityOperationState, 'completed' | 'cancelled' | 'partial' | 'failed'>, message: string, result?: unknown) => void
   dispose: () => void
 }
@@ -54,6 +57,9 @@ export class OperationRequestRegistry {
     }
     const onOwnerDestroyed = () => {
       if (entry.activity?.outcome || entry.state === 'active') this.requests.delete(key)
+      entry.paused = false
+      entry.resumeWaiter?.()
+      entry.resumeWaiter = undefined
       if (!entry.activity?.outcome && entry.state === 'active' && !controller.signal.aborted) {
         controller.abort(new DOMException('The owning renderer was closed', 'AbortError'))
       }
@@ -70,6 +76,9 @@ export class OperationRequestRegistry {
       beginCommit: () => {
         controller.signal.throwIfAborted()
         entry.state = 'committing'
+        entry.paused = false
+        entry.resumeWaiter?.()
+        entry.resumeWaiter = undefined
         if (entry.activity) {
           entry.activity.state = 'finishing'
           entry.activity.updatedAt = new Date().toISOString()
@@ -83,6 +92,17 @@ export class OperationRequestRegistry {
         entry.activity.progress = update.progress
         entry.activity.updatedAt = new Date().toISOString()
         this.publish(entry)
+      },
+      waitUntilRunning: async () => {
+        controller.signal.throwIfAborted()
+        if (!entry.paused) return
+        if (entry.activity?.state === 'pausing') {
+          entry.activity.state = 'paused'
+          entry.activity.updatedAt = new Date().toISOString()
+          this.publish(entry)
+        }
+        await new Promise<void>(resolve => { entry.resumeWaiter = resolve })
+        controller.signal.throwIfAborted()
       },
       complete: (state, message, result) => this.finishEntry(entry, state, message, result),
       dispose: () => {
@@ -104,8 +124,33 @@ export class OperationRequestRegistry {
       entry.activity.updatedAt = new Date().toISOString()
       this.publish(entry)
     }
+    entry.paused = false
+    entry.resumeWaiter?.()
+    entry.resumeWaiter = undefined
     entry.controller.abort(new DOMException('Operation cancelled by the user', 'AbortError'))
     return 'cancelling'
+  }
+
+  setPaused(ownerId: number, requestId: string, paused: boolean): 'pausing' | 'paused' | 'running' | 'committing' | 'missing' {
+    const entry = this.requests.get(`${ownerId}:${requestId}`)
+    if (!entry?.activity || entry.activity.outcome || entry.activity.kind !== 'optimization-preflight') return 'missing'
+    if (entry.state === 'committing') return 'committing'
+    if (paused) {
+      if (entry.paused) return entry.activity.state === 'paused' ? 'paused' : 'pausing'
+      entry.paused = true
+      entry.activity.state = 'pausing'
+      entry.activity.updatedAt = new Date().toISOString()
+      this.publish(entry)
+      return 'pausing'
+    }
+    if (!entry.paused) return 'running'
+    entry.paused = false
+    entry.activity.state = 'running'
+    entry.activity.updatedAt = new Date().toISOString()
+    entry.resumeWaiter?.()
+    entry.resumeWaiter = undefined
+    this.publish(entry)
+    return 'running'
   }
 
   getSnapshot(ownerId: number): { revision: number; operations: ActivityOperation[] } {

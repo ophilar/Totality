@@ -208,6 +208,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
   const [preflightData, setPreflightData] = useState<ShowTranscodePreflight | null>(null)
   const [preflightTermination, setPreflightTermination] = useState<'cancelling' | 'finishing' | null>(null)
   const [preflightProgress, setPreflightProgress] = useState<{ percentage: number; phase?: string; currentItem?: string } | null>(null)
+  const [preflightOperationState, setPreflightOperationState] = useState<'running' | 'pausing' | 'paused' | 'finishing' | null>(null)
   const [quarantineFiles, setQuarantineFiles] = useState<Array<{ mediaItemId: number; label: string; path: string; size: number; modifiedAt: string; owned: boolean }>>([])
   const modalRef = useRef<HTMLDivElement | null>(null)
   const activePreflightRequestId = useRef<string | null>(null)
@@ -516,9 +517,13 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     activePreflightRequestId.current = requestId
     setPreflightTermination(null)
     setPreflightProgress({ percentage: 0, phase: 'Starting preflight', currentItem: 'Loading series episodes' })
+    setPreflightOperationState('running')
     const unsubscribeProgress = window.electronAPI.onOperationsUpdated?.(({ operations }) => {
       const operation = operations.find(candidate => candidate.requestId === requestId)
       if (operation) {
+        if (operation.state === 'running' || operation.state === 'pausing' || operation.state === 'paused' || operation.state === 'finishing') {
+          setPreflightOperationState(operation.state)
+        }
         setPreflightProgress({
           percentage: operation.progress?.percentage ?? 0,
           phase: operation.phase ?? (operation.state === 'finishing' ? 'Saving optimization review' : operation.label),
@@ -548,6 +553,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
       activePreflightRequestId.current = null
       setPreflightTermination(null)
       setPreflightProgress(null)
+      setPreflightOperationState(null)
       if (closeAfterPreflight.current) {
         closeAfterPreflight.current = false
         try {
@@ -711,8 +717,32 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
   const preflightProgressPanel = busy && preflightProgress ? (
     <div role="status" aria-live="polite" className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-2">
       <div className="flex items-center justify-between gap-3 text-xs">
-        <span className="font-semibold">{preflightProgress.phase || 'Preflighting series'}</span>
-        <span className="text-muted-foreground tabular-nums">{preflightProgress.percentage}%</span>
+        <span className="font-semibold">{preflightOperationState === 'paused' ? 'Preflight paused' : preflightProgress.phase || 'Preflighting series'}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-muted-foreground tabular-nums">{preflightProgress.percentage}%</span>
+          <button
+            type="button"
+            disabled={!activePreflightRequestId.current || preflightTermination !== null || preflightOperationState === 'pausing' || preflightOperationState === 'finishing'}
+            onClick={() => {
+              const requestId = activePreflightRequestId.current
+              if (!requestId) return
+              const shouldPause = preflightOperationState !== 'paused'
+              setPreflightOperationState(shouldPause ? 'pausing' : 'running')
+              void window.electronAPI.operationsSetPaused(requestId, shouldPause).then(result => {
+                logOptimizationDiagnostic('TVOptimizationUI', 'info', shouldPause ? 'preflight.pause.requested' : 'preflight.resume.requested', { requestId, status: result.status })
+                if (result.status === 'pausing' || result.status === 'paused' || result.status === 'running' || result.status === 'committing') {
+                  setPreflightOperationState(result.status === 'committing' ? 'finishing' : result.status)
+                }
+              }).catch(error => {
+                logOptimizationDiagnostic('TVOptimizationUI', 'error', 'preflight.pause-control.failed', { requestId, error: describeDiagnosticError(error) })
+                setMessage(error instanceof Error ? error.message : String(error))
+              })
+            }}
+            className="rounded-md border border-border/60 px-2 py-1 font-semibold hover:bg-muted disabled:opacity-50"
+          >
+            {preflightOperationState === 'pausing' ? 'Pausing…' : preflightOperationState === 'paused' ? 'Resume' : 'Pause'}
+          </button>
+        </div>
       </div>
       <div
         role="progressbar"
@@ -725,7 +755,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
         <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${preflightProgress.percentage}%` }} />
       </div>
       <p className="text-xs text-muted-foreground break-words">{preflightProgress.currentItem || 'Preparing episode checks…'}</p>
-      <p className="text-[11px] text-muted-foreground">Episodes are checked in parallel groups. Encoding plans also measure and verify sample clips.</p>
+      <p className="text-[11px] text-muted-foreground">Pause takes effect after currently running file or sample operations finish. Stop cancels active work and removes incomplete samples.</p>
     </div>
   ) : null
 
@@ -1386,7 +1416,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
                 title={preflightTermination === 'cancelling' ? 'Cancelling optimization review' : preflightTermination === 'finishing' ? 'Finishing optimization review' : undefined}
                 className="px-5 py-2 bg-muted hover:bg-muted/80 rounded-xl text-xs font-bold transition-all cursor-pointer"
               >
-                {preflightTermination === 'cancelling' ? 'Cancelling…' : preflightTermination === 'finishing' ? 'Finishing…' : 'Cancel'}
+                {preflightTermination === 'cancelling' ? 'Stopping…' : preflightTermination === 'finishing' ? 'Finishing…' : activePreflightRequestId.current ? 'Stop preflight' : 'Cancel'}
               </button>
 
               <div className="flex items-center gap-2">

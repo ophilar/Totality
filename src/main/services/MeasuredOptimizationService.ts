@@ -35,7 +35,7 @@ export interface MeasuredSampleRequest {
   referenceFilter?: string
   referenceInputArgs?: string[]
   signal?: AbortSignal
-  onProgress?: (phase: string) => void
+  onProgress?: (phase: string) => Promise<void> | void
   candidates: Array<MeasuredCandidate & { ffmpegArgs: string[] }>
 }
 export interface MeasuredSampleResult { candidates: MeasuredCandidate[]; vmafAvailable: boolean; cambiAvailable: boolean }
@@ -81,7 +81,7 @@ export class MeasuredOptimizationService {
       // and libvmaf in one graph changes frame synchronization on multi-input graphs.
       if (request.referenceInputArgs?.length && request.referenceFilter) {
         for (const [index, start] of starts.entries()) {
-          request.onProgress?.(`Preparing source reference ${index + 1} of ${starts.length}`)
+          await request.onProgress?.(`Preparing source reference ${index + 1} of ${starts.length}`)
           const referencePath = path.join(request.outputDirectory, `reference-${index}.mkv`)
           ownedPaths.add(referencePath)
           await this.processRunner.run(binary, ['-y', '-v', 'error', ...request.referenceInputArgs, '-ss', String(start), '-i', PathUtils.sanitizeAbsolutePath(request.inputPath), '-t', String(length), '-vf', request.referenceFilter, '-fps_mode', 'passthrough', '-an', '-sn', '-c:v', 'ffv1', referencePath], request.signal)
@@ -94,7 +94,7 @@ export class MeasuredOptimizationService {
         let outputBytes = 0
         for (const [index, start] of starts.entries()) {
           request.signal?.throwIfAborted()
-          request.onProgress?.(`Encoding sample ${index + 1} of ${starts.length} with ${candidate.encoder} (${candidate.quality})`)
+          await request.onProgress?.(`Encoding sample ${index + 1} of ${starts.length} with ${candidate.encoder} (${candidate.quality})`)
           const outputPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}${request.outputExtension ?? '.mkv'}`)
           ownedPaths.add(outputPath)
           const args = candidate.ffmpegArgs.map(arg => arg === '<input>' ? PathUtils.sanitizeAbsolutePath(request.inputPath) : arg === '<output>' ? outputPath : arg)
@@ -109,7 +109,7 @@ export class MeasuredOptimizationService {
           const escapedPath = logPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "'\\\\''")
           const reference = !referencePaths.length && request.referenceFilter ? `,${request.referenceFilter}` : ''
           const graph = `[0:v]settb=AVTB,setpts=PTS-STARTPTS[d];[1:v]settb=AVTB,setpts=PTS-STARTPTS${reference}[r];[d][r]libvmaf=feature=name=cambi:log_fmt=json:log_path='${escapedPath}'`
-          request.onProgress?.(`Scoring sample ${index + 1} of ${starts.length} with VMAF and CAMBI`)
+          await request.onProgress?.(`Scoring sample ${index + 1} of ${starts.length} with VMAF and CAMBI`)
           await this.processRunner.run(binary, ['-v', 'error', '-i', outputPath, ...(referencePaths.length ? ['-i', referencePaths[index]] : ['-ss', String(start), '-t', String(length), '-i', PathUtils.sanitizeAbsolutePath(request.inputPath)]), '-filter_complex', graph, '-an', '-sn', '-f', 'null', '-'], request.signal)
           const log = JSON.parse(await fs.readFile(logPath, 'utf8')) as { pooled_metrics: { vmaf: { mean: number }; cambi: { mean: number } }; frames: Array<{ metrics: { vmaf: number; cambi: number } }> }
           if (!Number.isFinite(log.pooled_metrics.vmaf.mean) || !Number.isFinite(log.pooled_metrics.cambi.mean)) throw new Error('VMAF/CAMBI measurements are incomplete')

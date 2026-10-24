@@ -65,6 +65,7 @@ export function registerTranscodingHandlers(): void {
       const result = await getTranscodingService().preflightShowTranscode(preflightRequest, {
         signal: operation.signal,
         beginCommit: operation.beginCommit,
+        waitUntilRunning: operation.waitUntilRunning,
         update: operation.update,
       })
       operation.complete('completed', 'Optimization review is ready')
