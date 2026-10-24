@@ -260,12 +260,15 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     const targetHdrFormats = targetProfile?.definition.hdr.formats.map(format => format.toUpperCase()) ?? []
     const sourceIsSdr = !sourceHdrFormat || ['SDR', 'NONE'].includes(sourceHdrFormat)
     const sourceHdrSupported = sourceHdrFormat && ['HDR10', 'SDR'].includes(sourceHdrFormat) && (sourceHdrFormat === 'SDR' || targetHdrFormats.includes(sourceHdrFormat))
-    const recommendedHdr = sourceIsSdr
+    const isDynamicHdrSource = ['DOLBY VISION', 'HDR10+'].includes(sourceHdrFormat ?? '')
+    const recommendedHdr: 'SDR' | 'HDR10' | '' = isDynamicHdrSource
+      ? ''
+      : sourceIsSdr
       ? 'SDR'
       : sourceHdrSupported
         ? sourceHdrFormat as 'SDR' | 'HDR10'
         : targetHdrFormats.includes('HDR10') ? 'HDR10' : 'SDR'
-    setTargetHdrFormat(targetProfile ? recommendedHdr : '')
+    setTargetHdrFormat(targetProfile && episode ? recommendedHdr : '')
     logOptimizationDiagnostic('TVOptimizationUI', 'info', 'output.settings.recommended', {
       seriesIdentityKey,
       mediaItemId: episode?.id,
@@ -487,7 +490,8 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
       if (!qualityProfile) missingSettings.push('visual quality threshold')
       if (!encoderPolicy) missingSettings.push('encoder policy')
       if (!targetContainer && targetContainerSelection === 'user-selected') missingSettings.push('output container')
-      if (effectiveTargetProfileId && !targetHdrFormat) missingSettings.push('output color format for the selected playback target')
+      const dynamicHdrSource = ['DOLBY VISION', 'HDR10+'].includes(sourceHdrFormat ?? '')
+      if (effectiveTargetProfileId && !targetHdrFormat && (optimizationMode === 'transcode' || (episode && !dynamicHdrSource))) missingSettings.push('output color format for the selected playback target')
     }
     const settings = {
       seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, optimizationMode, outputMode,
@@ -662,6 +666,10 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
       : 'MKV is the recommended general-purpose container.'
   const colorRecommendation = !targetProfile
     ? 'Source color is preserved.'
+    : !episode
+      ? 'Color is resolved per episode from its source; Smart preserves Dolby Vision and HDR10+ video.'
+    : ['DOLBY VISION', 'HDR10+'].includes(sourceHdrFormat ?? '') && optimizationMode !== 'transcode'
+      ? 'Smart preserves dynamic HDR by copying the video stream. Full Transcode requires choosing SDR or HDR10.'
     : !sourceHdrFormat || ['SDR', 'NONE'].includes(sourceHdrFormat)
       ? 'Source is SDR; output stays SDR.'
       : targetHdrFormat === sourceHdrFormat
@@ -831,7 +839,9 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
               <label className="space-y-1">Visual quality threshold<select aria-label="Quality" value={qualityProfile} onChange={e => { const value = e.target.value as OptimizationQualityProfile; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'quality.threshold.selected', { qualityProfile: value }); setQualityProfile(value) }}><option value="">Choose quality threshold</option><option value="transparent">Highest measured fidelity</option><option value="balanced">Balanced fidelity and savings</option><option value="maximum_savings">More savings, measured loss allowed</option></select><span className="block text-[10px] text-muted-foreground">Default: Balanced · VMAF mean ≥95, fifth percentile ≥92, CAMBI ≤8.</span></label>
               <EncoderPolicySelector value={encoderPolicy} hardwareAvailable={hardwareAvailable} softwareAvailable={softwareAvailable} recommendation={hardwareAvailable ? `Verified ${hardwareEncoder} on ${selectedGpu?.name ?? 'selected GPU'} for ${codec?.toUpperCase()}.` : softwareAvailable ? `No verified hardware encoder for ${codec?.toUpperCase()}; software is available.` : `No verified encoder is available for ${codec?.toUpperCase()}.`} onChange={policy => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'encoder.policy.selected', { encoderPolicy: policy ?? '' }); setEncoderPolicy(policy ?? '') }} />
               <label className="space-y-1">Output container<select aria-label="Container" value={targetContainer} onChange={e => { const value = e.target.value as typeof targetContainer; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'output.container.selected', { targetContainer: value || null, selection: value ? 'user-selected' : 'automatic' }); setTargetContainer(value); setTargetContainerSelection(value ? 'user-selected' : 'automatic') }}>{!episode && <option value="">Automatic per episode</option>}{episode && !targetContainer && <option value="">No supported container available</option>}{profileSupportedContainers.filter(container => ['matroska', 'mp4'].includes(container.toLowerCase())).map(container => <option key={container} value={container.toLowerCase() === 'matroska' ? 'mkv' : 'mp4'}>{container}</option>)}</select><span className="block text-[10px] text-muted-foreground">{targetContainerSelection === 'automatic' ? 'Automatic' : 'Selected'} · {containerRecommendation}</span></label>
-              {targetProfile ? <label className="space-y-1">Output color<select aria-label="Output color" value={targetHdrFormat} onChange={e => { const value = e.target.value as typeof targetHdrFormat; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'output.color.selected', { targetHdrFormat: value }); setTargetHdrFormat(value) }}><option value="SDR">SDR</option>{targetProfile.definition.hdr.formats.includes('HDR10') && <option value="HDR10">HDR10</option>}</select><span className="block text-[10px] text-muted-foreground">Suggested: {targetHdrFormat || 'Unavailable'} · {colorRecommendation}</span></label> : <p className="self-center text-xs text-muted-foreground">{colorRecommendation}</p>}
+              {targetProfile && episode && ['DOLBY VISION', 'HDR10+'].includes(sourceHdrFormat ?? '') && optimizationMode !== 'transcode'
+                ? <p className="self-center text-xs text-muted-foreground">{colorRecommendation}</p>
+                : targetProfile ? <label className="space-y-1">Output color<select aria-label="Output color" value={targetHdrFormat} onChange={e => { const value = e.target.value as typeof targetHdrFormat; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'output.color.selected', { targetHdrFormat: value }); setTargetHdrFormat(value) }}><option value="">{episode ? 'Choose conversion' : 'Automatic per episode'}</option><option value="SDR">SDR</option>{targetProfile.definition.hdr.formats.includes('HDR10') && <option value="HDR10">HDR10</option>}</select><span className="block text-[10px] text-muted-foreground">{targetHdrFormat ? `Suggested: ${targetHdrFormat}` : episode ? 'Choose a conversion' : 'Automatic'} · {colorRecommendation}</span></label> : <p className="self-center text-xs text-muted-foreground">{colorRecommendation}</p>}
               <label>Audio conversion<select aria-label="Audio conversion" value={targetAudioCodec} onChange={e => { const value = e.target.value as typeof targetAudioCodec; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'audio.conversion.selected', { targetAudioCodec: value }); setTargetAudioCodec(value) }}><option value="">Preserve source{episode?.audio_codec ? ` (${episode.audio_codec})` : ''}; convert only for compatibility</option>{(targetProfile?.definition.audio.codecs ?? ['aac', 'ac3', 'eac3']).filter(codec => ['aac', 'ac3', 'eac3'].includes(codec)).map(codec => <option key={codec} value={codec}>{codec.toUpperCase()}{codec === recommendedAudioCodec ? ' (recommended for target compatibility)' : ''}</option>)}</select>{episode?.audio_codec && /dts.?hd|truehd|flac|pcm/i.test(episode.audio_codec) && <span className="block text-muted-foreground">{episode.audio_codec} is lossless; converting to a listed codec is lossy and should be selected only when the playback target requires it or measured savings justify it.</span>}</label>
             </div>
             {/* Codec Selection */}

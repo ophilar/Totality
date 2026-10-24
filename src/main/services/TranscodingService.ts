@@ -340,7 +340,8 @@ export class TranscodingService {
         const sourceCompatibility = targetProfile
           ? evaluatePlaybackTarget(targetProfile, { ...selectedAnalysis, audioTracks: compatibleAudioTracks, container: plannedContainer })
           : undefined
-        const shouldEncode = request.options.optimizationMode === 'transcode' || (request.options.optimizationMode === 'smart' && (advice.action === 'video_transcode' || sourceCompatibility?.overall === 'incompatible'))
+        const preserveDynamicHdr = Boolean(targetProfile && ['Dolby Vision', 'HDR10+'].includes(analysis.video.hdrFormat ?? ''))
+        const shouldEncode = request.options.optimizationMode === 'transcode' || (request.options.optimizationMode === 'smart' && !preserveDynamicHdr && (advice.action === 'video_transcode' || sourceCompatibility?.overall === 'incompatible'))
         const options: TranscodeOptions = { ...request.options, targetContainer: plannedContainer === 'mp4' ? 'mp4' : 'mkv', optimizationMode: shouldEncode ? 'transcode' : 'remux_only', audioConversions: shouldEncode && targetProfile ? undefined : plannedAudioConversions, encoderPolicy: request.options.encoderPolicy, useGpu: shouldEncode && request.options.encoderPolicy !== 'software', gpuId: shouldEncode && request.options.encoderPolicy !== 'software' ? request.options.gpuId : undefined }
         if (!shouldEncode && !streamsChanged && !containerChanged && plannedAudioConversions.length === 0) {
           const compatible = sourceCompatibility?.overall !== 'incompatible'
@@ -410,7 +411,7 @@ export class TranscodingService {
           : plannedSavingsOperations.length === 0 ? 'insufficient_data'
           : audioConversions.length > 0 ? 'audio_transcode_model'
           : 'audio_stream_removal'
-        getLoggingService().debug('[TVOptimization]', `Episode planned: mediaItem=${episode.id}, label="${label}", compatible=true, container=${plannedContainer}, containerSelection=${request.options.targetContainerSelection ?? 'explicit'}, operations=${plannedSavingsOperations.join(',') || 'none'}, decision=${shouldEncode ? 'sample_required' : 'actionable'}, savingsBytes=${savingsBreakdown.totalEstimatedSavingsBytes ?? 'unknown'}, coverage=${savingsBreakdown.coverage}, encoder=${params.encoder}`)
+        getLoggingService().debug('[TVOptimization]', `Episode planned: mediaItem=${episode.id}, label="${label}", compatible=true, container=${plannedContainer}, containerSelection=${request.options.targetContainerSelection ?? 'explicit'}, dynamicHdrPreserved=${preserveDynamicHdr && !shouldEncode}, operations=${plannedSavingsOperations.join(',') || 'none'}, decision=${shouldEncode ? 'sample_required' : 'actionable'}, savingsBytes=${savingsBreakdown.totalEstimatedSavingsBytes ?? 'unknown'}, coverage=${savingsBreakdown.coverage}, encoder=${params.encoder}`)
         const samplePaths = params.measuredCandidate?.samplePaths
         return {
           mediaItemId: episode.id, label, compatible: true, hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256,
@@ -423,7 +424,9 @@ export class TranscodingService {
           ],
           decisionStatus: shouldEncode ? 'sample_required' : 'actionable', evidenceStatus, savingsCoverage: savingsBreakdown.coverage, confidence: evidenceStatus === 'measured' ? 'high' : evidenceStatus === 'estimated' ? 'medium' : 'none',
           estimatedSavingsBytes: savingsBreakdown.totalEstimatedSavingsBytes,
-          savingsBasis, sourceTier: advice.sourceTier, adviceReason: shouldEncode ? 'Measured encoding passed the selected quality gates. Review all three samples before approval.' : advice.reason,
+          savingsBasis, sourceTier: advice.sourceTier, adviceReason: preserveDynamicHdr && !shouldEncode
+            ? sourceCompatibility?.overall === 'compatible' ? 'Dynamic HDR source video is preserved; only the container or selected streams are remuxed.' : 'Dynamic HDR source video is preserved without re-encoding, but the selected playback target is not fully satisfied by the source and allowed remux operations.'
+            : shouldEncode ? 'Measured encoding passed the selected quality gates. Review all three samples before approval.' : advice.reason,
           targetCompatibility, options, params, sourceAnalysis: analysis, targetProfile, samplePaths, sampleHashes: samplePaths ? await Promise.all(samplePaths.map(sha256File)) : undefined, changes: [...(options.targetConversion?.changes ?? []), ...audioConversions.map(track => `Convert audio stream ${track.sourceIndex} to ${track.codec.toUpperCase()} at ${track.bitrateKbps} kbps`), ...(removedSubtitleTracks.length ? [`Remove ${removedSubtitleTracks.length} subtitle stream${removedSubtitleTracks.length === 1 ? '' : 's'} excluded by the selected language policy`] : [])],
           measuredParameters: { encoder: params.encoder, crf: params.crf, preset: params.preset },
         }
