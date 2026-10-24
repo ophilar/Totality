@@ -805,6 +805,8 @@ const electronAPI = {
   // LOGGING
   // ============================================================================
   getLogs: (limit?: number) => ipcRenderer.invoke(IPC_CHANNELS.logsGetAll, limit),
+  logRendererEvent: (event: { level: 'info' | 'warn' | 'error'; source: 'TVOptimizationUI' | 'EncodingCapabilitiesUI'; event: string; details?: Record<string, unknown> }) =>
+    ipcRenderer.invoke(IPC_CHANNELS.logsRendererEvent, event),
   clearLogs: () => ipcRenderer.invoke(IPC_CHANNELS.logsClear),
   exportLogs: () => ipcRenderer.invoke(IPC_CHANNELS.logsExport),
   setVerboseLogging: (enabled: boolean) => ipcRenderer.invoke(IPC_CHANNELS.logsSetVerbose, enabled),
@@ -1954,6 +1956,7 @@ interface ExistingElectronAPI {
   // LOGGING
   // ============================================================================
   getLogs: (limit?: number) => Promise<Array<{ id: string; timestamp: string; level: 'verbose' | 'debug' | 'info' | 'warn' | 'error'; source: string; message: string; details?: string }>>
+  logRendererEvent: (event: { level: 'info' | 'warn' | 'error'; source: 'TVOptimizationUI' | 'EncodingCapabilitiesUI'; event: string; details?: Record<string, unknown> }) => Promise<void>
   clearLogs: () => Promise<void>
   exportLogs: () => Promise<{
     success: boolean

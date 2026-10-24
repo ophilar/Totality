@@ -11,6 +11,7 @@ import type { MediaItem, TVShow, TVShowSummary, SeasonInfo, TVSeason, SeriesComp
 import type { ProviderType } from '../../contexts/SourceContext'
 import { QualityBadges } from './QualityBadges'
 import { ScopedOptimizationSummary } from './ScopedOptimizationSummary'
+import { logOptimizationDiagnostic } from './optimizationDiagnostics'
 import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
 import { tvSortOptions, type TVShowSortBy } from './sortDefinitions'
 
@@ -487,13 +488,13 @@ export function TVShowsView({
     setOptimizingEpisode(null)
     if (showSummary) {
       if (!showSummary.series_identity_key) return
-      console.info('[TVOptimizationUI] Open series optimizer', { seriesIdentityKey: showSummary.series_identity_key, seriesTitle: showSummary.series_title, sourceId: showSummary.source_id, libraryId: showSummary.library_id, episodeCount: showSummary.episode_count })
+      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'optimizer.opened', { seriesIdentityKey: showSummary.series_identity_key, seriesTitle: showSummary.series_title, sourceId: showSummary.source_id, libraryId: showSummary.library_id, episodeCount: showSummary.episode_count })
       setOptimizingShow(showSummary)
       return
     }
     const firstEp = firstIdentifiedEpisode
     if (!firstEp?.series_identity_key) return
-    console.info('[TVOptimizationUI] Open selected series optimizer', { seriesIdentityKey: firstEp.series_identity_key, seriesTitle: selectedShowData?.title, sourceId: firstEp.source_id, libraryId: firstEp.library_id })
+    logOptimizationDiagnostic('TVOptimizationUI', 'info', 'selected-series.optimizer.opened', { seriesIdentityKey: firstEp.series_identity_key, seriesTitle: selectedShowData?.title, sourceId: firstEp.source_id, libraryId: firstEp.library_id })
 
     const summary = shows.find(s => s.series_identity_key === firstEp.series_identity_key)
     if (summary && summary.series_identity_key) {
@@ -513,7 +514,7 @@ export function TVShowsView({
 
   const handleOpenOptimizeEpisode = useCallback((episode: MediaItem) => {
     if (!episode.id || !episode.file_path || !episode.source_id || !episode.series_identity_key) return
-    console.info('[TVOptimizationUI] Open episode optimizer', { mediaItemId: episode.id, seriesIdentityKey: episode.series_identity_key, seriesTitle: episode.series_title, sourceId: episode.source_id, libraryId: episode.library_id })
+    logOptimizationDiagnostic('TVOptimizationUI', 'info', 'episode.optimizer.opened', { mediaItemId: episode.id, seriesIdentityKey: episode.series_identity_key, seriesTitle: episode.series_title, sourceId: episode.source_id, libraryId: episode.library_id })
     const show = shows.find(candidate => candidate.series_identity_key === episode.series_identity_key && candidate.source_id === episode.source_id && candidate.library_id === episode.library_id)
     setOptimizingShow(show ?? {
       series_title: episode.series_title || episode.title,
@@ -529,9 +530,10 @@ export function TVShowsView({
   }, [shows])
 
   const closeOptimization = useCallback(() => {
+    logOptimizationDiagnostic('TVOptimizationUI', 'info', 'optimizer.closed', { seriesIdentityKey: optimizingShow?.series_identity_key, mediaItemId: optimizingEpisode?.id })
     setOptimizingShow(null)
     setOptimizingEpisode(null)
-  }, [])
+  }, [optimizingEpisode?.id, optimizingShow?.series_identity_key])
   const posterMinWidth = useMemo(() => {
     const widthMap: Record<number, number> = {
       1: 120, 2: 140, 3: 160, 4: 180, 5: 200, 6: 240, 7: 300

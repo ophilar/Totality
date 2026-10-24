@@ -23,6 +23,12 @@ const FileLoggingSettingsSchema = z.object({
   minLevel: z.enum(['verbose', 'debug', 'info', 'warn', 'error']).optional(),
   retentionDays: z.number().int().min(1).max(365).optional(),
 })
+const RendererLogEventSchema = z.object({
+  level: z.enum(['info', 'warn', 'error']),
+  source: z.enum(['TVOptimizationUI', 'EncodingCapabilitiesUI']),
+  event: z.string().min(1).max(160),
+  details: z.record(z.string(), z.unknown()).optional(),
+})
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -88,6 +94,14 @@ async function getDiagnosticInfo(): Promise<DiagnosticInfo> {
 }
 
 export function registerLoggingHandlers(): void {
+  createIpcHandler(IPC_CHANNELS.logsRendererEvent, async (payload: unknown) => {
+    const event = validateInput(RendererLogEventSchema, payload, 'logs:rendererEvent')
+    const logger = getLoggingService()
+    const message = event.event.replace(/[\r\n]/g, ' ')
+    if (event.details) logger[event.level](`[${event.source}]`, message, event.details)
+    else logger[event.level](`[${event.source}]`, message)
+  })
+
   createIpcHandler(IPC_CHANNELS.logsGetAll, async (limit?: unknown) => {
     const validLimit = limit !== undefined ? validateInput(z.number().int().positive().max(100000), limit, 'logs:getAll') : undefined
     return getLoggingService().getLogs(validLimit)

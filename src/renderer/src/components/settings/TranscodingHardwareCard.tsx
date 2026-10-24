@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, Cpu, RefreshCw } from 'lucide-react'
 import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
+import { describeDiagnosticError, logOptimizationDiagnostic } from '../library/optimizationDiagnostics'
 
 export function TranscodingHardwareCard() {
   const [capabilities, setCapabilities] = useState<TranscodingCapabilities | null>(null)
@@ -12,20 +13,28 @@ export function TranscodingHardwareCard() {
   useEffect(() => {
     let active = true
     window.electronAPI.getCapabilities()
-      .then(value => { if (active) setCapabilities(value) })
-      .catch(reason => { if (active) setError(reason instanceof Error ? reason.message : String(reason)) })
+      .then(value => {
+        if (!active) return
+        logOptimizationDiagnostic('EncodingCapabilitiesUI', 'info', 'capabilities.loaded', { detectedAt: value.detectedAt, deviceCount: value.encodingMatrix.devices.length })
+        setCapabilities(value)
+      })
+      .catch(reason => {
+        if (!active) return
+        logOptimizationDiagnostic('EncodingCapabilitiesUI', 'error', 'capabilities.load.failed', { error: describeDiagnosticError(reason) })
+        setError(reason instanceof Error ? reason.message : String(reason))
+      })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [])
 
   const refresh = async () => {
-    console.info('[EncodingCapabilitiesUI] Refresh requested')
+    logOptimizationDiagnostic('EncodingCapabilitiesUI', 'info', 'capabilities.refresh.requested')
     setRefreshing(true)
     setError(null)
     try {
       setCapabilities(await window.electronAPI.refreshCapabilities())
     } catch (reason) {
-      console.error('[EncodingCapabilitiesUI] Refresh failed', reason)
+      logOptimizationDiagnostic('EncodingCapabilitiesUI', 'error', 'capabilities.refresh.failed', { error: describeDiagnosticError(reason) })
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setRefreshing(false)
@@ -33,13 +42,13 @@ export function TranscodingHardwareCard() {
   }
 
   const selectGpu = async (gpuId: string | null) => {
-    console.info('[EncodingCapabilitiesUI] Hardware selection changed', { gpuId })
+    logOptimizationDiagnostic('EncodingCapabilitiesUI', 'info', 'hardware.selection.changed', { gpuId })
     setSelectingGpu(true)
     setError(null)
     try {
       setCapabilities(await window.electronAPI.setSelectedGpu(gpuId))
     } catch (reason) {
-      console.error('[EncodingCapabilitiesUI] Hardware selection failed', { gpuId, reason })
+      logOptimizationDiagnostic('EncodingCapabilitiesUI', 'error', 'hardware.selection.failed', { gpuId, error: describeDiagnosticError(reason) })
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setSelectingGpu(false)
