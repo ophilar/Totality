@@ -76,6 +76,13 @@ interface MBArtistSearchResult {
   artists: MBArtist[]
 }
 
+export class MusicBrainzReleaseDataNotFoundError extends Error {
+  constructor(artistName: string, albumTitle: string) {
+    super(`No MusicBrainz release with track data was found for "${artistName}" - "${albumTitle}".`)
+    this.name = 'MusicBrainzReleaseDataNotFoundError'
+  }
+}
+
 /** Progress phases for music analysis */
 export type MusicAnalysisPhase = 'artists' | 'albums' | 'complete'
 
@@ -762,7 +769,7 @@ export class MusicBrainzService extends CancellableOperation {
 
     if (!tracklist || tracklist.tracks.length === 0) {
       console.log(`[MusicBrainzService] No tracklist found for "${artistName}" - "${albumTitle}"`)
-      throw new Error(`No MusicBrainz release with track data was found for "${artistName}" - "${albumTitle}".`)
+      throw new MusicBrainzReleaseDataNotFoundError(artistName, albumTitle)
     }
     console.log(`[MusicBrainzService] Using tracklist with ${tracklist.tracks.length} tracks`)
 
@@ -1028,6 +1035,12 @@ export class MusicBrainzService extends CancellableOperation {
           db.forceSave?.()
         }
       } catch (error) {
+        if (error instanceof MusicBrainzReleaseDataNotFoundError) {
+          skipped++
+          getLoggingService().info('[MusicBrainzService]', `Skipped album without MusicBrainz track data: "${album.artist_name}" - "${album.title}"`)
+          currentItem++
+          continue
+        }
         const message = `album "${album.title}": ${getErrorMessage(error)}`
         errors.push(message)
         getLoggingService().error('[MusicBrainzService]', `Failed to analyze ${message}`, error)

@@ -18,7 +18,7 @@ import { emitNotificationCreated } from '../ipc/utils/notificationEmitter'
 import { getSourceManager } from './SourceManager'
 import { getSeriesCompletenessService } from './SeriesCompletenessService'
 import { getMovieCollectionService } from './MovieCollectionService'
-import { getMusicBrainzService } from './MusicBrainzService'
+import { getMusicBrainzService, MusicBrainzReleaseDataNotFoundError } from './MusicBrainzService'
 import { getDatabase } from '../database/getDatabase'
 import { getLiveMonitoringService } from './LiveMonitoringService'
 import { PlexProvider } from '../providers/plex/PlexProvider'
@@ -906,7 +906,11 @@ export class TaskQueueService {
             await db.upsertAlbumCompleteness(albumCompleteness)
           }
         } catch (albumError) {
-          console.warn(`[TaskQueue] Failed to analyze album "${album.title}":`, albumError)
+          if (albumError instanceof MusicBrainzReleaseDataNotFoundError) {
+            console.info(`[TaskQueue] No MusicBrainz track data for album "${album.title}"; skipped track completeness.`)
+          } else {
+            console.warn(`[TaskQueue] Failed to analyze album "${album.title}":`, albumError)
+          }
         }
       }
 
@@ -918,7 +922,8 @@ export class TaskQueueService {
     const result = await mbService.analyzeAllMusic(onProgress, task.sourceId)
 
     task.result = {
-      itemsScanned: (result.artistsAnalyzed || 0) + (result.albumsAnalyzed || 0),
+      itemsScanned: (result.artistsAnalyzed || 0) + (result.albumsAnalyzed || 0) + result.skipped,
+      skippedCount: result.skipped,
       failedCount: result.failedCount,
       errors: result.errors,
     }
