@@ -466,7 +466,7 @@ export class SeriesCompletenessService extends CancellableOperation {
         episodeMap.set(key, ep)
       } else {
         // Keep the one with higher video bitrate (proxy for quality)
-        if ((ep.video_bitrate || 0) > (existing.video_bitrate || 0)) {
+        if ((ep.video_bitrate_kbps || 0) > (existing.video_bitrate_kbps || 0)) {
           episodeMap.set(key, ep)
         }
       }
@@ -560,6 +560,9 @@ export class SeriesCompletenessService extends CancellableOperation {
     // First, get basic show details to know which seasons exist
     const showDetails = await tmdb.getTVShowDetails(tmdbId)
     const showPosterUrl = tmdb.buildImageUrl(showDetails.poster_path) || undefined
+    if (showDetails.original_language) {
+      db.media.setSeriesOriginalLanguage(tmdbId, showDetails.original_language)
+    }
 
     // Build set of owned episodes for fast lookup
     const ownedSet = new Set<string>()

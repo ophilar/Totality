@@ -100,7 +100,7 @@ export class TimelineResolutionEngine {
               filePath: match.file_path,
               resolution: match.resolution,
               videoCodec: match.video_codec,
-              duration: match.duration,
+              duration: match.duration_ms,
             },
       })
     }

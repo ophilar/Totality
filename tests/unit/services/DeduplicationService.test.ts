@@ -103,7 +103,7 @@ describe('DeduplicationService', () => {
             height: 1080,
             original_language: 'en',
             audio_language: 'en',
-            video_bitrate: 5000000,
+            video_bitrate_kbps: 5000000,
           }
         }
         if (id === 2) {
@@ -112,7 +112,7 @@ describe('DeduplicationService', () => {
             height: 720,
             original_language: 'en',
             audio_language: 'es',
-            video_bitrate: 2000000,
+            video_bitrate_kbps: 2000000,
           }
         }
         return null

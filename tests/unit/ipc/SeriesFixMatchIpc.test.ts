@@ -17,6 +17,7 @@ const mockTMDB = {
   getTVShowDetails: vi.fn().mockResolvedValue({
     id: 1396,
     name: 'Breaking Bad',
+    original_language: 'en',
     poster_path: '/path/poster.jpg',
   }),
   buildImageUrl: vi.fn(() => 'https://image.tmdb.org/t/p/w500/path/poster.jpg'),
@@ -77,7 +78,8 @@ describe('series:fixMatch IPC Handler', () => {
       'lib-tv-1',
       '1396',
       'https://image.tmdb.org/t/p/w500/path/poster.jpg',
-      'Breaking Bad'
+      'Breaking Bad',
+      'en'
     )
     expect(mockCompletenessService.analyzeSeries).toHaveBeenCalledWith(
       'tmdb:1396',
@@ -133,7 +135,8 @@ describe('series:fixMatch IPC Handler', () => {
       undefined,
       '1396',
       'https://image.tmdb.org/t/p/w500/path/poster.jpg',
-      'Breaking Bad'
+      'Breaking Bad',
+      'en'
     )
     expect(mockCompletenessService.analyzeSeries).toHaveBeenCalledWith(
       'tmdb:1396',

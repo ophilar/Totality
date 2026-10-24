@@ -156,6 +156,7 @@ export interface MediaMetadata {
   imdbId?: string
   tmdbId?: number
   seriesTmdbId?: number
+  originalLanguage?: string
 
   // File info
   filePath?: string

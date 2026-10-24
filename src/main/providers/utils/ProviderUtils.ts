@@ -8,6 +8,7 @@
 import { AudioCodecRanker } from '../../services/AudioCodecRanker'
 import type { AudioTrackInfo } from '../../services/AudioCodecRanker'
 import { isCommentaryTrack } from '../../services/utils/audioTrackUtils'
+import { getVideoResolutionRank, getVideoResolutionTier } from '../../services/VideoResolutionTier'
 export { isCommentaryTrack } from '../../services/utils/audioTrackUtils'
 export type { AudioTrackInfo } from '../../services/AudioCodecRanker'
 
@@ -128,19 +129,13 @@ export function calculateAudioBitrateFromFile(
  * @returns true if the bitrate looks like an estimated value
  */
 /**
- * Score a media version for best-version selection across multi-version items.
- * Higher score = better quality. Ranks by resolution tier, then HDR, then bitrate.
+ * Rank a media version by its resolution tier for canonical version selection.
  *
  * Used by all providers to pick the "primary" version when an item has multiple files.
  */
-export function scoreVersion(v: { resolution: string; video_bitrate: number; hdr_format?: string }): number {
-  const res = v.resolution.toLowerCase()
-  const tierRank = res === '4k' || res.includes('2160') ? 4
-    : res.includes('1080') ? 3
-    : res.includes('720') ? 2
-    : 1
-  const hdrBonus = v.hdr_format && v.hdr_format !== 'None' ? 1000 : 0
-  return tierRank * 100000 + hdrBonus + v.video_bitrate
+export function scoreVersion(v: { resolution: string; height?: number }): number {
+  const rank = getVideoResolutionRank(getVideoResolutionTier(v.resolution, v.height))
+  return rank === null ? 0 : rank + 1
 }
 
 export function normalizeGroupTitle(title: string): string {
