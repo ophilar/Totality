@@ -518,6 +518,7 @@ export const TranscodeOptionsSchema = z.object({
   encoderPolicy: z.enum(['hardware', 'software', 'compare']).optional(),
   targetProfileId: z.string().min(1).nullable().optional(),
   targetContainer: z.enum(['mkv', 'mp4']).optional(),
+  targetContainerSelection: z.enum(['automatic', 'user-selected']).optional(),
   targetAudioCodec: z.enum(['aac', 'ac3', 'eac3']).optional(),
   targetHdrFormat: z.enum(['SDR', 'HDR10']).optional(),
   streamSelection: z.union([

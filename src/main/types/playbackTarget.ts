@@ -25,15 +25,39 @@ export interface PlaybackTargetDefinition {
 export interface PlaybackFinding { status: PlaybackFindingStatus; rule: string; evidence: string; source: PlaybackSource }
 export interface PlaybackTargetEvaluation { profileId: string; overall: 'compatible' | 'incompatible'; findings: Record<'container' | 'video' | 'hdr' | 'audio' | 'subtitle' | 'network', PlaybackFinding> }
 
+export function getPlaybackTargetContainers(
+  profile: PlaybackTargetProfile,
+  video: { codec?: string; profile?: string; hdrFormat?: string }
+): string[] {
+  const matches = (value: string | undefined, expected: string[] | undefined): boolean =>
+    !expected || expected.some(candidate => value?.toLowerCase().includes(candidate.toLowerCase()))
+  const rule = profile.definition.video.containerRules?.find(candidate =>
+    matches(video.codec, candidate.codecs) && matches(video.profile, candidate.profiles) && matches(video.hdrFormat, candidate.hdrFormats)
+  )
+  return rule?.containers ?? profile.definition.containers
+}
+
+export function recommendPlaybackTargetContainer(
+  profile: PlaybackTargetProfile,
+  video: { codec?: string; profile?: string; hdrFormat?: string },
+  sourceContainer?: string
+): 'mkv' | 'mp4' | '' {
+  const allowed = getPlaybackTargetContainers(profile, video).map(container => container.toLowerCase())
+  const source = sourceContainer?.split(',')[0].trim().toLowerCase()
+  const normalizedSource = source === 'mkv' || source === 'matroska' ? 'matroska' : source === 'm4v' ? 'mp4' : source
+  if (normalizedSource && allowed.includes(normalizedSource)) return normalizedSource === 'matroska' ? 'mkv' : normalizedSource === 'mp4' ? 'mp4' : ''
+  if (allowed.includes('matroska')) return 'mkv'
+  if (allowed.includes('mp4')) return 'mp4'
+  return ''
+}
+
 export function evaluatePlaybackTarget(profile: PlaybackTargetProfile, analysis: FileAnalysisResult): PlaybackTargetEvaluation {
   if (!analysis.success) throw new Error(analysis.error || 'Media analysis failed')
   const video = analysis.video
   if (!video || !analysis.container || analysis.overallBitrateKbps == null) throw new Error('Complete media analysis is required')
   const finding = (ok: boolean, rule: string, evidence: string): PlaybackFinding => ({ status: ok ? 'compatible' : 'incompatible', rule, evidence, source: 'local-analysis' })
-  const matches = (value: string | undefined, expected: string[] | undefined): boolean => !expected || expected.some(candidate => value?.toLowerCase().includes(candidate.toLowerCase()))
   const d = profile.definition
-  const matchingContainerRule = d.video.containerRules?.find(rule => matches(video.codec, rule.codecs) && matches(video.profile, rule.profiles) && matches(video.hdrFormat, rule.hdrFormats))
-  const allowedContainers = matchingContainerRule?.containers ?? d.containers
+  const allowedContainers = getPlaybackTargetContainers(profile, video)
   const findings = {
     container: finding(analysis.container.split(',').some(container => allowedContainers.includes(container)), `container in [${allowedContainers.join(', ')}]`, analysis.container),
     video: finding(d.video.codecs.some(codec => normalizeVideoCodec(codec) === normalizeVideoCodec(video.codec)) && d.video.profiles.includes(video.profile || '') && video.level !== undefined && video.level <= Math.max(...d.video.levels) && (video.width || 0) <= d.video.maxWidth && (video.height || 0) <= d.video.maxHeight && d.video.bitDepths.includes(video.bitDepth || 0), 'video codec/profile/level/resolution/bit-depth supported', JSON.stringify(video)),

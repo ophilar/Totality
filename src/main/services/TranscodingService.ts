@@ -30,7 +30,7 @@ import { buildTargetTranscodePlan, type TargetTranscodePlan } from './transcodin
 import type { MeasuredCandidate } from './MeasuredOptimizationPolicy'
 import { ChildProcessMeasurementRunner, MeasuredOptimizationService } from './MeasuredOptimizationService'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
-import { evaluatePlaybackTarget, type PlaybackTargetEvaluation, type PlaybackTargetProfile } from '@main/types/playbackTarget'
+import { evaluatePlaybackTarget, getPlaybackTargetContainers, recommendPlaybackTargetContainer, type PlaybackTargetEvaluation, type PlaybackTargetProfile } from '@main/types/playbackTarget'
 import { getTaskQueueService } from './TaskQueueService'
 import { buildOptimizationSavingsBreakdown, calculateBitrateSavingsBytes, projectMeasuredSavingsBytes, sumMeasuredStreamBytes, type OptimizationSavingsCoverage, type OptimizationSavingsOperation } from './OptimizationSavingsService'
 import { normalizeAudioCodec, normalizeVideoCodec } from './MediaNormalizer'
@@ -63,6 +63,7 @@ export interface TranscodeOptions {
   encoderPolicy?: 'hardware' | 'software' | 'compare'
   targetProfileId?: string | null
   targetContainer?: 'mkv' | 'mp4'
+  targetContainerSelection?: 'automatic' | 'user-selected'
   targetAudioCodec?: 'aac' | 'ac3' | 'eac3'
   audioConversions?: Array<{ sourceIndex: number; codec: string; bitrateKbps: number }>
   targetHdrFormat?: 'SDR' | 'HDR10'
@@ -255,7 +256,7 @@ export class TranscodingService {
 
   async preflightShowTranscode(request: ShowTranscodeRequest, operation?: { signal: AbortSignal; beginCommit: () => void }): Promise<ShowTranscodePreflight> {
     operation?.signal.throwIfAborted()
-    getLoggingService().info('[TVOptimization]', `Preflight started: scope=${request.mediaItemId === undefined ? 'series' : 'episode'}, series=${request.seriesIdentityKey ?? 'n/a'}, mediaItem=${request.mediaItemId ?? 'all'}, source=${request.sourceId}, library=${request.libraryId ?? 'n/a'}, mode=${request.options.optimizationMode ?? 'unspecified'}, codec=${request.options.targetCodec ?? 'unspecified'}, encoderPolicy=${request.options.encoderPolicy ?? 'unspecified'}, gpu=${request.options.gpuId ?? 'selected'}`)
+    getLoggingService().info('[TVOptimization]', `Preflight started: scope=${request.mediaItemId === undefined ? 'series' : 'episode'}, series=${request.seriesIdentityKey ?? 'n/a'}, mediaItem=${request.mediaItemId ?? 'all'}, source=${request.sourceId}, library=${request.libraryId ?? 'n/a'}, mode=${request.options.optimizationMode ?? 'unspecified'}, codec=${request.options.targetCodec ?? 'unspecified'}, encoderPolicy=${request.options.encoderPolicy ?? 'unspecified'}, container=${request.options.targetContainer ?? 'automatic'}, containerSelection=${request.options.targetContainerSelection ?? 'unspecified'}, gpu=${request.options.gpuId ?? 'selected'}`)
     if (!request.sourceId.trim()) throw new Error('Source ID is required')
     if (request.mediaItemId === undefined && (!request.seriesTitle?.trim() || !request.seriesIdentityKey?.trim() || !request.libraryId?.trim())) throw new Error('TV series identity and library are required')
     const profileId = request.options.targetProfileId === undefined
@@ -314,13 +315,33 @@ export class TranscodingService {
           const conversion = plannedAudioConversions.find(item => item.sourceIndex === track.index)
           return conversion ? { ...track, codec: conversion.codec, bitrate: conversion.bitrateKbps } : track
         })
-        const plannedContainer = request.options.targetContainer === 'mp4' ? 'mp4' : request.options.targetContainer === 'mkv' ? 'matroska' : analysis.container
+        const allowedTargetContainers = targetProfile ? getPlaybackTargetContainers(targetProfile, analysis.video) : undefined
+        const recommendedTargetContainer = targetProfile
+          ? recommendPlaybackTargetContainer(targetProfile, analysis.video, analysis.container)
+          : undefined
+        let plannedContainer: string | undefined
+        if (request.options.targetContainerSelection === 'automatic' && targetProfile) {
+          if (!recommendedTargetContainer) throw new Error(`Playback target ${targetProfile.name} has no supported MKV or MP4 container for this episode's video format`)
+          plannedContainer = recommendedTargetContainer === 'mp4' ? 'mp4' : 'matroska'
+        } else if (request.options.targetContainerSelection === 'automatic') {
+          const sourceContainer = analysis.container?.split(',')[0].trim().toLowerCase()
+          plannedContainer = sourceContainer === 'mkv' || sourceContainer === 'matroska' ? 'matroska'
+            : sourceContainer === 'mp4' || sourceContainer === 'm4v' ? 'mp4'
+              : request.options.targetContainer === 'mp4' ? 'mp4' : 'matroska'
+        } else {
+          plannedContainer = request.options.targetContainer === 'mp4' ? 'mp4'
+            : request.options.targetContainer === 'mkv' ? 'matroska'
+              : analysis.container
+          if (targetProfile && (!plannedContainer || !allowedTargetContainers?.some(container => container.toLowerCase() === plannedContainer!.toLowerCase()))) {
+            throw new Error(`Container ${plannedContainer ?? 'unspecified'} is not allowed by ${targetProfile.name}'s matching video/container rule`)
+          }
+        }
         const containerChanged = !analysis.container?.split(',').includes(plannedContainer!)
         const sourceCompatibility = targetProfile
           ? evaluatePlaybackTarget(targetProfile, { ...selectedAnalysis, audioTracks: compatibleAudioTracks, container: plannedContainer })
           : undefined
         const shouldEncode = request.options.optimizationMode === 'transcode' || (request.options.optimizationMode === 'smart' && (advice.action === 'video_transcode' || sourceCompatibility?.overall === 'incompatible'))
-        const options: TranscodeOptions = { ...request.options, optimizationMode: shouldEncode ? 'transcode' : 'remux_only', audioConversions: shouldEncode && targetProfile ? undefined : plannedAudioConversions, encoderPolicy: request.options.encoderPolicy, useGpu: shouldEncode && request.options.encoderPolicy !== 'software', gpuId: shouldEncode && request.options.encoderPolicy !== 'software' ? request.options.gpuId : undefined }
+        const options: TranscodeOptions = { ...request.options, targetContainer: plannedContainer === 'mp4' ? 'mp4' : 'mkv', optimizationMode: shouldEncode ? 'transcode' : 'remux_only', audioConversions: shouldEncode && targetProfile ? undefined : plannedAudioConversions, encoderPolicy: request.options.encoderPolicy, useGpu: shouldEncode && request.options.encoderPolicy !== 'software', gpuId: shouldEncode && request.options.encoderPolicy !== 'software' ? request.options.gpuId : undefined }
         if (!shouldEncode && !streamsChanged && !containerChanged && plannedAudioConversions.length === 0) {
           const compatible = sourceCompatibility?.overall !== 'incompatible'
           return { mediaItemId: episode.id, label, compatible, reason: compatible ? undefined : 'Retained streams do not satisfy the selected playback profile', hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, operations: [], decisionStatus: compatible ? 'already_optimized' : 'incompatible', targetCompatibility: sourceCompatibility, sourceTier: advice.sourceTier, adviceReason: advice.reason }
@@ -389,7 +410,7 @@ export class TranscodingService {
           : plannedSavingsOperations.length === 0 ? 'insufficient_data'
           : audioConversions.length > 0 ? 'audio_transcode_model'
           : 'audio_stream_removal'
-        getLoggingService().debug('[TVOptimization]', `Episode planned: mediaItem=${episode.id}, label="${label}", compatible=true, operations=${plannedSavingsOperations.join(',') || 'none'}, decision=${shouldEncode ? 'sample_required' : 'actionable'}, savingsBytes=${savingsBreakdown.totalEstimatedSavingsBytes ?? 'unknown'}, coverage=${savingsBreakdown.coverage}, encoder=${params.encoder}`)
+        getLoggingService().debug('[TVOptimization]', `Episode planned: mediaItem=${episode.id}, label="${label}", compatible=true, container=${plannedContainer}, containerSelection=${request.options.targetContainerSelection ?? 'explicit'}, operations=${plannedSavingsOperations.join(',') || 'none'}, decision=${shouldEncode ? 'sample_required' : 'actionable'}, savingsBytes=${savingsBreakdown.totalEstimatedSavingsBytes ?? 'unknown'}, coverage=${savingsBreakdown.coverage}, encoder=${params.encoder}`)
         const samplePaths = params.measuredCandidate?.samplePaths
         return {
           mediaItemId: episode.id, label, compatible: true, hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256,
