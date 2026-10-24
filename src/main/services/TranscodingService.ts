@@ -254,7 +254,11 @@ export class TranscodingService {
     this.activeJobs.clear()
   }
 
-  async preflightShowTranscode(request: ShowTranscodeRequest, operation?: { signal: AbortSignal; beginCommit: () => void }): Promise<ShowTranscodePreflight> {
+  async preflightShowTranscode(request: ShowTranscodeRequest, operation?: {
+    signal: AbortSignal
+    beginCommit: () => void
+    update: (update: { phase?: string; progress?: { percentage: number; currentItem?: string } }) => void
+  }): Promise<ShowTranscodePreflight> {
     operation?.signal.throwIfAborted()
     getLoggingService().info('[TVOptimization]', `Preflight started: scope=${request.mediaItemId === undefined ? 'series' : 'episode'}, series=${request.seriesIdentityKey ?? 'n/a'}, mediaItem=${request.mediaItemId ?? 'all'}, source=${request.sourceId}, library=${request.libraryId ?? 'n/a'}, mode=${request.options.optimizationMode ?? 'unspecified'}, codec=${request.options.targetCodec ?? 'unspecified'}, encoderPolicy=${request.options.encoderPolicy ?? 'unspecified'}, container=${request.options.targetContainer ?? 'automatic'}, containerSelection=${request.options.targetContainerSelection ?? 'unspecified'}, gpu=${request.options.gpuId ?? 'selected'}`)
     if (!request.sourceId.trim()) throw new Error('Source ID is required')
@@ -278,6 +282,21 @@ export class TranscodingService {
     const batchId = `batch_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
     const preflightId = `${batchId}_preflight`
     const queuedMediaIds = new Set((await getTaskQueueService().getTasks()).filter(task => task.type === TaskType.Transcode && ['queued', 'running'].includes(task.status)).map(task => task.mediaItemId).filter((id): id is number => id !== undefined))
+    let completedEpisodes = 0
+    const activeEpisodeSteps = new Map<number, string>()
+    const publishPreflightProgress = (episode: typeof episodes[number], phase: string) => {
+      activeEpisodeSteps.set(episode.id ?? 0, `${episode.title}: ${phase}`)
+      const active = [...activeEpisodeSteps.values()]
+      const currentItem = active.slice(0, 3).join(' · ')
+      const additionalCount = active.length - 3
+      operation?.update({
+        phase: `Episode ${Math.min(completedEpisodes + 1, episodes.length)} of ${episodes.length}`,
+        progress: {
+          percentage: Math.round((completedEpisodes / episodes.length) * 100),
+          currentItem: additionalCount > 0 ? `${currentItem} · +${additionalCount} more` : currentItem,
+        },
+      })
+    }
 
     const processEpisode = async (episode: typeof episodes[0]): Promise<ShowTranscodePreflight['episodes'][0]> => {
       const label = request.mediaItemId === undefined
@@ -285,6 +304,7 @@ export class TranscodingService {
         : episode.title
       const fallbackMediaItemId = episode.id || 0
       try {
+        publishPreflightProgress(episode, 'Checking source and queued work')
         operation?.signal.throwIfAborted()
         if (!episode.id || !episode.file_path || !episode.source_id) {
           throw new Error(`Episode "${label}" has no local source identity`)
@@ -294,6 +314,7 @@ export class TranscodingService {
         }
         await this.assertAuthorizedItem(episode.id)
         const stat = await fs.stat(episode.file_path)
+        publishPreflightProgress(episode, 'Inspecting video, audio, and subtitle streams')
         const { analysis } = await getQualityAnalyzer().analyzeMediaItemFileEvidence(episode, operation?.signal)
         if (!analysis.success || analysis.filePath !== episode.file_path || analysis.fileSizeBytes !== stat.size || !analysis.video) {
           throw new Error(`File analysis is incomplete or stale for "${label}"`)
@@ -361,7 +382,14 @@ export class TranscodingService {
         let targetCompatibility = sourceCompatibility
         try {
           if (shouldEncode) {
-          const measuredParameters = await this.selectMeasuredParameters(episode.file_path, options, sampleDirectory, operation?.signal)
+          publishPreflightProgress(episode, 'Measuring representative encode samples')
+          const measuredParameters = await this.selectMeasuredParameters(
+            episode.file_path,
+            options,
+            sampleDirectory,
+            operation?.signal,
+            phase => publishPreflightProgress(episode, phase),
+          )
             Object.assign(options, measuredParameters)
             options.useGpu = measuredParameters.encoder !== 'x265' && measuredParameters.encoder !== 'svt_av1'
             if (!options.useGpu) options.gpuId = undefined
@@ -369,7 +397,10 @@ export class TranscodingService {
           params = await this.getTranscodeParameters(episode.file_path, options)
           if (shouldEncode) {
             params.measuredCandidate = (options as TranscodeOptions & { measuredCandidate?: MeasuredCandidate }).measuredCandidate
-            for (const samplePath of params.measuredCandidate!.samplePaths!) {
+            const samplePaths = params.measuredCandidate!.samplePaths!
+            for (let sampleIndex = 0; sampleIndex < samplePaths.length; sampleIndex++) {
+              const samplePath = samplePaths[sampleIndex]
+              publishPreflightProgress(episode, `Verifying measured sample ${sampleIndex + 1} of ${samplePaths.length}`)
               operation?.signal.throwIfAborted()
               const sample = await getMediaFileAnalyzer().analyzeFile(samplePath)
               this.verifyPlannedStreams(analysis, sample, options, params)
@@ -456,10 +487,20 @@ export class TranscodingService {
     const results: ShowTranscodePreflight['episodes'] = []
     for (let i = 0; i < episodes.length; i += CONCURRENCY) {
       const chunk = episodes.slice(i, i + CONCURRENCY)
+      operation?.update({
+        phase: `Starting episodes ${i + 1}–${Math.min(i + chunk.length, episodes.length)} of ${episodes.length}`,
+        progress: { percentage: Math.round((completedEpisodes / episodes.length) * 100), currentItem: 'Preparing episode checks' },
+      })
       const chunkResults = await Promise.allSettled(chunk.map((ep: any) => processEpisode(ep)))
       const rejected = chunkResults.find((result): result is PromiseRejectedResult => result.status === 'rejected')
       if (rejected) throw rejected.reason
       results.push(...chunkResults.map(result => (result as PromiseFulfilledResult<ShowTranscodePreflight['episodes'][0]>).value))
+      completedEpisodes += chunk.length
+      for (const episode of chunk) activeEpisodeSteps.delete(episode.id ?? 0)
+      operation?.update({
+        phase: `Reviewed ${completedEpisodes} of ${episodes.length} episodes`,
+        progress: { percentage: Math.round((completedEpisodes / episodes.length) * 100), currentItem: 'Episode checks complete for this batch' },
+      })
       operation?.signal.throwIfAborted()
     }
 
@@ -470,6 +511,10 @@ export class TranscodingService {
         estimatedSavingsBytes: episode.estimatedSavingsBytes,
         savingsCoverage: episode.savingsCoverage,
       })))
+    operation?.update({
+      phase: 'Saving optimization review',
+      progress: { percentage: 100, currentItem: 'Writing the measured review plan' },
+    })
     const result: ShowTranscodePreflight = {
       preflightId,
       batchId,
@@ -1258,7 +1303,13 @@ export class TranscodingService {
     }
   }
 
-  async selectMeasuredParameters(filePath: string, options: TranscodeOptions, sampleDirectory?: string, signal?: AbortSignal): Promise<Pick<TranscodingParams, 'encoder' | 'crf' | 'preset' | 'measuredCandidate'>> {
+  async selectMeasuredParameters(
+    filePath: string,
+    options: TranscodeOptions,
+    sampleDirectory?: string,
+    signal?: AbortSignal,
+    onProgress?: (phase: string) => void,
+  ): Promise<Pick<TranscodingParams, 'encoder' | 'crf' | 'preset' | 'measuredCandidate'>> {
     if (!options.targetCodec || !options.qualityProfile || !options.encoderPolicy) throw new Error('Target codec, quality profile, and encoder policy are required for measurement')
     signal?.throwIfAborted()
     const analysis = this.analysisCache.get(filePath) ?? await getMediaFileAnalyzer().analyzeFile(filePath)
@@ -1288,7 +1339,7 @@ export class TranscodingService {
       if (Number(space.bavail) * Number(space.bsize) < requiredBytes) throw new Error('Insufficient disk headroom for episode sampling')
       const outputContainer = options.targetConversion?.container ?? options.targetContainer
       const outputExtension = outputContainer === 'mp4' ? '.mp4' : outputContainer === 'mkv' ? '.mkv' : path.extname(filePath)
-      const measured = await this.measuredOptimizationService.measure({ inputPath: filePath, outputDirectory, durationMs: analysis.durationMs, outputExtension, referenceFilter: options.targetConversion?.videoFilter, referenceInputArgs: options.targetConversion?.inputArgs, candidates, signal })
+      const measured = await this.measuredOptimizationService.measure({ inputPath: filePath, outputDirectory, durationMs: analysis.durationMs, outputExtension, referenceFilter: options.targetConversion?.videoFilter, referenceInputArgs: options.targetConversion?.inputArgs, candidates, signal, onProgress })
       signal?.throwIfAborted()
       const selected = selectMeasuredCandidate(options.qualityProfile, measured.candidates)
       for (const candidate of measured.candidates) if (candidate !== selected) for (const sample of candidate.samplePaths!) await fs.unlink(sample)

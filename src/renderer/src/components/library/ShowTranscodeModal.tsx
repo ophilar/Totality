@@ -207,6 +207,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
   const [busy, setBusy] = useState(false)
   const [preflightData, setPreflightData] = useState<ShowTranscodePreflight | null>(null)
   const [preflightTermination, setPreflightTermination] = useState<'cancelling' | 'finishing' | null>(null)
+  const [preflightProgress, setPreflightProgress] = useState<{ percentage: number; phase?: string; currentItem?: string } | null>(null)
   const [quarantineFiles, setQuarantineFiles] = useState<Array<{ mediaItemId: number; label: string; path: string; size: number; modifiedAt: string; owned: boolean }>>([])
   const modalRef = useRef<HTMLDivElement | null>(null)
   const activePreflightRequestId = useRef<string | null>(null)
@@ -514,6 +515,17 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     const requestId = crypto.randomUUID()
     activePreflightRequestId.current = requestId
     setPreflightTermination(null)
+    setPreflightProgress({ percentage: 0, phase: 'Starting preflight', currentItem: 'Loading series episodes' })
+    const unsubscribeProgress = window.electronAPI.onOperationsUpdated?.(({ operations }) => {
+      const operation = operations.find(candidate => candidate.requestId === requestId)
+      if (operation) {
+        setPreflightProgress({
+          percentage: operation.progress?.percentage ?? 0,
+          phase: operation.phase ?? (operation.state === 'finishing' ? 'Saving optimization review' : operation.label),
+          currentItem: operation.state === 'finishing' ? 'Writing the measured review plan' : operation.progress?.currentItem,
+        })
+      }
+    })
     let preflight: ShowTranscodePreflight | undefined
     try {
       preflight = await window.electronAPI.preflightShow({
@@ -532,8 +544,10 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
       logOptimizationDiagnostic('TVOptimizationUI', 'error', 'preflight.failed', { seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, requestId, error: describeDiagnosticError(error) })
       throw error
     } finally {
+      unsubscribeProgress?.()
       activePreflightRequestId.current = null
       setPreflightTermination(null)
+      setPreflightProgress(null)
       if (closeAfterPreflight.current) {
         closeAfterPreflight.current = false
         try {
@@ -694,6 +708,26 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
   const normalizedRadius = radius - strokeWidth * 0.5
   const circumference = normalizedRadius * 2 * Math.PI
   const strokeDashoffset = circumference - ((Math.min(Math.max(currentPercent, 0), 100)) / 100) * circumference
+  const preflightProgressPanel = busy && preflightProgress ? (
+    <div role="status" aria-live="polite" className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-2">
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <span className="font-semibold">{preflightProgress.phase || 'Preflighting series'}</span>
+        <span className="text-muted-foreground tabular-nums">{preflightProgress.percentage}%</span>
+      </div>
+      <div
+        role="progressbar"
+        aria-label="Series preflight progress"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={preflightProgress.percentage}
+        className="h-1.5 overflow-hidden rounded-full bg-muted"
+      >
+        <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${preflightProgress.percentage}%` }} />
+      </div>
+      <p className="text-xs text-muted-foreground break-words">{preflightProgress.currentItem || 'Preparing episode checks…'}</p>
+      <p className="text-[11px] text-muted-foreground">Episodes are checked in parallel groups. Encoding plans also measure and verify sample clips.</p>
+    </div>
+  ) : null
 
   return createPortal(
     <div
@@ -736,6 +770,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
         {/* Content */}
         {mode === 'config' ? (
           <div className="p-5 sm:p-6 space-y-5 max-h-[72vh] overflow-y-auto">
+            {preflightProgressPanel}
             <div className="rounded-xl border border-border/40 bg-muted/20 p-3 flex items-center justify-between gap-3">
               <div className="min-w-0"><div className="text-xs font-bold">Quarantined originals</div><div className="text-[11px] text-muted-foreground">{quarantineFiles.length} retained file{quarantineFiles.length === 1 ? '' : 's'} · {formatBytes(quarantineFiles.reduce((total, file) => total + file.size, 0))}{quarantineFiles.some(file => !file.owned) && ' · Unowned backups require separate review'}</div></div>
               <div className="flex gap-2 shrink-0"><button type="button" onClick={loadQuarantine} className="px-2.5 py-1.5 text-xs rounded-lg border border-border hover:bg-muted">List</button><button type="button" onClick={purgeQuarantine} disabled={quarantineFiles.length === 0 || quarantineFiles.some(file => !file.owned)} className="px-2.5 py-1.5 text-xs rounded-lg border border-red-500/40 text-red-300 disabled:opacity-40">Purge</button></div>
@@ -1130,6 +1165,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
         ) : mode === 'preview' && preflightData ? (
           /* Preflight Preview Mode */
           <div className="p-5 sm:p-6 space-y-4 max-h-[72vh] overflow-y-auto">
+            {preflightProgressPanel}
             {message && <div role={isSuccess ? 'status' : 'alert'} className={`rounded-xl border p-3 text-xs ${isSuccess ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400' : 'border-destructive/20 bg-destructive/10 text-destructive'}`}>{message}</div>}
             {/* Summary card */}
             <div className="bg-muted/20 border border-border/30 rounded-2xl p-4 space-y-3">
