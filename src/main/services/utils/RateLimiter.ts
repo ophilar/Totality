@@ -40,6 +40,8 @@ export class SlidingWindowRateLimiter implements RateLimiter {
   private readonly maxRequests: number
   private readonly windowMs: number
   private readonly bufferMs: number
+  private effectiveMaxRequests: number
+  private pauseUntil = 0
 
   /**
    * @param maxRequests Maximum number of requests allowed in the window
@@ -48,36 +50,43 @@ export class SlidingWindowRateLimiter implements RateLimiter {
    */
   constructor(maxRequests: number, windowMs: number, bufferMs: number = 100) {
     this.maxRequests = maxRequests
+    this.effectiveMaxRequests = maxRequests
     this.windowMs = windowMs
     this.bufferMs = bufferMs
   }
 
   async waitForSlot(): Promise<void> {
-    const now = Date.now()
-
-    // Remove timestamps outside the window
-    this.requestTimestamps = this.requestTimestamps.filter(
-      timestamp => now - timestamp < this.windowMs
-    )
-
-    // If at capacity, wait until oldest request expires
-    if (this.requestTimestamps.length >= this.maxRequests) {
-      const oldestTimestamp = this.requestTimestamps[0]
-      const waitTime = this.windowMs - (now - oldestTimestamp) + this.bufferMs
-
-      if (waitTime > 0) {
-        await this.delay(waitTime)
-        // Recursively check again after waiting
-        return this.waitForSlot()
+    while (true) {
+      const now = Date.now()
+      this.requestTimestamps = this.requestTimestamps.filter(timestamp => now - timestamp < this.windowMs)
+      const pauseWait = this.pauseUntil - now
+      const windowWait = this.requestTimestamps.length >= this.effectiveMaxRequests
+        ? this.windowMs - (now - this.requestTimestamps[0]) + this.bufferMs
+        : 0
+      if (pauseWait <= 0 && windowWait <= 0) {
+        this.requestTimestamps.push(now)
+        return
       }
+      await this.delay(Math.max(pauseWait, windowWait))
     }
-
-    // Record this request
-    this.requestTimestamps.push(Date.now())
   }
 
   reset(): void {
     this.requestTimestamps = []
+    this.effectiveMaxRequests = this.maxRequests
+    this.pauseUntil = 0
+  }
+
+  pauseFor(delayMs: number): void {
+    this.pauseUntil = Math.max(this.pauseUntil, Date.now() + Math.max(0, delayMs))
+  }
+
+  recordError(status: number): void {
+    if (status === 429 || status === 503) this.effectiveMaxRequests = Math.max(1, Math.floor(this.effectiveMaxRequests / 2))
+  }
+
+  recordSuccess(): void {
+    if (this.effectiveMaxRequests < this.maxRequests) this.effectiveMaxRequests++
   }
 
   private delay(ms: number): Promise<void> {
@@ -95,7 +104,7 @@ export class SlidingWindowRateLimiter implements RateLimiter {
 
     return {
       currentCount,
-      maxRequests: this.maxRequests,
+      maxRequests: this.effectiveMaxRequests,
       windowMs: this.windowMs,
     }
   }
@@ -192,8 +201,8 @@ export const RateLimiters = {
    * TMDB API: ~40 requests per second per IP
    * Using 40 req/1s to maximize throughput while staying within limits
    */
-  createTMDBLimiter(): SlidingWindowRateLimiter {
-    return new SlidingWindowRateLimiter(40, 1000, 25)
+  createTMDBLimiter(maxRequests = 40, windowMs = 1000): SlidingWindowRateLimiter {
+    return new SlidingWindowRateLimiter(maxRequests, windowMs, 25)
   },
 
   /**
