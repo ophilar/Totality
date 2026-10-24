@@ -251,6 +251,8 @@ Two additional client-side completeness filters applied in `loadCompletenessData
 7. Quality label (LOW/MEDIUM/HIGH) derived from weighted overall score (≥75=HIGH, ≥50=MEDIUM, <50=LOW)
 8. Corrupt audio track detection: tracks with bitrate < channels × 32 kbps are skipped in best-track selection
 
+**Estimated storage savings** (`QualityAnalyzer` and `OptimizationSavingsService`): one total combines modeled video savings with saved bytes from configured audio/subtitle selection policies. Lossy audio conversion contributes only when a plan explicitly selects it. Library estimates prefer H.265 when the configured default playback target supports it, otherwise AV1 when supported. Cross-codec estimates use configured codec-efficiency ratios and measured video stream bytes, or bitrate × duration when stream byte accounting is unavailable. Same-codec estimates use the configured high bitrate threshold for the resolution as the modeled output bitrate. These estimates do not establish perceptual quality. A completed encoded sample replaces the entire modeled plan total with a whole-output sample projection. Copy/quarantine retain the source; encoding and stream-copy pruning write a temporary/replacement output and require temporary free space before replacement.
+
 **Music Quality Tiers**:
 - **Ultra**: Lossless (FLAC/ALAC/WAV) with 24-bit+ OR >48kHz sample rate
 - **High**: CD-quality lossless (16-bit / 44.1-48kHz)
@@ -369,7 +371,7 @@ All setting keys are defined in `src/shared/settingKeys.ts` as `SETTING_KEYS` �
 
 ### AI Chat & Analysis (Gemini)
 
-**Model:** Google Gemini `gemini-2.5-flash` via `@google/genai` SDK (free tier: 10 RPM, 250 RPD)
+**Model:** Google Gemini `gemini-flash-latest` via `@google/genai` SDK. Google updates this alias to the latest Flash release.
 
 **Architecture:**
 - **GeminiService** (`src/main/services/GeminiService.ts`): Sync constructor reads API key from DB (async causes race condition). `sendMessageWithTools()` runs agentic tool-use loop (max 10 rounds).
