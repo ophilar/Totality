@@ -3,7 +3,6 @@ export const MEDIA_ITEM_SORT_FIELDS = [
   'year',
   'updated_at',
   'created_at',
-  'tier_score',
   'overall_score',
   'play_count',
   'last_watched_at',

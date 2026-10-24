@@ -54,10 +54,7 @@ export function registerQualityHandlers() {
       throw new Error('Media item not found')
     }
 
-    const qualityScore = db.getQualityScoreByMediaId(mediaItemId)
-    const currentScore = qualityScore?.overall_score || 0
-
-    return analyzer.getRecommendedFormat(mediaItem, currentScore)
+    return analyzer.getRecommendedFormat(mediaItem)
   })
 
   console.log('Quality analysis IPC handlers registered')

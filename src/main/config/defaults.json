@@ -42,8 +42,7 @@
     }
   },
   "gemini": {
-    "defaultModel": "gemini-3.1-flash-lite",
-    "fastModel": "gemini-3.1-flash-lite",
+    "defaultModel": "gemini-flash-latest",
     "maxExplanationCache": 20
   },
   "quality": {

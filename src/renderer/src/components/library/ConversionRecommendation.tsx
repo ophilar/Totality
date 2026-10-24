@@ -13,7 +13,7 @@ function MechanismRow({ label, mechanism }: { label: string; mechanism: Optimiza
       <div className="font-medium">{label}</div>
       <div className="text-muted-foreground">{mechanism.reason}</div>
     </div>
-    <span className="shrink-0 text-muted-foreground">Est. savings <EstimatedSavingsDisplay bytes={mechanism.estimatedSavingsBytes} /></span>
+    <span className="shrink-0 text-muted-foreground">Potential savings <EstimatedSavingsDisplay bytes={mechanism.estimatedSavingsBytes} /></span>
   </div>
 }
 
@@ -86,6 +86,6 @@ export function ConversionRecommendation({ item, compact = false, onOptimization
     </div>}
     {!hasSupportedOperation && <div className="pt-2 text-muted-foreground">No supported optimization action is available.</div>}
     {hasSupportedOperation && <button type="button" onClick={() => setShowTranscodeModal(true)} className="mt-3 rounded bg-primary px-3 py-1.5 font-semibold text-primary-foreground">Review optimization</button>}
-    {showTranscodeModal && <TranscodeModal mediaId={mediaId} initialOptimizationMode={transcodeVideo ? 'transcode' : 'remux_only'} initialStreamPruning={pruneStreams} initialAudioTranscode={transcodeAudio} onOptimizationCompleted={onOptimizationCompleted} onClose={() => setShowTranscodeModal(false)} />}
+    {showTranscodeModal && <TranscodeModal mediaId={mediaId} initialOptimizationMode={transcodeVideo ? 'transcode' : 'remux_only'} initialStreamPruning={pruneStreams} onOptimizationCompleted={onOptimizationCompleted} onClose={() => setShowTranscodeModal(false)} />}
   </div>
 }

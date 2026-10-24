@@ -6,6 +6,17 @@
 
 import type { ProviderType } from '../../contexts/SourceContext'
 
+export function parseLanguageWhitelist(value: string): string[] {
+  return value.split(/[,\s]+/).map(language => language.trim().toLowerCase()).filter(Boolean)
+}
+
+export function getOptimizationContainer(container?: string): 'mkv' | 'mp4' | '' {
+  const normalizedContainer = container?.split(',')[0].trim().toLowerCase()
+  if (normalizedContainer === 'mkv' || normalizedContainer === 'matroska') return 'mkv'
+  if (normalizedContainer === 'mp4' || normalizedContainer === 'm4v') return 'mp4'
+  return ''
+}
+
 // ============================================================================
 // Constants
 // ============================================================================

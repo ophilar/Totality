@@ -4,6 +4,7 @@ import * as path from 'path'
 import { z } from 'zod'
 import { getDatabase } from '../database/getDatabase'
 import { getQualityAnalyzer } from '../services/QualityAnalyzer'
+import { getTaskQueueService } from '../services/TaskQueueService'
 import { getGeminiService } from '../services/GeminiService'
 import { getTMDBService } from '../services/TMDBService'
 import { invalidateNfsMappingsCache } from '../providers/kodi/KodiDatabaseSchema'
@@ -12,6 +13,7 @@ import { safeSend } from './utils/safeSend'
 import fs from 'fs/promises'
 import type { MediaItem } from '../types/database'
 import { validateInput, PositiveIntSchema, NonEmptyStringSchema, SettingKeySchema, SettingValueSchema, MediaItemFiltersSchema, TVShowFiltersSchema, MediaItemSchema, QualityScoreSchema, NfsMappingsSchema, ExportCSVOptionsSchema, AddExclusionSchema, OptionalSourceIdSchema, FilePathSchema, LetterOffsetSchema } from '../validation/schemas'
+import { SETTING_KEYS } from '../../shared/settingKeys'
 
 import { operationRequestRegistry } from './utils/OperationRequestRegistry'
 import { createIpcHandler, createIpcHandlerWithEvent, createValidatedIpcHandlerWithEvent } from './utils/createHandler'
@@ -213,11 +215,20 @@ export function registerDatabaseHandlers() {
       const validKey = validateInput(SettingKeySchema, key, 'db:setSetting')
       const validValue = validateInput(SettingValueSchema, value, 'db:setSetting')
       console.log('[IPC db:setSetting]', validKey, sensitiveSettingKeys.has(validKey) ? '(redacted)' : validValue)
+      const previousValue = validKey === SETTING_KEYS.optimization_default_target_profile_id
+        ? await db.getSetting(validKey)
+        : null
       await db.setSetting(validKey, validValue)
+      const targetProfileChanged = validKey === SETTING_KEYS.optimization_default_target_profile_id && previousValue !== validValue
 
       // Invalidate quality analyzer cache when quality settings change
-      if (validKey.startsWith('quality_')) {
+      if (validKey.startsWith('quality_') || targetProfileChanged) {
         getQualityAnalyzer().invalidateThresholdsCache()
+      }
+      if (targetProfileChanged) {
+        const taskId = getTaskQueueService().addTask({ type: 'quality-analysis', label: 'Refresh media quality and savings estimates' })
+        if (taskId) await db.deleteSetting('optimization.savings_reanalysis_pending')
+        else await db.setSetting('optimization.savings_reanalysis_pending', 'true')
       }
 
       // Refresh TMDB API key when it changes (no restart needed)
@@ -225,8 +236,8 @@ export function registerDatabaseHandlers() {
         getTMDBService().refreshApiKey()
       }
 
-      // Refresh Gemini API key/model/enabled when they change (no restart needed)
-      if (validKey === 'gemini_api_key' || validKey === 'gemini_model' || validKey === 'ai_enabled') {
+      // Refresh Gemini API key/enabled state when they change (no restart needed)
+      if (validKey === 'gemini_api_key' || validKey === 'ai_enabled') {
         getGeminiService().refreshApiKey()
       }
 
@@ -666,7 +677,7 @@ export function registerDatabaseHandlers() {
         : undefined
 
       // Update the movie with the new TMDB ID, poster, title, and year
-      await db.updateMovieMatch(validMediaItemId, validTmdbId.toString(), posterUrl, title, year)
+      await db.updateMovieMatch(validMediaItemId, validTmdbId.toString(), posterUrl, title, year, movieDetails.original_language)
 
       // Send library update for live refresh
       safeSend(win, IPC_CHANNELS.libraryUpdated, { type: 'media' })

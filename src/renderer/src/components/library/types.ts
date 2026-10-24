@@ -102,23 +102,24 @@ export interface MediaItem {
   season_number?: number
   episode_number?: number
   resolution: string
-  video_bitrate: number
+  video_bitrate_kbps: number
   audio_channels: number
   poster_url?: string
   art_url?: string
   episode_thumb_url?: string
   season_poster_url?: string
-  overall_score?: number
+  overall_score?: number | null
   needs_upgrade?: boolean
   quality_tier?: 'SD' | '720p' | '1080p' | '4K' | 'UNKNOWN'
   tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
-  tier_score?: number
+  tier_score?: number | null
   tmdb_id?: string
   issues?: string
 
   // File information
   file_path?: string
-  file_size?: number
+  file_size_bytes?: number
+  container?: string
 
   // Codecs and tracks
   video_codec?: string
@@ -140,6 +141,7 @@ export interface MediaItem {
   // Quality & Storage Optimization
   evidence_status?: string | null
   estimated_savings_bytes?: number | null
+  savings_coverage?: 'complete' | 'partial' | 'insufficient'
   confidence?: string | null
   savings_basis?: string | null
   series_identity_key?: string | null
@@ -184,6 +186,7 @@ export interface TVShowSummary {
   library_id?: string
   series_identity_key?: string
   estimated_savings_bytes?: number | null
+  savings_coverage?: 'complete' | 'partial' | 'insufficient'
 }
 
 // ============================================================================
@@ -196,13 +199,13 @@ export interface LibraryStats {
   totalEpisodes: number
   totalShows: number
   needsUpgradeCount: number
-  averageQualityScore: number
+  averageQualityScore: number | null
   // Movie-specific stats
   movieNeedsUpgradeCount: number
-  movieAverageQualityScore: number
+  movieAverageQualityScore: number | null
   // TV-specific stats
   tvNeedsUpgradeCount: number
-  tvAverageQualityScore: number
+  tvAverageQualityScore: number | null
 }
 
 // ============================================================================

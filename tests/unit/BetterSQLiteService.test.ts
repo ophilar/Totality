@@ -88,27 +88,27 @@ describe('Media Items', () => {
   const insertMediaItem = (plex_id: string, title: string, type: string, overrides: Record<string, unknown> = {}) => {
     const defaults = {
       source_id: 'src1', source_type: 'plex', library_id: 'lib1',
-      file_path: `/media/${title}.mkv`, file_size: 1000000, duration: 7200000,
+      file_path: `/media/${title}.mkv`, file_size_bytes: 1000000, duration_ms: 7200000,
       resolution: '1080p', width: 1920, height: 1080,
-      video_codec: 'HEVC', video_bitrate: 5000,
-      audio_codec: 'AAC', audio_channels: 2, audio_bitrate: 320,
+      video_codec: 'HEVC', video_bitrate_kbps: 5000,
+      audio_codec: 'AAC', audio_channels: 2, audio_bitrate_kbps: 320,
       series_identity_key: type === 'episode' ? 'tmdb:100' : null,
       ...overrides,
     }
     return db.prepare(`
       INSERT INTO media_items (
         source_id, source_type, library_id, plex_id, title, type,
-        file_path, file_size, duration, resolution, width, height,
-        video_codec, video_bitrate, audio_codec, audio_channels, audio_bitrate,
+        file_path, file_size_bytes, duration_ms, resolution, width, height,
+        video_codec, video_bitrate_kbps, audio_codec, audio_channels, audio_bitrate_kbps,
         series_identity_key
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       defaults.source_id, defaults.source_type, defaults.library_id,
       plex_id, title, type,
-      defaults.file_path, defaults.file_size, defaults.duration,
+      defaults.file_path, defaults.file_size_bytes, defaults.duration_ms,
       defaults.resolution, defaults.width, defaults.height,
-      defaults.video_codec, defaults.video_bitrate,
-      defaults.audio_codec, defaults.audio_channels, defaults.audio_bitrate,
+      defaults.video_codec, defaults.video_bitrate_kbps,
+      defaults.audio_codec, defaults.audio_channels, defaults.audio_bitrate_kbps,
       defaults.series_identity_key
     )
   }
@@ -336,8 +336,8 @@ describe('Reset Operations', () => {
 
     // Insert media item
     db.prepare(`
-      INSERT INTO media_items (source_id, source_type, plex_id, title, type, file_path, file_size, duration,
-        resolution, width, height, video_codec, video_bitrate, audio_codec, audio_channels, audio_bitrate)
+      INSERT INTO media_items (source_id, source_type, plex_id, title, type, file_path, file_size_bytes, duration_ms,
+        resolution, width, height, video_codec, video_bitrate_kbps, audio_codec, audio_channels, audio_bitrate_kbps)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run('src1', 'plex', 'p1', 'Movie', 'movie', '/f.mkv', 1000, 7200, '1080p', 1920, 1080, 'HEVC', 5000, 'AAC', 2, 320)
 
@@ -384,8 +384,8 @@ describe('Cleanup Operations', () => {
     `).run('src1', 'plex', 'Plex', '{}')
 
     const { lastInsertRowid: itemId } = db.prepare(`
-      INSERT INTO media_items (source_id, source_type, plex_id, title, type, file_path, file_size, duration,
-        resolution, width, height, video_codec, video_bitrate, audio_codec, audio_channels, audio_bitrate)
+      INSERT INTO media_items (source_id, source_type, plex_id, title, type, file_path, file_size_bytes, duration_ms,
+        resolution, width, height, video_codec, video_bitrate_kbps, audio_codec, audio_channels, audio_bitrate_kbps)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run('src1', 'plex', 'p1', 'Movie', 'movie', '/f.mkv', 1000, 7200, '1080p', 1920, 1080, 'HEVC', 5000, 'AAC', 2, 320)
 

@@ -2,6 +2,7 @@ import type { OptimizationMetricsSummary } from '@main/types/database'
 
 export interface OptimizableItem {
   estimated_savings_bytes?: number | null
+  savings_coverage?: OptimizationMetricsSummary['coverage']
 }
 
 /**
@@ -15,15 +16,18 @@ export function calculateOptimizationSummary(
 
   let totalEstimatedSavings = 0
   let hasEstimatedSavings = false
+  let hasPartialCoverage = false
 
   for (const item of items) {
     if (item.estimated_savings_bytes != null) {
       totalEstimatedSavings += item.estimated_savings_bytes
       hasEstimatedSavings = true
     }
+    if (item.savings_coverage !== 'complete') hasPartialCoverage = true
   }
 
   return {
     estimatedSavingsBytes: hasEstimatedSavings ? totalEstimatedSavings : null,
+    coverage: !hasEstimatedSavings ? 'insufficient' : hasPartialCoverage ? 'partial' : 'complete',
   }
 }

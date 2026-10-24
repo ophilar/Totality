@@ -522,6 +522,10 @@ app.whenReady().then(async () => {
 
     // Load persisted history and re-enqueue any tasks that were pending at last quit
     taskQueueService.loadPersistedHistory()
+    if (getDatabase().getSetting('optimization.savings_reanalysis_pending') === 'true') {
+      const analysisTaskId = taskQueueService.addTask({ type: 'quality-analysis', label: 'Refresh media quality and savings estimates' })
+      if (analysisTaskId) getDatabase().deleteSetting('optimization.savings_reanalysis_pending')
+    }
     console.log('Task queue service initialized')
 
   } catch (error) {

@@ -111,7 +111,7 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
           {seasonCount} {seasonCount === 1 ? 'season' : 'seasons'} · {totalEpisodes} episodes
           {completenessData?.status && ` · ${getStatusBadge(completenessData.status)?.text || completenessData.status}`}
         </p>
-        <ScopedOptimizationSummary totalCount={totalEpisodes} estimatedSavingsBytes={show.estimated_savings_bytes} className="mt-1" />
+        <ScopedOptimizationSummary totalCount={totalEpisodes} estimatedSavingsBytes={show.estimated_savings_bytes} coverage={show.savings_coverage} className="mt-1" />
         {completenessData && (
           <div className="mt-2">
             <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded">
@@ -201,7 +201,7 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onOptim
     }
   }
 
-  const needsUpgrade = episode.tier_quality === 'LOW' || !!episode.needs_upgrade
+  const needsUpgrade = !!episode.needs_upgrade
   const showMenuButton = (onRescan && episode.file_path) || (onDismissUpgrade && needsUpgrade) || (onOptimizeEpisode && episode.id && episode.file_path && episode.source_id && episode.series_identity_key)
 
   // Format audio channels to standard labels (6ch = 5.1, 8ch = 7.1, etc.)
@@ -251,9 +251,8 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onOptim
           </span>
           <h4 className={`font-semibold truncate ${isMobile ? 'text-label' : ''}`}>{episode.title}</h4>
         </div>
-        <div className="flex items-center gap-1.5 mt-0.5 text-caption text-muted-foreground">
-          {episode.resolution && <span>{episode.resolution}</span>}
-          {audioDisplay && <><span>·</span><span>{audioDisplay}</span></>}
+        <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
+          <span>{episode.resolution} • {(episode.video_bitrate_kbps / 1000).toFixed(1)} Mbps • {episode.audio_channels}.0 Audio</span>
           {needsUpgrade && (
             <span title="Quality upgrade recommended"><CircleFadingArrowUp className="w-3.5 h-3.5 text-destructive shrink-0 ml-0.5" /></span>
           )}
@@ -261,8 +260,9 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onOptim
         <QualityBadges item={episode} showSavings={false} />
         {episode.estimated_savings_bytes != null && (
           <div className="mt-1 flex items-center gap-1.5 text-xs" aria-label="Estimated savings">
-            <span className="text-muted-foreground">Est. savings</span>
+            <span className="text-muted-foreground">Estimated savings</span>
             <EstimatedSavingsDisplay bytes={episode.estimated_savings_bytes} />
+            <span className="text-muted-foreground">· {episode.savings_coverage ?? 'insufficient'} evidence</span>
           </div>
         )}
       </div>
@@ -508,11 +508,13 @@ export function TVShowsView({
     setOptimizingEpisode(null)
     if (showSummary) {
       if (!showSummary.series_identity_key) return
+      console.info('[TVOptimizationUI] Open series optimizer', { seriesIdentityKey: showSummary.series_identity_key, seriesTitle: showSummary.series_title, sourceId: showSummary.source_id, libraryId: showSummary.library_id, episodeCount: showSummary.episode_count })
       setOptimizingShow(showSummary)
       return
     }
     const firstEp = firstIdentifiedEpisode
     if (!firstEp?.series_identity_key) return
+    console.info('[TVOptimizationUI] Open selected series optimizer', { seriesIdentityKey: firstEp.series_identity_key, seriesTitle: selectedShowData?.title, sourceId: firstEp.source_id, libraryId: firstEp.library_id })
 
     const summary = shows.find(s => s.series_identity_key === firstEp.series_identity_key)
     if (summary && summary.series_identity_key) {
@@ -532,6 +534,7 @@ export function TVShowsView({
 
   const handleOpenOptimizeEpisode = useCallback((episode: MediaItem) => {
     if (!episode.id || !episode.file_path || !episode.source_id || !episode.series_identity_key) return
+    console.info('[TVOptimizationUI] Open episode optimizer', { mediaItemId: episode.id, seriesIdentityKey: episode.series_identity_key, seriesTitle: episode.series_title, sourceId: episode.source_id, libraryId: episode.library_id })
     const show = shows.find(candidate => candidate.series_identity_key === episode.series_identity_key && candidate.source_id === episode.source_id && candidate.library_id === episode.library_id)
     setOptimizingShow(show ?? {
       series_title: episode.series_title || episode.title,
@@ -1421,7 +1424,7 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
           <p className="text-xs text-muted-foreground">
             {show.season_count} {show.season_count === 1 ? 'Season' : 'Seasons'} • {totalEpisodes} Episodes
           </p>
-          <ScopedOptimizationSummary totalCount={totalEpisodes} estimatedSavingsBytes={show.estimated_savings_bytes} />
+          <ScopedOptimizationSummary totalCount={totalEpisodes} estimatedSavingsBytes={show.estimated_savings_bytes} coverage={show.savings_coverage} />
         </div>
         {completenessData && (
           <div
