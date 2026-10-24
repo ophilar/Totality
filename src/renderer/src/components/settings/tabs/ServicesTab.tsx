@@ -156,8 +156,6 @@ export function ServicesTab() {
   const [geminiStatus, setGeminiStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>('idle')
   const [geminiError, setGeminiError] = useState<string | null>(null)
   const [originalGemini, setOriginalGemini] = useState('')
-  const [geminiModel, setGeminiModel] = useState('gemini-2.5-flash')
-  const [originalGeminiModel, setOriginalGeminiModel] = useState('gemini-2.5-flash')
   const [aiEnabled, setAiEnabled] = useState(true)
 
   // General state
@@ -168,7 +166,6 @@ export function ServicesTab() {
   const tmdbId = useId()
   const toggleId = useId()
   const geminiId = useId()
-  const geminiModelId = useId()
   const aiToggleId = useId()
 
   const toggleCard = (card: string) => {
@@ -190,9 +187,9 @@ export function ServicesTab() {
   useEffect(() => {
     const tmdbChanged = tmdbApiKey !== originalTmdb
     const nfsChanged = JSON.stringify(nfsMappings) !== JSON.stringify(originalNfsMappings)
-    const geminiChanged = geminiApiKey !== originalGemini || geminiModel !== originalGeminiModel
+    const geminiChanged = geminiApiKey !== originalGemini
     setHasChanges(tmdbChanged || nfsChanged || geminiChanged)
-  }, [tmdbApiKey, originalTmdb, nfsMappings, originalNfsMappings, geminiApiKey, originalGemini, geminiModel, originalGeminiModel])
+  }, [tmdbApiKey, originalTmdb, nfsMappings, originalNfsMappings, geminiApiKey, originalGemini])
 
   useEffect(() => {
     const cleanup = window.electronAPI.onFFprobeInstallProgress?.((progress: unknown) => {
@@ -225,9 +222,6 @@ export function ServicesTab() {
       if (gemini) {
         setGeminiStatus('valid')
       }
-      const model = allSettings.gemini_model || 'gemini-2.5-flash'
-      setGeminiModel(model)
-      setOriginalGeminiModel(model)
       setAiEnabled(allSettings.ai_enabled !== 'false')
 
       setFfprobeAvailable(ffAvailable)
@@ -282,12 +276,10 @@ export function ServicesTab() {
         window.electronAPI.setSetting('tmdb_api_key', tmdbApiKey),
         window.electronAPI.setNfsMappings(nfsMappings),
         window.electronAPI.setSetting('gemini_api_key', geminiApiKey),
-        window.electronAPI.setSetting('gemini_model', geminiModel),
       ])
       setOriginalTmdb(tmdbApiKey)
       setOriginalNfsMappings({ ...nfsMappings })
       setOriginalGemini(geminiApiKey)
-      setOriginalGeminiModel(geminiModel)
       setHasChanges(false)
     } catch (error) {
       console.error('Failed to save settings:', error)
@@ -680,20 +672,7 @@ export function ServicesTab() {
             {' '}(no credit card required)
           </p>
 
-          <div className="space-y-2">
-            <label htmlFor={geminiModelId} className="block text-xs font-medium text-muted-foreground">
-              Model
-            </label>
-            <select
-              id={geminiModelId}
-              value={geminiModel}
-              onChange={(e) => setGeminiModel(e.target.value)}
-              className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
-            >
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended)</option>
-              <option value="gemini-2.5-pro">Gemini 2.5 Pro (Most capable)</option>
-            </select>
-          </div>
+          <p className="text-xs text-muted-foreground">Model: Latest Gemini Flash, updated by Google.</p>
 
         </div>
       </ServiceCard>
