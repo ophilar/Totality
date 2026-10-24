@@ -14,6 +14,13 @@ export interface ActivityOperation {
   progress?: { percentage: number; currentItem?: string }
   outcome?: { message: string; hasResult: boolean }
   resultId?: string
+  entity?: {
+    seriesTitle?: string
+    seriesIdentityKey?: string
+    sourceId: string
+    libraryId?: string
+    mediaItemId?: number
+  }
   createdAt: string
   updatedAt: string
 }
@@ -78,7 +85,7 @@ export class OperationRequestRegistry {
     return this.createHandle(entry, key)
   }
 
-  registerBackground(requestId: string, activity: Pick<ActivityOperation, 'kind' | 'label' | 'context'>): RegisteredOperationRequest {
+  registerBackground(requestId: string, activity: Pick<ActivityOperation, 'kind' | 'label' | 'context' | 'entity'>): RegisteredOperationRequest {
     const key = `background:${requestId}`
     if (this.requests.has(key)) throw new Error(`Background operation ${requestId} is already active`)
     const now = new Date().toISOString()

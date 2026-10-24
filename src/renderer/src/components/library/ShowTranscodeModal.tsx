@@ -157,7 +157,7 @@ function formatBytes(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function ShowTranscodeModal({ show, episode, onClose, initialPreflight }: { show: TVShowSummary; episode?: MediaItem; onClose: () => void; initialPreflight?: ShowTranscodePreflight | null }) {
+export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, resumeRequestId }: { show: TVShowSummary; episode?: MediaItem; onClose: () => void; initialPreflight?: ShowTranscodePreflight | null; resumeRequestId?: string | null }) {
   const { addToast } = useToast()
   const { seriesIdentityKey, sourceId, libraryId } = getTVShowIdentity(show)
   const [mode, setMode] = useState<'config' | 'preview' | 'monitoring'>('config')
@@ -213,6 +213,7 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight }:
   const modalRef = useRef<HTMLDivElement | null>(null)
   const activePreflightRequestId = useRef<string | null>(null)
   const backgroundPreflight = useRef(false)
+  const startedPreflightHere = useRef(false)
 
   // Live Task Queue tracking state for monitoring mode
   const [queueState, setQueueState] = useState<QueueState>({
@@ -230,6 +231,71 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight }:
     setReviewedEpisodes([])
     setMode('preview')
   }, [initialPreflight?.preflightId])
+
+  useEffect(() => {
+    if (initialPreflight) return
+    let mounted = true
+    let finished = false
+    const updateOperation = async (operation: import('@main/ipc/utils/OperationRequestRegistry').ActivityOperation) => {
+      if (!mounted || finished) return
+      if (!operation.outcome) {
+        activePreflightRequestId.current = operation.requestId
+        backgroundPreflight.current = false
+        setBusy(true)
+        setPreflightOperationState(operation.state === 'paused' || operation.state === 'pausing' || operation.state === 'finishing' ? operation.state : 'running')
+        setPreflightProgress({
+          percentage: operation.progress?.percentage ?? 0,
+          phase: operation.phase ?? 'Preflighting series',
+          currentItem: operation.progress?.currentItem ?? operation.context,
+        })
+        return
+      }
+      finished = true
+      activePreflightRequestId.current = null
+      if (operation.state === 'completed' && operation.resultId) {
+        try {
+          const saved = await window.electronAPI.getShowPreflight(operation.resultId) as { result: ShowTranscodePreflight } | undefined
+          if (!mounted) return
+          if (!saved) throw new Error('The saved optimization review has expired')
+          setPreflightData(saved.result)
+          setReviewedEpisodes([])
+          setMode('preview')
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : String(error))
+        }
+      } else if (operation.state !== 'cancelled') {
+        setMessage(operation.outcome.message)
+      }
+      if (mounted) {
+        setBusy(false)
+        setPreflightProgress(null)
+        setPreflightOperationState(null)
+      }
+    }
+    const matchesCurrentMedia = (operation: import('@main/ipc/utils/OperationRequestRegistry').ActivityOperation) => {
+      const entity = operation.entity
+      return operation.kind === 'optimization-preflight' && entity?.sourceId === sourceId && entity.libraryId === libraryId &&
+        entity.seriesIdentityKey === seriesIdentityKey && entity.mediaItemId === episode?.id
+    }
+    const findOperation = (operations: import('@main/ipc/utils/OperationRequestRegistry').ActivityOperation[]) => {
+      if (resumeRequestId) return operations.find(operation => operation.requestId === resumeRequestId)
+      if (startedPreflightHere.current) return undefined
+      return operations.filter(operation => matchesCurrentMedia(operation) && !operation.outcome)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]
+    }
+    const unsubscribe = window.electronAPI.onOperationsUpdated?.(({ operations }) => {
+      const operation = findOperation(operations)
+      if (operation) void updateOperation(operation)
+    })
+    void window.electronAPI.operationsGetActivity().then(snapshot => {
+      const operation = findOperation(snapshot.operations)
+      if (operation) void updateOperation(operation)
+    }).catch(error => setMessage(error instanceof Error ? error.message : String(error)))
+    return () => {
+      mounted = false
+      unsubscribe?.()
+    }
+  }, [initialPreflight?.preflightId, resumeRequestId, seriesIdentityKey, sourceId, libraryId, episode?.id])
 
   useEffect(() => {
     let mounted = true
@@ -519,6 +585,7 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight }:
     setPreflightTermination(null)
     setPreflightProgress({ percentage: 0, phase: 'Starting preflight', currentItem: 'Loading series episodes' })
     setPreflightOperationState('running')
+    startedPreflightHere.current = true
     const unsubscribeProgress = window.electronAPI.onOperationsUpdated?.(({ operations }) => {
       const operation = operations.find(candidate => candidate.requestId === requestId)
       if (operation && !backgroundPreflight.current) {

@@ -25,6 +25,13 @@ function launchBackgroundPreflight(requestId: string, preflightRequest: ShowTran
     kind: 'optimization-preflight',
     label: 'Preflighting TV series',
     context: preflightRequest.seriesTitle ?? `Episode ${preflightRequest.mediaItemId}`,
+    entity: {
+      seriesTitle: preflightRequest.seriesTitle,
+      seriesIdentityKey: preflightRequest.seriesIdentityKey,
+      sourceId: preflightRequest.sourceId,
+      libraryId: preflightRequest.libraryId,
+      mediaItemId: preflightRequest.mediaItemId,
+    },
   })
   getLoggingService().info('[TVOptimization]', `Background preflight started: requestId=${requestId}, series=${preflightRequest.seriesIdentityKey ?? 'episode'}, mediaItem=${preflightRequest.mediaItemId ?? 'all'}`)
   void getTranscodingService().preflightShowTranscode(preflightRequest, {
