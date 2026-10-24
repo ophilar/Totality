@@ -243,6 +243,14 @@ export interface ShowTranscodePreflight {
   savingsBasis?: 'sample_based_projection' | 'mixed_sample_projection' | 'representative_sample_projection' | 'mixed_representative_sample_projection' | 'planned_operations'
 }
 
+interface CachedMeasurement {
+  version: 1
+  cacheKey: string
+  sourceSha256: string
+  candidate: MeasuredCandidate
+  sampleHashes: string[]
+}
+
 /**
  * TranscodingService
  *
@@ -454,27 +462,51 @@ export class TranscodingService {
         const subtitlePruningSavings = sumMeasuredStreamBytes(analysis.streamBytes, removedSubtitleTracks.map(track => track.index))
         await operation?.waitUntilRunning()
         const sourceSha256 = await sha256File(episode.file_path)
-        const sampleDirectory = path.join(app.getPath('userData'), 'transcoding-samples', preflightId, String(episode.id))
+        const measurementCacheKey = shouldEncode
+          ? createHash('sha256').update(JSON.stringify({
+              version: 1,
+              sourceSha256,
+              options,
+              targetProfile: targetProfile?.definition,
+            })).digest('hex')
+          : undefined
+        const sampleDirectory = measurementCacheKey
+          ? path.join(app.getPath('userData'), 'transcoding-samples', 'cache', measurementCacheKey)
+          : path.join(app.getPath('userData'), 'transcoding-samples', preflightId, String(episode.id))
         let params: TranscodingParams
         let targetCompatibility = sourceCompatibility
+        let cachedMeasurement: CachedMeasurement | undefined
+        let measurementCacheHit = false
         try {
           if (shouldEncode) {
             if (reusableRepresentativePlan) {
               publishPreflightProgress(episode, `Using measured settings from ${reusableRepresentativePlan.label}`)
               Object.assign(options, reusableRepresentativePlan.measuredParameters)
             } else {
-              publishPreflightProgress(episode, 'Measuring encode samples for this episode')
-              const measuredParameters = await this.selectMeasuredParameters(
-                episode.file_path,
-                options,
-                sampleDirectory,
-                operation?.signal,
-                async phase => {
-                  publishPreflightProgress(episode, phase)
-                  await operation?.waitUntilRunning()
-                },
-              )
-              Object.assign(options, measuredParameters)
+              cachedMeasurement = await this.getCachedMeasurement(measurementCacheKey!, sourceSha256, sampleDirectory)
+              if (cachedMeasurement) {
+                measurementCacheHit = true
+                publishPreflightProgress(episode, 'Reusing verified encode samples from cache')
+                Object.assign(options, {
+                  encoder: cachedMeasurement.candidate.encoder,
+                  crf: cachedMeasurement.candidate.quality,
+                  preset: cachedMeasurement.candidate.preset,
+                  measuredCandidate: cachedMeasurement.candidate,
+                })
+              } else {
+                publishPreflightProgress(episode, 'Measuring encode samples for this episode')
+                const measuredParameters = await this.selectMeasuredParameters(
+                  episode.file_path,
+                  options,
+                  sampleDirectory,
+                  operation?.signal,
+                  async phase => {
+                    publishPreflightProgress(episode, phase)
+                    await operation?.waitUntilRunning()
+                  },
+                )
+                Object.assign(options, measuredParameters)
+              }
             }
             options.useGpu = options.encoder !== 'x265' && options.encoder !== 'svt_av1'
             if (!options.useGpu) options.gpuId = undefined
@@ -497,9 +529,25 @@ export class TranscodingService {
                 if (targetCompatibility.overall !== 'compatible') throw new Error(`Measured sample is incompatible: ${Object.values(targetCompatibility.findings).filter(finding => finding.status === 'incompatible').map(finding => finding.rule).join('; ')}`)
               }
             }
+            if (!reusableRepresentativePlan && !measurementCacheHit) {
+              const candidate = params.measuredCandidate!
+              const cacheRecord: CachedMeasurement = {
+                version: 1,
+                cacheKey: measurementCacheKey!,
+                sourceSha256,
+                candidate,
+                sampleHashes: await Promise.all((candidate.samplePaths ?? []).map(sha256File)),
+              }
+              try {
+                await getDatabase().config.setSetting(`transcoding.measurement.${measurementCacheKey}`, JSON.stringify(cacheRecord))
+                getLoggingService().info('[TVOptimization]', `Measured encode cached: mediaItem=${episode.id}, cacheKey=${measurementCacheKey}, samples=${cacheRecord.sampleHashes.length}`)
+              } catch (error) {
+                getLoggingService().warn('[TVOptimization]', `Measured encode cache could not be saved: mediaItem=${episode.id}, cacheKey=${measurementCacheKey}, reason=${getErrorMessage(error)}`)
+              }
+            }
           }
         } catch (error) {
-          await fs.rm(sampleDirectory, { recursive: true, force: true })
+          if (!measurementCacheHit) await fs.rm(sampleDirectory, { recursive: true, force: true })
           throw error
         }
         const measuredPlanSavingsBytes = shouldEncode
@@ -1469,7 +1517,7 @@ export class TranscodingService {
 
   async discardTaskSamples(task: QueuedTask): Promise<void> {
     const payload = (task.options as TranscodeOptions & { queuePayload?: QueuedTranscodePayload } | undefined)?.queuePayload
-    if (payload?.samplePaths) for (const sample of payload.samplePaths) await fs.rm(sample, { force: true })
+    if (payload?.samplePaths) for (const sample of payload.samplePaths) if (!this.isCachedSamplePath(sample)) await fs.rm(sample, { force: true })
   }
 
   async discardBatchSamples(task: QueuedTask): Promise<void> {
@@ -1485,7 +1533,7 @@ export class TranscodingService {
     const raw = await getDatabase().config.getSetting(`transcoding.preflight.${preflightId}`)
     if (raw) {
       const preflight = JSON.parse(raw) as { result: ShowTranscodePreflight }
-      for (const episode of preflight.result.episodes) if (episode.samplePaths) for (const sample of episode.samplePaths) await fs.rm(sample, { force: true })
+      for (const episode of preflight.result.episodes) if (episode.samplePaths) for (const sample of episode.samplePaths) if (!this.isCachedSamplePath(sample)) await fs.rm(sample, { force: true })
     }
     const root = path.resolve(app.getPath('userData'), 'transcoding-samples')
     const directory = path.resolve(root, preflightId)
@@ -1494,6 +1542,38 @@ export class TranscodingService {
     this.showPreflights.delete(preflightId)
     await getDatabase().config.deleteSetting(`transcoding.preflight.${preflightId}`)
     getLoggingService().info('[TVOptimization]', `Preflight discarded: preflight=${preflightId}`)
+  }
+
+  private isCachedSamplePath(samplePath: string): boolean {
+    const cacheRoot = path.resolve(app.getPath('userData'), 'transcoding-samples', 'cache')
+    const resolved = path.resolve(samplePath)
+    const relative = path.relative(cacheRoot, resolved)
+    return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+  }
+
+  private async getCachedMeasurement(cacheKey: string, sourceSha256: string, sampleDirectory: string): Promise<CachedMeasurement | undefined> {
+    const settingKey = `transcoding.measurement.${cacheKey}`
+    const raw = await getDatabase().config.getSetting(settingKey)
+    if (!raw) return undefined
+    try {
+      const cached = JSON.parse(raw) as CachedMeasurement
+      const paths = cached.candidate?.samplePaths ?? []
+      const valid = cached.version === 1 && cached.cacheKey === cacheKey && cached.sourceSha256 === sourceSha256 &&
+        paths.length > 0 && paths.every(samplePath => {
+          const relative = path.relative(path.resolve(sampleDirectory), path.resolve(samplePath))
+          return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+        }) && cached.sampleHashes.length === paths.length
+      if (!valid) throw new Error('Cached measurement record does not match its source or cache directory')
+      const actualHashes = await Promise.all(paths.map(sha256File))
+      if (actualHashes.some((hash, index) => hash !== cached.sampleHashes[index])) throw new Error('Cached sample content changed')
+      getLoggingService().info('[TVOptimization]', `Measured encode cache hit: cacheKey=${cacheKey}, samples=${paths.length}`)
+      return cached
+    } catch (error) {
+      getLoggingService().warn('[TVOptimization]', `Discarding invalid measured encode cache: cacheKey=${cacheKey}, reason=${getErrorMessage(error)}`)
+      await getDatabase().config.deleteSetting(settingKey)
+      await fs.rm(sampleDirectory, { recursive: true, force: true })
+      return undefined
+    }
   }
 
   private preflightFingerprint(result: ShowTranscodePreflight): string {
