@@ -62,7 +62,7 @@ export const LIBRARY_TOOLS: GeminiToolDefinition[] = [
         tier_quality: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'], description: 'Filter by quality level within tier' },
         needs_upgrade: { type: 'boolean', description: 'Only return items that need quality upgrades' },
         search_query: { type: 'string', description: 'Search by title' },
-        sort_by: { type: 'string', enum: ['title', 'year', 'tier_score', 'overall_score', 'updated_at'], description: 'Sort field' },
+        sort_by: { type: 'string', enum: ['title', 'year', 'overall_score', 'updated_at'], description: 'Sort field' },
         sort_order: { type: 'string', enum: ['asc', 'desc'], description: 'Sort direction' },
         limit: { type: 'number', description: 'Max results to return (default 20, max 50)' },
       },
@@ -287,7 +287,7 @@ export const LIBRARY_TOOLS: GeminiToolDefinition[] = [
   },
   {
     name: 'get_item_details',
-    description: 'Get full technical details for a specific media item by title or ID. Returns video/audio specs, all audio tracks, subtitle tracks, file info, versions, and quality scores. Use for in-depth quality breakdowns.',
+    description: 'Get full technical details for a specific media item by title or ID. Returns video/audio specs, tracks, file info, versions, and the configurable metadata-based media quality rating.',
     parameters: {
       type: 'object',
       properties: {
@@ -580,7 +580,7 @@ export async function executeTool(
     case 'get_media_items': {
       const limit = toolNumber(input, 'limit', 1, 50) || 20
       const requestedSortBy = toolString(input, 'sort_by')
-      const sortBy = (['title', 'year', 'updated_at', 'created_at', 'tier_score', 'overall_score', 'play_count', 'last_watched_at', 'tmdb_rating', 'estimated_savings_bytes'] as const)
+      const sortBy = (['title', 'year', 'updated_at', 'created_at', 'overall_score', 'play_count', 'last_watched_at', 'tmdb_rating', 'estimated_savings_bytes'] as const)
         .find(value => value === requestedSortBy)
       const items = db.getMediaItems({
         type: toolString(input, 'type') as 'movie' | 'episode' | undefined || undefined,
@@ -601,7 +601,7 @@ export async function executeTool(
         episode_number: item.episode_number,
         resolution: item.resolution,
         video_codec: item.video_codec,
-        video_bitrate: item.video_bitrate,
+        video_bitrate_kbps: item.video_bitrate_kbps,
         audio_codec: item.audio_codec,
         quality_tier: item.quality_tier,
         tier_quality: item.tier_quality,
@@ -853,7 +853,7 @@ export async function executeTool(
             quality: ownedItem ? {
               resolution: ownedItem.resolution,
               video_codec: ownedItem.video_codec,
-              video_bitrate: ownedItem.video_bitrate,
+              video_bitrate_kbps: ownedItem.video_bitrate_kbps,
               audio_codec: ownedItem.audio_codec,
               quality_tier: ownedItem.quality_tier,
               tier_quality: ownedItem.tier_quality,
@@ -1254,18 +1254,18 @@ export async function executeTool(
         label: v.label,
         resolution: v.resolution,
         video_codec: v.video_codec,
-        video_bitrate: v.video_bitrate,
+        video_bitrate_kbps: v.video_bitrate_kbps,
         audio_codec: v.audio_codec,
         audio_channels: v.audio_channels,
         hdr_format: v.hdr_format,
-        file_size: v.file_size,
+        file_size_bytes: v.file_size_bytes,
         quality_tier: v.quality_tier,
         tier_quality: v.tier_quality,
         is_best: v.is_best,
       })) : undefined
 
-      const fileSizeMB = item.file_size ? Math.round((item.file_size as number) / 1024 / 1024) : null
-      const durationMin = item.duration ? Math.round((item.duration as number) / 60) : null
+      const fileSizeMB = item.file_size_bytes ? Math.round((item.file_size_bytes as number) / 1024 / 1024) : null
+      const durationMin = item.duration_ms ? Math.round((item.duration_ms as number) / 60000) : null
 
       const details = compact({
         title: item.title,
@@ -1277,7 +1277,7 @@ export async function executeTool(
         // Video
         resolution: item.resolution,
         video_codec: item.video_codec,
-        video_bitrate: item.video_bitrate,
+        video_bitrate_kbps: item.video_bitrate_kbps,
         video_frame_rate: item.video_frame_rate,
         hdr_format: item.hdr_format,
         color_bit_depth: item.color_bit_depth,
@@ -1285,7 +1285,7 @@ export async function executeTool(
         // Audio (primary)
         audio_codec: item.audio_codec,
         audio_channels: item.audio_channels,
-        audio_bitrate: item.audio_bitrate,
+        audio_bitrate_kbps: item.audio_bitrate_kbps,
         has_object_audio: item.has_object_audio,
         // All tracks
         audio_tracks: audioTracks.length > 0 ? audioTracks : undefined,
@@ -1696,7 +1696,7 @@ export async function executeTool(
         copies: d.copies.map((c: any) => ({
           source_type: c.source_type, resolution: c.resolution,
           video_codec: c.video_codec, quality_score: c.overall_score,
-          file_size: c.file_size ? `${(c.file_size / 1e9).toFixed(1)} GB` : null,
+          file_size_bytes: c.file_size_bytes ? `${(c.file_size_bytes / 1e9).toFixed(1)} GB` : null,
         })),
       })))
     }

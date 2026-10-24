@@ -62,7 +62,7 @@ export class GeminiAnalysisService {
           type: item.type,
           resolution: item.resolution,
           video_codec: item.video_codec,
-          video_bitrate: item.video_bitrate,
+          video_bitrate_kbps: item.video_bitrate_kbps,
         })),
       ),
     ].join('\n')
@@ -120,7 +120,7 @@ export class GeminiAnalysisService {
           series_title: item.series_title,
           resolution: item.resolution,
           video_codec: item.video_codec,
-          video_bitrate: item.video_bitrate,
+          video_bitrate_kbps: item.video_bitrate_kbps,
         })),
       ),
       '',
@@ -133,7 +133,7 @@ export class GeminiAnalysisService {
           series_title: item.series_title,
           resolution: item.resolution,
           video_codec: item.video_codec,
-          video_bitrate: item.video_bitrate,
+          video_bitrate_kbps: item.video_bitrate_kbps,
         })),
       ),
     ].join('\n')
