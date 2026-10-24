@@ -10,6 +10,7 @@ import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors, formatBytes, formatSeasonLabel, getStatusBadge } from './mediaUtils'
 import type { MediaItem, TVShow, TVShowSummary, SeasonInfo, TVSeason, SeriesCompletenessData, MissingEpisode } from './types'
 import type { ProviderType } from '../../contexts/SourceContext'
+import type { ShowTranscodePreflight } from '@main/services/TranscodingService'
 import { QualityBadges } from './QualityBadges'
 import { ScopedOptimizationSummary } from './ScopedOptimizationSummary'
 import { logOptimizationDiagnostic } from './optimizationDiagnostics'
@@ -497,6 +498,33 @@ export function TVShowsView({
   // Optimization modal state
   const [optimizingShow, setOptimizingShow] = useState<TVShowSummary | null>(null)
   const [optimizingEpisode, setOptimizingEpisode] = useState<MediaItem | null>(null)
+  const [reviewingPreflight, setReviewingPreflight] = useState<ShowTranscodePreflight | null>(null)
+  useEffect(() => {
+    const openReview = (event: Event) => {
+      const preflightId = (event as CustomEvent<{ preflightId?: string }>).detail?.preflightId
+      if (!preflightId) return
+      void window.electronAPI.getShowPreflight(preflightId).then(async saved => {
+        if (!saved) return
+        const { request, result } = saved as { request: { seriesTitle?: string; seriesIdentityKey?: string; sourceId: string; libraryId?: string; mediaItemId?: number }; result: ShowTranscodePreflight }
+        const episode = request.mediaItemId ? await window.electronAPI.getMediaItem(request.mediaItemId) as MediaItem | null : null
+        const title = request.seriesTitle || episode?.series_title || result.seriesTitle
+        setOptimizingEpisode(episode)
+        setOptimizingShow({
+          series_title: title,
+          episode_count: result.episodeCount,
+          season_count: 0,
+          poster_url: episode?.poster_url,
+          source_id: request.sourceId,
+          source_type: episode?.source_type,
+          library_id: request.libraryId,
+          series_identity_key: request.seriesIdentityKey,
+        })
+        setReviewingPreflight(result)
+      }).catch(error => console.error('Could not reopen completed optimization review:', error))
+    }
+    window.addEventListener('tvOptimization:review', openReview)
+    return () => window.removeEventListener('tvOptimization:review', openReview)
+  }, [])
   const firstIdentifiedEpisode = useMemo(() => {
     if (!selectedShowData) return undefined
     for (const season of selectedShowData.seasons.values()) {
@@ -555,6 +583,7 @@ export function TVShowsView({
     logOptimizationDiagnostic('TVOptimizationUI', 'info', 'optimizer.closed', { seriesIdentityKey: optimizingShow?.series_identity_key, mediaItemId: optimizingEpisode?.id })
     setOptimizingShow(null)
     setOptimizingEpisode(null)
+    setReviewingPreflight(null)
   }, [optimizingEpisode?.id, optimizingShow?.series_identity_key])
   const posterMinWidth = useMemo(() => {
     const widthMap: Record<number, number> = {
@@ -671,6 +700,7 @@ export function TVShowsView({
             <ShowTranscodeModal
               show={optimizingShow}
               episode={optimizingEpisode ?? undefined}
+              initialPreflight={reviewingPreflight}
               onClose={closeOptimization}
             />
           )}
@@ -711,6 +741,7 @@ export function TVShowsView({
           <ShowTranscodeModal
             show={optimizingShow}
             episode={optimizingEpisode ?? undefined}
+            initialPreflight={reviewingPreflight}
             onClose={closeOptimization}
           />
         )}
@@ -1098,6 +1129,7 @@ export function TVShowsView({
           <ShowTranscodeModal
             show={optimizingShow}
             episode={optimizingEpisode ?? undefined}
+            initialPreflight={reviewingPreflight}
             onClose={closeOptimization}
           />
         )}
@@ -1288,6 +1320,7 @@ export function TVShowsView({
           <ShowTranscodeModal
             show={optimizingShow}
             episode={optimizingEpisode ?? undefined}
+            initialPreflight={reviewingPreflight}
             onClose={closeOptimization}
           />
         )}

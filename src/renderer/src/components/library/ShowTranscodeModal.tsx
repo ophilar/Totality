@@ -157,7 +157,7 @@ function formatBytes(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSummary; episode?: MediaItem; onClose: () => void }) {
+export function ShowTranscodeModal({ show, episode, onClose, initialPreflight }: { show: TVShowSummary; episode?: MediaItem; onClose: () => void; initialPreflight?: ShowTranscodePreflight | null }) {
   const { addToast } = useToast()
   const { seriesIdentityKey, sourceId, libraryId } = getTVShowIdentity(show)
   const [mode, setMode] = useState<'config' | 'preview' | 'monitoring'>('config')
@@ -212,7 +212,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
   const [quarantineFiles, setQuarantineFiles] = useState<Array<{ mediaItemId: number; label: string; path: string; size: number; modifiedAt: string; owned: boolean }>>([])
   const modalRef = useRef<HTMLDivElement | null>(null)
   const activePreflightRequestId = useRef<string | null>(null)
-  const closeAfterPreflight = useRef(false)
+  const backgroundPreflight = useRef(false)
 
   // Live Task Queue tracking state for monitoring mode
   const [queueState, setQueueState] = useState<QueueState>({
@@ -223,6 +223,13 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
   })
 
   useFocusTrap(true, modalRef)
+
+  useEffect(() => {
+    if (!initialPreflight) return
+    setPreflightData(initialPreflight)
+    setReviewedEpisodes([])
+    setMode('preview')
+  }, [initialPreflight?.preflightId])
 
   useEffect(() => {
     let mounted = true
@@ -291,17 +298,10 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
   const handleClose = useCallback(async () => {
     const requestId = activePreflightRequestId.current
     if (requestId) {
-      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.cancel.requested', { requestId, seriesIdentityKey, mediaItemId: episode?.id })
-      closeAfterPreflight.current = true
-      try {
-        const result = await window.electronAPI.dbCancelOperation(requestId)
-        logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.cancel.result', { requestId, status: result.status })
-        setPreflightTermination(result.status === 'committing' ? 'finishing' : 'cancelling')
-      } catch (error) {
-        logOptimizationDiagnostic('TVOptimizationUI', 'error', 'preflight.cancel.failed', { requestId, error: describeDiagnosticError(error) })
-        closeAfterPreflight.current = false
-        addToast({ type: 'error', title: 'Cancel optimization review', message: String(error) })
-      }
+      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.continue-in-background', { requestId, seriesIdentityKey, mediaItemId: episode?.id })
+      backgroundPreflight.current = true
+      activePreflightRequestId.current = null
+      onClose()
       return
     }
     try {
@@ -319,11 +319,11 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy) void handleClose()
+      if (event.key === 'Escape') void handleClose()
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [busy, handleClose])
+  }, [handleClose])
 
   const loadQuarantine = async () => {
     try {
@@ -514,13 +514,14 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
       setPreflightData(null)
     }
     const requestId = crypto.randomUUID()
+    backgroundPreflight.current = false
     activePreflightRequestId.current = requestId
     setPreflightTermination(null)
     setPreflightProgress({ percentage: 0, phase: 'Starting preflight', currentItem: 'Loading series episodes' })
     setPreflightOperationState('running')
     const unsubscribeProgress = window.electronAPI.onOperationsUpdated?.(({ operations }) => {
       const operation = operations.find(candidate => candidate.requestId === requestId)
-      if (operation) {
+      if (operation && !backgroundPreflight.current) {
         if (operation.state === 'running' || operation.state === 'pausing' || operation.state === 'paused' || operation.state === 'finishing') {
           setPreflightOperationState(operation.state)
         }
@@ -533,7 +534,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     })
     let preflight: ShowTranscodePreflight | undefined
     try {
-      preflight = await window.electronAPI.preflightShow({
+      const started = await window.electronAPI.startPreflightShow({
         requestId,
         mediaItemId: episode?.id,
         seriesTitle: show.series_title,
@@ -541,28 +542,47 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
         sourceId,
         libraryId,
         options: getCleanOptions(overrides)
-      }) as ShowTranscodePreflight
+      })
+      if (started.requestId !== requestId) throw new Error('The background preflight returned a different request identity')
+      preflight = await new Promise<ShowTranscodePreflight>((resolve, reject) => {
+        let settled = false
+        let unsubscribe: (() => void) | undefined
+        const inspect = async (operations: Array<{ requestId: string; state: string; outcome?: { message: string } }>) => {
+          if (settled) return
+          const operation = operations.find(candidate => candidate.requestId === requestId)
+          if (!operation?.outcome) return
+          settled = true
+          unsubscribe?.()
+          if (operation.state !== 'completed') {
+            reject(new Error(operation.outcome.message))
+            return
+          }
+          try {
+            const result = await window.electronAPI.operationsGetResult(requestId) as { preflightId?: string }
+            if (!result?.preflightId) throw new Error('The completed preflight did not return its saved review identifier')
+            const saved = await window.electronAPI.getShowPreflight(result.preflightId) as { result: ShowTranscodePreflight } | undefined
+            if (!saved) throw new Error('The saved optimization review has expired')
+            resolve(saved.result)
+          } catch (error) {
+            reject(error)
+          }
+        }
+        unsubscribe = window.electronAPI.onOperationsUpdated?.(({ operations }) => { void inspect(operations) })
+        void window.electronAPI.operationsGetActivity().then(snapshot => inspect(snapshot.operations)).catch(reject)
+      })
       logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.returned', { preflightId: preflight.preflightId, batchId: preflight.batchId, episodeCount: preflight.episodeCount, compatible: preflight.episodes.filter(item => item.compatible).length, savingsBytes: preflight.estimatedSavingsBytes, savingsCoverage: preflight.savingsCoverage })
-      setPreflightData(preflight)
+      if (!backgroundPreflight.current) setPreflightData(preflight)
       return preflight
     } catch (error) {
       logOptimizationDiagnostic('TVOptimizationUI', 'error', 'preflight.failed', { seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, requestId, error: describeDiagnosticError(error) })
       throw error
     } finally {
       unsubscribeProgress?.()
-      activePreflightRequestId.current = null
-      setPreflightTermination(null)
-      setPreflightProgress(null)
-      setPreflightOperationState(null)
-      if (closeAfterPreflight.current) {
-        closeAfterPreflight.current = false
-        try {
-          if (preflight) await window.electronAPI.discardShow(preflight.preflightId)
-          onClose()
-        } catch (error) {
-          setMessage(error instanceof Error ? error.message : String(error))
-          addToast({ type: 'error', title: 'Discard optimization review', message: String(error) })
-        }
+      if (!backgroundPreflight.current) {
+        activePreflightRequestId.current = null
+        setPreflightTermination(null)
+        setPreflightProgress(null)
+        setPreflightOperationState(null)
       }
     }
   }
@@ -595,12 +615,14 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     setIsSuccess(false)
     try {
       const preflight = await runPreflight()
+      if (backgroundPreflight.current) return
       setMode('preview')
       logOptimizationDiagnostic('TVOptimizationUI', 'info', 'review.opened', { preflightId: preflight.preflightId, batchId: preflight.batchId, episodeCount: preflight.episodes.length, sampleReviewCount: preflight.episodes.filter(item => item.compatible && item.samplePaths?.length).length })
       if (!preflight.compatible) {
         setMessage('Preflight completed with some incompatibilities.')
       }
     } catch (error) {
+      if (backgroundPreflight.current) return
       const errMsg = error instanceof Error ? error.message : String(error)
       logOptimizationDiagnostic('TVOptimizationUI', 'error', 'review.preflight.failed', { seriesIdentityKey, mediaItemId: episode?.id, error: describeDiagnosticError(error) })
       setMessage(errMsg)
@@ -610,7 +632,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
         message: errMsg
       })
     } finally {
-      setBusy(false)
+      if (!backgroundPreflight.current) setBusy(false)
     }
   }
 
@@ -742,6 +764,26 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
           >
             {preflightOperationState === 'pausing' ? 'Pausing…' : preflightOperationState === 'paused' ? 'Resume' : 'Pause'}
           </button>
+          <button
+            type="button"
+            disabled={!activePreflightRequestId.current || preflightTermination !== null || preflightOperationState === 'finishing'}
+            onClick={() => {
+              const requestId = activePreflightRequestId.current
+              if (!requestId) return
+              setPreflightTermination('cancelling')
+              void window.electronAPI.dbCancelOperation(requestId).then(result => {
+                logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.cancel.requested', { requestId, status: result.status })
+                if (result.status === 'committing') setPreflightTermination('finishing')
+              }).catch(error => {
+                logOptimizationDiagnostic('TVOptimizationUI', 'error', 'preflight.cancel.failed', { requestId, error: describeDiagnosticError(error) })
+                setPreflightTermination(null)
+                setMessage(error instanceof Error ? error.message : String(error))
+              })
+            }}
+            className="rounded-md border border-destructive/40 px-2 py-1 font-semibold text-destructive hover:bg-destructive/10 disabled:opacity-50"
+          >
+            {preflightTermination === 'cancelling' ? 'Stopping…' : 'Stop'}
+          </button>
         </div>
       </div>
       <div
@@ -755,7 +797,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
         <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${preflightProgress.percentage}%` }} />
       </div>
       <p className="text-xs text-muted-foreground break-words">{preflightProgress.currentItem || 'Preparing episode checks…'}</p>
-      <p className="text-[11px] text-muted-foreground">Pause takes effect after currently running file or sample operations finish. Stop cancels active work and removes incomplete samples.</p>
+      <p className="text-[11px] text-muted-foreground">Pause takes effect after the active file or sample step. Close this window to keep working; manage it later from Activity.</p>
     </div>
   ) : null
 
@@ -767,7 +809,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
       aria-labelledby="show-transcode-modal-title"
       tabIndex={-1}
       className="fixed inset-0 z-250 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
-      onClick={busy ? undefined : () => void handleClose()}
+      onClick={() => void handleClose()}
     >
       <div
         className="relative bg-card border border-border sm:rounded-2xl shadow-2xl max-w-2xl w-full h-dvh sm:h-auto sm:max-h-[92vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
@@ -786,15 +828,13 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
               <p className="text-xs text-muted-foreground truncate max-w-[420px]">{show.series_title}</p>
             </div>
           </div>
-          {!busy && (
-            <button
-              onClick={() => void handleClose()}
-              className="p-1.5 hover:bg-muted rounded-full text-muted-foreground hover:text-foreground transition-all cursor-pointer"
-              title="Close modal (tasks continue in background)"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          )}
+          <button
+            onClick={() => void handleClose()}
+            className={`rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer ${busy ? 'px-2.5 py-1.5 text-xs font-semibold' : 'p-1.5'}`}
+            title={busy ? 'Continue in background' : 'Close'}
+          >
+            {busy ? 'Continue in background' : <X className="w-5 h-5" />}
+          </button>
         </div>
 
         {/* Content */}
