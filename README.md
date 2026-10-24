@@ -66,8 +66,18 @@ Automatically analyzes your movies and TV shows for:
 
 Items are scored within tiers (SD/720p/1080p/4K) as LOW, MEDIUM, or HIGH based on:
 - Video bitrate relative to resolution
-- Codec efficiency (AV1 > HEVC > H.264)
-- Audio codec quality ranking
+- Configurable codec efficiency multipliers and video/audio bitrate thresholds
+- A configurable video/audio contribution weight
+
+This is a metadata-based media quality rating. It does not compare the encoded picture with the source, so an approved transcode still requires a measured sample and quality review.
+
+Video bitrate depends on resolution, frame rate, color depth, codec, encoding parameters, and scene complexity ([IETF RFC 9317](https://datatracker.ietf.org/doc/html/rfc9317)). FFmpeg exposes both target-bitrate and constant-quality controls for x265 ([FFmpeg documentation](https://www.ffmpeg.org/ffmpeg-all.html#libx265)). Perceptual comparison tools such as Netflix VMAF compare a reference and encoded output ([VMAF](https://github.com/Netflix/vmaf)).
+
+### Estimated Storage Savings
+
+Library views show one estimated savings total for video encoding and the saved stream policies: removable audio tracks and subtitles. Lossy audio conversion is included only when selected in a reviewed plan. Estimates prefer H.265 when the default playback target supports it, and use AV1 when it supports AV1 but not H.265. Video estimates use configured codec-efficiency multipliers and measured video stream bytes when available, otherwise bitrate multiplied by duration. For same-codec encodes, the configured high video bitrate threshold models the target bitrate, so savings can be estimated within a codec. These are rough modeled estimates; resolution, frame rate, content, and encoding settings affect output size and quality. A reviewed sample replaces the whole modeled plan total with a sample-based projection.
+
+Copy and quarantine modes retain the original file, so they do not reclaim disk space until the original is removed. Encoding reads the original and writes a temporary output for verification before replacement, which requires free space for that temporary output. Stream-copy pruning also writes a replacement output in the current workflow.
 
 ### Music Quality Analysis
 
