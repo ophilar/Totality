@@ -478,6 +478,7 @@ export function TVShowsView({
   const [optimizingShow, setOptimizingShow] = useState<TVShowSummary | null>(null)
   const [optimizingEpisode, setOptimizingEpisode] = useState<MediaItem | null>(null)
   const [reviewingPreflight, setReviewingPreflight] = useState<ShowTranscodePreflight | null>(null)
+  const [resumePreflightRequestId, setResumePreflightRequestId] = useState<string | null>(null)
   useEffect(() => {
     const openReview = (event: Event) => {
       const preflightId = (event as CustomEvent<{ preflightId?: string }>).detail?.preflightId
@@ -499,11 +500,39 @@ export function TVShowsView({
           series_identity_key: request.seriesIdentityKey,
         })
         setReviewingPreflight(result)
+        setResumePreflightRequestId(null)
       }).catch(error => console.error('Could not reopen completed optimization review:', error))
     }
+    const resumeOperation = (event: Event) => {
+      const detail = (event as CustomEvent<{ requestId?: string; entity?: { seriesTitle?: string; seriesIdentityKey?: string; sourceId: string; libraryId?: string; mediaItemId?: number } }>).detail
+      if (!detail?.requestId || !detail.entity) return
+      const entity = detail.entity
+      const requestId = detail.requestId
+      void (async () => {
+        const episode = entity.mediaItemId ? await window.electronAPI.getMediaItem(entity.mediaItemId) as MediaItem | null : null
+        const existing = shows.find(show => show.series_identity_key === entity.seriesIdentityKey && show.source_id === entity.sourceId && show.library_id === entity.libraryId)
+        setOptimizingEpisode(episode)
+        setOptimizingShow(existing ?? {
+          series_title: entity.seriesTitle || episode?.series_title || 'TV series',
+          episode_count: episode ? 1 : 0,
+          season_count: episode ? 1 : 0,
+          poster_url: episode?.poster_url,
+          source_id: entity.sourceId,
+          source_type: episode?.source_type,
+          library_id: entity.libraryId,
+          series_identity_key: entity.seriesIdentityKey,
+        })
+        setReviewingPreflight(null)
+        setResumePreflightRequestId(requestId)
+      })().catch(error => console.error('Could not return to background optimization preflight:', error))
+    }
     window.addEventListener('tvOptimization:review', openReview)
-    return () => window.removeEventListener('tvOptimization:review', openReview)
-  }, [])
+    window.addEventListener('tvOptimization:resume', resumeOperation)
+    return () => {
+      window.removeEventListener('tvOptimization:review', openReview)
+      window.removeEventListener('tvOptimization:resume', resumeOperation)
+    }
+  }, [shows])
   const firstIdentifiedEpisode = useMemo(() => {
     if (!selectedShowData) return undefined
     for (const season of selectedShowData.seasons.values()) {
@@ -563,6 +592,7 @@ export function TVShowsView({
     setOptimizingShow(null)
     setOptimizingEpisode(null)
     setReviewingPreflight(null)
+    setResumePreflightRequestId(null)
   }, [optimizingEpisode?.id, optimizingShow?.series_identity_key])
   const posterMinWidth = useMemo(() => {
     const widthMap: Record<number, number> = {
@@ -680,6 +710,7 @@ export function TVShowsView({
               show={optimizingShow}
               episode={optimizingEpisode ?? undefined}
               initialPreflight={reviewingPreflight}
+              resumeRequestId={resumePreflightRequestId}
               onClose={closeOptimization}
             />
           )}
@@ -724,6 +755,7 @@ export function TVShowsView({
             show={optimizingShow}
             episode={optimizingEpisode ?? undefined}
             initialPreflight={reviewingPreflight}
+            resumeRequestId={resumePreflightRequestId}
             onClose={closeOptimization}
           />
         )}
@@ -950,6 +982,7 @@ export function TVShowsView({
             show={optimizingShow}
             episode={optimizingEpisode ?? undefined}
             initialPreflight={reviewingPreflight}
+            resumeRequestId={resumePreflightRequestId}
             onClose={closeOptimization}
           />
         )}
@@ -1102,6 +1135,7 @@ export function TVShowsView({
             show={optimizingShow}
             episode={optimizingEpisode ?? undefined}
             initialPreflight={reviewingPreflight}
+            resumeRequestId={resumePreflightRequestId}
             onClose={closeOptimization}
           />
         )}

@@ -438,6 +438,7 @@ export function ActivityPanel() {
                     </div>
                   ) : operation.kind === 'optimization-preflight' ? (
                     <div className="flex gap-2">
+                      {operation.entity && <button onClick={() => window.dispatchEvent(new CustomEvent('tvOptimization:resume', { detail: { requestId: operation.requestId, entity: operation.entity } }))} className="text-[11px] text-primary hover:text-primary/80">Return</button>}
                       <button onClick={() => handleOperationPause(operation)} className="text-[11px] text-muted-foreground hover:text-foreground">{operation.state === 'paused' ? 'Resume' : 'Pause'}</button>
                       <button onClick={() => handleOperationCancel(operation)} className="text-[11px] text-destructive hover:text-destructive/80">Stop</button>
                     </div>
