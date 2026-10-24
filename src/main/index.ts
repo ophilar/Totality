@@ -71,7 +71,7 @@ import { registerAutoUpdateHandlers } from './ipc/autoUpdate'
 import { registerGeminiHandlers } from './ipc/gemini'
 import { registerMoodHandlers, setMoodMainWindow } from './ipc/mood'
 import { registerTimelinesHandlers } from './ipc/timelines'
-import { registerTranscodingHandlers } from './ipc/transcoding'
+import { registerTranscodingHandlers, resumeBackgroundPreflights } from './ipc/transcoding'
 import { registerDuplicateHandlers } from './ipc/duplicates'
 import { registerPlaybackTargetProfileHandlers } from './ipc/playbackTargetProfiles'
 import { registerPlaybackCompatibilityHandlers } from './ipc/playbackCompatibility'
@@ -522,6 +522,7 @@ app.whenReady().then(async () => {
 
     // Load persisted history and re-enqueue any tasks that were pending at last quit
     taskQueueService.loadPersistedHistory()
+    resumeBackgroundPreflights()
     if (getDatabase().getSetting('optimization.savings_reanalysis_pending') === 'true') {
       const analysisTaskId = taskQueueService.addTask({ type: 'quality-analysis', label: 'Refresh media quality and savings estimates' })
       if (analysisTaskId) getDatabase().deleteSetting('optimization.savings_reanalysis_pending')
