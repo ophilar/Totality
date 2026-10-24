@@ -169,6 +169,10 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
   const [targetProfiles, setTargetProfiles] = useState<PlaybackTargetProfile[]>([])
   const [targetProfilesLoading, setTargetProfilesLoading] = useState(true)
   const targetProfile = targetProfiles.find(profile => profile.id === targetProfileId)
+  const sourceContainer = getOptimizationContainer(episode?.container)
+  const sourceVideoCodec = episode?.video_codec?.toLowerCase()
+  const sourceTargetCodec = normalizeVideoCodec(sourceVideoCodec) === 'HEVC' ? 'hevc' : normalizeVideoCodec(sourceVideoCodec) === 'AV1' ? 'av1' : undefined
+  const sourceHdrFormat = episode?.hdr_format?.toUpperCase()
   const recommendedAudioCodec = targetProfile && episode?.audio_codec
     && episode.audio_channels <= targetProfile.definition.audio.maxChannels
     && (!episode.has_object_audio || targetProfile.definition.audio.objectAudio)
@@ -178,7 +182,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
       && targetProfile.definition.audio.codecs.some(supportedCodec => normalizeAudioCodec(supportedCodec) === normalizeAudioCodec(codec))
     )
     : undefined
-  const [qualityProfile, setQualityProfile] = useState<OptimizationQualityProfile | ''>('')
+  const [qualityProfile, setQualityProfile] = useState<OptimizationQualityProfile | ''>('balanced')
   const [encoderPolicy, setEncoderPolicy] = useState<'hardware' | 'software' | 'compare' | ''>('')
   const useHardwareEncoder = encoderPolicy === 'hardware' || encoderPolicy === 'compare'
   const [targetContainer, setTargetContainer] = useState<'mkv' | 'mp4' | ''>('')
@@ -237,14 +241,38 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
   }, [addToast])
 
   useEffect(() => {
-    const sourceContainer = getOptimizationContainer(episode?.container)
-    const profileSupportsSourceContainer = !targetProfile || targetProfile.definition.containers.includes(sourceContainer === 'mkv' ? 'matroska' : 'mp4')
-    setTargetContainer(sourceContainer && profileSupportsSourceContainer ? sourceContainer : '')
-    const sourceVideoCodec = episode?.video_codec?.toLowerCase()
-    const sourceTargetCodec = normalizeVideoCodec(sourceVideoCodec) === 'HEVC' ? 'hevc' : normalizeVideoCodec(sourceVideoCodec) === 'AV1' ? 'av1' : undefined
-    const targetSupportsSourceCodec = sourceTargetCodec && (!targetProfile || targetProfile.definition.video.codecs.some(codec => normalizeVideoCodec(codec) === normalizeVideoCodec(sourceTargetCodec)))
-    setCodec(targetSupportsSourceCodec ? sourceTargetCodec : '')
-  }, [episode?.id, episode?.container, episode?.video_codec, targetProfile])
+    const supportedContainers = targetProfile?.definition.containers ?? ['matroska', 'mp4']
+    const sourceContainerSupported = sourceContainer && supportedContainers.includes(sourceContainer === 'mkv' ? 'matroska' : 'mp4')
+    const preferredContainer: 'mkv' | 'mp4' | '' = supportedContainers.includes('matroska') ? 'mkv' : supportedContainers.includes('mp4') ? 'mp4' : ''
+    setTargetContainer(sourceContainerSupported ? sourceContainer : preferredContainer)
+    const targetSupports = (candidate: 'hevc' | 'av1') => !targetProfile || targetProfile.definition.video.codecs.some(codec => normalizeVideoCodec(codec) === normalizeVideoCodec(candidate))
+    const selectedCodec = sourceTargetCodec && targetSupports(sourceTargetCodec)
+      ? sourceTargetCodec
+      : (['hevc', 'av1'] as const).find(targetSupports) ?? ''
+    setCodec(selectedCodec)
+
+    const targetHdrFormats = targetProfile?.definition.hdr.formats.map(format => format.toUpperCase()) ?? []
+    const sourceIsSdr = !sourceHdrFormat || ['SDR', 'NONE'].includes(sourceHdrFormat)
+    const sourceHdrSupported = sourceHdrFormat && ['HDR10', 'SDR'].includes(sourceHdrFormat) && (sourceHdrFormat === 'SDR' || targetHdrFormats.includes(sourceHdrFormat))
+    const recommendedHdr = sourceIsSdr
+      ? 'SDR'
+      : sourceHdrSupported
+        ? sourceHdrFormat as 'SDR' | 'HDR10'
+        : targetHdrFormats.includes('HDR10') ? 'HDR10' : 'SDR'
+    setTargetHdrFormat(targetProfile ? recommendedHdr : '')
+    logOptimizationDiagnostic('TVOptimizationUI', 'info', 'output.settings.recommended', {
+      seriesIdentityKey,
+      mediaItemId: episode?.id,
+      targetProfileId: targetProfile?.id ?? null,
+      targetCodec: selectedCodec || null,
+      targetContainer: sourceContainerSupported ? sourceContainer : preferredContainer || null,
+      qualityProfile: 'balanced',
+      targetHdrFormat: targetProfile ? recommendedHdr : null,
+      sourceCodec: sourceTargetCodec ?? null,
+      sourceContainer: sourceContainer || null,
+      sourceHdrFormat: sourceHdrFormat ?? null
+    })
+  }, [episode?.id, episode?.container, episode?.video_codec, episode?.hdr_format, targetProfile])
 
 
   const handleClose = useCallback(async () => {
@@ -442,11 +470,29 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     const shouldRemoveStreams = overrides.removeUnnecessaryStreams ?? removeUnnecessaryStreams
     const shouldAdjustToTarget = overrides.adjustToTarget ?? adjustToTarget
     const effectiveTargetProfileId = overrides.targetProfileId ?? targetProfileId
-    if (!outputMode || (shouldRemoveStreams && audio === 'original-and-protected' && !language.trim())) {
-      throw new Error('Choose an output mode and, when stream pruning is enabled, an original language.')
+    const missingSettings: string[] = []
+    if (!outputMode) missingSettings.push('output mode')
+    if (shouldRemoveStreams && audio === 'original-and-protected' && !language.trim()) missingSettings.push('original language for stream pruning')
+    if (shouldAdjustToTarget && optimizationMode !== 'remux_only') {
+      if (!codec) missingSettings.push('video codec')
+      if (!qualityProfile) missingSettings.push('visual quality threshold')
+      if (!encoderPolicy) missingSettings.push('encoder policy')
+      if (!targetContainer) missingSettings.push('output container')
+      if (effectiveTargetProfileId && !targetHdrFormat) missingSettings.push('output color format for the selected playback target')
     }
-    if (shouldAdjustToTarget && optimizationMode !== 'remux_only' && (!codec || !qualityProfile || !encoderPolicy || !targetContainer || (effectiveTargetProfileId && !targetHdrFormat))) throw new Error('Choose a video codec, quality, encoder policy, container, and, when a playback target is selected, output color format before measuring samples.')
-    logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.requested', { seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, optimizationMode, codec, encoderPolicy, gpuId: gpuId || null, removeUnnecessaryStreams: shouldRemoveStreams, adjustToTarget: shouldAdjustToTarget, targetProfileId: effectiveTargetProfileId || null })
+    const settings = {
+      seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, optimizationMode, outputMode,
+      codec: codec || null, qualityProfile: qualityProfile || null, encoderPolicy: encoderPolicy || null,
+      targetContainer: targetContainer || null, targetHdrFormat: targetHdrFormat || null,
+      gpuId: gpuId || null, removeUnnecessaryStreams: shouldRemoveStreams,
+      adjustToTarget: shouldAdjustToTarget, targetProfileId: effectiveTargetProfileId || null
+    }
+    logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.requested', settings)
+    if (missingSettings.length > 0) {
+      const error = `Complete these settings before measuring samples: ${missingSettings.join(', ')}.`
+      logOptimizationDiagnostic('TVOptimizationUI', 'warn', 'preflight.validation.failed', { ...settings, missingSettings })
+      throw new Error(error)
+    }
     setReviewedEpisodes([])
     if (preflightData) {
       await window.electronAPI.discardShow(preflightData.preflightId)
@@ -572,8 +618,42 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
 
   // Filter tasks belonging to transcoding
   const vendor = gpus.find(gpu => gpu.id === gpuId)?.vendor
+  const selectedGpu = gpus.find(gpu => gpu.id === gpuId)
   const hardwareEncoder = vendor && codec ? getHardwareEncoder(vendor, codec) : undefined
   const hardwareAvailable = hardwareEncoder !== undefined && supportedEncoders.includes(hardwareEncoder)
+  const softwareEncoder = codec === 'av1' ? 'svt_av1' : codec === 'hevc' ? 'x265' : undefined
+  const softwareAvailable = softwareEncoder !== undefined && supportedEncoders.includes(softwareEncoder)
+  useEffect(() => {
+    const recommendedPolicy = hardwareAvailable ? 'hardware' : softwareAvailable ? 'software' : ''
+    setEncoderPolicy(recommendedPolicy)
+    logOptimizationDiagnostic('TVOptimizationUI', 'info', 'encoder.policy.recommended', {
+      encoderPolicy: recommendedPolicy || null,
+      codec: codec || null,
+      gpuId: gpuId || null,
+      encoder: hardwareAvailable ? hardwareEncoder : softwareAvailable ? softwareEncoder : null
+    })
+  }, [codec, gpuId, hardwareAvailable, hardwareEncoder, softwareAvailable, softwareEncoder])
+  const codecRecommendation = targetProfile
+    ? sourceTargetCodec === codec
+      ? `Source codec is supported by ${targetProfile.name}.`
+      : `Preferred codec supported by ${targetProfile.name}.`
+    : sourceTargetCodec === codec
+      ? 'Preserves the source codec.'
+      : 'HEVC is the preferred broadly supported codec.'
+  const containerRecommendation = targetProfile
+    ? sourceContainer === targetContainer
+      ? `Preserves the source container supported by ${targetProfile.name}.`
+      : `Container supported by ${targetProfile.name}.`
+    : sourceContainer === targetContainer
+      ? 'Preserves the source container.'
+      : 'MKV is the recommended general-purpose container.'
+  const colorRecommendation = !targetProfile
+    ? 'Source color is preserved.'
+    : !sourceHdrFormat || ['SDR', 'NONE'].includes(sourceHdrFormat)
+      ? 'Source is SDR; output stays SDR.'
+      : targetHdrFormat === sourceHdrFormat
+        ? `Preserves source ${sourceHdrFormat} supported by ${targetProfile.name}.`
+        : `Uses ${targetHdrFormat} for compatibility with ${targetProfile.name}.`
   const verifiedResults = queueState.completedTasks.filter(task => task.batchId === activeBatchId && task.status === 'completed' && typeof task.result?.physicallyReclaimedBytes === 'number').map(task => task.result!)
   const batchQueue = queueState.queue.filter(task => task.batchId === activeBatchId)
   const currentTask = queueState.currentTask?.batchId === activeBatchId ? queueState.currentTask : null
@@ -641,6 +721,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
               <label className="block space-y-1.5 text-xs font-semibold">Playback target
                 <select aria-label="Playback target" value={targetProfileId} onChange={event => {
                   const profileId = event.target.value
+                  logOptimizationDiagnostic('TVOptimizationUI', 'info', 'playback.target.selected', { targetProfileId: profileId || null })
                   setTargetProfileId(profileId)
                   setTargetProfileName(targetProfiles.find(profile => profile.id === profileId)?.name || '')
                   if (!profileId) setTargetHdrFormat('')
@@ -728,12 +809,13 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
             </details>
 
             <details open className="space-y-3 rounded-xl border border-border/40 bg-card/20 p-3">
-              <summary className="cursor-pointer list-none text-xs font-bold uppercase tracking-wider text-muted-foreground">Target adjustment details</summary>
+              <summary className="cursor-pointer list-none text-xs font-bold uppercase tracking-wider text-muted-foreground">Output settings</summary>
+              <p className="text-xs text-muted-foreground">Recommended settings are already selected and will be used for measurement. Change any choice if you prefer.</p>
             <div className="grid grid-cols-2 gap-3 text-xs">
-              <label>Visual quality threshold<select aria-label="Quality" value={qualityProfile} onChange={e => { const value = e.target.value as OptimizationQualityProfile; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'quality.threshold.selected', { qualityProfile: value }); setQualityProfile(value) }}><option value="">Select threshold</option><option value="transparent">Highest measured fidelity</option><option value="balanced">Balanced fidelity and savings</option><option value="maximum_savings">More savings, measured loss allowed</option></select></label>
-              <EncoderPolicySelector value={encoderPolicy} hardwareAvailable={hardwareAvailable} onChange={policy => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'encoder.policy.selected', { encoderPolicy: policy ?? '' }); setEncoderPolicy(policy ?? '') }} />
-              <label>Container<select aria-label="Container" value={targetContainer} onChange={e => setTargetContainer(e.target.value as typeof targetContainer)}>{!targetContainer && <option value="">Select container{episode?.container ? ` (source: ${episode.container})` : ''}</option>}{(targetProfile?.definition.containers ?? ['matroska', 'mp4']).filter(container => ['matroska', 'mp4'].includes(container)).map(container => <option key={container} value={container === 'matroska' ? 'mkv' : 'mp4'}>{container}</option>)}</select></label>
-              {targetProfile ? <label>Output color<select aria-label="Output color" value={targetHdrFormat} onChange={e => { const value = e.target.value as typeof targetHdrFormat; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'output.color.selected', { targetHdrFormat: value }); setTargetHdrFormat(value) }}><option value="">Select color format</option><option value="SDR">SDR</option>{targetProfile.definition.hdr.formats.includes('HDR10') && <option value="HDR10">HDR10</option>}</select></label> : <p className="text-xs text-muted-foreground">Preserve the source color format. HDR conversion requires a playback target.</p>}
+              <label className="space-y-1">Visual quality threshold<select aria-label="Quality" value={qualityProfile} onChange={e => { const value = e.target.value as OptimizationQualityProfile; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'quality.threshold.selected', { qualityProfile: value }); setQualityProfile(value) }}><option value="">Choose quality threshold</option><option value="transparent">Highest measured fidelity</option><option value="balanced">Balanced fidelity and savings</option><option value="maximum_savings">More savings, measured loss allowed</option></select><span className="block text-[10px] text-muted-foreground">Default: Balanced · VMAF mean ≥95, fifth percentile ≥92, CAMBI ≤8.</span></label>
+              <EncoderPolicySelector value={encoderPolicy} hardwareAvailable={hardwareAvailable} softwareAvailable={softwareAvailable} recommendation={hardwareAvailable ? `Verified ${hardwareEncoder} on ${selectedGpu?.name ?? 'selected GPU'} for ${codec?.toUpperCase()}.` : softwareAvailable ? `No verified hardware encoder for ${codec?.toUpperCase()}; software is available.` : `No verified encoder is available for ${codec?.toUpperCase()}.`} onChange={policy => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'encoder.policy.selected', { encoderPolicy: policy ?? '' }); setEncoderPolicy(policy ?? '') }} />
+              <label className="space-y-1">Output container<select aria-label="Container" value={targetContainer} onChange={e => { const value = e.target.value as typeof targetContainer; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'output.container.selected', { targetContainer: value }); setTargetContainer(value) }}>{!targetContainer && <option value="">No supported container available</option>}{(targetProfile?.definition.containers ?? ['matroska', 'mp4']).filter(container => ['matroska', 'mp4'].includes(container)).map(container => <option key={container} value={container === 'matroska' ? 'mkv' : 'mp4'}>{container}</option>)}</select><span className="block text-[10px] text-muted-foreground">Suggested: {targetContainer ? targetContainer.toUpperCase() : 'Unavailable'} · {containerRecommendation}</span></label>
+              {targetProfile ? <label className="space-y-1">Output color<select aria-label="Output color" value={targetHdrFormat} onChange={e => { const value = e.target.value as typeof targetHdrFormat; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'output.color.selected', { targetHdrFormat: value }); setTargetHdrFormat(value) }}><option value="SDR">SDR</option>{targetProfile.definition.hdr.formats.includes('HDR10') && <option value="HDR10">HDR10</option>}</select><span className="block text-[10px] text-muted-foreground">Suggested: {targetHdrFormat || 'Unavailable'} · {colorRecommendation}</span></label> : <p className="self-center text-xs text-muted-foreground">{colorRecommendation}</p>}
               <label>Audio conversion<select aria-label="Audio conversion" value={targetAudioCodec} onChange={e => { const value = e.target.value as typeof targetAudioCodec; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'audio.conversion.selected', { targetAudioCodec: value }); setTargetAudioCodec(value) }}><option value="">Preserve source{episode?.audio_codec ? ` (${episode.audio_codec})` : ''}; convert only for compatibility</option>{(targetProfile?.definition.audio.codecs ?? ['aac', 'ac3', 'eac3']).filter(codec => ['aac', 'ac3', 'eac3'].includes(codec)).map(codec => <option key={codec} value={codec}>{codec.toUpperCase()}{codec === recommendedAudioCodec ? ' (recommended for target compatibility)' : ''}</option>)}</select>{episode?.audio_codec && /dts.?hd|truehd|flac|pcm/i.test(episode.audio_codec) && <span className="block text-muted-foreground">{episode.audio_codec} is lossless; converting to a listed codec is lossy and should be selected only when the playback target requires it or measured savings justify it.</span>}</label>
             </div>
             {/* Codec Selection */}
@@ -742,6 +824,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
                 <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                   <Layers className="w-3.5 h-3.5 text-primary" /> Target Video Codec
                 </label>
+                <p className="text-[10px] text-muted-foreground">Suggested: {codec ? codec.toUpperCase() : 'Unavailable'} · {codecRecommendation}</p>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
