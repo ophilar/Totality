@@ -8,9 +8,10 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { Loader2, Monitor, ArrowUpCircle, RefreshCw, Download, Globe, Copy, Check, Eye, EyeOff } from 'lucide-react'
+import { Loader2, Monitor, ArrowUpCircle, RefreshCw, Download, Globe, Copy, Check, Eye, EyeOff, Languages } from 'lucide-react'
 import { Toggle } from '../../ui/Toggle'
 import { SETTING_KEYS } from '../../../../../shared/settingKeys'
+import { isSameLanguage, LANGUAGE_OPTIONS, parseLanguageWhitelist } from '../../library/mediaUtils'
 
 interface UpdateState {
   status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
@@ -30,6 +31,10 @@ export function GeneralTab() {
   const [isLoading, setIsLoading] = useState(true)
   const [minimizeToTray, setMinimizeToTray] = useState(false)
   const [startMinimized, setStartMinimized] = useState(false)
+  const [subtitlePreferredLanguages, setSubtitlePreferredLanguages] = useState('')
+  const [isSavingSubtitleLanguages, setIsSavingSubtitleLanguages] = useState(false)
+  const [subtitleLanguageSaveError, setSubtitleLanguageSaveError] = useState<string | null>(null)
+  const [subtitleLanguagesSaved, setSubtitleLanguagesSaved] = useState(false)
 
   // Auto-update state
   const [appVersion, setAppVersion] = useState('')
@@ -49,6 +54,17 @@ export function GeneralTab() {
   const [urlCopied, setUrlCopied] = useState(false)
   const [webSessionTimeout, setWebSessionTimeout] = useState('86400000')
 
+  const toggleSubtitleLanguage = (languageCode: string) => {
+    const selectedLanguages = parseLanguageWhitelist(subtitlePreferredLanguages)
+    const isSelected = selectedLanguages.some(language => isSameLanguage(language, languageCode))
+    const updatedLanguages = isSelected
+      ? selectedLanguages.filter(language => !isSameLanguage(language, languageCode))
+      : [...selectedLanguages, languageCode]
+    setSubtitlePreferredLanguages(updatedLanguages.join(', '))
+    setSubtitleLanguagesSaved(false)
+    setSubtitleLanguageSaveError(null)
+  }
+
   const loadWebStatus = useCallback(async () => {
     try {
       const status = await window.electronAPI.webAccessGetStatus()
@@ -63,7 +79,7 @@ export function GeneralTab() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [trayVal, startVal, version, uState, uSetting, weVal, wpVal, wpinVal, wtVal] = await Promise.all([
+        const [trayVal, startVal, version, uState, uSetting, weVal, wpVal, wpinVal, wtVal, subtitleLanguages] = await Promise.all([
           window.electronAPI.getSetting('minimize_to_tray'),
           window.electronAPI.getSetting('start_minimized_to_tray'),
           window.electronAPI.getAppVersion(),
@@ -73,6 +89,7 @@ export function GeneralTab() {
           window.electronAPI.getSetting(SETTING_KEYS.web_access_port),
           window.electronAPI.getSetting(SETTING_KEYS.web_access_pin),
           window.electronAPI.getSetting(SETTING_KEYS.web_access_session_timeout),
+          window.electronAPI.getSetting(SETTING_KEYS.subtitle_preferred_languages),
         ])
         setMinimizeToTray(trayVal === 'true')
         setStartMinimized(startVal === 'true')
@@ -86,6 +103,7 @@ export function GeneralTab() {
           setWebAccessError('Web access is enabled, but a PIN is required before the server can start.')
         }
         if (wtVal) setWebSessionTimeout(wtVal)
+        setSubtitlePreferredLanguages(subtitleLanguages || '')
         await loadWebStatus()
       } catch (error) {
         console.error('Failed to load general settings:', error)
@@ -119,6 +137,7 @@ export function GeneralTab() {
   }
 
   const { status, version: newVersion, releaseNotes, downloadProgress, lastChecked } = updateState
+  const selectedSubtitleLanguages = parseLanguageWhitelist(subtitlePreferredLanguages)
 
   return (
     <div className="p-6 space-y-5 overflow-y-auto">
@@ -161,6 +180,76 @@ export function GeneralTab() {
               />
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Subtitle Stream Preferences */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 mb-1">
+          <Languages className="w-4 h-4 text-muted-foreground" />
+          <h3 className="text-sm font-medium text-foreground">Subtitle Stream Preferences</h3>
+        </div>
+        <div className="bg-muted/30 rounded-lg border border-border/40 p-4 space-y-3">
+          <label className="block text-sm font-medium text-foreground" htmlFor="subtitle-preferred-languages">
+            Languages to retain during optimization
+          </label>
+          <p className="text-xs text-muted-foreground">Enter ISO-639 codes separated by commas or spaces. Leave blank to retain every subtitle track.</p>
+          <div className="flex gap-2">
+            <input
+              id="subtitle-preferred-languages"
+              type="text"
+              value={subtitlePreferredLanguages}
+              onChange={event => {
+                setSubtitlePreferredLanguages(event.target.value)
+                setSubtitleLanguagesSaved(false)
+                setSubtitleLanguageSaveError(null)
+              }}
+              placeholder="eng, heb, spa"
+              className="flex-1 bg-background text-foreground text-sm rounded-md px-3 py-2 border border-border/40 focus:outline-hidden focus:ring-2 focus:ring-primary font-mono"
+            />
+            <button
+              type="button"
+              onClick={async () => {
+                setIsSavingSubtitleLanguages(true)
+                setSubtitleLanguageSaveError(null)
+                try {
+                  await window.electronAPI.setSetting(SETTING_KEYS.subtitle_preferred_languages, subtitlePreferredLanguages)
+                  setSubtitleLanguagesSaved(true)
+                } catch (error) {
+                  setSubtitleLanguageSaveError(error instanceof Error ? error.message : String(error))
+                } finally {
+                  setIsSavingSubtitleLanguages(false)
+                }
+              }}
+              disabled={isSavingSubtitleLanguages}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-xs font-bold hover:bg-primary/90 transition-colors disabled:opacity-50 shrink-0"
+            >
+              {isSavingSubtitleLanguages ? 'Saving...' : subtitleLanguagesSaved ? 'Saved' : 'Save'}
+            </button>
+          </div>
+          {subtitleLanguageSaveError && <p role="alert" className="text-xs text-destructive">Could not save subtitle preferences: {subtitleLanguageSaveError}</p>}
+          <details className="rounded-md border border-border/40 p-3">
+            <summary className="cursor-pointer text-sm font-medium text-foreground">Quick add or remove a language</summary>
+            <div className="mt-3 flex flex-wrap gap-2" aria-label="Subtitle language choices">
+              {LANGUAGE_OPTIONS.map(({ code, code3, label }) => {
+                const isSelected = selectedSubtitleLanguages.some(language => isSameLanguage(language, code))
+                return (
+                  <button
+                    key={code}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => toggleSubtitleLanguage(code3)}
+                    className={`rounded-md border px-2.5 py-1.5 text-xs transition-colors ${isSelected
+                      ? 'border-primary bg-primary/15 text-foreground'
+                      : 'border-border/50 bg-background text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    {label.replace(`(${code})`, `(${code3})`)}{isSelected ? ' ✓' : ' +'}
+                  </button>
+                )
+              })}
+            </div>
+          </details>
         </div>
       </div>
 
