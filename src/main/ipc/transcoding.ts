@@ -65,6 +65,7 @@ export function registerTranscodingHandlers(): void {
       operation.complete('completed', 'Optimization review is ready')
       return result
     } catch (error) {
+      getLoggingService().error('[TVOptimization]', `Preflight failed: series=${preflightRequest.seriesIdentityKey ?? 'episode'}, mediaItem=${preflightRequest.mediaItemId ?? 'all'}, source=${preflightRequest.sourceId}, library=${preflightRequest.libraryId ?? 'n/a'}:`, getErrorMessage(error))
       operation.complete(operation.signal.aborted ? 'cancelled' : 'failed', getErrorMessage(error))
       throw error
     } finally {

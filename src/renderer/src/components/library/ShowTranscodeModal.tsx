@@ -460,6 +460,9 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
       console.info('[TVOptimizationUI] Preflight returned', { preflightId: preflight.preflightId, batchId: preflight.batchId, episodeCount: preflight.episodeCount, compatible: preflight.episodes.filter(item => item.compatible).length, savingsBytes: preflight.estimatedSavingsBytes, savingsCoverage: preflight.savingsCoverage })
       setPreflightData(preflight)
       return preflight
+    } catch (error) {
+      console.error('[TVOptimizationUI] Preflight failed', { seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, requestId, error })
+      throw error
     } finally {
       activePreflightRequestId.current = null
       setPreflightTermination(null)
@@ -490,6 +493,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     try {
       await runPreflight(next)
     } catch (error) {
+      console.error('[TVOptimizationUI] Plan refresh failed', { seriesIdentityKey, mediaItemId: episode?.id, error })
       setMessage(error instanceof Error ? error.message : String(error))
     } finally {
       setBusy(false)
@@ -503,11 +507,13 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     try {
       const preflight = await runPreflight()
       setMode('preview')
+      console.info('[TVOptimizationUI] Review opened', { preflightId: preflight.preflightId, batchId: preflight.batchId, episodeCount: preflight.episodes.length, sampleReviewCount: preflight.episodes.filter(item => item.compatible && item.samplePaths?.length).length })
       if (!preflight.compatible) {
         setMessage('Preflight completed with some incompatibilities.')
       }
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error)
+      console.error('[TVOptimizationUI] Review preflight failed', { seriesIdentityKey, mediaItemId: episode?.id, error })
       setMessage(errMsg)
       addToast({
         type: 'error',
@@ -542,6 +548,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
       })
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error)
+      console.error('[TVOptimizationUI] Queue failed', { preflightId: preflightData.preflightId, batchId: preflightData.batchId, error })
       setMessage(errMsg)
       addToast({
         type: 'error',
@@ -1097,7 +1104,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
                     </div>
                     {ep.changes?.map(change => <p key={change} className="text-xs">{change}</p>)}
                     {ep.targetCompatibility && <PlaybackCompatibilityFindings evaluation={ep.targetCompatibility} targetName={ep.targetProfile?.name} />}
-                    {ep.samplePaths?.length && <div className="text-xs space-y-2">{ep.samplePaths.map((sample, index) => <button key={sample} className="mr-2 underline" onClick={() => void window.electronAPI.openShowSample(preflightData.preflightId, ep.mediaItemId, index).catch(error => { const message = error instanceof Error ? error.message : String(error); setMessage(message); addToast({ type: 'error', title: 'Could not open measured sample', message }) })}>Play sample {index + 1}</button>)}<label className="block"><input type="checkbox" checked={reviewedEpisodes.includes(ep.mediaItemId)} onChange={event => setReviewedEpisodes(ids => event.target.checked ? [...ids, ep.mediaItemId] : ids.filter(id => id !== ep.mediaItemId))} /> I approve playback of these samples and the listed conversions</label></div>}
+                    {ep.samplePaths?.length && <div className="text-xs space-y-2">{ep.samplePaths.map((sample, index) => <button key={sample} className="mr-2 underline" onClick={() => { console.info('[TVOptimizationUI] Sample playback requested', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, sampleIndex: index }); void window.electronAPI.openShowSample(preflightData.preflightId, ep.mediaItemId, index).then(() => console.info('[TVOptimizationUI] Sample playback opened', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, sampleIndex: index })).catch(error => { console.error('[TVOptimizationUI] Sample playback failed', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, sampleIndex: index, error }); const message = error instanceof Error ? error.message : String(error); setMessage(message); addToast({ type: 'error', title: 'Could not open measured sample', message }) }) }}>Play sample {index + 1}</button>)}<label className="block"><input type="checkbox" checked={reviewedEpisodes.includes(ep.mediaItemId)} onChange={event => { const reviewed = event.target.checked; console.info('[TVOptimizationUI] Sample review acknowledged', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, reviewed }); setReviewedEpisodes(ids => reviewed ? [...ids, ep.mediaItemId] : ids.filter(id => id !== ep.mediaItemId)) }} /> I approve playback of these samples and the listed conversions</label></div>}
                     <div className="flex items-center justify-between text-[10px] text-muted-foreground/80">
                       <span>{ep.evidenceStatus ? `Evidence: ${ep.evidenceStatus} (${ep.confidence || 'none'})` : 'Evidence: unavailable'}</span>
                       <span>Selected plan: <EstimatedSavingsDisplay bytes={ep.estimatedSavingsBytes} /> · {ep.savingsCoverage ?? 'insufficient'} evidence{ep.savingsBasis === 'video_sample_encode' ? ' · Sample-based projection' : ''}</span>
