@@ -157,6 +157,7 @@ export const IPC_CHANNELS = {
   logsSetFileLoggingSettings: 'logs:setFileLoggingSettings',
   logsSetVerbose: 'logs:setVerbose',
   logsWarn: 'logs:warn',
+  logsRendererEvent: 'logs:rendererEvent',
   mainProcessMessage: 'main-process-message',
   mediaAnalyze: 'media:analyze',
   mediaDeepAnalyze: 'media:deepAnalyze',

@@ -25,6 +25,7 @@ import type { TVShowSummary, MediaItem } from './types'
 import type { GpuInfo, PlannedOptimizationOperation, ShowTranscodePreflight } from './transcoding/types'
 import { EncoderPolicySelector } from './transcoding/EncoderPolicySelector'
 import { formatLanguage, getOptimizationContainer, isSameLanguage, LANGUAGE_OPTIONS, parseLanguageWhitelist } from './mediaUtils'
+import { describeDiagnosticError, logOptimizationDiagnostic } from './optimizationDiagnostics'
 import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
 import { PlaybackCompatibilityFindings } from './PlaybackCompatibilityPanel'
 import { getTVShowIdentity } from './tv/showIdentity'
@@ -249,23 +250,31 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
   const handleClose = useCallback(async () => {
     const requestId = activePreflightRequestId.current
     if (requestId) {
+      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.cancel.requested', { requestId, seriesIdentityKey, mediaItemId: episode?.id })
       closeAfterPreflight.current = true
       try {
         const result = await window.electronAPI.dbCancelOperation(requestId)
+        logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.cancel.result', { requestId, status: result.status })
         setPreflightTermination(result.status === 'committing' ? 'finishing' : 'cancelling')
       } catch (error) {
+        logOptimizationDiagnostic('TVOptimizationUI', 'error', 'preflight.cancel.failed', { requestId, error: describeDiagnosticError(error) })
         closeAfterPreflight.current = false
         addToast({ type: 'error', title: 'Cancel optimization review', message: String(error) })
       }
       return
     }
     try {
-      if (preflightData && mode !== 'monitoring') await window.electronAPI.discardShow(preflightData.preflightId)
+      if (preflightData && mode !== 'monitoring') {
+        logOptimizationDiagnostic('TVOptimizationUI', 'info', 'review.discard.requested', { preflightId: preflightData.preflightId, batchId: preflightData.batchId })
+        await window.electronAPI.discardShow(preflightData.preflightId)
+      }
+      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'optimizer.close.completed', { seriesIdentityKey, mediaItemId: episode?.id, mode })
       onClose()
     } catch (error) {
+      logOptimizationDiagnostic('TVOptimizationUI', 'error', 'review.discard.failed', { preflightId: preflightData?.preflightId, error: describeDiagnosticError(error) })
       addToast({ type: 'error', title: 'Discard plan', message: String(error) })
     }
-  }, [preflightData, mode, onClose, addToast])
+  }, [preflightData, mode, onClose, addToast, seriesIdentityKey, episode?.id])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -437,7 +446,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
       throw new Error('Choose an output mode and, when stream pruning is enabled, an original language.')
     }
     if (shouldAdjustToTarget && optimizationMode !== 'remux_only' && (!codec || !qualityProfile || !encoderPolicy || !targetContainer || (effectiveTargetProfileId && !targetHdrFormat))) throw new Error('Choose a video codec, quality, encoder policy, container, and, when a playback target is selected, output color format before measuring samples.')
-    console.info('[TVOptimizationUI] Preflight requested', { seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, optimizationMode, codec, encoderPolicy, gpuId: gpuId || null, removeUnnecessaryStreams: shouldRemoveStreams, adjustToTarget: shouldAdjustToTarget, targetProfileId: effectiveTargetProfileId || null })
+    logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.requested', { seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, optimizationMode, codec, encoderPolicy, gpuId: gpuId || null, removeUnnecessaryStreams: shouldRemoveStreams, adjustToTarget: shouldAdjustToTarget, targetProfileId: effectiveTargetProfileId || null })
     setReviewedEpisodes([])
     if (preflightData) {
       await window.electronAPI.discardShow(preflightData.preflightId)
@@ -457,11 +466,11 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
         libraryId,
         options: getCleanOptions(overrides)
       }) as ShowTranscodePreflight
-      console.info('[TVOptimizationUI] Preflight returned', { preflightId: preflight.preflightId, batchId: preflight.batchId, episodeCount: preflight.episodeCount, compatible: preflight.episodes.filter(item => item.compatible).length, savingsBytes: preflight.estimatedSavingsBytes, savingsCoverage: preflight.savingsCoverage })
+      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.returned', { preflightId: preflight.preflightId, batchId: preflight.batchId, episodeCount: preflight.episodeCount, compatible: preflight.episodes.filter(item => item.compatible).length, savingsBytes: preflight.estimatedSavingsBytes, savingsCoverage: preflight.savingsCoverage })
       setPreflightData(preflight)
       return preflight
     } catch (error) {
-      console.error('[TVOptimizationUI] Preflight failed', { seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, requestId, error })
+      logOptimizationDiagnostic('TVOptimizationUI', 'error', 'preflight.failed', { seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, requestId, error: describeDiagnosticError(error) })
       throw error
     } finally {
       activePreflightRequestId.current = null
@@ -480,6 +489,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
   }
 
   const updatePlan = async (next: { removeUnnecessaryStreams?: boolean; adjustToTarget?: boolean; targetProfileId?: string }) => {
+    logOptimizationDiagnostic('TVOptimizationUI', 'info', 'plan.settings.changed', { seriesIdentityKey, mediaItemId: episode?.id, changes: next })
     if (next.removeUnnecessaryStreams !== undefined) setRemoveUnnecessaryStreams(next.removeUnnecessaryStreams)
     if (next.adjustToTarget !== undefined) setAdjustToTarget(next.adjustToTarget)
     if (next.targetProfileId !== undefined) {
@@ -493,7 +503,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     try {
       await runPreflight(next)
     } catch (error) {
-      console.error('[TVOptimizationUI] Plan refresh failed', { seriesIdentityKey, mediaItemId: episode?.id, error })
+      logOptimizationDiagnostic('TVOptimizationUI', 'error', 'plan.refresh.failed', { seriesIdentityKey, mediaItemId: episode?.id, error: describeDiagnosticError(error) })
       setMessage(error instanceof Error ? error.message : String(error))
     } finally {
       setBusy(false)
@@ -507,13 +517,13 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     try {
       const preflight = await runPreflight()
       setMode('preview')
-      console.info('[TVOptimizationUI] Review opened', { preflightId: preflight.preflightId, batchId: preflight.batchId, episodeCount: preflight.episodes.length, sampleReviewCount: preflight.episodes.filter(item => item.compatible && item.samplePaths?.length).length })
+      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'review.opened', { preflightId: preflight.preflightId, batchId: preflight.batchId, episodeCount: preflight.episodes.length, sampleReviewCount: preflight.episodes.filter(item => item.compatible && item.samplePaths?.length).length })
       if (!preflight.compatible) {
         setMessage('Preflight completed with some incompatibilities.')
       }
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error)
-      console.error('[TVOptimizationUI] Review preflight failed', { seriesIdentityKey, mediaItemId: episode?.id, error })
+      logOptimizationDiagnostic('TVOptimizationUI', 'error', 'review.preflight.failed', { seriesIdentityKey, mediaItemId: episode?.id, error: describeDiagnosticError(error) })
       setMessage(errMsg)
       addToast({
         type: 'error',
@@ -531,11 +541,11 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     setMessage('')
     try {
       const requiresApproval = preflightData.episodes.some(episode => episode.compatible && episode.decisionStatus === 'sample_required')
-      console.info('[TVOptimizationUI] Queue requested', { preflightId: preflightData.preflightId, batchId: preflightData.batchId, requiresSampleApproval: requiresApproval, reviewedEpisodeCount: reviewedEpisodes.length })
+      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'queue.requested', { preflightId: preflightData.preflightId, batchId: preflightData.batchId, requiresSampleApproval: requiresApproval, reviewedEpisodeCount: reviewedEpisodes.length })
       if (preflightData.episodes.some(episode => episode.compatible && episode.samplePaths?.length && !reviewedEpisodes.includes(episode.mediaItemId))) throw new Error('Play and approve the winning samples for every eligible episode.')
       if (requiresApproval) await window.electronAPI.approveShow(preflightData.preflightId)
       const queued = await window.electronAPI.queueShow(preflightData.preflightId)
-      console.info('[TVOptimizationUI] Queue completed', { batchId: queued.batchId, queuedMediaItemIds: queued.queuedMediaItemIds })
+      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'queue.completed', { batchId: queued.batchId, queuedMediaItemIds: queued.queuedMediaItemIds })
       setActiveBatchId(queued.batchId)
       setIsSuccess(true)
       setMode('monitoring')
@@ -548,7 +558,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
       })
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error)
-      console.error('[TVOptimizationUI] Queue failed', { preflightId: preflightData.preflightId, batchId: preflightData.batchId, error })
+      logOptimizationDiagnostic('TVOptimizationUI', 'error', 'queue.failed', { preflightId: preflightData.preflightId, batchId: preflightData.batchId, error: describeDiagnosticError(error) })
       setMessage(errMsg)
       addToast({
         type: 'error',
@@ -661,7 +671,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 <button
                   type="button"
-                  onClick={() => setOptimizationMode('smart')}
+                  onClick={() => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'strategy.selected', { mode: 'smart' }); setOptimizationMode('smart') }}
                   className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                     optimizationMode === 'smart'
                       ? 'border-primary bg-primary/10 shadow-sm ring-1 ring-primary'
@@ -679,7 +689,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
 
                 <button
                   type="button"
-                  onClick={() => setOptimizationMode('remux_only')}
+                  onClick={() => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'strategy.selected', { mode: 'remux_only' }); setOptimizationMode('remux_only') }}
                   className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                     optimizationMode === 'remux_only'
                       ? 'border-primary bg-primary/10 shadow-sm ring-1 ring-primary'
@@ -698,7 +708,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
 
                 <button
                   type="button"
-                  onClick={() => setOptimizationMode('transcode')}
+                  onClick={() => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'strategy.selected', { mode: 'transcode' }); setOptimizationMode('transcode') }}
                   className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                     optimizationMode === 'transcode'
                       ? 'border-primary bg-primary/10 shadow-sm ring-1 ring-primary'
@@ -720,11 +730,11 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
             <details open className="space-y-3 rounded-xl border border-border/40 bg-card/20 p-3">
               <summary className="cursor-pointer list-none text-xs font-bold uppercase tracking-wider text-muted-foreground">Target adjustment details</summary>
             <div className="grid grid-cols-2 gap-3 text-xs">
-              <label>Visual quality threshold<select aria-label="Quality" value={qualityProfile} onChange={e => setQualityProfile(e.target.value as OptimizationQualityProfile)}><option value="">Select threshold</option><option value="transparent">Highest measured fidelity</option><option value="balanced">Balanced fidelity and savings</option><option value="maximum_savings">More savings, measured loss allowed</option></select></label>
-              <EncoderPolicySelector value={encoderPolicy} hardwareAvailable={hardwareAvailable} onChange={policy => setEncoderPolicy(policy ?? '')} />
+              <label>Visual quality threshold<select aria-label="Quality" value={qualityProfile} onChange={e => { const value = e.target.value as OptimizationQualityProfile; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'quality.threshold.selected', { qualityProfile: value }); setQualityProfile(value) }}><option value="">Select threshold</option><option value="transparent">Highest measured fidelity</option><option value="balanced">Balanced fidelity and savings</option><option value="maximum_savings">More savings, measured loss allowed</option></select></label>
+              <EncoderPolicySelector value={encoderPolicy} hardwareAvailable={hardwareAvailable} onChange={policy => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'encoder.policy.selected', { encoderPolicy: policy ?? '' }); setEncoderPolicy(policy ?? '') }} />
               <label>Container<select aria-label="Container" value={targetContainer} onChange={e => setTargetContainer(e.target.value as typeof targetContainer)}>{!targetContainer && <option value="">Select container{episode?.container ? ` (source: ${episode.container})` : ''}</option>}{(targetProfile?.definition.containers ?? ['matroska', 'mp4']).filter(container => ['matroska', 'mp4'].includes(container)).map(container => <option key={container} value={container === 'matroska' ? 'mkv' : 'mp4'}>{container}</option>)}</select></label>
-              {targetProfile ? <label>Output color<select aria-label="Output color" value={targetHdrFormat} onChange={e => setTargetHdrFormat(e.target.value as typeof targetHdrFormat)}><option value="">Select color format</option><option value="SDR">SDR</option>{targetProfile.definition.hdr.formats.includes('HDR10') && <option value="HDR10">HDR10</option>}</select></label> : <p className="text-xs text-muted-foreground">Preserve the source color format. HDR conversion requires a playback target.</p>}
-              <label>Audio conversion<select aria-label="Audio conversion" value={targetAudioCodec} onChange={e => setTargetAudioCodec(e.target.value as typeof targetAudioCodec)}><option value="">Preserve source{episode?.audio_codec ? ` (${episode.audio_codec})` : ''}; convert only for compatibility</option>{(targetProfile?.definition.audio.codecs ?? ['aac', 'ac3', 'eac3']).filter(codec => ['aac', 'ac3', 'eac3'].includes(codec)).map(codec => <option key={codec} value={codec}>{codec.toUpperCase()}{codec === recommendedAudioCodec ? ' (recommended for target compatibility)' : ''}</option>)}</select>{episode?.audio_codec && /dts.?hd|truehd|flac|pcm/i.test(episode.audio_codec) && <span className="block text-muted-foreground">{episode.audio_codec} is lossless; converting to a listed codec is lossy and should be selected only when the playback target requires it or measured savings justify it.</span>}</label>
+              {targetProfile ? <label>Output color<select aria-label="Output color" value={targetHdrFormat} onChange={e => { const value = e.target.value as typeof targetHdrFormat; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'output.color.selected', { targetHdrFormat: value }); setTargetHdrFormat(value) }}><option value="">Select color format</option><option value="SDR">SDR</option>{targetProfile.definition.hdr.formats.includes('HDR10') && <option value="HDR10">HDR10</option>}</select></label> : <p className="text-xs text-muted-foreground">Preserve the source color format. HDR conversion requires a playback target.</p>}
+              <label>Audio conversion<select aria-label="Audio conversion" value={targetAudioCodec} onChange={e => { const value = e.target.value as typeof targetAudioCodec; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'audio.conversion.selected', { targetAudioCodec: value }); setTargetAudioCodec(value) }}><option value="">Preserve source{episode?.audio_codec ? ` (${episode.audio_codec})` : ''}; convert only for compatibility</option>{(targetProfile?.definition.audio.codecs ?? ['aac', 'ac3', 'eac3']).filter(codec => ['aac', 'ac3', 'eac3'].includes(codec)).map(codec => <option key={codec} value={codec}>{codec.toUpperCase()}{codec === recommendedAudioCodec ? ' (recommended for target compatibility)' : ''}</option>)}</select>{episode?.audio_codec && /dts.?hd|truehd|flac|pcm/i.test(episode.audio_codec) && <span className="block text-muted-foreground">{episode.audio_codec} is lossless; converting to a listed codec is lossy and should be selected only when the playback target requires it or measured savings justify it.</span>}</label>
             </div>
             {/* Codec Selection */}
             {optimizationMode !== 'remux_only' && (
@@ -735,7 +745,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={() => setCodec('av1')}
+                    onClick={() => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'video.codec.selected', { targetCodec: 'av1' }); setCodec('av1') }}
                     disabled={Boolean(targetProfile && !targetProfile.definition.video.codecs.some(codec => normalizeVideoCodec(codec) === 'AV1'))}
                     className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                       codec === 'av1'
@@ -752,7 +762,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
 
                   <button
                     type="button"
-                    onClick={() => setCodec('hevc')}
+                    onClick={() => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'video.codec.selected', { targetCodec: 'hevc' }); setCodec('hevc') }}
                     disabled={Boolean(targetProfile && !targetProfile.definition.video.codecs.some(codec => normalizeVideoCodec(codec) === 'HEVC'))}
                     className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                       codec === 'hevc'
@@ -1104,7 +1114,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
                     </div>
                     {ep.changes?.map(change => <p key={change} className="text-xs">{change}</p>)}
                     {ep.targetCompatibility && <PlaybackCompatibilityFindings evaluation={ep.targetCompatibility} targetName={ep.targetProfile?.name} />}
-                    {ep.samplePaths?.length && <div className="text-xs space-y-2">{ep.samplePaths.map((sample, index) => <button key={sample} className="mr-2 underline" onClick={() => { console.info('[TVOptimizationUI] Sample playback requested', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, sampleIndex: index }); void window.electronAPI.openShowSample(preflightData.preflightId, ep.mediaItemId, index).then(() => console.info('[TVOptimizationUI] Sample playback opened', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, sampleIndex: index })).catch(error => { console.error('[TVOptimizationUI] Sample playback failed', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, sampleIndex: index, error }); const message = error instanceof Error ? error.message : String(error); setMessage(message); addToast({ type: 'error', title: 'Could not open measured sample', message }) }) }}>Play sample {index + 1}</button>)}<label className="block"><input type="checkbox" checked={reviewedEpisodes.includes(ep.mediaItemId)} onChange={event => { const reviewed = event.target.checked; console.info('[TVOptimizationUI] Sample review acknowledged', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, reviewed }); setReviewedEpisodes(ids => reviewed ? [...ids, ep.mediaItemId] : ids.filter(id => id !== ep.mediaItemId)) }} /> I approve playback of these samples and the listed conversions</label></div>}
+                    {ep.samplePaths?.length && <div className="text-xs space-y-2">{ep.samplePaths.map((sample, index) => <button key={sample} className="mr-2 underline" onClick={() => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'sample.playback.requested', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, sampleIndex: index }); void window.electronAPI.openShowSample(preflightData.preflightId, ep.mediaItemId, index).then(() => logOptimizationDiagnostic('TVOptimizationUI', 'info', 'sample.playback.opened', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, sampleIndex: index })).catch(error => { logOptimizationDiagnostic('TVOptimizationUI', 'error', 'sample.playback.failed', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, sampleIndex: index, error: describeDiagnosticError(error) }); const message = error instanceof Error ? error.message : String(error); setMessage(message); addToast({ type: 'error', title: 'Could not open measured sample', message }) }) }}>Play sample {index + 1}</button>)}<label className="block"><input type="checkbox" checked={reviewedEpisodes.includes(ep.mediaItemId)} onChange={event => { const reviewed = event.target.checked; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'sample.review.acknowledged', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, reviewed }); setReviewedEpisodes(ids => reviewed ? [...ids, ep.mediaItemId] : ids.filter(id => id !== ep.mediaItemId)) }} /> I approve playback of these samples and the listed conversions</label></div>}
                     <div className="flex items-center justify-between text-[10px] text-muted-foreground/80">
                       <span>{ep.evidenceStatus ? `Evidence: ${ep.evidenceStatus} (${ep.confidence || 'none'})` : 'Evidence: unavailable'}</span>
                       <span>Selected plan: <EstimatedSavingsDisplay bytes={ep.estimatedSavingsBytes} /> · {ep.savingsCoverage ?? 'insufficient'} evidence{ep.savingsBasis === 'video_sample_encode' ? ' · Sample-based projection' : ''}</span>
