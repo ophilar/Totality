@@ -246,14 +246,14 @@ export function MatchFixModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-200 flex items-center justify-center bg-black/60"
+      className="fixed inset-0 z-200 flex items-center justify-center bg-black/60 p-4 overflow-y-auto"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
     >
       <div
         ref={modalRef}
-        className="bg-card rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden"
+        className="bg-card rounded-xl shadow-2xl w-full max-w-2xl max-h-[calc(100vh-2rem)] min-h-0 flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >

@@ -148,7 +148,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 flex items-center justify-center z-150"
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-150 p-4 overflow-y-auto"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -157,7 +157,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
     >
       <div
         ref={modalRef}
-        className="bg-card border border-border/30 rounded-2xl w-full max-w-4xl h-[680px] flex flex-col shadow-xl mx-4 overflow-hidden"
+        className="bg-card border border-border/30 rounded-2xl w-full max-w-4xl h-[min(680px,calc(100vh-2rem))] min-h-0 flex flex-col shadow-xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

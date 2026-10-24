@@ -88,7 +88,7 @@ export const CollectionModal = memo(function CollectionModal({
       title: m.title,
       year: m.year,
       poster_url: m.poster_url,
-      needs_upgrade: m.needs_upgrade || m.tier_quality === 'LOW'
+      needs_upgrade: m.needs_upgrade
     }))
 
     const missing = missingMovies.map(m => ({
@@ -104,6 +104,8 @@ export const CollectionModal = memo(function CollectionModal({
     return [...owned, ...missing].sort((a, b) => (a.year || 0) - (b.year || 0))
   }, [ownedMovies, missingMovies])
 
+  const optimizationSummary = calculateOptimizationSummary(ownedMovies)
+
   return (
     <>
       {createPortal(<div className="fixed inset-0 z-150 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="collection-modal-title">
@@ -114,7 +116,7 @@ export const CollectionModal = memo(function CollectionModal({
         />
 
         {/* Modal */}
-        <div ref={modalRef} className="relative bg-card border border-border rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+        <div ref={modalRef} className="relative bg-card border border-border rounded-xl shadow-xl max-w-4xl w-full max-h-[calc(100vh-2rem)] min-h-0 overflow-hidden flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl shrink-0">
             <div>
@@ -128,7 +130,8 @@ export const CollectionModal = memo(function CollectionModal({
               </p>
               <ScopedOptimizationSummary
                 totalCount={ownedMovies.length}
-                estimatedSavingsBytes={calculateOptimizationSummary(ownedMovies)?.estimatedSavingsBytes ?? null}
+                estimatedSavingsBytes={optimizationSummary?.estimatedSavingsBytes}
+                coverage={optimizationSummary?.coverage}
               />
             </div>
             <div className="flex items-center gap-1">

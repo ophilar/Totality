@@ -24,7 +24,7 @@ import { AnimatedNumber } from '../ui/AnimatedNumber'
 interface MusicAlbumUpgrade extends MusicAlbum {
   quality_tier: string
   tier_quality: string
-  tier_score: number
+  tier_score: number | null
 }
 
 
@@ -57,6 +57,8 @@ type UpgradeTab = 'movies' | 'tv' | 'music'
 const MOVIE_ITEM_HEIGHT = 80  // poster height + padding
 const TV_ITEM_HEIGHT = 80
 const MUSIC_ITEM_HEIGHT = 64  // square album art + padding
+
+const videoResolutionRank = (tier?: string): number => ({ SD: 0, '720p': 1, '1080p': 2, '4K': 3 }[tier ?? ''] ?? -1)
 
 // Expandable row constants (variable height rows)
 const COLLAPSED_HEIGHT = 80  // Base row height for collections/series
@@ -206,8 +208,8 @@ export function Dashboard({
         window.electronAPI.getSetting(SETTING_KEYS.dashboard_series_sort),
         window.electronAPI.getSetting(SETTING_KEYS.dashboard_artist_sort),
         // Data (6-11)
-        window.electronAPI.getMediaItems({ needsUpgrade: true, type: 'movie', sortBy: 'tier_score', sortOrder: 'asc', sourceId }),
-        window.electronAPI.getMediaItems({ needsUpgrade: true, type: 'episode', sortBy: 'tier_score', sortOrder: 'asc', sourceId }),
+        window.electronAPI.getMediaItems({ needsUpgrade: true, type: 'movie', sortBy: 'title', sortOrder: 'asc', sourceId }),
+        window.electronAPI.getMediaItems({ needsUpgrade: true, type: 'episode', sortBy: 'title', sortOrder: 'asc', sourceId }),
         window.electronAPI.musicGetAlbumsNeedingUpgrade(undefined, sourceId),
         window.electronAPI.collectionsGetIncomplete(sourceId),
         window.electronAPI.seriesGetIncomplete(sourceId),
@@ -316,21 +318,21 @@ export function Dashboard({
           : a.person_name.localeCompare(b.person_name)))
 
       // Filter and sort upgrades, excluding dismissed items
-      const sortUpgrades = <T extends { tier_score?: number; title: string; id: number }>(items: T[]): T[] => items.sort((a, b) => {
-        if (effectiveUpgSort === 'quality') return (a.tier_score ?? 100) - (b.tier_score ?? 100)
+      const sortUpgrades = <T extends { quality_tier?: string; title: string; id: number }>(items: T[]): T[] => items.sort((a, b) => {
+        if (effectiveUpgSort === 'quality') return videoResolutionRank(a.quality_tier) - videoResolutionRank(b.quality_tier)
         if (effectiveUpgSort === 'recent') return (((b as unknown as Record<string, string>).created_at) || '').localeCompare(((a as unknown as Record<string, string>).created_at) || '')
         if (effectiveUpgSort === 'watch_priority') {
           const pcA = ((a as unknown as Record<string, number>).play_count || 0)
           const pcB = ((b as unknown as Record<string, number>).play_count || 0)
           // Primary: items with play count first, sorted by weighted score
           if (pcA > 0 || pcB > 0) {
-            const scoreA = (100 - (a.tier_score ?? 100)) * Math.log2(pcA + 2)
-            const scoreB = (100 - (b.tier_score ?? 100)) * Math.log2(pcB + 2)
+            const scoreA = (3 - videoResolutionRank(a.quality_tier)) * Math.log2(pcA + 2)
+            const scoreB = (3 - videoResolutionRank(b.quality_tier)) * Math.log2(pcB + 2)
             if (scoreA !== scoreB) return scoreB - scoreA
           }
-          // Tiebreaker: watched items above unwatched, then by quality
+          // Tiebreaker: watched items above unwatched, then lower resolution.
           if (pcA !== pcB) return pcB - pcA
-          return (a.tier_score ?? 100) - (b.tier_score ?? 100)
+          return videoResolutionRank(a.quality_tier) - videoResolutionRank(b.quality_tier)
         }
         return a.title.localeCompare(b.title)
       })
@@ -706,22 +708,22 @@ export function Dashboard({
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sortByWatchPriority = (a: any, b: any) => {
+  const sortByWatchPriority = (a: MediaItem & { play_count?: number }, b: MediaItem & { play_count?: number }) => {
     const pcA = a.play_count || 0
     const pcB = b.play_count || 0
     if (pcA > 0 || pcB > 0) {
-      const scoreA = (100 - (a.tier_score ?? 100)) * Math.log2(pcA + 2)
-      const scoreB = (100 - (b.tier_score ?? 100)) * Math.log2(pcB + 2)
+      const scoreA = (3 - videoResolutionRank(a.quality_tier)) * Math.log2(pcA + 2)
+      const scoreB = (3 - videoResolutionRank(b.quality_tier)) * Math.log2(pcB + 2)
       if (scoreA !== scoreB) return scoreB - scoreA
     }
     if (pcA !== pcB) return pcB - pcA
-    return (a.tier_score ?? 100) - (b.tier_score ?? 100)
+    return videoResolutionRank(a.quality_tier) - videoResolutionRank(b.quality_tier)
   }
 
   useEffect(() => {
     const dir = upgradeSortDir === 'asc' ? 1 : -1
     setMovieUpgrades(prev => [...prev].sort((a, b) => {
-      if (movieSortBy === 'quality') return ((a.tier_score ?? 100) - (b.tier_score ?? 100)) * dir
+      if (movieSortBy === 'quality') return (videoResolutionRank(a.quality_tier) - videoResolutionRank(b.quality_tier)) * dir
       if (movieSortBy === 'recent') return getCreatedAt(b).localeCompare(getCreatedAt(a)) * dir
       if (movieSortBy === 'watch_priority') return sortByWatchPriority(a, b) * dir
       return a.title.localeCompare(b.title) * dir
@@ -731,7 +733,7 @@ export function Dashboard({
   useEffect(() => {
     const dir = upgradeSortDir === 'asc' ? 1 : -1
     setTvUpgrades(prev => [...prev].sort((a, b) => {
-      if (tvSortBy === 'quality') return ((a.tier_score ?? 100) - (b.tier_score ?? 100)) * dir
+      if (tvSortBy === 'quality') return (videoResolutionRank(a.quality_tier) - videoResolutionRank(b.quality_tier)) * dir
       if (tvSortBy === 'recent') return getCreatedAt(b).localeCompare(getCreatedAt(a)) * dir
       if (tvSortBy === 'watch_priority') return sortByWatchPriority(a, b) * dir
       return (a.series_title || a.title).localeCompare(b.series_title || b.title) * dir
@@ -808,7 +810,7 @@ export function Dashboard({
           <div className="font-medium text-sm truncate">{item.title}</div>
           <div className="text-xs text-muted-foreground truncate">{item.year}</div>
           <div className="text-xs text-muted-foreground mt-1">
-            {item.quality_tier} · {item.tier_quality}
+            {item.quality_tier} · {item.tier_quality === 'UNKNOWN' ? 'Quality rating unknown' : `${item.tier_quality} quality rating`}
           </div>
         </div>
         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
@@ -862,7 +864,7 @@ export function Dashboard({
             S{item.season_number}E{item.episode_number} · {item.title}
           </div>
           <div className="text-xs text-muted-foreground mt-1">
-            {item.quality_tier} · {item.tier_quality}
+            {item.quality_tier} · {item.tier_quality === 'UNKNOWN' ? 'Quality rating unknown' : `${item.tier_quality} quality rating`}
           </div>
         </div>
         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
@@ -1519,10 +1521,7 @@ export function Dashboard({
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-xs text-muted-foreground flex items-center gap-1"><Film className="w-3 h-3" />Movies</span>
-                          <AnimatedNumber value={Math.round(libraryStats.movieAverageQualityScore || 0)} className="text-xs font-bold" />
-                        </div>
-                        <div className="h-1 bg-muted rounded-full overflow-hidden">
-                          <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${libraryStats.movieAverageQualityScore || 0}%` }} />
+                          <span className="text-[10px] text-muted-foreground">Media quality rating</span>
                         </div>
                         {libraryStats.movieNeedsUpgradeCount > 0 && (
                           <div className="text-xs text-muted-foreground mt-0.5"><AnimatedNumber value={libraryStats.movieNeedsUpgradeCount} /> upgrades</div>
@@ -1533,10 +1532,7 @@ export function Dashboard({
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-xs text-muted-foreground flex items-center gap-1"><Tv className="w-3 h-3" />TV</span>
-                          <AnimatedNumber value={Math.round(libraryStats.tvAverageQualityScore || 0)} className="text-xs font-bold" />
-                        </div>
-                        <div className="h-1 bg-muted rounded-full overflow-hidden">
-                          <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${libraryStats.tvAverageQualityScore || 0}%` }} />
+                          <span className="text-[10px] text-muted-foreground">Media quality rating</span>
                         </div>
                         {libraryStats.tvNeedsUpgradeCount > 0 && (
                           <div className="text-xs text-muted-foreground mt-0.5"><AnimatedNumber value={libraryStats.tvNeedsUpgradeCount} /> upgrades</div>
@@ -1703,7 +1699,7 @@ export function Dashboard({
                       }}
                       className="text-xs bg-background text-foreground border border-border/50 rounded px-2 py-0.5 cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-primary"
                     >
-                      <option value="quality">Quality</option>
+                      <option value="quality">Resolution</option>
                       <option value="watch_priority">Play Priority</option>
                       <option value="recent">Recent</option>
                       <option value="title">Name</option>

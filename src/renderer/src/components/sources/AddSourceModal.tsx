@@ -147,14 +147,14 @@ export function AddSourceModal({ onClose, onSuccess }: AddSourceModalProps) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 flex items-center justify-center z-150"
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-150 p-4 overflow-y-auto"
       role="dialog"
       aria-modal="true"
       aria-labelledby="add-source-modal-title"
       onClick={handleBackdropClick}
       onKeyDown={handleKeyDown}
     >
-      <div ref={modalRef} className="bg-card rounded-xl shadow-xl w-full max-w-xs mx-4 max-h-[90vh] overflow-y-auto">
+      <div ref={modalRef} className="bg-card rounded-xl shadow-xl w-full max-w-xs max-h-[calc(100vh-2rem)] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
           <h2 id="add-source-modal-title" className="text-sm font-semibold">

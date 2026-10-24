@@ -6,10 +6,8 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
-import { useTheme } from '../../contexts/ThemeContext'
 import logoAnimation from '../../assets/totality_anim.webm'
 import logoImage from '../../assets/logo.png'
-import logoBlackImage from '../../assets/logo_black.png'
 
 interface SplashScreenProps {
   onComplete: () => void
@@ -20,7 +18,6 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
   const [fadeOut, setFadeOut] = useState(false)
   const [videoReady, setVideoReady] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
-  const { effectiveIsDark } = useTheme()
 
   // Start video playback after a delay to ensure window is fully visible
   useEffect(() => {
@@ -65,9 +62,9 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
 
   return (
     <div
-      className="fixed inset-0 z-200 bg-background flex items-center justify-center"
+      className="fixed inset-0 z-200 flex items-center justify-center"
       style={{
-        backgroundColor: 'hsl(var(--background))',
+        backgroundColor: '#000',
         opacity: fadeOut ? 0 : 1,
         transition: 'opacity 600ms ease-out',
       }}
@@ -87,11 +84,10 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
           className="absolute inset-0 w-full h-full object-contain"
           style={{
             opacity: videoReady && !videoEnded ? 1 : 0,
-            filter: effectiveIsDark ? undefined : 'invert(1) contrast(1.15)',
           }}
         />
         <img
-          src={effectiveIsDark ? logoImage : logoBlackImage}
+          src={logoImage}
           alt="Totality application logo"
           className="absolute inset-0 w-full h-full object-contain"
           style={{
