@@ -1173,7 +1173,8 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
                 <div>
                   <h4 className="text-sm font-bold text-foreground">Preflight Optimization Plan</h4>
                   <p className="text-xs text-muted-foreground">{preflightData.episodes.length} episodes analyzed; only evidenced actions can be queued</p>
-                  <p className="text-sm font-semibold">Selected series plan total: <EstimatedSavingsDisplay bytes={preflightData.estimatedSavingsBytes} /> · {preflightData.savingsCoverage ?? 'insufficient'} evidence{preflightData.savingsBasis === 'sample_based_projection' ? ' · Sample-based projection' : preflightData.savingsBasis === 'mixed_sample_projection' ? ' · Includes sample-based projections' : ''}</p>
+                  <p className="text-xs text-muted-foreground">{preflightData.episodes.filter(ep => ep.samplingRole === 'measured').length} episode samples measured · {preflightData.episodes.filter(ep => ep.samplingRole === 'projected').length} episodes use representative settings. Compatibility is inspected per episode.</p>
+                  <p className="text-sm font-semibold">Selected series plan total: <EstimatedSavingsDisplay bytes={preflightData.estimatedSavingsBytes} /> · {preflightData.savingsCoverage ?? 'insufficient'} evidence{preflightData.savingsBasis === 'sample_based_projection' ? ' · Sample-based projection' : preflightData.savingsBasis === 'mixed_sample_projection' ? ' · Includes sample-based projections' : preflightData.savingsBasis === 'representative_sample_projection' || preflightData.savingsBasis === 'mixed_representative_sample_projection' ? ' · Includes representative-sample projections' : ''}</p>
                 </div>
                 <label className="flex items-center gap-2 text-xs text-muted-foreground">Playback target
                   <select value={targetProfileId} onChange={event => { void updatePlan({ targetProfileId: event.target.value }) }} disabled={busy || targetProfilesLoading} className="rounded-lg border border-border bg-background px-2 py-1 text-xs text-foreground">
@@ -1230,7 +1231,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
                 })
                 .finally(() => setBusy(false))
             }}>Analyze show using series analysis</button>
-            <p className="text-xs">Actionable: {preflightData.episodes.filter(ep => ep.compatible && ep.decisionStatus === 'actionable').length} · Playback review: {preflightData.episodes.filter(ep => ep.compatible && ep.decisionStatus === 'sample_required').length} · Blocked: {preflightData.episodes.filter(ep => !ep.compatible).length}</p>
+            <p className="text-xs">Actionable: {preflightData.episodes.filter(ep => ep.compatible && ep.decisionStatus === 'actionable').length} · Transcode episodes: {preflightData.episodes.filter(ep => ep.compatible && ep.decisionStatus === 'sample_required').length} · Samples to review: {preflightData.episodes.filter(ep => ep.samplePaths?.length).length} · Blocked: {preflightData.episodes.filter(ep => !ep.compatible).length}</p>
             {/* Episodes breakdown */}
             <div className="space-y-2">
               <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
@@ -1257,12 +1258,14 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
                         {formatBytes(ep.sourceSize)} • {ep.hdrFormat}
                       </span>
                     </div>
+                    {ep.samplingRole === 'measured' && <p className="text-xs text-primary">Encode samples measured from this episode.</p>}
+                    {ep.samplingRole === 'projected' && <p className="text-xs text-amber-300">Uses measured settings from {ep.sampleRepresentativeLabel}; this episode’s savings are projected.</p>}
                     {ep.changes?.map(change => <p key={change} className="text-xs">{change}</p>)}
                     {ep.targetCompatibility && <PlaybackCompatibilityFindings evaluation={ep.targetCompatibility} targetName={ep.targetProfile?.name} />}
                     {ep.samplePaths?.length && <div className="text-xs space-y-2">{ep.samplePaths.map((sample, index) => <button key={sample} className="mr-2 underline" onClick={() => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'sample.playback.requested', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, sampleIndex: index }); void window.electronAPI.openShowSample(preflightData.preflightId, ep.mediaItemId, index).then(() => logOptimizationDiagnostic('TVOptimizationUI', 'info', 'sample.playback.opened', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, sampleIndex: index })).catch(error => { logOptimizationDiagnostic('TVOptimizationUI', 'error', 'sample.playback.failed', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, sampleIndex: index, error: describeDiagnosticError(error) }); const message = error instanceof Error ? error.message : String(error); setMessage(message); addToast({ type: 'error', title: 'Could not open measured sample', message }) }) }}>Play sample {index + 1}</button>)}<label className="block"><input type="checkbox" checked={reviewedEpisodes.includes(ep.mediaItemId)} onChange={event => { const reviewed = event.target.checked; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'sample.review.acknowledged', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, reviewed }); setReviewedEpisodes(ids => reviewed ? [...ids, ep.mediaItemId] : ids.filter(id => id !== ep.mediaItemId)) }} /> I approve playback of these samples and the listed conversions</label></div>}
                     <div className="flex items-center justify-between text-[10px] text-muted-foreground/80">
                       <span>{ep.evidenceStatus ? `Evidence: ${ep.evidenceStatus} (${ep.confidence || 'none'})` : 'Evidence: unavailable'}</span>
-                      <span>Selected plan: <EstimatedSavingsDisplay bytes={ep.estimatedSavingsBytes} /> · {ep.savingsCoverage ?? 'insufficient'} evidence{ep.savingsBasis === 'video_sample_encode' ? ' · Sample-based projection' : ''}</span>
+                      <span>Selected plan: <EstimatedSavingsDisplay bytes={ep.estimatedSavingsBytes} /> · {ep.savingsCoverage ?? 'insufficient'} evidence{ep.savingsBasis === 'video_sample_encode' ? ' · Sample-based projection' : ep.savingsBasis === 'representative_video_sample_projection' ? ' · Representative-sample projection' : ''}</span>
                     </div>
                   </div>
                 ))}
