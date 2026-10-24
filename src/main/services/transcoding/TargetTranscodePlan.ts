@@ -2,6 +2,7 @@
 import type { FileAnalysisResult } from '../MediaFileAnalyzer'
 import type { TranscodeOptions } from '../TranscodingService'
 import type { PlaybackTargetProfile } from '@main/types/playbackTarget'
+import { getPlaybackTargetContainers } from '@main/types/playbackTarget'
 import { buildStreamSelectionPlan } from './StreamSelectionPlan'
 import { APP_CONFIG } from '@main/config'
 import { normalizeAudioCodec, normalizeVideoCodec } from '../MediaNormalizer'
@@ -33,7 +34,9 @@ export function buildTargetTranscodePlan(analysis: FileAnalysisResult, profile: 
   const streams = buildStreamSelectionPlan(analysis, options)
   if (!definition.video.codecs.some(codec => normalizeVideoCodec(codec) === normalizeVideoCodec(options.targetCodec))) throw new Error(`Select a video codec supported by ${profile.name}`)
   const container = options.targetContainer
-  if (!container || !definition.containers.includes(container === 'mkv' ? 'matroska' : 'mp4')) throw new Error('Select a supported output container')
+  const allowedContainers = getPlaybackTargetContainers(profile, video).map(candidate => candidate.toLowerCase())
+  const requestedContainer = container === 'mkv' ? 'matroska' : container ?? ''
+  if (!container || !allowedContainers.includes(requestedContainer)) throw new Error(`Container ${container || 'unspecified'} is not supported for this video by ${profile.name}`)
   const scale = Math.min(1, definition.video.maxWidth / video.width, definition.video.maxHeight / video.height)
   const width = Math.floor(video.width * scale / 2) * 2, height = Math.floor(video.height * scale / 2) * 2
   const bitDepth = definition.video.bitDepths.includes(video.bitDepth!) ? video.bitDepth! : definition.video.bitDepths.includes(10) ? 10 : 8

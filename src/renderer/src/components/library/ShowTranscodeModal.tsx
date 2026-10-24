@@ -30,7 +30,7 @@ import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
 import { PlaybackCompatibilityFindings } from './PlaybackCompatibilityPanel'
 import { getTVShowIdentity } from './tv/showIdentity'
 import type { QueueState } from '@main/types/taskQueue'
-import type { PlaybackTargetProfile } from '@main/types/playbackTarget'
+import { getPlaybackTargetContainers, recommendPlaybackTargetContainer, type PlaybackTargetProfile } from '@main/types/playbackTarget'
 import type { OptimizationQualityProfile } from '@main/services/MeasuredOptimizationPolicy'
 import { getHardwareEncoder } from '@main/services/TranscodingCapabilities'
 import { TaskType } from '@main/types/database'
@@ -186,6 +186,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
   const [encoderPolicy, setEncoderPolicy] = useState<'hardware' | 'software' | 'compare' | ''>('')
   const useHardwareEncoder = encoderPolicy === 'hardware' || encoderPolicy === 'compare'
   const [targetContainer, setTargetContainer] = useState<'mkv' | 'mp4' | ''>('')
+  const [targetContainerSelection, setTargetContainerSelection] = useState<'automatic' | 'user-selected'>('automatic')
   const [targetAudioCodec, setTargetAudioCodec] = useState<'aac' | 'ac3' | 'eac3' | ''>('')
   const [targetHdrFormat, setTargetHdrFormat] = useState<'SDR' | 'HDR10' | ''>('')
   const [reviewedEpisodes, setReviewedEpisodes] = useState<number[]>([])
@@ -241,10 +242,15 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
   }, [addToast])
 
   useEffect(() => {
-    const supportedContainers = targetProfile?.definition.containers ?? ['matroska', 'mp4']
-    const sourceContainerSupported = sourceContainer && supportedContainers.includes(sourceContainer === 'mkv' ? 'matroska' : 'mp4')
-    const preferredContainer: 'mkv' | 'mp4' | '' = supportedContainers.includes('matroska') ? 'mkv' : supportedContainers.includes('mp4') ? 'mp4' : ''
-    setTargetContainer(sourceContainerSupported ? sourceContainer : preferredContainer)
+    const sourceVideo = { codec: episode?.video_codec, profile: episode?.video_profile, hdrFormat: episode?.hdr_format }
+    const supportedContainers = targetProfile ? getPlaybackTargetContainers(targetProfile, sourceVideo) : ['matroska', 'mp4']
+    const preferredContainer: 'mkv' | 'mp4' | '' = !episode
+      ? ''
+      : targetProfile
+      ? recommendPlaybackTargetContainer(targetProfile, sourceVideo, episode?.container)
+      : sourceContainer || 'mkv'
+    setTargetContainer(preferredContainer)
+    setTargetContainerSelection('automatic')
     const targetSupports = (candidate: 'hevc' | 'av1') => !targetProfile || targetProfile.definition.video.codecs.some(codec => normalizeVideoCodec(codec) === normalizeVideoCodec(candidate))
     const selectedCodec = sourceTargetCodec && targetSupports(sourceTargetCodec)
       ? sourceTargetCodec
@@ -265,12 +271,14 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
       mediaItemId: episode?.id,
       targetProfileId: targetProfile?.id ?? null,
       targetCodec: selectedCodec || null,
-      targetContainer: sourceContainerSupported ? sourceContainer : preferredContainer || null,
+      targetContainer: preferredContainer || null,
       qualityProfile: 'balanced',
       targetHdrFormat: targetProfile ? recommendedHdr : null,
       sourceCodec: sourceTargetCodec ?? null,
       sourceContainer: sourceContainer || null,
-      sourceHdrFormat: sourceHdrFormat ?? null
+      sourceHdrFormat: sourceHdrFormat ?? null,
+      containerSelection: 'automatic',
+      allowedContainers: supportedContainers
     })
   }, [episode?.id, episode?.container, episode?.video_codec, episode?.hdr_format, targetProfile])
 
@@ -453,6 +461,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
       qualityProfile: qualityProfile || undefined,
       encoderPolicy: encoderPolicy || undefined,
       targetContainer: shouldAdjustToTarget ? targetContainer || undefined : undefined,
+      targetContainerSelection: shouldAdjustToTarget ? targetContainerSelection : 'automatic',
       targetAudioCodec: shouldAdjustToTarget ? targetAudioCodec || undefined : undefined,
       targetHdrFormat: shouldAdjustToTarget && effectiveTargetProfileId ? targetHdrFormat || undefined : undefined,
       transcodingEngine: 'ffmpeg' as const,
@@ -477,7 +486,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
       if (!codec) missingSettings.push('video codec')
       if (!qualityProfile) missingSettings.push('visual quality threshold')
       if (!encoderPolicy) missingSettings.push('encoder policy')
-      if (!targetContainer) missingSettings.push('output container')
+      if (!targetContainer && targetContainerSelection === 'user-selected') missingSettings.push('output container')
       if (effectiveTargetProfileId && !targetHdrFormat) missingSettings.push('output color format for the selected playback target')
     }
     const settings = {
@@ -640,7 +649,11 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
     : sourceTargetCodec === codec
       ? 'Preserves the source codec.'
       : 'HEVC is the preferred broadly supported codec.'
-  const containerRecommendation = targetProfile
+  const containerRecommendation = !episode
+    ? targetProfile
+      ? 'System resolves the container per episode using matching target rules, then preserves the source when allowed.'
+      : 'System preserves each episode source container when possible.'
+    : targetProfile
     ? sourceContainer === targetContainer
       ? `Preserves the source container supported by ${targetProfile.name}.`
       : `Container supported by ${targetProfile.name}.`
@@ -654,6 +667,9 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
       : targetHdrFormat === sourceHdrFormat
         ? `Preserves source ${sourceHdrFormat} supported by ${targetProfile.name}.`
         : `Uses ${targetHdrFormat} for compatibility with ${targetProfile.name}.`
+  const profileSupportedContainers = targetProfile
+    ? getPlaybackTargetContainers(targetProfile, { codec: episode?.video_codec, profile: episode?.video_profile, hdrFormat: episode?.hdr_format })
+    : ['matroska', 'mp4']
   const verifiedResults = queueState.completedTasks.filter(task => task.batchId === activeBatchId && task.status === 'completed' && typeof task.result?.physicallyReclaimedBytes === 'number').map(task => task.result!)
   const batchQueue = queueState.queue.filter(task => task.batchId === activeBatchId)
   const currentTask = queueState.currentTask?.batchId === activeBatchId ? queueState.currentTask : null
@@ -814,7 +830,7 @@ export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSum
             <div className="grid grid-cols-2 gap-3 text-xs">
               <label className="space-y-1">Visual quality threshold<select aria-label="Quality" value={qualityProfile} onChange={e => { const value = e.target.value as OptimizationQualityProfile; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'quality.threshold.selected', { qualityProfile: value }); setQualityProfile(value) }}><option value="">Choose quality threshold</option><option value="transparent">Highest measured fidelity</option><option value="balanced">Balanced fidelity and savings</option><option value="maximum_savings">More savings, measured loss allowed</option></select><span className="block text-[10px] text-muted-foreground">Default: Balanced · VMAF mean ≥95, fifth percentile ≥92, CAMBI ≤8.</span></label>
               <EncoderPolicySelector value={encoderPolicy} hardwareAvailable={hardwareAvailable} softwareAvailable={softwareAvailable} recommendation={hardwareAvailable ? `Verified ${hardwareEncoder} on ${selectedGpu?.name ?? 'selected GPU'} for ${codec?.toUpperCase()}.` : softwareAvailable ? `No verified hardware encoder for ${codec?.toUpperCase()}; software is available.` : `No verified encoder is available for ${codec?.toUpperCase()}.`} onChange={policy => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'encoder.policy.selected', { encoderPolicy: policy ?? '' }); setEncoderPolicy(policy ?? '') }} />
-              <label className="space-y-1">Output container<select aria-label="Container" value={targetContainer} onChange={e => { const value = e.target.value as typeof targetContainer; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'output.container.selected', { targetContainer: value }); setTargetContainer(value) }}>{!targetContainer && <option value="">No supported container available</option>}{(targetProfile?.definition.containers ?? ['matroska', 'mp4']).filter(container => ['matroska', 'mp4'].includes(container)).map(container => <option key={container} value={container === 'matroska' ? 'mkv' : 'mp4'}>{container}</option>)}</select><span className="block text-[10px] text-muted-foreground">Suggested: {targetContainer ? targetContainer.toUpperCase() : 'Unavailable'} · {containerRecommendation}</span></label>
+              <label className="space-y-1">Output container<select aria-label="Container" value={targetContainer} onChange={e => { const value = e.target.value as typeof targetContainer; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'output.container.selected', { targetContainer: value || null, selection: value ? 'user-selected' : 'automatic' }); setTargetContainer(value); setTargetContainerSelection(value ? 'user-selected' : 'automatic') }}>{!episode && <option value="">Automatic per episode</option>}{episode && !targetContainer && <option value="">No supported container available</option>}{profileSupportedContainers.filter(container => ['matroska', 'mp4'].includes(container.toLowerCase())).map(container => <option key={container} value={container.toLowerCase() === 'matroska' ? 'mkv' : 'mp4'}>{container}</option>)}</select><span className="block text-[10px] text-muted-foreground">{targetContainerSelection === 'automatic' ? 'Automatic' : 'Selected'} · {containerRecommendation}</span></label>
               {targetProfile ? <label className="space-y-1">Output color<select aria-label="Output color" value={targetHdrFormat} onChange={e => { const value = e.target.value as typeof targetHdrFormat; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'output.color.selected', { targetHdrFormat: value }); setTargetHdrFormat(value) }}><option value="SDR">SDR</option>{targetProfile.definition.hdr.formats.includes('HDR10') && <option value="HDR10">HDR10</option>}</select><span className="block text-[10px] text-muted-foreground">Suggested: {targetHdrFormat || 'Unavailable'} · {colorRecommendation}</span></label> : <p className="self-center text-xs text-muted-foreground">{colorRecommendation}</p>}
               <label>Audio conversion<select aria-label="Audio conversion" value={targetAudioCodec} onChange={e => { const value = e.target.value as typeof targetAudioCodec; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'audio.conversion.selected', { targetAudioCodec: value }); setTargetAudioCodec(value) }}><option value="">Preserve source{episode?.audio_codec ? ` (${episode.audio_codec})` : ''}; convert only for compatibility</option>{(targetProfile?.definition.audio.codecs ?? ['aac', 'ac3', 'eac3']).filter(codec => ['aac', 'ac3', 'eac3'].includes(codec)).map(codec => <option key={codec} value={codec}>{codec.toUpperCase()}{codec === recommendedAudioCodec ? ' (recommended for target compatibility)' : ''}</option>)}</select>{episode?.audio_codec && /dts.?hd|truehd|flac|pcm/i.test(episode.audio_codec) && <span className="block text-muted-foreground">{episode.audio_codec} is lossless; converting to a listed codec is lossy and should be selected only when the playback target requires it or measured savings justify it.</span>}</label>
             </div>
