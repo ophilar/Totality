@@ -234,6 +234,7 @@ export const IPC_CHANNELS = {
   operationsDismiss: 'operations:dismiss',
   operationsGetActivity: 'operations:getActivity',
   operationsGetResult: 'operations:getResult',
+  operationsSetPaused: 'operations:setPaused',
   operationsUpdated: 'operations:updated',
   optimizationDecideLanguage: 'optimization:decideLanguage',
   optimizationGetDecision: 'optimization:getDecision',

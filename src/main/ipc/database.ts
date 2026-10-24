@@ -31,6 +31,9 @@ export function registerDatabaseHandlers() {
   createValidatedIpcHandlerWithEvent(IPC_CHANNELS.operationsGetActivity, z.tuple([]), async (event) => operationRequestRegistry.getSnapshot(event.sender.id))
   createValidatedIpcHandlerWithEvent(IPC_CHANNELS.operationsGetResult, z.string().min(1).max(100), async (event, requestId) => operationRequestRegistry.getResult(event.sender.id, requestId))
   createValidatedIpcHandlerWithEvent(IPC_CHANNELS.operationsDismiss, z.string().min(1).max(100), async (event, requestId) => operationRequestRegistry.dismiss(event.sender.id, requestId))
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.operationsSetPaused, z.tuple([z.string().min(1).max(100), z.boolean()]), async (event, requestId, paused) => ({
+    status: operationRequestRegistry.setPaused(event.sender.id, requestId, paused),
+  }))
 
   // ============================================================================
   // MEDIA ITEMS

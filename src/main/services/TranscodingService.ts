@@ -298,6 +298,7 @@ export class TranscodingService {
   async preflightShowTranscode(request: ShowTranscodeRequest, operation?: {
     signal: AbortSignal
     beginCommit: () => void
+    waitUntilRunning: () => Promise<void>
     update: (update: { phase?: string; progress?: { percentage: number; currentItem?: string } }) => void
   }): Promise<ShowTranscodePreflight> {
     operation?.signal.throwIfAborted()
@@ -367,6 +368,7 @@ export class TranscodingService {
         : episode.title
       const fallbackMediaItemId = episode.id || 0
       try {
+        await operation?.waitUntilRunning()
         publishPreflightProgress(episode, 'Checking source and queued work')
         operation?.signal.throwIfAborted()
         if (!episode.id || !episode.file_path || !episode.source_id) {
@@ -379,6 +381,7 @@ export class TranscodingService {
         const stat = await fs.stat(episode.file_path)
         publishPreflightProgress(episode, 'Inspecting video, audio, and subtitle streams')
         const { analysis } = await getQualityAnalyzer().analyzeMediaItemFileEvidence(episode, operation?.signal)
+        await operation?.waitUntilRunning()
         if (!analysis.success || analysis.filePath !== episode.file_path || analysis.fileSizeBytes !== stat.size || !analysis.video) {
           throw new Error(`File analysis is incomplete or stale for "${label}"`)
         }
@@ -449,6 +452,7 @@ export class TranscodingService {
         const audioConversionSavings = estimateAudioConversionSavings(analysis, audioConversions)
         const audioPruningSavings = sumMeasuredStreamBytes(analysis.streamBytes, removedAudioTracks.map(track => track.index))
         const subtitlePruningSavings = sumMeasuredStreamBytes(analysis.streamBytes, removedSubtitleTracks.map(track => track.index))
+        await operation?.waitUntilRunning()
         const sourceSha256 = await sha256File(episode.file_path)
         const sampleDirectory = path.join(app.getPath('userData'), 'transcoding-samples', preflightId, String(episode.id))
         let params: TranscodingParams
@@ -465,7 +469,10 @@ export class TranscodingService {
                 options,
                 sampleDirectory,
                 operation?.signal,
-                phase => publishPreflightProgress(episode, phase),
+                async phase => {
+                  publishPreflightProgress(episode, phase)
+                  await operation?.waitUntilRunning()
+                },
               )
               Object.assign(options, measuredParameters)
             }
@@ -480,6 +487,7 @@ export class TranscodingService {
             const samplePaths = params.measuredCandidate!.samplePaths ?? []
             for (let sampleIndex = 0; sampleIndex < samplePaths.length; sampleIndex++) {
               const samplePath = samplePaths[sampleIndex]
+              await operation?.waitUntilRunning()
               publishPreflightProgress(episode, `Verifying measured sample ${sampleIndex + 1} of ${samplePaths.length}`)
               operation?.signal.throwIfAborted()
               const sample = await getMediaFileAnalyzer().analyzeFile(samplePath)
@@ -641,6 +649,7 @@ export class TranscodingService {
           : 'planned_operations',
     }
     getLoggingService().info('[TVOptimization]', `Preflight completed: preflight=${preflightId}, batch=${batchId}, series=${request.seriesIdentityKey ?? 'episode'}, episodes=${episodes.length}, sampleRepresentatives=${results.filter(episode => episode.samplingRole === 'measured').length}, projectedEpisodes=${results.filter(episode => episode.samplingRole === 'projected').length}, compatible=${results.filter(episode => episode.compatible).length}, actionable=${results.filter(episode => episode.compatible && episode.operations.length > 0).length}, savingsBytes=${planMetrics.totalEstimatedSavingsBytes ?? 'unknown'}, coverage=${planMetrics.coverage}`)
+    await operation?.waitUntilRunning()
     operation?.signal.throwIfAborted()
     operation?.beginCommit()
     this.showPreflights.set(preflightId, { request, result })
@@ -1416,7 +1425,7 @@ export class TranscodingService {
     options: TranscodeOptions,
     sampleDirectory?: string,
     signal?: AbortSignal,
-    onProgress?: (phase: string) => void,
+    onProgress?: (phase: string) => Promise<void> | void,
   ): Promise<Pick<TranscodingParams, 'encoder' | 'crf' | 'preset' | 'measuredCandidate'>> {
     if (!options.targetCodec || !options.qualityProfile || !options.encoderPolicy) throw new Error('Target codec, quality profile, and encoder policy are required for measurement')
     signal?.throwIfAborted()

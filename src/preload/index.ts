@@ -855,6 +855,7 @@ const electronAPI = {
   operationsGetActivity: () => ipcRenderer.invoke(IPC_CHANNELS.operationsGetActivity),
   operationsGetResult: (requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.operationsGetResult, requestId),
   operationsDismiss: (requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.operationsDismiss, requestId),
+  operationsSetPaused: (requestId: string, paused: boolean) => ipcRenderer.invoke(IPC_CHANNELS.operationsSetPaused, requestId, paused),
   onOperationsUpdated: (callback: (snapshot: { revision: number; operations: ActivityOperation[] }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, snapshot: { revision: number; operations: ActivityOperation[] }) => callback(snapshot)
     ipcRenderer.on(IPC_CHANNELS.operationsUpdated, handler)
@@ -2004,6 +2005,7 @@ interface ExistingElectronAPI {
   operationsGetActivity: () => Promise<{ revision: number; operations: ActivityOperation[] }>
   operationsGetResult: (requestId: string) => Promise<unknown>
   operationsDismiss: (requestId: string) => Promise<void>
+  operationsSetPaused: (requestId: string, paused: boolean) => Promise<{ status: string }>
   onOperationsUpdated?: (callback: (snapshot: { revision: number; operations: ActivityOperation[] }) => void) => () => void
   listPlaybackTargetProfiles: () => Promise<PlaybackTargetProfile[]>
   createPlaybackTargetProfile: (input: { name: string; definition: PlaybackTargetDefinition }) => Promise<PlaybackTargetProfile>
