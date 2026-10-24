@@ -7,7 +7,7 @@ import { IPC_CHANNELS } from '../../shared/ipcChannels'
 
 import { getDatabase } from '../database/getDatabase'
 import { createIpcHandler, createIpcHandlerWithEvent, createValidatedIpcHandler } from './utils/createHandler'
-import { getMusicBrainzService } from '../services/MusicBrainzService'
+import { getMusicBrainzService, MusicBrainzReleaseDataNotFoundError } from '../services/MusicBrainzService'
 import { getSourceManager } from '../services/SourceManager'
 import { PlexProvider } from '../providers/plex/PlexProvider'
 import { LocalFolderProvider } from '../providers/local/LocalFolderProvider'
@@ -463,7 +463,11 @@ export function registerMusicHandlers(): void {
             console.log(`[music:analyzeArtistCompleteness] ${album.title}: ${albumCompleteness.owned_tracks}/${albumCompleteness.total_tracks} tracks`)
           }
         } catch (albumError) {
-          console.warn(`[music:analyzeArtistCompleteness] Failed to analyze album "${album.title}":`, albumError)
+          if (albumError instanceof MusicBrainzReleaseDataNotFoundError) {
+            console.info(`[music:analyzeArtistCompleteness] No MusicBrainz track data for album "${album.title}"; skipped track completeness.`)
+          } else {
+            console.warn(`[music:analyzeArtistCompleteness] Failed to analyze album "${album.title}":`, albumError)
+          }
         }
       }
 

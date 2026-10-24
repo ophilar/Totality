@@ -702,7 +702,7 @@ CREATE TABLE IF NOT EXISTS task_history (
   label TEXT NOT NULL,
   source_id TEXT,
   library_id TEXT,
-  status TEXT NOT NULL CHECK(status IN ('completed', 'failed', 'cancelled', 'interrupted')),
+  status TEXT NOT NULL CHECK(status IN ('completed', 'partial', 'failed', 'cancelled', 'interrupted')),
   error TEXT,
   result TEXT,
   created_at TEXT NOT NULL,
