@@ -493,10 +493,10 @@ export class LocalFolderProvider implements MediaProvider {
       db.startBatch()
 
       // Cache for series TMDB lookups - avoids searching for same series 50+ times
-      const seriesTmdbCache = new Map<string, { tmdbId: number; name: string; posterPath?: string; seasonPosters: Map<number, string | null> } | null>()
+      const seriesTmdbCache = new Map<string, { tmdbId: number; name: string; originalLanguage: string; posterPath?: string; seasonPosters: Map<number, string | null> } | null>()
 
       // Cache for movie TMDB lookups - avoids redundant searches for same movie
-      const movieTmdbCache = new Map<string, { tmdbId: number; title: string; year?: number; posterPath?: string; backdropPath?: string } | null>()
+      const movieTmdbCache = new Map<string, { tmdbId: number; title: string; originalLanguage: string; year?: number; posterPath?: string; backdropPath?: string } | null>()
 
       // Structure to hold pre-processed file info for batch FFprobe
       interface FileToProcess {
@@ -622,13 +622,13 @@ export class LocalFolderProvider implements MediaProvider {
                 if (analysis.video) {
                   const v = analysis.video
                   getLoggingService().verbose('[LocalFolderProvider]',
-                    `FFprobe: ${path.basename(filePath)} → ${v.width}x${v.height} ${v.codec} ${v.hdrFormat || 'SDR'} ${Math.round((v.bitrate || 0) / 1000)}kbps`,
+                    `FFprobe: ${path.basename(filePath)} → ${v.width}x${v.height} ${v.codec} ${v.hdrFormat || 'SDR'} ${Math.round(v.bitrateKbps || 0)}kbps`,
                     analysis.audioTracks.length ? `Audio: ${analysis.audioTracks.map((a) => `${a.codec} ${a.channels}ch`).join(', ')}` : undefined)
                 }
 
                 // Filter out short videos for movies (featurettes, behind-the-scenes, etc.)
-                if (scanType === 'movie' && analysis.duration && analysis.duration < MIN_MOVIE_DURATION_SECONDS) {
-                  console.log(`[LocalFolderProvider ${this.sourceId}] Skipping short video (${Math.round(analysis.duration / 60)}min): ${path.basename(filePath)}`)
+                if (scanType === 'movie' && analysis.durationMs && analysis.durationMs < MIN_MOVIE_DURATION_SECONDS * 1000) {
+                  console.log(`[LocalFolderProvider ${this.sourceId}] Skipping short video (${Math.round(analysis.durationMs / 60000)}min): ${path.basename(filePath)}`)
                   continue
                 }
               }
@@ -840,10 +840,10 @@ export class LocalFolderProvider implements MediaProvider {
       db.startBatch()
 
       // Cache for series TMDB lookups - avoids searching for same series multiple times
-      const seriesTmdbCache = new Map<string, { tmdbId: number; name: string; posterPath?: string; seasonPosters: Map<number, string | null> } | null>()
+      const seriesTmdbCache = new Map<string, { tmdbId: number; name: string; originalLanguage: string; posterPath?: string; seasonPosters: Map<number, string | null> } | null>()
 
       // Cache for movie TMDB lookups - avoids redundant searches for same movie
-      const movieTmdbCache = new Map<string, { tmdbId: number; title: string; year?: number; posterPath?: string; backdropPath?: string } | null>()
+      const movieTmdbCache = new Map<string, { tmdbId: number; title: string; originalLanguage: string; year?: number; posterPath?: string; backdropPath?: string } | null>()
 
       try {
         for (let i = 0; i < validFiles.length; i++) {
@@ -902,8 +902,8 @@ export class LocalFolderProvider implements MediaProvider {
                 metadata = this.enhanceWithFFprobeData(metadata, analysis)
 
                 // Filter out short videos for movies (featurettes, behind-the-scenes, etc.)
-                if (scanType === 'movie' && analysis.duration && analysis.duration < MIN_MOVIE_DURATION_SECONDS) {
-                  console.log(`[LocalFolderProvider ${this.sourceId}] Skipping short video (${Math.round(analysis.duration / 60)}min): ${path.basename(filePath)}`)
+                if (scanType === 'movie' && analysis.durationMs && analysis.durationMs < MIN_MOVIE_DURATION_SECONDS * 1000) {
+                  console.log(`[LocalFolderProvider ${this.sourceId}] Skipping short video (${Math.round(analysis.durationMs / 60000)}min): ${path.basename(filePath)}`)
                   continue
                 }
               }
@@ -1084,11 +1084,11 @@ export class LocalFolderProvider implements MediaProvider {
                 const primaryAudio = analysis.audioTracks[0]
                 audioInfo = {
                   codec: normalizeAudioCodec(primaryAudio.codec, primaryAudio.profile),
-                  bitrate: primaryAudio.bitrate,
+                  bitrate: primaryAudio.bitrateKbps,
                   sampleRate: primaryAudio.sampleRate,
                   bitDepth: primaryAudio.bitDepth,
                   channels: primaryAudio.channels,
-                  duration: analysis.duration,
+                  duration: analysis.durationMs,
                   isLossless: this.isLosslessCodec(primaryAudio.codec),
                   hasEmbeddedArtwork: analysis.embeddedArtwork?.hasArtwork,
                 }
@@ -1382,7 +1382,7 @@ export class LocalFolderProvider implements MediaProvider {
     parsed: ParsedMovieInfo,
     fetchFromTMDB: boolean,
     tmdb: ReturnType<typeof getTMDBService>,
-    movieTmdbCache?: Map<string, { tmdbId: number; title: string; year?: number; posterPath?: string; backdropPath?: string } | null>
+    movieTmdbCache?: Map<string, { tmdbId: number; title: string; originalLanguage: string; year?: number; posterPath?: string; backdropPath?: string } | null>
   ): Promise<MediaMetadata> {
     const stats = await fs.promises.stat(filePath)
 
@@ -1411,6 +1411,7 @@ export class LocalFolderProvider implements MediaProvider {
           const cached = movieTmdbCache.get(cacheKey)
           if (cached) {
             metadata.tmdbId = cached.tmdbId
+            metadata.originalLanguage = cached.originalLanguage
             metadata.title = cached.title
             metadata.year = cached.year
             metadata.posterUrl = cached.posterPath
@@ -1429,6 +1430,7 @@ export class LocalFolderProvider implements MediaProvider {
         if (match) {
           getLoggingService().verbose('[LocalFolderProvider]', `TMDB match: "${parsed.title}" (${parsed.year || '?'}) → "${match.title}" (tmdb:${match.tmdbId})`)
           metadata.tmdbId = match.tmdbId
+          metadata.originalLanguage = match.originalLanguage
           metadata.title = match.title
           metadata.year = match.year
           metadata.posterUrl = match.posterPath
@@ -1468,12 +1470,12 @@ export class LocalFolderProvider implements MediaProvider {
     normalizedTitle: string,
     year: number | undefined,
     tmdb: ReturnType<typeof getTMDBService>
-  ): Promise<{ tmdbId: number; title: string; year?: number; posterPath?: string; backdropPath?: string; voteAverage?: number } | null> {
+  ): Promise<{ tmdbId: number; title: string; originalLanguage: string; year?: number; posterPath?: string; backdropPath?: string; voteAverage?: number } | null> {
     // Helper to find best match from results
     const findBestMatch = (
-      results: Array<{ id: number; title: string; release_date?: string; poster_path?: string | null; backdrop_path?: string | null; vote_average?: number }>,
+      results: Array<{ id: number; title: string; original_language: string; release_date?: string; poster_path?: string | null; backdrop_path?: string | null; vote_average?: number }>,
       targetYear?: number
-    ): { tmdbId: number; title: string; year?: number; posterPath?: string; backdropPath?: string; voteAverage?: number } | null => {
+    ): { tmdbId: number; title: string; originalLanguage: string; year?: number; posterPath?: string; backdropPath?: string; voteAverage?: number } | null => {
       if (!results || results.length === 0) return null
 
       // If we have a target year, try to find an exact or close match
@@ -1486,6 +1488,7 @@ export class LocalFolderProvider implements MediaProvider {
           return {
             tmdbId: exactMatch.id,
             title: exactMatch.title,
+            originalLanguage: exactMatch.original_language,
             year: exactMatch.release_date ? parseInt(exactMatch.release_date.split('-')[0], 10) : undefined,
             posterPath: exactMatch.poster_path || undefined,
             backdropPath: exactMatch.backdrop_path || undefined,
@@ -1504,6 +1507,7 @@ export class LocalFolderProvider implements MediaProvider {
           return {
             tmdbId: fuzzyMatch.id,
             title: fuzzyMatch.title,
+            originalLanguage: fuzzyMatch.original_language,
             year: fuzzyMatch.release_date ? parseInt(fuzzyMatch.release_date.split('-')[0], 10) : undefined,
             posterPath: fuzzyMatch.poster_path || undefined,
             backdropPath: fuzzyMatch.backdrop_path || undefined,
@@ -1517,6 +1521,7 @@ export class LocalFolderProvider implements MediaProvider {
       return {
         tmdbId: first.id,
         title: first.title,
+        originalLanguage: first.original_language,
         year: first.release_date ? parseInt(first.release_date.split('-')[0], 10) : undefined,
         posterPath: first.poster_path || undefined,
         backdropPath: first.backdrop_path || undefined,
@@ -1573,8 +1578,8 @@ export class LocalFolderProvider implements MediaProvider {
   private async tryAIDisambiguation(
     filename: string,
     year: number | undefined,
-    results: Array<{ id: number; title: string; release_date?: string; overview?: string; poster_path?: string | null; backdrop_path?: string | null; vote_average?: number }>,
-  ): Promise<{ tmdbId: number; title: string; year?: number; posterPath?: string; backdropPath?: string; voteAverage?: number } | null> {
+    results: Array<{ id: number; title: string; original_language: string; release_date?: string; overview?: string; poster_path?: string | null; backdrop_path?: string | null; vote_average?: number }>,
+  ): Promise<{ tmdbId: number; title: string; originalLanguage: string; year?: number; posterPath?: string; backdropPath?: string; voteAverage?: number } | null> {
     try {
       const gemini = getGeminiService()
       if (!gemini.isConfigured()) return null
@@ -1594,6 +1599,7 @@ export class LocalFolderProvider implements MediaProvider {
       return {
         tmdbId: best.id,
         title: best.title,
+        originalLanguage: best.original_language,
         year: best.release_date ? parseInt(best.release_date.split('-')[0], 10) : undefined,
         posterPath: best.poster_path || undefined,
         backdropPath: best.backdrop_path || undefined,
@@ -1610,7 +1616,7 @@ export class LocalFolderProvider implements MediaProvider {
     parsed: ParsedEpisodeInfo,
     fetchFromTMDB: boolean,
     tmdb: ReturnType<typeof getTMDBService>,
-    seriesTmdbCache?: Map<string, { tmdbId: number; name: string; posterPath?: string; seasonPosters: Map<number, string | null> } | null>
+    seriesTmdbCache?: Map<string, { tmdbId: number; name: string; originalLanguage: string; posterPath?: string; seasonPosters: Map<number, string | null> } | null>
   ): Promise<MediaMetadata> {
     const stats = await fs.promises.stat(filePath)
 
@@ -1647,6 +1653,7 @@ export class LocalFolderProvider implements MediaProvider {
             cachedSeries = {
               tmdbId: series.id,
               name: series.name,
+              originalLanguage: series.original_language,
               posterPath: series.poster_path || undefined,
               seasonPosters: new Map()
             }
@@ -1662,6 +1669,7 @@ export class LocalFolderProvider implements MediaProvider {
         if (cachedSeries) {
           metadata.seriesTitle = cachedSeries.name
           metadata.seriesTmdbId = cachedSeries.tmdbId
+          metadata.originalLanguage = cachedSeries.originalLanguage
 
           // Set series poster as fallback
           if (cachedSeries.posterPath) {
@@ -1735,7 +1743,7 @@ export class LocalFolderProvider implements MediaProvider {
       enhanced.height = analysis.video.height
       enhanced.resolution = normalizeResolution(analysis.video.width, analysis.video.height)
       enhanced.videoCodec = normalizeVideoCodec(analysis.video.codec)
-      enhanced.videoBitrate = analysis.video.bitrate
+      enhanced.videoBitrate = analysis.video.bitrateKbps
       enhanced.videoFrameRate = analysis.video.frameRate
       enhanced.colorBitDepth = analysis.video.bitDepth
       enhanced.hdrFormat = analysis.video.hdrFormat
@@ -1743,12 +1751,12 @@ export class LocalFolderProvider implements MediaProvider {
       enhanced.colorSpace = analysis.video.colorSpace
     }
 
-    if (analysis.duration) {
-      enhanced.duration = analysis.duration
+    if (analysis.durationMs) {
+      enhanced.duration = analysis.durationMs
     }
 
-    if (analysis.fileSize) {
-      enhanced.fileSize = analysis.fileSize
+    if (analysis.fileSizeBytes) {
+      enhanced.fileSize = analysis.fileSizeBytes
     }
 
     if (analysis.container) {
@@ -1759,7 +1767,7 @@ export class LocalFolderProvider implements MediaProvider {
       enhanced.audioTracks = analysis.audioTracks.map((track: AnalyzedAudioStream) => ({
         codec: normalizeAudioCodec(track.codec, track.profile),
         channels: track.channels,
-        bitrate: track.bitrate,
+        bitrate: track.bitrateKbps,
         sampleRate: track.sampleRate,
         language: track.language,
         isDefault: track.isDefault,
@@ -1767,7 +1775,7 @@ export class LocalFolderProvider implements MediaProvider {
       }))
 
       // Select the best audio track for primary fields (not just first track)
-      const primary = AudioCodecRanker.selectBestTrack(analysis.audioTracks.map(track => ({ ...track, bitrate: track.bitrate ?? 0 })))
+      const primary = AudioCodecRanker.selectBestTrack(analysis.audioTracks.map(track => ({ ...track, bitrate: track.bitrateKbps ?? 0 })))
       if (primary) {
         // Use profile from the matching raw AnalyzedAudioStream for proper DTS variant detection
         const rawTrack = analysis.audioTracks.find(t => t.codec === primary.codec && t.channels === primary.channels)
@@ -1885,16 +1893,16 @@ export class LocalFolderProvider implements MediaProvider {
       source_type: sourceType,
       label: labelParts.join(' '),
       file_path: metadata.filePath || '',
-      file_size: metadata.fileSize || 0,
-      duration: metadata.duration || 0,
+      file_size_bytes: metadata.fileSize || 0,
+      duration_ms: metadata.duration || 0,
       resolution,
       width: metadata.width || 0,
       height: metadata.height || 0,
       video_codec: metadata.videoCodec || '',
-      video_bitrate: metadata.videoBitrate || 0,
+      video_bitrate_kbps: metadata.videoBitrate || 0,
       audio_codec: metadata.audioCodec || '',
       audio_channels: metadata.audioChannels || 2,
-      audio_bitrate: metadata.audioBitrate || 0,
+      audio_bitrate_kbps: metadata.audioBitrate || 0,
       video_frame_rate: metadata.videoFrameRate,
       color_bit_depth: metadata.colorBitDepth,
       hdr_format: hdrFormat === 'None' ? undefined : hdrFormat,
@@ -1955,11 +1963,12 @@ export class LocalFolderProvider implements MediaProvider {
       imdbId: item.imdb_id,
       tmdbId: item.tmdb_id ? parseInt(item.tmdb_id, 10) : undefined,
       seriesTmdbId: item.series_tmdb_id ? parseInt(item.series_tmdb_id, 10) : undefined,
+      originalLanguage: item.original_language || undefined,
 
       // File info
       filePath: item.file_path,
-      fileSize: item.file_size,
-      duration: item.duration,
+      fileSize: item.file_size_bytes,
+      duration: item.duration_ms,
       container: item.container,
 
       // Video quality
@@ -1967,7 +1976,7 @@ export class LocalFolderProvider implements MediaProvider {
       width: item.width,
       height: item.height,
       videoCodec: item.video_codec,
-      videoBitrate: item.video_bitrate,
+      videoBitrate: item.video_bitrate_kbps,
       videoFrameRate: item.video_frame_rate,
       colorBitDepth: item.color_bit_depth,
       hdrFormat: item.hdr_format,
@@ -1977,7 +1986,7 @@ export class LocalFolderProvider implements MediaProvider {
       // Audio quality (primary track)
       audioCodec: item.audio_codec,
       audioChannels: item.audio_channels,
-      audioBitrate: item.audio_bitrate,
+      audioBitrate: item.audio_bitrate_kbps,
       audioSampleRate: item.audio_sample_rate,
       hasObjectAudio: item.has_object_audio,
 
@@ -2195,11 +2204,11 @@ export class LocalFolderProvider implements MediaProvider {
                 const primaryAudio = analysis.audioTracks[0]
                 audioInfo = {
                   codec: normalizeAudioCodec(primaryAudio.codec, primaryAudio.profile),
-                  bitrate: primaryAudio.bitrate,
+                  bitrate: primaryAudio.bitrateKbps,
                   sampleRate: primaryAudio.sampleRate,
                   bitDepth: primaryAudio.bitDepth,
                   channels: primaryAudio.channels,
-                  duration: analysis.duration,
+                  duration: analysis.durationMs,
                   isLossless: this.isLosslessCodec(primaryAudio.codec),
                   hasEmbeddedArtwork: analysis.embeddedArtwork?.hasArtwork,
                 }

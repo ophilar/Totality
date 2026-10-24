@@ -83,7 +83,7 @@ interface AnalyzedVideoStream {
   level?: number
   width: number
   height: number
-  bitrate?: number
+  bitrateKbps?: number
   frameRate?: number
   bitDepth?: number
   pixelFormat?: string
@@ -99,7 +99,7 @@ interface AnalyzedAudioStream {
   profile?: string
   channels: number
   channelLayout?: string
-  bitrate?: number
+  bitrateKbps?: number
   sampleRate?: number
   bitDepth?: number
   language?: string
@@ -132,9 +132,9 @@ interface FileAnalysisResult {
   error?: string
   filePath: string
   container?: string
-  duration?: number
-  fileSize?: number
-  overallBitrate?: number
+  durationMs?: number
+  fileSizeBytes?: number
+  overallBitrateKbps?: number
   video?: AnalyzedVideoStream
   audioTracks: AnalyzedAudioStream[]
   subtitleTracks: AnalyzedSubtitleStream[]
@@ -254,7 +254,7 @@ function parseVideoStream(stream: FFprobeStream, durationMs?: number): AnalyzedV
     level: stream.level,
     width: stream.width || stream.coded_width || 0,
     height: stream.height || stream.coded_height || 0,
-    bitrate,
+    bitrateKbps: bitrate,
     frameRate,
     bitDepth,
     pixelFormat: stream.pix_fmt,
@@ -284,7 +284,7 @@ function parseAudioStream(stream: FFprobeStream, durationMs?: number): AnalyzedA
     profile: stream.profile,
     channels,
     channelLayout: stream.channel_layout,
-    bitrate,
+    bitrateKbps: bitrate,
     sampleRate: stream.sample_rate ? parseInt(stream.sample_rate, 10) : undefined,
     bitDepth: stream.bits_per_sample || (stream.bits_per_raw_sample ? parseInt(stream.bits_per_raw_sample, 10) : undefined),
     language: stream.tags?.language,
@@ -335,11 +335,11 @@ function parseFFprobeOutput(filePath: string, output: FFprobeOutput): FileAnalys
   // Parse format info
   if (output.format) {
     result.container = output.format.format_name
-    result.fileSize = output.format.size ? parseInt(output.format.size, 10) : undefined
-    result.duration = output.format.duration
+    result.fileSizeBytes = output.format.size ? parseInt(output.format.size, 10) : undefined
+    result.durationMs = output.format.duration
       ? Math.round(parseFloat(output.format.duration) * 1000)
       : undefined
-    result.overallBitrate = output.format.bit_rate
+    result.overallBitrateKbps = output.format.bit_rate
       ? Math.round(parseInt(output.format.bit_rate, 10) / 1000)
       : undefined
 
@@ -412,11 +412,11 @@ function parseFFprobeOutput(filePath: string, output: FFprobeOutput): FileAnalys
     switch (stream.codec_type) {
       case 'video':
         if (!result.video) {
-          result.video = parseVideoStream(stream, result.duration)
+          result.video = parseVideoStream(stream, result.durationMs)
         }
         break
       case 'audio':
-        result.audioTracks.push(parseAudioStream(stream, result.duration))
+        result.audioTracks.push(parseAudioStream(stream, result.durationMs))
         break
       case 'subtitle':
         result.subtitleTracks.push(parseSubtitleStream(stream))
@@ -425,34 +425,34 @@ function parseFFprobeOutput(filePath: string, output: FFprobeOutput): FileAnalys
   }
 
   // Calculate video bitrate from file size
-  if (result.video && result.fileSize && result.duration) {
-    const durationSeconds = result.duration / 1000
-    const calculatedTotalBitrate = Math.round((result.fileSize * 8) / durationSeconds / 1000)
+  if (result.video && result.fileSizeBytes && result.durationMs) {
+    const durationSeconds = result.durationMs / 1000
+    const calculatedTotalBitrate = Math.round((result.fileSizeBytes * 8) / durationSeconds / 1000)
 
-    let totalAudioBitrate = result.audioTracks.reduce((sum, t) => sum + (t.bitrate || 0), 0)
+    let totalAudioBitrate = result.audioTracks.reduce((sum, t) => sum + (t.bitrateKbps || 0), 0)
     const maxAudioBitrate = Math.round(calculatedTotalBitrate * 0.30)
     if (totalAudioBitrate > maxAudioBitrate) {
       totalAudioBitrate = maxAudioBitrate
     }
 
     const calculatedVideoBitrate = Math.max(0, calculatedTotalBitrate - totalAudioBitrate)
-    const metadataBitrate = result.video.bitrate
+    const metadataBitrate = result.video.bitrateKbps
 
     if (metadataBitrate) {
       const ratio = metadataBitrate / calculatedVideoBitrate
       if (ratio < 0.5 || ratio > 1.5) {
-        result.video.bitrate = calculatedVideoBitrate
+        result.video.bitrateKbps = calculatedVideoBitrate
       }
     } else {
-      result.video.bitrate = calculatedVideoBitrate
+      result.video.bitrateKbps = calculatedVideoBitrate
     }
-  } else if (result.video && result.overallBitrate && !result.video.bitrate) {
-    let totalAudioBitrate = result.audioTracks.reduce((sum, t) => sum + (t.bitrate || 0), 0)
-    const maxAudioBitrate = Math.round(result.overallBitrate * 0.30)
+  } else if (result.video && result.overallBitrateKbps && !result.video.bitrateKbps) {
+    let totalAudioBitrate = result.audioTracks.reduce((sum, t) => sum + (t.bitrateKbps || 0), 0)
+    const maxAudioBitrate = Math.round(result.overallBitrateKbps * 0.30)
     if (totalAudioBitrate > maxAudioBitrate) {
       totalAudioBitrate = maxAudioBitrate
     }
-    result.video.bitrate = Math.max(0, result.overallBitrate - totalAudioBitrate)
+    result.video.bitrateKbps = Math.max(0, result.overallBitrateKbps - totalAudioBitrate)
   }
 
   return result

@@ -150,8 +150,8 @@ export class DeduplicationService {
           score += 15
         }
       }
-      if (item.video_bitrate != null) {
-        score += item.video_bitrate / 1000
+      if (item.video_bitrate_kbps != null) {
+        score += item.video_bitrate_kbps / 1000
       }
       return { id: item.id!, score }
     })

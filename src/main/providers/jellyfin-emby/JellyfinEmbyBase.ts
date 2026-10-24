@@ -1054,16 +1054,16 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
                 // Pick best version for parent item fields
                 const best = allVersions.reduce((a, b) => scoreVersion(b) > scoreVersion(a) ? b : a)
                 canonicalItem.file_path = best.file_path
-                canonicalItem.file_size = best.file_size
-                canonicalItem.duration = best.duration
+                canonicalItem.file_size_bytes = best.file_size_bytes
+                canonicalItem.duration_ms = best.duration_ms
                 canonicalItem.resolution = best.resolution
                 canonicalItem.width = best.width
                 canonicalItem.height = best.height
                 canonicalItem.video_codec = best.video_codec
-                canonicalItem.video_bitrate = best.video_bitrate
+                canonicalItem.video_bitrate_kbps = best.video_bitrate_kbps
                 canonicalItem.audio_codec = best.audio_codec
                 canonicalItem.audio_channels = best.audio_channels
-                canonicalItem.audio_bitrate = best.audio_bitrate
+                canonicalItem.audio_bitrate_kbps = best.audio_bitrate_kbps
                 canonicalItem.video_frame_rate = best.video_frame_rate
                 canonicalItem.color_bit_depth = best.color_bit_depth
                 canonicalItem.hdr_format = best.hdr_format
@@ -1447,16 +1447,16 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         source_type: sourceType,
         label,
         file_path: mediaSource.Path || '',
-        file_size: mediaSource.Size || 0,
-        duration: mediaSource.RunTimeTicks ? Math.floor(mediaSource.RunTimeTicks / 10000) : 0,
+        file_size_bytes: mediaSource.Size || 0,
+        duration_ms: mediaSource.RunTimeTicks ? Math.floor(mediaSource.RunTimeTicks / 10000) : 0,
         resolution,
         width,
         height,
         video_codec: normalizeVideoCodec(videoStream.Codec),
-        video_bitrate: normalizeBitrate(videoBps, 'bps'),
+        video_bitrate_kbps: normalizeBitrate(videoBps, 'bps'),
         audio_codec: normalizeAudioCodec(audioStream.Codec, audioStream.Profile),
         audio_channels: normalizeAudioChannels(audioStream.Channels, audioStream.ChannelLayout),
-        audio_bitrate: bestAudioTrack.bitrate,
+        audio_bitrate_kbps: bestAudioTrack.bitrate,
         video_frame_rate: normalizeFrameRate(videoStream.RealFrameRate),
         color_bit_depth: videoStream.BitDepth,
         hdr_format: hdrFormat,
@@ -1547,16 +1547,16 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         season_number: item.ParentIndexNumber,
         episode_number: item.IndexNumber,
         file_path: best.file_path,
-        file_size: best.file_size,
-        duration: best.duration,
+        file_size_bytes: best.file_size_bytes,
+        duration_ms: best.duration_ms,
         resolution: best.resolution,
         width: best.width,
         height: best.height,
         video_codec: best.video_codec,
-        video_bitrate: best.video_bitrate,
+        video_bitrate_kbps: best.video_bitrate_kbps,
         audio_codec: best.audio_codec,
         audio_channels: best.audio_channels,
-        audio_bitrate: best.audio_bitrate,
+        audio_bitrate_kbps: best.audio_bitrate_kbps,
         video_frame_rate: best.video_frame_rate,
         color_bit_depth: best.color_bit_depth,
         hdr_format: best.hdr_format,
@@ -1636,8 +1636,8 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
       const bitrateMap = new Map<number, number>()
       for (const track of result.audioTracks) {
-        if (track.bitrate) {
-          bitrateMap.set(track.index, track.bitrate)
+        if (track.bitrateKbps) {
+          bitrateMap.set(track.index, track.bitrateKbps)
         }
       }
 

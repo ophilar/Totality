@@ -110,7 +110,7 @@ export interface AnalyzedVideoStream {
   level?: number
   width: number
   height: number
-  bitrate?: number
+  bitrateKbps?: number
   frameRate?: number
   bitDepth?: number
   pixelFormat?: string
@@ -129,7 +129,7 @@ export interface AnalyzedAudioStream {
   profile?: string
   channels: number
   channelLayout?: string
-  bitrate?: number
+  bitrateKbps?: number
   sampleRate?: number
   bitDepth?: number
   language?: string
@@ -177,9 +177,9 @@ export interface FileAnalysisResult {
   error?: string
   filePath: string
   container?: string
-  duration?: number // milliseconds
-  fileSize?: number // bytes
-  overallBitrate?: number // kbps
+  durationMs?: number
+  fileSizeBytes?: number
+  overallBitrateKbps?: number
 
   video?: AnalyzedVideoStream
   audioTracks: AnalyzedAudioStream[]
@@ -1069,7 +1069,7 @@ export class MediaFileAnalyzer {
       // Check common package manager locations
       const localAppData = process.env.LOCALAPPDATA
       if (localAppData) {
-        paths.push(path.join(localAppData, 'Microsoft', 'WinGet', 'Packages', '**', 'ffprobe.exe'))
+        paths.push(path.join(localAppData, 'Microsoft', 'WinGet', 'Links', 'ffprobe.exe'))
         paths.push(path.join(localAppData, 'Programs', 'ffmpeg', 'bin', 'ffprobe.exe'))
       }
 
@@ -1202,11 +1202,11 @@ export class MediaFileAnalyzer {
     // Parse format info
     if (output.format) {
       result.container = output.format.format_name
-      result.fileSize = output.format.size ? parseInt(output.format.size, 10) : undefined
-      result.duration = output.format.duration
+      result.fileSizeBytes = output.format.size ? parseInt(output.format.size, 10) : undefined
+      result.durationMs = output.format.duration
         ? Math.round(parseFloat(output.format.duration) * 1000)
         : undefined
-      result.overallBitrate = output.format.bit_rate
+      result.overallBitrateKbps = output.format.bit_rate
         ? Math.round(parseInt(output.format.bit_rate, 10) / 1000)
         : undefined
 
@@ -1291,11 +1291,11 @@ export class MediaFileAnalyzer {
         case 'video':
           // Only use first video stream (and not attached pictures)
           if (!result.video) {
-            result.video = this.parseVideoStream(stream, result.duration)
+            result.video = this.parseVideoStream(stream, result.durationMs)
           }
           break
         case 'audio':
-          result.audioTracks.push(this.parseAudioStream(stream, result.duration))
+          result.audioTracks.push(this.parseAudioStream(stream, result.durationMs))
           break
         case 'subtitle':
           result.subtitleTracks.push(this.parseSubtitleStream(stream))
@@ -1305,14 +1305,14 @@ export class MediaFileAnalyzer {
 
     // Calculate video bitrate from file size and duration (more accurate than metadata)
     // MKV files frequently have inaccurate bitrate values in their metadata tags
-    if (result.video && result.fileSize && result.duration) {
-      const durationSeconds = result.duration / 1000
+    if (result.video && result.fileSizeBytes && result.durationMs) {
+      const durationSeconds = result.durationMs / 1000
 
       // Calculate total bitrate from file: (bytes * 8) / seconds / 1000 = kbps
-      const calculatedTotalBitrate = Math.round((result.fileSize * 8) / durationSeconds / 1000)
+      const calculatedTotalBitrate = Math.round((result.fileSizeBytes * 8) / durationSeconds / 1000)
 
       // Sum audio bitrates (from metadata or estimates)
-      let totalAudioBitrate = result.audioTracks.reduce((sum, t) => sum + (t.bitrate || 0), 0)
+      let totalAudioBitrate = result.audioTracks.reduce((sum, t) => sum + (t.bitrateKbps || 0), 0)
 
       // Cap audio at 30% of total - audio can't exceed this in a typical video file
       // This prevents over-estimated lossless audio (TrueHD/DTS-HD MA) from inflating audio total
@@ -1324,31 +1324,31 @@ export class MediaFileAnalyzer {
 
       const calculatedVideoBitrate = Math.max(0, calculatedTotalBitrate - totalAudioBitrate)
 
-      const metadataBitrate = result.video.bitrate
+      const metadataBitrate = result.video.bitrateKbps
       if (metadataBitrate) {
         // If stream metadata bitrate differs significantly from calculated (< 50% or > 150%), use calculated
         const ratio = metadataBitrate / calculatedVideoBitrate
         if (ratio < 0.5 || ratio > 1.5) {
           console.log(`[MediaFileAnalyzer] Stream bitrate (${metadataBitrate} kbps) differs significantly from calculated (${calculatedVideoBitrate} kbps). Using calculated.`)
-          result.video.bitrate = calculatedVideoBitrate
+          result.video.bitrateKbps = calculatedVideoBitrate
         } else {
           console.log(`[MediaFileAnalyzer] Stream bitrate (${metadataBitrate} kbps) matches calculated (${calculatedVideoBitrate} kbps). Using metadata.`)
         }
       } else {
         // No metadata bitrate, use calculated
-        result.video.bitrate = calculatedVideoBitrate
+        result.video.bitrateKbps = calculatedVideoBitrate
         console.log(`[MediaFileAnalyzer] Video bitrate: ${calculatedVideoBitrate} kbps (total: ${calculatedTotalBitrate} - audio: ${totalAudioBitrate})`)
       }
-    } else if (result.video && result.overallBitrate && !result.video.bitrate) {
+    } else if (result.video && result.overallBitrateKbps && !result.video.bitrateKbps) {
       // Fallback: use overall bitrate from format if no file size available
-      let totalAudioBitrate = result.audioTracks.reduce((sum, t) => sum + (t.bitrate || 0), 0)
+      let totalAudioBitrate = result.audioTracks.reduce((sum, t) => sum + (t.bitrateKbps || 0), 0)
       // Cap audio at 30% of overall bitrate
-      const maxAudioBitrate = Math.round(result.overallBitrate * 0.30)
+      const maxAudioBitrate = Math.round(result.overallBitrateKbps * 0.30)
       if (totalAudioBitrate > maxAudioBitrate) {
         totalAudioBitrate = maxAudioBitrate
       }
-      result.video.bitrate = Math.max(0, result.overallBitrate - totalAudioBitrate)
-      console.log(`[MediaFileAnalyzer] Using format bitrate fallback: ${result.video.bitrate} kbps (overall: ${result.overallBitrate} - audio: ${totalAudioBitrate})`)
+      result.video.bitrateKbps = Math.max(0, result.overallBitrateKbps - totalAudioBitrate)
+      console.log(`[MediaFileAnalyzer] Using format bitrate fallback: ${result.video.bitrateKbps} kbps (overall: ${result.overallBitrateKbps} - audio: ${totalAudioBitrate})`)
     }
 
     return result
@@ -1469,7 +1469,7 @@ export class MediaFileAnalyzer {
       level: stream.level,
       width: stream.width || stream.coded_width || 0,
       height: stream.height || stream.coded_height || 0,
-      bitrate,
+      bitrateKbps: bitrate,
       frameRate,
       bitDepth,
       pixelFormat: stream.pix_fmt,
@@ -1498,7 +1498,7 @@ export class MediaFileAnalyzer {
       profile: stream.profile,
       channels,
       channelLayout: stream.channel_layout,
-      bitrate,
+      bitrateKbps: bitrate,
       sampleRate: stream.sample_rate ? parseInt(stream.sample_rate, 10) : undefined,
       bitDepth: stream.bits_per_sample || (stream.bits_per_raw_sample ? parseInt(stream.bits_per_raw_sample, 10) : undefined),
       language: stream.tags?.language,

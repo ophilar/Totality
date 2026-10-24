@@ -462,7 +462,7 @@ describe('PlexProvider', () => {
       expect(result.mediaItem.file_path).toBe('/movies/Test Movie (2024)/Test.Movie.2024.1080p.mkv')
       expect(result.versions[0].audio_codec).toBe('')
       expect(result.versions[0].audio_channels).toBe(0)
-      expect(result.versions[0].audio_bitrate).toBe(0)
+      expect(result.versions[0].audio_bitrate_kbps).toBe(0)
       expect(result.versions[0].audio_tracks).toBe('[]')
     })
 
@@ -536,8 +536,8 @@ describe('PlexProvider', () => {
   describe('scoreVersion integration', () => {
     it('picks 4K version over 1080p in multi-version item', () => {
       // This was a bug — scoreVersion checked includes('2160') but normalizeResolution returns '4K'
-      const uhd = scoreVersion({ resolution: '4K', video_bitrate: 30000, hdr_format: 'None' })
-      const fhd = scoreVersion({ resolution: '1080p', video_bitrate: 30000, hdr_format: 'None' })
+      const uhd = scoreVersion({ resolution: '4K' })
+      const fhd = scoreVersion({ resolution: '1080p' })
 
       expect(uhd).toBeGreaterThan(fhd)
     })

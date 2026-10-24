@@ -1019,7 +1019,7 @@ export class KodiProvider implements MediaProvider {
       }
       // Only use ffprobe video bitrate if we don't have one from file size calculation
       if (!enhanced.videoBitrate || enhanced.videoBitrate === 0) {
-        enhanced.videoBitrate = analysis.video.bitrate
+        enhanced.videoBitrate = analysis.video.bitrateKbps
       }
       // HDR format - ffprobe is more accurate than Kodi's hdrtype
       if (!enhanced.hdrFormat || enhanced.hdrFormat === 'None') {
@@ -1027,8 +1027,8 @@ export class KodiProvider implements MediaProvider {
       }
     }
 
-    if (analysis.duration && (!enhanced.duration || enhanced.duration === 0)) {
-      enhanced.duration = analysis.duration
+    if (analysis.durationMs && (!enhanced.duration || enhanced.duration === 0)) {
+      enhanced.duration = analysis.durationMs
     }
 
     if (analysis.container && !enhanced.container) {
@@ -1047,7 +1047,7 @@ export class KodiProvider implements MediaProvider {
         enhancedAudioTracks.push({
           codec: existingTrack?.codec || ffprobeTrack.codec,
           channels: existingTrack?.channels || ffprobeTrack.channels,
-          bitrate: ffprobeTrack.bitrate || existingTrack?.bitrate, // Prefer ffprobe bitrate
+          bitrate: ffprobeTrack.bitrateKbps || existingTrack?.bitrate, // Prefer ffprobe bitrate
           sampleRate: ffprobeTrack.sampleRate,
           language: existingTrack?.language || ffprobeTrack.language,
           isDefault: existingTrack?.isDefault ?? ffprobeTrack.isDefault,

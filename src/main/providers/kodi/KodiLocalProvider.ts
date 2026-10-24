@@ -362,8 +362,8 @@ export class KodiLocalProvider implements MediaProvider {
         enhanced.videoCodec = normalizeVideoCodec(analysis.video.codec)
       }
 
-      if (analysis.video.bitrate !== undefined) {
-        enhanced.videoBitrate = analysis.video.bitrate
+      if (analysis.video.bitrateKbps !== undefined) {
+        enhanced.videoBitrate = analysis.video.bitrateKbps
       }
 
       if (analysis.video.frameRate) {
@@ -392,13 +392,13 @@ export class KodiLocalProvider implements MediaProvider {
     }
 
     // Duration from FFprobe
-    if (analysis.duration) {
-      enhanced.duration = analysis.duration
+    if (analysis.durationMs) {
+      enhanced.duration = analysis.durationMs
     }
 
     // File size from FFprobe
-    if (analysis.fileSize) {
-      enhanced.fileSize = analysis.fileSize
+    if (analysis.fileSizeBytes) {
+      enhanced.fileSize = analysis.fileSizeBytes
     }
 
     // Container format
@@ -412,7 +412,7 @@ export class KodiLocalProvider implements MediaProvider {
         codec: normalizeAudioCodec(track.codec, track.profile),
         profile: track.profile,
         channels: track.channels,
-        bitrate: track.bitrate,
+        bitrate: track.bitrateKbps,
         sampleRate: track.sampleRate,
         language: track.language,
         title: track.title,
@@ -421,7 +421,7 @@ export class KodiLocalProvider implements MediaProvider {
       }))
 
       // Find the best audio track (not just default/first) for primary audio fields
-      const primaryAudio = AudioCodecRanker.selectBestTrack(analysis.audioTracks.map(track => ({ ...track, bitrate: track.bitrate ?? 0 })))
+      const primaryAudio = AudioCodecRanker.selectBestTrack(analysis.audioTracks.map(track => ({ ...track, bitrate: track.bitrateKbps ?? 0 })))
       if (primaryAudio) {
         enhanced.audioCodec = normalizeAudioCodec(primaryAudio.codec, primaryAudio.profile)
         enhanced.audioChannels = primaryAudio.channels
@@ -886,7 +886,7 @@ export class KodiLocalProvider implements MediaProvider {
               if (i === 0) {
                 console.log(`[KodiLocalProvider] FFprobe result for "${items[i].title}":`, {
                   success: ffprobeResult.success, error: ffprobeResult.error, hasVideo: !!ffprobeResult.video,
-                  videoBitrate: ffprobeResult.video?.bitrate, colorBitDepth: ffprobeResult.video?.bitDepth,
+                  videoBitrate: ffprobeResult.video?.bitrateKbps, colorBitDepth: ffprobeResult.video?.bitDepth,
                   colorSpace: ffprobeResult.video?.colorSpace, frameRate: ffprobeResult.video?.frameRate,
                   audioTracks: ffprobeResult.audioTracks?.length,
                 })
@@ -1108,7 +1108,7 @@ export class KodiLocalProvider implements MediaProvider {
                   success: ffprobeResult.success,
                   error: ffprobeResult.error,
                   hasVideo: !!ffprobeResult.video,
-                  videoBitrate: ffprobeResult.video?.bitrate,
+                  videoBitrate: ffprobeResult.video?.bitrateKbps,
                 })
                 if (ffprobeResult.success) {
                   metadata = this.enhanceMetadataWithFFprobe(metadata, ffprobeResult)
@@ -1705,8 +1705,8 @@ export class KodiLocalProvider implements MediaProvider {
         track.is_lossless = isLosslessCodec(track.audio_codec)
       }
 
-      if (audioStream.bitrate) {
-        track.audio_bitrate = audioStream.bitrate
+      if (audioStream.bitrateKbps) {
+        track.audio_bitrate = audioStream.bitrateKbps
       }
 
       if (audioStream.sampleRate) {
@@ -1730,13 +1730,13 @@ export class KodiLocalProvider implements MediaProvider {
       }
 
       // Update duration from FFprobe if available
-      if (analysis.duration) {
-        track.duration = Math.round(analysis.duration * 1000) // Convert to ms
+      if (analysis.durationMs) {
+        track.duration = analysis.durationMs
       }
 
       // Update file size
-      if (analysis.fileSize) {
-        track.file_size = analysis.fileSize
+      if (analysis.fileSizeBytes) {
+        track.file_size = analysis.fileSizeBytes
       }
 
       return track

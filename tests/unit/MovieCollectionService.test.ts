@@ -224,9 +224,9 @@ describe('MovieCollectionService', () => {
   describe('deduplication', () => {
     it('keeps higher bitrate version when TMDB IDs match', () => {
       const movies = [
-        { id: 1, tmdb_id: '550', title: 'Fight Club', video_bitrate: 3000 },
-        { id: 2, tmdb_id: '550', title: 'Fight Club', video_bitrate: 8000 },
-        { id: 3, tmdb_id: '551', title: 'Other Movie', video_bitrate: 5000 },
+        { id: 1, tmdb_id: '550', title: 'Fight Club', video_bitrate_kbps: 3000 },
+        { id: 2, tmdb_id: '550', title: 'Fight Club', video_bitrate_kbps: 8000 },
+        { id: 3, tmdb_id: '551', title: 'Other Movie', video_bitrate_kbps: 5000 },
       ] as unknown as MediaItem[]
 
       // Access the private method via any cast for testing
@@ -235,13 +235,13 @@ describe('MovieCollectionService', () => {
 
       expect(deduplicated).toHaveLength(2)
       const fightClub = deduplicated.find(m => m.tmdb_id === '550')
-      expect(fightClub?.video_bitrate).toBe(8000) // Higher bitrate kept
+      expect(fightClub?.video_bitrate_kbps).toBe(8000) // Higher bitrate kept
     })
 
     it('skips movies without TMDB IDs', () => {
       const movies = [
-        { id: 1, tmdb_id: null, title: 'No ID', video_bitrate: 5000 },
-        { id: 2, tmdb_id: '100', title: 'Has ID', video_bitrate: 5000 },
+        { id: 1, tmdb_id: null, title: 'No ID', video_bitrate_kbps: 5000 },
+        { id: 2, tmdb_id: '100', title: 'Has ID', video_bitrate_kbps: 5000 },
       ] as unknown as MediaItem[]
 
       const deduplicated = (service as unknown as { deduplicateMoviesByTmdbId: (m: MediaItem[]) => MediaItem[] })

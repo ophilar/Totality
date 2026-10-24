@@ -23,13 +23,6 @@ const VIDEO_TIER_RANK: Record<string, number> = {
   '4K': 3,
 }
 
-// Video quality level rankings within a tier
-const VIDEO_LEVEL_RANK: Record<string, number> = {
-  LOW: 0,
-  MEDIUM: 1,
-  HIGH: 2,
-}
-
 // Music quality tier rankings (higher = better)
 const MUSIC_TIER_RANK: Record<string, number> = {
   LOSSY_LOW: 0,
@@ -212,7 +205,7 @@ export class WishlistCompletionService {
         const score = qualityScores.get(item.media_item_id!)
         if (!score) continue
 
-        if (this.isVideoQualityImproved(item, score.quality_tier, score.tier_quality)) {
+        if (this.isVideoQualityImproved(item, score.quality_tier)) {
           completed.push({
             id: item.id!,
             title: item.title,
@@ -246,23 +239,16 @@ export class WishlistCompletionService {
   }
 
   /**
-   * Check if video quality has improved (tier rank increased, or same tier but level increased)
+   * Check if video resolution tier has increased.
    */
   private isVideoQualityImproved(
     item: WishlistItem,
-    currentTier: string,
-    currentLevel: string
+    currentTier: string
   ): boolean {
     const oldTierRank = VIDEO_TIER_RANK[item.current_quality_tier || ''] ?? -1
     const newTierRank = VIDEO_TIER_RANK[currentTier] ?? -1
 
     if (newTierRank > oldTierRank) return true
-
-    if (newTierRank === oldTierRank) {
-      const oldLevelRank = VIDEO_LEVEL_RANK[item.current_quality_level || ''] ?? -1
-      const newLevelRank = VIDEO_LEVEL_RANK[currentLevel] ?? -1
-      return newLevelRank > oldLevelRank
-    }
 
     return false
   }

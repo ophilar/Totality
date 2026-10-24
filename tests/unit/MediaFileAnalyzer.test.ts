@@ -88,6 +88,19 @@ describe('MediaFileAnalyzer', () => {
   })
 
   describe('isAvailable', () => {
+    it('checks the WinGet Links install path on Windows', () => {
+      if (process.platform !== 'win32') return
+      const previousLocalAppData = process.env.LOCALAPPDATA
+      process.env.LOCALAPPDATA = 'C:/Users/test/AppData/Local'
+      try {
+        const paths = (analyzer as any).getPossibleFFprobePaths() as string[]
+        expect(paths).toContain('C:/Users/test/AppData/Local/Microsoft/WinGet/Links/ffprobe.exe')
+      } finally {
+        if (previousLocalAppData === undefined) delete process.env.LOCALAPPDATA
+        else process.env.LOCALAPPDATA = previousLocalAppData
+      }
+    })
+
     it('returns false when no ffprobe found', async () => {
       mockSpawn.mockImplementation(() => {
         const proc = createMockProcess('', 1)

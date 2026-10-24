@@ -373,7 +373,8 @@ export function registerSeriesHandlers() {
           validLibraryId,
           validTmdbId.toString(),
           posterUrl,
-          newSeriesTitle
+          newSeriesTitle,
+          showDetails.original_language
         )
 
         // Re-analyze the series with the canonical identity key and library scope

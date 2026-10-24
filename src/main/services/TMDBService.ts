@@ -426,11 +426,11 @@ export class TMDBService {
     externalId: string,
     externalSource: 'imdb_id'
   ): Promise<{
-    movie_results: Array<{ id: number; title: string; release_date?: string }>
+    movie_results: Array<{ id: number; title: string; release_date?: string; original_language: string }>
     tv_results: Array<{ id: number; name: string }>
   }> {
     return await this.request<{
-      movie_results: Array<{ id: number; title: string; release_date?: string }>
+      movie_results: Array<{ id: number; title: string; release_date?: string; original_language: string }>
       tv_results: Array<{ id: number; name: string }>
     }>(
       `/find/${externalId}`,
