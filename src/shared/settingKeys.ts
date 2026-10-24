@@ -13,7 +13,6 @@ export const SETTING_KEYS = {
   // API keys & services
   tmdb_api_key: 'tmdb_api_key',
   gemini_api_key: 'gemini_api_key',
-  gemini_model: 'gemini_model',
   ai_enabled: 'ai_enabled',
   musicbrainz_api_token: 'musicbrainz_api_token',
   musicbrainz_name_correction: 'musicbrainz_name_correction',
@@ -29,7 +28,6 @@ export const SETTING_KEYS = {
   dashboard_person_sort: 'dashboard_person_sort',
 
   // Quality settings
-  quality_video_weight: 'quality_video_weight',
   quality_video_sd_medium: 'quality_video_sd_medium',
   quality_video_sd_high: 'quality_video_sd_high',
   quality_video_720p_medium: 'quality_video_720p_medium',
@@ -38,6 +36,11 @@ export const SETTING_KEYS = {
   quality_video_1080p_high: 'quality_video_1080p_high',
   quality_video_4k_medium: 'quality_video_4k_medium',
   quality_video_4k_high: 'quality_video_4k_high',
+  quality_video_weight: 'quality_video_weight',
+  quality_codec_h264: 'quality_codec_h264',
+  quality_codec_h265: 'quality_codec_h265',
+  quality_codec_av1: 'quality_codec_av1',
+  quality_codec_vp9: 'quality_codec_vp9',
   quality_audio_sd_medium: 'quality_audio_sd_medium',
   quality_audio_sd_high: 'quality_audio_sd_high',
   quality_audio_720p_medium: 'quality_audio_720p_medium',
@@ -50,10 +53,8 @@ export const SETTING_KEYS = {
   quality_music_high_bitrate: 'quality_music_high_bitrate',
   quality_music_hires_samplerate: 'quality_music_hires_samplerate',
   quality_music_hires_bitdepth: 'quality_music_hires_bitdepth',
-  quality_codec_h264: 'quality_codec_h264',
-  quality_codec_h265: 'quality_codec_h265',
-  quality_codec_av1: 'quality_codec_av1',
-  quality_codec_vp9: 'quality_codec_vp9',
+  subtitle_preferred_languages: 'subtitle_preferred_languages',
+  optimization_default_target_profile_id: 'optimization_default_target_profile_id',
 
   // FFprobe settings
   ffprobe_enabled: 'ffprobe_enabled',

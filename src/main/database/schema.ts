@@ -52,20 +52,20 @@ CREATE TABLE IF NOT EXISTS media_items (
 
   -- File information
   file_path TEXT NOT NULL,
-  file_size INTEGER NOT NULL,
-  duration INTEGER NOT NULL,
+  file_size_bytes INTEGER NOT NULL,
+  duration_ms INTEGER NOT NULL,
 
   -- Video quality
   resolution TEXT NOT NULL,
   width INTEGER NOT NULL,
   height INTEGER NOT NULL,
   video_codec TEXT NOT NULL,
-  video_bitrate INTEGER NOT NULL,
+  video_bitrate_kbps INTEGER NOT NULL,
 
   -- Audio quality
   audio_codec TEXT NOT NULL,
   audio_channels INTEGER NOT NULL,
-  audio_bitrate INTEGER NOT NULL,
+  audio_bitrate_kbps INTEGER NOT NULL,
 
   -- Enhanced video quality metadata
   video_frame_rate REAL,
@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS media_items (
   imdb_id TEXT,
   tmdb_id TEXT,
   series_tmdb_id TEXT,
+  original_language TEXT,
   poster_url TEXT,
   episode_thumb_url TEXT,
   season_poster_url TEXT,
@@ -129,20 +130,20 @@ CREATE TABLE IF NOT EXISTS media_item_versions (
 
   -- File information
   file_path TEXT NOT NULL,
-  file_size INTEGER NOT NULL,
-  duration INTEGER NOT NULL,
+  file_size_bytes INTEGER NOT NULL,
+  duration_ms INTEGER NOT NULL,
 
   -- Video quality
   resolution TEXT NOT NULL,
   width INTEGER NOT NULL,
   height INTEGER NOT NULL,
   video_codec TEXT NOT NULL,
-  video_bitrate INTEGER NOT NULL,
+  video_bitrate_kbps INTEGER NOT NULL,
 
   -- Audio quality (best audio track)
   audio_codec TEXT NOT NULL,
   audio_channels INTEGER NOT NULL,
-  audio_bitrate INTEGER NOT NULL,
+  audio_bitrate_kbps INTEGER NOT NULL,
 
   -- Enhanced video quality metadata
   video_frame_rate REAL,
@@ -187,21 +188,22 @@ CREATE TABLE IF NOT EXISTS quality_scores (
 
   -- Tier-based scoring
   quality_tier TEXT NOT NULL DEFAULT 'SD',
-  tier_quality TEXT NOT NULL DEFAULT 'MEDIUM',
-  tier_score INTEGER NOT NULL DEFAULT 0,
-  bitrate_tier_score INTEGER NOT NULL DEFAULT 0,
-  audio_tier_score INTEGER NOT NULL DEFAULT 0,
-  storage_debt_bytes INTEGER,
+  tier_quality TEXT NOT NULL DEFAULT 'UNKNOWN',
+  tier_score INTEGER,
+  bitrate_tier_score INTEGER,
+  audio_tier_score INTEGER,
+  video_savings_bytes INTEGER,
+  savings_coverage TEXT,
   evidence_status TEXT,
   estimated_savings_bytes INTEGER,
   confidence TEXT,
   savings_basis TEXT,
 
   -- Legacy scores (0-100 scale) - kept for backward compatibility
-  overall_score INTEGER NOT NULL,
-  resolution_score INTEGER NOT NULL,
-  bitrate_score INTEGER NOT NULL,
-  audio_score INTEGER NOT NULL,
+  overall_score INTEGER,
+  resolution_score INTEGER,
+  bitrate_score INTEGER,
+  audio_score INTEGER,
 
   -- Quality flags
   is_low_quality INTEGER NOT NULL DEFAULT 0,
@@ -979,17 +981,6 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
   ('theme_mode', 'dark'),
   ('tmdb_api_key', ''),
 
-  -- Video bitrate thresholds (kbps) - MEDIUM and HIGH thresholds per tier
-  -- Below MEDIUM = LOW quality, MEDIUM to HIGH = MEDIUM quality, above HIGH = HIGH quality
-  ('quality_video_sd_medium', '1500'),
-  ('quality_video_sd_high', '3500'),
-  ('quality_video_720p_medium', '3000'),
-  ('quality_video_720p_high', '8000'),
-  ('quality_video_1080p_medium', '6000'),
-  ('quality_video_1080p_high', '15000'),
-  ('quality_video_4k_medium', '15000'),
-  ('quality_video_4k_high', '40000'),
-
   -- Audio bitrate thresholds (kbps) - MEDIUM and HIGH thresholds per tier
   ('quality_audio_sd_medium', '128'),
   ('quality_audio_sd_high', '192'),
@@ -999,12 +990,6 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
   ('quality_audio_1080p_high', '640'),
   ('quality_audio_4k_medium', '320'),
   ('quality_audio_4k_high', '1000'),
-
-  -- Codec efficiency multipliers (effective bitrate = actual * multiplier)
-  ('quality_codec_h264', '1.0'),
-  ('quality_codec_h265', '2.0'),
-  ('quality_codec_av1', '2.5'),
-  ('quality_codec_vp9', '1.8'),
 
   -- Music quality thresholds
   ('quality_music_low_bitrate', '192'),

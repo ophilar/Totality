@@ -26,12 +26,12 @@ export const MediaTypeSchema = z.enum(['movie', 'episode'])
 /**
  * Quality tier
  */
-export const QualityTierSchema = z.enum(['SD', '720p', '1080p', '4K'])
+export const QualityTierSchema = z.enum(['SD', '720p', '1080p', '4K', 'UNKNOWN'])
 
 /**
  * Tier quality level
  */
-export const TierQualitySchema = z.enum(['LOW', 'MEDIUM', 'HIGH'])
+export const TierQualitySchema = z.enum(['LOW', 'MEDIUM', 'HIGH', 'UNKNOWN'])
 
 /**
  * Positive integer (for IDs)
@@ -327,15 +327,15 @@ export const MediaItemSchema = z.object({
   title: z.string().min(1).max(500),
   year: z.number().int().min(1800).max(2100).optional().nullable().transform(value => value ?? undefined),
   file_path: z.string().optional().nullable(),
-  file_size: z.number().int().nonnegative().optional().nullable(),
-  duration: z.number().int().nonnegative().optional().nullable(),
+  file_size_bytes: z.number().int().nonnegative().optional().nullable(),
+  duration_ms: z.number().int().nonnegative().optional().nullable(),
   resolution: z.string().max(20).optional().nullable(),
   video_codec: z.string().max(50).optional().nullable(),
-  video_bitrate: z.number().nonnegative().optional().nullable(),
+  video_bitrate_kbps: z.number().nonnegative().optional().nullable(),
   video_frame_rate: z.number().nonnegative().optional().nullable(),
   audio_codec: z.string().max(50).optional().nullable(),
   audio_channels: z.number().int().min(1).max(32).optional().nullable(),
-  audio_bitrate: z.number().nonnegative().optional().nullable(),
+  audio_bitrate_kbps: z.number().nonnegative().optional().nullable(),
   has_object_audio: z.boolean().optional().nullable(),
   hdr_format: z.string().max(50).optional().nullable(),
   container: z.string().max(20).optional().nullable(),
@@ -364,21 +364,22 @@ export const MediaItemSchema = z.object({
 export const QualityScoreSchema = z.object({
   id: z.number().int().positive().optional(),
   media_item_id: z.number().int().positive(),
-  overall_score: z.number().min(0).max(100),
+  overall_score: z.number().min(0).max(100).nullable(),
   needs_upgrade: z.boolean(),
   quality_tier: QualityTierSchema,
   tier_quality: TierQualitySchema,
-  tier_score: z.number().min(0).max(100),
-  bitrate_tier_score: z.number().min(0).max(100),
-  audio_tier_score: z.number().min(0).max(100),
-  resolution_score: z.number().min(0).max(100),
-  bitrate_score: z.number().min(0).max(100),
-  audio_score: z.number().min(0).max(100),
+  tier_score: z.number().min(0).max(100).nullable(),
+  bitrate_tier_score: z.number().min(0).max(100).nullable(),
+  audio_tier_score: z.number().min(0).max(100).nullable(),
+  resolution_score: z.number().min(0).max(100).nullable(),
+  bitrate_score: z.number().min(0).max(100).nullable(),
+  audio_score: z.number().min(0).max(100).nullable(),
   is_low_quality: z.boolean(),
   evidence_status: z.enum(['measured', 'estimated', 'insufficient']).optional(),
   estimated_savings_bytes: z.number().nonnegative().nullable().optional(),
+  savings_coverage: z.enum(['complete', 'partial', 'insufficient']),
   confidence: z.enum(['high', 'medium', 'low', 'none']).optional(),
-  savings_basis: z.enum(['audio_stream_removal', 'audio_stream_removal_and_transcode_model', 'audio_transcode_model', 'video_sample_encode', 'video_bitrate_estimate', 'audio_bitrate_estimate', 'mixed_estimates', 'mixed_measured_and_estimated', 'insufficient_data']).optional(),
+  savings_basis: z.enum(['audio_stream_removal', 'subtitle_stream_removal', 'audio_stream_removal_and_transcode_model', 'audio_transcode_model', 'video_sample_encode', 'video_bitrate_estimate', 'audio_bitrate_estimate', 'mixed_estimates', 'mixed_measured', 'mixed_measured_and_estimated', 'insufficient_data']).optional(),
   issues: z.string(),
 })
 

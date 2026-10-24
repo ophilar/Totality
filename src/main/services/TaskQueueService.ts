@@ -29,6 +29,7 @@ import type { ScanResult } from '../providers/base/MediaProvider'
 import { getWishlistCompletionService } from './WishlistCompletionService'
 import { getTMDBService } from './TMDBService'
 import { getTranscodingService } from './TranscodingService'
+import { getQualityAnalyzer } from './QualityAnalyzer'
 import { analyzeAlbumQuality } from './MusicQualityAnalyzer'
 import { getArtistAlbumsCombined } from './utils/musicUtils'
 import type {
@@ -698,6 +699,12 @@ export class TaskQueueService {
       case 'music-scan':
         await this.executeMusicScan(task, progressCallback)
         this.sendLibraryUpdated('music')
+        break
+
+      case 'quality-analysis':
+        await getQualityAnalyzer().loadThresholdsFromDatabase()
+        task.result = { itemsScanned: await getQualityAnalyzer().analyzeAllMediaItems((current, total) => progressCallback({ current, total, phase: 'quality analysis' }), () => this.cancelRequested) }
+        this.sendLibraryUpdated()
         break
 
       case 'transcode':

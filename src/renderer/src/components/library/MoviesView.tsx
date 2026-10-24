@@ -519,7 +519,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
     }
   }
 
-  const needsUpgrade = movie.tier_quality === 'LOW' || !!movie.needs_upgrade
+  const needsUpgrade = !!movie.needs_upgrade
   const showMenuButton = Boolean(movie.id && movie.file_path) || onFixMatch || onRescan || (onDismissUpgrade && needsUpgrade)
 
   return (
@@ -639,7 +639,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
             </div>
           )}
           {/* Quality Upgrade Badge */}
-          {(movie.tier_quality === 'LOW' || !!movie.needs_upgrade) && (
+          {!!movie.needs_upgrade && (
             <div title="Quality upgrade recommended">
               <CircleFadingArrowUp className="w-5 h-5 text-red-500" />
             </div>
@@ -670,7 +670,7 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
   const [isRescanning, setIsRescanning] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
   const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
-  const needsUpgrade = movie.tier_quality === 'LOW' || !!movie.needs_upgrade
+  const needsUpgrade = !!movie.needs_upgrade
 
   const handleFixMatch = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -747,7 +747,7 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
         <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
           <span>
             {movie.year}{movie.year && movie.resolution ? ' • ' : ''}{movie.resolution}
-            {movie.video_bitrate ? ` • ${(movie.video_bitrate / 1000).toFixed(1)} Mbps` : ''}
+            {movie.video_bitrate_kbps ? ` • ${(movie.video_bitrate_kbps / 1000).toFixed(1)} Mbps` : ''}
             {movie.audio_channels ? ` • ${movie.audio_channels}.0 Audio` : ''}
             {movie.version_count && movie.version_count > 1 && ` • ${movie.version_count} versions`}
           </span>
@@ -767,7 +767,7 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
         <QualityBadges item={movie} showSavings={false} />
         {movie.estimated_savings_bytes != null && (
           <div className="mt-1 flex items-center gap-1.5 text-xs" aria-label="Estimated savings">
-            <span className="text-muted-foreground">Est. savings</span>
+            <span className="text-muted-foreground">Estimated savings</span>
             <EstimatedSavingsDisplay bytes={movie.estimated_savings_bytes} />
           </div>
         )}

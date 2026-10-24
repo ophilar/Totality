@@ -114,14 +114,17 @@ export interface SubtitleTrack {
 
 export type EvidenceStatus = 'measured' | 'estimated' | 'insufficient'
 export type EvidenceConfidence = 'high' | 'medium' | 'low' | 'none'
+export type SavingsCoverage = 'complete' | 'partial' | 'insufficient'
 export type SavingsBasis =
   | 'audio_stream_removal'
+  | 'subtitle_stream_removal'
   | 'audio_stream_removal_and_transcode_model'
   | 'audio_transcode_model'
   | 'video_sample_encode'
   | 'video_bitrate_estimate'
   | 'audio_bitrate_estimate'
   | 'mixed_estimates'
+  | 'mixed_measured'
   | 'mixed_measured_and_estimated'
   | 'insufficient_data'
 
@@ -158,20 +161,20 @@ export interface MediaItem {
 
   // File information
   file_path: string
-  file_size: number
-  duration: number
+  file_size_bytes: number
+  duration_ms: number
 
   // Video quality
   resolution: string
   width: number
   height: number
   video_codec: string
-  video_bitrate: number
+  video_bitrate_kbps: number
 
   // Audio quality
   audio_codec: string
   audio_channels: number
-  audio_bitrate: number
+  audio_bitrate_kbps: number
 
   // Enhanced video quality metadata
   video_frame_rate?: number      // 23.976, 24, 60 fps
@@ -211,9 +214,9 @@ export interface MediaItem {
   audio_language?: string | null
   quality_tier?: string
   tier_quality?: string
-  tier_score?: number
+  tier_score?: number | null
   efficiency_score?: number | null
-  storage_debt_bytes?: number | null
+  video_savings_bytes?: number | null
   needs_upgrade?: boolean
   poster_url?: string
   episode_thumb_url?: string
@@ -222,6 +225,7 @@ export interface MediaItem {
 
   // Estimated savings
   evidence_status?: string | null
+  savings_coverage?: SavingsCoverage
 
   // Ratings
   tmdb_rating?: number            // 0-10 scale from TMDB vote_average
@@ -258,20 +262,20 @@ export interface MediaItemVersion {
 
   // File information
   file_path: string
-  file_size: number
-  duration: number
+  file_size_bytes: number
+  duration_ms: number
 
   // Video quality
   resolution: string
   width: number
   height: number
   video_codec: string
-  video_bitrate: number
+  video_bitrate_kbps: number
 
   // Audio quality (best audio track)
   audio_codec: string
   audio_channels: number
-  audio_bitrate: number
+  audio_bitrate_kbps: number
 
   // Enhanced video quality metadata
   video_frame_rate?: number
@@ -296,11 +300,11 @@ export interface MediaItemVersion {
 
   // Quality scores (denormalized for fast access)
   quality_tier?: string           // 'SD', '720p', '1080p', '4K'
-  tier_quality?: string           // 'LOW', 'MEDIUM', 'HIGH'
-  tier_score?: number
+  tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
+  tier_score?: number | null
   needs_upgrade?: boolean
-  bitrate_tier_score?: number
-  audio_tier_score?: number
+  bitrate_tier_score?: number | null
+  audio_tier_score?: number | null
 
   // Best version flag
   is_best?: boolean
@@ -317,21 +321,22 @@ export interface QualityScore {
   // Tier-based scoring
   quality_tier: 'SD' | '720p' | '1080p' | '4K' | 'UNKNOWN'
   tier_quality: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
-  tier_score: number // 0-100 score within tier
-  bitrate_tier_score: number // 0-100 bitrate score for tier
-  audio_tier_score: number // 0-100 audio score for tier
+  tier_score: number | null
+  bitrate_tier_score: number | null
+  audio_tier_score: number | null
 
   // Legacy scores (for backward compatibility)
-  overall_score: number // Maps to tier_score
-  resolution_score: number // Deprecated
-  bitrate_score: number // Maps to bitrate_tier_score
-  audio_score: number // Maps to audio_tier_score
+  overall_score: number | null
+  resolution_score: number | null
+  bitrate_score: number | null
+  audio_score: number | null
 
   efficiency_score?: number | null
-  storage_debt_bytes?: number | null
+  video_savings_bytes?: number | null
 
   estimated_savings_bytes?: number | null
   evidence_status?: EvidenceStatus
+  savings_coverage: SavingsCoverage
   confidence?: EvidenceConfidence
   savings_basis?: SavingsBasis
 
@@ -465,6 +470,7 @@ export interface TVShowSummary {
   total_play_count?: number
   last_watched_at?: string
   estimated_savings_bytes?: number | null
+  savings_coverage?: SavingsCoverage
 }
 
 export interface TVShowFilters {
@@ -872,6 +878,7 @@ export interface AnalysisOutcome {
 
 export interface OptimizationMetricsSummary {
   estimatedSavingsBytes: number | null
+  coverage: SavingsCoverage
 }
 
 export type { QueuedTask, TaskProgress, TaskQueueState, TaskResult } from './taskQueue'

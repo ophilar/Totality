@@ -80,16 +80,16 @@ function makeMediaItem(overrides: Record<string, any> = {}) {
     title: 'Test Movie',
     type: 'movie',
     file_path: '/movies/test.mkv',
-    file_size: 1000000,
-    duration: 7200,
+    file_size_bytes: 1000000,
+    duration_ms: 7200,
     resolution: '1080p',
     width: 1920,
     height: 1080,
     video_codec: 'HEVC',
-    video_bitrate: 5000,
+    video_bitrate_kbps: 5000,
     audio_codec: 'AAC',
     audio_channels: 2,
-    audio_bitrate: 128,
+    audio_bitrate_kbps: 128,
     ...overrides,
   }
 }
@@ -110,6 +110,7 @@ function makeQualityScore(mediaItemId: number, estimatedSavingsBytes: number | n
     needs_upgrade: true,
     issues: '[]',
     estimated_savings_bytes: estimatedSavingsBytes,
+    savings_coverage: 'complete',
   }
 }
 
@@ -218,6 +219,147 @@ describe('BetterSQLiteService — Media Items', () => {
     expect(item?.title).toBe('Updated')
   })
 
+  it('preserves matched original language across provider rescans', () => {
+    const id = service.upsertMediaItem(makeMediaItem({ tmdb_id: '123' }))
+    service.updateMovieMatch(id, '123', undefined, undefined, undefined, 'en')
+
+    service.upsertMediaItem(makeMediaItem({ title: 'Rescanned title', tmdb_id: '123' }))
+
+    expect(service.getMediaItem(id)?.original_language).toBe('en')
+  })
+
+  it('ranks alternate versions by resolution and preserves a tied existing selection', () => {
+    const mediaItemId = service.upsertMediaItem(makeMediaItem())
+    const createVersion = (filePath: string, resolution: string, height: number, isBest: boolean) => ({
+      media_item_id: mediaItemId,
+      version_source: 'local_file',
+      file_path: filePath,
+      file_size_bytes: 1_000_000,
+      duration_ms: 7_200,
+      resolution,
+      width: 1920,
+      height,
+      video_codec: 'h264',
+      video_bitrate_kbps: 2_000,
+      audio_codec: 'aac',
+      audio_channels: 2,
+      audio_bitrate_kbps: 128,
+      quality_tier: '1080p',
+      tier_quality: 'UNKNOWN' as const,
+      tier_score: null,
+      is_best: isBest,
+    })
+    service.upsertMediaItemVersion(createVersion('/versions/a.mkv', '1080p', 1080, true))
+    service.upsertMediaItemVersion(createVersion('/versions/b.mkv', '1080p', 1080, false))
+
+    service.syncMediaItemVersions(mediaItemId, [
+      createVersion('/versions/a.mkv', '1080p', 1080, false),
+      createVersion('/versions/b.mkv', '1080p', 1080, false),
+    ])
+
+    const versions = service.getMediaItemVersions(mediaItemId)
+    expect(versions.filter(version => version.is_best).map(version => version.file_path)).toEqual(['/versions/a.mkv'])
+    expect(versions.every(version => version.tier_score === null)).toBe(true)
+  })
+
+  it('leaves equal-resolution versions unselected when no existing selection breaks the tie', () => {
+    const mediaItemId = service.upsertMediaItem(makeMediaItem({ file_path: '/movies/primary.mkv' }))
+    const createVersion = (filePath: string) => ({
+      media_item_id: mediaItemId,
+      version_source: 'local_file',
+      file_path: filePath,
+      file_size_bytes: 1_000_000,
+      duration_ms: 7_200,
+      resolution: '1080p',
+      width: 1920,
+      height: 1080,
+      video_codec: 'h264',
+      video_bitrate_kbps: 2_000,
+      audio_codec: 'aac',
+      audio_channels: 2,
+      audio_bitrate_kbps: 128,
+      quality_tier: '1080p',
+      tier_quality: 'UNKNOWN' as const,
+      tier_score: null,
+      is_best: false,
+    })
+    service.upsertMediaItemVersion(createVersion('/versions/a.mkv'))
+    service.upsertMediaItemVersion(createVersion('/versions/b.mkv'))
+
+    service.updateBestVersion(mediaItemId)
+
+    expect(service.getMediaItemVersions(mediaItemId).some(version => version.is_best)).toBe(false)
+    expect(service.getMediaItem(mediaItemId)?.file_path).toBe('/movies/primary.mkv')
+  })
+
+  it('clears only stale savings totals once when savings semantics change', () => {
+    const id = service.upsertMediaItem(makeMediaItem())
+    service.upsertQualityScore({ ...makeQualityScore(id, 300), video_savings_bytes: 125 })
+    const versionId = service.upsertMediaItemVersion({
+      media_item_id: id,
+      version_source: 'local_file',
+      file_path: '/movies/version.mkv',
+      file_size_bytes: 1_000_000,
+      duration_ms: 7_200,
+      resolution: '1080p',
+      width: 1920,
+      height: 1080,
+      video_codec: 'HEVC',
+      video_bitrate_kbps: 5_000,
+      audio_codec: 'AAC',
+      audio_channels: 2,
+      audio_bitrate_kbps: 128,
+      quality_tier: '1080p',
+      tier_quality: 'UNKNOWN',
+      tier_score: null,
+    })
+    testDb.prepare("UPDATE settings SET value = '1' WHERE key = 'optimization.savings_semantics_version'").run()
+
+    const migratedService = new BetterSQLiteService()
+    migratedService.initialize()
+    expect(migratedService.getQualityScore(id)?.estimated_savings_bytes).toBeNull()
+    expect(migratedService.getQualityScore(id)?.video_savings_bytes).toBeNull()
+    expect(migratedService.getQualityScore(id)?.tier_quality).toBe('UNKNOWN')
+    expect(migratedService.getQualityScore(id)?.tier_score).toBeNull()
+    expect(migratedService.getQualityScore(id)?.overall_score).toBeNull()
+    expect(migratedService.getQualityScore(id)?.quality_tier).toBe('1080p')
+    expect(migratedService.getMediaItemVersions(id).find(version => version.id === versionId)?.tier_score).toBeNull()
+    expect(migratedService.getSetting('optimization.savings_reanalysis_pending')).toBe('true')
+
+    migratedService.upsertQualityScore({ ...makeQualityScore(id, 450), video_savings_bytes: 125 })
+    new BetterSQLiteService().initialize()
+    expect(migratedService.getQualityScore(id)?.estimated_savings_bytes).toBe(450)
+  })
+
+  it('preserves media quality values when migrating legacy column names', () => {
+    const id = service.upsertMediaItem(makeMediaItem())
+    service.upsertQualityScore({ ...makeQualityScore(id, 300), video_savings_bytes: 200 })
+
+    testDb.exec(`
+      ALTER TABLE media_items RENAME COLUMN file_size_bytes TO file_size;
+      ALTER TABLE media_items RENAME COLUMN duration_ms TO duration;
+      ALTER TABLE media_items RENAME COLUMN video_bitrate_kbps TO video_bitrate;
+      ALTER TABLE media_items RENAME COLUMN audio_bitrate_kbps TO audio_bitrate;
+      ALTER TABLE media_item_versions RENAME COLUMN file_size_bytes TO file_size;
+      ALTER TABLE media_item_versions RENAME COLUMN duration_ms TO duration;
+      ALTER TABLE media_item_versions RENAME COLUMN video_bitrate_kbps TO video_bitrate;
+      ALTER TABLE media_item_versions RENAME COLUMN audio_bitrate_kbps TO audio_bitrate;
+      ALTER TABLE quality_scores RENAME COLUMN video_savings_bytes TO storage_debt_bytes;
+    `)
+
+    const migratedService = new BetterSQLiteService()
+    migratedService.initialize()
+
+    const item = migratedService.getMediaItem(id)
+    const score = migratedService.getQualityScore(id)
+    expect(item?.file_size_bytes).toBe(1_000_000)
+    expect(item?.duration_ms).toBe(7_200)
+    expect(item?.video_bitrate_kbps).toBe(5_000)
+    expect(item?.audio_bitrate_kbps).toBe(128)
+    expect(score?.video_savings_bytes).toBe(200)
+    expect(score?.estimated_savings_bytes).toBe(300)
+  })
+
   it('getMediaItem returns correct shape', () => {
     const id = service.upsertMediaItem(makeMediaItem({ year: 2020 }))
     const item = service.getMediaItem(id)
@@ -282,8 +424,8 @@ describe('BetterSQLiteService — Media Items', () => {
 
     const filters = { type: 'movie' as const, sourceId: 'src-1', searchQuery: 'Search Match' }
 
-    expect(service.getOptimizationMetrics(filters)).toEqual({ estimatedSavingsBytes: 640_000_000 })
-    expect(service.getOptimizationMetrics({ ...filters, sourceId: 'missing-source' })).toEqual({ estimatedSavingsBytes: null })
+    expect(service.getOptimizationMetrics(filters)).toEqual({ estimatedSavingsBytes: 640_000_000, coverage: 'complete' })
+    expect(service.getOptimizationMetrics({ ...filters, sourceId: 'missing-source' })).toEqual({ estimatedSavingsBytes: null, coverage: 'insufficient' })
   })
 
   it('sorts shows by their aggregate numeric estimated savings', () => {
@@ -306,6 +448,26 @@ describe('BetterSQLiteService — Media Items', () => {
 
     expect(shows.map(show => show.series_title)).toEqual(['Show A', 'Show B'])
     expect(shows.map(show => show.estimated_savings_bytes)).toEqual([1_300_000_000, 1_000_000_000])
+  })
+
+  it('does not sort shows by the removed video profile score', () => {
+    const highProfileId = service.upsertMediaItem(makeMediaItem({
+      plex_id: 'show-high', type: 'episode', series_title: 'High Profile', series_tmdb_id: 2001,
+    }))
+    const lowProfileId = service.upsertMediaItem(makeMediaItem({
+      plex_id: 'show-low', type: 'episode', series_title: 'Low Profile', series_tmdb_id: 2002,
+    }))
+    const unknownProfileId = service.upsertMediaItem(makeMediaItem({
+      plex_id: 'show-unknown', type: 'episode', series_title: 'Unknown Profile', series_tmdb_id: 2003,
+    }))
+    service.upsertQualityScores([
+      { ...makeQualityScore(highProfileId, null), tier_score: 84 },
+      { ...makeQualityScore(lowProfileId, null), tier_score: 62 },
+      { ...makeQualityScore(unknownProfileId, null), tier_score: null },
+    ])
+
+    const shows = service.getTVShows({ sortBy: 'title', sortOrder: 'asc' })
+    expect(shows.map(show => show.series_title)).toEqual(['High Profile', 'Low Profile', 'Unknown Profile'])
   })
 
   it('countMediaItems counts by source', () => {
@@ -358,8 +520,8 @@ describe('BetterSQLiteService — Media Items', () => {
       ;(service as any).db.prepare(`
         INSERT INTO media_items (
           source_id, source_type, library_id, plex_id, title, type,
-          file_path, file_size, duration, resolution, width, height,
-          video_codec, video_bitrate, audio_codec, audio_channels, audio_bitrate,
+          file_path, file_size_bytes, duration_ms, resolution, width, height,
+          video_codec, video_bitrate_kbps, audio_codec, audio_channels, audio_bitrate_kbps,
           series_title, series_identity_key
         ) VALUES (
           'src-1', 'plex', 'lib-1', 'bad-ep-1', 'Bad Episode', 'episode',
@@ -376,8 +538,8 @@ describe('BetterSQLiteService — Media Items', () => {
       ;(service as any).db.prepare(`
         INSERT INTO media_items (
           source_id, source_type, library_id, plex_id, title, type,
-          file_path, file_size, duration, resolution, width, height,
-          video_codec, video_bitrate, audio_codec, audio_channels, audio_bitrate,
+          file_path, file_size_bytes, duration_ms, resolution, width, height,
+          video_codec, video_bitrate_kbps, audio_codec, audio_channels, audio_bitrate_kbps,
           series_title, series_identity_key
         ) VALUES (
           'src-1', 'plex', 'lib-1', 'bad-ep-2', 'Bad Episode', 'episode',

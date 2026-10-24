@@ -14,12 +14,12 @@ interface MediaDetail {
   episode_number?: number
   resolution: string
   video_codec: string
-  video_bitrate: number
+  video_bitrate_kbps: number
   audio_codec: string
   audio_channels: number
-  audio_bitrate: number
-  file_size: number
-  duration: number
+  audio_bitrate_kbps: number
+  file_size_bytes: number
+  duration_ms: number
   poster_url?: string
   hdr_format?: string
   summary?: string
@@ -39,15 +39,15 @@ interface MediaVersion {
   label?: string
   resolution: string
   video_codec: string
-  video_bitrate: number
+  video_bitrate_kbps: number
   audio_codec: string
   audio_channels: number
-  audio_bitrate: number
-  file_size: number
+  audio_bitrate_kbps: number
+  file_size_bytes: number
   hdr_format?: string
   quality_tier?: string
   tier_quality?: string
-  tier_score?: number
+  tier_score?: number | null
   is_best?: boolean
 }
 
@@ -179,21 +179,20 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
   // Use active version stats if selected, otherwise media item
   const displayRes = activeVersion?.resolution ?? media.resolution
   const displayVCodec = activeVersion?.video_codec ?? media.video_codec
-  const displayVBitrate = activeVersion?.video_bitrate ?? media.video_bitrate
+  const displayVBitrate = activeVersion?.video_bitrate_kbps ?? media.video_bitrate_kbps
   const displayACodec = activeVersion?.audio_codec ?? media.audio_codec
   const displayACh = activeVersion?.audio_channels ?? media.audio_channels
-  const displayABitrate = activeVersion?.audio_bitrate ?? media.audio_bitrate
-  const displaySize = activeVersion?.file_size ?? media.file_size
+  const displayABitrate = activeVersion?.audio_bitrate_kbps ?? media.audio_bitrate_kbps
+  const displaySize = activeVersion?.file_size_bytes ?? media.file_size_bytes
   const displayHdr = activeVersion?.hdr_format ?? media.hdr_format
   const displayQuality = activeVersion?.quality_tier ?? quality?.quality_tier
   const displayTierQuality = activeVersion?.tier_quality ?? quality?.tier_quality
-  const displayScore = activeVersion?.tier_score ?? quality?.tier_score
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/60" onClick={onClose}>
       <div
         className={`absolute bottom-0 left-0 right-0 bg-card rounded-t-2xl flex flex-col ${
-          isDragging ? '' : 'transition-[height] duration-300 ease-out'
+          isDragging ? '' : 'transition-[height] duration_ms-300 ease-out'
         }`}
         style={{ height: `${sheetHeight}vh` }}
         onClick={(e) => e.stopPropagation()}
@@ -236,7 +235,7 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
                 )}
                 <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                   {media.year && <span className="text-xs text-muted-foreground">{media.year}</span>}
-                  {media.duration > 0 && <span className="text-xs text-muted-foreground">{formatDuration(media.duration)}</span>}
+                  {media.duration_ms > 0 && <span className="text-xs text-muted-foreground">{formatDuration(media.duration_ms)}</span>}
                   {media.tmdb_rating != null && media.tmdb_rating > 0 && (
                     <span className="text-xs text-yellow-400 flex items-center gap-0.5">
                       <Star className="w-3 h-3 fill-yellow-400" />
@@ -249,7 +248,6 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
                     <span className={`text-xs font-medium px-2 py-0.5 rounded ${getResolutionColors(displayQuality)}`}>
                       {displayQuality === 'UNKNOWN' ? 'Unknown' : displayQuality} · {displayTierQuality === 'UNKNOWN' ? 'Insufficient evidence' : displayTierQuality}
                     </span>
-                    {displayScore != null && displayTierQuality !== 'UNKNOWN' && <span className="text-xs text-muted-foreground">Score {displayScore}</span>}
                   </div>
                 )}
                 {/* Play count */}

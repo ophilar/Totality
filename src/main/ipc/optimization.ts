@@ -11,6 +11,7 @@ import {
 } from '@main/services/OptimizationDecisionService'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
+import { normalizeAudioCodec } from '@main/services/MediaNormalizer'
 
 const pendingRecord = z.object({
   requestedAt: z.string(),
@@ -24,7 +25,7 @@ async function getMediaItemAndSource(db: ReturnType<typeof getDatabase>, mediaIt
   if (!item || !item.file_path || !item.source_id) throw new Error('Media item has no local source path')
   const source = await db.sources.getSourceById(item.source_id)
   if (!source) throw new Error('Media source was not found')
-  return { item: item as typeof item & { file_path: string }, source }
+  return { item: item as typeof item & { id: number; file_path: string }, source }
 }
 
 function mapAnalysisAudioTracksToDecisionTracks(audioTracks: AnalyzedAudioStream[]): OptimizationDecisionAudioTrack[] {
@@ -32,10 +33,11 @@ function mapAnalysisAudioTracksToDecisionTracks(audioTracks: AnalyzedAudioStream
     index: track.index,
     language: track.language,
     title: track.title,
-    codec: track.codec,
+    codec: normalizeAudioCodec(track.codec, track.profile),
+    profile: track.profile,
     channels: track.channels,
     channelLayout: track.channelLayout,
-    bitrate: track.bitrate,
+    bitrateKbps: track.bitrateKbps,
     isDefault: track.isDefault,
     hasObjectAudio: track.hasObjectAudio,
     reliableTag: Boolean(track.language),
@@ -76,11 +78,12 @@ export function registerOptimizationHandlers() {
     const analysis = await getMediaFileAnalyzer().analyzeFile(item.file_path)
     if (!analysis.success) throw new Error(analysis.error || 'Fresh media analysis failed')
 
-    const savings = getQualityAnalyzer().getOptimizationSavingsBreakdown(item, analysis)
+    const qualityAnalyzer = getQualityAnalyzer()
+    await qualityAnalyzer.loadThresholdsFromDatabase()
+    const savings = qualityAnalyzer.getOptimizationSavingsBreakdown(item, analysis)
     return buildOptimizationDecision({
       originalLanguage: item.original_language,
-      durationSeconds: analysis.duration == null ? undefined : analysis.duration / 1000,
-      fileSize: analysis.fileSize || 0,
+      durationMs: analysis.durationMs || undefined,
       videoSavingsBytes: savings.videoSavingsBytes,
       audioTranscodeSavingsBytes: null,
       audioTracks: mapAnalysisAudioTracksToDecisionTracks(analysis.audioTracks),

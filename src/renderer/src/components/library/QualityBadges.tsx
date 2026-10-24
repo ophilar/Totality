@@ -25,9 +25,10 @@ export function formatHdrLabel(value?: string | null): string | undefined {
 export function QualityBadges({ item, whiteBg = false, showSavings = true }: QualityBadgesProps) {
   const badges: Array<{ label: string; coloredClass: string; icon?: LucideIcon }> = []
 
-  if (item.tier_quality === 'UNKNOWN') {
-    badges.push({ label: 'Quality unknown', coloredClass: 'bg-muted text-muted-foreground' })
-  }
+  badges.push({
+    label: item.tier_quality === 'UNKNOWN' ? 'Quality unknown' : `${item.tier_quality} quality`,
+    coloredClass: item.tier_quality === 'UNKNOWN' ? 'bg-muted text-muted-foreground' : 'bg-muted text-muted-foreground',
+  })
 
   // HDR badges - use same terminology as details page
   const hdrLabel = formatHdrLabel(item.hdr_format)
@@ -66,9 +67,9 @@ export function QualityBadges({ item, whiteBg = false, showSavings = true }: Qua
   return (
     <div className={`flex flex-wrap gap-1 ${whiteBg ? '' : 'mt-1'}`}>
       {showSavings && item.estimated_savings_bytes != null && (
-        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${whiteBg ? 'bg-foreground text-background border border-border' : 'bg-orange-600/90 text-white'}`} title="Estimated storage savings">
+        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${whiteBg ? 'bg-foreground text-background border border-border' : 'bg-orange-600/90 text-white'}`} title={`Estimated combined storage savings · ${item.savings_coverage ?? 'insufficient'} evidence`}>
           <HardDrive className="w-3 h-3" />
-          Est. savings <EstimatedSavingsDisplay bytes={item.estimated_savings_bytes} className={whiteBg ? 'text-background' : 'text-white'} />
+          Estimated savings <EstimatedSavingsDisplay bytes={item.estimated_savings_bytes} className={whiteBg ? 'text-background' : 'text-white'} /> · {item.savings_coverage ?? 'insufficient'}
         </span>
       )}
       {badges.map((badge, idx) => (

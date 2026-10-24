@@ -18,6 +18,7 @@ import { app } from 'electron'
 import { DATABASE_SCHEMA, PROVIDER_TYPES_SQL } from './schema'
 import { getCredentialEncryptionService } from '../services/CredentialEncryptionService'
 import { getErrorMessage } from '../services/utils/errorUtils'
+import { getVideoResolutionRank, getVideoResolutionTier } from '../services/VideoResolutionTier'
 import {
   PROVIDER_TYPES,
   type MediaItem,
@@ -160,6 +161,7 @@ export class BetterSQLiteService {
   public get media() {
     return {
       getItemById: (id: number) => this.getMediaItemById(id),
+      setSeriesOriginalLanguage: (tmdbId: string, language: string) => this.setSeriesOriginalLanguage(tmdbId, language),
       getItemByPath: (path: string) => this.getMediaItemByPath(path),
       updatePathAndStats: (id: number, filePath: string, analysis: any) => this.updatePathAndStats(id, filePath, analysis),
       getQualityScoreByMediaId: (id: number) => this.getQualityScore(id),
@@ -195,29 +197,29 @@ export class BetterSQLiteService {
     const resolution = analysis.video?.width && analysis.video?.height ? `${analysis.video.width}x${analysis.video.height}` : analysis.video?.resolution || 'unknown'
     const audioCodec = analysis.audioTracks?.[0]?.codec || 'unknown'
     const audioChannels = analysis.audioTracks?.[0]?.channels || 0
-    const audioBitrate = analysis.audioTracks?.[0]?.bitrate || 0
+    const audioBitrateKbps = analysis.audioTracks?.[0]?.bitrateKbps || 0
     const videoCodec = analysis.video?.codec || 'unknown'
-    const videoBitrate = analysis.video?.bitrate || 0
+    const videoBitrateKbps = analysis.video?.bitrateKbps || 0
     const width = analysis.video?.width || 0
     const height = analysis.video?.height || 0
-    const duration = analysis.duration || 0
-    const fileSize = analysis.fileSize || 0
+    const durationMs = analysis.durationMs || 0
+    const fileSizeBytes = analysis.fileSizeBytes || 0
     const deepAnalysis = analysis.success ? JSON.stringify({ ...analysis, filePath: newPath }) : null
     const audioTracks = analysis.audioTracks ? JSON.stringify(analysis.audioTracks) : null
 
     this.db.prepare(`
       UPDATE media_items SET
         file_path = ?,
-        file_size = ?,
-        duration = ?,
+        file_size_bytes = ?,
+        duration_ms = ?,
         resolution = ?,
         width = ?,
         height = ?,
         video_codec = ?,
-        video_bitrate = ?,
+        video_bitrate_kbps = ?,
         audio_codec = ?,
         audio_channels = ?,
-        audio_bitrate = ?,
+        audio_bitrate_kbps = ?,
         deep_analysis = COALESCE(?, deep_analysis),
         deep_analysis_at = CASE WHEN ? IS NOT NULL THEN datetime('now') ELSE deep_analysis_at END,
         audio_tracks = COALESCE(?, audio_tracks),
@@ -225,16 +227,16 @@ export class BetterSQLiteService {
       WHERE id = ?
     `).run(
       newPath,
-      fileSize,
-      duration,
+      fileSizeBytes,
+      durationMs,
       resolution,
       width,
       height,
       videoCodec,
-      videoBitrate,
+      videoBitrateKbps,
       audioCodec,
       audioChannels,
-      audioBitrate,
+      audioBitrateKbps,
       deepAnalysis,
       deepAnalysis,
       audioTracks,
@@ -253,7 +255,7 @@ export class BetterSQLiteService {
       throw new Error('seriesIdentityKey is required to retrieve episodes')
     }
     let sql = `SELECT m.*, q.overall_score, q.needs_upgrade, q.quality_tier, q.tier_quality, q.tier_score, q.issues,
-q.storage_debt_bytes, q.estimated_savings_bytes, q.evidence_status, q.confidence, q.savings_basis
+      q.video_savings_bytes, q.estimated_savings_bytes, q.savings_coverage, q.evidence_status, q.confidence, q.savings_basis
 FROM media_items m
 LEFT JOIN quality_scores q ON m.id = q.media_item_id
 WHERE m.type = 'episode' AND m.series_identity_key = ?`
@@ -334,6 +336,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
 
     // Execute main schema (CREATE TABLE IF NOT EXISTS)
     this.db.exec(DATABASE_SCHEMA)
+    this.renameMediaQualityColumns()
 
     // Run ALTER TABLE migrations for new columns
     const alterStatements = [
@@ -343,7 +346,8 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       'ALTER TABLE quality_scores ADD COLUMN tier_score INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE quality_scores ADD COLUMN bitrate_tier_score INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE quality_scores ADD COLUMN audio_tier_score INTEGER NOT NULL DEFAULT 0',
-      'ALTER TABLE quality_scores ADD COLUMN storage_debt_bytes INTEGER',
+      'ALTER TABLE quality_scores ADD COLUMN video_savings_bytes INTEGER',
+      'ALTER TABLE quality_scores ADD COLUMN savings_coverage TEXT',
       'ALTER TABLE quality_scores ADD COLUMN evidence_status TEXT',
       'ALTER TABLE quality_scores ADD COLUMN estimated_savings_bytes INTEGER',
       'ALTER TABLE quality_scores ADD COLUMN confidence TEXT',
@@ -364,6 +368,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       'ALTER TABLE media_items ADD COLUMN has_object_audio INTEGER DEFAULT 0',
       'ALTER TABLE media_items ADD COLUMN container TEXT',
       'ALTER TABLE media_items ADD COLUMN series_tmdb_id TEXT',
+      'ALTER TABLE media_items ADD COLUMN original_language TEXT',
       'ALTER TABLE media_items ADD COLUMN user_fixed_match INTEGER DEFAULT 0',
       'ALTER TABLE media_items ADD COLUMN audio_tracks TEXT',
       'ALTER TABLE media_items ADD COLUMN file_mtime INTEGER',
@@ -453,6 +458,79 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
           throw error
         }
       }
+    }
+
+    const db = this.db
+    const qualityScoreColumns = db.pragma('table_info(quality_scores)') as Array<{ name: string; notnull: number }>
+    const nullableQualityScoreColumns = ['tier_score', 'bitrate_tier_score', 'audio_tier_score', 'overall_score', 'resolution_score', 'bitrate_score', 'audio_score']
+    if (qualityScoreColumns.some(column => nullableQualityScoreColumns.includes(column.name) && column.notnull === 1)) {
+      const table = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'quality_scores'").get() as { sql: string }
+      let nextTableSql = table.sql.replace(/CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?quality_scores/i, 'CREATE TABLE quality_scores_new')
+      for (const column of nullableQualityScoreColumns) {
+        nextTableSql = nextTableSql.replace(new RegExp(`(^\\s*${column}\\s+INTEGER)\\s+NOT\\s+NULL(?:\\s+DEFAULT\\s+0)?`, 'gm'), '$1')
+      }
+      if (nextTableSql === table.sql) throw new Error('Could not prepare nullable quality score table migration')
+      db.pragma('foreign_keys = OFF')
+      db.exec('BEGIN TRANSACTION')
+      try {
+        db.exec(nextTableSql)
+        const existingColumns = db.pragma('table_info(quality_scores)') as Array<{ name: string }>
+        const nextColumns = db.pragma('table_info(quality_scores_new)') as Array<{ name: string }>
+        const nextColumnNames = new Set(nextColumns.map(column => column.name))
+        const columns = existingColumns.filter(column => nextColumnNames.has(column.name)).map(column => column.name).join(', ')
+        db.exec(`INSERT INTO quality_scores_new (${columns}) SELECT ${columns} FROM quality_scores`)
+        db.exec('DROP TABLE quality_scores')
+        db.exec('ALTER TABLE quality_scores_new RENAME TO quality_scores')
+        db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_quality_scores_needs_upgrade ON quality_scores(needs_upgrade) WHERE needs_upgrade = 1;
+          CREATE INDEX IF NOT EXISTS idx_quality_scores_tier ON quality_scores(quality_tier);
+          CREATE INDEX IF NOT EXISTS idx_quality_scores_tier_quality ON quality_scores(tier_quality);
+          CREATE INDEX IF NOT EXISTS idx_quality_scores_tier_both ON quality_scores(quality_tier, tier_quality);
+        `)
+        db.exec('COMMIT')
+      } catch (error) {
+        db.exec('ROLLBACK')
+        throw error
+      } finally {
+        db.pragma('foreign_keys = ON')
+      }
+    }
+
+    const savingsSemantics = db.prepare(
+      "SELECT value FROM settings WHERE key = 'optimization.savings_semantics_version'"
+    ).get() as { value: string } | undefined
+    if (savingsSemantics?.value !== '5') {
+      db.transaction(() => {
+        db.prepare(`UPDATE quality_scores SET
+          video_savings_bytes = NULL,
+          estimated_savings_bytes = NULL,
+          savings_coverage = NULL,
+          evidence_status = NULL,
+          confidence = NULL,
+          savings_basis = NULL,
+          tier_quality = 'UNKNOWN',
+          tier_score = NULL,
+          bitrate_tier_score = NULL,
+          audio_tier_score = NULL,
+          overall_score = NULL,
+          resolution_score = NULL,
+          bitrate_score = NULL,
+          audio_score = NULL,
+          is_low_quality = 0,
+          needs_upgrade = 0
+        `).run()
+        db.prepare(`UPDATE media_item_versions SET tier_quality = 'UNKNOWN', tier_score = NULL, bitrate_tier_score = NULL, audio_tier_score = NULL`).run()
+
+        db.prepare(`
+          INSERT INTO settings (key, value) VALUES ('optimization.savings_semantics_version', '5')
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        `).run()
+        db.prepare(`
+          INSERT INTO settings (key, value) VALUES ('optimization.savings_reanalysis_pending', 'true')
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        `).run()
+      })()
+      console.info('[BetterSQLite] Cleared proxy-derived quality and savings values for recalculation under the current evidence model')
     }
 
     // Migrate provider CHECK constraints using the canonical schema types.
@@ -721,6 +799,37 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     console.log('[BetterSQLite] Migrations completed')
   }
 
+  private renameMediaQualityColumns(): void {
+    if (!this.db) throw new Error('Database not initialized')
+
+    const renames = [
+      ['media_items', 'file_size', 'file_size_bytes'],
+      ['media_items', 'duration', 'duration_ms'],
+      ['media_items', 'video_bitrate', 'video_bitrate_kbps'],
+      ['media_items', 'audio_bitrate', 'audio_bitrate_kbps'],
+      ['media_item_versions', 'file_size', 'file_size_bytes'],
+      ['media_item_versions', 'duration', 'duration_ms'],
+      ['media_item_versions', 'video_bitrate', 'video_bitrate_kbps'],
+      ['media_item_versions', 'audio_bitrate', 'audio_bitrate_kbps'],
+      ['quality_scores', 'storage_debt_bytes', 'video_savings_bytes'],
+    ] as const
+
+    this.db.transaction(() => {
+      for (const [table, oldName, newName] of renames) {
+        const columns = this.db!.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+        const columnNames = new Set(columns.map(column => column.name))
+        if (columnNames.has(oldName) && columnNames.has(newName)) {
+          throw new Error(`Cannot rename ${table}.${oldName}: ${newName} already exists`)
+        }
+        if (columnNames.has(oldName)) {
+          this.db!.exec(`ALTER TABLE ${table} RENAME COLUMN ${oldName} TO ${newName}`)
+        } else if (!columnNames.has(newName)) {
+          throw new Error(`Cannot find ${table}.${oldName} or ${newName} during media quality migration`)
+        }
+      }
+    })()
+  }
+
   /**
    * Migrate existing media_items into media_item_versions (one version per item).
    * Only runs if versions table is empty but items exist.
@@ -739,18 +848,18 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
 
       this.db.exec(`
         INSERT INTO media_item_versions (
-          media_item_id, version_source, file_path, file_size, duration,
-          resolution, width, height, video_codec, video_bitrate,
-          audio_codec, audio_channels, audio_bitrate,
+          media_item_id, version_source, file_path, file_size_bytes, duration_ms,
+          resolution, width, height, video_codec, video_bitrate_kbps,
+          audio_codec, audio_channels, audio_bitrate_kbps,
           video_frame_rate, color_bit_depth, hdr_format, color_space,
           video_profile, video_level, audio_profile, audio_sample_rate,
           has_object_audio, audio_tracks, subtitle_tracks, container, file_mtime,
           is_best, created_at, updated_at
         )
         SELECT
-          id, 'primary', file_path, file_size, duration,
-          resolution, width, height, video_codec, video_bitrate,
-          audio_codec, audio_channels, audio_bitrate,
+          id, 'primary', file_path, file_size_bytes, duration_ms,
+          resolution, width, height, video_codec, video_bitrate_kbps,
+          audio_codec, audio_channels, audio_bitrate_kbps,
           video_frame_rate, color_bit_depth, hdr_format, color_space,
           video_profile, video_level, audio_profile, audio_sample_rate,
           has_object_audio, audio_tracks, subtitle_tracks, container, file_mtime,
@@ -987,11 +1096,11 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     totalShows: number
     lowQualityCount: number
     needsUpgradeCount: number
-    averageQualityScore: number
+    averageQualityScore: number | null
     movieNeedsUpgradeCount: number
-    movieAverageQualityScore: number
+    movieAverageQualityScore: number | null
     tvNeedsUpgradeCount: number
-    tvAverageQualityScore: number
+    tvAverageQualityScore: number | null
   } {
     if (!this.db) throw new Error('Database not initialized')
 
@@ -1006,11 +1115,11 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         COUNT(DISTINCT CASE WHEN m.type = 'episode' THEN m.series_title END) as totalShows,
         SUM(CASE WHEN q.is_low_quality = 1 THEN 1 ELSE 0 END) as lowQualityCount,
         SUM(CASE WHEN q.needs_upgrade = 1 THEN 1 ELSE 0 END) as needsUpgradeCount,
-        COALESCE(AVG(CASE WHEN q.tier_quality != 'UNKNOWN' THEN q.overall_score END), 0) as averageQualityScore,
+        AVG(CASE WHEN q.tier_quality != 'UNKNOWN' THEN q.overall_score END) as averageQualityScore,
         SUM(CASE WHEN m.type = 'movie' AND q.needs_upgrade = 1 THEN 1 ELSE 0 END) as movieNeedsUpgradeCount,
-        COALESCE(AVG(CASE WHEN m.type = 'movie' AND q.tier_quality != 'UNKNOWN' THEN q.overall_score END), 0) as movieAverageQualityScore,
+        AVG(CASE WHEN m.type = 'movie' AND q.tier_quality != 'UNKNOWN' THEN q.overall_score END) as movieAverageQualityScore,
         SUM(CASE WHEN m.type = 'episode' AND q.needs_upgrade = 1 THEN 1 ELSE 0 END) as tvNeedsUpgradeCount,
-        COALESCE(AVG(CASE WHEN m.type = 'episode' AND q.tier_quality != 'UNKNOWN' THEN q.overall_score END), 0) as tvAverageQualityScore
+        AVG(CASE WHEN m.type = 'episode' AND q.tier_quality != 'UNKNOWN' THEN q.overall_score END) as tvAverageQualityScore
       FROM media_items m
       LEFT JOIN quality_scores q ON m.id = q.media_item_id
       LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
@@ -1028,11 +1137,11 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         totalShows: 0,
         lowQualityCount: 0,
         needsUpgradeCount: 0,
-        averageQualityScore: 0,
+        averageQualityScore: null,
         movieNeedsUpgradeCount: 0,
-        movieAverageQualityScore: 0,
+        movieAverageQualityScore: null,
         tvNeedsUpgradeCount: 0,
-        tvAverageQualityScore: 0,
+        tvAverageQualityScore: null,
       }
     }
 
@@ -1043,11 +1152,11 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       totalShows: row.totalShows || 0,
       lowQualityCount: row.lowQualityCount || 0,
       needsUpgradeCount: row.needsUpgradeCount || 0,
-      averageQualityScore: Math.round(row.averageQualityScore || 0),
+      averageQualityScore: row.averageQualityScore == null ? null : Math.round(row.averageQualityScore),
       movieNeedsUpgradeCount: row.movieNeedsUpgradeCount || 0,
-      movieAverageQualityScore: Math.round(row.movieAverageQualityScore || 0),
+      movieAverageQualityScore: row.movieAverageQualityScore == null ? null : Math.round(row.movieAverageQualityScore),
       tvNeedsUpgradeCount: row.tvNeedsUpgradeCount || 0,
-      tvAverageQualityScore: Math.round(row.tvAverageQualityScore || 0),
+      tvAverageQualityScore: row.tvAverageQualityScore == null ? null : Math.round(row.tvAverageQualityScore),
     }
   }
 
@@ -1147,22 +1256,22 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     if (!this.db) throw new Error('Database not initialized')
 
     const totalRow = this.db.prepare(`
-      SELECT COUNT(*) as count, COALESCE(SUM(m.file_size), 0) as size
+      SELECT COUNT(*) as count, COALESCE(SUM(m.file_size_bytes), 0) as size
       FROM media_items m
       LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
       WHERE (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-        AND m.file_size > 0
+        AND m.file_size_bytes > 0
     `).get() as { count: number; size: number }
 
     const byCodec = this.db.prepare(`
       SELECT
         UPPER(COALESCE(m.video_codec, 'unknown')) as codec,
         COUNT(*) as count,
-        COALESCE(SUM(m.file_size), 0) as size
+        COALESCE(SUM(m.file_size_bytes), 0) as size
       FROM media_items m
       LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
       WHERE (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-        AND m.file_size > 0
+        AND m.file_size_bytes > 0
       GROUP BY UPPER(COALESCE(m.video_codec, 'unknown'))
       ORDER BY size DESC
     `).all() as Array<{ codec: string; count: number; size: number }>
@@ -1171,12 +1280,12 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       SELECT
         COALESCE(q.quality_tier, 'Unknown') as tier,
         COUNT(*) as count,
-        COALESCE(SUM(m.file_size), 0) as size
+        COALESCE(SUM(m.file_size_bytes), 0) as size
       FROM media_items m
       LEFT JOIN quality_scores q ON m.id = q.media_item_id
       LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
       WHERE (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-        AND m.file_size > 0
+        AND m.file_size_bytes > 0
       GROUP BY COALESCE(q.quality_tier, 'Unknown')
       ORDER BY CASE tier WHEN '4K' THEN 1 WHEN '1080p' THEN 2 WHEN '720p' THEN 3 WHEN 'SD' THEN 4 ELSE 5 END
     `).all() as Array<{ tier: string; count: number; size: number }>
@@ -1238,13 +1347,13 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       SELECT
         COUNT(DISTINCT v.media_item_id) as items_with_versions,
         COUNT(*) as total_versions,
-        COALESCE(SUM(CASE WHEN v.is_best = 0 THEN v.file_size ELSE 0 END), 0) as redundant_size,
+        COALESCE(SUM(CASE WHEN v.is_best = 0 THEN v.file_size_bytes ELSE 0 END), 0) as redundant_size,
         COUNT(CASE WHEN v.is_best = 0 THEN 1 END) as redundant_count
       FROM media_item_versions v
       JOIN media_items m ON v.media_item_id = m.id
       LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
       WHERE (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-        AND v.file_size > 0
+        AND v.file_size_bytes > 0
         AND (SELECT COUNT(*) FROM media_item_versions v2 WHERE v2.media_item_id = v.media_item_id) > 1
     `).get() as { items_with_versions: number; total_versions: number; redundant_size: number; redundant_count: number } | undefined
 
@@ -1291,14 +1400,14 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       overall_score: number | null
       resolution: string | null
       video_codec: string | null
-      file_size: number | null
+      file_size_bytes: number | null
     }>
   }> {
     if (!this.db) throw new Error('Database not initialized')
 
     const sql = `
       SELECT m.tmdb_id, m.title, m.year, m.type,
-             m.id, m.source_id, m.source_type, m.library_id, m.file_path, m.file_size,
+             m.id, m.source_id, m.source_type, m.library_id, m.file_path, m.file_size_bytes,
              m.resolution, m.video_codec,
              q.quality_tier, q.overall_score
       FROM media_items m
@@ -1317,7 +1426,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     const rows = this.db.prepare(sql).all() as Array<{
       tmdb_id: string; title: string; year: number | null; type: string
       id: number; source_id: string; source_type: string; library_id: string
-      file_path: string | null; file_size: number | null
+      file_path: string | null; file_size_bytes: number | null
       resolution: string | null; video_codec: string | null
       quality_tier: string | null; overall_score: number | null
     }>
@@ -1328,7 +1437,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         id: number; source_id: string; source_type: string; library_id: string
         file_path: string | null; quality_tier: string | null
         overall_score: number | null; resolution: string | null
-        video_codec: string | null; file_size: number | null
+        video_codec: string | null; file_size_bytes: number | null
       }>
     }>()
 
@@ -1352,7 +1461,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         overall_score: row.overall_score,
         resolution: row.resolution,
         video_codec: row.video_codec,
-        file_size: row.file_size,
+        file_size_bytes: row.file_size_bytes,
       })
     }
 
@@ -1552,7 +1661,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       SELECT m.*,
              q.overall_score, q.needs_upgrade,
              q.quality_tier, q.tier_quality, q.tier_score, q.issues,
-             q.storage_debt_bytes, q.estimated_savings_bytes, q.evidence_status, q.confidence, q.savings_basis
+             q.video_savings_bytes, q.estimated_savings_bytes, q.savings_coverage, q.evidence_status, q.confidence, q.savings_basis
       FROM media_items m
       LEFT JOIN quality_scores q ON m.id = q.media_item_id
       LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
@@ -1567,7 +1676,6 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       'last_watched_at': 'm.last_watched_at',
       'updated_at': 'm.updated_at',
       'created_at': 'm.created_at',
-      'tier_score': 'q.tier_score',
       'overall_score': 'q.overall_score',
       'tmdb_rating': 'm.tmdb_rating',
       'estimated_savings_bytes': 'q.estimated_savings_bytes'
@@ -1679,14 +1787,19 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
 
     const { whereClause, params } = this.buildMediaItemWhere(filters)
     const result = this.db.prepare(`
-      SELECT SUM(q.estimated_savings_bytes) AS estimatedSavingsBytes
+      SELECT SUM(q.estimated_savings_bytes) AS estimatedSavingsBytes,
+        COUNT(m.id) AS itemCount,
+        SUM(CASE WHEN q.estimated_savings_bytes IS NULL OR q.savings_coverage IS NULL OR q.savings_coverage != 'complete' THEN 1 ELSE 0 END) AS incompleteCount
       FROM media_items m
       LEFT JOIN quality_scores q ON m.id = q.media_item_id
       LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
       ${whereClause}
-    `).get(...params) as { estimatedSavingsBytes: number | null }
+    `).get(...params) as { estimatedSavingsBytes: number | null; itemCount: number; incompleteCount: number }
 
-    return { estimatedSavingsBytes: result.estimatedSavingsBytes }
+    const coverage = result.estimatedSavingsBytes == null || result.itemCount === 0
+      ? 'insufficient'
+      : result.incompleteCount > 0 ? 'partial' : 'complete'
+    return { estimatedSavingsBytes: result.estimatedSavingsBytes, coverage }
   }
 
   private buildMediaItemWhere(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): { whereClause: string; params: unknown[] } {
@@ -1771,19 +1884,19 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     const stmt = this.db.prepare(`
       INSERT INTO media_items (
         source_id, source_type, library_id, plex_id, title, sort_title, year, type,
-        series_title, series_identity_key, season_number, episode_number, file_path, file_size,
-        duration, resolution, width, height, video_codec, video_bitrate,
-        audio_codec, audio_channels, audio_bitrate, video_frame_rate,
+        series_title, series_identity_key, season_number, episode_number, file_path, file_size_bytes,
+        duration_ms, resolution, width, height, video_codec, video_bitrate_kbps,
+        audio_codec, audio_channels, audio_bitrate_kbps, video_frame_rate,
         color_bit_depth, hdr_format, color_space, video_profile, video_level,
         audio_profile, audio_sample_rate, has_object_audio, audio_tracks,
         subtitle_tracks,
-        container, file_mtime, imdb_id, tmdb_id, series_tmdb_id, poster_url,
+        container, file_mtime, imdb_id, tmdb_id, series_tmdb_id, original_language, poster_url,
         episode_thumb_url, season_poster_url, summary, tmdb_rating, user_fixed_match,
         play_count, last_watched_at,
         created_at, updated_at
       ) VALUES (
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now')
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now')
       )
       ON CONFLICT(source_id, plex_id) DO UPDATE SET
         library_id = excluded.library_id,
@@ -1796,16 +1909,16 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         season_number = excluded.season_number,
         episode_number = excluded.episode_number,
         file_path = excluded.file_path,
-        file_size = excluded.file_size,
-        duration = excluded.duration,
+        file_size_bytes = excluded.file_size_bytes,
+        duration_ms = excluded.duration_ms,
         resolution = excluded.resolution,
         width = excluded.width,
         height = excluded.height,
         video_codec = excluded.video_codec,
-        video_bitrate = excluded.video_bitrate,
+        video_bitrate_kbps = excluded.video_bitrate_kbps,
         audio_codec = excluded.audio_codec,
         audio_channels = excluded.audio_channels,
-        audio_bitrate = excluded.audio_bitrate,
+        audio_bitrate_kbps = excluded.audio_bitrate_kbps,
         video_frame_rate = excluded.video_frame_rate,
         color_bit_depth = excluded.color_bit_depth,
         hdr_format = excluded.hdr_format,
@@ -1822,6 +1935,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         imdb_id = COALESCE(excluded.imdb_id, media_items.imdb_id),
         tmdb_id = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.tmdb_id ELSE COALESCE(excluded.tmdb_id, media_items.tmdb_id) END,
         series_tmdb_id = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.series_tmdb_id ELSE COALESCE(excluded.series_tmdb_id, media_items.series_tmdb_id) END,
+        original_language = COALESCE(excluded.original_language, media_items.original_language),
         poster_url = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.poster_url ELSE COALESCE(excluded.poster_url, media_items.poster_url) END,
         episode_thumb_url = COALESCE(excluded.episode_thumb_url, media_items.episode_thumb_url),
         season_poster_url = COALESCE(excluded.season_poster_url, media_items.season_poster_url),
@@ -1848,16 +1962,16 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       item.season_number || null,
       item.episode_number || null,
       item.file_path,
-      item.file_size,
-      item.duration,
+      item.file_size_bytes,
+      item.duration_ms,
       item.resolution,
       item.width,
       item.height,
       item.video_codec,
-      item.video_bitrate,
+      item.video_bitrate_kbps,
       item.audio_codec,
       item.audio_channels,
-      item.audio_bitrate,
+      item.audio_bitrate_kbps,
       item.video_frame_rate || null,
       item.color_bit_depth || null,
       item.hdr_format || null,
@@ -1874,6 +1988,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       item.imdb_id || null,
       item.tmdb_id || null,
       item.series_tmdb_id || null,
+      item.original_language || null,
       item.poster_url || null,
       item.episode_thumb_url || null,
       item.season_poster_url || null,
@@ -2331,9 +2446,9 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     const stmt = this.db.prepare(`
       INSERT INTO media_item_versions (
         media_item_id, version_source, edition, label,
-        file_path, file_size, duration,
-        resolution, width, height, video_codec, video_bitrate,
-        audio_codec, audio_channels, audio_bitrate,
+        file_path, file_size_bytes, duration_ms,
+        resolution, width, height, video_codec, video_bitrate_kbps,
+        audio_codec, audio_channels, audio_bitrate_kbps,
         video_frame_rate, color_bit_depth, hdr_format, color_space,
         video_profile, video_level, audio_profile, audio_sample_rate,
         has_object_audio, audio_tracks, subtitle_tracks, container, file_mtime,
@@ -2345,16 +2460,16 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         version_source = excluded.version_source,
         edition = excluded.edition,
         label = excluded.label,
-        file_size = excluded.file_size,
-        duration = excluded.duration,
+        file_size_bytes = excluded.file_size_bytes,
+        duration_ms = excluded.duration_ms,
         resolution = excluded.resolution,
         width = excluded.width,
         height = excluded.height,
         video_codec = excluded.video_codec,
-        video_bitrate = excluded.video_bitrate,
+        video_bitrate_kbps = excluded.video_bitrate_kbps,
         audio_codec = excluded.audio_codec,
         audio_channels = excluded.audio_channels,
-        audio_bitrate = excluded.audio_bitrate,
+        audio_bitrate_kbps = excluded.audio_bitrate_kbps,
         video_frame_rate = excluded.video_frame_rate,
         color_bit_depth = excluded.color_bit_depth,
         hdr_format = excluded.hdr_format,
@@ -2381,16 +2496,16 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       version.edition || null,
       version.label || null,
       version.file_path,
-      version.file_size,
-      version.duration,
+      version.file_size_bytes,
+      version.duration_ms,
       version.resolution,
       version.width,
       version.height,
       version.video_codec,
-      version.video_bitrate,
+      version.video_bitrate_kbps,
       version.audio_codec,
       version.audio_channels,
-      version.audio_bitrate,
+      version.audio_bitrate_kbps,
       version.video_frame_rate || null,
       version.color_bit_depth || null,
       version.hdr_format || null,
@@ -2406,7 +2521,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       version.file_mtime || null,
       version.quality_tier || null,
       version.tier_quality || null,
-      version.tier_score || 0,
+      version.tier_score ?? null,
       version.is_best ? 1 : 0
     )
 
@@ -2424,7 +2539,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     if (!this.db) throw new Error('Database not initialized')
 
     const rows = this.db.prepare(
-      'SELECT * FROM media_item_versions WHERE media_item_id = ? ORDER BY is_best DESC, tier_score DESC'
+      'SELECT * FROM media_item_versions WHERE media_item_id = ? ORDER BY is_best DESC, id ASC'
     ).all(mediaItemId) as Record<string, unknown>[]
 
     return rows.map(row => ({
@@ -2434,16 +2549,16 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       edition: row.edition as string | undefined,
       label: row.label as string | undefined,
       file_path: row.file_path as string,
-      file_size: row.file_size as number,
-      duration: row.duration as number,
+      file_size_bytes: row.file_size_bytes as number,
+      duration_ms: row.duration_ms as number,
       resolution: row.resolution as string,
       width: row.width as number,
       height: row.height as number,
       video_codec: row.video_codec as string,
-      video_bitrate: row.video_bitrate as number,
+      video_bitrate_kbps: row.video_bitrate_kbps as number,
       audio_codec: row.audio_codec as string,
       audio_channels: row.audio_channels as number,
-      audio_bitrate: row.audio_bitrate as number,
+      audio_bitrate_kbps: row.audio_bitrate_kbps as number,
       video_frame_rate: row.video_frame_rate as number | undefined,
       color_bit_depth: row.color_bit_depth as number | undefined,
       hdr_format: row.hdr_format as string | undefined,
@@ -2458,7 +2573,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       container: row.container as string | undefined,
       file_mtime: row.file_mtime as number | undefined,
       quality_tier: row.quality_tier as string | undefined,
-      tier_quality: row.tier_quality as string | undefined,
+      tier_quality: row.tier_quality as MediaItemVersion['tier_quality'],
       tier_score: row.tier_score as number | undefined,
       is_best: !!(row.is_best as number),
       created_at: row.created_at as string,
@@ -2469,7 +2584,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   /**
    * Update only the quality scoring fields on a version row.
    */
-  updateMediaItemVersionQuality(versionId: number, scores: { quality_tier: string; tier_quality: string; tier_score: number; bitrate_tier_score: number; audio_tier_score: number }): void {
+  updateMediaItemVersionQuality(versionId: number, scores: { quality_tier: string; tier_quality: string; tier_score: number | null; bitrate_tier_score: number | null; audio_tier_score: number | null }): void {
     if (!this.db) throw new Error('Database not initialized')
     this.db.prepare(
       `UPDATE media_item_versions SET quality_tier = ?, tier_quality = ?, tier_score = ?, bitrate_tier_score = ?, audio_tier_score = ?, updated_at = datetime('now') WHERE id = ?`
@@ -2491,6 +2606,9 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   syncMediaItemVersions(mediaItemId: number, versions: MediaItemVersion[]): void {
     if (!this.db) throw new Error('Database not initialized')
 
+    const selectedFilePath = (this.db.prepare(
+      'SELECT file_path FROM media_item_versions WHERE media_item_id = ? AND is_best = 1 ORDER BY id LIMIT 1'
+    ).get(mediaItemId) as { file_path: string } | undefined)?.file_path
     const currentFilePaths = versions.map(v => v.file_path).filter(Boolean)
 
     if (currentFilePaths.length > 0) {
@@ -2503,7 +2621,10 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     }
 
     for (const version of versions) {
-      this.upsertMediaItemVersion(version)
+      this.upsertMediaItemVersion({
+        ...version,
+        is_best: version.is_best || version.file_path === selectedFilePath,
+      })
     }
 
     this.updateBestVersion(mediaItemId)
@@ -2519,40 +2640,35 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     const versions = this.getMediaItemVersions(mediaItemId)
     if (versions.length === 0) return
 
-    // Rank versions: 4K=4, 1080p=3, 720p=2, SD=1, then by tier_score
-    const tierRank = (tier?: string): number => {
-      switch (tier) {
-        case '4K': return 4
-        case '1080p': return 3
-        case '720p': return 2
-        default: return 1
-      }
-    }
-
-    // Sort by tier rank desc, then tier_score desc
-    const sorted = [...versions].sort((a, b) => {
-      const rankDiff = tierRank(b.quality_tier) - tierRank(a.quality_tier)
-      if (rankDiff !== 0) return rankDiff
-      return (b.tier_score || 0) - (a.tier_score || 0)
-    })
-
-    const best = sorted[0]
+    // Resolution is the only available objective source-quality ranking.
+    const rankedVersions = versions.map(version => ({
+      version,
+      rank: getVideoResolutionRank(version.quality_tier === 'UNKNOWN' ? null : version.quality_tier)
+        ?? getVideoResolutionRank(getVideoResolutionTier(version.resolution, version.height)),
+    })).filter((entry): entry is { version: MediaItemVersion; rank: number } => entry.rank !== null)
+    const highestTierRank = Math.max(...rankedVersions.map(entry => entry.rank))
+    const topVersions = rankedVersions
+      .filter(entry => entry.rank === highestTierRank)
+      .map(entry => entry.version)
+    const best = topVersions.length === 1
+      ? topVersions[0]
+      : topVersions.find(version => version.is_best)
 
     // Wrap in transaction to ensure consistency across the 3 related updates
     const updateBest = this.db.transaction(() => {
       // Clear all is_best flags, then set the best one
       this.db!.prepare('UPDATE media_item_versions SET is_best = 0 WHERE media_item_id = ?').run(mediaItemId)
-      if (best.id) {
+      if (best?.id) {
         this.db!.prepare('UPDATE media_item_versions SET is_best = 1 WHERE id = ?').run(best.id)
       }
 
       // Sync best version's file/quality fields to parent media_item
-      this.db!.prepare(`
+      if (best) this.db!.prepare(`
         UPDATE media_items SET
-          file_path = ?, file_size = ?, duration = ?,
+          file_path = ?, file_size_bytes = ?, duration_ms = ?,
           resolution = ?, width = ?, height = ?,
-          video_codec = ?, video_bitrate = ?,
-          audio_codec = ?, audio_channels = ?, audio_bitrate = ?,
+          video_codec = ?, video_bitrate_kbps = ?,
+          audio_codec = ?, audio_channels = ?, audio_bitrate_kbps = ?,
           video_frame_rate = ?, color_bit_depth = ?, hdr_format = ?, color_space = ?,
           video_profile = ?, video_level = ?,
           audio_profile = ?, audio_sample_rate = ?, has_object_audio = ?,
@@ -2561,10 +2677,10 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
           updated_at = datetime('now')
         WHERE id = ?
       `).run(
-        best.file_path, best.file_size, best.duration,
+        best.file_path, best.file_size_bytes, best.duration_ms,
         best.resolution, best.width, best.height,
-        best.video_codec, best.video_bitrate,
-        best.audio_codec, best.audio_channels, best.audio_bitrate,
+        best.video_codec, best.video_bitrate_kbps,
+        best.audio_codec, best.audio_channels, best.audio_bitrate_kbps,
         best.video_frame_rate || null, best.color_bit_depth || null,
         best.hdr_format || null, best.color_space || null,
         best.video_profile || null, best.video_level || null,
@@ -2575,6 +2691,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         versions.length,
         mediaItemId
       )
+      else this.db!.prepare("UPDATE media_items SET version_count = ?, updated_at = datetime('now') WHERE id = ?").run(versions.length, mediaItemId)
     })
     updateBest()
   }
@@ -2617,21 +2734,21 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     const stmt = this.db.prepare(`
       INSERT INTO quality_scores (
         media_item_id, quality_tier, tier_quality, tier_score,
-        bitrate_tier_score, audio_tier_score, storage_debt_bytes, overall_score,
+        bitrate_tier_score, audio_tier_score, video_savings_bytes, overall_score,
         resolution_score, bitrate_score, audio_score,
         is_low_quality, needs_upgrade, issues,
         previous_quality_tier, upgraded_at,
         evidence_status,
-        estimated_savings_bytes, confidence, savings_basis,
+        estimated_savings_bytes, savings_coverage, confidence, savings_basis,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       ON CONFLICT(media_item_id) DO UPDATE SET
         quality_tier = excluded.quality_tier,
         tier_quality = excluded.tier_quality,
         tier_score = excluded.tier_score,
         bitrate_tier_score = excluded.bitrate_tier_score,
         audio_tier_score = excluded.audio_tier_score,
-        storage_debt_bytes = excluded.storage_debt_bytes,
+        video_savings_bytes = excluded.video_savings_bytes,
         overall_score = excluded.overall_score,
         resolution_score = excluded.resolution_score,
         bitrate_score = excluded.bitrate_score,
@@ -2643,6 +2760,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         upgraded_at = excluded.upgraded_at,
         evidence_status = excluded.evidence_status,
         estimated_savings_bytes = excluded.estimated_savings_bytes,
+        savings_coverage = excluded.savings_coverage,
         confidence = excluded.confidence,
         savings_basis = excluded.savings_basis,
         updated_at = datetime('now')
@@ -2655,7 +2773,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       score.tier_score,
       score.bitrate_tier_score,
       score.audio_tier_score,
-      score.storage_debt_bytes ?? null,
+      score.video_savings_bytes ?? null,
       score.overall_score,
       score.resolution_score,
       score.bitrate_score,
@@ -2667,6 +2785,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       upgradedAt,
       score.evidence_status ?? null,
       score.estimated_savings_bytes ?? null,
+      score.savings_coverage,
       score.confidence ?? null,
       score.savings_basis ?? null
     )
@@ -4188,7 +4307,12 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         COALESCE(m.series_identity_key, MIN(m.series_identity_key)) as series_identity_key,
         COALESCE(SUM(m.play_count), 0) as total_play_count,
         MAX(m.last_watched_at) as last_watched_at,
-        SUM(q.estimated_savings_bytes) as estimated_savings_bytes
+        SUM(q.estimated_savings_bytes) as estimated_savings_bytes,
+        CASE
+          WHEN COUNT(q.estimated_savings_bytes) = 0 THEN 'insufficient'
+          WHEN SUM(CASE WHEN q.estimated_savings_bytes IS NULL OR q.savings_coverage IS NULL OR q.savings_coverage != 'complete' THEN 1 ELSE 0 END) > 0 THEN 'partial'
+          ELSE 'complete'
+        END as savings_coverage
       FROM media_items m
       LEFT JOIN quality_scores q ON q.media_item_id = m.id
       WHERE m.type = 'episode'
@@ -5400,6 +5524,16 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     return this.getMediaItem(id)
   }
 
+  setSeriesOriginalLanguage(tmdbId: string, language: string): void {
+    if (!this.db) throw new Error('Database not initialized')
+    this.db.prepare(`
+      UPDATE media_items
+      SET original_language = ?, updated_at = datetime('now')
+      WHERE type = 'episode' AND series_tmdb_id = ?
+        AND (original_language IS NULL OR original_language = '')
+    `).run(language, tmdbId)
+  }
+
   /**
    * Update series match (TMDB ID) for all episodes of a series
    */
@@ -5409,7 +5543,8 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     libraryId: string | null | undefined,
     tmdbId: string,
     posterUrl?: string,
-    newSeriesTitle?: string
+    newSeriesTitle?: string,
+    originalLanguage?: string
   ): number {
     if (!this.db) throw new Error('Database not initialized')
     if (!seriesIdentityKey || seriesIdentityKey.trim() === '') {
@@ -5429,6 +5564,11 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       // 1. Update media_items strictly matching series_identity_key, source_id, and library_id
       const params: unknown[] = [tmdbId, newIdentityKey, 1]
       let sql = 'UPDATE media_items SET series_tmdb_id = ?, series_identity_key = ?, user_fixed_match = ?'
+
+      if (originalLanguage) {
+        sql += ', original_language = ?'
+        params.push(originalLanguage)
+      }
 
       if (posterUrl) {
         sql += ', poster_url = ?'
@@ -5517,7 +5657,8 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     tmdbId: string,
     posterUrl?: string,
     title?: string,
-    year?: number
+    year?: number,
+    originalLanguage?: string
   ): void {
     if (!this.db) throw new Error('Database not initialized')
 
@@ -5535,6 +5676,10 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     if (year !== undefined) {
       sql += ', year = ?'
       params.push(year)
+    }
+    if (originalLanguage) {
+      sql += ', original_language = ?'
+      params.push(originalLanguage)
     }
 
     sql += " WHERE id = ? AND type = 'movie'"
@@ -5566,11 +5711,11 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   /**
    * Update movie TMDB ID (automatic lookup, not user-initiated)
    */
-  updateMovieWithTMDBId(mediaItemId: number, tmdbId: string): void {
+  updateMovieWithTMDBId(mediaItemId: number, tmdbId: string, originalLanguage?: string): void {
     if (!this.db) throw new Error('Database not initialized')
     this.db.prepare(
-      "UPDATE media_items SET tmdb_id = ? WHERE id = ? AND type = 'movie'"
-    ).run(tmdbId, mediaItemId)
+      "UPDATE media_items SET tmdb_id = ?, original_language = COALESCE(?, original_language) WHERE id = ? AND type = 'movie'"
+    ).run(tmdbId, originalLanguage ?? null, mediaItemId)
   }
 
   /**
@@ -5721,8 +5866,8 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     if (options.includeUpgrades) {
       const rows = this.db.prepare(`
         SELECT mi.title, mi.year, mi.type, mi.series_title, mi.season_number, mi.episode_number,
-          qs.quality_tier, qs.tier_score, mi.resolution, mi.video_bitrate, mi.audio_channels,
-          mi.video_codec, mi.audio_codec, mi.file_size, mi.tmdb_id, mi.imdb_id, mi.file_path,
+          qs.quality_tier, qs.tier_score, mi.resolution, mi.video_bitrate_kbps, mi.audio_channels,
+          mi.video_codec, mi.audio_codec, mi.file_size_bytes, mi.tmdb_id, mi.imdb_id, mi.file_path,
           ms.display_name as source_name
         FROM media_items mi
         JOIN quality_scores qs ON qs.media_item_id = mi.id
@@ -5737,12 +5882,12 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         const csvRows = rows.map(r => {
           const currentIdx = tierOrder.indexOf(r.quality_tier as string)
           const targetTier = currentIdx < tierOrder.length - 1 ? tierOrder[currentIdx + 1] : r.quality_tier
-          const fileSizeMB = r.file_size ? Math.round((r.file_size as number) / 1048576) : ''
+          const fileSizeMB = r.file_size_bytes ? Math.round((r.file_size_bytes as number) / 1048576) : ''
           return [
             esc(r.title), r.year || '', r.type || '',
             esc(r.series_title), r.season_number ?? '', r.episode_number ?? '',
             r.quality_tier || '', targetTier, r.tier_score ?? '', r.resolution || '',
-            r.video_bitrate || '', r.audio_channels || '', r.video_codec || '', r.audio_codec || '',
+            r.video_bitrate_kbps || '', r.audio_channels || '', r.video_codec || '', r.audio_codec || '',
             fileSizeMB, esc(r.source_name), r.tmdb_id || '', r.imdb_id || '', esc(r.file_path),
           ].join(',')
         })

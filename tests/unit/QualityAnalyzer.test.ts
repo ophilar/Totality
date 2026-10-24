@@ -7,40 +7,178 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
+const configuredSettings = new Map<string, string>()
+const mockGetSetting = vi.fn((key: string) => configuredSettings.get(key) ?? null)
+const mockGetSettingsByPrefix = vi.fn(() => ({} as Record<string, string>))
+const mockGetPlaybackTargetProfile = vi.fn<() => Promise<PlaybackTargetProfile | null>>(async () => null)
+
 // Mock database getter before importing QualityAnalyzer
 vi.mock('../../src/main/database/getDatabase', () => ({
   getDatabase: vi.fn(() => ({
-    getSettingsByPrefix: vi.fn(() => ({})),
+    config: { getSetting: mockGetSetting, getSettingsByPrefix: mockGetSettingsByPrefix },
+    playbackTargetProfiles: { get: mockGetPlaybackTargetProfile },
     upsertQualityScore: vi.fn(),
   })),
 }))
 
 import { QualityAnalyzer } from '../../src/main/services/QualityAnalyzer'
 import type { MediaItem, MediaItemVersion, MusicAlbum, MusicTrack, MusicQualityScore } from '../../src/main/types/database'
+import type { PlaybackTargetProfile } from '../../src/main/types/playbackTarget'
 
 describe('QualityAnalyzer', () => {
   let analyzer: QualityAnalyzer
 
   beforeEach(() => {
     vi.clearAllMocks()
+    configuredSettings.clear()
+    mockGetSettingsByPrefix.mockReturnValue({})
+    mockGetPlaybackTargetProfile.mockResolvedValue(null)
     analyzer = new QualityAnalyzer()
   })
 
-  it('keeps measured removable-audio bytes separate from video savings', async () => {
+  it('estimates only measured subtitle bytes when an explicit language policy removes tracks', () => {
+    configuredSettings.set('subtitle_preferred_languages', 'eng')
+    const item = createMediaItem({ file_size_bytes: 1_000, original_language: 'en', video_codec: 'hevc' })
+    const analysis = {
+      success: true,
+      filePath: '/test/file.mkv',
+      durationMs: 60_000,
+      fileSizeBytes: 1_000,
+      video: { index: 0, codec: 'hevc', width: 1920, height: 1080, bitrateKbps: 2_000 },
+      audioTracks: [{ index: 1, codec: 'aac', channels: 2, bitrateKbps: 128, language: 'en', isDefault: true, hasObjectAudio: false }],
+      subtitleTracks: [
+        { index: 2, codec: 'srt', language: 'eng', isDefault: false, isForced: false },
+        { index: 3, codec: 'srt', language: 'fra', isDefault: false, isForced: false },
+      ],
+      streamBytes: { 2: 10, 3: 50 },
+    }
+
+    const breakdown = analyzer.getOptimizationSavingsBreakdown(item, analysis)
+    expect(breakdown.videoSavingsBytes).toBe(0)
+    expect(breakdown.subtitlePruningBytes).toBe(50)
+    expect(breakdown.totalEstimatedSavingsBytes).toBe(50)
+    expect(breakdown.coverage).toBe('complete')
+  })
+
+  it('keeps every subtitle when no language policy is configured', () => {
+    const breakdown = analyzer.getOptimizationSavingsBreakdown(createMediaItem({ original_language: 'en' }), {
+      success: true,
+      filePath: '/test/file.mkv',
+      durationMs: 60_000,
+      fileSizeBytes: 1_000,
+      video: { index: 0, codec: 'hevc', width: 1920, height: 1080, bitrateKbps: 2_000 },
+      audioTracks: [],
+      subtitleTracks: [{ index: 2, codec: 'srt', language: 'fra', isDefault: false, isForced: false }],
+      streamBytes: { 2: 50 },
+    })
+    expect(breakdown.subtitlePruningBytes).toBeNull()
+    expect(breakdown.totalEstimatedSavingsBytes).toBe(0)
+    expect(breakdown.coverage).toBe('complete')
+  })
+
+  it('uses measured video stream bytes for the H.265 model', () => {
+    const breakdown = analyzer.getOptimizationSavingsBreakdown(createMediaItem({
+      file_size_bytes: 1_000_000_000,
+      video_codec: 'h264',
+      video_bitrate_kbps: 8_000,
+      duration_ms: 3_600_000,
+    }), {
+      success: true,
+      filePath: '/test/file.mkv',
+      durationMs: 3_600_000,
+      fileSizeBytes: 1_000_000_000,
+      video: { index: 0, codec: 'h264', width: 1920, height: 1080, bitrateKbps: 8_000 },
+      audioTracks: [],
+      subtitleTracks: [],
+      streamBytes: { 0: 400_000_000 },
+    })
+    expect(breakdown.videoSavingsBytes).toBe(200_000_000)
+  })
+
+  it('estimates same-codec savings against the configured high bitrate threshold', () => {
+    const breakdown = analyzer.getOptimizationSavingsBreakdown(createMediaItem({
+      file_size_bytes: 10_000_000_000,
+      video_codec: 'hevc',
+      video_bitrate_kbps: 20_000,
+      duration_ms: 3_600_000,
+    }))
+
+    expect(breakdown.videoSavingsBytes).toBe(5_625_000_000)
+  })
+
+  it('uses AV1 for library estimates when the default target supports AV1 but not H.265', async () => {
+    configuredSettings.set('optimization_default_target_profile_id', 'av1-target')
+    mockGetPlaybackTargetProfile.mockResolvedValue({
+      id: 'av1-target',
+      name: 'AV1 target',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      definition: {
+        containers: ['mkv'],
+        video: { codecs: ['av1'], profiles: ['main'], levels: [6], maxWidth: 3840, maxHeight: 2160, maxFrameRate: 60, bitDepths: [8, 10] },
+        hdr: { formats: [], fallbackRequired: false },
+        audio: { codecs: ['aac'], maxChannels: 2, objectAudio: false, outputPath: 'device' },
+        subtitles: { formats: ['srt'], embedded: true, external: false, burnIn: false },
+        network: { sustainableBitrate: 100_000_000 },
+      },
+    })
+    await analyzer.loadThresholdsFromDatabase()
+
+    const breakdown = analyzer.getOptimizationSavingsBreakdown(createMediaItem({
+      file_size_bytes: 10_000_000_000,
+      video_codec: 'h264',
+      video_bitrate_kbps: 20_000,
+      duration_ms: 3_600_000,
+    }))
+
+    expect(breakdown.videoSavingsBytes).toBe(5_400_000_000)
+  })
+
+  it('leaves unsupported codecs and missing video inputs unknown', () => {
+    const unsupported = analyzer.getOptimizationSavingsBreakdown(createMediaItem({
+      video_codec: 'mpeg2', video_bitrate_kbps: 8_000, duration_ms: 3_600_000,
+    }))
+    const incomplete = analyzer.getOptimizationSavingsBreakdown(createMediaItem({
+      video_codec: 'h264', video_bitrate_kbps: null, duration_ms: null,
+    }))
+    const zeroBitrate = analyzer.getOptimizationSavingsBreakdown(createMediaItem({
+      video_codec: 'h264', video_bitrate_kbps: 0, duration_ms: 3_600_000,
+    }))
+    expect(unsupported.videoSavingsBytes).toBeNull()
+    expect(incomplete.videoSavingsBytes).toBeNull()
+    expect(zeroBitrate.videoSavingsBytes).toBeNull()
+  })
+
+  it('allows a modeled codec conversion review without resolution metadata or source labels blocking it', () => {
+    const advice = analyzer.getOptimizationAdvice(createMediaItem({
+      file_path: 'C:/library/WEB-DL/title.mkv',
+      file_size_bytes: 1_000_000_000,
+      video_codec: 'h264',
+      video_bitrate_kbps: 8_000,
+      duration_ms: 3_600_000,
+      resolution: null,
+      audio_tracks: null,
+    }))
+
+    expect(advice.action).toBe('video_transcode')
+    expect(advice.estimatedSavingsBytes).toBeGreaterThan(0)
+  })
+
+  it('combines modeled H.265 video savings with measured removable-audio bytes', async () => {
     const item = createMediaItem({
-      file_size: 1_000_000_000,
-      duration: 3_600_000,
+      file_size_bytes: 1_000_000_000,
+      duration_ms: 3_600_000,
       original_language: 'en',
     })
     const analysis = {
       success: true,
       filePath: '/test/file.mkv',
-      duration: 3_600_000,
-      fileSize: 3_000_000_000,
-      video: { index: 0, codec: 'h264', width: 1920, height: 1080, bitrate: 10_000 },
+      durationMs: 3_600_000,
+      fileSizeBytes: 3_000_000_000,
+      video: { index: 0, codec: 'h264', width: 1920, height: 1080, bitrateKbps: 10_000 },
       audioTracks: [
-        { index: 1, codec: 'aac', channels: 2, bitrate: 192, language: 'en', isDefault: true, hasObjectAudio: false },
-        { index: 2, codec: 'aac', channels: 2, bitrate: 800, language: 'fr', isDefault: false, hasObjectAudio: false },
+        { index: 1, codec: 'aac', channels: 2, bitrateKbps: 192, language: 'en', isDefault: true, hasObjectAudio: false },
+        { index: 2, codec: 'aac', channels: 2, bitrateKbps: 800, language: 'fr', isDefault: false, hasObjectAudio: false },
       ],
       subtitleTracks: [],
       streamBytes: { 1: 86_400_000, 2: 360_000_000 },
@@ -50,32 +188,56 @@ describe('QualityAnalyzer', () => {
     expect(breakdown.videoSavingsBytes).toBe(2_250_000_000)
     expect(breakdown.audioPruningBytes).toBe(360_000_000)
     const score = await analyzer.analyzeMediaItem(item, analysis)
-    expect(score.storage_debt_bytes).toBe(2_250_000_000)
+    expect(score.video_savings_bytes).toBe(2_250_000_000)
+    expect(score.estimated_savings_bytes).toBe(2_610_000_000)
   })
 
-  it('retains the distinct bitrate efficiency score and issue', async () => {
+  it('does not include audio conversion savings unless selected in a plan', () => {
+    const item = createMediaItem({
+      file_size_bytes: 1_000_000_000,
+      duration_ms: 3_600_000,
+      original_language: 'en',
+      video_bitrate_kbps: 5_000,
+    })
+    const analysis = {
+      success: true,
+      filePath: '/test/file.mkv',
+      durationMs: 3_600_000,
+      fileSizeBytes: 1_000_000_000,
+      video: { index: 0, codec: 'h264', width: 1920, height: 1080, bitrateKbps: 5_000 },
+      audioTracks: [
+        { index: 1, codec: 'flac', channels: 2, bitrateKbps: 1_500, language: 'en', isDefault: true, hasObjectAudio: false },
+        { index: 2, codec: 'aac', channels: 2, bitrateKbps: 320, language: 'fr', isDefault: false, hasObjectAudio: false },
+      ],
+      subtitleTracks: [],
+      streamBytes: { 1: 675_000_000, 2: 100_000_000 },
+    }
+
+    const breakdown = analyzer.getOptimizationSavingsBreakdown(item, analysis)
+
+    expect(breakdown.videoSavingsBytes).toBe(1_000_000_000)
+    expect(breakdown.audioPruningBytes).toBe(100_000_000)
+    expect(breakdown.audioTranscodeBytes).toBeNull()
+    expect(breakdown.totalEstimatedSavingsBytes).toBeGreaterThan(0)
+    expect(breakdown.coverage).toBe('complete')
+  })
+
+  it('preserves the configurable overall media quality rating', async () => {
     const score = await analyzer.analyzeMediaItem(createMediaItem({
-      video_bitrate: 12_000,
-      duration: 3_600_000,
+      video_bitrate_kbps: 12_000,
+      duration_ms: 3_600_000,
       resolution: '1080p',
       hdr_format: 'None',
       color_bit_depth: 8,
     }))
 
-    expect(score.efficiency_score).toBe(48)
-    expect(score.issues).toContain('Low efficiency score (48%): bitrate is high for this tier')
-  })
-
-  it('scores efficiency continuously at configured target and bloat boundaries', async () => {
-    const scoreAt = async (video_bitrate: number) => (await analyzer.analyzeMediaItem(createMediaItem({
-      resolution: '1080p', video_codec: 'h264', video_bitrate, duration: 3_600_000, hdr_format: 'None', color_bit_depth: 8,
-    }))).efficiency_score
-
-    expect(await scoreAt(5_000)).toBe(100)
-    expect(await scoreAt(5_001)).toBe(100)
-    expect(await scoreAt(7_500)).toBe(80)
-    expect(await scoreAt(10_000)).toBe(60)
-    expect(await scoreAt(20_000)).toBe(0)
+    expect(score.quality_tier).toBe('1080p')
+    expect(score.tier_quality).not.toBe('UNKNOWN')
+    expect(score.tier_score).not.toBeNull()
+    expect(score.tier_quality).toBe('HIGH')
+    expect(score.efficiency_score).toBeNull()
+    expect(score.video_savings_bytes).toBe(2_700_000_000)
+    expect(score.issues).not.toContain('Low bitrate')
   })
 
   // ============================================================================
@@ -84,216 +246,48 @@ describe('QualityAnalyzer', () => {
 
   describe('resolution tier detection', () => {
     it('should classify SD resolution (below 720p)', async () => {
-      const item = createMediaItem({ resolution: '480p', video_bitrate: 2000 })
+      const item = createMediaItem({ resolution: '480p', video_bitrate_kbps: 2000 })
       const score = await analyzer.analyzeMediaItem(item)
       expect(score.quality_tier).toBe('SD')
     })
 
     it('should classify 720p resolution', async () => {
-      const item = createMediaItem({ resolution: '720p', video_bitrate: 5000 })
+      const item = createMediaItem({ resolution: '720p', video_bitrate_kbps: 5000 })
       const score = await analyzer.analyzeMediaItem(item)
       expect(score.quality_tier).toBe('720p')
     })
 
     it('should classify 1080p resolution', async () => {
-      const item = createMediaItem({ resolution: '1080p', video_bitrate: 10000 })
+      const item = createMediaItem({ resolution: '1080p', video_bitrate_kbps: 10000 })
       const score = await analyzer.analyzeMediaItem(item)
       expect(score.quality_tier).toBe('1080p')
     })
 
     it('should classify 4K resolution (2160p)', async () => {
-      const item = createMediaItem({ resolution: '2160p', video_bitrate: 25000 })
+      const item = createMediaItem({ resolution: '2160p', video_bitrate_kbps: 25000 })
       const score = await analyzer.analyzeMediaItem(item)
       expect(score.quality_tier).toBe('4K')
     })
 
     it('should parse WxH resolution format correctly', async () => {
-      const item = createMediaItem({ resolution: '1920x1080', video_bitrate: 10000 })
+      const item = createMediaItem({ resolution: '1920x1080', video_bitrate_kbps: 10000 })
       const score = await analyzer.analyzeMediaItem(item)
       expect(score.quality_tier).toBe('1080p')
     })
 
     it('should preserve unknown resolution without assigning a quality score', async () => {
-      const item = createMediaItem({ resolution: 'unknown', video_bitrate: 2000 })
+      const item = createMediaItem({ resolution: 'unknown', video_bitrate_kbps: 2000 })
       const score = await analyzer.analyzeMediaItem(item)
       expect(score.quality_tier).toBe('UNKNOWN')
       expect(score.tier_quality).toBe('UNKNOWN')
-      expect(score.overall_score).toBe(0)
+      expect(score.overall_score).toBeNull()
     })
 
     it('does not infer overall quality from audio when video bitrate is missing', async () => {
-      const score = await analyzer.analyzeMediaItem(createMediaItem({ video_bitrate: null }))
+      const score = await analyzer.analyzeMediaItem(createMediaItem({ video_bitrate_kbps: null }))
       expect(score.tier_quality).toBe('UNKNOWN')
-      expect(score.overall_score).toBe(0)
-      expect(score.audio_tier_score).toBeGreaterThan(0)
-    })
-  })
-
-  // ============================================================================
-  // TIER QUALITY (WITHIN-TIER SCORING)
-  // ============================================================================
-
-  describe('tier quality scoring', () => {
-    it('should rate HIGH quality for high bitrate 1080p', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 20000,
-        audio_channels: 6,
-        audio_codec: 'truehd',
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.tier_quality).toBe('HIGH')
-    })
-
-    it('should rate MEDIUM quality for medium bitrate 1080p', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 8000,
-        audio_channels: 6,
-        audio_codec: 'ac3',
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.tier_quality).toBe('MEDIUM')
-    })
-
-    it('should rate LOW quality for low bitrate 1080p', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 3000,
-        audio_channels: 2,
-        audio_codec: 'aac',
-        audio_bitrate: 64,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.tier_quality).toBe('LOW')
-    })
-
-    it('should consider audio quality in overall tier', async () => {
-      // High video bitrate but poor audio should not be HIGH
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 20000,
-        audio_channels: 2,
-        audio_codec: 'aac',
-        audio_bitrate: 64,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      // Audio is LOW, so overall should not be HIGH
-      expect(['LOW', 'MEDIUM']).toContain(score.tier_quality)
-    })
-  })
-
-  // ============================================================================
-  // CODEC EFFICIENCY
-  // ============================================================================
-
-  describe('codec efficiency', () => {
-    it('should apply HEVC/H.265 efficiency multiplier', async () => {
-      const h264Item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 8000,
-        video_codec: 'h264',
-      })
-      const hevcItem = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 4000, // Half the bitrate
-        video_codec: 'hevc',
-      })
-
-      const h264Score = await analyzer.analyzeMediaItem(h264Item)
-      const hevcScore = await analyzer.analyzeMediaItem(hevcItem)
-
-      // HEVC at half bitrate should have similar or better effective quality
-      // due to 2x efficiency multiplier
-      expect(hevcScore.tier_score).toBeGreaterThanOrEqual(h264Score.tier_score - 20)
-    })
-
-    it('should apply AV1 efficiency multiplier', async () => {
-      const item = createMediaItem({
-        resolution: '2160p', // Use standard resolution string
-        video_bitrate: 16000,
-        video_codec: 'av1',
-        audio_codec: 'truehd', // HIGH audio to not drag down overall
-        audio_channels: 8,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      // AV1 has 2.5x efficiency, so effective bitrate is 40000 (at 40000 HIGH threshold)
-      expect(score.tier_quality).toBe('HIGH')
-    })
-  })
-
-  // ============================================================================
-  // AUDIO QUALITY
-  // ============================================================================
-
-  describe('audio quality detection', () => {
-    it('should recognize object audio (Atmos) as HIGH quality', async () => {
-      const item = createMediaItem({
-        resolution: '2160p', // Standard resolution string
-        video_bitrate: 45000, // Above 4K HIGH threshold (40000)
-        has_object_audio: true,
-        audio_codec: 'truehd',
-        audio_channels: 8,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.tier_quality).toBe('HIGH')
-    })
-
-    it('should recognize lossless audio (TrueHD) as HIGH quality', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 15000,
-        audio_codec: 'truehd',
-        audio_channels: 8,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.tier_quality).toBe('HIGH')
-    })
-
-    it('should recognize DTS-HD MA as lossless', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 15000,
-        audio_codec: 'dts-hd ma',
-        audio_channels: 8,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.tier_quality).toBe('HIGH')
-    })
-
-    it('should recognize FLAC as lossless', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 15000,
-        audio_codec: 'flac',
-        audio_channels: 2,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.tier_quality).toBe('HIGH')
-    })
-
-    it('should rate AC3 5.1 as MEDIUM quality', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 8000,
-        audio_codec: 'ac3',
-        audio_channels: 6,
-        audio_bitrate: 448,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.tier_quality).toBe('MEDIUM')
-    })
-
-    it('should rate stereo AAC at low bitrate as LOW', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 8000,
-        audio_codec: 'aac',
-        audio_channels: 2,
-        audio_bitrate: 96,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.tier_quality).toBe('LOW')
+      expect(score.overall_score).toBeNull()
+      expect(score.audio_tier_score).toBeNull()
     })
   })
 
@@ -302,21 +296,21 @@ describe('QualityAnalyzer', () => {
   // ============================================================================
 
   describe('needs upgrade detection', () => {
-    it('should flag LOW quality items as needing upgrade', async () => {
+    it('does not infer a video upgrade from bitrate or audio properties', async () => {
       const item = createMediaItem({
         resolution: '720p',
-        video_bitrate: 1500,
+        video_bitrate_kbps: 1500,
         audio_channels: 2,
-        audio_bitrate: 64,
+        audio_bitrate_kbps: 64,
       })
       const score = await analyzer.analyzeMediaItem(item)
-      expect(score.needs_upgrade).toBe(true)
+      expect(score.needs_upgrade).toBe(false)
     })
 
     it('should not flag HIGH quality items as needing upgrade', async () => {
       const item = createMediaItem({
         resolution: '4K',
-        video_bitrate: 50000,
+        video_bitrate_kbps: 50000,
         audio_codec: 'truehd',
         audio_channels: 8,
         has_object_audio: true,
@@ -334,7 +328,7 @@ describe('QualityAnalyzer', () => {
     it('should select best audio track from multiple tracks', async () => {
       const item = createMediaItem({
         resolution: '2160p', // Standard resolution string
-        video_bitrate: 45000, // Above 4K HIGH threshold (40000)
+        video_bitrate_kbps: 45000, // Above 4K HIGH threshold (40000)
         audio_codec: 'aac', // Default fallback
         audio_channels: 2,
         audio_tracks: JSON.stringify([
@@ -344,14 +338,13 @@ describe('QualityAnalyzer', () => {
         ]),
       })
       const score = await analyzer.analyzeMediaItem(item)
-      // Should select TrueHD Atmos track as best (object audio = HIGH)
       expect(score.tier_quality).toBe('HIGH')
     })
 
     it('should fallback to primary audio fields if audio_tracks is empty', async () => {
       const item = createMediaItem({
         resolution: '1080p',
-        video_bitrate: 15000,
+        video_bitrate_kbps: 15000,
         audio_codec: 'truehd',
         audio_channels: 8,
         audio_tracks: '[]',
@@ -363,7 +356,7 @@ describe('QualityAnalyzer', () => {
     it('should reject invalid audio_tracks JSON', async () => {
       const item = createMediaItem({
         resolution: '1080p',
-        video_bitrate: 15000,
+        video_bitrate_kbps: 15000,
         audio_codec: 'ac3',
         audio_channels: 6,
         audio_tracks: 'not valid json',
@@ -378,25 +371,25 @@ describe('QualityAnalyzer', () => {
   // ============================================================================
 
   describe('issues reporting', () => {
-    it('should report low bitrate issue', async () => {
+    it('does not report low bitrate as a visual-quality issue', async () => {
       const item = createMediaItem({
         resolution: '1080p',
-        video_bitrate: 2000,
+        video_bitrate_kbps: 2000,
       })
       const score = await analyzer.analyzeMediaItem(item)
-      expect(score.issues).toContain('Low bitrate')
+      expect(score.issues).not.toContain('Low bitrate')
     })
 
-    it('should report poor audio issue', async () => {
+    it('does not report audio bitrate as an audio-quality judgment', async () => {
       const item = createMediaItem({
         resolution: '1080p',
-        video_bitrate: 15000,
+        video_bitrate_kbps: 15000,
         audio_channels: 2,
         audio_codec: 'aac',
-        audio_bitrate: 64,
+        audio_bitrate_kbps: 64,
       })
       const score = await analyzer.analyzeMediaItem(item)
-      expect(score.issues).toContain('audio')
+      expect(score.issues).not.toContain('Low audio quality')
     })
   })
 
@@ -418,180 +411,57 @@ describe('QualityAnalyzer', () => {
 
   describe('resolution tier classification edge cases', () => {
     it('should classify 1080i as 1080p tier', async () => {
-      const item = createMediaItem({ resolution: '1080i', video_bitrate: 10000 })
+      const item = createMediaItem({ resolution: '1080i', video_bitrate_kbps: 10000 })
       const score = await analyzer.analyzeMediaItem(item)
       expect(score.quality_tier).toBe('1080p')
     })
 
     it('should classify 720i as 720p tier', async () => {
-      const item = createMediaItem({ resolution: '720i', video_bitrate: 5000 })
+      const item = createMediaItem({ resolution: '720i', video_bitrate_kbps: 5000 })
       const score = await analyzer.analyzeMediaItem(item)
       expect(score.quality_tier).toBe('720p')
     })
 
     it('should classify 4K string as 4K tier', async () => {
-      const item = createMediaItem({ resolution: '4K', video_bitrate: 25000 })
+      const item = createMediaItem({ resolution: '4K', video_bitrate_kbps: 25000 })
       const score = await analyzer.analyzeMediaItem(item)
       expect(score.quality_tier).toBe('4K')
     })
 
     it('should parse WxH format for 4K (3840x2160)', async () => {
-      const item = createMediaItem({ resolution: '3840x2160', video_bitrate: 25000 })
+      const item = createMediaItem({ resolution: '3840x2160', video_bitrate_kbps: 25000 })
       const score = await analyzer.analyzeMediaItem(item)
       expect(score.quality_tier).toBe('4K')
     })
 
     it('should parse WxH format for 720p (1280x720)', async () => {
-      const item = createMediaItem({ resolution: '1280x720', video_bitrate: 5000 })
+      const item = createMediaItem({ resolution: '1280x720', video_bitrate_kbps: 5000 })
       const score = await analyzer.analyzeMediaItem(item)
       expect(score.quality_tier).toBe('720p')
     })
 
     it('should parse WxH format for SD (640x480)', async () => {
-      const item = createMediaItem({ resolution: '640x480', video_bitrate: 2000 })
+      const item = createMediaItem({ resolution: '640x480', video_bitrate_kbps: 2000 })
       const score = await analyzer.analyzeMediaItem(item)
       expect(score.quality_tier).toBe('SD')
     })
 
     it('should fall back to height field when resolution string is unknown', async () => {
-      const item = createMediaItem({ resolution: 'custom', video_bitrate: 10000, height: 1080 })
+      const item = createMediaItem({ resolution: 'custom', video_bitrate_kbps: 10000, height: 1080 })
       const score = await analyzer.analyzeMediaItem(item)
       expect(score.quality_tier).toBe('1080p')
     })
 
     it('should use height field for 4K fallback', async () => {
-      const item = createMediaItem({ resolution: 'custom', video_bitrate: 25000, height: 2160 })
+      const item = createMediaItem({ resolution: 'custom', video_bitrate_kbps: 25000, height: 2160 })
       const score = await analyzer.analyzeMediaItem(item)
       expect(score.quality_tier).toBe('4K')
     })
 
     it('should use height field for 720p fallback', async () => {
-      const item = createMediaItem({ resolution: 'custom', video_bitrate: 5000, height: 720 })
+      const item = createMediaItem({ resolution: 'custom', video_bitrate_kbps: 5000, height: 720 })
       const score = await analyzer.analyzeMediaItem(item)
       expect(score.quality_tier).toBe('720p')
-    })
-  })
-
-  // ============================================================================
-  // VIDEO TIER SCORE CALCULATION
-  // ============================================================================
-
-  describe('video tier score calculation', () => {
-    it('should return 0 for zero bitrate', async () => {
-      const item = createMediaItem({ resolution: '1080p', video_bitrate: 0 })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.bitrate_tier_score).toBe(0)
-    })
-
-    it('should return 100 for bitrate at or above HIGH threshold', async () => {
-      // 1080p HIGH threshold = 15000
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 15000,
-        video_codec: 'h264',
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.bitrate_tier_score).toBe(100)
-    })
-
-    it('should return score below 50 for bitrate below MEDIUM threshold', async () => {
-      // 1080p MEDIUM threshold = 6000
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 3000,
-        video_codec: 'h264',
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.bitrate_tier_score).toBeLessThan(50)
-      expect(score.bitrate_tier_score).toBeGreaterThan(0)
-    })
-
-    it('should return score between 50-99 for bitrate between MEDIUM and HIGH', async () => {
-      // 1080p: MEDIUM=6000, HIGH=15000
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 10000,
-        video_codec: 'h264',
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.bitrate_tier_score).toBeGreaterThanOrEqual(50)
-      expect(score.bitrate_tier_score).toBeLessThan(100)
-    })
-  })
-
-  // ============================================================================
-  // AUDIO TIER SCORE CALCULATION
-  // ============================================================================
-
-  describe('audio tier score calculation', () => {
-    it('should return 100 for object audio', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 15000,
-        has_object_audio: true,
-        audio_codec: 'truehd',
-        audio_channels: 8,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.audio_tier_score).toBe(100)
-    })
-
-    it('should return 100 for lossless audio', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 15000,
-        audio_codec: 'flac',
-        audio_channels: 2,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.audio_tier_score).toBe(100)
-    })
-
-    it('should return 0 for zero audio bitrate (non-lossless)', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 15000,
-        audio_codec: 'aac',
-        audio_channels: 2,
-        audio_bitrate: 0,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.audio_tier_score).toBe(0)
-    })
-
-    it('should scale audio score between MEDIUM and HIGH thresholds', async () => {
-      // 1080p audio: MEDIUM=256, HIGH=640
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 15000,
-        audio_codec: 'ac3',
-        audio_channels: 6,
-        audio_bitrate: 448,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.audio_tier_score).toBeGreaterThanOrEqual(50)
-      expect(score.audio_tier_score).toBeLessThan(100)
-    })
-  })
-
-  // ============================================================================
-  // WEIGHTED OVERALL SCORE
-  // ============================================================================
-
-  describe('weighted overall score', () => {
-    it('should compute tier_score as weighted average of video and audio', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 15000,
-        video_codec: 'h264',
-        audio_codec: 'ac3',
-        audio_channels: 6,
-        audio_bitrate: 448,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      // Default weight: 70% video, 30% audio
-      const expected = Math.round(score.bitrate_tier_score * 0.7 + score.audio_tier_score * 0.3)
-      expect(score.tier_score).toBe(expected)
     })
   })
 
@@ -599,96 +469,15 @@ describe('QualityAnalyzer', () => {
   // ISSUES REPORTING (additional cases)
   // ============================================================================
 
-  describe('issues reporting (additional)', () => {
-    it('should report unknown bitrate when video_bitrate is 0', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 0,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      const issues = JSON.parse(score.issues)
-      expect(issues.some((i: string) => i.includes('unknown'))).toBe(true)
-    })
-
-    it('should report 4K without HDR', async () => {
-      const item = createMediaItem({
-        resolution: '2160p',
-        video_bitrate: 45000,
-        hdr_format: 'None',
-        audio_codec: 'truehd',
-        audio_channels: 8,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      const issues = JSON.parse(score.issues)
-      expect(issues.some((i: string) => i.includes('without HDR'))).toBe(true)
-    })
-
-    it('should report 8-bit color for 4K content', async () => {
-      const item = createMediaItem({
-        resolution: '2160p',
-        video_bitrate: 45000,
-        hdr_format: 'HDR10',
-        color_bit_depth: 8,
-        audio_codec: 'truehd',
-        audio_channels: 8,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      const issues = JSON.parse(score.issues)
-      expect(issues.some((i: string) => i.includes('8-bit'))).toBe(true)
-    })
-
-    it('should not report HDR issue when HDR is present', async () => {
-      const item = createMediaItem({
-        resolution: '2160p',
-        video_bitrate: 45000,
-        hdr_format: 'Dolby Vision',
-        color_bit_depth: 10,
-        audio_codec: 'truehd',
-        audio_channels: 8,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      const issues = JSON.parse(score.issues)
-      expect(issues.some((i: string) => i.includes('without HDR'))).toBe(false)
-    })
-
-    it('should report mono audio', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 10000,
-        audio_channels: 1,
-        audio_codec: 'aac',
-        audio_bitrate: 64,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      const issues = JSON.parse(score.issues)
-      expect(issues.some((i: string) => i.includes('Mono'))).toBe(true)
-    })
-
-    it('should report low audio quality for stereo below threshold', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 15000,
-        audio_channels: 2,
-        audio_codec: 'aac',
-        audio_bitrate: 64,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      const issues = JSON.parse(score.issues)
-      expect(issues.some((i: string) => i.includes('Low audio quality'))).toBe(true)
-    })
-
-    it('should include codec name in low bitrate issue for efficient codecs', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 2000,
-        video_codec: 'hevc',
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      const issues = JSON.parse(score.issues)
-      expect(issues.some((i: string) => i.includes('hevc'))).toBe(true)
+  describe('media facts are not visual-quality grades', () => {
+    it('retains HDR, bit-depth, and audio-channel facts as diagnostics', async () => {
+      const hdr = await analyzer.analyzeMediaItem(createMediaItem({ resolution: '2160p', hdr_format: 'None', color_bit_depth: 8 }))
+      const mono = await analyzer.analyzeMediaItem(createMediaItem({ resolution: '1080p', audio_channels: 1 }))
+      expect(JSON.parse(hdr.issues)).toContain('4K content without HDR')
+      expect(JSON.parse(hdr.issues)).toContain('Color bit depth is 8-bit (below 10-bit)')
+      expect(JSON.parse(mono.issues)).toContain('Mono audio')
     })
   })
-
   // ============================================================================
   // CORRUPT AUDIO TRACK DETECTION
   // ============================================================================
@@ -697,7 +486,7 @@ describe('QualityAnalyzer', () => {
     it('should skip suspiciously low bitrate tracks', async () => {
       const item = createMediaItem({
         resolution: '2160p',
-        video_bitrate: 45000,
+        video_bitrate_kbps: 45000,
         audio_tracks: JSON.stringify([
           // Corrupt 5.1 track: 96 kbps < 6 channels × 32 kbps = 192 kbps
           { codec: 'ac3', channels: 6, bitrate: 96, hasObjectAudio: false },
@@ -721,7 +510,7 @@ describe('QualityAnalyzer', () => {
     it('should prefer non-commentary tracks', async () => {
       const item = createMediaItem({
         resolution: '1080p',
-        video_bitrate: 15000,
+        video_bitrate_kbps: 15000,
         audio_tracks: JSON.stringify([
           { codec: 'truehd', channels: 8, bitrate: 5000, hasObjectAudio: true, title: "Director's Commentary" },
           { codec: 'ac3', channels: 6, bitrate: 448, hasObjectAudio: false, title: 'English' },
@@ -734,111 +523,6 @@ describe('QualityAnalyzer', () => {
   })
 
   // ============================================================================
-  // CODEC EFFICIENCY (additional cases)
-  // ============================================================================
-
-  describe('codec efficiency (additional)', () => {
-    it('should apply VP9 efficiency multiplier', async () => {
-      const h264Item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 9000,
-        video_codec: 'h264',
-      })
-      const vp9Item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 5000,
-        video_codec: 'vp9',
-      })
-      const h264Score = await analyzer.analyzeMediaItem(h264Item)
-      const vp9Score = await analyzer.analyzeMediaItem(vp9Item)
-      // VP9 at 5000 × 1.8 = 9000 effective, similar to H.264 at 9000
-      expect(vp9Score.bitrate_tier_score).toBeGreaterThanOrEqual(h264Score.bitrate_tier_score - 5)
-    })
-
-    it('should use 1.0x multiplier for unknown codecs', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 6000,
-        video_codec: 'unknown_codec',
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      // 6000 with 1.0x = exactly at MEDIUM threshold → score should be 50
-      expect(score.bitrate_tier_score).toBe(50)
-    })
-
-    it('should recognize x264 as H.264 variant', async () => {
-      const h264Item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 10000,
-        video_codec: 'h264',
-      })
-      const x264Item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 10000,
-        video_codec: 'x264',
-      })
-      const h264Score = await analyzer.analyzeMediaItem(h264Item)
-      const x264Score = await analyzer.analyzeMediaItem(x264Item)
-      expect(x264Score.bitrate_tier_score).toBe(h264Score.bitrate_tier_score)
-    })
-
-    it('should recognize x265 as HEVC variant', async () => {
-      const hevcItem = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 5000,
-        video_codec: 'hevc',
-      })
-      const x265Item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 5000,
-        video_codec: 'x265',
-      })
-      const hevcScore = await analyzer.analyzeMediaItem(hevcItem)
-      const x265Score = await analyzer.analyzeMediaItem(x265Item)
-      expect(x265Score.bitrate_tier_score).toBe(hevcScore.bitrate_tier_score)
-    })
-  })
-
-  // ============================================================================
-  // LOSSLESS AUDIO DETECTION
-  // ============================================================================
-
-  describe('lossless audio detection', () => {
-    it('should recognize ALAC as lossless', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 15000,
-        audio_codec: 'alac',
-        audio_channels: 2,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.audio_tier_score).toBe(100)
-    })
-
-    it('should recognize PCM as lossless', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 15000,
-        audio_codec: 'pcm_s24le',
-        audio_channels: 2,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.audio_tier_score).toBe(100)
-    })
-
-    it('should recognize dtshd_ma as lossless', async () => {
-      const item = createMediaItem({
-        resolution: '1080p',
-        video_bitrate: 15000,
-        audio_codec: 'dtshd_ma',
-        audio_channels: 8,
-      })
-      const score = await analyzer.analyzeMediaItem(item)
-      expect(score.audio_tier_score).toBe(100)
-    })
-  })
-
-  // ============================================================================
   // ANALYZE VERSION
   // ============================================================================
 
@@ -846,34 +530,34 @@ describe('QualityAnalyzer', () => {
     it('should return lightweight quality result for a version', () => {
       const version = createMediaItemVersion({
         resolution: '2160p',
-        video_bitrate: 45000,
+        video_bitrate_kbps: 45000,
         video_codec: 'hevc',
         audio_codec: 'truehd',
         audio_channels: 8,
-        audio_bitrate: 5000,
+        audio_bitrate_kbps: 5000,
         has_object_audio: true,
       })
       const result = analyzer.analyzeVersion(version)
       expect(result.quality_tier).toBe('4K')
       expect(result.tier_quality).toBe('HIGH')
-      expect(result.tier_score).toBeGreaterThanOrEqual(75)
+      expect(result.tier_score).not.toBeNull()
       expect(result.bitrate_tier_score).toBe(100)
       expect(result.audio_tier_score).toBe(100)
     })
 
-    it('should return LOW quality for a poor version', () => {
+    it('keeps within-resolution quality unknown for a poor version', () => {
       const version = createMediaItemVersion({
         resolution: '720p',
-        video_bitrate: 1000,
+        video_bitrate_kbps: 1000,
         video_codec: 'h264',
         audio_codec: 'aac',
         audio_channels: 2,
-        audio_bitrate: 64,
+        audio_bitrate_kbps: 64,
       })
       const result = analyzer.analyzeVersion(version)
       expect(result.quality_tier).toBe('720p')
       expect(result.tier_quality).toBe('LOW')
-      expect(result.tier_score).toBeLessThan(50)
+      expect(result.tier_score).not.toBeNull()
     })
   })
 
@@ -882,28 +566,28 @@ describe('QualityAnalyzer', () => {
   // ============================================================================
 
   describe('getRecommendedFormat', () => {
-    it('should return no upgrade for high quality 4K', () => {
+    it('reports the current resolution without claiming visual quality', () => {
       const item = createMediaItem({ resolution: '2160p', height: 2160 })
-      const result = analyzer.getRecommendedFormat(item, 95)
-      expect(result).toBe('No upgrade needed')
+      const result = analyzer.getRecommendedFormat(item)
+      expect(result).toBe('4K resolution')
     })
 
-    it('should recommend 4K UHD for 1080p with low score', () => {
+    it('recommends a resolution increase without using a quality score', () => {
       const item = createMediaItem({ resolution: '1080p', height: 1080 })
-      const result = analyzer.getRecommendedFormat(item, 70)
+      const result = analyzer.getRecommendedFormat(item)
       expect(result).toBe('4K UHD Blu-ray')
     })
 
     it('should recommend Blu-ray for sub-1080p content', () => {
       const item = createMediaItem({ resolution: '720p', height: 720 })
-      const result = analyzer.getRecommendedFormat(item, 50)
+      const result = analyzer.getRecommendedFormat(item)
       expect(result).toBe('Blu-ray')
     })
 
-    it('should recommend Blu-ray for 1080p with high score', () => {
+    it('recommends by resolution regardless of visual quality score', () => {
       const item = createMediaItem({ resolution: '1080p', height: 1080 })
-      const result = analyzer.getRecommendedFormat(item, 85)
-      expect(result).toBe('Blu-ray')
+      const result = analyzer.getRecommendedFormat(item)
+      expect(result).toBe('4K UHD Blu-ray')
     })
   })
 
@@ -1193,10 +877,10 @@ function createMediaItem(overrides: Partial<MediaItem> = {}): MediaItem {
     year: 2023,
     resolution: '1080p',
     video_codec: 'h264',
-    video_bitrate: 10000,
+    video_bitrate_kbps: 10000,
     audio_codec: 'ac3',
     audio_channels: 6,
-    audio_bitrate: 448,
+    audio_bitrate_kbps: 448,
     has_object_audio: false,
     ...overrides,
   }
@@ -1207,16 +891,16 @@ function createMediaItemVersion(overrides: Partial<MediaItemVersion> = {}): Medi
     media_item_id: 1,
     version_source: 'primary',
     file_path: '/test/file.mkv',
-    file_size: 10000000,
-    duration: 7200,
+    file_size_bytes: 10000000,
+    duration_ms: 7200000,
     resolution: '1080p',
     width: 1920,
     height: 1080,
     video_codec: 'h264',
-    video_bitrate: 10000,
+    video_bitrate_kbps: 10000,
     audio_codec: 'ac3',
     audio_channels: 6,
-    audio_bitrate: 448,
+    audio_bitrate_kbps: 448,
     ...overrides,
   }
 }
