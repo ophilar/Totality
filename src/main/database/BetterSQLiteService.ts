@@ -117,6 +117,43 @@ export class BetterSQLiteService {
     `).run(BetterSQLiteService.MAX_ACTIVITY_LOG)
   }
 
+  private migrateTaskHistoryPartialStatus(): void {
+    if (!this.db) throw new Error('Database not initialized')
+    const table = this.db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'task_history'").get() as { sql: string } | undefined
+    if (!table || table.sql.includes("'partial'")) return
+
+    this.db.transaction(() => {
+      this.db!.exec(`
+        CREATE TABLE task_history_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          task_id TEXT NOT NULL,
+          type TEXT NOT NULL,
+          label TEXT NOT NULL,
+          source_id TEXT,
+          library_id TEXT,
+          status TEXT NOT NULL CHECK(status IN ('completed', 'partial', 'failed', 'cancelled', 'interrupted')),
+          error TEXT,
+          result TEXT,
+          created_at TEXT NOT NULL,
+          started_at TEXT,
+          completed_at TEXT,
+          duration_ms INTEGER,
+          recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+      `)
+      this.db!.exec(`
+        INSERT INTO task_history_new (id, task_id, type, label, source_id, library_id, status, error, result, created_at, started_at, completed_at, duration_ms, recorded_at)
+        SELECT id, task_id, type, label, source_id, library_id, status, error, result, created_at, started_at, completed_at, duration_ms, recorded_at
+        FROM task_history
+      `)
+      this.db!.exec('DROP TABLE task_history')
+      this.db!.exec('ALTER TABLE task_history_new RENAME TO task_history')
+      this.db!.exec('CREATE INDEX idx_task_history_status ON task_history(status)')
+      this.db!.exec('CREATE INDEX idx_task_history_recorded ON task_history(recorded_at DESC)')
+      this.db!.exec('CREATE INDEX idx_task_history_source ON task_history(source_id)')
+    })()
+  }
+
   /**
    * Build a safe FTS5 MATCH query from a user-supplied search string.
    * Each whitespace-separated word becomes a quoted phrase to avoid special-char errors.
@@ -336,6 +373,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
 
     // Execute main schema (CREATE TABLE IF NOT EXISTS)
     this.db.exec(DATABASE_SCHEMA)
+    this.migrateTaskHistoryPartialStatus()
     this.renameMediaQualityColumns()
 
     // Run ALTER TABLE migrations for new columns
@@ -1678,7 +1716,8 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       'created_at': 'm.created_at',
       'overall_score': 'q.overall_score',
       'tmdb_rating': 'm.tmdb_rating',
-      'estimated_savings_bytes': 'q.estimated_savings_bytes'
+      'estimated_savings_bytes': 'q.estimated_savings_bytes',
+      'total_size_bytes': 'm.file_size_bytes'
     }
     const sortColumn = sortColumnMap[filters?.sortBy || 'title'] || 'COALESCE(m.sort_title, m.title)'
     const sortOrder = filters?.sortOrder?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC'
@@ -4305,6 +4344,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         MIN(m.source_type) as source_type,
         MIN(m.library_id) as library_id,
         COALESCE(m.series_identity_key, MIN(m.series_identity_key)) as series_identity_key,
+        COALESCE(SUM(m.file_size_bytes), 0) as total_size_bytes,
         COALESCE(SUM(m.play_count), 0) as total_play_count,
         MAX(m.last_watched_at) as last_watched_at,
         SUM(q.estimated_savings_bytes) as estimated_savings_bytes,
@@ -4362,6 +4402,9 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         break
       case 'estimated_savings_bytes':
         sql += ` ORDER BY COALESCE(SUM(q.estimated_savings_bytes), 0) ${sortOrder}, COALESCE(sort_title, series_title) ASC`
+        break
+      case 'total_size_bytes':
+        sql += ` ORDER BY total_size_bytes ${sortOrder}, COALESCE(sort_title, series_title) ASC`
         break
       default:
         sql += ` ORDER BY COALESCE(sort_title, series_title) ${sortOrder}`

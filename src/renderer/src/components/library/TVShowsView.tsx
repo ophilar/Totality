@@ -6,7 +6,7 @@ import { AnimatedNumber } from '../ui/AnimatedNumber'
 import { MissingItemCard } from './MissingItemCard'
 import { ShowTranscodeModal } from './ShowTranscodeModal'
 import { useMenuClose } from '../../hooks/useMenuClose'
-import { providerColors, formatSeasonLabel, getStatusBadge } from './mediaUtils'
+import { providerColors, formatBytes, formatSeasonLabel, getStatusBadge } from './mediaUtils'
 import type { MediaItem, TVShow, TVShowSummary, SeasonInfo, TVSeason, SeriesCompletenessData, MissingEpisode } from './types'
 import type { ProviderType } from '../../contexts/SourceContext'
 import { QualityBadges } from './QualityBadges'
@@ -102,6 +102,7 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
           {seasonCount} {seasonCount === 1 ? 'Season' : 'Seasons'} • {totalEpisodes} Episodes
           {completenessData?.status && ` • ${getStatusBadge(completenessData.status)?.text || completenessData.status}`}
         </p>
+        <p className="text-xs text-muted-foreground mt-0.5">Total size: {formatBytes(show.total_size_bytes)}</p>
         <ScopedOptimizationSummary totalCount={totalEpisodes} estimatedSavingsBytes={show.estimated_savings_bytes} coverage={show.savings_coverage} className="mt-1" />
         {completenessData && (
           <div className="mt-2">
@@ -1197,6 +1198,7 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
           <p className="text-xs text-muted-foreground">
             {show.season_count} {show.season_count === 1 ? 'Season' : 'Seasons'} • {totalEpisodes} Episodes
           </p>
+          <p className="text-xs text-muted-foreground">Total size: {formatBytes(show.total_size_bytes)}</p>
           <ScopedOptimizationSummary totalCount={totalEpisodes} estimatedSavingsBytes={show.estimated_savings_bytes} coverage={show.savings_coverage} />
         </div>
         {completenessData && (
@@ -1227,6 +1229,7 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
          prevProps.show.poster_url === nextProps.show.poster_url &&
          prevProps.show.episode_count === nextProps.show.episode_count &&
          prevProps.show.estimated_savings_bytes === nextProps.show.estimated_savings_bytes &&
+         prevProps.show.total_size_bytes === nextProps.show.total_size_bytes &&
          prevProps.show.season_count === nextProps.show.season_count &&
          prevProps.showSourceBadge === nextProps.showSourceBadge &&
          prevProps.completenessData?.id === nextProps.completenessData?.id &&

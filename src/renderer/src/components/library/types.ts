@@ -184,6 +184,7 @@ export interface TVShowSummary {
   series_identity_key?: string
   estimated_savings_bytes?: number | null
   savings_coverage?: 'complete' | 'partial' | 'insufficient'
+  total_size_bytes?: number
 }
 
 // ============================================================================

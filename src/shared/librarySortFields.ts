@@ -8,6 +8,7 @@ export const MEDIA_ITEM_SORT_FIELDS = [
   'last_watched_at',
   'tmdb_rating',
   'estimated_savings_bytes',
+  'total_size_bytes',
 ] as const
 
 export type MediaItemSortField = typeof MEDIA_ITEM_SORT_FIELDS[number]
@@ -19,6 +20,7 @@ export const TV_SHOW_SORT_FIELDS = [
   'play_count',
   'last_watched_at',
   'estimated_savings_bytes',
+  'total_size_bytes',
 ] as const
 
 export type TVShowSortField = typeof TV_SHOW_SORT_FIELDS[number]

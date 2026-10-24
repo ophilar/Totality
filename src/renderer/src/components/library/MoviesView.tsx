@@ -150,7 +150,7 @@ export function MoviesView({
       return items
     }
 
-    if (sortBy === 'estimated_savings_bytes') {
+    if (sortBy === 'estimated_savings_bytes' || sortBy === 'total_size_bytes') {
       return movieList.map(movie => ({ type: 'movie' as const, movie }))
     }
 
