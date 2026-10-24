@@ -17,7 +17,7 @@ export class SoftwareCommandBuilder implements ITranscodeCommandBuilder {
     const totalCpus = os.cpus()?.length || 4
     const softwareThreads = Math.max(1, totalCpus > 4 ? totalCpus - 2 : totalCpus - 1)
 
-    const sourceBitrate = _analysis?.video?.bitrate || _analysis?.overallBitrate || (_analysis?.duration && _analysis?.fileSize ? Math.round((_analysis.fileSize * 8) / _analysis.duration) : undefined)
+    const sourceBitrate = _analysis?.video?.bitrateKbps || _analysis?.overallBitrateKbps || (_analysis?.durationMs && _analysis?.fileSizeBytes ? Math.round((_analysis.fileSizeBytes * 8) / _analysis.durationMs) : undefined)
 
     const args: string[] = [
       '-y',

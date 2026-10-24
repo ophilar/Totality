@@ -4,6 +4,7 @@ import type { TranscodeOptions } from '../TranscodingService'
 import type { PlaybackTargetProfile } from '@main/types/playbackTarget'
 import { buildStreamSelectionPlan } from './StreamSelectionPlan'
 import { APP_CONFIG } from '@main/config'
+import { normalizeAudioCodec, normalizeVideoCodec } from '../MediaNormalizer'
 
 // Main-tier bitrate limits in bits/s: ITU-T H.265 Annex A and AV1 Annex A.
 const MAIN_TIER_BITRATE_LIMITS: Record<string, Record<number, number>> = {
@@ -30,7 +31,7 @@ export function buildTargetTranscodePlan(analysis: FileAnalysisResult, profile: 
   const video = analysis.video!
   const definition = profile.definition
   const streams = buildStreamSelectionPlan(analysis, options)
-  if (!definition.video.codecs.includes(options.targetCodec!)) throw new Error(`Select a video codec supported by ${profile.name}`)
+  if (!definition.video.codecs.some(codec => normalizeVideoCodec(codec) === normalizeVideoCodec(options.targetCodec))) throw new Error(`Select a video codec supported by ${profile.name}`)
   const container = options.targetContainer
   if (!container || !definition.containers.includes(container === 'mkv' ? 'matroska' : 'mp4')) throw new Error('Select a supported output container')
   const scale = Math.min(1, definition.video.maxWidth / video.width, definition.video.maxHeight / video.height)
@@ -49,16 +50,16 @@ export function buildTargetTranscodePlan(analysis: FileAnalysisResult, profile: 
     if (track.channels > definition.audio.maxChannels || (track.hasObjectAudio && !definition.audio.objectAudio)) throw new Error(`Audio stream ${track.index} is incompatible; channel count and object audio must be preserved`)
     const protectedTrack = track.hasObjectAudio || track.isCommentary || track.isAudioDescription || track.isAccessibility
     const requestedCodec = options.targetAudioCodec
-    if (requestedCodec && !protectedTrack && requestedCodec !== track.codec) {
-      if (!definition.audio.codecs.includes(requestedCodec)) throw new Error(`Audio codec ${requestedCodec} is not supported by ${profile.name}`)
+    if (requestedCodec && !protectedTrack && normalizeAudioCodec(requestedCodec) !== normalizeAudioCodec(track.codec, track.profile)) {
+      if (!definition.audio.codecs.some(codec => normalizeAudioCodec(codec) === normalizeAudioCodec(requestedCodec))) throw new Error(`Audio codec ${requestedCodec} is not supported by ${profile.name}`)
       const bitrateKbps = track.channels >= 6 ? APP_CONFIG.transcoding.audioSurroundTargetBitrateKbps : APP_CONFIG.transcoding.audioStereoTargetBitrateKbps
       changes.push(`Convert audio stream ${track.index} from ${track.codec} to ${requestedCodec}, preserving ${track.channels} channels`)
       return { sourceIndex: track.index, codec: requestedCodec, bitrateKbps }
     }
-    if (definition.audio.codecs.includes(track.codec)) return { sourceIndex: track.index, codec: track.codec }
+    if (definition.audio.codecs.some(codec => normalizeAudioCodec(codec) === normalizeAudioCodec(track.codec, track.profile))) return { sourceIndex: track.index, codec: track.codec }
     if (protectedTrack) throw new Error(`Protected audio stream ${track.index} requires codec preservation`)
     const codec = requestedCodec
-    if (!codec || !definition.audio.codecs.includes(codec) || !['aac', 'ac3', 'eac3'].includes(codec)) throw new Error(`Select a supported audio codec for stream ${track.index}`)
+    if (!codec || !definition.audio.codecs.some(supportedCodec => normalizeAudioCodec(supportedCodec) === normalizeAudioCodec(codec)) || !['aac', 'ac3', 'eac3'].includes(codec)) throw new Error(`Select a supported audio codec for stream ${track.index}`)
     const bitrateKbps = track.channels >= 6 ? APP_CONFIG.transcoding.audioSurroundTargetBitrateKbps : APP_CONFIG.transcoding.audioStereoTargetBitrateKbps
     changes.push(`Convert audio stream ${track.index} from ${track.codec} to ${codec}, preserving ${track.channels} channels`)
     return { sourceIndex: track.index, codec, bitrateKbps }
@@ -67,11 +68,11 @@ export function buildTargetTranscodePlan(analysis: FileAnalysisResult, profile: 
     const codec = track.codec === 'subrip' ? 'srt' : track.codec
     if (!definition.subtitles.embedded || !definition.subtitles.formats.includes(codec) || (container === 'mp4' && codec !== 'mov_text')) throw new Error(`Subtitle stream ${track.index} cannot be preserved in the selected target`)
   }
-  const retainedBitrate = audio.reduce((sum, item) => sum + (item.bitrateKbps ?? analysis.audioTracks.find(track => track.index === item.sourceIndex)?.bitrate ?? 0) * 1000, 0)
-  const outputCeiling = options.maxOutputBytes ?? analysis.fileSize!
+  const retainedBitrate = audio.reduce((sum, item) => sum + (item.bitrateKbps ?? analysis.audioTracks.find(track => track.index === item.sourceIndex)?.bitrateKbps ?? 0) * 1000, 0)
+  const outputCeiling = options.maxOutputBytes ?? analysis.fileSizeBytes!
   const levelBitrateLimit = MAIN_TIER_BITRATE_LIMITS[options.targetCodec!]?.[level]
   if (levelBitrateLimit === undefined) throw new Error(`No verified main-tier bitrate limit for ${options.targetCodec} level ${level / 10}`)
-  const maximumVideoBitrate = Math.floor(Math.min(levelBitrateLimit, Math.min(definition.network.sustainableBitrate, outputCeiling * 8 / (analysis.duration! / 1000)) - retainedBitrate))
+  const maximumVideoBitrate = Math.floor(Math.min(levelBitrateLimit, Math.min(definition.network.sustainableBitrate, outputCeiling * 8 / (analysis.durationMs! / 1000)) - retainedBitrate))
   if (maximumVideoBitrate <= 0) throw new Error('Retained audio exhausts the configured target bitrate')
   const convertHdr = sourceHdr !== 'SDR' && hdrFormat !== sourceHdr
   if (convertHdr && hdrFormat !== 'SDR' && hdrFormat !== 'HDR10') throw new Error(`Conversion to ${hdrFormat} is not verified; select SDR or HDR10`)
