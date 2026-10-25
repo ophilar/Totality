@@ -685,9 +685,11 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
       if (backgroundPreflight.current) return
       setMode('preview')
       logOptimizationDiagnostic('TVOptimizationUI', 'info', 'review.opened', { preflightId: preflight.preflightId, batchId: preflight.batchId, episodeCount: preflight.episodes.length, sampleReviewCount: preflight.episodes.filter(item => item.compatible && item.samplePaths?.length).length })
-      if (!preflight.compatible) {
-        setMessage('Preflight completed with some incompatibilities.')
-      }
+      const hasIncompatibleEpisodes = preflight.episodes.some(item => item.decisionStatus === 'incompatible')
+      const hasInsufficientEvidence = preflight.episodes.some(item => item.decisionStatus === 'insufficient_evidence')
+      if (hasIncompatibleEpisodes && hasInsufficientEvidence) setMessage('Some episodes are incompatible and others need more evidence.')
+      else if (hasIncompatibleEpisodes) setMessage('Some episodes are incompatible with this plan.')
+      else if (hasInsufficientEvidence) setMessage('Some episodes need more evidence and will be skipped.')
     } catch (error) {
       if (backgroundPreflight.current) return
       const errMsg = error instanceof Error ? error.message : String(error)
