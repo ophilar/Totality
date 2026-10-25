@@ -1557,8 +1557,15 @@ export function Dashboard({
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-xs text-muted-foreground flex items-center gap-1"><Film className="w-3 h-3" />Movies</span>
-                          <span className="text-[10px] text-muted-foreground">Media quality rating</span>
+                          {libraryStats.movieAverageQualityScore === null
+                            ? <span className="text-xs font-bold text-muted-foreground">—</span>
+                            : <AnimatedNumber value={libraryStats.movieAverageQualityScore} className="text-xs font-bold" />}
                         </div>
+                        {libraryStats.movieAverageQualityScore !== null && (
+                          <div className="h-1 bg-muted rounded-full overflow-hidden">
+                            <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${libraryStats.movieAverageQualityScore}%` }} />
+                          </div>
+                        )}
                         {libraryStats.movieNeedsUpgradeCount > 0 && (
                           <div className="text-caption text-muted-foreground mt-0.5"><AnimatedNumber value={libraryStats.movieNeedsUpgradeCount} /> upgrades</div>
                         )}
@@ -1568,8 +1575,15 @@ export function Dashboard({
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-xs text-muted-foreground flex items-center gap-1"><Tv className="w-3 h-3" />TV</span>
-                          <span className="text-[10px] text-muted-foreground">Media quality rating</span>
+                          {libraryStats.tvAverageQualityScore === null
+                            ? <span className="text-xs font-bold text-muted-foreground">—</span>
+                            : <AnimatedNumber value={libraryStats.tvAverageQualityScore} className="text-xs font-bold" />}
                         </div>
+                        {libraryStats.tvAverageQualityScore !== null && (
+                          <div className="h-1 bg-muted rounded-full overflow-hidden">
+                            <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${libraryStats.tvAverageQualityScore}%` }} />
+                          </div>
+                        )}
                         {libraryStats.tvNeedsUpgradeCount > 0 && (
                           <div className="text-caption text-muted-foreground mt-0.5"><AnimatedNumber value={libraryStats.tvNeedsUpgradeCount} /> upgrades</div>
                         )}
