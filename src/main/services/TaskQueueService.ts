@@ -233,17 +233,21 @@ export class TaskQueueService {
    * Cancel the current running task
    */
   cancelCurrentTask(): void {
-    if (!this.currentTask) return
+    if (!this.currentTask || this.cancelRequested) return
 
     console.log(`[TaskQueue] Cancelling current task: ${this.currentTask.label}`)
     this.cancelRequested = true
+    this.currentTask.status = 'cancelling'
+    this.emitQueueUpdate()
 
     // Also cancel in underlying services
     switch (this.currentTask.type) {
       case 'library-scan':
       case 'source-scan':
-      case 'music-scan':
         getSourceManager().stopScan()
+        break
+      case 'music-scan':
+        if (this.currentTask.sourceId) getSourceManager().cancelMusicScan(this.currentTask.sourceId)
         break
       case 'series-completeness':
         getSeriesCompletenessService().cancel()
@@ -1027,6 +1031,8 @@ export class TaskQueueService {
       itemsRemoved: result.itemsRemoved,
     }
 
+    if (this.cancelRequested || result.cancelled) return
+
     if (!result.success && result.errors?.length > 0) {
       throw new Error(result.errors.join(', '))
     }
@@ -1034,7 +1040,12 @@ export class TaskQueueService {
     // Analyze quality for all albums after scan
     const db = getDatabase()
     console.log(`[TaskQueue] Analyzing music quality for source ${task.sourceId}...`)
-    await analyzeAlbumQuality(db, task.sourceId)
+    await analyzeAlbumQuality(db, task.sourceId, (current, total) => onProgress({
+      current,
+      total,
+      phase: 'music quality analysis',
+      currentItem: `Album ${current} of ${total}`,
+    }))
     console.log(`[TaskQueue] Music quality analysis complete`)
   }
 

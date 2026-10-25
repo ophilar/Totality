@@ -303,6 +303,8 @@ export interface MediaProvider {
   // Library Operations
   getLibraries(): Promise<MediaLibrary[]>
   scanLibrary(libraryId: string, options?: ScanOptions): Promise<ScanResult>
+  cancelScan?(): void
+  cancelMusicScan?(): void
 
   // Item Operations
   getItemMetadata(itemId: string): Promise<MediaMetadata>

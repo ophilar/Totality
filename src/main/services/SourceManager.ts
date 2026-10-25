@@ -78,10 +78,19 @@ export class SourceManager {
    * Stop the current scan
    */
   stopScan(): void {
-    if (this.isScanning) {
-      console.log('[SourceManager] Stopping scan...')
-      this.scanCancelled = true
+    if (!this.isScanning) return
+    console.log('[SourceManager] Stopping scan...')
+    this.scanCancelled = true
+    for (const provider of this.providers.values()) {
+      provider.cancelScan?.()
+      provider.cancelMusicScan?.()
     }
+  }
+
+  cancelMusicScan(sourceId: string): void {
+    const provider = this.providers.get(sourceId)
+    provider?.cancelMusicScan?.()
+    provider?.cancelScan?.()
   }
 
   /**
