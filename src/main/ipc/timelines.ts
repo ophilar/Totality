@@ -114,6 +114,14 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
     if (resolved.timeline.id !== input.recipeId || resolved.sourceId !== input.sourceId) throw new Error('The reviewed timeline does not match the selected guide and source.')
     if (resolved.timeline.refreshError && !input.allowStale) throw new Error('Explicit approval is required to sync a stale timeline snapshot.')
     if (resolved.items.some(item => item.status === 'ambiguous')) throw new Error('Resolve ambiguous timeline matches before syncing.')
+    for (const item of resolved.items) {
+      const match = item.matchedMediaItem
+      if (!match) continue
+      const current = getDatabase().getMediaItemById(match.id)
+      if (!current || current.source_id !== input.sourceId || current.source_type !== 'plex' || current.plex_id !== match.plexId) {
+        throw new Error('A timeline match changed after review; resolve the guide again before syncing.')
+      }
+    }
     const plex = getSourceManager().getProvider(input.sourceId)
     if (!(plex instanceof PlexProvider)) throw new Error(`Source '${input.sourceId}' is not a connected Plex source.`)
     const server = plex.getSelectedServer()
