@@ -69,7 +69,9 @@ export function buildTargetTranscodePlan(analysis: FileAnalysisResult, profile: 
   })
   for (const track of analysis.subtitleTracks.filter(track => streams.subtitleStreamIndexes.includes(track.index))) {
     const codec = track.codec === 'subrip' ? 'srt' : track.codec
-    if (!definition.subtitles.embedded || !definition.subtitles.formats.includes(codec) || (container === 'mp4' && codec !== 'mov_text')) throw new Error(`Subtitle stream ${track.index} cannot be preserved in the selected target`)
+    if (!definition.subtitles.embedded || !definition.subtitles.formats.includes(codec) || (container === 'mp4' && codec !== 'mov_text')) {
+      throw new Error(`Subtitle stream ${track.index} (${codec}) is incompatible with ${profile.name} in ${container}; remove it with the subtitle policy or choose a target profile/container that supports ${codec}.`)
+    }
   }
   const retainedBitrate = audio.reduce((sum, item) => sum + (item.bitrateKbps ?? analysis.audioTracks.find(track => track.index === item.sourceIndex)?.bitrateKbps ?? 0) * 1000, 0)
   const outputCeiling = options.maxOutputBytes ?? analysis.fileSizeBytes!

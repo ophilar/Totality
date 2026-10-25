@@ -584,7 +584,8 @@ export class QualityAnalyzer {
     sourceId?: string,
     libraryId?: string,
     signal?: AbortSignal,
-    series?: { title: string; seriesIdentityKey: string }
+    series?: { title: string; seriesIdentityKey: string },
+    onItemFailure?: (mediaItemId: number | undefined, error: unknown) => void
   ): Promise<number> {
     const db = getDatabase()
     const logging = getLoggingService()
@@ -650,7 +651,16 @@ export class QualityAnalyzer {
             `Analyzing item ${currentItemIndex}/${totalItems}: id=${currentItemId}, type=${item.type}`
           )
           currentStage = 'persisting deep analysis'
-          const { qualityScore } = await this.analyzeMediaItemFileEvidence(item, signal)
+          let qualityScore: QualityScore
+          try {
+            qualityScore = (await this.analyzeMediaItemFileEvidence(item, signal)).qualityScore
+          } catch (error) {
+            if (signal?.aborted || isCancelled?.()) throw error
+            onItemFailure?.(item.id, error)
+            logging.error('[QualityAnalyzer]', `Item analysis failed: id=${item.id ?? 'unknown'}, index=${currentItemIndex}/${totalItems}`, error)
+            if (onProgress) onProgress(currentItemIndex, totalItems)
+            continue
+          }
           currentStage = 'calculating quality score'
           qualityScoresBatch.push(qualityScore)
 
@@ -737,7 +747,8 @@ export class QualityAnalyzer {
       low: number
       medium: number
       high: number
-    }
+    },
+    coverage: { rated: number; total: number; unknown: number }
   }> {
     const db = getDatabase()
     const scores = await db.media.getQualityScores()
@@ -752,18 +763,27 @@ export class QualityAnalyzer {
         low: 0,
         medium: 0,
         high: 0
-      }
+      },
+      coverage: { rated: 0, total: db.countMediaItems(), unknown: 0 }
     }
 
     scores.forEach((score: QualityScore) => {
       const tier = score.quality_tier
       const quality = score.tier_quality.toLowerCase()
-      if (!(tier in distribution.byTier) || (quality !== 'low' && quality !== 'medium' && quality !== 'high')) return
-
-      const knownTier = tier as QualityTier
-      distribution.byTier[knownTier][quality]++
+      if (quality === 'unknown') {
+        distribution.coverage.unknown++
+        return
+      }
+      if (quality !== 'low' && quality !== 'medium' && quality !== 'high') return
       distribution.byQuality[quality]++
+      distribution.coverage.rated++
+      if (tier in distribution.byTier) {
+        const knownTier = tier as QualityTier
+        distribution.byTier[knownTier][quality]++
+      }
     })
+
+    distribution.coverage.unknown += Math.max(0, distribution.coverage.total - scores.length)
 
     return distribution
   }

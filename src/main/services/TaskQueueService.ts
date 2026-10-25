@@ -69,10 +69,12 @@ export class TaskQueueService {
   private taskHistory: ActivityLogEntry[] = []
   private monitoringHistory: ActivityLogEntry[] = []
   private cancelRequested = false
+  private shuttingDown = false
   private monitoringWasPausedByUs = false // Track if we paused monitoring
   private monitoringResumeTimer: ReturnType<typeof setTimeout> | null = null
   private progressThrottleTimer: NodeJS.Timeout | null = null
   private progressUpdatePending = false
+  private processingIdleWaiters: Array<() => void> = []
 
   private static readonly MAX_COMPLETED_TASKS = 50
   private static readonly MAX_HISTORY_ENTRIES = 100
@@ -204,6 +206,17 @@ export class TaskQueueService {
     this.isPaused = true
     console.log(`[TaskQueue] Queue paused`)
     this.emitQueueUpdate()
+  }
+
+  async stopForShutdown(): Promise<void> {
+    this.shuttingDown = true
+    const interruptedTask = this.currentTask ? structuredClone(this.currentTask) : undefined
+    this.pauseQueue()
+    if (interruptedTask) this.cancelCurrentTask()
+    if (this.isProcessing) await new Promise<void>(resolve => this.processingIdleWaiters.push(resolve))
+    if (interruptedTask && this.completedTasks.find(task => task.id === interruptedTask.id)?.status === 'interrupted') {
+      this.queue.unshift({ ...interruptedTask, status: 'queued', progress: undefined, completedAt: undefined, error: undefined })
+    }
   }
 
   /**
@@ -440,7 +453,7 @@ export class TaskQueueService {
       if (toRestore.length > 0) {
         db.savePendingTasks(toRestore.map(t => ({
           taskId: t.id, type: t.type, label: t.label,
-          sourceId: t.sourceId, libraryId: t.libraryId, artistId: t.artistId, createdAt: t.createdAt,
+          sourceId: t.sourceId, libraryId: t.libraryId, artistId: t.artistId, createdAt: t.createdAt, payload: t,
         })))
         console.log(`[TaskQueue] Saved ${toRestore.length} task(s) to restore on next launch`)
       } else {
@@ -460,19 +473,44 @@ export class TaskQueueService {
       const db = getDatabase()
       const pending = db.getPendingTasks()
       if (pending.length === 0) return
+      const restoredTasks: QueuedTask[] = []
+      for (const row of pending) {
+        try {
+          const savedTask = row.payloadJson ? JSON.parse(row.payloadJson) as QueuedTask : undefined
+          if (row.type === 'transcode' && !savedTask?.options) throw new Error('Persisted optimization plan is unavailable')
+          restoredTasks.push({
+            ...(savedTask ?? {
+              type: row.type as TaskType,
+              label: row.label,
+              sourceId: row.sourceId ?? undefined,
+              libraryId: row.libraryId ?? undefined,
+              artistId: row.artistId ?? undefined,
+            }),
+            id: row.taskId,
+            createdAt: row.createdAt,
+            status: 'queued',
+            progress: undefined,
+            completedAt: undefined,
+            error: undefined,
+          })
+        } catch (error) {
+          const message = `Could not resume interrupted task: ${getErrorMessage(error)}`
+          console.error(`[TaskQueue] ${row.label}: ${message}`)
+          db.saveTaskHistory({
+            taskId: row.taskId, type: row.type, label: row.label, sourceId: row.sourceId ?? undefined,
+            libraryId: row.libraryId ?? undefined, status: 'failed', error: message,
+            createdAt: row.createdAt, completedAt: new Date().toISOString(),
+          })
+          db.saveActivityLogEntry({ entryType: 'task-failed', message: `${row.label}: ${message}`, taskId: row.taskId, taskType: row.type as TaskType })
+        }
+      }
 
       db.clearPendingTasks()
-
-      let restored = 0
-      for (const row of pending) {
-        const id = this.addTask({
-          type: row.type as TaskType,
-          label: row.label,
-          sourceId: row.sourceId ?? undefined,
-          libraryId: row.libraryId ?? undefined,
-          artistId: row.artistId ?? undefined,
-        })
-        if (id) restored++
+      this.queue.push(...restoredTasks)
+      const restored = restoredTasks.length
+      if (restored > 0) {
+        this.emitQueueUpdate()
+        this.processNext()
       }
 
       if (restored > 0) {
@@ -559,9 +597,9 @@ export class TaskQueueService {
       await this.executeTask(task)
 
       if (this.cancelRequested) {
-        task.status = 'cancelled'
-        this.addTaskHistoryEntry(task, 'task-cancelled', `Cancelled: ${task.label}`)
-      } else if ((task.result?.failedCount ?? 0) > 0 && (task.result?.itemsScanned ?? 0) > 0) {
+        task.status = this.shuttingDown ? 'interrupted' : 'cancelled'
+        this.addTaskHistoryEntry(task, this.shuttingDown ? 'task-interrupted' : 'task-cancelled', `${this.shuttingDown ? 'Interrupted (app quit)' : 'Cancelled'}: ${task.label}`)
+      } else if ((task.result?.failedCount ?? 0) > 0) {
         task.status = 'partial'
         this.addTaskHistoryEntry(task, 'task-partial', this.formatCompletionMessage(task))
       } else {
@@ -573,9 +611,9 @@ export class TaskQueueService {
       const isCancellation = this.cancelRequested || errorMsg === 'Task cancelled'
 
       if (isCancellation) {
-        task.status = 'cancelled'
-        this.addTaskHistoryEntry(task, 'task-cancelled', `Cancelled: ${task.label}`)
-        console.log(`[TaskQueue] Task cancelled: ${task.label}`)
+        task.status = this.shuttingDown ? 'interrupted' : 'cancelled'
+        this.addTaskHistoryEntry(task, this.shuttingDown ? 'task-interrupted' : 'task-cancelled', `${this.shuttingDown ? 'Interrupted (app quit)' : 'Cancelled'}: ${task.label}`)
+        console.log(`[TaskQueue] Task ${this.shuttingDown ? 'interrupted for shutdown' : 'cancelled'}: ${task.label}`)
       } else {
         task.status = 'failed'
         task.error = errorMsg
@@ -624,6 +662,7 @@ export class TaskQueueService {
     this.currentTask = null
     this.isProcessing = false
     this.cancelRequested = false
+    for (const resolve of this.processingIdleWaiters.splice(0)) resolve()
 
     this.emitQueueUpdate()
     this.emitTaskComplete(task)
@@ -703,7 +742,20 @@ export class TaskQueueService {
 
       case 'quality-analysis':
         await getQualityAnalyzer().loadThresholdsFromDatabase()
-        task.result = { itemsScanned: await getQualityAnalyzer().analyzeAllMediaItems((current, total) => progressCallback({ current, total, phase: 'quality analysis' }), () => this.cancelRequested) }
+        {
+          const errors: string[] = []
+          const itemsScanned = await getQualityAnalyzer().analyzeAllMediaItems(
+            (current, total) => progressCallback({ current, total, phase: 'quality analysis' }),
+            () => this.cancelRequested,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            (mediaItemId, error) => errors.push(`Media item ${mediaItemId ?? 'unknown'}: ${getErrorMessage(error)}`),
+          )
+          task.result = { itemsScanned, failedCount: errors.length, errors }
+          if (errors.length === 0 && !this.cancelRequested) await getDatabase().deleteSetting('optimization.savings_reanalysis_pending')
+        }
         this.sendLibraryUpdated()
         break
 
@@ -881,12 +933,17 @@ export class TaskQueueService {
 
       onProgress({ phase: 'Analyzing artist', currentItem: artist.name, percentage: 5 })
 
+      const errors: string[] = []
       const ownedTitles = albums.map(a => a.title)
       const ownedMbIds = albums.filter(a => a.musicbrainz_id).map(a => a.musicbrainz_id!)
-      const completeness = await mbService.analyzeArtistCompleteness(
-        artist.name, artist.musicbrainz_id, ownedTitles, ownedMbIds
-      )
-      await db.upsertArtistCompleteness(completeness)
+      try {
+        const completeness = await mbService.analyzeArtistCompleteness(
+          artist.name, artist.musicbrainz_id, ownedTitles, ownedMbIds
+        )
+        await db.upsertArtistCompleteness(completeness)
+      } catch (error) {
+        errors.push(`Artist ${artist.name}: ${getErrorMessage(error)}`)
+      }
 
       // Analyze track completeness for each album
       for (let i = 0; i < albums.length; i++) {
@@ -907,14 +964,14 @@ export class TaskQueueService {
           }
         } catch (albumError) {
           if (albumError instanceof MusicBrainzReleaseDataNotFoundError) {
-            console.info(`[TaskQueue] No MusicBrainz track data for album "${album.title}"; skipped track completeness.`)
+            errors.push(`Album ${album.title}: ${getErrorMessage(albumError)}`)
           } else {
-            console.warn(`[TaskQueue] Failed to analyze album "${album.title}":`, albumError)
+            errors.push(`Album ${album.title}: ${getErrorMessage(albumError)}`)
           }
         }
       }
 
-      task.result = { itemsScanned: 1 + albums.length }
+      task.result = { itemsScanned: albums.length + 1, failedCount: errors.length, errors }
       return
     }
 
@@ -928,9 +985,6 @@ export class TaskQueueService {
       errors: result.errors,
     }
 
-    if (!result.completed && !this.cancelRequested && result.failedCount > 0 && result.artistsAnalyzed + result.albumsAnalyzed === 0) {
-      throw new Error(result.errors.join('; '))
-    }
   }
 
   private async executeMusicScan(task: QueuedTask, onProgress: (p: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void): Promise<void> {
