@@ -12,6 +12,7 @@ import { useWishlist } from '../../contexts/WishlistContext'
 import { useNavigation } from '../../contexts/NavigationContext'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { NotificationBell } from '../ui/NotificationBell'
+import { ActivityPanel } from '../ui/ActivityPanel'
 import logoImage from '../../assets/totality_header_logo.png'
 import type { MediaViewType } from '../library/types'
 
@@ -785,6 +786,8 @@ export function TopBar({
               )}
             </button>
           </Tooltip>
+
+          <ActivityPanel />
 
           {/* Notifications */}
           <NotificationBell />

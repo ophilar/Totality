@@ -266,6 +266,13 @@ export const RPC_CHANNEL_MAP: Record<string, string> = {
   notificationsDelete: IPC_CHANNELS.notificationsDelete,
   notificationsClear: IPC_CHANNELS.notificationsClear,
 
+  // Background activity
+  dbCancelOperation: IPC_CHANNELS.dbCancelOperation,
+  operationsDismiss: IPC_CHANNELS.operationsDismiss,
+  operationsGetActivity: IPC_CHANNELS.operationsGetActivity,
+  operationsGetResult: IPC_CHANNELS.operationsGetResult,
+  operationsSetPaused: IPC_CHANNELS.operationsSetPaused,
+
   // Task Queue
   taskQueueGetState: IPC_CHANNELS.taskQueueGetState,
   taskQueueAddTask: IPC_CHANNELS.taskQueueAddTask,
@@ -339,6 +346,7 @@ export const EVENT_CHANNEL_MAP: Record<string, string> = {
   onMonitoringEvent: IPC_CHANNELS.monitoringEvent,
   onNotification: IPC_CHANNELS.notification,
   onNotificationsNew: IPC_CHANNELS.notificationsNew,
+  onOperationsUpdated: IPC_CHANNELS.operationsUpdated,
   onTaskQueueUpdated: IPC_CHANNELS.taskQueueUpdated,
   onTaskQueueTaskComplete: IPC_CHANNELS.taskQueueTaskComplete,
   onScanCompleted: IPC_CHANNELS.scanCompleted,

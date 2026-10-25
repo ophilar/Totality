@@ -7,7 +7,6 @@ import { MissingItemPopup } from './MissingItemPopup'
 import { CollectionModal } from './CollectionModal'
 import { MatchFixModal } from './MatchFixModal'
 import { WishlistPanel } from '../wishlist/WishlistPanel'
-import { ActivityPanel } from '../ui/ActivityPanel'
 import { MoviesView } from './MoviesView'
 import { TranscodeModal } from './TranscodeModal'
 import { TVShowsView } from './TVShowsView'
@@ -1735,7 +1734,6 @@ export function MediaBrowser({
                 </span>
               )}
             </button>
-            <ActivityPanel />
             <button
               ref={settingsButtonRef}
               onClick={() => onOpenSettings?.()}
