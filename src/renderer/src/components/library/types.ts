@@ -337,10 +337,20 @@ export interface MediaBrowserProps {
   onLibraryTabChange?: (tab: MediaViewType) => void
   // Notify parent of auto-refresh state
   onAutoRefreshChange?: (isRefreshing: boolean) => void
+  pendingTVOptimizationAction?: TVOptimizationNavigation | null
+  onTVOptimizationActionHandled?: () => void
   // Responsive layout
   isMobile?: boolean
   isTablet?: boolean
 }
+
+export type TVOptimizationNavigation =
+  | { kind: 'review'; preflightId: string }
+  | {
+      kind: 'resume'
+      requestId: string
+      entity: { seriesTitle?: string; seriesIdentityKey?: string; sourceId: string; libraryId?: string; mediaItemId?: number }
+    }
 
 export interface MissingItemPopupData {
   type: 'episode' | 'season' | 'movie'

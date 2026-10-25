@@ -23,7 +23,7 @@ import { ToastContainer } from './components/ui/Toast'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { SectionErrorBoundary } from './components/ui/SectionErrorBoundary'
 const TimelinesView = lazy(() => import('./components/timelines/TimelinesView').then(module => ({ default: module.TimelinesView })))
-import type { MediaViewType, SeriesStats, CollectionStats, MusicCompletenessStats, AnalysisProgress } from './components/library/types'
+import type { MediaViewType, SeriesStats, CollectionStats, MusicCompletenessStats, AnalysisProgress, TVOptimizationNavigation } from './components/library/types'
 import { isWebMode, isAuthenticated, authenticate } from './services/webTransport'
 import { useMobileLayout } from './hooks/useMobileLayout'
 import { MobileTabBar, type MobileTab } from './components/mobile/MobileTabBar'
@@ -54,6 +54,7 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
   const [showChatPanel, setShowChatPanel] = useState(false)
   const [showMoodSyncPanel, setShowMoodSyncPanel] = useState(false)
   const [showTaskQueuePanel, setShowTaskQueuePanel] = useState(false)
+  const [pendingTVOptimizationAction, setPendingTVOptimizationAction] = useState<TVOptimizationNavigation | null>(null)
   const [showMobileSearch, setShowMobileSearch] = useState(false)
   // Auto-refresh state (passed up from MediaBrowser)
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false)
@@ -276,14 +277,37 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
     setShowAddSourceModal(false)
   }
 
-  const handleNavigateToLibrary = (tab?: MediaViewType) => {
+  const handleNavigateToLibrary = useCallback((tab?: MediaViewType) => {
     const newTab = tab || libraryTab
     if (!isRestoringRef.current) {
       pushNavState({ view: 'library', tab: newTab })
     }
     if (tab) setLibraryTab(tab)
     setCurrentView('library')
-  }
+  }, [libraryTab, pushNavState])
+
+  const handleTVOptimizationActionHandled = useCallback(() => setPendingTVOptimizationAction(null), [])
+
+  useEffect(() => {
+    const openReview = (event: Event) => {
+      const preflightId = (event as CustomEvent<{ preflightId?: string }>).detail?.preflightId
+      if (!preflightId) return
+      setPendingTVOptimizationAction({ kind: 'review', preflightId })
+      handleNavigateToLibrary('tv')
+    }
+    const resumePreflight = (event: Event) => {
+      const detail = (event as CustomEvent<{ requestId?: string; entity?: Extract<TVOptimizationNavigation, { kind: 'resume' }>['entity'] }>).detail
+      if (!detail?.requestId || !detail.entity) return
+      setPendingTVOptimizationAction({ kind: 'resume', requestId: detail.requestId, entity: detail.entity })
+      handleNavigateToLibrary('tv')
+    }
+    window.addEventListener('tvOptimization:requestReview', openReview)
+    window.addEventListener('tvOptimization:returnToPreflight', resumePreflight)
+    return () => {
+      window.removeEventListener('tvOptimization:requestReview', openReview)
+      window.removeEventListener('tvOptimization:returnToPreflight', resumePreflight)
+    }
+  }, [handleNavigateToLibrary])
 
   const handleNavigateToDashboard = () => {
     if (!isRestoringRef.current) {
@@ -486,6 +510,8 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
                 libraryTab={libraryTab}
                 onLibraryTabChange={setLibraryTab}
                 onAutoRefreshChange={setIsAutoRefreshing}
+                pendingTVOptimizationAction={pendingTVOptimizationAction}
+                onTVOptimizationActionHandled={handleTVOptimizationActionHandled}
                 isMobile={isMobile}
                 isTablet={isTablet}
               />

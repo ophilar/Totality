@@ -7,7 +7,7 @@ import { MissingItemCard } from './MissingItemCard'
 import { ShowTranscodeModal } from './ShowTranscodeModal'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors, formatBytes, formatSeasonLabel, getStatusBadge } from './mediaUtils'
-import type { MediaItem, TVShow, TVShowSummary, SeasonInfo, TVSeason, SeriesCompletenessData, MissingEpisode } from './types'
+import type { MediaItem, TVShow, TVShowSummary, SeasonInfo, TVSeason, SeriesCompletenessData, MissingEpisode, TVOptimizationNavigation } from './types'
 import type { ProviderType } from '../../contexts/SourceContext'
 import type { ShowTranscodePreflight } from '@main/services/TranscodingService'
 import { QualityBadges } from './QualityBadges'
@@ -304,6 +304,8 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onOptim
 })
 
 export function TVShowsView({
+  pendingTVOptimizationAction,
+  onTVOptimizationActionHandled,
   shows,
   selectedShow,
   selectedSeason,
@@ -333,6 +335,8 @@ export function TVShowsView({
   isMobile = false,
   isTablet = false,
 }: {
+  pendingTVOptimizationAction?: TVOptimizationNavigation | null
+  onTVOptimizationActionHandled?: () => void
   shows: TVShowSummary[]
   selectedShow: string | null
   selectedSeason: number | null
@@ -533,6 +537,17 @@ export function TVShowsView({
       window.removeEventListener('tvOptimization:resume', resumeOperation)
     }
   }, [shows])
+
+  useEffect(() => {
+    if (!pendingTVOptimizationAction) return
+    const detail = pendingTVOptimizationAction.kind === 'review'
+      ? { preflightId: pendingTVOptimizationAction.preflightId }
+      : { requestId: pendingTVOptimizationAction.requestId, entity: pendingTVOptimizationAction.entity }
+    const eventName = pendingTVOptimizationAction.kind === 'review' ? 'tvOptimization:review' : 'tvOptimization:resume'
+    window.dispatchEvent(new CustomEvent(eventName, { detail }))
+    onTVOptimizationActionHandled?.()
+  }, [pendingTVOptimizationAction, onTVOptimizationActionHandled])
+
   const firstIdentifiedEpisode = useMemo(() => {
     if (!selectedShowData) return undefined
     for (const season of selectedShowData.seasons.values()) {
