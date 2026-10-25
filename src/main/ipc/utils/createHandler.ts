@@ -23,6 +23,21 @@ export interface HandlerOptions {
   onError?: (channel: string, error: unknown) => void
 }
 
+const authenticatedWebRpc = Symbol('authenticated-web-rpc')
+
+export interface AuthenticatedWebRpcEvent {
+  readonly [authenticatedWebRpc]: true
+  sender: {
+    id?: number
+    send: (channel: string, ...args: unknown[]) => void
+    isDestroyed: () => boolean
+  }
+}
+
+export function createAuthenticatedWebRpcEvent(sender: AuthenticatedWebRpcEvent['sender']): AuthenticatedWebRpcEvent {
+  return Object.defineProperty({ sender }, authenticatedWebRpc, { value: true }) as AuthenticatedWebRpcEvent
+}
+
 // Re-export error utilities for consumers
 export { getErrorMessage, isNodeError }
 
@@ -30,7 +45,8 @@ export { getErrorMessage, isNodeError }
  * Validates that an incoming IPC message originates from an authorized local frame.
  * Enforces fail-closed security: missing events, missing sender frames, or missing URLs are rejected.
  */
-export function validateSenderFrame(event: Pick<IpcMainInvokeEvent, 'senderFrame'>, channel: string): void {
+export function validateSenderFrame(event: Pick<IpcMainInvokeEvent, 'senderFrame'> | AuthenticatedWebRpcEvent, channel: string): void {
+  if (event && authenticatedWebRpc in event) return
   if (!event || !event.senderFrame) {
     getLoggingService().error('[IPC Security]', `Rejected unauthorized IPC request on ${channel}: missing event or senderFrame`)
     throw new Error(`Unauthorized IPC request on ${channel}: missing sender frame`)

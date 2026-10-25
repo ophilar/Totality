@@ -29,6 +29,7 @@ import { getDatabase } from '../database/getDatabase'
 import { getCredentialEncryptionService } from './CredentialEncryptionService'
 import { SETTING_KEYS } from '../../shared/settingKeys'
 import { getLoggingService } from './LoggingService'
+import { createAuthenticatedWebRpcEvent, type AuthenticatedWebRpcEvent } from '../ipc/utils/createHandler'
 
 // Types
 interface RpcMessage {
@@ -677,8 +678,7 @@ export class WebServerService {
         try {
           const handler = this.handlerMap.get(channel)
           if (handler) {
-            const syntheticEvent = { sender: { send: () => {}, isDestroyed: () => false } }
-            const val = await handler(syntheticEvent, ...args)
+            const val = await handler(this.createRpcEvent(ws), ...args)
             ws.send(JSON.stringify({ type: 'response', id, result: val ? '__set__' : null }))
             return
           }
@@ -697,41 +697,42 @@ export class WebServerService {
     }
 
     try {
-      const syntheticEvent = {
-        sender: {
-          send: (eventChannel: string, ...eventArgs: unknown[]) => {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: 'event', channel: eventChannel, args: eventArgs }))
-            }
-          },
-          isDestroyed: () => ws.readyState !== WebSocket.OPEN,
-        },
-      }
-
-      let result = await handler(syntheticEvent, ...args)
+      const result = await handler(this.createRpcEvent(ws), ...args)
 
       // Strip connection_config from source responses (contains passwords/tokens)
+      let sanitizedResult = result
       if (channel === 'sources:list' || channel === 'sources:getEnabled') {
-        if (Array.isArray(result)) {
-          result = result.map((s: Record<string, unknown>) => ({ ...s, connection_config: '{}' }))
+        if (Array.isArray(sanitizedResult)) {
+          sanitizedResult = sanitizedResult.map((source: Record<string, unknown>) => ({ ...source, connection_config: '{}' }))
         }
       }
 
       // Strip sensitive settings from getAllSettings response
-      if (channel === 'db:getAllSettings' && result && typeof result === 'object') {
-        const filtered = { ...(result as Record<string, string>) }
+      if (channel === 'db:getAllSettings' && sanitizedResult && typeof sanitizedResult === 'object') {
+        const filtered = { ...(sanitizedResult as Record<string, string>) }
         for (const key of WEB_SENSITIVE_SETTINGS) {
           if (key in filtered) filtered[key] = ''
         }
-        result = filtered
+        sanitizedResult = filtered
       }
 
-      ws.send(JSON.stringify({ type: 'response', id, result }))
+      ws.send(JSON.stringify({ type: 'response', id, result: sanitizedResult }))
     } catch (err) {
       // Sanitize error — never expose stack traces or internal details to web clients
       console.error(`[WebServer] RPC error on ${channel}:`, err)
       ws.send(JSON.stringify({ type: 'response', id, error: 'Internal error' }))
     }
+  }
+
+  private createRpcEvent(ws: AuthenticatedWebSocket): AuthenticatedWebRpcEvent {
+    return createAuthenticatedWebRpcEvent({
+      send: (eventChannel: string, ...eventArgs: unknown[]) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'event', channel: eventChannel, args: eventArgs }))
+        }
+      },
+      isDestroyed: () => ws.readyState !== WebSocket.OPEN,
+    })
   }
 
   // ---------------------------------------------------------------------------
