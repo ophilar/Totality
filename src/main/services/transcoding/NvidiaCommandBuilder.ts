@@ -8,12 +8,13 @@ import { APP_CONFIG } from '@main/config'
 
 export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
   buildFFmpegArgs(input: string, output: string, options: TranscodeOptions, analysis: FileAnalysisResult): string[] {
+    if (process.platform === 'win32' && options.gpuDeviceSelector?.kind !== 'directx') throw new Error('The selected NVIDIA adapter could not be mapped to a DirectX device.')
+    if (process.platform === 'linux' && options.gpuDeviceSelector?.kind !== 'nvenc') throw new Error('The selected NVIDIA adapter could not be mapped to an NVENC device.')
+    if (process.platform !== 'win32' && process.platform !== 'linux') throw new Error('Per-device NVIDIA encoding is unavailable on this platform.')
     const hdrArgs = buildHdrMetadataArgs(analysis, options)
     const args: string[] = [
       '-y',
-      '-hwaccel', 'cuda',
-      '-hwaccel_output_format', 'cuda',
-      '-extra_hw_frames', '8',
+      ...(process.platform === 'win32' ? ['-init_hw_device', `d3d11va=selected:${options.gpuDeviceSelector?.kind === 'directx' ? options.gpuDeviceSelector.index : ''}`, '-filter_hw_device', 'selected'] : []),
       '-i', input,
       '-fps_mode', 'passthrough'
     ]
@@ -23,6 +24,7 @@ export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
 
     args.push(
       '-c:v', codec,
+      ...(process.platform === 'linux' ? ['-gpu', String(options.gpuDeviceSelector?.kind === 'nvenc' ? options.gpuDeviceSelector.index : '')] : []),
       '-preset', preset,
       '-rc', 'vbr',
       '-cq', cq,
@@ -37,8 +39,14 @@ export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
       analysis?.video?.bitDepth === 10
     )
 
-    if (is10BitSource || options.targetCodec === 'av1') {
-      args.push('-vf', 'scale_cuda=format=p010le')
+    if (process.platform === 'linux' && (is10BitSource || options.targetCodec === 'av1')) {
+      args.push('-pix_fmt', 'p010le')
+    } else if (process.platform === 'linux') {
+      args.push('-pix_fmt', 'nv12')
+    } else if (is10BitSource || options.targetCodec === 'av1') {
+      args.push('-vf', 'format=p010le,hwupload')
+    } else {
+      args.push('-vf', 'format=nv12,hwupload')
     }
 
     appendStreamMappingArgs(args, analysis, options)

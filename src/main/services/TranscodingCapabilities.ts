@@ -9,8 +9,7 @@ export interface TranscodingCapabilities extends TranscodingAvailability {
   detectedAt: string
   gpus: GpuInfo[]
   selectedGpuId: string | null
-  vendors: Array<GpuInfo['vendor'] | 'Software'>
-  encoders: string[]
+  deviceEncoders: Record<string, string[]>
   encodingMatrix: EncodingMatrix
   engines: Array<'ffmpeg'>
 }
@@ -39,54 +38,32 @@ export function buildTranscodingCapabilities(
   availability: TranscodingAvailability,
   gpus: GpuInfo[],
   selectedGpuId: string | null = null,
-  encoders: string[] = []
+  deviceEncoders: Record<string, string[]>
 ): TranscodingCapabilities {
-  const vendors: Array<GpuInfo['vendor'] | 'Software'> = []
-
-  for (const gpu of gpus) {
-    if (gpu.vendor === 'Unknown' || vendors.includes(gpu.vendor)) continue
-    vendors.push(gpu.vendor)
-  }
-
-  vendors.push('Software')
-
-  const verifiedEncoders = new Set(encoders)
   const devices = [
     { id: 'software', name: 'Software', kind: 'software' as const },
-    ...vendors.filter(vendor => vendor !== 'Software').map(vendor => ({
-      id: `hardware-${vendor.toLowerCase()}`,
-      name: vendor === 'NVIDIA' ? 'NVIDIA NVENC' : vendor === 'Intel' ? 'Intel QSV' : vendor === 'AMD' ? 'AMD AMF' : 'Apple VideoToolbox',
-      kind: 'hardware' as const,
-    })),
+    ...gpus.map(gpu => ({ id: gpu.id, name: gpu.name, kind: 'hardware' as const })),
   ]
+  const encoderAvailable = (deviceId: string, vendor: GpuInfo['vendor'] | 'Software', codec: EncodingCodec): boolean => {
+    const encoder = vendor === 'Software'
+      ? codec === 'h264' ? 'libx264' : codec === 'hevc' ? 'x265' : 'svt_av1'
+      : getHardwareEncoder(vendor, codec)
+    return encoder !== undefined && deviceEncoders[deviceId].includes(encoder)
+  }
   const encodingMatrix: EncodingMatrix = {
     devices,
     codecs: [
-      { codec: 'h264', capabilities: [verifiedEncoders.has('libx264'), ...devices.slice(1).map(device => {
-        const vendor = device.name.split(' ')[0] as GpuInfo['vendor']
-        const encoder = getHardwareEncoder(vendor, 'h264')
-        return encoder ? verifiedEncoders.has(encoder) : false
-      })] },
-      { codec: 'hevc', capabilities: [verifiedEncoders.has('x265'), ...devices.slice(1).map(device => {
-        const vendor = device.name.split(' ')[0] as GpuInfo['vendor']
-        const encoder = getHardwareEncoder(vendor, 'hevc')
-        return encoder ? verifiedEncoders.has(encoder) : false
-      })] },
-      { codec: 'av1', capabilities: [verifiedEncoders.has('svt_av1'), ...devices.slice(1).map(device => {
-        const vendor = device.name.split(' ')[0] as GpuInfo['vendor']
-        const encoder = getHardwareEncoder(vendor, 'av1')
-        return encoder ? verifiedEncoders.has(encoder) : false
-      })] },
+      { codec: 'h264', capabilities: [encoderAvailable('software', 'Software', 'h264'), ...gpus.map(gpu => encoderAvailable(gpu.id, gpu.vendor, 'h264'))] },
+      { codec: 'hevc', capabilities: [encoderAvailable('software', 'Software', 'hevc'), ...gpus.map(gpu => encoderAvailable(gpu.id, gpu.vendor, 'hevc'))] },
+      { codec: 'av1', capabilities: [encoderAvailable('software', 'Software', 'av1'), ...gpus.map(gpu => encoderAvailable(gpu.id, gpu.vendor, 'av1'))] },
     ],
   }
-
   return {
     ...availability,
     detectedAt: new Date().toISOString(),
     gpus,
     selectedGpuId,
-    vendors,
-    encoders: Array.from(new Set(encoders)),
+    deviceEncoders,
     encodingMatrix,
     engines: availability.ffmpeg ? ['ffmpeg'] : []
   }

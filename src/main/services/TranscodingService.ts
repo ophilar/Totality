@@ -56,6 +56,7 @@ export interface TranscodeOptions {
   preset?: string
   customArgs?: string
   gpuId?: string
+  gpuDeviceSelector?: GpuInfo['encoderDeviceSelector']
   transcodingEngine?: 'ffmpeg'
   targetSize?: string
   maxOutputBytes?: number
@@ -255,7 +256,7 @@ interface CachedMeasurement {
 interface TranscodingCapabilitiesCacheRecord {
   fingerprint: string
   detectedAt: string
-  encoders: string[]
+  deviceEncoders: Record<string, string[]>
 }
 
 /**
@@ -264,7 +265,7 @@ interface TranscodingCapabilitiesCacheRecord {
  * Coordinates FFmpeg transcoding from explicit parameters.
  */
 export class TranscodingService {
-  private static readonly CAPABILITIES_CACHE_KEY = 'transcoding.capabilities.snapshot.v1'
+  private static readonly CAPABILITIES_CACHE_KEY = 'transcoding.capabilities.snapshot.v2'
   private activeJobs = new Map<number, AbortController>()
   private initializedPromise: Promise<void> | null = null
   private capabilitiesPromise: Promise<TranscodingCapabilities> | null = null
@@ -999,10 +1000,11 @@ export class TranscodingService {
   async getCapabilities(options: { refresh?: boolean } = {}): Promise<TranscodingCapabilities> {
     if (this.capabilitiesPromise && !options.refresh) return this.capabilitiesPromise
     this.capabilitiesPromise = (async () => {
-      const [availability, gpus] = await Promise.all([
+      const [availability, detectedGpus] = await Promise.all([
         this.checkAvailability(),
         GpuDetector.detectGpus({ refresh: options.refresh })
       ])
+      const gpus = await this.resolveGpuEncoderDevices(detectedGpus)
       const persistedSelection = await getDatabase().config.getSetting('selected_transcoding_gpu_id')
       const selectedGpuId = persistedSelection && gpus.some(gpu => gpu.id === persistedSelection)
         ? persistedSelection
@@ -1014,7 +1016,7 @@ export class TranscodingService {
           const cached = JSON.parse(cachedSnapshot) as TranscodingCapabilitiesCacheRecord
           if (cached.fingerprint === fingerprint) {
             getLoggingService().info('[TranscodingService]', `Reusing verified encoder capabilities captured at ${cached.detectedAt}`)
-            const capabilities = buildTranscodingCapabilities(availability, gpus, selectedGpuId, cached.encoders)
+            const capabilities = buildTranscodingCapabilities(availability, gpus, selectedGpuId, cached.deviceEncoders)
             return { ...capabilities, detectedAt: cached.detectedAt }
           }
           getLoggingService().info('[TranscodingService]', 'Encoder capability environment changed; probing encoders again')
@@ -1026,9 +1028,9 @@ export class TranscodingService {
       if (encoderProbe.failures.length > 0) {
         getLoggingService().warn('[TranscodingService]', `FFmpeg capability detection: ${encoderProbe.failures.join('; ')}`)
       }
-      const capabilities = buildTranscodingCapabilities(availability, gpus, selectedGpuId, encoderProbe.encoders)
-      await getDatabase().config.setSetting(TranscodingService.CAPABILITIES_CACHE_KEY, JSON.stringify({ fingerprint, detectedAt: capabilities.detectedAt, encoders: capabilities.encoders } satisfies TranscodingCapabilitiesCacheRecord))
-      getLoggingService().info('[TranscodingService]', `Hardware snapshot captured at ${capabilities.detectedAt}: ${gpus.length} GPU(s), encoders=${capabilities.encoders.join(',') || 'none'}`)
+      const capabilities = buildTranscodingCapabilities(availability, gpus, selectedGpuId, encoderProbe.deviceEncoders)
+      await getDatabase().config.setSetting(TranscodingService.CAPABILITIES_CACHE_KEY, JSON.stringify({ fingerprint, detectedAt: capabilities.detectedAt, deviceEncoders: capabilities.deviceEncoders } satisfies TranscodingCapabilitiesCacheRecord))
+      getLoggingService().info('[TranscodingService]', `Hardware snapshot captured at ${capabilities.detectedAt}: ${gpus.length} GPU(s), device encoders=${JSON.stringify(capabilities.deviceEncoders)}`)
       return capabilities
     })()
     return this.capabilitiesPromise
@@ -1050,44 +1052,145 @@ export class TranscodingService {
       systemRelease: os.release(),
       ffmpegPath: PathUtils.resolveExecutablePath(ffmpegPath),
       ffmpegBuild,
-      gpus: gpus.map(({ id, name, vendor, driverVersion }) => ({ id, name, vendor, driverVersion })),
+      gpus: gpus.map(({ id, name, vendor, driverVersion, encoderDeviceSelector, renderDevicePath }) => ({ id, name, vendor, driverVersion, encoderDeviceSelector, renderDevicePath })),
     })
     return createHash('sha256').update(environment).digest('hex')
   }
 
-  private async probeFfmpegEncoders(gpus: GpuInfo[]): Promise<{ encoders: string[]; failures: string[] }> {
+  private async resolveGpuEncoderDevices(gpus: GpuInfo[]): Promise<GpuInfo[]> {
+    if (!gpus.length) return gpus
     const ffmpegPath = getMediaFileAnalyzer().getFFmpegPath()
-    if (!ffmpegPath) return { encoders: [], failures: ['FFmpeg path is unavailable'] }
-    const compiled = await new Promise<{ encoders: string[]; failures: string[] }>(resolve => {
-      const proc = spawn(PathUtils.resolveExecutablePath(ffmpegPath), ['-hide_banner', '-encoders'])
-      let output = ''
-      proc.stdout.on('data', data => { output += data.toString() })
-      proc.stderr.on('data', data => { output += data.toString() })
-      proc.on('error', error => resolve({ encoders: [], failures: [`Failed to execute ${ffmpegPath}: ${error.message}`] }))
-      proc.on('close', code => {
-        if (code !== 0) return resolve({ encoders: [], failures: [`FFmpeg encoder probe exited with code ${code}`] })
-        const ffmpegNames = [...output.matchAll(/^\s*[A-Z.]+\s+(\S+)/gm)].map(match => match[1])
-        const aliases: Record<string, string> = {
-          hevc_nvenc: 'nvenc_h265',
-          av1_nvenc: 'nvenc_av1',
-          h264_nvenc: 'nvenc_h264',
-          hevc_qsv: 'qsv_h265',
-          av1_qsv: 'qsv_av1',
-          h264_qsv: 'qsv_h264',
-          hevc_amf: 'hevc_amf',
-          av1_amf: 'av1_amf',
-          h264_amf: 'h264_amf',
-          hevc_videotoolbox: 'vt_h265',
-          h264_videotoolbox: 'vt_h264',
-          libx265: 'x265',
-          libsvtav1: 'svt_av1',
-          libx264: 'libx264'
+    if (!ffmpegPath) return gpus
+    if (process.platform === 'win32') {
+      const adapterResults = await Promise.all(gpus.map(async (_, adapterIndex) => {
+        try {
+          const result = await this.runCapabilityProcess(ffmpegPath, [
+            '-hide_banner', '-loglevel', 'info',
+            '-init_hw_device', `d3d11va=adapter:${adapterIndex}`,
+            '-f', 'lavfi', '-i', 'color=c=black:s=16x16:d=0.04',
+            '-frames:v', '1', '-f', 'null', '-'
+          ])
+          const match = result.output.match(/Using device [0-9a-f]{4}:[0-9a-f]{4} \((.+)\)\./i)
+          return match ? { adapterIndex, name: match[1].trim() } : { adapterIndex, error: result.output || `Adapter probe exited with code ${result.code}` }
+        } catch (error) {
+          return { adapterIndex, error: getErrorMessage(error) }
         }
-        const names = ffmpegNames.map(name => aliases[name] || name)
-        getLoggingService().debug('[TranscodingService]', `FFmpeg encoder verification completed: ${names.length} encoders found`)
-        resolve({ encoders: names, failures: [] })
+      }))
+      const validMatches = adapterResults.filter((result): result is { adapterIndex: number; name: string } => 'name' in result)
+      const failures = adapterResults.filter((result): result is { adapterIndex: number; error: string } => 'error' in result)
+      for (const failure of failures) getLoggingService().warn('[TranscodingService]', `DirectX adapter ${failure.adapterIndex} could not be enumerated: ${failure.error}`)
+      return gpus.map(gpu => {
+        const osMatches = gpus.filter(candidate => candidate.name.localeCompare(gpu.name, undefined, { sensitivity: 'accent' }) === 0)
+        const ffmpegMatches = validMatches.filter(match => match.name.localeCompare(gpu.name, undefined, { sensitivity: 'accent' }) === 0)
+        if (osMatches.length !== 1 || ffmpegMatches.length !== 1) {
+          getLoggingService().warn('[TranscodingService]', `Physical GPU selector unresolved for ${gpu.name}: OS matches=${osMatches.length}, FFmpeg adapter matches=${ffmpegMatches.length}`)
+          return gpu
+        }
+        getLoggingService().info('[TranscodingService]', `Mapped ${gpu.name} to FFmpeg DirectX adapter ${ffmpegMatches[0].adapterIndex}`)
+        return { ...gpu, encoderDeviceSelector: { kind: 'directx', index: ffmpegMatches[0].adapterIndex } }
       })
+    }
+    if (process.platform === 'linux') return this.resolveLinuxEncoderDevices(gpus, ffmpegPath)
+    return gpus
+  }
+
+  private async resolveLinuxEncoderDevices(gpus: GpuInfo[], ffmpegPath: string): Promise<GpuInfo[]> {
+    const mappedGpus = gpus.map(gpu => gpu.vendor === 'Intel' && gpu.renderDevicePath
+      ? { ...gpu, encoderDeviceSelector: { kind: 'drm' as const, path: gpu.renderDevicePath } }
+      : gpu)
+    const nvidiaGpus = mappedGpus.filter(gpu => gpu.vendor === 'NVIDIA')
+    if (!nvidiaGpus.length) return mappedGpus
+    let inventory: { code: number | null; output: string }
+    try {
+      inventory = await this.runCapabilityProcess('nvidia-smi', ['--query-gpu=pci.bus_id,name', '--format=csv,noheader,nounits'])
+    } catch (error) {
+      getLoggingService().warn('[TranscodingService]', `NVIDIA PCI inventory unavailable: ${getErrorMessage(error)}`)
+      return mappedGpus
+    }
+    if (inventory.code !== 0) {
+      getLoggingService().warn('[TranscodingService]', `NVIDIA PCI inventory unavailable: ${inventory.output || `exit code ${inventory.code}`}`)
+      return mappedGpus
+    }
+    const nvidiaDevices = inventory.output.split(/\r?\n/).filter(Boolean).map(line => {
+      const [busId, ...name] = line.split(',').map(part => part.trim())
+      const [domain, bus, deviceFunction] = busId.split(':')
+      const pciAddress = `${domain.slice(-4).padStart(4, '0')}:${bus}:${deviceFunction}`.toLowerCase()
+      return { pciAddress, name: name.join(',') }
     })
+    let nvencListing: { code: number | null; output: string }
+    try {
+      nvencListing = await this.runCapabilityProcess(ffmpegPath, [
+        '-hide_banner', '-loglevel', 'verbose', '-f', 'lavfi', '-i', 'color=c=black:s=16x16:d=0.04',
+        '-frames:v', '1', '-c:v', 'h264_nvenc', '-gpu', 'list', '-f', 'null', '-'
+      ])
+    } catch (error) {
+      getLoggingService().warn('[TranscodingService]', `NVENC device list unavailable: ${getErrorMessage(error)}`)
+      return mappedGpus
+    }
+    const nvencDevices = [...nvencListing.output.matchAll(/GPU #(\d+)\s*-\s*<\s*(.+?)\s*>/gi)]
+      .map(match => ({ index: Number(match[1]), name: match[2].trim() }))
+    return mappedGpus.map(gpu => {
+      if (gpu.vendor !== 'NVIDIA') return gpu
+      const pciMatches = nvidiaDevices.filter(device => gpu.id.endsWith(device.pciAddress))
+      const nvencMatches = nvencDevices.filter(device => pciMatches.some(pci => {
+        const inventoryName = pci.name.replace(/^NVIDIA\s+/i, '').trim()
+        return inventoryName.localeCompare(device.name.replace(/^NVIDIA\s+/i, '').trim(), undefined, { sensitivity: 'accent' }) === 0
+      }))
+      if (pciMatches.length !== 1 || nvencMatches.length !== 1) {
+        getLoggingService().warn('[TranscodingService]', `Physical NVENC selector unresolved for ${gpu.name}: PCI matches=${pciMatches.length}, NVENC matches=${nvencMatches.length}`)
+        return gpu
+      }
+      getLoggingService().info('[TranscodingService]', `Mapped ${gpu.name} to NVENC device ${nvencMatches[0].index}`)
+      return { ...gpu, encoderDeviceSelector: { kind: 'nvenc', index: nvencMatches[0].index } }
+    })
+  }
+
+  private runCapabilityProcess(binary: string, args: string[], timeoutMs = 5000): Promise<{ code: number | null; output: string }> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(PathUtils.resolveExecutablePath(binary), args, { windowsHide: true, timeout: timeoutMs })
+      let output = ''
+      child.stdout.on('data', data => { output += data.toString() })
+      child.stderr.on('data', data => { output += data.toString() })
+      child.once('error', reject)
+      child.once('close', code => resolve({ code, output }))
+    })
+  }
+
+  private async probeFfmpegEncoders(gpus: GpuInfo[]): Promise<{ deviceEncoders: Record<string, string[]>; failures: string[] }> {
+    const ffmpegPath = getMediaFileAnalyzer().getFFmpegPath()
+    if (!ffmpegPath) return {
+      deviceEncoders: { software: [], ...Object.fromEntries(gpus.map(gpu => [gpu.id, []])) },
+      failures: ['FFmpeg path is unavailable']
+    }
+    let encoderListing: { code: number | null; output: string }
+    try {
+      encoderListing = await this.runCapabilityProcess(ffmpegPath, ['-hide_banner', '-encoders'])
+    } catch (error) {
+      return { deviceEncoders: { software: [], ...Object.fromEntries(gpus.map(gpu => [gpu.id, []])) }, failures: [`Failed to execute ${ffmpegPath}: ${getErrorMessage(error)}`] }
+    }
+    if (encoderListing.code !== 0) return {
+      deviceEncoders: { software: [], ...Object.fromEntries(gpus.map(gpu => [gpu.id, []])) },
+      failures: [`FFmpeg encoder probe exited with code ${encoderListing.code}: ${encoderListing.output}`]
+    }
+    const ffmpegNames = [...encoderListing.output.matchAll(/^\s*[A-Z.]+\s+(\S+)/gm)].map(match => match[1])
+    const aliases: Record<string, string> = {
+      hevc_nvenc: 'nvenc_h265',
+      av1_nvenc: 'nvenc_av1',
+      h264_nvenc: 'nvenc_h264',
+      hevc_qsv: 'qsv_h265',
+      av1_qsv: 'qsv_av1',
+      h264_qsv: 'qsv_h264',
+      hevc_amf: 'hevc_amf',
+      av1_amf: 'av1_amf',
+      h264_amf: 'h264_amf',
+      hevc_videotoolbox: 'vt_h265',
+      h264_videotoolbox: 'vt_h264',
+      libx265: 'x265',
+      libsvtav1: 'svt_av1',
+      libx264: 'libx264'
+    }
+    const encoderNames = ffmpegNames.map(name => aliases[name] || name)
+    getLoggingService().debug('[TranscodingService]', `FFmpeg encoder verification completed: ${encoderNames.length} encoders found`)
     const encodersToProbe: Record<string, { vendor?: GpuInfo['vendor']; codec: string; arguments?: string[] }> = {
       nvenc_h265: { vendor: 'NVIDIA', codec: 'hevc_nvenc' }, nvenc_av1: { vendor: 'NVIDIA', codec: 'av1_nvenc' }, nvenc_h264: { vendor: 'NVIDIA', codec: 'h264_nvenc' },
       qsv_h265: { vendor: 'Intel', codec: 'hevc_qsv' }, qsv_av1: { vendor: 'Intel', codec: 'av1_qsv' }, qsv_h264: { vendor: 'Intel', codec: 'h264_qsv' },
@@ -1095,21 +1198,64 @@ export class TranscodingService {
       vt_h265: { vendor: 'Apple', codec: 'hevc_videotoolbox', arguments: ['-allow_sw', '0'] }, vt_h264: { vendor: 'Apple', codec: 'h264_videotoolbox', arguments: ['-allow_sw', '0'] },
       x265: { codec: 'libx265' }, svt_av1: { codec: 'libsvtav1' }, libx264: { codec: 'libx264' }
     }
-    const encoders: string[] = []
-    const failures = [...compiled.failures]
-    for (const encoder of compiled.encoders) {
+    const deviceEncoders: Record<string, string[]> = {}
+    const failures: string[] = []
+    const softwareEncoders: string[] = []
+    for (const encoder of encoderNames) {
       const device = encodersToProbe[encoder]
-      if (!device || (device.vendor && !gpus.some(gpu => gpu.vendor === device.vendor))) continue
+      if (!device || device.vendor) continue
       try {
-        await new ChildProcessMeasurementRunner().run(ffmpegPath, ['-v', 'error', '-f', 'lavfi', '-i', `testsrc2=size=${APP_CONFIG.transcoding.encoderProbeWidth}x${APP_CONFIG.transcoding.encoderProbeHeight}`, '-frames:v', '1', '-c:v', device.codec, ...(device.arguments ?? []), '-f', 'null', '-'])
+        const result = await this.runCapabilityProcess(ffmpegPath, ['-v', 'error', '-f', 'lavfi', '-i', `testsrc2=size=${APP_CONFIG.transcoding.encoderProbeWidth}x${APP_CONFIG.transcoding.encoderProbeHeight}`, '-frames:v', '1', '-c:v', device.codec, ...(device.arguments ?? []), '-f', 'null', '-'], 30000)
+        if (result.code !== 0) throw new Error(result.output || `FFmpeg exited with code ${result.code}`)
+        softwareEncoders.push(encoder)
       } catch (error) {
-        const failure = `Encoder ${encoder}: ${getErrorMessage(error)}`
-        failures.push(failure)
+        failures.push(`Encoder ${encoder} (software): ${getErrorMessage(error)}`)
+      }
+    }
+    deviceEncoders.software = softwareEncoders
+
+    for (const gpu of gpus) {
+      const encoders: string[] = []
+      const encoderInitializationArgs = this.getEncoderDeviceInitializationArgs(gpu)
+      if (!encoderInitializationArgs) {
+        failures.push(`No adapter-pinned FFmpeg device selector is available for ${gpu.name} on ${process.platform}`)
+        deviceEncoders[gpu.id] = []
         continue
       }
-      encoders.push(encoder)
+      for (const encoder of encoderNames) {
+        const device = encodersToProbe[encoder]
+        if (!device || device.vendor !== gpu.vendor) continue
+        try {
+          const result = await this.runCapabilityProcess(ffmpegPath, [
+            '-v', 'error', ...encoderInitializationArgs,
+            '-f', 'lavfi', '-i', `testsrc2=size=${APP_CONFIG.transcoding.encoderProbeWidth}x${APP_CONFIG.transcoding.encoderProbeHeight}`,
+            '-frames:v', '1', '-c:v', device.codec,
+            ...(process.platform === 'linux' && gpu.vendor === 'NVIDIA' ? ['-gpu', String(gpu.encoderDeviceSelector?.kind === 'nvenc' ? gpu.encoderDeviceSelector.index : ''), '-vf', 'format=nv12'] : ['-vf', gpu.vendor === 'Intel' ? 'format=nv12,hwupload=extra_hw_frames=64' : 'format=nv12,hwupload']),
+            ...(device.arguments ?? []), '-f', 'null', '-'
+          ], 30000)
+          if (result.code !== 0) throw new Error(result.output || `FFmpeg exited with code ${result.code}`)
+          encoders.push(encoder)
+        } catch (error) {
+          failures.push(`Encoder ${encoder} on ${gpu.name}: ${getErrorMessage(error)}`)
+        }
+      }
+      deviceEncoders[gpu.id] = encoders
     }
-    return { encoders, failures }
+    return { deviceEncoders, failures }
+  }
+
+  private getEncoderDeviceInitializationArgs(gpu: GpuInfo): string[] | undefined {
+    if (gpu.vendor === 'Apple') return undefined
+    if (process.platform === 'linux' && gpu.vendor === 'NVIDIA' && gpu.encoderDeviceSelector?.kind === 'nvenc') return []
+    if (process.platform === 'win32') {
+      if (gpu.encoderDeviceSelector?.kind !== 'directx') return undefined
+      if (gpu.vendor === 'Intel') return ['-init_hw_device', `qsv=selected:hw,child_device=${gpu.encoderDeviceSelector.index},child_device_type=d3d11va`, '-filter_hw_device', 'selected']
+      if (gpu.vendor === 'NVIDIA' || gpu.vendor === 'AMD') return ['-init_hw_device', `d3d11va=selected:${gpu.encoderDeviceSelector.index}`, '-filter_hw_device', 'selected']
+    }
+    if (process.platform === 'linux' && gpu.vendor === 'Intel' && gpu.encoderDeviceSelector?.kind === 'drm') {
+      return ['-init_hw_device', `qsv=selected:hw,child_device=${gpu.encoderDeviceSelector.path}`, '-filter_hw_device', 'selected']
+    }
+    return undefined
   }
 
   async setSelectedGpu(gpuId: string | null): Promise<TranscodingCapabilities> {
@@ -1235,7 +1381,7 @@ export class TranscodingService {
     } else {
       expectedEncoder = targetCodec === 'hevc' ? 'x265' : 'svt_av1'
     }
-    if (capabilitiesForOptions && !capabilitiesForOptions.encoders.includes(expectedEncoder)) {
+    if (capabilitiesForOptions && !capabilitiesForOptions.deviceEncoders[selectedGpuIdForOptions ?? '']?.includes(expectedEncoder)) {
       throw new Error(`The selected device does not support ${targetCodec.toUpperCase()} encoding.`)
     }
 
@@ -1272,17 +1418,20 @@ export class TranscodingService {
     const allowedPresets = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow', 'placebo', 'hq', 'hp', 'bd', 'll', 'llhq', 'llhp', 'lossless', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'quality', '4', '6', '8']
     if (!allowedPresets.includes(preset)) throw new Error(`Invalid encoder preset: ${preset}`)
     const finalPreset = preset
+    const usesSelectedHardwareEncoder = Boolean(selectedGpuIdForOptions && videoCodec === expectedEncoder)
 
     const resolvedOptions: TranscodeOptions = {
       ...effectiveOptions,
       targetCodec,
-      gpuId: selectedGpuIdForOptions,
+      useGpu: usesSelectedHardwareEncoder,
+      gpuId: usesSelectedHardwareEncoder ? selectedGpuIdForOptions : undefined,
+      gpuDeviceSelector: usesSelectedHardwareEncoder ? capabilitiesForOptions?.gpus.find(gpu => gpu.id === selectedGpuIdForOptions)?.encoderDeviceSelector : undefined,
       encoder: videoCodec,
       crf: finalCrf,
       preset: finalPreset
     }
 
-    const builder = TranscodeCommandFactory.getBuilder(selectedVendor, resolvedOptions)
+    const builder = TranscodeCommandFactory.getBuilder(usesSelectedHardwareEncoder ? selectedVendor : undefined, resolvedOptions)
     const ffmpegArgs = builder.buildFFmpegArgs('<input>', '<output>', resolvedOptions, analysis)
 
     // Add custom args if present
@@ -1609,16 +1758,25 @@ export class TranscodingService {
     const analysis = this.analysisCache.get(filePath) ?? await getMediaFileAnalyzer().analyzeFile(filePath)
     if (!analysis.success || !analysis.video || !analysis.durationMs) throw new Error(analysis.error || 'Complete media analysis is required for measurement')
     const capabilities = options.encoderPolicy === 'software' ? undefined : await this.getCapabilities()
-    const hardwareVendor = capabilities?.gpus.find(gpu => gpu.id === (options.gpuId || capabilities.selectedGpuId))?.vendor
+    const selectedGpu = capabilities?.gpus.find(gpu => gpu.id === (options.gpuId || capabilities.selectedGpuId))
+    const hardwareVendor = selectedGpu?.vendor
     const hardwareEncoder = hardwareVendor && options.encoderPolicy !== 'software'
       ? getHardwareEncoder(hardwareVendor, options.targetCodec)
       : undefined
     if (options.encoderPolicy !== 'software' && !hardwareEncoder) throw new Error(`The selected hardware does not support ${options.targetCodec.toUpperCase()} encoding.`)
-    if (hardwareEncoder && !capabilities!.encoders.includes(hardwareEncoder)) throw new Error(`The selected device does not support ${hardwareEncoder} encoding.`)
+    if (hardwareEncoder && !capabilities!.deviceEncoders[selectedGpu!.id]?.includes(hardwareEncoder)) throw new Error(`The selected device does not support ${hardwareEncoder} encoding.`)
     const ladder = buildCandidateLadder(options.targetCodec, options.encoderPolicy, hardwareEncoder)
     const candidates = ladder.map(candidate => {
       const useGpu = candidate.encoder !== 'x265' && candidate.encoder !== 'svt_av1'
-      const candidateOptions = { ...options, useGpu, gpuId: useGpu ? options.gpuId : undefined, encoder: candidate.encoder, crf: candidate.quality, preset: candidate.preset }
+      const candidateOptions = {
+        ...options,
+        useGpu,
+        gpuId: useGpu ? selectedGpu?.id : undefined,
+        gpuDeviceSelector: useGpu ? selectedGpu?.encoderDeviceSelector : undefined,
+        encoder: candidate.encoder,
+        crf: candidate.quality,
+        preset: candidate.preset
+      }
       return { ...candidate, outputBytes: 0, sampledDurationSeconds: 0, vmafMean: 0, vmafP5: 0, cambiMean: 0, ffmpegArgs: TranscodeCommandFactory.getBuilder(hardwareVendor, candidateOptions).buildFFmpegArgs('<input>', '<output>', candidateOptions, analysis) }
     })
     const outputDirectory = sampleDirectory ?? path.join(app.getPath('userData'), 'transcoding-samples', randomUUID())
