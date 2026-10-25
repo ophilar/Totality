@@ -105,6 +105,16 @@ export const RPC_CHANNEL_MAP: Record<string, string> = {
   qualityGetDistribution: IPC_CHANNELS.qualityGetDistribution,
   qualityGetRecommendedFormat: IPC_CHANNELS.qualityGetRecommendedFormat,
 
+  // Timelines
+  timelinesGetPlexPlaylists: IPC_CHANNELS.timelinesGetPlexPlaylists,
+  timelinesGetRecipe: IPC_CHANNELS.timelinesGetRecipe,
+  timelinesListParserPlugins: IPC_CHANNELS.timelinesListParserPlugins,
+  timelinesListRecipes: IPC_CHANNELS.timelinesListRecipes,
+  timelinesRemoveParserPlugin: IPC_CHANNELS.timelinesRemoveParserPlugin,
+  timelinesResolveTimeline: IPC_CHANNELS.timelinesResolveTimeline,
+  timelinesSaveParserPlugin: IPC_CHANNELS.timelinesSaveParserPlugin,
+  timelinesSyncPlexPlaylist: IPC_CHANNELS.timelinesSyncPlexPlaylist,
+
   // Database - Media Items
   getMediaItems: IPC_CHANNELS.dbGetMediaItems,
   countMediaItems: IPC_CHANNELS.dbCountMediaItems,
