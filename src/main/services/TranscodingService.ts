@@ -335,8 +335,6 @@ export class TranscodingService {
     saveEpisodeCheckpoint?: (mediaItemId: number, checkpoint: ShowTranscodeEpisodeCheckpoint) => Promise<void>
   }): Promise<ShowTranscodePreflight> {
     operation?.signal.throwIfAborted()
-    const scope = request.mediaItemId !== undefined ? 'episode' : request.seasonNumber !== undefined ? 'season' : 'series'
-    getLoggingService().info('[TVOptimization]', `Preflight started: scope=${scope}, series=${request.seriesIdentityKey ?? 'n/a'}, season=${request.seasonNumber ?? 'all'}, mediaItem=${request.mediaItemId ?? 'all'}, source=${request.sourceId}, library=${request.libraryId ?? 'n/a'}, mode=${request.options.optimizationMode ?? 'unspecified'}, codec=${request.options.targetCodec ?? 'unspecified'}, encoderPolicy=${request.options.encoderPolicy ?? 'unspecified'}, container=${request.options.targetContainer ?? 'automatic'}, containerSelection=${request.options.targetContainerSelection ?? 'unspecified'}, gpu=${request.options.gpuId ?? 'selected'}`)
     if (!request.sourceId.trim()) throw new Error('Source ID is required')
     if (request.mediaItemId === undefined && (!request.seriesTitle?.trim() || !request.seriesIdentityKey?.trim() || !request.libraryId?.trim())) throw new Error('TV series identity and library are required')
     const profileId = request.options.targetProfileId === undefined
@@ -355,6 +353,8 @@ export class TranscodingService {
     )) {
       throw new Error('The selected episode does not belong to the requested series and source')
     }
+    const scope = request.mediaItemId === undefined ? request.seasonNumber === undefined ? 'series' : 'season' : episodes[0].type === 'movie' ? 'movie' : 'episode'
+    getLoggingService().info('[TVOptimization]', `Preflight started: scope=${scope}, series=${request.seriesIdentityKey ?? 'n/a'}, season=${request.seasonNumber ?? 'all'}, mediaItem=${request.mediaItemId ?? 'all'}, source=${request.sourceId}, library=${request.libraryId ?? 'n/a'}, mode=${request.options.optimizationMode ?? 'unspecified'}, codec=${request.options.targetCodec ?? 'unspecified'}, encoderPolicy=${request.options.encoderPolicy ?? 'unspecified'}, container=${request.options.targetContainer ?? 'automatic'}, containerSelection=${request.options.targetContainerSelection ?? 'unspecified'}, gpu=${request.options.gpuId ?? 'selected'}`)
     const batchId = operation?.batchId ?? `batch_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
     const preflightId = operation?.preflightId ?? `${batchId}_preflight`
     const needsHardwareSnapshot = request.options.optimizationMode !== 'remux_only' && request.options.encoderPolicy !== 'software'
@@ -436,9 +436,9 @@ export class TranscodingService {
 
     const processEpisode = async (prepared: PreparedEpisode, samplingState: SamplingGroupState): Promise<ShowTranscodePreflight['episodes'][number]> => {
       const episode = prepared.episode
-      const label = request.mediaItemId === undefined
-        ? `${request.seriesTitle} S${String(episode.season_number || 0).padStart(2, '0')}E${String(episode.episode_number || 0).padStart(2, '0')} ${episode.title}`
-        : episode.title
+      const label = episode.type === 'movie'
+        ? `Movie: ${episode.title}`
+        : `${request.seriesTitle ?? episode.series_title ?? 'TV episode'}${episode.season_number == null ? '' : ` S${String(episode.season_number).padStart(2, '0')}E${String(episode.episode_number ?? 0).padStart(2, '0')}`} · ${episode.title}`
       const fallbackMediaItemId = episode.id || 0
       const mediaItemId = episode.id ?? fallbackMediaItemId
       const toInsufficientPlan = (error: unknown): ShowTranscodePreflight['episodes'][number] => {
