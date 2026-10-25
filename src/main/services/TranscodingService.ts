@@ -363,10 +363,7 @@ export class TranscodingService {
       const representative = representativeForGroup(group)
       for (const episode of group) representativeIdByEpisodeId.set(episode.id ?? 0, representative.id ?? 0)
     }
-    const processingOrder = [
-      ...representativeByGroup,
-      ...episodes.filter(episode => !representativeIds.has(episode.id ?? 0)),
-    ]
+    const remainingEpisodes = episodes.filter(episode => !representativeIds.has(episode.id ?? 0))
     const processedPlans = new Map<number, { plan: ShowTranscodePreflight['episodes'][0]; profileKey?: string }>()
     getLoggingService().info('[TVOptimization]', `Sampling groups selected: episodes=${episodes.length}, sampleRepresentatives=${representativeByGroup.length}, policy=one-per-season-and-technical-profile`)
 
@@ -457,12 +454,9 @@ export class TranscodingService {
           if (targetProfile) options.targetConversion = buildTargetTranscodePlan(analysis, targetProfile, options)
         }
         if (shouldEncode && representativeId !== episode.id && !reusableRepresentativePlan) {
-          const representative = representativePlan?.plan
-          const representativeFailure = representative?.reason ?? (representative?.compatible
-            ? 'the representative did not require a measured encode sample'
-            : 'the representative did not produce a compatible measured plan')
-          const reason = `Not sampled: season/profile representative "${representative?.label ?? 'unknown'}" did not provide reusable measured settings (${representativeFailure}).`
-          getLoggingService().info('[TVOptimization]', `Episode sample skipped: mediaItem=${episode.id}, representative=${representativeId}, reason=${representativeFailure}`)
+          const representative = representativePlan!.plan
+          const representativeOutcome = representative.reason ? 'failed; see its review entry for details' : 'did not produce reusable measured settings'
+          const reason = `Not sampled: season/profile representative "${representative.label}" ${representativeOutcome}.`
           return {
             mediaItemId: episode.id,
             label,
@@ -653,37 +647,41 @@ export class TranscodingService {
       }
     }
 
-    // Parallel preflight processing in concurrency batches of 4
+    // Process every representative before dependent episodes can reuse its plan.
     const CONCURRENCY = 4
     const episodeResults = new Map<number, ShowTranscodePreflight['episodes'][number]>()
-    for (let i = 0; i < processingOrder.length; i += CONCURRENCY) {
-      const chunk = processingOrder.slice(i, i + CONCURRENCY)
-      operation?.update({
-        phase: `Starting episodes ${i + 1}–${Math.min(i + chunk.length, processingOrder.length)} of ${processingOrder.length}`,
-        progress: { percentage: Math.round((completedEpisodes / episodes.length) * 100), currentItem: 'Preparing episode checks' },
-      })
-      const chunkResults = await Promise.allSettled(chunk.map(episode => processEpisode(episode)))
-      const rejected = chunkResults.find((result): result is PromiseRejectedResult => result.status === 'rejected')
-      if (rejected) throw rejected.reason
-      chunkResults.forEach((result, index) => {
-        const episode = chunk[index]
-        const plan = (result as PromiseFulfilledResult<ShowTranscodePreflight['episodes'][0]>).value
-        episodeResults.set(episode.id ?? 0, plan)
-        processedPlans.set(episode.id ?? 0, {
-          plan,
-          profileKey: plan.sourceAnalysis
-            ? getPreflightSamplingProfileKey(episode, request.options, plan.sourceAnalysis)
-            : undefined,
+    const processInBatches = async (batchEpisodes: typeof episodes) => {
+      for (let i = 0; i < batchEpisodes.length; i += CONCURRENCY) {
+        const chunk = batchEpisodes.slice(i, i + CONCURRENCY)
+        operation?.update({
+          phase: `Starting episodes ${completedEpisodes + 1}–${completedEpisodes + chunk.length} of ${episodes.length}`,
+          progress: { percentage: Math.round((completedEpisodes / episodes.length) * 100), currentItem: 'Preparing episode checks' },
         })
-      })
-      completedEpisodes += chunk.length
-      for (const episode of chunk) activeEpisodeSteps.delete(episode.id ?? 0)
-      operation?.update({
-        phase: `Reviewed ${completedEpisodes} of ${episodes.length} episodes`,
-        progress: { percentage: Math.round((completedEpisodes / episodes.length) * 100), currentItem: 'Episode checks complete for this batch' },
-      })
-      operation?.signal.throwIfAborted()
+        const chunkResults = await Promise.allSettled(chunk.map(episode => processEpisode(episode)))
+        const rejected = chunkResults.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+        if (rejected) throw rejected.reason
+        chunkResults.forEach((result, index) => {
+          const episode = chunk[index]
+          const plan = (result as PromiseFulfilledResult<ShowTranscodePreflight['episodes'][0]>).value
+          episodeResults.set(episode.id ?? 0, plan)
+          processedPlans.set(episode.id ?? 0, {
+            plan,
+            profileKey: plan.sourceAnalysis
+              ? getPreflightSamplingProfileKey(episode, request.options, plan.sourceAnalysis)
+              : undefined,
+          })
+        })
+        completedEpisodes += chunk.length
+        for (const episode of chunk) activeEpisodeSteps.delete(episode.id ?? 0)
+        operation?.update({
+          phase: `Reviewed ${completedEpisodes} of ${episodes.length} episodes`,
+          progress: { percentage: Math.round((completedEpisodes / episodes.length) * 100), currentItem: 'Episode checks complete for this batch' },
+        })
+        operation?.signal.throwIfAborted()
+      }
     }
+    await processInBatches(representativeByGroup)
+    await processInBatches(remainingEpisodes)
 
     const results = episodes.map(episode => {
       const result = episodeResults.get(episode.id ?? 0)
