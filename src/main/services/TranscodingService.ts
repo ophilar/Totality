@@ -25,7 +25,7 @@ import { getStatsCacheService } from './StatsCacheService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import type { MediaSourceTier } from './transcoding/TrashSourceClassifier'
 import { StreamRemuxCommandBuilder } from './transcoding/StreamRemuxCommandBuilder'
-import { buildCandidateLadder, selectMeasuredCandidate } from './MeasuredOptimizationPolicy'
+import { buildCandidateLadder, evaluateMeasuredCandidates, selectMeasuredCandidate } from './MeasuredOptimizationPolicy'
 import { buildTargetTranscodePlan, type TargetTranscodePlan } from './transcoding/TargetTranscodePlan'
 import type { MeasuredCandidate } from './MeasuredOptimizationPolicy'
 import { ChildProcessMeasurementRunner, MeasuredOptimizationService } from './MeasuredOptimizationService'
@@ -1517,6 +1517,11 @@ export class TranscodingService {
       const outputExtension = outputContainer === 'mp4' ? '.mp4' : outputContainer === 'mkv' ? '.mkv' : path.extname(filePath)
       const measured = await this.measuredOptimizationService.measure({ inputPath: filePath, outputDirectory, durationMs: analysis.durationMs, outputExtension, referenceFilter: options.targetConversion?.videoFilter, referenceInputArgs: options.targetConversion?.inputArgs, candidates, signal, onProgress })
       signal?.throwIfAborted()
+      const evaluations = evaluateMeasuredCandidates(options.qualityProfile, measured.candidates)
+      const candidateReport = evaluations.map(({ candidate, passed, failedGates }) =>
+        `${candidate.encoder}/${candidate.preset} q${candidate.quality}: size=${candidate.outputBytes}, vmafMean=${candidate.vmafMean.toFixed(2)}, vmafP5=${candidate.vmafP5.toFixed(2)}, cambiMean=${candidate.cambiMean.toFixed(2)}, result=${passed ? 'pass' : `fail(${failedGates.join(',')})`}`
+      ).join(' | ')
+      getLoggingService().debug('[TVOptimization]', `Measured candidate quality results: file=${path.basename(filePath)}, profile=${options.qualityProfile}, candidates=${candidateReport}`)
       const selected = selectMeasuredCandidate(options.qualityProfile, measured.candidates)
       for (const candidate of measured.candidates) if (candidate !== selected) for (const sample of candidate.samplePaths!) await fs.unlink(sample)
       return { encoder: selected.encoder, crf: selected.quality, preset: selected.preset, measuredCandidate: selected }

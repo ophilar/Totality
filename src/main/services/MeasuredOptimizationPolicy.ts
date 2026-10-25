@@ -36,6 +36,12 @@ interface QualityGates {
   cambiMean: number
 }
 
+export interface MeasuredCandidateEvaluation {
+  candidate: MeasuredCandidate
+  passed: boolean
+  failedGates: string[]
+}
+
 const QUALITY_GATES: Record<OptimizationQualityProfile, QualityGates> = {
   transparent: { vmafMean: 96, vmafP5: 93, cambiMean: 5 },
   balanced: { vmafMean: 95, vmafP5: 92, cambiMean: 8 },
@@ -44,10 +50,29 @@ const QUALITY_GATES: Record<OptimizationQualityProfile, QualityGates> = {
 
 export function selectMeasuredCandidate(profile: OptimizationQualityProfile, candidates: MeasuredCandidate[]): MeasuredCandidate {
   const gates = QUALITY_GATES[profile]
-  const eligible = candidates
-    .filter(candidate => candidate.vmafMean >= gates.vmafMean && candidate.vmafP5 >= gates.vmafP5 && candidate.cambiMean <= gates.cambiMean)
+  const evaluations = evaluateMeasuredCandidates(profile, candidates)
+  const eligible = evaluations
+    .filter(evaluation => evaluation.passed)
+    .map(evaluation => evaluation.candidate)
     .sort((left, right) => left.outputBytes - right.outputBytes)
   const selected = eligible[0]
-  if (!selected) throw new Error(`No measured candidate satisfies the ${profile} quality gates`)
+  if (!selected) {
+    const reports = evaluations.map(({ candidate, failedGates }) =>
+      `${candidate.encoder}/${candidate.preset} q${candidate.quality}: VMAF mean ${candidate.vmafMean.toFixed(2)} (min ${gates.vmafMean}), VMAF p5 ${candidate.vmafP5.toFixed(2)} (min ${gates.vmafP5}), CAMBI ${candidate.cambiMean.toFixed(2)} (max ${gates.cambiMean}); failed=${failedGates.join(',') || 'none'}`
+    )
+    throw new Error(`No measured candidate satisfies the ${profile} quality gates. Candidate results: ${reports.join(' | ')}`)
+  }
   return selected
+}
+
+export function evaluateMeasuredCandidates(profile: OptimizationQualityProfile, candidates: MeasuredCandidate[]): MeasuredCandidateEvaluation[] {
+  const gates = QUALITY_GATES[profile]
+  return candidates.map(candidate => {
+    const failedGates = [
+      ...(candidate.vmafMean >= gates.vmafMean ? [] : [`VMAF mean < ${gates.vmafMean}`]),
+      ...(candidate.vmafP5 >= gates.vmafP5 ? [] : [`VMAF p5 < ${gates.vmafP5}`]),
+      ...(candidate.cambiMean <= gates.cambiMean ? [] : [`CAMBI > ${gates.cambiMean}`]),
+    ]
+    return { candidate, passed: failedGates.length === 0, failedGates }
+  })
 }
