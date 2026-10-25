@@ -8,6 +8,7 @@ export interface GpuInfo {
   id: string
   name: string
   vendor: 'NVIDIA' | 'Intel' | 'AMD' | 'Apple' | 'Unknown'
+  driverVersion?: string
 }
 
 export class GpuDetector {
@@ -17,8 +18,8 @@ export class GpuDetector {
     
     try {
       if (platform === 'win32') {
-        const { stdout } = await execAsync('powershell.exe -NoProfile -NonInteractive -Command "Get-CimInstance Win32_VideoController | Select-Object Name,PNPDeviceID | ConvertTo-Json -Compress"')
-        const parsed = JSON.parse(stdout) as Array<{ Name?: string; PNPDeviceID?: string }> | { Name?: string; PNPDeviceID?: string }
+        const { stdout } = await execAsync('powershell.exe -NoProfile -NonInteractive -Command "Get-CimInstance Win32_VideoController | Select-Object Name,PNPDeviceID,DriverVersion | ConvertTo-Json -Compress"')
+        const parsed = JSON.parse(stdout) as Array<{ Name?: string; PNPDeviceID?: string; DriverVersion?: string }> | { Name?: string; PNPDeviceID?: string; DriverVersion?: string }
         const devices = Array.isArray(parsed) ? parsed : [parsed]
         devices.filter(device => device.Name).forEach((device, idx) => {
           const name = device.Name!.trim()
@@ -26,7 +27,8 @@ export class GpuDetector {
           gpus.push({
             id: `win-${identity.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
             name,
-            vendor: GpuDetector.parseVendor(name)
+            vendor: GpuDetector.parseVendor(name),
+            driverVersion: device.DriverVersion?.trim()
           })
         })
       } else if (platform === 'darwin') {
