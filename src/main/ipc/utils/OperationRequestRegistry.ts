@@ -1,5 +1,7 @@
 import type { WebContents } from 'electron'
 import { BrowserWindow } from 'electron'
+import { IPC_CHANNELS } from '../../../shared/ipcChannels'
+import { safeSend } from './safeSend'
 
 export type ActivityOperationKind = 'duplicate-scan' | 'ai-report' | 'timeline' | 'plex-playlist' | 'update-download' | 'sonarr-wait' | 'optimization-preflight'
 export type ActivityOperationState = 'running' | 'pausing' | 'paused' | 'cancelling' | 'finishing' | 'completed' | 'cancelled' | 'partial' | 'failed'
@@ -183,7 +185,7 @@ export class OperationRequestRegistry {
     return 'running'
   }
 
-  getSnapshot(ownerId: number): { revision: number; operations: ActivityOperation[] } {
+  getSnapshot(ownerId?: number): { revision: number; operations: ActivityOperation[] } {
     const operations = [...this.requests.values()]
       .filter(entry => (entry.ownerId === ownerId || entry.ownerId === undefined) && entry.activity)
       .map(entry => structuredClone(entry.activity!))
@@ -230,13 +232,14 @@ export class OperationRequestRegistry {
   private publishSnapshot(ownerId?: number, fallbackOwner?: WebContents): void {
     if (ownerId === undefined) {
       for (const window of BrowserWindow.getAllWindows()) {
-        if (!window.isDestroyed()) window.webContents.send('operations:updated', this.getSnapshot(window.webContents.id))
+        if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.operationsUpdated, this.getSnapshot(window.webContents.id))
       }
+      safeSend(null, IPC_CHANNELS.operationsUpdated, this.getSnapshot())
       return
     }
     const owner = this.owners.get(ownerId) ?? fallbackOwner ?? [...this.requests.values()].find(entry => entry.ownerId === ownerId)?.owner
     if (!owner || owner.isDestroyed()) return
-    owner.send('operations:updated', this.getSnapshot(ownerId))
+    owner.send(IPC_CHANNELS.operationsUpdated, this.getSnapshot(ownerId))
   }
 }
 
