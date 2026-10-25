@@ -7,6 +7,7 @@ import { APP_CONFIG } from '@main/config'
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream, type Stats } from 'node:fs'
 import * as path from 'path'
+import * as os from 'node:os'
 import { getDatabase } from '@main/database/getDatabase'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
@@ -251,12 +252,19 @@ interface CachedMeasurement {
   sampleHashes: string[]
 }
 
+interface TranscodingCapabilitiesCacheRecord {
+  fingerprint: string
+  detectedAt: string
+  encoders: string[]
+}
+
 /**
  * TranscodingService
  *
  * Coordinates FFmpeg transcoding from explicit parameters.
  */
 export class TranscodingService {
+  private static readonly CAPABILITIES_CACHE_KEY = 'transcoding.capabilities.snapshot.v1'
   private activeJobs = new Map<number, AbortController>()
   private initializedPromise: Promise<void> | null = null
   private capabilitiesPromise: Promise<TranscodingCapabilities> | null = null
@@ -999,15 +1007,52 @@ export class TranscodingService {
       const selectedGpuId = persistedSelection && gpus.some(gpu => gpu.id === persistedSelection)
         ? persistedSelection
         : null
+      const fingerprint = await this.getCapabilitiesFingerprint(availability.ffmpeg, gpus)
+      if (!options.refresh) {
+        const cachedSnapshot = await getDatabase().config.getSetting(TranscodingService.CAPABILITIES_CACHE_KEY)
+        if (cachedSnapshot) {
+          const cached = JSON.parse(cachedSnapshot) as TranscodingCapabilitiesCacheRecord
+          if (cached.fingerprint === fingerprint) {
+            getLoggingService().info('[TranscodingService]', `Reusing verified encoder capabilities captured at ${cached.detectedAt}`)
+            const capabilities = buildTranscodingCapabilities(availability, gpus, selectedGpuId, cached.encoders)
+            return { ...capabilities, detectedAt: cached.detectedAt }
+          }
+          getLoggingService().info('[TranscodingService]', 'Encoder capability environment changed; probing encoders again')
+        }
+      } else {
+        getLoggingService().info('[TranscodingService]', 'Refreshing encoder capability snapshot by request')
+      }
       const encoderProbe = await this.probeFfmpegEncoders(gpus)
       if (encoderProbe.failures.length > 0) {
         getLoggingService().warn('[TranscodingService]', `FFmpeg capability detection: ${encoderProbe.failures.join('; ')}`)
       }
       const capabilities = buildTranscodingCapabilities(availability, gpus, selectedGpuId, encoderProbe.encoders)
+      await getDatabase().config.setSetting(TranscodingService.CAPABILITIES_CACHE_KEY, JSON.stringify({ fingerprint, detectedAt: capabilities.detectedAt, encoders: capabilities.encoders } satisfies TranscodingCapabilitiesCacheRecord))
       getLoggingService().info('[TranscodingService]', `Hardware snapshot captured at ${capabilities.detectedAt}: ${gpus.length} GPU(s), encoders=${capabilities.encoders.join(',') || 'none'}`)
       return capabilities
     })()
     return this.capabilitiesPromise
+  }
+
+  private async getCapabilitiesFingerprint(ffmpegAvailable: boolean, gpus: GpuInfo[]): Promise<string> {
+    const ffmpegPath = getMediaFileAnalyzer().getFFmpegPath()
+    const ffmpegBuild = ffmpegAvailable ? await new Promise<string>((resolve, reject) => {
+      const proc = spawn(PathUtils.resolveExecutablePath(ffmpegPath), ['-hide_banner', '-version'], { windowsHide: true, timeout: 5000 })
+      let output = ''
+      proc.stdout.on('data', data => { output += data.toString() })
+      proc.stderr.on('data', data => { output += data.toString() })
+      proc.once('error', reject)
+      proc.once('close', code => code === 0 ? resolve(output) : reject(new Error(`FFmpeg version probe exited with code ${code}`)))
+    }) : 'unavailable'
+    const environment = JSON.stringify({
+      ffmpegAvailable,
+      platform: process.platform,
+      systemRelease: os.release(),
+      ffmpegPath: PathUtils.resolveExecutablePath(ffmpegPath),
+      ffmpegBuild,
+      gpus: gpus.map(({ id, name, vendor, driverVersion }) => ({ id, name, vendor, driverVersion })),
+    })
+    return createHash('sha256').update(environment).digest('hex')
   }
 
   private async probeFfmpegEncoders(gpus: GpuInfo[]): Promise<{ encoders: string[]; failures: string[] }> {
@@ -1060,7 +1105,6 @@ export class TranscodingService {
       } catch (error) {
         const failure = `Encoder ${encoder}: ${getErrorMessage(error)}`
         failures.push(failure)
-        getLoggingService().warn('[TranscodingService]', `${failure} It is unavailable.`)
         continue
       }
       encoders.push(encoder)
