@@ -1,5 +1,5 @@
 
-import { selectAll, selectOne } from 'css-select'
+import { is, selectAll, selectOne } from 'css-select'
 import { parseDocument } from 'htmlparser2'
 import type { AnyNode, Document, Element } from 'domhandler'
 import { removeElement, textContent } from 'domutils'
@@ -96,15 +96,15 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
     orderDefinition: string | { groupingId: string; placement: 'first' | 'last' }
   ): TimelineItem[] {
     const table = selectAll<AnyNode, Element>(plugin.tableSelector!, document).find(candidate => {
-      const header = selectOne<AnyNode, Element>(plugin.headerRowSelector!, candidate)
-      const names = (header ? selectAll<AnyNode, Element>('th,td', header) : []).map(cell => this.readCellText(cell))
+      const header = this.directTableRows(candidate).find(row => is(row, plugin.headerRowSelector!))
+      const names = this.expandTableCells(header ? selectAll<AnyNode, Element>('th,td', header) : []).map(cell => this.readCellText(cell))
       return plugin.requiredHeaders!.every(name => names.includes(name))
     })
     if (!table) throw new Error(`Parser '${plugin.id}' found no table matching '${plugin.tableSelector}' and its required headers.`)
-    const headerRow = selectOne<AnyNode, Element>(plugin.headerRowSelector!, table)!
-    const headers = selectAll<AnyNode, Element>('th,td', headerRow)
+    const headerRow = this.directTableRows(table).find(row => is(row, plugin.headerRowSelector!))!
+    const tableRows = this.directTableRows(table).filter(row => is(row, plugin.rowSelector!))
+    const headers = this.expandTableCells(selectAll<AnyNode, Element>('th,td', headerRow))
       .map(cell => this.readCellText(cell))
-      .filter((value): value is string => Boolean(value))
     const headerIndex = (name: string): number => {
       const index = headers.indexOf(name)
       if (index < 0) throw new Error(`Parser '${plugin.id}' could not find source column '${name}'.`)
@@ -132,12 +132,11 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
     const groupOrders = isGroupedOrder ? this.readGroupOrders(document, plugin.id, grouping!) : undefined
     const tieBreakIndex = isGroupedOrder ? headerIndex(grouping!.tieBreakHeader) : -1
 
-    const tableRows = selectAll<AnyNode, Element>(plugin.rowSelector!, table)
     const contentRows = tableRows.filter(row => !this.isStructuralTableRow(row, headerRow, plugin, headers))
     let rowsWithTitle = 0
     const items = contentRows
         .flatMap((row, rowIndex) => {
-        const cells = selectAll<AnyNode, Element>(':scope > th, :scope > td', row)
+        const cells = this.expandTableCells(selectAll<AnyNode, Element>(':scope > th, :scope > td', row), headers.length)
         const cell = (field: string): string | undefined => {
         const value = this.readCellText(cells[indexes[field]])
           return value || undefined
@@ -198,27 +197,50 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
     row: Element,
     headerRow: Element,
     plugin: TimelineParserPlugin,
-    headers: string[]
+    headers: Array<string | undefined>
   ): boolean {
     if (row === headerRow) return true
 
-    const cells = selectAll<AnyNode, Element>(':scope > th, :scope > td', row)
+    const cells = this.expandTableCells(selectAll<AnyNode, Element>(':scope > th, :scope > td', row), headers.length)
     const values = cells.map(cell => this.readCellText(cell)).filter((value): value is string => Boolean(value))
     if (values.length === 0) return true
 
     // Repeated table headings are common on long wiki tables and may sit inside tbody.
-    if (values.length > 1 && values.every(value => headers.includes(value))) return true
+    if (cells.length > 0 && cells.every((cell, index) => {
+      const value = this.readCellText(cell)
+      return Boolean(value) && value === headers[index]
+    })) return true
 
     // A merged heading that spans table columns is a section divider, not an item.
     const isMergedSectionHeading = cells.some(cell => {
       const spansColumns = Number.parseInt(cell.attribs.colspan ?? '1', 10) > 1
-      return spansColumns && (cell.name === 'th' || values.length === 1)
+      return spansColumns && cells.length === 1
     })
     if (isMergedSectionHeading) return true
 
     // Some source tables repeat just the selected order column as a one-cell label.
     // Skip it only when that cell is itself one of the declared headers.
     return values.length === 1 && plugin.requiredHeaders!.includes(values[0])
+  }
+
+  private expandTableCells(cells: Element[], columnCount?: number): Element[] {
+    const expanded = cells.flatMap(cell => Array.from(
+      { length: Number.parseInt(cell.attribs.colspan ?? '1', 10) },
+      () => cell
+    ))
+    return columnCount === undefined ? expanded : expanded.slice(0, columnCount)
+  }
+
+  private directTableRows(table: Element): Element[] {
+    return table.children.flatMap(child => {
+      if (child.type !== 'tag') return []
+      const element = child as Element
+      if (element.name === 'tr') return [element]
+      if (element.name === 'tbody' || element.name === 'thead' || element.name === 'tfoot') {
+        return element.children.filter((row): row is Element => row.type === 'tag' && row.name === 'tr')
+      }
+      return []
+    })
   }
 
   private parseListItems(
@@ -398,18 +420,19 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
     config: TimelineParserGroupDefinition
   ): Map<string, number[]> {
     const table = selectAll<AnyNode, Element>(config.groupTableSelector, document).find(candidate => {
-      const row = selectOne<AnyNode, Element>(config.groupHeaderRowSelector, candidate)
+      const row = this.directTableRows(candidate).find(candidateRow => is(candidateRow, config.groupHeaderRowSelector))
       const names = (row ? selectAll<AnyNode, Element>('th,td', row) : []).map(cell => this.readCellText(cell))
       return names.includes(config.groupHeader) && names.includes(config.groupOrderHeader)
     })
     if (!table) throw new Error(`Parser '${pluginId}' found no group table matching its configured headers.`)
-    const header = selectOne<AnyNode, Element>(config.groupHeaderRowSelector, table)!
+    const header = this.directTableRows(table).find(row => is(row, config.groupHeaderRowSelector))!
+    const rows = this.directTableRows(table).filter(row => is(row, config.groupRowSelector))
     const headers = selectAll<AnyNode, Element>('th,td', header).map(cell => this.readCellText(cell))
     const groupIndex = headers.indexOf(config.groupHeader)
     const orderIndex = headers.indexOf(config.groupOrderHeader)
     if (groupIndex < 0 || orderIndex < 0) throw new Error(`Parser '${pluginId}' group table is missing a configured header.`)
     const groups = new Map<string, number[]>()
-    for (const row of selectAll<AnyNode, Element>(config.groupRowSelector, table)) {
+    for (const row of rows) {
       if (row === header) continue
       const cells = selectAll<AnyNode, Element>(':scope > th, :scope > td', row)
       const name = this.normalize(this.readCellText(cells[groupIndex]) ?? '')
