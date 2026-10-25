@@ -15,6 +15,7 @@ import { getErrorMessage } from './utils/errorUtils'
 import { BrowserWindow } from 'electron'
 import { safeSend } from '../ipc/utils/safeSend'
 import { emitNotificationCreated } from '../ipc/utils/notificationEmitter'
+import { getWebServerService } from './WebServerService'
 import { getSourceManager } from './SourceManager'
 import { getSeriesCompletenessService } from './SeriesCompletenessService'
 import { getMovieCollectionService } from './MovieCollectionService'
@@ -1382,9 +1383,8 @@ export class TaskQueueService {
   }
 
   private sendToRenderer(channel: string, data: unknown): void {
-    if (this.mainWindow) {
-      safeSend(this.mainWindow, channel, data)
-    }
+    if (this.mainWindow) safeSend(this.mainWindow, channel, data)
+    getWebServerService()?.broadcastEvent(channel, data)
   }
 }
 
