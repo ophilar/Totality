@@ -621,7 +621,7 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
           settled = true
           unsubscribe?.()
           if (operation.state !== 'completed') {
-            reject(new Error(operation.outcome.message))
+            reject(operation.state === 'cancelled' ? new DOMException(operation.outcome.message, 'AbortError') : new Error(operation.outcome.message))
             return
           }
           try {
@@ -641,7 +641,11 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
       if (!backgroundPreflight.current) setPreflightData(preflight)
       return preflight
     } catch (error) {
-      logOptimizationDiagnostic('TVOptimizationUI', 'error', 'preflight.failed', { seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, requestId, error: describeDiagnosticError(error) })
+      const cancelled = error instanceof DOMException && error.name === 'AbortError'
+      logOptimizationDiagnostic('TVOptimizationUI', cancelled ? 'info' : 'error', cancelled ? 'preflight.cancelled' : 'preflight.failed', {
+        seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, requestId,
+        ...(cancelled ? {} : { error: describeDiagnosticError(error) }),
+      })
       throw error
     } finally {
       unsubscribeProgress?.()
@@ -692,6 +696,7 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
       else if (hasInsufficientEvidence) setMessage('Some episodes need more evidence and will be skipped.')
     } catch (error) {
       if (backgroundPreflight.current) return
+      if (error instanceof DOMException && error.name === 'AbortError') return
       const errMsg = error instanceof Error ? error.message : String(error)
       logOptimizationDiagnostic('TVOptimizationUI', 'error', 'review.preflight.failed', { seriesIdentityKey, mediaItemId: episode?.id, error: describeDiagnosticError(error) })
       setMessage(errMsg)
