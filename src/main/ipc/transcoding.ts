@@ -45,26 +45,49 @@ function checkpointSettingKey(requestId: string, mediaItemId: number): string {
 
 function launchBackgroundPreflight(requestId: string, record: PersistedBackgroundPreflight): Promise<ShowTranscodePreflight | undefined> {
   const { request: preflightRequest } = record
-  const scope = preflightRequest.mediaItemId !== undefined ? 'episode' : preflightRequest.seasonNumber !== undefined ? `season ${preflightRequest.seasonNumber}` : 'series'
-  const shutdownInterrupted = record.activity?.state === 'partial' && record.activity.outcome?.message === PREFLIGHT_SHUTDOWN_MESSAGE
-  if (record.activity && (!record.activity.outcome || shutdownInterrupted)) {
-    record.activity = { ...record.activity, state: 'running', phase: record.activity.phase ? `Resuming · ${record.activity.phase}` : 'Resuming preflight' }
-    record.activity.outcome = undefined
-  }
-  const operation = operationRequestRegistry.registerBackground(requestId, {
-    kind: 'optimization-preflight',
-    label: `Preflighting TV ${scope}`,
-    context: preflightRequest.mediaItemId !== undefined ? `${preflightRequest.seriesTitle ?? 'TV series'} · Episode ${preflightRequest.mediaItemId}` : `${preflightRequest.seriesTitle ?? 'TV series'}${preflightRequest.seasonNumber === undefined ? '' : ` · Season ${preflightRequest.seasonNumber}`}`,
+  const mediaItem = preflightRequest.mediaItemId === undefined
+    ? null
+    : getDatabase().media.getItemById(preflightRequest.mediaItemId)
+  const seriesTitle = preflightRequest.seriesTitle ?? mediaItem?.series_title
+  const episodeCoordinates = mediaItem?.season_number != null && mediaItem.episode_number != null
+    ? `S${String(mediaItem.season_number).padStart(2, '0')}E${String(mediaItem.episode_number).padStart(2, '0')}`
+    : undefined
+  const episodeDescription = [seriesTitle, episodeCoordinates, mediaItem?.title]
+    .filter((part): part is string => Boolean(part))
+    .join(' · ')
+  const target = mediaItem?.type === 'movie'
+    ? `movie: ${mediaItem.title}${mediaItem.year ? ` (${mediaItem.year})` : ''}`
+    : preflightRequest.mediaItemId !== undefined
+      ? `TV episode: ${episodeDescription || `media item ${preflightRequest.mediaItemId}`}`
+      : preflightRequest.seasonNumber !== undefined
+        ? `TV season: ${seriesTitle ? `${seriesTitle} · ` : ''}Season ${preflightRequest.seasonNumber}`
+        : `TV show${seriesTitle ? `: ${seriesTitle}` : ''}`
+  const activity = {
+    kind: 'optimization-preflight' as const,
+    label: `Preflighting ${target}`,
+    context: target,
     entity: {
-      seriesTitle: preflightRequest.seriesTitle,
+      seriesTitle,
       seriesIdentityKey: preflightRequest.seriesIdentityKey,
       sourceId: preflightRequest.sourceId,
       libraryId: preflightRequest.libraryId,
       mediaItemId: preflightRequest.mediaItemId,
       seasonNumber: preflightRequest.seasonNumber,
     },
-  }, activity => {
-    record.activity = activity
+  }
+  const shutdownInterrupted = record.activity?.state === 'partial' && record.activity.outcome?.message === PREFLIGHT_SHUTDOWN_MESSAGE
+  if (record.activity && (!record.activity.outcome || shutdownInterrupted)) {
+    record.activity = {
+      ...record.activity,
+      ...activity,
+      requestId,
+      state: 'running',
+      phase: record.activity.phase ? `Resuming · ${record.activity.phase}` : 'Resuming preflight',
+    }
+    record.activity.outcome = undefined
+  }
+  const operation = operationRequestRegistry.registerBackground(requestId, activity, nextActivity => {
+    record.activity = nextActivity
     getDatabase().config.setSetting(`${BACKGROUND_PREFLIGHT_SETTING_PREFIX}${requestId}`, JSON.stringify(record))
   }, record.activity)
   if (record.activity?.outcome) return Promise.resolve(undefined)
