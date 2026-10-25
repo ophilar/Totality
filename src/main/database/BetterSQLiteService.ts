@@ -215,8 +215,8 @@ export class BetterSQLiteService {
 
   public get tvShows() {
     return {
-      getEpisodes: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) =>
-        this.getEpisodes(seriesTitle, sourceId, seriesIdentityKey, libraryId),
+      getEpisodes: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string, seasonNumber?: number) =>
+        this.getEpisodes(seriesTitle, sourceId, seriesIdentityKey, libraryId, seasonNumber),
       getCompletenessByIdentity: (identityKey: string, sourceId?: string, libraryId?: string) =>
         this.getSeriesCompletenessByIdentity(identityKey, sourceId, libraryId)
     }
@@ -285,7 +285,8 @@ export class BetterSQLiteService {
     _seriesTitle: string,
     sourceId: string,
     seriesIdentityKey: string,
-    libraryId: string
+    libraryId: string,
+    seasonNumber?: number
   ): MediaItem[] {
     if (!this.db) throw new Error('Database not initialized')
     if (!seriesIdentityKey || seriesIdentityKey.trim() === '') {
@@ -304,6 +305,10 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     if (libraryId) {
       sql += ' AND m.library_id = ?'
       params.push(libraryId)
+    }
+    if (seasonNumber !== undefined) {
+      sql += ' AND m.season_number = ?'
+      params.push(seasonNumber)
     }
     sql += ' ORDER BY m.season_number ASC, m.episode_number ASC'
     return this.db.prepare(sql).all(...params).map((row) => this.mapMediaItem(row as Record<string, unknown>))

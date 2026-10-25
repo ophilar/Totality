@@ -157,7 +157,7 @@ function formatBytes(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, resumeRequestId }: { show: TVShowSummary; episode?: MediaItem; onClose: () => void; initialPreflight?: ShowTranscodePreflight | null; resumeRequestId?: string | null }) {
+export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initialPreflight, resumeRequestId }: { show: TVShowSummary; episode?: MediaItem; seasonNumber?: number; onClose: () => void; initialPreflight?: ShowTranscodePreflight | null; resumeRequestId?: string | null }) {
   const { addToast } = useToast()
   const { seriesIdentityKey, sourceId, libraryId } = getTVShowIdentity(show)
   const [mode, setMode] = useState<'config' | 'preview' | 'monitoring'>('config')
@@ -239,9 +239,9 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
       const { operations } = await window.electronAPI.operationsGetActivity()
       const active = operations.some(operation => !operation.outcome && operation.kind === 'optimization-preflight' &&
         operation.entity?.sourceId === sourceId && operation.entity.libraryId === libraryId &&
-        operation.entity.seriesIdentityKey === seriesIdentityKey && operation.entity.mediaItemId === episode?.id)
+        operation.entity.seriesIdentityKey === seriesIdentityKey && operation.entity.mediaItemId === episode?.id && operation.entity.seasonNumber === seasonNumber)
       if (active) return undefined
-      return window.electronAPI.findShowPreflight(seriesIdentityKey, sourceId, libraryId, show.series_title, episode?.id)
+      return window.electronAPI.findShowPreflight(seriesIdentityKey, sourceId, libraryId, show.series_title, episode?.id, seasonNumber)
     })().then(saved => {
       if (!mounted || startedPreflightHere.current || !saved) return
       const request = saved.request as import('@main/services/TranscodingService').ShowTranscodeRequest
@@ -269,10 +269,10 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
       setReviewedEpisodes([])
       setMessage('')
       setMode('preview')
-      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.reused', { preflightId: result.preflightId, batchId: result.batchId, seriesIdentityKey, mediaItemId: episode?.id })
+      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.reused', { preflightId: result.preflightId, batchId: result.batchId, seriesIdentityKey, seasonNumber, mediaItemId: episode?.id })
     }).catch(error => setMessage(error instanceof Error ? error.message : String(error)))
     return () => { mounted = false }
-  }, [initialPreflight, resumeRequestId, targetProfilesLoading, seriesIdentityKey, sourceId, libraryId, show.series_title, episode?.id, targetProfiles])
+  }, [initialPreflight, resumeRequestId, targetProfilesLoading, seriesIdentityKey, sourceId, libraryId, show.series_title, episode?.id, seasonNumber, targetProfiles])
 
   useEffect(() => {
     if (initialPreflight) return
@@ -287,7 +287,7 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
         setPreflightOperationState(operation.state === 'paused' || operation.state === 'pausing' || operation.state === 'finishing' ? operation.state : 'running')
         setPreflightProgress({
           percentage: operation.progress?.percentage ?? 0,
-          phase: operation.phase ?? 'Preflighting series',
+          phase: operation.phase ?? (seasonNumber === undefined ? 'Preflighting series' : `Preflighting season ${seasonNumber}`),
           currentItem: operation.progress?.currentItem ?? operation.context,
         })
         return
@@ -317,7 +317,7 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
     const matchesCurrentMedia = (operation: import('@main/ipc/utils/OperationRequestRegistry').ActivityOperation) => {
       const entity = operation.entity
       return operation.kind === 'optimization-preflight' && entity?.sourceId === sourceId && entity.libraryId === libraryId &&
-        entity.seriesIdentityKey === seriesIdentityKey && entity.mediaItemId === episode?.id
+        entity.seriesIdentityKey === seriesIdentityKey && entity.mediaItemId === episode?.id && entity.seasonNumber === seasonNumber
     }
     const findOperation = (operations: import('@main/ipc/utils/OperationRequestRegistry').ActivityOperation[]) => {
       if (resumeRequestId) return operations.find(operation => operation.requestId === resumeRequestId)
@@ -337,7 +337,7 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
       mounted = false
       unsubscribe?.()
     }
-  }, [initialPreflight?.preflightId, resumeRequestId, seriesIdentityKey, sourceId, libraryId, episode?.id])
+  }, [initialPreflight?.preflightId, resumeRequestId, seriesIdentityKey, sourceId, libraryId, episode?.id, seasonNumber])
 
   useEffect(() => {
     let mounted = true
@@ -597,6 +597,7 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
     }
     const settings = {
       seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, optimizationMode, outputMode,
+      seasonNumber,
       codec: codec || null, qualityProfile: qualityProfile || null, encoderPolicy: encoderPolicy || null,
       targetContainer: targetContainer || null, targetHdrFormat: targetHdrFormat || null,
       gpuId: gpuId || null, removeUnnecessaryStreams: shouldRemoveStreams,
@@ -617,7 +618,7 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
     backgroundPreflight.current = false
     activePreflightRequestId.current = requestId
     setPreflightTermination(null)
-    setPreflightProgress({ percentage: 0, phase: 'Starting preflight', currentItem: 'Loading series episodes' })
+    setPreflightProgress({ percentage: 0, phase: 'Starting preflight', currentItem: seasonNumber === undefined ? 'Loading series episodes' : `Loading season ${seasonNumber} episodes` })
     setPreflightOperationState('running')
     startedPreflightHere.current = true
     const unsubscribeProgress = window.electronAPI.onOperationsUpdated?.(({ operations }) => {
@@ -638,6 +639,7 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
       const started = await window.electronAPI.startPreflightShow({
         requestId,
         mediaItemId: episode?.id,
+        seasonNumber,
         seriesTitle: show.series_title,
         seriesIdentityKey,
         sourceId,
@@ -847,7 +849,7 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
   const preflightProgressPanel = busy && preflightProgress ? (
     <div role="status" aria-live="polite" className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-2">
       <div className="flex items-center justify-between gap-3 text-xs">
-        <span className="font-semibold">{preflightOperationState === 'paused' ? 'Preflight paused' : preflightProgress.phase || 'Preflighting series'}</span>
+        <span className="font-semibold">{preflightOperationState === 'paused' ? 'Preflight paused' : preflightProgress.phase || (seasonNumber === undefined ? 'Preflighting series' : `Preflighting season ${seasonNumber}`)}</span>
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground tabular-nums">{preflightProgress.percentage}%</span>
           <button
@@ -931,9 +933,9 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
             </div>
             <div>
               <h3 id="show-transcode-modal-title" className="text-lg font-bold leading-tight flex items-center gap-2">
-                {mode === 'monitoring' ? 'Live Series Optimization' : mode === 'preview' ? 'Optimization Plan Preview' : 'Batch Optimize Series'}
+                {mode === 'monitoring' ? (seasonNumber === undefined ? 'Live Series Optimization' : `Live Season ${seasonNumber} Optimization`) : mode === 'preview' ? (seasonNumber === undefined ? 'Optimization Plan Preview' : `Season ${seasonNumber} Optimization Plan`) : seasonNumber === undefined ? 'Batch Optimize Series' : `Optimize Season ${seasonNumber}`}
               </h3>
-              <p className="text-xs text-muted-foreground truncate max-w-[420px]">{show.series_title}</p>
+              <p className="text-xs text-muted-foreground truncate max-w-[420px]">{show.series_title}{seasonNumber === undefined ? '' : ` · Season ${seasonNumber}`}</p>
             </div>
           </div>
           <button
@@ -1576,7 +1578,7 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
                   {busy ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Preflighting Series…</span>
+                      <span>{seasonNumber === undefined ? 'Preflighting Series…' : `Preflighting Season ${seasonNumber}…`}</span>
                     </>
                   ) : (
                     <>

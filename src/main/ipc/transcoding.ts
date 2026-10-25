@@ -24,6 +24,7 @@ const FindShowPreflightSchema = z.tuple([
   LibraryIdSchema,
   NonEmptyStringSchema,
   z.number().int().positive().optional(),
+  z.number().int().nonnegative().optional(),
 ])
 
 const BACKGROUND_PREFLIGHT_SETTING_PREFIX = 'transcoding.backgroundPreflight.'
@@ -44,6 +45,7 @@ function checkpointSettingKey(requestId: string, mediaItemId: number): string {
 
 function launchBackgroundPreflight(requestId: string, record: PersistedBackgroundPreflight): Promise<ShowTranscodePreflight | undefined> {
   const { request: preflightRequest } = record
+  const scope = preflightRequest.mediaItemId !== undefined ? 'episode' : preflightRequest.seasonNumber !== undefined ? `season ${preflightRequest.seasonNumber}` : 'series'
   const shutdownInterrupted = record.activity?.state === 'partial' && record.activity.outcome?.message === PREFLIGHT_SHUTDOWN_MESSAGE
   if (record.activity && (!record.activity.outcome || shutdownInterrupted)) {
     record.activity = { ...record.activity, state: 'running', phase: record.activity.phase ? `Resuming · ${record.activity.phase}` : 'Resuming preflight' }
@@ -51,14 +53,15 @@ function launchBackgroundPreflight(requestId: string, record: PersistedBackgroun
   }
   const operation = operationRequestRegistry.registerBackground(requestId, {
     kind: 'optimization-preflight',
-    label: 'Preflighting TV series',
-    context: preflightRequest.seriesTitle ?? `Episode ${preflightRequest.mediaItemId}`,
+    label: `Preflighting TV ${scope}`,
+    context: preflightRequest.mediaItemId !== undefined ? `${preflightRequest.seriesTitle ?? 'TV series'} · Episode ${preflightRequest.mediaItemId}` : `${preflightRequest.seriesTitle ?? 'TV series'}${preflightRequest.seasonNumber === undefined ? '' : ` · Season ${preflightRequest.seasonNumber}`}`,
     entity: {
       seriesTitle: preflightRequest.seriesTitle,
       seriesIdentityKey: preflightRequest.seriesIdentityKey,
       sourceId: preflightRequest.sourceId,
       libraryId: preflightRequest.libraryId,
       mediaItemId: preflightRequest.mediaItemId,
+      seasonNumber: preflightRequest.seasonNumber,
     },
   }, activity => {
     record.activity = activity
@@ -210,7 +213,7 @@ export function registerTranscodingHandlers(): void {
   })
   createValidatedIpcHandler(IPC_CHANNELS.transcodingPreflightRemux, z.number().int().positive(), async (mediaItemId) => getTranscodingService().preflightRemux(mediaItemId))
   createValidatedIpcHandler(IPC_CHANNELS.transcodingGetShowPreflight, NonEmptyStringSchema, async (preflightId) => getTranscodingService().getShowPreflight(preflightId))
-  createValidatedIpcHandler(IPC_CHANNELS.transcodingFindShowPreflight, FindShowPreflightSchema, async (seriesIdentityKey, sourceId, libraryId, seriesTitle, mediaItemId) => getTranscodingService().findLatestShowPreflight({ seriesIdentityKey, sourceId, libraryId, seriesTitle, mediaItemId }))
+  createValidatedIpcHandler(IPC_CHANNELS.transcodingFindShowPreflight, FindShowPreflightSchema, async (seriesIdentityKey, sourceId, libraryId, seriesTitle, mediaItemId, seasonNumber) => getTranscodingService().findLatestShowPreflight({ seriesIdentityKey, sourceId, libraryId, seriesTitle, mediaItemId, seasonNumber }))
 
   createValidatedIpcHandler(IPC_CHANNELS.transcodingDiscardShow, QueueShowTranscodeSchema, async (preflightId) => getTranscodingService().discardShowPreflight(preflightId))
   createValidatedIpcHandler(IPC_CHANNELS.transcodingOpenShowSample, z.tuple([NonEmptyStringSchema, z.number().int().positive(), z.number().int().nonnegative()]), async (preflightId, mediaItemId, index) => {
