@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Activity, AlertCircle, CheckCircle2, Loader2, Pause, Play, X } from 'lucide-react'
+import { AlertCircle, CheckCircle2, History, Loader2, Pause, Play, X } from 'lucide-react'
 import type { ActivityOperation } from '@main/ipc/utils/OperationRequestRegistry'
 import { getActiveThemeClass } from '../../contexts/ThemeContext'
 import { useMenuClose } from '../../hooks/useMenuClose'
@@ -54,11 +54,12 @@ export function ActivityPanel() {
       <button
         onClick={() => setIsOpen(open => !open)}
         className={`relative p-2 rounded-md transition-colors ${isOpen ? 'bg-white text-black' : 'text-white hover:bg-white/10'}`}
-        aria-label="Activity"
+        aria-label="Background activity"
+        title="Background activity"
         aria-expanded={isOpen}
         aria-haspopup="true"
       >
-        {activeCount > 0 ? <Loader2 className="w-5 h-5 animate-spin" /> : <Activity className="w-5 h-5" />}
+        {activeCount > 0 ? <Loader2 className="w-5 h-5 animate-spin" /> : <History className="w-5 h-5" />}
         {activeCount > 0 && <span className="absolute -top-1 -right-1 bg-white text-black text-[10px] font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">{activeCount > 99 ? '99+' : activeCount}</span>}
       </button>
 
@@ -69,8 +70,8 @@ export function ActivityPanel() {
       >
         <header className="flex items-center justify-between p-4 border-b border-border/30">
           <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold">Activity</h2>
+            <History className="w-4 h-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold">Background activity</h2>
             {activeCount > 0 && <span className="text-xs text-muted-foreground">{activeCount} active</span>}
           </div>
           <button onClick={() => setIsOpen(false)} className="p-1.5 rounded-md hover:bg-muted text-muted-foreground" aria-label="Close activity">
@@ -82,7 +83,7 @@ export function ActivityPanel() {
         <div className="min-h-0 overflow-y-auto">
           {operations.length === 0 ? (
             <div className="py-10 px-4 text-center">
-              <Activity className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
+              <History className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">No background activity</p>
               <p className="text-xs text-muted-foreground/60 mt-1">Long-running work and its progress will appear here.</p>
             </div>
@@ -95,12 +96,12 @@ export function ActivityPanel() {
                 </div>
                 {operation.outcome ? (
                   <div className="flex shrink-0 items-center gap-2">
-                    {operation.outcome.hasResult && operation.resultId && <button onClick={() => window.dispatchEvent(new CustomEvent('tvOptimization:review', { detail: { preflightId: operation.resultId } }))} className="text-xs text-primary hover:text-primary/80">Review</button>}
+                    {operation.outcome.hasResult && operation.resultId && <button onClick={() => window.dispatchEvent(new CustomEvent('tvOptimization:requestReview', { detail: { preflightId: operation.resultId } }))} className="text-xs text-primary hover:text-primary/80">Review</button>}
                     <button onClick={() => void handleDismiss(operation)} className="text-xs text-muted-foreground hover:text-foreground">Dismiss</button>
                   </div>
                 ) : operation.kind === 'optimization-preflight' ? (
                   <div className="flex shrink-0 items-center gap-2">
-                    {operation.entity && <button onClick={() => window.dispatchEvent(new CustomEvent('tvOptimization:resume', { detail: { requestId: operation.requestId, entity: operation.entity } }))} className="text-xs text-primary hover:text-primary/80">Return</button>}
+                    {operation.entity && <button onClick={() => window.dispatchEvent(new CustomEvent('tvOptimization:returnToPreflight', { detail: { requestId: operation.requestId, entity: operation.entity } }))} className="text-xs text-primary hover:text-primary/80">Return</button>}
                     <button onClick={() => void handlePause(operation)} className="text-xs text-muted-foreground hover:text-foreground" aria-label={operation.state === 'paused' ? 'Resume preflight' : 'Pause preflight'} title={operation.state === 'paused' ? 'Resume' : 'Pause'}>
                       {operation.state === 'paused' ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
                     </button>

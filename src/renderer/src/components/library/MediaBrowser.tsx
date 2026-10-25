@@ -78,7 +78,8 @@ export function MediaBrowser({
   libraryTab,
   onLibraryTabChange,
   onAutoRefreshChange,
-  onBackdropChange,
+  pendingTVOptimizationAction,
+  onTVOptimizationActionHandled,
   isMobile = false,
   isTablet = false,
 }: MediaBrowserProps) {
@@ -2115,6 +2116,8 @@ export function MediaBrowser({
             />
           ) : view === 'tv' ? (
           <TVShowsView
+            pendingTVOptimizationAction={pendingTVOptimizationAction}
+            onTVOptimizationActionHandled={onTVOptimizationActionHandled}
             shows={paginatedShows}
             selectedShow={selectedShow}
             selectedSeason={selectedSeason}
