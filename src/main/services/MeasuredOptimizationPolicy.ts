@@ -36,7 +36,7 @@ interface QualityGates {
   cambiMean: number
 }
 
-export interface MeasuredCandidateEvaluation {
+interface MeasuredCandidateEvaluation {
   candidate: MeasuredCandidate
   passed: boolean
   failedGates: string[]
@@ -58,14 +58,14 @@ export function selectMeasuredCandidate(profile: OptimizationQualityProfile, can
   const selected = eligible[0]
   if (!selected) {
     const reports = evaluations.map(({ candidate, failedGates }) =>
-      `${candidate.encoder}/${candidate.preset} q${candidate.quality}: VMAF mean ${candidate.vmafMean.toFixed(2)} (min ${gates.vmafMean}), VMAF p5 ${candidate.vmafP5.toFixed(2)} (min ${gates.vmafP5}), CAMBI ${candidate.cambiMean.toFixed(2)} (max ${gates.cambiMean}); failed=${failedGates.join(',') || 'none'}`
+      `${candidate.encoder}/${candidate.preset} q${candidate.quality}: VMAF mean ${candidate.vmafMean.toFixed(2)} (min ${gates.vmafMean}), VMAF p5 ${candidate.vmafP5.toFixed(2)} (min ${gates.vmafP5}), CAMBI ${candidate.cambiMean.toFixed(2)} (max ${gates.cambiMean}); failed=${failedGates.join(',')}`
     )
     throw new Error(`No measured candidate satisfies the ${profile} quality gates. Candidate results: ${reports.join(' | ')}`)
   }
   return selected
 }
 
-export function evaluateMeasuredCandidates(profile: OptimizationQualityProfile, candidates: MeasuredCandidate[]): MeasuredCandidateEvaluation[] {
+function evaluateMeasuredCandidates(profile: OptimizationQualityProfile, candidates: MeasuredCandidate[]): MeasuredCandidateEvaluation[] {
   const gates = QUALITY_GATES[profile]
   return candidates.map(candidate => {
     const failedGates = [

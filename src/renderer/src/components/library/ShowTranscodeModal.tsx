@@ -86,16 +86,16 @@ function getSourceTierBadge(tier?: string) {
 
 function getAdvisoryBadges(operations: PlannedOptimizationOperation[], compatible: boolean = true, decisionStatus?: string) {
   const badges: ReactNode[] = []
-  if (!compatible) {
-    badges.push(
-      <span key="incompatible" className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-destructive/20 text-destructive border border-destructive/30 flex items-center gap-1">
-        <AlertCircle className="w-3 h-3" /> Incompatible
-      </span>
-    )
-  } else if (decisionStatus === 'insufficient_evidence') {
+  if (decisionStatus === 'insufficient_evidence') {
     badges.push(
       <span key="insufficient-evidence" className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
         <AlertCircle className="w-3 h-3" /> Insufficient Evidence
+      </span>
+    )
+  } else if (!compatible) {
+    badges.push(
+      <span key="incompatible" className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-destructive/20 text-destructive border border-destructive/30 flex items-center gap-1">
+        <AlertCircle className="w-3 h-3" /> Incompatible
       </span>
     )
   } else if (decisionStatus === 'sample_required') {
@@ -1409,10 +1409,10 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
               </div>
             </div>
 
-            {!preflightData.compatible && (
+            {preflightData.episodes.some(episode => !episode.compatible) && (
               <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>Some episodes are incompatible and cannot be processed. Review errors above.</span>
+                <span>Some episodes are blocked or need more evidence. Review the details above.</span>
               </div>
             )}
           </div>
