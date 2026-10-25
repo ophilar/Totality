@@ -1,5 +1,6 @@
 
 import type { FileAnalysisResult } from '../MediaFileAnalyzer'
+import type { GpuEncoderDeviceSelector } from '../utils/GpuDetector'
 
 export interface TranscodeOptions {
   targetCodec?: 'av1' | 'hevc'
@@ -13,6 +14,7 @@ export interface TranscodeOptions {
   preset?: string
   customArgs?: string
   gpuId?: string
+  gpuDeviceSelector?: GpuEncoderDeviceSelector
   transcodingEngine?: 'ffmpeg'
   targetSize?: string
   maxOutputBytes?: number

@@ -201,7 +201,7 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
   const [outputMode, setOutputMode] = useState<'copy' | 'quarantine-replace' | 'replace'>('quarantine-replace')
   const [gpuId, setGpuId] = useState('')
   const [gpus, setGpus] = useState<GpuInfo[]>([])
-  const [supportedEncoders, setSupportedEncoders] = useState<string[]>([])
+  const [deviceEncoders, setDeviceEncoders] = useState<Record<string, string[]>>({})
   const [message, setMessage] = useState('')
   const [isSuccess, setIsSuccess] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -478,7 +478,7 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
       if (!isMounted || !capabilities) return
       const detectedGpus = capabilities.gpus || []
       setGpus(detectedGpus)
-      setSupportedEncoders(capabilities.encoders)
+      setDeviceEncoders(capabilities.deviceEncoders)
       const selected = detectedGpus.find((gpu: GpuInfo) => gpu.id === capabilities.selectedGpuId)
       setGpuId(selected?.id || '')
     }).catch(err => {
@@ -749,9 +749,9 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
   const vendor = gpus.find(gpu => gpu.id === gpuId)?.vendor
   const selectedGpu = gpus.find(gpu => gpu.id === gpuId)
   const hardwareEncoder = vendor && codec ? getHardwareEncoder(vendor, codec) : undefined
-  const hardwareAvailable = hardwareEncoder !== undefined && supportedEncoders.includes(hardwareEncoder)
+  const hardwareAvailable = hardwareEncoder !== undefined && (deviceEncoders[gpuId] ?? []).includes(hardwareEncoder)
   const softwareEncoder = codec === 'av1' ? 'svt_av1' : codec === 'hevc' ? 'x265' : undefined
-  const softwareAvailable = softwareEncoder !== undefined && supportedEncoders.includes(softwareEncoder)
+  const softwareAvailable = softwareEncoder !== undefined && (deviceEncoders.software ?? []).includes(softwareEncoder)
   useEffect(() => {
     const recommendedPolicy = hardwareAvailable ? 'hardware' : softwareAvailable ? 'software' : ''
     setEncoderPolicy(recommendedPolicy)

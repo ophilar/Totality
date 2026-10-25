@@ -81,9 +81,9 @@ export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, init
   const failureReportedRef = useRef(false)
   const selectedGpu = capabilities?.gpus.find(gpu => gpu.id === options.gpuId)
   const hardwareEncoder = selectedGpu && options.targetCodec ? getHardwareEncoder(selectedGpu.vendor, options.targetCodec) : undefined
-  const hardwareAvailable = Boolean(hardwareEncoder && capabilities?.encoders.includes(hardwareEncoder))
+  const hardwareAvailable = Boolean(hardwareEncoder && selectedGpu && capabilities?.deviceEncoders[selectedGpu.id]?.includes(hardwareEncoder))
   const softwareEncoder = options.targetCodec === 'av1' ? 'svt_av1' : options.targetCodec === 'hevc' ? 'x265' : undefined
-  const softwareAvailable = Boolean(softwareEncoder && capabilities?.encoders.includes(softwareEncoder))
+  const softwareAvailable = Boolean(softwareEncoder && capabilities?.deviceEncoders.software.includes(softwareEncoder))
   const targetProfile = targetProfiles.find(profile => profile.id === targetProfileId)
   const recommendedAudioCodec = targetProfile && media?.audio_codec
     && media.audio_channels <= targetProfile.definition.audio.maxChannels
