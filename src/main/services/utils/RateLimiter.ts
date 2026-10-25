@@ -1,4 +1,6 @@
 
+import { APP_CONFIG } from '@main/config'
+
 /**
  * RateLimiter Utilities
  *
@@ -21,7 +23,6 @@ export interface RateLimiter {
    */
   reset(): void
 }
-
 /**
  * Sliding Window Rate Limiter
  *
@@ -129,12 +130,18 @@ export class SimpleDelayRateLimiter implements RateLimiter {
   private currentDelayMs: number
   private readonly maxDelayMs: number
   private consecutiveSuccesses = 0
+  private consecutiveAvailabilityFailures = 0
+  private cooldownUntil = 0
 
   /**
    * @param delayMs Minimum milliseconds between requests
    * @param maxDelayMs Maximum adaptive delay after service errors
    */
-  constructor(delayMs: number, maxDelayMs = 6000) {
+  constructor(
+    delayMs: number,
+    maxDelayMs = 6000,
+    private readonly availabilityCooldown?: { failureThreshold: number; durationMs: number }
+  ) {
     this.baseDelayMs = delayMs
     this.currentDelayMs = delayMs
     this.maxDelayMs = maxDelayMs
@@ -142,7 +149,11 @@ export class SimpleDelayRateLimiter implements RateLimiter {
 
   async waitForSlot(): Promise<void> {
     const now = Date.now()
-    const scheduledTime = Math.max(now, this.lastScheduledTime === 0 ? now : this.lastScheduledTime + this.currentDelayMs)
+    if (this.cooldownUntil <= now) {
+      this.cooldownUntil = 0
+      this.consecutiveAvailabilityFailures = 0
+    }
+    const scheduledTime = Math.max(now, this.lastScheduledTime === 0 ? now : this.lastScheduledTime + this.currentDelayMs, this.cooldownUntil)
     this.lastScheduledTime = scheduledTime
     const waitMs = scheduledTime - now
 
@@ -156,9 +167,16 @@ export class SimpleDelayRateLimiter implements RateLimiter {
       this.currentDelayMs = Math.min(this.maxDelayMs, Math.max(this.currentDelayMs * 1.5, 3000))
       this.consecutiveSuccesses = 0
     }
+    if ([502, 503, 504].includes(status) && this.availabilityCooldown) {
+      this.consecutiveAvailabilityFailures++
+      if (this.consecutiveAvailabilityFailures >= this.availabilityCooldown.failureThreshold && this.cooldownUntil === 0) {
+        this.cooldownUntil = Date.now() + this.availabilityCooldown.durationMs
+      }
+    }
   }
 
   recordSuccess(): void {
+    this.consecutiveAvailabilityFailures = 0
     this.consecutiveSuccesses++
     if (this.consecutiveSuccesses >= 5 && this.currentDelayMs > this.baseDelayMs) {
       this.currentDelayMs = Math.max(this.baseDelayMs, this.currentDelayMs - 500)
@@ -178,6 +196,8 @@ export class SimpleDelayRateLimiter implements RateLimiter {
     this.lastScheduledTime = 0
     this.currentDelayMs = this.baseDelayMs
     this.consecutiveSuccesses = 0
+    this.consecutiveAvailabilityFailures = 0
+    this.cooldownUntil = 0
   }
 
   private delay(ms: number): Promise<void> {
@@ -210,6 +230,10 @@ export const RateLimiters = {
    * Using 1.5s to be safe and respectful of the service
    */
   createMusicBrainzLimiter(): SimpleDelayRateLimiter {
-    return new SimpleDelayRateLimiter(1500)
+    const config = APP_CONFIG.musicBrainz
+    return new SimpleDelayRateLimiter(config.requestIntervalMs, config.maxAdaptiveDelayMs, {
+      failureThreshold: config.availabilityFailuresBeforeCooldown,
+      durationMs: config.availabilityCooldownMs,
+    })
   },
 }

@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { APP_CONFIG } from '@main/config'
 import {
   SlidingWindowRateLimiter,
   SimpleDelayRateLimiter,
@@ -124,6 +125,22 @@ describe('SimpleDelayRateLimiter', () => {
 
     limiter.reset()
     expect(limiter.getCurrentDelay()).toBe(1500)
+  })
+
+  it('pauses MusicBrainz requests after repeated availability failures', async () => {
+    const limiter = RateLimiters.createMusicBrainzLimiter()
+    await limiter.waitForSlot()
+    limiter.recordError(503)
+    limiter.recordError(503)
+    limiter.recordError(503)
+
+    let resolved = false
+    const request = limiter.waitForSlot().then(() => { resolved = true })
+    await vi.advanceTimersByTimeAsync(APP_CONFIG.musicBrainz.availabilityCooldownMs - 1)
+    expect(resolved).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await request
+    expect(resolved).toBe(true)
   })
 })
 

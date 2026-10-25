@@ -14,6 +14,12 @@
     "rateLimitRequests": 40,
     "rateLimitWindowMs": 10000
   },
+  "musicBrainz": {
+    "requestIntervalMs": 1500,
+    "maxAdaptiveDelayMs": 6000,
+    "availabilityFailuresBeforeCooldown": 3,
+    "availabilityCooldownMs": 60000
+  },
   "logging": {
     "maxInfoEntries": 500,
     "maxImportantEntries": 500,
