@@ -139,11 +139,13 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                <span className="text-label font-medium">{queueState.currentTask.label}</span>
+                <span className="text-sm font-medium">{queueState.currentTask.label}</span>
+                {queueState.currentTask.status === 'cancelling' && <span className="text-xs text-muted-foreground">Cancelling…</span>}
               </div>
-              <Button variant="tertiary" size="icon-sm" onClick={handleCancelCurrent} title="Cancel"
-                icon={<XCircle className="w-4 h-4" />}
-              />
+              <button onClick={handleCancelCurrent} disabled={queueState.currentTask.status === 'cancelling'}
+                className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-red-400 disabled:opacity-50" title={queueState.currentTask.status === 'cancelling' ? 'Cancellation requested' : 'Cancel'}>
+                <XCircle className="w-4 h-4" />
+              </button>
             </div>
             {queueState.currentTask.progress && (
               <>
