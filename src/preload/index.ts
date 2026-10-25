@@ -445,7 +445,7 @@ const electronAPI = {
 
   // Music Quality Analysis
   musicGetAlbumQuality: (albumId: number) => ipcRenderer.invoke(IPC_CHANNELS.musicGetAlbumQuality, albumId),
-  musicGetAlbumsNeedingUpgrade: (limit?: number, sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.musicGetAlbumsNeedingUpgrade, limit, sourceId),
+  musicGetAlbumsNeedingUpgrade: (options?: { limit?: number; sourceId?: string }) => ipcRenderer.invoke(IPC_CHANNELS.musicGetAlbumsNeedingUpgrade, options),
   musicAnalyzeAllQuality: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.musicAnalyzeAllQuality, sourceId),
   onMusicQualityProgress: (callback: (progress: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
@@ -881,6 +881,7 @@ const electronAPI = {
   preflightShow: (request: unknown) => ipcRenderer.invoke(IPC_CHANNELS.transcodingPreflightShow, request),
   startPreflightShow: (request: unknown) => ipcRenderer.invoke(IPC_CHANNELS.transcodingStartPreflightShow, request),
   getShowPreflight: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingGetShowPreflight, preflightId),
+  findShowPreflight: (seriesIdentityKey: string, sourceId: string, libraryId: string, seriesTitle: string, mediaItemId?: number) => ipcRenderer.invoke(IPC_CHANNELS.transcodingFindShowPreflight, seriesIdentityKey, sourceId, libraryId, seriesTitle, mediaItemId),
   queueShow: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingQueueShow, preflightId),
   approveShow: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingApproveShow, preflightId),
   discardShow: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingDiscardShow, preflightId),
@@ -1387,7 +1388,8 @@ interface ExistingElectronAPI {
       low: number
       medium: number
       high: number
-    }
+    },
+    coverage: { rated: number; total: number; unknown: number }
   }>
   qualityGetRecommendedFormat: (mediaItemId: number) => Promise<string>
   onQualityAnalysisProgress: (callback: (progress: unknown) => void) => () => void
@@ -1551,7 +1553,7 @@ interface ExistingElectronAPI {
 
   // Music Quality Analysis
   musicGetAlbumQuality: (albumId: number) => Promise<unknown | null>
-  musicGetAlbumsNeedingUpgrade: (limit?: number, sourceId?: string) => Promise<unknown[]>
+  musicGetAlbumsNeedingUpgrade: (options?: { limit?: number; sourceId?: string }) => Promise<unknown[]>
   musicAnalyzeAllQuality: (sourceId?: string) => Promise<{ success: boolean; analyzed: number }>
   onMusicQualityProgress: (callback: (progress: unknown) => void) => () => void
 
@@ -2023,6 +2025,7 @@ interface ExistingElectronAPI {
   preflightShow: (request: any) => Promise<any>
   startPreflightShow: (request: any) => Promise<{ requestId: string }>
   getShowPreflight: (preflightId: string) => Promise<any>
+  findShowPreflight: (seriesIdentityKey: string, sourceId: string, libraryId: string, seriesTitle: string, mediaItemId?: number) => Promise<{ request: unknown; result: unknown } | undefined>
   queueShow: (preflightId: string) => Promise<any>
   approveShow: (preflightId: string) => Promise<any>
   discardShow: (preflightId: string) => Promise<any>

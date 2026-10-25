@@ -484,6 +484,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       // Deep file analysis cache
       'ALTER TABLE media_items ADD COLUMN deep_analysis TEXT',
       'ALTER TABLE media_items ADD COLUMN deep_analysis_at TEXT',
+      'ALTER TABLE pending_tasks ADD COLUMN payload_json TEXT',
     ]
 
     for (const statement of alterStatements) {
@@ -6756,17 +6757,17 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
 
   savePendingTasks(tasks: Array<{
     taskId: string; type: string; label: string
-    sourceId?: string; libraryId?: string; artistId?: number; createdAt: string
+    sourceId?: string; libraryId?: string; artistId?: number; createdAt: string; payload?: unknown
   }>): void {
     if (!this.db) return
     const save = this.db.transaction(() => {
       this.db!.prepare('DELETE FROM pending_tasks').run()
       const insert = this.db!.prepare(
-        `INSERT INTO pending_tasks(position, task_id, type, label, source_id, library_id, artist_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO pending_tasks(position, task_id, type, label, source_id, library_id, artist_id, created_at, payload_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       tasks.forEach((t, i) => {
-        insert.run(i, t.taskId, t.type, t.label, t.sourceId ?? null, t.libraryId ?? null, t.artistId ?? null, t.createdAt)
+        insert.run(i, t.taskId, t.type, t.label, t.sourceId ?? null, t.libraryId ?? null, t.artistId ?? null, t.createdAt, t.payload === undefined ? null : JSON.stringify(t.payload))
       })
     })
     save()
@@ -6774,12 +6775,12 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
 
   getPendingTasks(): Array<{
     taskId: string; type: string; label: string
-    sourceId: string | null; libraryId: string | null; artistId: number | null; createdAt: string
+    sourceId: string | null; libraryId: string | null; artistId: number | null; createdAt: string; payloadJson: string | null
   }> {
     if (!this.db) return []
     return (this.db.prepare(
-      'SELECT task_id as taskId, type, label, source_id as sourceId, library_id as libraryId, artist_id as artistId, created_at as createdAt FROM pending_tasks ORDER BY position ASC'
-    ).all() as Array<{ taskId: string; type: string; label: string; sourceId: string | null; libraryId: string | null; artistId: number | null; createdAt: string }>)
+      'SELECT task_id as taskId, type, label, source_id as sourceId, library_id as libraryId, artist_id as artistId, created_at as createdAt, payload_json as payloadJson FROM pending_tasks ORDER BY position ASC'
+    ).all() as Array<{ taskId: string; type: string; label: string; sourceId: string | null; libraryId: string | null; artistId: number | null; createdAt: string; payloadJson: string | null }>)
   }
 
   clearPendingTasks(): void {

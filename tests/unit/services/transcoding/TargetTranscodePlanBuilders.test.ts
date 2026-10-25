@@ -6,6 +6,9 @@ import { IntelCommandBuilder } from '../../../../src/main/services/transcoding/I
 import { NvidiaCommandBuilder } from '../../../../src/main/services/transcoding/NvidiaCommandBuilder'
 import { SoftwareCommandBuilder } from '../../../../src/main/services/transcoding/SoftwareCommandBuilder'
 import type { TargetTranscodePlan } from '../../../../src/main/services/transcoding/TargetTranscodePlan'
+import type { TranscodeOptions, ITranscodeCommandBuilder } from '../../../../src/main/services/transcoding/types'
+import { buildTargetTranscodePlan } from '../../../../src/main/services/transcoding/TargetTranscodePlan'
+import type { PlaybackTargetProfile } from '../../../../src/main/types/playbackTarget'
 
 const analysis: FileAnalysisResult = {
   success: true,
@@ -33,20 +36,24 @@ const targetConversion: TargetTranscodePlan = {
   changes: []
 }
 
-const builders = [
-  ['NVIDIA', new NvidiaCommandBuilder(), 'nvenc_h265'],
-  ['Intel', new IntelCommandBuilder(), 'qsv_h265'],
-  ['AMD', new AmdCommandBuilder(), 'hevc_amf'],
-  ['Apple', new AppleCommandBuilder(), 'vt_h265'],
+const builders: Array<[string, ITranscodeCommandBuilder, string, TranscodeOptions['gpuDeviceSelector']?]> = [
+  ...(process.platform === 'win32' || process.platform === 'linux' ? [[
+    'NVIDIA', new NvidiaCommandBuilder(), 'nvenc_h265', process.platform === 'win32' ? { kind: 'directx' as const, index: 0 } : { kind: 'nvenc' as const, index: 0 }
+  ] as [string, ITranscodeCommandBuilder, string, NonNullable<TranscodeOptions['gpuDeviceSelector']>]] : []),
+  ...(process.platform === 'win32' || process.platform === 'linux' ? [[
+    'Intel', new IntelCommandBuilder(), 'qsv_h265', process.platform === 'win32' ? { kind: 'directx' as const, index: 0 } : { kind: 'drm' as const, path: '/dev/dri/renderD128' }
+  ] as [string, ITranscodeCommandBuilder, string, NonNullable<TranscodeOptions['gpuDeviceSelector']>]] : []),
+  ...(process.platform === 'win32' ? [['AMD', new AmdCommandBuilder(), 'hevc_amf', { kind: 'directx', index: 0 }] as [string, ITranscodeCommandBuilder, string, NonNullable<TranscodeOptions['gpuDeviceSelector']>]] : []),
   ['software', new SoftwareCommandBuilder(), 'x265']
-] as const
+]
 
 describe('target conversion command parity', () => {
-  it.each(builders)('%s applies the measured target plan to its output command', (_vendor, builder, encoder) => {
+  it.each(builders)('%s applies the measured target plan to its output command', (_vendor, builder, encoder, gpuDeviceSelector) => {
     const args = builder.buildFFmpegArgs('movie.mkv', 'movie.mp4', {
       targetCodec: 'hevc',
       targetConversion,
       encoder,
+      gpuDeviceSelector,
       crf: 22,
       preset: 'quality',
       streamSelection: { audio: 'all', subtitle: 'all' }
@@ -69,5 +76,37 @@ describe('target conversion command parity', () => {
     expect(() => new AppleCommandBuilder().buildFFmpegArgs('movie.mkv', 'movie.mp4', {
       targetCodec: 'av1', crf: 22, preset: 'quality'
     }, analysis)).toThrow(/supports HEVC/)
+  })
+
+  it('rejects per-GPU Apple VideoToolbox encoding until the selected GPU can be pinned', () => {
+    expect(() => new AppleCommandBuilder().buildFFmpegArgs('movie.mkv', 'movie.mp4', {
+      targetCodec: 'hevc', crf: 22, preset: 'quality'
+    }, analysis)).toThrow(/selected GPU registry ID/)
+  })
+
+  it('identifies the subtitle stream codec and supported corrections when the target cannot preserve it', () => {
+    const source = {
+      ...analysis,
+      durationMs: 3_600_000,
+      fileSizeBytes: 1_000_000_000,
+      video: { ...analysis.video!, frameRate: 24 },
+      subtitleTracks: [{ index: 2, codec: 'ass', language: 'eng', title: 'English', isForced: false }],
+    }
+    const profile: PlaybackTargetProfile = {
+      id: 'target', name: 'Test playback target', createdAt: '', updatedAt: '',
+      definition: {
+        containers: ['mp4'],
+        video: { codecs: ['hevc'], profiles: ['Main 10'], levels: [41], maxWidth: 3840, maxHeight: 2160, maxFrameRate: 60, bitDepths: [10] },
+        hdr: { formats: ['SDR'], fallbackRequired: false },
+        audio: { codecs: ['truehd'], maxChannels: 8, objectAudio: true, outputPath: 'passthrough' },
+        subtitles: { formats: ['mov_text'], embedded: true, external: false, burnIn: false },
+        network: { sustainableBitrate: 100_000_000 },
+      },
+    }
+
+    expect(() => buildTargetTranscodePlan(source, profile, {
+      targetCodec: 'hevc', targetContainer: 'mp4', maxOutputBytes: 1_000_000_000,
+      streamSelection: { audio: 'all', subtitle: 'all' },
+    })).toThrow(/Subtitle stream 2 \(ass\).*Test playback target.*mp4.*remove it with the subtitle policy or choose a target profile\/container that supports ass/)
   })
 })

@@ -692,7 +692,8 @@ CREATE TABLE IF NOT EXISTS pending_tasks (
   source_id  TEXT,
   library_id TEXT,
   artist_id  INTEGER,
-  created_at TEXT    NOT NULL
+  created_at TEXT    NOT NULL,
+  payload_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS task_history (

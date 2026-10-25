@@ -1,4 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import fs from 'node:fs/promises'
+import path from 'node:path'
 import { getTranscodingService } from '../../../../src/main/services/TranscodingService'
 import { PreflightShowTranscodeSchema } from '../../../../src/main/validation/schemas'
 
@@ -12,7 +14,7 @@ vi.mock('@main/services/LoggingService', () => ({
   })
 }))
 
-const mockAddTasks = vi.fn().mockResolvedValue(undefined)
+const mockAddTasks = vi.fn()
 vi.mock('../../../../src/main/services/TaskQueueService', () => ({
   getTaskQueueService: () => ({
     getTasks: vi.fn().mockResolvedValue([]),
@@ -20,7 +22,7 @@ vi.mock('../../../../src/main/services/TaskQueueService', () => ({
   })
 }))
 
-describe('ShowOptimizationQueueAndExpiration', () => {
+describe('ShowOptimizationQueueAndPersistence', () => {
   let mockDb: any
 
   beforeEach(async () => {
@@ -46,7 +48,7 @@ describe('ShowOptimizationQueueAndExpiration', () => {
     vi.mocked(getDatabase).mockReturnValue(mockDb)
   })
 
-  it('rejects expired show preflight and discards stored state', async () => {
+  it('retains a saved show preflight after its legacy expiration timestamp', async () => {
     const transcodingService = getTranscodingService()
     const preflightId = 'expired_preflight_1'
     const expiredTime = new Date(Date.now() - 60000).toISOString()
@@ -69,10 +71,8 @@ describe('ShowOptimizationQueueAndExpiration', () => {
       }
     }))
 
-    await expect(transcodingService.queueShowTranscode(preflightId)).rejects.toThrow(
-      'Show transcode preflight has expired; run preflight again'
-    )
-    expect(mockDb.config.deleteSetting).toHaveBeenCalledWith(`transcoding.preflight.${preflightId}`)
+    await expect(transcodingService.getShowPreflight(preflightId)).resolves.toMatchObject({ result: { preflightId, expiresAt: expiredTime } })
+    expect(mockDb.config.deleteSetting).not.toHaveBeenCalled()
     expect(mockAddTasks).not.toHaveBeenCalled()
   })
 
@@ -81,7 +81,7 @@ describe('ShowOptimizationQueueAndExpiration', () => {
     mockDb.config.getSetting.mockResolvedValue(null)
 
     await expect(transcodingService.queueShowTranscode('nonexistent')).rejects.toThrow(
-      'Show transcode preflight was not found or has expired'
+      'Show transcode preflight was not found'
     )
     expect(mockAddTasks).not.toHaveBeenCalled()
   })
@@ -132,14 +132,19 @@ describe('ShowOptimizationQueueAndExpiration', () => {
   it('queues authorized episodes in sequence when preflight is valid', async () => {
     const transcodingService = getTranscodingService()
     const preflightId = 'valid_preflight_1'
-    const futureTime = new Date(Date.now() + 600000).toISOString()
+    const sourcePath = path.resolve('src/main/services/TranscodingService.ts')
+    const sourceStat = await fs.stat(sourcePath)
+    mockDb.media.getItemById.mockImplementation(async (id: number) => ({
+      id, title: `Show S01E0${id - 100}`, source_id: 'src1', file_path: sourcePath,
+    }))
+    mockDb.sources.getSourceById.mockResolvedValue({ connection_config: JSON.stringify({ folderPath: path.dirname(sourcePath) }) })
+    mockAddTasks.mockImplementation((tasks: unknown[]) => tasks.map((_, index) => `task-${index}`))
 
     mockDb.config.getSetting.mockResolvedValue(JSON.stringify({
       request: { sourceId: 'src1', libraryId: 'lib1' },
       result: {
         preflightId,
         batchId: 'batch_valid',
-        expiresAt: futureTime,
         userApproved: false,
         episodes: [
           {
@@ -147,6 +152,9 @@ describe('ShowOptimizationQueueAndExpiration', () => {
             label: 'Show S01E01 Title',
             compatible: true,
             decisionStatus: 'actionable',
+            sourceSize: sourceStat.size,
+            sourceMtimeMs: sourceStat.mtimeMs,
+            sourceSha256: 'a'.repeat(64),
             options: { crf: 20 },
             targetProfile: { id: 'prof-1', name: 'Profile 1' },
           },
@@ -155,6 +163,9 @@ describe('ShowOptimizationQueueAndExpiration', () => {
             label: 'Show S01E02 Title',
             compatible: true,
             decisionStatus: 'actionable',
+            sourceSize: sourceStat.size,
+            sourceMtimeMs: sourceStat.mtimeMs,
+            sourceSha256: 'a'.repeat(64),
             options: { crf: 20 },
             targetProfile: { id: 'prof-1', name: 'Profile 1' },
           }
@@ -174,6 +185,6 @@ describe('ShowOptimizationQueueAndExpiration', () => {
     expect(queuedTasks[1].mediaItemId).toBe(102)
     expect(queuedTasks[1].label).toBe('Show S01E02 Title')
 
-    expect(mockDb.config.deleteSetting).toHaveBeenCalledWith(`transcoding.preflight.${preflightId}`)
+    expect(mockDb.config.setSetting).toHaveBeenCalledWith(`transcoding.preflight.${preflightId}`, expect.stringContaining('queuedAt'))
   })
 })

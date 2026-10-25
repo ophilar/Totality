@@ -312,12 +312,11 @@ export function registerMusicHandlers(): void {
   /**
    * Get albums that need quality upgrades
    */
-  createIpcHandler(IPC_CHANNELS.musicGetAlbumsNeedingUpgrade, async (limit?: unknown, sourceId?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicGetAlbumsNeedingUpgrade, async (options?: unknown) => {
     try {
-      const validLimit = limit !== undefined ? validateInput(z.number().int().positive().optional(), limit, 'music:getAlbumsNeedingUpgrade') : undefined
-      const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'music:getAlbumsNeedingUpgrade') : undefined
+      const parsed = validateInput(z.object({ limit: z.number().int().positive().optional(), sourceId: OptionalSourceIdSchema }).strict(), options ?? {}, 'music:getAlbumsNeedingUpgrade')
       const db = getDatabase()
-      return db.getAlbumsNeedingUpgrade(validLimit, validSourceId)
+      return db.getAlbumsNeedingUpgrade(parsed.limit, parsed.sourceId)
     } catch (error: unknown) {
       console.error('[music:getAlbumsNeedingUpgrade] Error:', error)
       throw error

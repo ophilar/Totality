@@ -30,7 +30,13 @@ export function registerDatabaseHandlers() {
 
   createValidatedIpcHandlerWithEvent(IPC_CHANNELS.operationsGetActivity, z.tuple([]), async (event) => operationRequestRegistry.getSnapshot(event.sender.id))
   createValidatedIpcHandlerWithEvent(IPC_CHANNELS.operationsGetResult, z.string().min(1).max(100), async (event, requestId) => operationRequestRegistry.getResult(event.sender.id, requestId))
-  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.operationsDismiss, z.string().min(1).max(100), async (event, requestId) => operationRequestRegistry.dismiss(event.sender.id, requestId))
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.operationsDismiss, z.string().min(1).max(100), async (event, requestId) => {
+    operationRequestRegistry.dismiss(event.sender.id, requestId)
+    await db.config.deleteSetting(`transcoding.backgroundPreflight.${requestId}`)
+    for (const key of Object.keys(db.config.getAllSettings()).filter(key => key.startsWith(`transcoding.preflightCheckpoint.${requestId}.`))) {
+      await db.config.deleteSetting(key)
+    }
+  })
   createValidatedIpcHandlerWithEvent(IPC_CHANNELS.operationsSetPaused, z.tuple([z.string().min(1).max(100), z.boolean()]), async (event, requestId, paused) => ({
     status: operationRequestRegistry.setPaused(event.sender.id, requestId, paused),
   }))
@@ -229,9 +235,8 @@ export function registerDatabaseHandlers() {
         getQualityAnalyzer().invalidateThresholdsCache()
       }
       if (targetProfileChanged) {
-        const taskId = getTaskQueueService().addTask({ type: 'quality-analysis', label: 'Refresh media quality and savings estimates' })
-        if (taskId) await db.deleteSetting('optimization.savings_reanalysis_pending')
-        else await db.setSetting('optimization.savings_reanalysis_pending', 'true')
+        await db.setSetting('optimization.savings_reanalysis_pending', 'true')
+        getTaskQueueService().addTask({ type: 'quality-analysis', label: 'Refresh media quality and savings estimates' })
       }
 
       // Refresh TMDB API key when it changes (no restart needed)

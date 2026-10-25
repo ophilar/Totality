@@ -7,6 +7,7 @@ export interface TranscodingAvailability {
 
 export interface TranscodingCapabilities extends TranscodingAvailability {
   detectedAt: string
+  snapshotFingerprint?: string
   gpus: GpuInfo[]
   selectedGpuId: string | null
   deviceEncoders: Record<string, string[]>

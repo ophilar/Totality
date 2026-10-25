@@ -129,6 +129,7 @@ export function Dashboard({
   const [qualityDistribution, setQualityDistribution] = useState<{
     byTier: { [tier: string]: { low: number; medium: number; high: number } }
     byQuality: { low: number; medium: number; high: number }
+    coverage: { rated: number; total: number; unknown: number }
   } | null>(null)
   const [_collectionStatsData, setCollectionStatsData] = useState<{ total: number; complete: number; incomplete: number; avgCompleteness: number } | null>(null)
   const [_seriesStatsData, setSeriesStatsData] = useState<{ totalSeries: number; completeSeries: number; incompleteSeries: number; averageCompleteness: number } | null>(null)
@@ -210,7 +211,7 @@ export function Dashboard({
         // Data (6-11)
         window.electronAPI.getMediaItems({ needsUpgrade: true, type: 'movie', sortBy: 'title', sortOrder: 'asc', sourceId }),
         window.electronAPI.getMediaItems({ needsUpgrade: true, type: 'episode', sortBy: 'title', sortOrder: 'asc', sourceId }),
-        window.electronAPI.musicGetAlbumsNeedingUpgrade(undefined, sourceId),
+        window.electronAPI.musicGetAlbumsNeedingUpgrade({ sourceId }),
         window.electronAPI.collectionsGetIncomplete(sourceId),
         window.electronAPI.seriesGetIncomplete(sourceId),
         window.electronAPI.musicGetAllArtistCompleteness(sourceId),
@@ -1613,6 +1614,11 @@ export function Dashboard({
                           )
                         })
                       })() : null}
+                      {qualityDistribution && (
+                        <div className="mt-2 text-xs text-muted-foreground" title={`${qualityDistribution.coverage.unknown.toLocaleString()} unrated or unknown`}>
+                          Rated {qualityDistribution.coverage.rated.toLocaleString()} / {qualityDistribution.coverage.total.toLocaleString()}
+                        </div>
+                      )}
                     </div>
                   </div>
 

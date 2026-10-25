@@ -6,7 +6,8 @@ import { GetTranscodeParamsByMediaItemSchema, CancelTranscodeSchema, SetSelected
 import { getLoggingService } from '@main/services/LoggingService'
 import { createIpcHandler, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
 import { operationRequestRegistry } from '@main/ipc/utils/OperationRequestRegistry'
-import type { ShowTranscodeRequest, TranscodeOptions } from '@main/services/TranscodingService'
+import type { ActivityOperation } from '@main/ipc/utils/OperationRequestRegistry'
+import type { ShowTranscodePreflight, ShowTranscodeRequest, TranscodeOptions } from '@main/services/TranscodingService'
 import { getDatabase } from '@main/database/getDatabase'
 import { MediaPathAuthorization } from '@main/services/MediaPathAuthorization'
 import { getErrorMessage } from './utils'
@@ -17,10 +18,37 @@ const ShowQuarantineIdentitySchema = z.tuple([
   NonEmptyStringSchema,
   LibraryIdSchema,
 ])
+const FindShowPreflightSchema = z.tuple([
+  NonEmptyStringSchema,
+  SourceIdSchema,
+  LibraryIdSchema,
+  NonEmptyStringSchema,
+  z.number().int().positive().optional(),
+])
 
 const BACKGROUND_PREFLIGHT_SETTING_PREFIX = 'transcoding.backgroundPreflight.'
+const PREFLIGHT_CHECKPOINT_SETTING_PREFIX = 'transcoding.preflightCheckpoint.'
+const PREFLIGHT_SHUTDOWN_MESSAGE = 'Interrupted because the app is closing. Saved progress will resume on next launch.'
+const backgroundPreflightWork = new Map<string, Promise<void>>()
 
-function launchBackgroundPreflight(requestId: string, preflightRequest: ShowTranscodeRequest): void {
+interface PersistedBackgroundPreflight {
+  request: ShowTranscodeRequest
+  preflightId: string
+  batchId: string
+  activity?: ActivityOperation
+}
+
+function checkpointSettingKey(requestId: string, mediaItemId: number): string {
+  return `${PREFLIGHT_CHECKPOINT_SETTING_PREFIX}${requestId}.${mediaItemId}`
+}
+
+function launchBackgroundPreflight(requestId: string, record: PersistedBackgroundPreflight): Promise<ShowTranscodePreflight | undefined> {
+  const { request: preflightRequest } = record
+  const shutdownInterrupted = record.activity?.state === 'partial' && record.activity.outcome?.message === PREFLIGHT_SHUTDOWN_MESSAGE
+  if (record.activity && (!record.activity.outcome || shutdownInterrupted)) {
+    record.activity = { ...record.activity, state: 'running', phase: record.activity.phase ? `Resuming · ${record.activity.phase}` : 'Resuming preflight' }
+    record.activity.outcome = undefined
+  }
   const operation = operationRequestRegistry.registerBackground(requestId, {
     kind: 'optimization-preflight',
     label: 'Preflighting TV series',
@@ -32,30 +60,72 @@ function launchBackgroundPreflight(requestId: string, preflightRequest: ShowTran
       libraryId: preflightRequest.libraryId,
       mediaItemId: preflightRequest.mediaItemId,
     },
-  })
+  }, activity => {
+    record.activity = activity
+    getDatabase().config.setSetting(`${BACKGROUND_PREFLIGHT_SETTING_PREFIX}${requestId}`, JSON.stringify(record))
+  }, record.activity)
+  if (record.activity?.outcome) return Promise.resolve(undefined)
   getLoggingService().info('[TVOptimization]', `Background preflight started: requestId=${requestId}, series=${preflightRequest.seriesIdentityKey ?? 'episode'}, mediaItem=${preflightRequest.mediaItemId ?? 'all'}`)
-  void getTranscodingService().preflightShowTranscode(preflightRequest, {
+  let completed = false
+  const work = getTranscodingService().preflightShowTranscode(preflightRequest, {
     signal: operation.signal,
     beginCommit: operation.beginCommit,
     waitUntilRunning: operation.waitUntilRunning,
     update: operation.update,
+    preflightId: record.preflightId,
+    batchId: record.batchId,
+    loadEpisodeCheckpoint: async mediaItemId => {
+      const key = checkpointSettingKey(requestId, mediaItemId)
+      const raw = await getDatabase().config.getSetting(key)
+      if (!raw) return undefined
+      try {
+        const checkpoint = JSON.parse(raw) as import('@main/services/TranscodingService').ShowTranscodeEpisodeCheckpoint
+        if (checkpoint.version === 1 && checkpoint.plan?.mediaItemId === mediaItemId) return checkpoint
+      } catch (error) {
+        getLoggingService().warn('[TVOptimization]', `Discarding unreadable episode checkpoint: requestId=${requestId}, mediaItem=${mediaItemId}, reason=${getErrorMessage(error)}`)
+        await getDatabase().config.deleteSetting(key)
+        return undefined
+      }
+      getLoggingService().warn('[TVOptimization]', `Discarding unsupported episode checkpoint: requestId=${requestId}, mediaItem=${mediaItemId}`)
+      await getDatabase().config.deleteSetting(key)
+      return undefined
+    },
+    saveEpisodeCheckpoint: async (mediaItemId, checkpoint) => {
+      getDatabase().config.setSetting(checkpointSettingKey(requestId, mediaItemId), JSON.stringify(checkpoint))
+    },
   }).then(result => {
+    completed = true
     operation.complete('completed', 'Optimization review is ready', { preflightId: result.preflightId })
+    return result
   }).catch(error => {
     const outcome = getErrorMessage(error)
     if (operation.signal.aborted) {
-      getLoggingService().info('[TVOptimization]', `Background preflight cancelled: requestId=${requestId}, series=${preflightRequest.seriesIdentityKey ?? 'episode'}, mediaItem=${preflightRequest.mediaItemId ?? 'all'}`)
+      const interruptedByShutdown = operation.signal.reason instanceof DOMException && operation.signal.reason.message === 'Application is shutting down'
+      getLoggingService().info('[TVOptimization]', `Background preflight ${interruptedByShutdown ? 'interrupted for shutdown' : 'cancelled'}: requestId=${requestId}, series=${preflightRequest.seriesIdentityKey ?? 'episode'}, mediaItem=${preflightRequest.mediaItemId ?? 'all'}`)
+      operation.complete(interruptedByShutdown ? 'partial' : 'cancelled', interruptedByShutdown ? PREFLIGHT_SHUTDOWN_MESSAGE : outcome)
     } else {
       getLoggingService().error('[TVOptimization]', `Background preflight failed: series=${preflightRequest.seriesIdentityKey ?? 'episode'}, mediaItem=${preflightRequest.mediaItemId ?? 'all'}, source=${preflightRequest.sourceId}, library=${preflightRequest.libraryId ?? 'n/a'}:`, outcome)
+      operation.complete('failed', outcome)
     }
-    operation.complete(operation.signal.aborted ? 'cancelled' : 'failed', outcome)
-  }).finally(async () => {
+    throw error
+  }).finally(() => {
+    if (!completed) return
     try {
-      await getDatabase().config.deleteSetting(`${BACKGROUND_PREFLIGHT_SETTING_PREFIX}${requestId}`)
+      const checkpointKeys = Object.keys(getDatabase().config.getAllSettings()).filter(key => key.startsWith(`${PREFLIGHT_CHECKPOINT_SETTING_PREFIX}${requestId}.`))
+      for (const key of checkpointKeys) getDatabase().config.deleteSetting(key)
     } catch (error) {
-      getLoggingService().error('[TVOptimization]', `Could not clear completed background preflight record: requestId=${requestId}`, getErrorMessage(error))
+      getLoggingService().error('[TVOptimization]', `Could not remove completed preflight checkpoints: requestId=${requestId}`, getErrorMessage(error))
     }
   })
+  const trackedWork = work.then(() => undefined, () => undefined)
+  backgroundPreflightWork.set(requestId, trackedWork)
+  void trackedWork.then(() => backgroundPreflightWork.delete(requestId))
+  return work
+}
+
+export async function stopBackgroundPreflightsForShutdown(): Promise<void> {
+  operationRequestRegistry.interruptBackgroundOperations()
+  await Promise.all(backgroundPreflightWork.values())
 }
 
 export function resumeBackgroundPreflights(): void {
@@ -64,9 +134,23 @@ export function resumeBackgroundPreflights(): void {
   for (const [key, raw] of pending) {
     const requestId = key.slice(BACKGROUND_PREFLIGHT_SETTING_PREFIX.length)
     try {
-      const preflightRequest = JSON.parse(raw) as ShowTranscodeRequest
+      const saved = JSON.parse(raw) as Partial<PersistedBackgroundPreflight>
+      let record: PersistedBackgroundPreflight
+      if (saved.request && saved.preflightId && saved.batchId) {
+        record = saved as PersistedBackgroundPreflight
+      } else {
+        const legacy = PreflightShowTranscodeSchema.safeParse([{ ...saved, requestId }])
+        if (!legacy.success) throw new Error('Background preflight record is incomplete')
+        const [{ requestId: parsedRequestId, ...request }] = legacy.data
+        if (parsedRequestId !== requestId) throw new Error('Background preflight identity does not match its saved key')
+        record = { request, preflightId: `preflight_${requestId}`, batchId: `batch_${requestId}` }
+        getDatabase().config.setSetting(key, JSON.stringify(record))
+      }
+      if (!record.request || !record.preflightId || !record.batchId) throw new Error('Background preflight record is incomplete')
       getLoggingService().info('[TVOptimization]', `Resuming interrupted background preflight: requestId=${requestId}`)
-      launchBackgroundPreflight(requestId, preflightRequest)
+      void launchBackgroundPreflight(requestId, record).catch(error => {
+        getLoggingService().error('[TVOptimization]', `Could not resume background preflight: requestId=${requestId}`, getErrorMessage(error))
+      })
     } catch (error) {
       getLoggingService().error('[TVOptimization]', `Could not resume background preflight record: key=${key}`, getErrorMessage(error))
     }
@@ -109,38 +193,24 @@ export function registerTranscodingHandlers(): void {
     return getTranscodingService().cancelTranscode(mediaItemId)
   })
 
-  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.transcodingPreflightShow, PreflightShowTranscodeSchema, async (event, request) => {
+  createValidatedIpcHandler(IPC_CHANNELS.transcodingPreflightShow, PreflightShowTranscodeSchema, async (request) => {
     const { requestId, ...preflightRequest } = request
-    const operation = operationRequestRegistry.register(event.sender, requestId, {
-      kind: 'optimization-preflight',
-      label: 'Preflighting TV series',
-      context: preflightRequest.seriesTitle ?? `Episode ${preflightRequest.mediaItemId}`,
-    })
-    try {
-      const result = await getTranscodingService().preflightShowTranscode(preflightRequest, {
-        signal: operation.signal,
-        beginCommit: operation.beginCommit,
-        waitUntilRunning: operation.waitUntilRunning,
-        update: operation.update,
-      })
-      operation.complete('completed', 'Optimization review is ready')
-      return result
-    } catch (error) {
-      getLoggingService().error('[TVOptimization]', `Preflight failed: series=${preflightRequest.seriesIdentityKey ?? 'episode'}, mediaItem=${preflightRequest.mediaItemId ?? 'all'}, source=${preflightRequest.sourceId}, library=${preflightRequest.libraryId ?? 'n/a'}:`, getErrorMessage(error))
-      operation.complete(operation.signal.aborted ? 'cancelled' : 'failed', getErrorMessage(error))
-      throw error
-    } finally {
-      operation.dispose()
-    }
+    const record: PersistedBackgroundPreflight = { request: preflightRequest, preflightId: `preflight_${requestId}`, batchId: `batch_${requestId}` }
+    await getDatabase().config.setSetting(`${BACKGROUND_PREFLIGHT_SETTING_PREFIX}${requestId}`, JSON.stringify(record))
+    return await launchBackgroundPreflight(requestId, record)
   })
   createValidatedIpcHandlerWithEvent(IPC_CHANNELS.transcodingStartPreflightShow, PreflightShowTranscodeSchema, async (_event, request) => {
     const { requestId, ...preflightRequest } = request
-    await getDatabase().config.setSetting(`${BACKGROUND_PREFLIGHT_SETTING_PREFIX}${requestId}`, JSON.stringify(preflightRequest))
-    launchBackgroundPreflight(requestId, preflightRequest)
+    const record: PersistedBackgroundPreflight = { request: preflightRequest, preflightId: `preflight_${requestId}`, batchId: `batch_${requestId}` }
+    await getDatabase().config.setSetting(`${BACKGROUND_PREFLIGHT_SETTING_PREFIX}${requestId}`, JSON.stringify(record))
+    void launchBackgroundPreflight(requestId, record).catch(error => {
+      getLoggingService().error('[TVOptimization]', `Background preflight failed after the start request was accepted: requestId=${requestId}`, getErrorMessage(error))
+    })
     return { requestId }
   })
   createValidatedIpcHandler(IPC_CHANNELS.transcodingPreflightRemux, z.number().int().positive(), async (mediaItemId) => getTranscodingService().preflightRemux(mediaItemId))
   createValidatedIpcHandler(IPC_CHANNELS.transcodingGetShowPreflight, NonEmptyStringSchema, async (preflightId) => getTranscodingService().getShowPreflight(preflightId))
+  createValidatedIpcHandler(IPC_CHANNELS.transcodingFindShowPreflight, FindShowPreflightSchema, async (seriesIdentityKey, sourceId, libraryId, seriesTitle, mediaItemId) => getTranscodingService().findLatestShowPreflight({ seriesIdentityKey, sourceId, libraryId, seriesTitle, mediaItemId }))
 
   createValidatedIpcHandler(IPC_CHANNELS.transcodingDiscardShow, QueueShowTranscodeSchema, async (preflightId) => getTranscodingService().discardShowPreflight(preflightId))
   createValidatedIpcHandler(IPC_CHANNELS.transcodingOpenShowSample, z.tuple([NonEmptyStringSchema, z.number().int().positive(), z.number().int().nonnegative()]), async (preflightId, mediaItemId, index) => {

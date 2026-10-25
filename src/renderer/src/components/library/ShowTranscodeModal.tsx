@@ -233,6 +233,48 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
   }, [initialPreflight?.preflightId])
 
   useEffect(() => {
+    if (initialPreflight || resumeRequestId || targetProfilesLoading) return
+    let mounted = true
+    void (async () => {
+      const { operations } = await window.electronAPI.operationsGetActivity()
+      const active = operations.some(operation => !operation.outcome && operation.kind === 'optimization-preflight' &&
+        operation.entity?.sourceId === sourceId && operation.entity.libraryId === libraryId &&
+        operation.entity.seriesIdentityKey === seriesIdentityKey && operation.entity.mediaItemId === episode?.id)
+      if (active) return undefined
+      return window.electronAPI.findShowPreflight(seriesIdentityKey, sourceId, libraryId, show.series_title, episode?.id)
+    })().then(saved => {
+      if (!mounted || startedPreflightHere.current || !saved) return
+      const request = saved.request as import('@main/services/TranscodingService').ShowTranscodeRequest
+      const result = saved.result as ShowTranscodePreflight
+      const options = request.options
+      setOptimizationMode(options.optimizationMode ?? 'smart')
+      setRemoveUnnecessaryStreams(options.streamSelection?.audio !== 'all')
+      setAdjustToTarget(options.optimizationMode !== 'remux_only')
+      setTargetProfileId(options.targetProfileId ?? '')
+      setTargetProfileName(targetProfiles.find(profile => profile.id === options.targetProfileId)?.name ?? '')
+      setQualityProfile(options.qualityProfile ?? '')
+      setEncoderPolicy(options.encoderPolicy ?? '')
+      setTargetContainer(options.targetContainer ?? '')
+      setTargetContainerSelection(options.targetContainerSelection ?? 'automatic')
+      setTargetAudioCodec(options.targetAudioCodec ?? '')
+      setTargetHdrFormat(options.targetHdrFormat ?? '')
+      setCodec(options.targetCodec ?? '')
+      setAudio(options.streamSelection?.audio === 'all' ? 'all' : 'original-and-protected')
+      setLanguage(options.streamSelection?.audio === 'original-and-protected' ? options.streamSelection.originalLanguage : '')
+      setSubtitleWhitelist(options.streamSelection?.subtitleLanguageWhitelist?.join(', ') ?? '')
+      setOutputMode(options.outputMode ?? 'quarantine-replace')
+      setGpuId(options.gpuId ?? '')
+      setActiveBatchId(result.batchId)
+      setPreflightData(result)
+      setReviewedEpisodes([])
+      setMessage('')
+      setMode('preview')
+      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.reused', { preflightId: result.preflightId, batchId: result.batchId, seriesIdentityKey, mediaItemId: episode?.id })
+    }).catch(error => setMessage(error instanceof Error ? error.message : String(error)))
+    return () => { mounted = false }
+  }, [initialPreflight, resumeRequestId, targetProfilesLoading, seriesIdentityKey, sourceId, libraryId, show.series_title, episode?.id, targetProfiles])
+
+  useEffect(() => {
     if (initialPreflight) return
     let mounted = true
     let finished = false
@@ -256,7 +298,7 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
         try {
           const saved = await window.electronAPI.getShowPreflight(operation.resultId) as { result: ShowTranscodePreflight } | undefined
           if (!mounted) return
-          if (!saved) throw new Error('The saved optimization review has expired')
+          if (!saved) throw new Error('The saved optimization review could not be found')
           setPreflightData(saved.result)
           setReviewedEpisodes([])
           setMode('preview')
@@ -317,6 +359,7 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
   }, [addToast])
 
   useEffect(() => {
+    if (preflightData) return
     const sourceVideo = { codec: episode?.video_codec, profile: episode?.video_profile, hdrFormat: episode?.hdr_format }
     const supportedContainers = targetProfile ? getPlaybackTargetContainers(targetProfile, sourceVideo) : ['matroska', 'mp4']
     const preferredContainer: 'mkv' | 'mp4' | '' = !episode
@@ -358,10 +401,10 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
       containerSelection: 'automatic',
       allowedContainers: supportedContainers
     })
-  }, [episode?.id, episode?.container, episode?.video_codec, episode?.hdr_format, targetProfile])
+  }, [preflightData, episode?.id, episode?.container, episode?.video_codec, episode?.hdr_format, targetProfile])
 
 
-  const handleClose = useCallback(async () => {
+  const handleClose = useCallback(() => {
     const requestId = activePreflightRequestId.current
     if (requestId) {
       logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.continue-in-background', { requestId, seriesIdentityKey, mediaItemId: episode?.id })
@@ -370,18 +413,9 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
       onClose()
       return
     }
-    try {
-      if (preflightData && mode !== 'monitoring') {
-        logOptimizationDiagnostic('TVOptimizationUI', 'info', 'review.discard.requested', { preflightId: preflightData.preflightId, batchId: preflightData.batchId })
-        await window.electronAPI.discardShow(preflightData.preflightId)
-      }
-      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'optimizer.close.completed', { seriesIdentityKey, mediaItemId: episode?.id, mode })
-      onClose()
-    } catch (error) {
-      logOptimizationDiagnostic('TVOptimizationUI', 'error', 'review.discard.failed', { preflightId: preflightData?.preflightId, error: describeDiagnosticError(error) })
-      addToast({ type: 'error', title: 'Discard plan', message: String(error) })
-    }
-  }, [preflightData, mode, onClose, addToast, seriesIdentityKey, episode?.id])
+    logOptimizationDiagnostic('TVOptimizationUI', 'info', preflightData && mode !== 'monitoring' ? 'review.closed.saved' : 'optimizer.close.completed', { preflightId: preflightData?.preflightId, seriesIdentityKey, mediaItemId: episode?.id, mode })
+    onClose()
+  }, [preflightData, mode, onClose, seriesIdentityKey, episode?.id])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -628,7 +662,7 @@ export function ShowTranscodeModal({ show, episode, onClose, initialPreflight, r
             const result = await window.electronAPI.operationsGetResult(requestId) as { preflightId?: string }
             if (!result?.preflightId) throw new Error('The completed preflight did not return its saved review identifier')
             const saved = await window.electronAPI.getShowPreflight(result.preflightId) as { result: ShowTranscodePreflight } | undefined
-            if (!saved) throw new Error('The saved optimization review has expired')
+            if (!saved) throw new Error('The saved optimization review could not be found')
             resolve(saved.result)
           } catch (error) {
             reject(error)

@@ -71,7 +71,7 @@ import { registerAutoUpdateHandlers } from './ipc/autoUpdate'
 import { registerGeminiHandlers } from './ipc/gemini'
 import { registerMoodHandlers, setMoodMainWindow } from './ipc/mood'
 import { registerTimelinesHandlers } from './ipc/timelines'
-import { registerTranscodingHandlers, resumeBackgroundPreflights } from './ipc/transcoding'
+import { registerTranscodingHandlers, resumeBackgroundPreflights, stopBackgroundPreflightsForShutdown } from './ipc/transcoding'
 import { registerDuplicateHandlers } from './ipc/duplicates'
 import { registerPlaybackTargetProfileHandlers } from './ipc/playbackTargetProfiles'
 import { registerPlaybackCompatibilityHandlers } from './ipc/playbackCompatibility'
@@ -281,9 +281,6 @@ let isClosing = false
 // Quit when all windows are closed, except on macOS
 app.on('window-all-closed', async () => {
   if (process.platform !== 'darwin' && !isClosing) {
-    isClosing = true
-    const db = getDatabaseServiceSync()
-    await db.close()
     app.quit()
     win = null
   }
@@ -300,12 +297,13 @@ app.on('before-quit', async (event) => {
   getWebServerService()?.stop()
   const db = getDatabaseServiceSync()
   const shutdown = new ApplicationShutdown({
-    stopAcceptingWork: () => {
+    stopAcceptingWork: async () => {
       getLiveMonitoringService().stop()
       getAutoUpdateService().cleanup()
+      await stopBackgroundPreflightsForShutdown()
     },
     pauseTaskQueue: async () => {
-      getTaskQueueService().pauseQueue()
+      await getTaskQueueService().stopForShutdown()
     },
     shutdownWorkerPool: async () => {
       try {
@@ -524,8 +522,7 @@ app.whenReady().then(async () => {
     taskQueueService.loadPersistedHistory()
     resumeBackgroundPreflights()
     if (getDatabase().getSetting('optimization.savings_reanalysis_pending') === 'true') {
-      const analysisTaskId = taskQueueService.addTask({ type: 'quality-analysis', label: 'Refresh media quality and savings estimates' })
-      if (analysisTaskId) getDatabase().deleteSetting('optimization.savings_reanalysis_pending')
+      taskQueueService.addTask({ type: 'quality-analysis', label: 'Refresh media quality and savings estimates' })
     }
     console.log('Task queue service initialized')
 

@@ -37,6 +37,7 @@ interface RequestEntry {
   result?: unknown
   paused?: boolean
   resumeWaiter?: () => void
+  onActivityUpdated?: (activity: ActivityOperation) => void
 }
 
 export interface RegisteredOperationRequest {
@@ -87,7 +88,12 @@ export class OperationRequestRegistry {
     return this.createHandle(entry, key)
   }
 
-  registerBackground(requestId: string, activity: Pick<ActivityOperation, 'kind' | 'label' | 'context' | 'entity'>): RegisteredOperationRequest {
+  registerBackground(
+    requestId: string,
+    activity: Pick<ActivityOperation, 'kind' | 'label' | 'context' | 'entity'>,
+    onActivityUpdated?: (activity: ActivityOperation) => void,
+    restoredActivity?: ActivityOperation,
+  ): RegisteredOperationRequest {
     const key = `background:${requestId}`
     if (this.requests.has(key)) throw new Error(`Background operation ${requestId} is already active`)
     const now = new Date().toISOString()
@@ -95,7 +101,8 @@ export class OperationRequestRegistry {
       owner: null,
       controller: new AbortController(),
       state: 'active',
-      activity: { ...activity, requestId, state: 'running', createdAt: now, updatedAt: now },
+      activity: restoredActivity ? structuredClone(restoredActivity) : { ...activity, requestId, state: 'running', createdAt: now, updatedAt: now },
+      onActivityUpdated,
     }
     this.requests.set(key, entry)
     this.publish(entry)
@@ -210,6 +217,16 @@ export class OperationRequestRegistry {
     this.publishSnapshot(entry.ownerId, entry.owner ?? undefined)
   }
 
+  interruptBackgroundOperations(): void {
+    for (const [key, entry] of this.requests) {
+      if (!key.startsWith('background:') || entry.activity?.outcome || entry.state === 'committing') continue
+      entry.paused = false
+      entry.resumeWaiter?.()
+      entry.resumeWaiter = undefined
+      entry.controller.abort(new DOMException('Application is shutting down', 'AbortError'))
+    }
+  }
+
   private finishEntry(entry: RequestEntry, state: Extract<ActivityOperationState, 'completed' | 'cancelled' | 'partial' | 'failed'>, message: string, result?: unknown): void {
     if (!entry.activity) return
     entry.activity.state = state
@@ -226,6 +243,7 @@ export class OperationRequestRegistry {
 
   private publish(entry: RequestEntry): void {
     this.revision++
+    if (entry.activity) entry.onActivityUpdated?.(structuredClone(entry.activity))
     this.publishSnapshot(entry.ownerId)
   }
 
