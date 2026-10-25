@@ -22,6 +22,7 @@ export interface ActivityOperation {
     sourceId: string
     libraryId?: string
     mediaItemId?: number
+    seasonNumber?: number
   }
   createdAt: string
   updatedAt: string

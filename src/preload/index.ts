@@ -881,7 +881,7 @@ const electronAPI = {
   preflightShow: (request: unknown) => ipcRenderer.invoke(IPC_CHANNELS.transcodingPreflightShow, request),
   startPreflightShow: (request: unknown) => ipcRenderer.invoke(IPC_CHANNELS.transcodingStartPreflightShow, request),
   getShowPreflight: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingGetShowPreflight, preflightId),
-  findShowPreflight: (seriesIdentityKey: string, sourceId: string, libraryId: string, seriesTitle: string, mediaItemId?: number) => ipcRenderer.invoke(IPC_CHANNELS.transcodingFindShowPreflight, seriesIdentityKey, sourceId, libraryId, seriesTitle, mediaItemId),
+  findShowPreflight: (seriesIdentityKey: string, sourceId: string, libraryId: string, seriesTitle: string, mediaItemId?: number, seasonNumber?: number) => ipcRenderer.invoke(IPC_CHANNELS.transcodingFindShowPreflight, seriesIdentityKey, sourceId, libraryId, seriesTitle, mediaItemId, seasonNumber),
   queueShow: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingQueueShow, preflightId),
   approveShow: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingApproveShow, preflightId),
   discardShow: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingDiscardShow, preflightId),
@@ -2025,7 +2025,7 @@ interface ExistingElectronAPI {
   preflightShow: (request: any) => Promise<any>
   startPreflightShow: (request: any) => Promise<{ requestId: string }>
   getShowPreflight: (preflightId: string) => Promise<any>
-  findShowPreflight: (seriesIdentityKey: string, sourceId: string, libraryId: string, seriesTitle: string, mediaItemId?: number) => Promise<{ request: unknown; result: unknown } | undefined>
+  findShowPreflight: (seriesIdentityKey: string, sourceId: string, libraryId: string, seriesTitle: string, mediaItemId?: number, seasonNumber?: number) => Promise<{ request: unknown; result: unknown } | undefined>
   queueShow: (preflightId: string) => Promise<any>
   approveShow: (preflightId: string) => Promise<any>
   discardShow: (preflightId: string) => Promise<any>

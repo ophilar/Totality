@@ -481,6 +481,7 @@ export function TVShowsView({
   // Optimization modal state
   const [optimizingShow, setOptimizingShow] = useState<TVShowSummary | null>(null)
   const [optimizingEpisode, setOptimizingEpisode] = useState<MediaItem | null>(null)
+  const [optimizingSeason, setOptimizingSeason] = useState<number | null>(null)
   const [reviewingPreflight, setReviewingPreflight] = useState<ShowTranscodePreflight | null>(null)
   const [resumePreflightRequestId, setResumePreflightRequestId] = useState<string | null>(null)
   useEffect(() => {
@@ -489,10 +490,11 @@ export function TVShowsView({
       if (!preflightId) return
       void window.electronAPI.getShowPreflight(preflightId).then(async saved => {
         if (!saved) return
-        const { request, result } = saved as { request: { seriesTitle?: string; seriesIdentityKey?: string; sourceId: string; libraryId?: string; mediaItemId?: number }; result: ShowTranscodePreflight }
+        const { request, result } = saved as { request: { seriesTitle?: string; seriesIdentityKey?: string; sourceId: string; libraryId?: string; mediaItemId?: number; seasonNumber?: number }; result: ShowTranscodePreflight }
         const episode = request.mediaItemId ? await window.electronAPI.getMediaItem(request.mediaItemId) as MediaItem | null : null
         const title = request.seriesTitle || episode?.series_title || result.seriesTitle
         setOptimizingEpisode(episode)
+        setOptimizingSeason(request.seasonNumber ?? null)
         setOptimizingShow({
           series_title: title,
           episode_count: result.episodeCount,
@@ -508,7 +510,7 @@ export function TVShowsView({
       }).catch(error => console.error('Could not reopen completed optimization review:', error))
     }
     const resumeOperation = (event: Event) => {
-      const detail = (event as CustomEvent<{ requestId?: string; entity?: { seriesTitle?: string; seriesIdentityKey?: string; sourceId: string; libraryId?: string; mediaItemId?: number } }>).detail
+      const detail = (event as CustomEvent<{ requestId?: string; entity?: { seriesTitle?: string; seriesIdentityKey?: string; sourceId: string; libraryId?: string; mediaItemId?: number; seasonNumber?: number } }>).detail
       if (!detail?.requestId || !detail.entity) return
       const entity = detail.entity
       const requestId = detail.requestId
@@ -516,6 +518,7 @@ export function TVShowsView({
         const episode = entity.mediaItemId ? await window.electronAPI.getMediaItem(entity.mediaItemId) as MediaItem | null : null
         const existing = shows.find(show => show.series_identity_key === entity.seriesIdentityKey && show.source_id === entity.sourceId && show.library_id === entity.libraryId)
         setOptimizingEpisode(episode)
+        setOptimizingSeason(entity.seasonNumber ?? null)
         setOptimizingShow(existing ?? {
           series_title: entity.seriesTitle || episode?.series_title || 'TV series',
           episode_count: episode ? 1 : 0,
@@ -559,6 +562,7 @@ export function TVShowsView({
 
   const handleOpenOptimize = useCallback((showSummary?: TVShowSummary | null) => {
     setOptimizingEpisode(null)
+    setOptimizingSeason(null)
     if (showSummary) {
       if (!showSummary.series_identity_key) return
       logOptimizationDiagnostic('TVOptimizationUI', 'info', 'optimizer.opened', { seriesIdentityKey: showSummary.series_identity_key, seriesTitle: showSummary.series_title, sourceId: showSummary.source_id, libraryId: showSummary.library_id, episodeCount: showSummary.episode_count })
@@ -585,6 +589,27 @@ export function TVShowsView({
     }
   }, [firstIdentifiedEpisode, selectedShowData, shows])
 
+  const handleOpenOptimizeSeason = useCallback(() => {
+    if (selectedSeason === null || !selectedShowData) return
+    const season = selectedShowData.seasons.get(selectedSeason)
+    const firstEpisode = season?.episodes.find(episode => episode.series_identity_key?.trim())
+    if (!season || !firstEpisode?.series_identity_key) return
+    const show = shows.find(candidate => candidate.series_identity_key === firstEpisode.series_identity_key && candidate.source_id === firstEpisode.source_id && candidate.library_id === firstEpisode.library_id)
+    logOptimizationDiagnostic('TVOptimizationUI', 'info', 'season.optimizer.opened', { seasonNumber: selectedSeason, seriesIdentityKey: firstEpisode.series_identity_key, seriesTitle: selectedShowData.title, sourceId: firstEpisode.source_id, libraryId: firstEpisode.library_id, episodeCount: season.episodes.length })
+    setOptimizingEpisode(null)
+    setOptimizingSeason(selectedSeason)
+    setOptimizingShow(show ?? {
+      series_title: selectedShowData.title,
+      episode_count: season.episodes.length,
+      season_count: 1,
+      poster_url: season.posterUrl ?? selectedShowData.poster_url,
+      source_id: firstEpisode.source_id,
+      source_type: firstEpisode.source_type,
+      library_id: firstEpisode.library_id,
+      series_identity_key: firstEpisode.series_identity_key,
+    })
+  }, [selectedSeason, selectedShowData, shows])
+
   const handleOpenOptimizeEpisode = useCallback((episode: MediaItem) => {
     if (!episode.id || !episode.file_path || !episode.source_id || !episode.series_identity_key) return
     logOptimizationDiagnostic('TVOptimizationUI', 'info', 'episode.optimizer.opened', { mediaItemId: episode.id, seriesIdentityKey: episode.series_identity_key, seriesTitle: episode.series_title, sourceId: episode.source_id, libraryId: episode.library_id })
@@ -600,15 +625,17 @@ export function TVShowsView({
       series_identity_key: episode.series_identity_key,
     })
     setOptimizingEpisode(episode)
+    setOptimizingSeason(null)
   }, [shows])
 
   const closeOptimization = useCallback(() => {
-    logOptimizationDiagnostic('TVOptimizationUI', 'info', 'optimizer.closed', { seriesIdentityKey: optimizingShow?.series_identity_key, mediaItemId: optimizingEpisode?.id })
+    logOptimizationDiagnostic('TVOptimizationUI', 'info', 'optimizer.closed', { seriesIdentityKey: optimizingShow?.series_identity_key, seasonNumber: optimizingSeason ?? undefined, mediaItemId: optimizingEpisode?.id })
     setOptimizingShow(null)
     setOptimizingEpisode(null)
+    setOptimizingSeason(null)
     setReviewingPreflight(null)
     setResumePreflightRequestId(null)
-  }, [optimizingEpisode?.id, optimizingShow?.series_identity_key])
+  }, [optimizingEpisode?.id, optimizingSeason, optimizingShow?.series_identity_key])
   const posterMinWidth = useMemo(() => {
     const widthMap: Record<number, number> = {
       1: 120, 2: 140, 3: 160, 4: 180, 5: 200, 6: 240, 7: 300
@@ -724,6 +751,7 @@ export function TVShowsView({
             <ShowTranscodeModal
               show={optimizingShow}
               episode={optimizingEpisode ?? undefined}
+              seasonNumber={optimizingSeason ?? undefined}
               initialPreflight={reviewingPreflight}
               resumeRequestId={resumePreflightRequestId}
               onClose={closeOptimization}
@@ -769,6 +797,7 @@ export function TVShowsView({
           <ShowTranscodeModal
             show={optimizingShow}
             episode={optimizingEpisode ?? undefined}
+            seasonNumber={optimizingSeason ?? undefined}
             initialPreflight={reviewingPreflight}
             resumeRequestId={resumePreflightRequestId}
             onClose={closeOptimization}
@@ -996,6 +1025,7 @@ export function TVShowsView({
           <ShowTranscodeModal
             show={optimizingShow}
             episode={optimizingEpisode ?? undefined}
+            seasonNumber={optimizingSeason ?? undefined}
             initialPreflight={reviewingPreflight}
             resumeRequestId={resumePreflightRequestId}
             onClose={closeOptimization}
@@ -1008,6 +1038,7 @@ export function TVShowsView({
   // Episode list view
   if (selectedShow && selectedSeason !== null && selectedShowData) {
     const season = selectedShowData.seasons.get(selectedSeason)
+    const seasonHasCanonicalIdentity = season?.episodes.some(episode => episode.series_identity_key?.trim()) ?? false
     const completenessData = seriesCompleteness.get(selectedShow)
 
     // Get owned episodes for this season, filtered by resolution/quality
@@ -1055,13 +1086,13 @@ export function TVShowsView({
             {selectedShowData.title} - {formatSeasonLabel(selectedSeason!)}
           </h3>
           <button
-            onClick={() => handleOpenOptimize()}
-            disabled={!firstIdentifiedEpisode}
+            onClick={handleOpenOptimizeSeason}
+            disabled={!seasonHasCanonicalIdentity}
             className="flex items-center gap-2 px-3 py-1.5 text-sm bg-purple-600/20 text-purple-300 border border-purple-500/30 rounded-md hover:bg-purple-600/30 transition-colors"
-            title={firstIdentifiedEpisode ? 'Optimize Series' : 'Optimization requires a canonical series identity'}
+            title={seasonHasCanonicalIdentity ? `Optimize Season ${selectedSeason}` : 'Optimization requires a canonical series identity'}
           >
             <Zap className="w-3.5 h-3.5 text-purple-400" />
-            Optimize Series
+            Optimize Season
           </button>
         </div>
 
@@ -1149,6 +1180,7 @@ export function TVShowsView({
           <ShowTranscodeModal
             show={optimizingShow}
             episode={optimizingEpisode ?? undefined}
+            seasonNumber={optimizingSeason ?? undefined}
             initialPreflight={reviewingPreflight}
             resumeRequestId={resumePreflightRequestId}
             onClose={closeOptimization}

@@ -120,6 +120,7 @@ export interface TranscodingParams {
 
 export interface ShowTranscodeRequest {
   mediaItemId?: number
+  seasonNumber?: number
   seriesTitle?: string
   seriesIdentityKey?: string
   sourceId: string
@@ -334,7 +335,8 @@ export class TranscodingService {
     saveEpisodeCheckpoint?: (mediaItemId: number, checkpoint: ShowTranscodeEpisodeCheckpoint) => Promise<void>
   }): Promise<ShowTranscodePreflight> {
     operation?.signal.throwIfAborted()
-    getLoggingService().info('[TVOptimization]', `Preflight started: scope=${request.mediaItemId === undefined ? 'series' : 'episode'}, series=${request.seriesIdentityKey ?? 'n/a'}, mediaItem=${request.mediaItemId ?? 'all'}, source=${request.sourceId}, library=${request.libraryId ?? 'n/a'}, mode=${request.options.optimizationMode ?? 'unspecified'}, codec=${request.options.targetCodec ?? 'unspecified'}, encoderPolicy=${request.options.encoderPolicy ?? 'unspecified'}, container=${request.options.targetContainer ?? 'automatic'}, containerSelection=${request.options.targetContainerSelection ?? 'unspecified'}, gpu=${request.options.gpuId ?? 'selected'}`)
+    const scope = request.mediaItemId !== undefined ? 'episode' : request.seasonNumber !== undefined ? 'season' : 'series'
+    getLoggingService().info('[TVOptimization]', `Preflight started: scope=${scope}, series=${request.seriesIdentityKey ?? 'n/a'}, season=${request.seasonNumber ?? 'all'}, mediaItem=${request.mediaItemId ?? 'all'}, source=${request.sourceId}, library=${request.libraryId ?? 'n/a'}, mode=${request.options.optimizationMode ?? 'unspecified'}, codec=${request.options.targetCodec ?? 'unspecified'}, encoderPolicy=${request.options.encoderPolicy ?? 'unspecified'}, container=${request.options.targetContainer ?? 'automatic'}, containerSelection=${request.options.targetContainerSelection ?? 'unspecified'}, gpu=${request.options.gpuId ?? 'selected'}`)
     if (!request.sourceId.trim()) throw new Error('Source ID is required')
     if (request.mediaItemId === undefined && (!request.seriesTitle?.trim() || !request.seriesIdentityKey?.trim() || !request.libraryId?.trim())) throw new Error('TV series identity and library are required')
     const profileId = request.options.targetProfileId === undefined
@@ -344,9 +346,9 @@ export class TranscodingService {
     if (profileId != null && !targetProfile) throw new Error(`Playback target profile ${profileId} was not found`)
     if (!targetProfile && request.options.targetHdrFormat && request.options.optimizationMode !== 'remux_only') throw new Error('HDR format conversion requires a selected playback target.')
     const episodes = request.mediaItemId === undefined
-      ? await getDatabase().tvShows.getEpisodes(request.seriesTitle!, request.sourceId, request.seriesIdentityKey!, request.libraryId!)
+      ? await getDatabase().tvShows.getEpisodes(request.seriesTitle!, request.sourceId, request.seriesIdentityKey!, request.libraryId!, request.seasonNumber)
       : [await getDatabase().media.getItemById(request.mediaItemId)].filter((item): item is MediaItem => item !== null)
-    if (episodes.length === 0) throw new Error('No local episodes were found for the selected show')
+    if (episodes.length === 0) throw new Error(request.seasonNumber === undefined ? 'No local episodes were found for the selected show' : `No local episodes were found for season ${request.seasonNumber}`)
     if (request.mediaItemId !== undefined && (
       episodes[0].source_id !== request.sourceId ||
       (request.seriesIdentityKey !== undefined && episodes[0].series_identity_key !== request.seriesIdentityKey)
@@ -942,7 +944,7 @@ export class TranscodingService {
     return preflight
   }
 
-  async findLatestShowPreflight(identity: Pick<ShowTranscodeRequest, 'sourceId' | 'libraryId' | 'seriesIdentityKey' | 'seriesTitle' | 'mediaItemId'>): Promise<{ request: ShowTranscodeRequest; result: ShowTranscodePreflight } | undefined> {
+  async findLatestShowPreflight(identity: Pick<ShowTranscodeRequest, 'sourceId' | 'libraryId' | 'seriesIdentityKey' | 'seriesTitle' | 'mediaItemId' | 'seasonNumber'>): Promise<{ request: ShowTranscodeRequest; result: ShowTranscodePreflight } | undefined> {
     const savedPreflights = await getDatabase().config.getSettingsByPrefix(TranscodingService.SHOW_PREFLIGHT_SETTING_PREFIX)
     const matches = Object.entries(savedPreflights)
       .flatMap(([key, raw]) => {
@@ -950,7 +952,8 @@ export class TranscodingService {
           const preflight = JSON.parse(raw) as { request: ShowTranscodeRequest; result: ShowTranscodePreflight }
           const request = preflight.request
           return request.sourceId === identity.sourceId && request.libraryId === identity.libraryId &&
-            request.seriesIdentityKey === identity.seriesIdentityKey && request.mediaItemId === identity.mediaItemId
+            request.seriesIdentityKey === identity.seriesIdentityKey && request.mediaItemId === identity.mediaItemId &&
+            request.seasonNumber === identity.seasonNumber
             ? [preflight]
             : []
         } catch (error) {
@@ -959,7 +962,7 @@ export class TranscodingService {
         }
       })
     const episodes = identity.mediaItemId === undefined
-      ? await getDatabase().tvShows.getEpisodes(identity.seriesTitle ?? '', identity.sourceId, identity.seriesIdentityKey ?? '', identity.libraryId ?? '')
+      ? await getDatabase().tvShows.getEpisodes(identity.seriesTitle ?? '', identity.sourceId, identity.seriesIdentityKey ?? '', identity.libraryId ?? '', identity.seasonNumber)
       : [await getDatabase().media.getItemById(identity.mediaItemId)].filter((item): item is MediaItem => item !== null)
     let capabilityFingerprint: string | undefined
     for (const preflight of matches.sort((left, right) => (right.result.createdAt ?? '').localeCompare(left.result.createdAt ?? ''))) {

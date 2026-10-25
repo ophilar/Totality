@@ -566,11 +566,14 @@ export const PreflightShowTranscodeSchema = z.tuple([
   z.object({
     requestId: z.string().min(1).max(100),
     mediaItemId: z.number().int().positive().optional(),
+    seasonNumber: z.number().int().nonnegative().optional(),
     seriesTitle: z.string().min(1).optional(),
     seriesIdentityKey: z.string().min(1).optional(),
     sourceId: z.string().min(1),
     libraryId: z.string().min(1).optional(),
     options: TranscodeOptionsSchema.unwrap()
+  }).refine(request => request.mediaItemId === undefined || request.seasonNumber === undefined, {
+    message: 'An optimization preflight can target an episode or a season, not both.'
   })
 ])
 

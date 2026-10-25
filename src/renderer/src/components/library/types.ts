@@ -349,7 +349,7 @@ export type TVOptimizationNavigation =
   | {
       kind: 'resume'
       requestId: string
-      entity: { seriesTitle?: string; seriesIdentityKey?: string; sourceId: string; libraryId?: string; mediaItemId?: number }
+      entity: { seriesTitle?: string; seriesIdentityKey?: string; sourceId: string; libraryId?: string; mediaItemId?: number; seasonNumber?: number }
     }
 
 export interface MissingItemPopupData {
