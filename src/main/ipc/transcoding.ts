@@ -42,8 +42,13 @@ function launchBackgroundPreflight(requestId: string, preflightRequest: ShowTran
   }).then(result => {
     operation.complete('completed', 'Optimization review is ready', { preflightId: result.preflightId })
   }).catch(error => {
-    getLoggingService().error('[TVOptimization]', `Background preflight failed: series=${preflightRequest.seriesIdentityKey ?? 'episode'}, mediaItem=${preflightRequest.mediaItemId ?? 'all'}, source=${preflightRequest.sourceId}, library=${preflightRequest.libraryId ?? 'n/a'}:`, getErrorMessage(error))
-    operation.complete(operation.signal.aborted ? 'cancelled' : 'failed', getErrorMessage(error))
+    const outcome = getErrorMessage(error)
+    if (operation.signal.aborted) {
+      getLoggingService().info('[TVOptimization]', `Background preflight cancelled: requestId=${requestId}, series=${preflightRequest.seriesIdentityKey ?? 'episode'}, mediaItem=${preflightRequest.mediaItemId ?? 'all'}`)
+    } else {
+      getLoggingService().error('[TVOptimization]', `Background preflight failed: series=${preflightRequest.seriesIdentityKey ?? 'episode'}, mediaItem=${preflightRequest.mediaItemId ?? 'all'}, source=${preflightRequest.sourceId}, library=${preflightRequest.libraryId ?? 'n/a'}:`, outcome)
+    }
+    operation.complete(operation.signal.aborted ? 'cancelled' : 'failed', outcome)
   }).finally(async () => {
     try {
       await getDatabase().config.deleteSetting(`${BACKGROUND_PREFLIGHT_SETTING_PREFIX}${requestId}`)
