@@ -456,6 +456,33 @@ export class TranscodingService {
           options.maxOutputBytes = stat.size
           if (targetProfile) options.targetConversion = buildTargetTranscodePlan(analysis, targetProfile, options)
         }
+        if (shouldEncode && representativeId !== episode.id && !reusableRepresentativePlan) {
+          const representative = representativePlan?.plan
+          const representativeFailure = representative?.reason ?? (representative?.compatible
+            ? 'the representative did not require a measured encode sample'
+            : 'the representative did not produce a compatible measured plan')
+          const reason = `Not sampled: season/profile representative "${representative?.label ?? 'unknown'}" did not provide reusable measured settings (${representativeFailure}).`
+          getLoggingService().info('[TVOptimization]', `Episode sample skipped: mediaItem=${episode.id}, representative=${representativeId}, reason=${representativeFailure}`)
+          return {
+            mediaItemId: episode.id,
+            label,
+            compatible: false,
+            reason,
+            hdrFormat: analysis.video.hdrFormat || 'SDR',
+            sourceSize: stat.size,
+            sourceMtimeMs: stat.mtimeMs,
+            operations: [],
+            decisionStatus: 'insufficient_evidence',
+            evidenceStatus: 'insufficient',
+            savingsCoverage: 'insufficient',
+            confidence: 'none',
+            savingsBasis: 'insufficient_data',
+            sourceTier: advice.sourceTier,
+            targetCompatibility: sourceCompatibility,
+            sourceAnalysis: analysis,
+            targetProfile,
+          }
+        }
         const audioConversions = options.targetConversion?.audio.flatMap(track => track.bitrateKbps === undefined ? [] : [{ sourceIndex: track.sourceIndex, codec: track.codec, bitrateKbps: track.bitrateKbps }]) ?? options.audioConversions ?? []
         const audioConversionSavings = estimateAudioConversionSavings(analysis, audioConversions)
         const audioPruningSavings = sumMeasuredStreamBytes(analysis.streamBytes, removedAudioTracks.map(track => track.index))
@@ -696,7 +723,7 @@ export class TranscodingService {
             : 'mixed_sample_projection'
           : 'planned_operations',
     }
-    getLoggingService().info('[TVOptimization]', `Preflight completed: preflight=${preflightId}, batch=${batchId}, series=${request.seriesIdentityKey ?? 'episode'}, episodes=${episodes.length}, sampleRepresentatives=${results.filter(episode => episode.samplingRole === 'measured').length}, projectedEpisodes=${results.filter(episode => episode.samplingRole === 'projected').length}, compatible=${results.filter(episode => episode.compatible).length}, actionable=${results.filter(episode => episode.compatible && episode.operations.length > 0).length}, savingsBytes=${planMetrics.totalEstimatedSavingsBytes ?? 'unknown'}, coverage=${planMetrics.coverage}`)
+    getLoggingService().info('[TVOptimization]', `Preflight completed: preflight=${preflightId}, batch=${batchId}, series=${request.seriesIdentityKey ?? 'episode'}, episodes=${episodes.length}, samplingGroupsSelected=${representativeByGroup.length}, measuredSampleRepresentatives=${results.filter(episode => episode.samplingRole === 'measured').length}, projectedEpisodes=${results.filter(episode => episode.samplingRole === 'projected').length}, insufficientEvidence=${results.filter(episode => episode.decisionStatus === 'insufficient_evidence').length}, compatible=${results.filter(episode => episode.compatible).length}, actionable=${results.filter(episode => episode.compatible && episode.operations.length > 0).length}, savingsBytes=${planMetrics.totalEstimatedSavingsBytes ?? 'unknown'}, coverage=${planMetrics.coverage}`)
     await operation?.waitUntilRunning()
     operation?.signal.throwIfAborted()
     operation?.beginCommit()
