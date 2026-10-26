@@ -59,10 +59,17 @@ export class WishlistCompletionService {
     const db = getDatabase()
     const activeItems = db.getActiveWishlistItems() as WishlistItem[]
 
+    console.log(`[WishlistCompletion] Checking ${activeItems.length} active wishlist items`)
+
     if (activeItems.length === 0) return
 
     const missingItems = activeItems.filter((i: WishlistItem) => i.reason === 'missing')
     const upgradeItems = activeItems.filter((i: WishlistItem) => i.reason === 'upgrade')
+
+    console.log(`[WishlistCompletion] Missing: ${missingItems.length}, Upgrade: ${upgradeItems.length}`)
+    for (const item of missingItems) {
+      console.log(`[WishlistCompletion]   Missing: "${item.title}" type=${item.media_type} series="${item.series_title}" season=${item.season_number} tmdb=${item.tmdb_id}`)
+    }
 
     const completed: CompletionResult[] = []
 
@@ -100,7 +107,7 @@ export class WishlistCompletionService {
     // Group items by type for batch queries
     const movieItems = items.filter((i) => i.media_type === 'movie' && i.tmdb_id)
     const seasonItems = items.filter(
-      (i) => i.media_type === 'season' && i.series_title
+      (i) => i.media_type === 'season' && (i.series_title || i.tmdb_id)
     )
     const episodeItems = items.filter(
       (i) => i.media_type === 'episode' && i.series_title && i.season_number != null && i.episode_number != null
@@ -125,11 +132,24 @@ export class WishlistCompletionService {
       }
     }
 
-    // Check seasons by series_title + season_number (or any episodes if no season specified)
+    // Check seasons by series_title + season_number, or by title, or by TMDB ID
     for (const item of seasonItems) {
-      const count = item.season_number != null
-        ? db.getEpisodeCountForSeason(item.series_title!, item.season_number!)
-        : db.getEpisodeCountForSeries(item.series_title!)
+      let count = 0
+      const seriesName = item.series_title || item.title
+
+      if (seriesName && item.season_number != null) {
+        count = db.getEpisodeCountForSeason(seriesName, item.season_number!)
+      } else if (seriesName) {
+        count = db.getEpisodeCountForSeries(seriesName)
+      }
+
+      // Fallback: check by TMDB ID if title didn't match
+      if (count === 0 && item.tmdb_id) {
+        const found = db.getMediaItemsByTmdbIds([item.tmdb_id])
+        if (found.size > 0) count = 1
+      }
+
+      console.log(`[WishlistCompletion]   Season check: "${seriesName}" S${item.season_number ?? 'any'} tmdb=${item.tmdb_id} → ${count} episodes found`)
       if (count > 0) {
         completed.push({
           id: item.id!,

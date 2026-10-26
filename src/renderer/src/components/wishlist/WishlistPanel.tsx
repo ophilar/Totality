@@ -109,6 +109,8 @@ function WishlistSearch() {
       reason: 'missing' as WishlistReason,
       priority: 3 as WishlistPriority,
       status: 'active' as WishlistStatus,
+      // For TV shows, set series_title so wishlist completion can match episodes
+      ...(result.type === 'tv' ? { series_title: result.title } : {}),
     })
     setAddedIds(prev => new Set(prev).add(result.id))
   }, [addItem])
