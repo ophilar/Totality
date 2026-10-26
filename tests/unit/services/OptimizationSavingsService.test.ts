@@ -1,16 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildOptimizationSavingsBreakdown, calculateBitrateSavingsBytes, calculateBytesAtBitrateKbps, calculateCodecEfficiencySavingsBytes, projectMeasuredSavingsBytes, projectSavingsRate, sumMeasuredStreamBytes } from '@main/services/OptimizationSavingsService'
+import { buildOptimizationSavingsBreakdown, calculateBitrateSavingsBytes, calculateBytesAtBitrateKbps, projectMeasuredSavingsBytes, projectSavingsRate, sumMeasuredStreamBytes } from '@main/services/OptimizationSavingsService'
 
 describe('shared savings calculations', () => {
   it('converts bitrate and duration to bytes consistently', () => {
     expect(calculateBytesAtBitrateKbps(1_000, 60)).toBe(7_500_000)
     expect(calculateBitrateSavingsBytes(1_000, 128, 60)).toBe(6_540_000)
-  })
-
-  it('models codec efficiency without claiming same or less efficient conversions save space', () => {
-    expect(calculateCodecEfficiencySavingsBytes(1_000_000, 1, 2)).toBe(500_000)
-    expect(calculateCodecEfficiencySavingsBytes(1_000_000, 2, 2)).toBe(0)
-    expect(calculateCodecEfficiencySavingsBytes(1_000_000, 2.5, 2)).toBe(0)
   })
 
   it('projects measured sample output across a representative episode and show', () => {

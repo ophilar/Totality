@@ -26,6 +26,7 @@ export interface OptimizationDecisionInput {
   originalLanguage: string | null | undefined
   durationMs?: number
   videoSavingsBytes?: number | null
+  videoAvailable?: boolean
   audioTranscodeSavingsBytes?: number | null
   audioTracks: OptimizationDecisionAudioTrack[]
 }
@@ -143,10 +144,12 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
   }
   const estimatedVideoSavings = videoSavings != null && videoSavings > 0 ? videoSavings : null
   const videoTranscode: OptimizationDecisionMechanism = {
-    status: estimatedVideoSavings != null ? 'review-required' : 'unavailable',
+    status: estimatedVideoSavings != null || input.videoAvailable ? 'review-required' : 'unavailable',
     estimatedSavingsBytes: estimatedVideoSavings,
     reason: estimatedVideoSavings != null
       ? 'Configured video target estimate only; visual quality is not assessed. Review measured samples before encoding'
+      : input.videoAvailable
+        ? 'Video savings require measured encode samples that satisfy the selected quality and playback requirements.'
       : videoSavings === 0
         ? 'Configured video target and bitrate threshold estimate no size reduction; visual quality is not assessed'
         : 'Video bitrate or duration evidence is unavailable, so file-size savings cannot be estimated',

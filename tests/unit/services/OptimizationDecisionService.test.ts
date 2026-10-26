@@ -155,6 +155,13 @@ describe('buildOptimizationDecision', () => {
     expect(result.videoTranscode.reason).toContain('file-size savings cannot be estimated')
   })
 
+  it('allows measured preflight when video is present and savings are unknown', () => {
+    const result = buildOptimizationDecision({ originalLanguage: 'en', durationMs: 60_000, videoAvailable: true, videoSavingsBytes: null, audioTracks: [] })
+    expect(result.videoTranscode.status).toBe('review-required')
+    expect(result.videoTranscode.estimatedSavingsBytes).toBeNull()
+    expect(result.videoTranscode.reason).toContain('measured encode samples')
+  })
+
   it('keeps a positive storage estimate available for review', () => {
     const result = buildOptimizationDecision({
       originalLanguage: 'en', fileSize: 50_000_000, durationMs: 3600_000,
