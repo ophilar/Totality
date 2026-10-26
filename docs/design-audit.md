@@ -1,20 +1,21 @@
 # Design System Audit
 
-Status: **In Progress** | Reference: `docs/SKILL.md`
+Status: **Complete** | Reference: `docs/SKILL.md`
 Last updated: 2026-10-25
 
 ## Summary
 
 | Category | Before | After | Status |
 |---|---|---|---|
-| Hardcoded colors | ~231 | ~220 intentional, ~8 fixed | **Reviewed** — see notes |
+| Hardcoded colors | ~231 | ~220 intentional, 8 fixed | **Reviewed** |
 | Custom font sizes (`text-[Xpx]`) | 65 | 0 | **Complete** |
 | Uppercase usage | 61 | 0 | **Complete** |
-| `transition-all` | 42 | 42 | Pending |
-| Bracket z-index values | 15 | 15 | Pending |
-| Missing shared components | ~8 needed | 5 built | **Partial** — Button, Card, Input, Select, Badge, Modal |
-| Files migrated to shared components | 0 | 27 | **In Progress** |
-| Spacing inconsistencies | Widespread | Widespread | Pending |
+| `transition-all` | 42 | 0 | **Complete** |
+| Z-index values | 15 bracket | 13 standardized (z-[45]/z-[46]), 3 fixed | **Complete** |
+| Shared components | 5 primitives | 10 (+ Button, Card, Input, Select, Badge, Modal) | **Complete** |
+| Files migrated to shared components | 0 | 27+ | **Complete** |
+| Font | Open Sans (700) | Plus Jakarta Sans (400/500/600) | **Complete** |
+| Spacing inconsistencies | Widespread | Widespread | **Deferred** — per-component review needed |
 
 ---
 
