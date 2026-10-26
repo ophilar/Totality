@@ -2874,12 +2874,13 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     for (let i = 0; i < mediaItemIds.length; i += chunkSize) {
       const chunk = mediaItemIds.slice(i, i + chunkSize)
       const placeholders = chunk.map(() => '?').join(',')
-      const rows = this.db.prepare(`SELECT * FROM media_item_versions WHERE media_item_id IN (${placeholders}) ORDER BY media_item_id, id`).all(...chunk) as MediaItemVersion[]
+      const rows = this.db.prepare(`SELECT * FROM media_item_versions WHERE media_item_id IN (${placeholders}) ORDER BY media_item_id, id`).all(...chunk) as Array<Omit<MediaItemVersion, 'has_object_audio' | 'is_best'> & { has_object_audio: number | null; is_best: number }>
       for (const row of rows) {
-        if (!result.has(row.media_item_id)) {
-          result.set(row.media_item_id, [])
+        const version: MediaItemVersion = { ...row, has_object_audio: Boolean(row.has_object_audio), is_best: Boolean(row.is_best) }
+        if (!result.has(version.media_item_id)) {
+          result.set(version.media_item_id, [])
         }
-        result.get(row.media_item_id)!.push(row)
+        result.get(version.media_item_id)!.push(version)
       }
     }
     return result

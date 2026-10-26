@@ -2137,7 +2137,8 @@ export class TranscodingService {
         if (candidates.length) {
           const requiredBytes = Math.ceil((plannedBitrate ? plannedBitrate / 8 * sampleSeconds : options.maxOutputBytes ?? stat.size) * candidates.length + sourceSampleBytes + referenceBytes + (options.targetConversion?.maximumVideoBitrate ?? 0) / 4)
           const space = await fs.statfs(outputDirectory)
-          if (Number(space.bavail) * Number(space.bsize) < requiredBytes) throw new Error('Insufficient disk headroom for episode sampling')
+          const availableBytes = Number(space.bavail) * Number(space.bsize)
+          if (availableBytes < requiredBytes) throw new Error(`Insufficient disk headroom for episode sampling: requires ${requiredBytes} bytes; ${availableBytes} bytes available`)
           const roundStart = measuredCandidates.length
           const measured = await this.measuredOptimizationService.measure({
             inputPath: filePath,

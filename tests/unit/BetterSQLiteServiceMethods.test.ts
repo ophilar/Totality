@@ -262,6 +262,36 @@ describe('BetterSQLiteService — Media Items', () => {
     expect(versions.every(version => version.tier_score === null)).toBe(true)
   })
 
+  it('maps SQLite integer flags to booleans when loading versions in batches', () => {
+    const mediaItemId = service.upsertMediaItem(makeMediaItem())
+    const versionId = service.upsertMediaItemVersion({
+      media_item_id: mediaItemId,
+      version_source: 'local_file',
+      file_path: '/versions/object-audio.mkv',
+      file_size_bytes: 1_000_000,
+      duration_ms: 7_200,
+      resolution: '1080p',
+      width: 1920,
+      height: 1080,
+      video_codec: 'h264',
+      video_bitrate_kbps: 2_000,
+      audio_codec: 'truehd',
+      audio_channels: 8,
+      audio_bitrate_kbps: 4_000,
+      has_object_audio: true,
+      quality_tier: '1080p',
+      tier_quality: 'UNKNOWN',
+      tier_score: null,
+      is_best: true,
+    })
+
+    const version = service.getItemVersionsForMediaIds([mediaItemId]).get(mediaItemId)?.[0]
+
+    expect(version?.id).toBe(versionId)
+    expect(version?.has_object_audio).toBe(true)
+    expect(version?.is_best).toBe(true)
+  })
+
   it('leaves equal-resolution versions unselected when no existing selection breaks the tie', () => {
     const mediaItemId = service.upsertMediaItem(makeMediaItem({ file_path: '/movies/primary.mkv' }))
     const createVersion = (filePath: string) => ({
