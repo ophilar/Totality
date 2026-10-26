@@ -469,7 +469,7 @@ export class TranscodingService {
           representativePlan.plan.measuredParameters
           ? representativePlan.plan
           : undefined
-        const advice = getQualityAnalyzer().getOptimizationAdvice(episode, analysis)
+        const advice = getQualityAnalyzer().getOptimizationAdvice(episode, analysis, request.options.targetCodec)
         const sourcePlan = buildStreamSelectionPlan(analysis, request.options)
         const removedAudioTracks = analysis.audioTracks.filter(track => !sourcePlan.audioStreamIndexes.includes(track.index))
         const removedSubtitleTracks = analysis.subtitleTracks.filter(track => !sourcePlan.subtitleStreamIndexes.includes(track.index))
