@@ -57,7 +57,7 @@ function ServiceCard({
           {/* Status indicator */}
           <div className="shrink-0">
             {status === 'configured' ? (
-              <CheckCircle className="w-5 h-5 text-primary" />
+              <CheckCircle className="w-5 h-5 text-foreground" />
             ) : status === 'partial' ? (
               <CheckCircle className="w-5 h-5 text-muted-foreground" />
             ) : (
@@ -485,7 +485,7 @@ export function ServicesTab() {
                 onClick={handleTestTmdb}
                 disabled={!tmdbApiKey.trim() || tmdbStatus === 'testing' || tmdbStatus === 'valid'}
                 className={`px-3 py-2 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2 ${
-                  tmdbStatus === 'valid' ? 'text-primary' :
+                  tmdbStatus === 'valid' ? 'text-foreground' :
                   tmdbStatus === 'invalid' ? 'text-destructive bg-destructive/10' :
                   'text-label bg-muted hover:bg-muted/80'
                 }`}
@@ -511,7 +511,7 @@ export function ServicesTab() {
             </div>
           <p className="text-caption text-muted-foreground">
             Free API key from{' '}
-            <button type="button" onClick={() => window.electronAPI.openExternal('https://www.themoviedb.org/settings/api')} className="text-primary hover:underline">themoviedb.org</button>
+            <button type="button" onClick={() => window.electronAPI.openExternal('https://www.themoviedb.org/settings/api')} className="text-muted-foreground hover:text-foreground hover:underline">themoviedb.org</button>
           </p>
         </div>
       </ServiceCard>
@@ -650,7 +650,7 @@ export function ServicesTab() {
                 onClick={handleTestGemini}
                 disabled={!geminiApiKey.trim() || geminiStatus === 'testing' || geminiStatus === 'valid'}
                 className={`px-3 py-2 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2 ${
-                  geminiStatus === 'valid' ? 'text-primary' :
+                  geminiStatus === 'valid' ? 'text-foreground' :
                   geminiStatus === 'invalid' ? 'text-destructive bg-destructive/10' :
                   'text-label bg-muted hover:bg-muted/80'
                 }`}
@@ -677,7 +677,7 @@ export function ServicesTab() {
             </div>
           <p className="text-caption text-muted-foreground">
             Free API key from{' '}
-            <button type="button" onClick={() => window.electronAPI.openExternal('https://aistudio.google.com/apikey')} className="text-primary hover:underline">aistudio.google.com</button>
+            <button type="button" onClick={() => window.electronAPI.openExternal('https://aistudio.google.com/apikey')} className="text-muted-foreground hover:text-foreground hover:underline">aistudio.google.com</button>
             {' '}(no credit card required)
           </p>
 
@@ -725,7 +725,7 @@ export function ServicesTab() {
                 const testResult = testResults[nfsPath]
                 return (
                   <div key={nfsPath} className="space-y-1">
-                    <div className="flex items-center gap-2 p-2.5 bg-background/50 rounded-lg">
+                    <div className="flex items-center gap-2 p-2.5">
                       <code className="flex-1 text-caption truncate text-muted-foreground" title={nfsPath}>
                         nfs://{nfsPath}
                       </code>
@@ -758,7 +758,7 @@ export function ServicesTab() {
                       <div
                         className={`flex items-center gap-2 px-2.5 py-1.5 text-caption rounded-lg ${
                           testResult.success
-                            ? 'bg-primary/10 text-primary'
+                            ? 'bg-muted/50 text-foreground'
                             : 'bg-destructive/10 text-destructive'
                         }`}
                       >
@@ -782,7 +782,7 @@ export function ServicesTab() {
           )}
 
           {/* Add New Mapping */}
-          <div className="space-y-2 p-3 bg-background/50 rounded-lg">
+          <div className="space-y-2 pt-3 border-t border-border/30">
             <p className="text-caption font-medium text-muted-foreground">Add new mapping</p>
             <div className="flex items-end gap-2">
               <div className="flex-1 space-y-1">

@@ -309,7 +309,7 @@ export function TroubleshootTab() {
   const getLevelIcon = useCallback((level: string) => {
     switch (level) {
       case 'error':
-        return <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
+        return <AlertCircle className="w-3.5 h-3.5 text-destructive shrink-0" />
       case 'warn':
         return <AlertTriangle className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
       case 'info':
@@ -563,7 +563,7 @@ export function TroubleshootTab() {
           >
             <div className="shrink-0">
               {fileLoggingSettings.enabled ? (
-                <CheckCircle className="w-5 h-5 text-green-500" />
+                <CheckCircle className="w-5 h-5 text-foreground" />
               ) : (
                 <Circle className="w-5 h-5 text-muted-foreground/50" />
               )}
@@ -591,8 +591,8 @@ export function TroubleshootTab() {
 
         {fileLoggingExpanded && (
           <div className="px-4 pb-4 pt-2 border-t border-border/30 bg-muted/10 space-y-3">
-            <div className="bg-background/50 rounded-lg divide-y divide-border/30">
-              <div className="flex items-center justify-between px-4 py-3">
+            <div className="divide-y divide-border/30">
+              <div className="flex items-center justify-between py-3">
                 <span className="text-label text-foreground">Minimum level</span>
                 <Select
                   inputSize="sm"
@@ -607,7 +607,7 @@ export function TroubleshootTab() {
                   <option value="error">Error</option>
                 </Select>
               </div>
-              <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex items-center justify-between py-3">
                 <span className="text-label text-foreground">Retention period</span>
                 <Select
                   inputSize="sm"
@@ -621,7 +621,7 @@ export function TroubleshootTab() {
                   <option value={30}>30 days</option>
                 </Select>
               </div>
-              <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex items-center justify-between py-3">
                 <span className="text-label text-foreground">Log files location</span>
                 <Button
                   variant="primary"

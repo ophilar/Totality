@@ -79,7 +79,7 @@ function SettingsCard({
       >
         <div className="shrink-0">
           {status === 'configured' ? (
-            <CheckCircle className="w-5 h-5 text-primary" />
+            <CheckCircle className="w-5 h-5 text-foreground" />
           ) : status === 'partial' ? (
             <CheckCircle className="w-5 h-5 text-muted-foreground" />
           ) : (
@@ -294,8 +294,8 @@ export function LibrarySettingsTab() {
               Configure how completeness analysis works across your libraries.
               Changes take effect on next analysis run.
             </p>
-            <div className="bg-background/50 rounded-lg divide-y divide-border/30">
-              <div className="flex items-center justify-between px-4 py-3">
+            <div className="divide-y divide-border/30">
+              <div className="flex items-center justify-between py-3">
                 <span className="text-label text-foreground">Include EPs</span>
                 <Toggle
                   checked={includeEps}
@@ -308,7 +308,7 @@ export function LibrarySettingsTab() {
                   }}
                 />
               </div>
-              <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex items-center justify-between py-3">
                 <span className="text-label text-foreground">Include Singles</span>
                 <Toggle
                   checked={includeSingles}
@@ -327,58 +327,54 @@ export function LibrarySettingsTab() {
           {/* TV Shows */}
           <div className="space-y-2">
             <p className="text-caption font-medium text-foreground">TV Shows</p>
-            <div className="bg-background/50 rounded-lg divide-y divide-border/30">
-              <div className="flex items-start justify-between px-4 py-3 gap-4">
-                <div className="flex-1 min-w-0">
-                  <span className="text-label text-foreground">Exclude seasons I have nothing of</span>
-                  <p className="text-caption text-muted-foreground mt-0.5">
-                    Seasons where you own 0 episodes are removed from completion counts. Takes effect immediately.
-                  </p>
-                </div>
-                <Toggle
-                  checked={excludeEmptySeasons}
-                  onChange={async (checked) => {
-                    setExcludeEmptySeasons(checked)
-                    await window.electronAPI.setSetting(
-                      SETTING_KEYS.exclude_empty_seasons,
-                      String(checked)
-                    )
-                    window.dispatchEvent(new CustomEvent('exclusions-changed'))
-                  }}
-                />
+            <div className="flex items-start justify-between py-3 gap-4">
+              <div className="flex-1 min-w-0">
+                <span className="text-label text-foreground">Exclude seasons I have nothing of</span>
+                <p className="text-caption text-muted-foreground mt-0.5">
+                  Seasons where you own 0 episodes are removed from completion counts. Takes effect immediately.
+                </p>
               </div>
+              <Toggle
+                checked={excludeEmptySeasons}
+                onChange={async (checked) => {
+                  setExcludeEmptySeasons(checked)
+                  await window.electronAPI.setSetting(
+                    SETTING_KEYS.exclude_empty_seasons,
+                    String(checked)
+                  )
+                  window.dispatchEvent(new CustomEvent('exclusions-changed'))
+                }}
+              />
             </div>
           </div>
 
           {/* Movie Collections */}
           <div className="space-y-2">
             <p className="text-caption font-medium text-foreground">Movie Collections</p>
-            <div className="bg-background/50 rounded-lg divide-y divide-border/30">
-              <div className="flex items-start justify-between px-4 py-3 gap-4">
-                <div className="flex-1 min-w-0">
-                  <span className="text-label text-foreground">Exclude recently released films</span>
-                  <p className="text-caption text-muted-foreground mt-0.5">
-                    Films released within this window (e.g. still in cinemas) are hidden from missing lists. Only applies to collections scanned after enabling.
-                  </p>
-                </div>
-                <select
-                  value={theatricalLagDays}
-                  onChange={async (e) => {
-                    const val = e.target.value
-                    setTheatricalLagDays(val)
-                    await window.electronAPI.setSetting(
-                      SETTING_KEYS.collection_theatrical_lag_days,
-                      val
-                    )
-                    window.dispatchEvent(new CustomEvent('exclusions-changed'))
-                  }}
-                  className="shrink-0 text-label bg-background border border-border/50 rounded-md px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                >
-                  {THEATRICAL_LAG_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
+            <div className="flex items-start justify-between py-3 gap-4">
+              <div className="flex-1 min-w-0">
+                <span className="text-label text-foreground">Exclude recently released films</span>
+                <p className="text-caption text-muted-foreground mt-0.5">
+                  Films released within this window (e.g. still in cinemas) are hidden from missing lists. Only applies to collections scanned after enabling.
+                </p>
               </div>
+              <select
+                value={theatricalLagDays}
+                onChange={async (e) => {
+                  const val = e.target.value
+                  setTheatricalLagDays(val)
+                  await window.electronAPI.setSetting(
+                    SETTING_KEYS.collection_theatrical_lag_days,
+                    val
+                  )
+                  window.dispatchEvent(new CustomEvent('exclusions-changed'))
+                }}
+                className="shrink-0 text-label bg-background border border-border/50 rounded-md px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                {THEATRICAL_LAG_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -390,7 +386,7 @@ export function LibrarySettingsTab() {
                 ? 'Items you dismiss will appear here.'
                 : `${totalExclusions} dismissed item${totalExclusions !== 1 ? 's' : ''}. Remove items to see them again.`}
             </p>
-            <div className="bg-background/50 rounded-lg divide-y divide-border/30">
+            <div className="divide-y divide-border/30">
               {EXCLUSION_SECTIONS.map((section) => {
                 const items = exclusions[section.type] || []
                 const isExpanded = expandedSections.has(section.type)

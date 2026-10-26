@@ -255,7 +255,7 @@ export function QualitySettingsTab() {
         ) : (
           <>
             <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center mb-4">
-              <Save className="w-6 h-6 text-primary" />
+              <Save className="w-6 h-6 text-foreground" />
             </div>
             <h3 className="text-body font-medium mb-2">Settings Saved</h3>
             <p className="text-caption text-muted-foreground mb-6 max-w-sm">
@@ -345,7 +345,7 @@ export function QualitySettingsTab() {
                 updateSetting(`quality_audio_${selectedTier}_high` as keyof SettingsState, high)
               }}
             />
-            <div className="bg-background/50 rounded-lg p-3 space-y-2 col-span-2">
+            <div className="space-y-2 col-span-2">
               <div className="flex items-center justify-between">
                 <span className="text-caption font-medium">Score Weighting</span>
               </div>
@@ -599,7 +599,7 @@ function QualityThreshold({
   const highPercent = getPercent(highValue)
 
   return (
-    <div className="bg-background/50 rounded-lg p-3 space-y-2">
+    <div className="space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-caption font-medium">{label}</span>
       </div>
@@ -973,7 +973,7 @@ function HandbrakeGuide({
       </div>
 
       {/* Codec Info */}
-      <div className="bg-background/50 border border-border/30 rounded-lg p-3 text-caption text-muted-foreground">
+      <div className="text-caption text-muted-foreground">
         {selectedCodec === 'svtav1' && (
           <div><span className="text-foreground font-medium">SVT-AV1</span> — Best quality per bit. ~30% smaller than HEVC at same quality. Slowest to encode. Playback requires a 2018+ device, modern smart TVs, or VLC/Plex. Not supported on older Roku, some budget Android boxes, or Safari before macOS Ventura.</div>
         )}
@@ -986,7 +986,7 @@ function HandbrakeGuide({
       </div>
 
       {/* Target Bitrate */}
-      <div className="bg-background/50 border border-border/30 rounded-lg p-3">
+      <div>
         <div className="flex items-center justify-between">
           <span className="text-caption font-medium text-foreground">Target for HIGH Quality</span>
           <span className="text-label font-mono text-foreground">
@@ -998,7 +998,7 @@ function HandbrakeGuide({
       {/* Video Settings */}
       <div className="space-y-2">
         <h4 className="text-caption font-medium text-foreground">Video Encoder Settings</h4>
-        <div className="bg-background/50 rounded-lg p-3 space-y-2 text-caption">
+        <div className="space-y-2 text-caption">
           <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Encoder:</span>
@@ -1034,7 +1034,7 @@ function HandbrakeGuide({
       {/* Audio Settings */}
       <div className="space-y-2">
         <h4 className="text-caption font-medium text-foreground">Audio Settings</h4>
-        <div className="bg-background/50 rounded-lg p-3 space-y-1.5 text-caption">
+        <div className="space-y-1.5 text-caption">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Primary:</span>
             <span className="text-foreground">{preset.audio.primary}</span>
@@ -1063,7 +1063,7 @@ function HandbrakeGuide({
       {/* Common Settings */}
       <div className="space-y-2">
         <h4 className="text-caption font-medium text-foreground">Other Settings</h4>
-        <div className="bg-background/50 rounded-lg p-3 text-caption text-muted-foreground space-y-1">
+        <div className="text-caption text-muted-foreground space-y-1">
           <div className="flex justify-between">
             <span>Container:</span>
             <span className="text-foreground">MKV (preserves all tracks/chapters)</span>
@@ -1103,7 +1103,7 @@ function ExtraOptionsCopyable({ extraOptions }: { extraOptions: string }) {
   return (
     <div className="space-y-2">
       <h4 className="text-caption font-medium text-foreground">Extra Options (Advanced)</h4>
-      <div className="bg-background/50 rounded-lg p-3 flex items-start gap-2">
+      <div className="flex items-start gap-2">
         <code className="text-caption text-muted-foreground break-all leading-relaxed block flex-1 select-all">
           {extraOptions}
         </code>
@@ -1113,7 +1113,7 @@ function ExtraOptionsCopyable({ extraOptions }: { extraOptions: string }) {
           title="Copy to clipboard"
         >
           {copied ? (
-            <Check className="w-3.5 h-3.5 text-primary" />
+            <Check className="w-3.5 h-3.5 text-foreground" />
           ) : (
             <Copy className="w-3.5 h-3.5" />
           )}
