@@ -394,6 +394,25 @@ All setting keys are defined in `src/shared/settingKeys.ts` as `SETTING_KEYS` â€
 - IPC handlers validate inputs with **Zod v4** schemas (`src/main/validation/schemas.ts`) using `validateInput(schema, input, 'context')` â€” note Zod v4 has different APIs from v3 (e.g., `z.object()` methods differ)
 - **Zod v4 `z.record(enum, value)` gotcha**: Unlike v3, Zod v4 treats enum-keyed records as requiring ALL enum keys. For partial records (e.g., `pollingIntervals` where only some providers are configured), use `z.record(enum, value.optional())` so missing keys pass validation as `undefined`
 
+## Design System
+
+**Authority:** `docs/SKILL.md` is the single source of truth for all UI design decisions. Every component, screen, modal, panel, and flow must follow its rules.
+
+**Audit:** `docs/design-audit.md` tracks all known violations and migration progress.
+
+**Tokens:** `src/renderer/src/styles/design-tokens.ts` exports centralized constants for typography, spacing, z-index, animation, radius, and sizing. Import these instead of magic numbers.
+
+### Hard Rules (enforced on all new and modified UI code)
+
+1. **No hardcoded colors.** Never write hex values, `text-white`, `bg-white`, or bare Tailwind color classes (`text-red-500`). Use semantic tokens: `text-foreground`, `bg-background`, `text-destructive`, `text-muted-foreground`, etc.
+2. **No uppercase.** Never use `uppercase` or `text-transform: uppercase`. Use `font-medium` or `font-semibold` at the same size to signal label/category text. Sentence case everywhere.
+3. **No bracket font sizes.** Never use `text-[10px]` or similar. Use the typography scale from `design-tokens.ts` (`TYPE.micro`, `TYPE.caption`, `TYPE.label`, `TYPE.body`, etc.) or standard Tailwind classes.
+4. **No `transition-all`.** Animate only: `opacity`, `transform`, `background-color`, `border-color`, `color`, `box-shadow`, `filter`. Use `transition-colors` or `transition-opacity` instead.
+5. **Shared components first.** New UI primitives (buttons, cards, inputs, badges, modals) go in `src/renderer/src/components/ui/`. Check for existing shared components before creating inline variants.
+6. **Space is the default grouping tool.** Use spacing to show relationships (8px within, 16px between related, 32px between sections). Lines and boxes only when spacing alone isn't enough.
+7. **One emphasis per screen.** Exactly one element is the most important. Everything else steps down in a visible order.
+8. **Color carries meaning, not mood.** Green = success, amber = warning, red = failure/destructive. Nothing else is colored.
+
 ## Important Patterns
 
 ### Service Initialization Lifecycle

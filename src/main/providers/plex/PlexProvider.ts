@@ -2000,18 +2000,27 @@ export class PlexProvider implements MediaProvider {
 
       // Reconcile music: remove tracks not in scanned set
       const existingTracks = db.getMusicTracks({ sourceId: this.sourceId }) as MusicTrack[]
-      let musicRemoved = 0
-      for (const track of existingTracks) {
-        if (track.provider_id && !scannedTrackIds.has(track.provider_id) && track.id) {
-          try {
-            db.deleteMusicTrack(track.id)
-            musicRemoved++
-          } catch { /* best effort */ }
+      const existingTrackCount = existingTracks.length
+
+      // Safety guard: refuse bulk deletion when scan appears incomplete (API failures, timeouts)
+      if (scannedTrackIds.size === 0 && existingTrackCount > 0) {
+        console.warn(`[PlexProvider ${this.sourceId}] Scan found 0 tracks but DB has ${existingTrackCount} — skipping reconciliation (possible API failure)`)
+      } else if (existingTrackCount > 0 && scannedTrackIds.size < existingTrackCount * 0.5) {
+        console.warn(`[PlexProvider ${this.sourceId}] Scan found only ${scannedTrackIds.size}/${existingTrackCount} tracks — skipping reconciliation (possible partial scan failure)`)
+      } else {
+        let musicRemoved = 0
+        for (const track of existingTracks) {
+          if (track.provider_id && !scannedTrackIds.has(track.provider_id) && track.id) {
+            try {
+              db.deleteMusicTrack(track.id)
+              musicRemoved++
+            } catch { /* best effort */ }
+          }
         }
-      }
-      if (musicRemoved > 0) {
-        result.itemsRemoved = musicRemoved
-        console.log(`[PlexProvider ${this.sourceId}] Removed ${musicRemoved} stale music tracks`)
+        if (musicRemoved > 0) {
+          result.itemsRemoved = musicRemoved
+          console.log(`[PlexProvider ${this.sourceId}] Removed ${musicRemoved} stale music tracks`)
+        }
       }
 
       // Clean up orphaned albums/artists

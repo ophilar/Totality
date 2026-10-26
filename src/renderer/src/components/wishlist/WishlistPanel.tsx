@@ -205,7 +205,7 @@ export interface WishlistPanelProps {
 }
 
 type SortOption = 'priority' | 'added_at' | 'title' | 'year' | 'completed_at'
-type FilterType = WishlistMediaType | 'all'
+type FilterType = WishlistMediaType | 'tv' | 'music' | 'all'
 type CategoryType = WishlistReason | 'all'
 type StatusType = WishlistStatus | 'all'
 
@@ -352,8 +352,8 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
   // Media type filter options (no "All" — category row already has it)
   const filterOptions: { type: FilterType; icon: typeof Film; label: string }[] = [
     { type: 'movie', icon: Film, label: 'Movies' },
-    { type: 'episode', icon: Tv, label: 'TV' },
-    { type: 'album', icon: Music, label: 'Music' }
+    { type: 'tv', icon: Tv, label: 'TV' },
+    { type: 'music', icon: Music, label: 'Music' }
   ]
 
   // Group items by reason for display

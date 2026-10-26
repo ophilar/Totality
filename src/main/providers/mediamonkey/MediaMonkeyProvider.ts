@@ -61,6 +61,15 @@ import {
   guessCodecFromExtension,
 } from '../base/MusicScannerUtils'
 
+const VIDEO_EXTENSIONS = new Set([
+  '.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.ts', '.mpg', '.mpeg', '.3gp', '.vob',
+])
+
+function isVideoExtension(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase()
+  return VIDEO_EXTENSIONS.has(ext)
+}
+
 export class MediaMonkeyProvider implements MediaProvider {
   readonly providerType: ProviderType = 'mediamonkey'
   readonly sourceId: string
@@ -327,6 +336,9 @@ export class MediaMonkeyProvider implements MediaProvider {
 
           for (const song of songs) {
             if (this.musicScanCancelled) break
+
+            // Skip video files — MediaMonkey stores audio and video in the same Songs table
+            if (song.SongPath && isVideoExtension(song.SongPath)) continue
 
             const trackData = this.convertToMusicTrack(song, albumId, artistId, moodMap)
             await db.upsertMusicTrack(trackData)

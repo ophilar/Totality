@@ -200,7 +200,7 @@ export interface DatabaseServiceInterface {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getAlbumsNeedingUpgrade(limit?: number, sourceId?: string): any[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getMusicStats(sourceId?: string): any
+  getMusicStats(sourceId?: string, libraryId?: string): any
 
   // --- Music Completeness ---
   upsertArtistCompleteness(data: Partial<ArtistCompleteness> & { artist_name: string }): void | Promise<void>

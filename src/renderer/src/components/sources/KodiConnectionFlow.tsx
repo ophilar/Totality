@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect } from 'react'
-import { Database, HardDrive, Film, Music } from 'lucide-react'
+import { Database, HardDrive, FolderOpen, Film, Music } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
 import { KodiMySQLFlow } from './KodiMySQLFlow'
 
@@ -78,6 +78,53 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
     } catch (err) {
       console.error('Error detecting local Kodi:', err)
       setMode('select-mode')
+    }
+  }
+
+  // Browse for Kodi database file (portable/non-standard installations)
+  const handleBrowseDatabase = async () => {
+    try {
+      const dbPath = await window.electronAPI.kodiSelectDatabase()
+      if (!dbPath) return
+
+      // Extract version number from filename (e.g., MyVideos121.db → 121)
+      const filename = dbPath.split(/[/\\]/).pop() || ''
+      const videoMatch = filename.match(/^MyVideos(\d+)\.db$/i)
+      const musicMatch = filename.match(/^MyMusic(\d+)\.db$/i)
+
+      if (!videoMatch && !musicMatch) {
+        setError('Please select a Kodi database file (MyVideosXXX.db or MyMusicXXX.db)')
+        return
+      }
+
+      // Try to find the companion database in the same directory
+      const dbDir = dbPath.replace(/[/\\][^/\\]+$/, '')
+      let videoDatabasePath = ''
+      let videoDatabaseVersion = 0
+      let musicDatabasePath: string | null = null
+      let musicDatabaseVersion: number | null = null
+
+      if (videoMatch) {
+        videoDatabasePath = dbPath
+        videoDatabaseVersion = parseInt(videoMatch[1], 10)
+      } else if (musicMatch) {
+        musicDatabasePath = dbPath
+        musicDatabaseVersion = parseInt(musicMatch[1], 10)
+      }
+
+      setLocalInstallation({
+        path: dbDir,
+        databasePath: videoDatabasePath,
+        databaseVersion: videoDatabaseVersion,
+        musicDatabasePath,
+        musicDatabaseVersion,
+        kodiRunning: false,
+      })
+      setIncludeVideoDb(videoDatabaseVersion > 0)
+      setIncludeMusicDb(musicDatabaseVersion != null && musicDatabaseVersion > 0)
+      setMode('local')
+    } catch (err) {
+      setError('Failed to select database file')
     }
   }
 
@@ -386,6 +433,18 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
               </div>
             </button>
           )}
+
+          {/* Browse for Database option - for portable/non-standard installations */}
+          <button
+            onClick={handleBrowseDatabase}
+            className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary hover:bg-muted/50 transition-colors text-left"
+          >
+            <FolderOpen className="w-5 h-5 text-foreground shrink-0" />
+            <div className="min-w-0">
+              <div className="font-medium text-sm">Browse for Database</div>
+              <div className="text-xs text-muted-foreground">Select a Kodi database file manually (portable installs)</div>
+            </div>
+          </button>
 
           <button
             onClick={() => setMode('mysql')}

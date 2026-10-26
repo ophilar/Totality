@@ -715,6 +715,11 @@ export function MusicView({
                           </>
                         )}
                       </div>
+                      {!track.isMissing && track.file_path && (
+                        <div className="text-[10px] text-muted-foreground/50 truncate mt-0.5" title={track.file_path}>
+                          {track.file_path.split(/[/\\]/).slice(-2).join('/')}
+                        </div>
+                      )}
                     </div>
                     {/* 3-dot menu for owned tracks with file_path */}
                     {!track.isMissing && track.file_path && onRescanTrack && (

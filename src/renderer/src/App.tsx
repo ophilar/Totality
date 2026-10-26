@@ -333,6 +333,16 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleBack, handleForward])
 
+  // Mouse back/forward button navigation
+  useEffect(() => {
+    const handleMouseUp = (e: MouseEvent) => {
+      if (e.button === 3) { e.preventDefault(); handleBack() }
+      else if (e.button === 4) { e.preventDefault(); handleForward() }
+    }
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => window.removeEventListener('mouseup', handleMouseUp)
+  }, [handleBack, handleForward])
+
   const handleOpenSettings = (initialTab?: string) => {
     setSettingsInitialTab(initialTab)
     setShowSettingsModal(true)

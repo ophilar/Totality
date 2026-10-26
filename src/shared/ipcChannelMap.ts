@@ -47,6 +47,7 @@ export const RPC_CHANNEL_MAP: Record<string, string> = {
   // Kodi
   kodiDetectLocal: 'kodi:detectLocal',
   kodiIsRunning: 'kodi:isRunning',
+  kodiSelectDatabase: 'kodi:selectDatabase',
   kodiImportCollections: 'kodi:importCollections',
   kodiGetCollections: 'kodi:getCollections',
   kodiTestMySQLConnection: 'kodi:testMySQLConnection',

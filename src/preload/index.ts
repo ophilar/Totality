@@ -118,6 +118,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Detect local Kodi installation
   kodiDetectLocal: () => ipcRenderer.invoke('kodi:detectLocal'),
   kodiIsRunning: () => ipcRenderer.invoke('kodi:isRunning'),
+  kodiSelectDatabase: () => ipcRenderer.invoke('kodi:selectDatabase'),
 
   // Detect local MediaMonkey installation
   mediamonkeyDetectLocal: () => ipcRenderer.invoke('mediamonkey:detectLocal'),
@@ -422,7 +423,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   musicGetAlbumById: (id: number) => ipcRenderer.invoke('music:getAlbumById', id),
   musicGetTracks: (filters?: unknown) => ipcRenderer.invoke('music:getTracks', filters),
   musicGetTracksByAlbum: (albumId: number) => ipcRenderer.invoke('music:getTracksByAlbum', albumId),
-  musicGetStats: (sourceId?: string) => ipcRenderer.invoke('music:getStats', sourceId),
+  musicGetStats: (sourceId?: string, libraryId?: string) => ipcRenderer.invoke('music:getStats', sourceId, libraryId),
   musicCountArtists: (filters?: unknown) => ipcRenderer.invoke('music:countArtists', filters),
   musicCountAlbums: (filters?: unknown) => ipcRenderer.invoke('music:countAlbums', filters),
   musicCountTracks: (filters?: unknown) => ipcRenderer.invoke('music:countTracks', filters),
@@ -984,6 +985,7 @@ export interface ElectronAPI {
     kodiRunning: boolean
   } | null>
   kodiIsRunning: () => Promise<boolean>
+  kodiSelectDatabase: () => Promise<string | null>
 
   // MediaMonkey Detection
   mediamonkeyDetectLocal: () => Promise<{
@@ -1460,7 +1462,7 @@ export interface ElectronAPI {
   musicGetAlbumById: (id: number) => Promise<unknown | null>
   musicGetTracks: (filters?: unknown) => Promise<unknown[]>
   musicGetTracksByAlbum: (albumId: number) => Promise<unknown[]>
-  musicGetStats: (sourceId?: string) => Promise<{
+  musicGetStats: (sourceId?: string, libraryId?: string) => Promise<{
     totalArtists: number
     totalAlbums: number
     totalTracks: number
@@ -1638,7 +1640,7 @@ export interface ElectronAPI {
   }) => Promise<{ success: boolean }>
   wishlistRemove: (id: number) => Promise<{ success: boolean }>
   wishlistGetAll: (filters?: {
-    media_type?: 'movie' | 'episode' | 'season' | 'album' | 'track'
+    media_type?: 'movie' | 'episode' | 'season' | 'album' | 'track' | 'tv' | 'music'
     priority?: 1 | 2 | 3 | 4 | 5
     reason?: 'missing' | 'upgrade'
     status?: 'active' | 'completed'

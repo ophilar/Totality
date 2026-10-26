@@ -634,6 +634,26 @@ export function registerSourceHandlers(): void {
   })
 
   /**
+   * Open file picker for Kodi database (portable/non-standard installations)
+   */
+  ipcMain.handle('kodi:selectDatabase', async () => {
+    try {
+      const result = await dialog.showOpenDialog({
+        title: 'Select Kodi Video Database',
+        filters: [{ name: 'SQLite Database', extensions: ['db'] }],
+        properties: ['openFile'],
+      })
+      if (result.canceled || result.filePaths.length === 0) {
+        return null
+      }
+      return result.filePaths[0]
+    } catch (error: unknown) {
+      console.error('Error opening file dialog:', error)
+      return null
+    }
+  })
+
+  /**
    * Detect local MediaMonkey installation
    * Returns detection result with found installations
    */

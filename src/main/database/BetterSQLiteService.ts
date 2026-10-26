@@ -3446,6 +3446,10 @@ export class BetterSQLiteService {
       sql += ' AND source_id = ?'
       params.push(filters.sourceId)
     }
+    if (filters?.libraryId) {
+      sql += ' AND library_id = ?'
+      params.push(filters.libraryId)
+    }
     if (filters?.searchQuery) {
       sql += ' AND id IN (SELECT rowid FROM music_track_fts WHERE music_track_fts MATCH ?)'
       params.push(BetterSQLiteService.buildFtsQuery(filters.searchQuery))
@@ -3515,6 +3519,7 @@ export class BetterSQLiteService {
     if (filters?.albumId) { sql += ' AND album_id = ?'; params.push(filters.albumId) }
     if (filters?.artistId) { sql += ' AND artist_id = ?'; params.push(filters.artistId) }
     if (filters?.sourceId) { sql += ' AND source_id = ?'; params.push(filters.sourceId) }
+    if (filters?.libraryId) { sql += ' AND library_id = ?'; params.push(filters.libraryId) }
     if (filters?.searchQuery) { sql += ' AND id IN (SELECT rowid FROM music_track_fts WHERE music_track_fts MATCH ?)'; params.push(BetterSQLiteService.buildFtsQuery(filters.searchQuery)) }
     if (filters?.alphabetFilter) {
       if (filters.alphabetFilter === '#') { sql += " AND title NOT GLOB '[A-Za-z]*'" }
@@ -3648,15 +3653,18 @@ export class BetterSQLiteService {
   /**
    * Get music library stats
    */
-  getMusicStats(sourceId?: string): {
+  getMusicStats(sourceId?: string, libraryId?: string): {
     totalArtists: number
     totalAlbums: number
     totalTracks: number
   } {
     if (!this.db) throw new Error('Database not initialized')
 
-    const whereClause = sourceId ? ' WHERE source_id = ?' : ''
-    const params = sourceId ? [sourceId] : []
+    const conditions: string[] = []
+    const params: string[] = []
+    if (sourceId) { conditions.push('source_id = ?'); params.push(sourceId) }
+    if (libraryId) { conditions.push('library_id = ?'); params.push(libraryId) }
+    const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : ''
 
     const artistsStmt = this.db.prepare(`SELECT COUNT(*) as count FROM music_artists${whereClause}`)
     const albumsStmt = this.db.prepare(`SELECT COUNT(*) as count FROM music_albums${whereClause}`)
@@ -5054,8 +5062,14 @@ WHERE m.type = 'episode' AND m.series_title = ?`
     const params: unknown[] = []
 
     if (filters?.media_type) {
-      sql += ' AND media_type = ?'
-      params.push(filters.media_type)
+      if (filters.media_type === 'tv') {
+        sql += " AND media_type IN ('season', 'episode')"
+      } else if (filters.media_type === 'music') {
+        sql += " AND media_type IN ('album', 'track')"
+      } else {
+        sql += ' AND media_type = ?'
+        params.push(filters.media_type)
+      }
     }
     if (filters?.priority) {
       sql += ' AND priority = ?'

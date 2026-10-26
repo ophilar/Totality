@@ -275,11 +275,12 @@ export function registerMusicHandlers(): void {
   /**
    * Get music library statistics
    */
-  ipcMain.handle('music:getStats', async (_event, sourceId?: unknown) => {
+  ipcMain.handle('music:getStats', async (_event, sourceId?: unknown, libraryId?: unknown) => {
     try {
       const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'music:getStats') : undefined
+      const validLibraryId = typeof libraryId === 'string' && libraryId ? libraryId : undefined
       const db = getDatabase()
-      return db.getMusicStats(validSourceId)
+      return db.getMusicStats(validSourceId, validLibraryId)
     } catch (error: unknown) {
       console.error('[music:getStats] Error:', error)
       throw error

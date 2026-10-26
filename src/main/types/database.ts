@@ -731,7 +731,7 @@ export interface WishlistItem {
 }
 
 export interface WishlistFilters {
-  media_type?: WishlistMediaType
+  media_type?: WishlistMediaType | 'tv' | 'music'
   priority?: WishlistPriority
   reason?: WishlistReason
   status?: WishlistStatus

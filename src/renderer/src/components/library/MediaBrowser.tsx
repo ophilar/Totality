@@ -532,7 +532,7 @@ export function MediaBrowser({
   // Load music stats (non-blocking background load)
   const loadMusicData = async () => {
     try {
-      const mStats = await window.electronAPI.musicGetStats(activeSourceId || undefined)
+      const mStats = await window.electronAPI.musicGetStats(activeSourceId || undefined, activeLibraryId || undefined)
       setMusicStats(mStats as MusicStats)
     } catch (err) {
       console.warn('Failed to load music stats:', err)
@@ -736,7 +736,7 @@ export function MediaBrowser({
       // Calculate stats with real-time EP/Singles filtering
       const effectiveEps = overrideEps ?? includeEps
       const effectiveSingles = overrideSingles ?? includeSingles
-      const freshStats = await window.electronAPI.musicGetStats(activeSourceId || undefined) as MusicStats | null
+      const freshStats = await window.electronAPI.musicGetStats(activeSourceId || undefined, activeLibraryId || undefined) as MusicStats | null
       const totalArtists = freshStats?.totalArtists ?? completenessData.length
       const analyzedArtists = completenessData.length
 
