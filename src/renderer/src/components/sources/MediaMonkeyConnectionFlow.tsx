@@ -149,7 +149,7 @@ export function MediaMonkeyConnectionFlow({ onSuccess, onBack }: MediaMonkeyConn
   if (mode === 'success') {
     return (
       <div className="flex flex-col items-center justify-center py-12">
-        <CheckCircle2 className="w-12 h-12 text-green-500" />
+        <CheckCircle2 className="w-12 h-12 text-foreground" />
         <h3 className="mt-4 text-title font-medium text-foreground">Connected to MediaMonkey!</h3>
         <p className="mt-2 text-label text-muted-foreground">Initial scan has been queued.</p>
       </div>
@@ -243,9 +243,9 @@ export function MediaMonkeyConnectionFlow({ onSuccess, onBack }: MediaMonkeyConn
 
       {/* Error */}
       {error && (
-        <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-          <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
-          <p className="text-label text-red-300">{error}</p>
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+          <AlertCircle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+          <p className="text-label text-destructive">{error}</p>
         </div>
       )}
 

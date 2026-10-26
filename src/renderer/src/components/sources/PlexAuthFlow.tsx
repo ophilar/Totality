@@ -247,7 +247,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
                 href={authUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-label text-primary hover:underline"
+                className="text-label text-muted-foreground hover:text-foreground hover:underline"
               >
                 Click here if the browser didn't open
               </a>
@@ -331,7 +331,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
       {step === 'libraries' && (
         <>
           <div className="text-center py-4">
-            <div className="inline-flex items-center justify-center w-12 h-12 bg-green-500/20 text-green-500 rounded-full mb-3">
+            <div className="inline-flex items-center justify-center w-12 h-12 bg-muted text-foreground rounded-full mb-3">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>

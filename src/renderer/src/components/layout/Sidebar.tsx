@@ -805,7 +805,7 @@ function SourceItem({
                     }}
                     className={`p-1 rounded transition-colors ${
                       library.isEnabled
-                        ? 'text-green-500 hover:text-green-400'
+                        ? 'text-foreground hover:text-foreground'
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                     title={library.isEnabled ? 'Hide library' : 'Show library'}
@@ -947,7 +947,7 @@ function SourceItem({
                                   e.stopPropagation()
                                   onStopScan()
                                 }}
-                                className="p-0.5 text-muted-foreground hover:text-red-500 transition-colors rounded"
+                                className="p-0.5 text-muted-foreground hover:text-destructive transition-colors rounded"
                                 title="Stop scan"
                                 aria-label="Stop scan"
                               >
@@ -979,7 +979,7 @@ function SourceItem({
                                 e.stopPropagation()
                                 onStopScan()
                               }}
-                              className="p-0.5 text-muted-foreground hover:text-red-500 transition-colors rounded"
+                              className="p-0.5 text-muted-foreground hover:text-destructive transition-colors rounded"
                               title="Stop scan"
                               aria-label="Stop scan"
                             >
@@ -1038,8 +1038,8 @@ function SourceItem({
               disabled={isDeleting}
               className={`p-2 rounded transition-colors focus:outline-hidden disabled:opacity-50 ${
                 confirmDelete
-                  ? 'bg-red-500 text-white hover:bg-red-600'
-                  : 'text-red-400 hover:text-red-300 hover:bg-red-500/10'
+                  ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                  : 'text-destructive hover:text-destructive hover:bg-destructive/10'
               }`}
               aria-label={confirmDelete ? `Confirm remove ${source.display_name}` : `Remove ${source.display_name}`}
               title={confirmDelete ? 'Confirm?' : 'Remove'}

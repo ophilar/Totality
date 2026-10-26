@@ -277,7 +277,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
     return (
       <div className="space-y-4">
         <div className="text-center py-4">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-green-500/20 text-green-500 rounded-full mb-3">
+          <div className="inline-flex items-center justify-center w-12 h-12 bg-muted text-foreground rounded-full mb-3">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
@@ -348,7 +348,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
     return (
       <div className="space-y-4">
         <div className="text-center py-4">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-green-500/20 text-green-500 rounded-full mb-3">
+          <div className="inline-flex items-center justify-center w-12 h-12 bg-muted text-foreground rounded-full mb-3">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
@@ -428,7 +428,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
               <div className="min-w-0 flex-1">
                 <div className="font-medium text-label flex items-center gap-2">
                   Local Database
-                  <span className="text-caption text-green-500 font-normal">Found</span>
+                  <span className="text-caption text-foreground font-normal">Found</span>
                 </div>
                 <div className="text-caption text-muted-foreground">
                   {localInstallation.databaseVersion > 0 && `MyVideos${localInstallation.databaseVersion}.db`}

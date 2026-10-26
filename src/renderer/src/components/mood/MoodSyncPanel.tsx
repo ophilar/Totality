@@ -685,7 +685,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                       ) : !hasMismatch || wasSynced ? (
                         <CheckCircle2 className="w-3.5 h-3.5 text-foreground" />
                       ) : isSelected ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
+                        <CheckCircle2 className="w-3.5 h-3.5 text-foreground" />
                       ) : (
                         <Circle className="w-3.5 h-3.5 text-muted-foreground/50" />
                       )}
@@ -742,7 +742,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                             )}
                             {/* Show source moods missing from target */}
                             {target.moodMismatch && comp.sourceMoods.filter(m => isMissing(m, target.targetMoods)).length > 0 && (
-                              <span className="text-primary/70">
+                              <span className="text-foreground/70">
                                 {target.targetMoods.length > 0 && <span className="text-muted-foreground/30"> / </span>}
                                 {comp.sourceMoods.filter(m => isMissing(m, target.targetMoods)).map((m, k) => (
                                   <span key={k}>
@@ -767,7 +767,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                               <span className="text-muted-foreground/40 italic">missing</span>
                             )}
                             {target.genreMismatch && comp.sourceGenres.filter(m => isMissing(m, target.targetGenres)).length > 0 && (
-                              <span className="text-primary/70">
+                              <span className="text-foreground/70">
                                 {target.targetGenres.length > 0 && <span className="text-muted-foreground/30"> / </span>}
                                 {comp.sourceGenres.filter(m => isMissing(m, target.targetGenres)).map((m, k) => (
                                   <span key={k}>

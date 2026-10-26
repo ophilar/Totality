@@ -138,7 +138,7 @@ export const CollectionModal = memo(function CollectionModal({
               <p className="text-label text-muted-foreground mt-1">
                 {collection.owned_movies} of {collection.total_movies} movies owned
                 <span className="mx-2">•</span>
-                <span className={collection.completeness_percentage === 100 ? 'text-green-500' : 'text-orange-500'}>
+                <span className="text-foreground">
                   {Math.round(collection.completeness_percentage)}% complete
                 </span>
               </p>

@@ -366,7 +366,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
   }
 
   const LowIndicator = () => (
-    <span className="inline-block w-2 h-2 rounded-full bg-red-500 ml-1.5" title="Below quality threshold" />
+    <span className="inline-block w-2 h-2 rounded-full bg-destructive ml-1.5" title="Below quality threshold" />
   )
 
   const getTrackDiagnostic = (track: AudioTrack, tier?: string): { message: string; severity: 'error' | 'warning' } | null => {
@@ -799,7 +799,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                   className="p-1 rounded-lg text-white hover:bg-white/15 transition-colors"
                   title="Copy title"
                 >
-                  {copied ? <Check className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
+                  {copied ? <Check className="w-5 h-5 text-foreground" /> : <Copy className="w-5 h-5" />}
                 </button>
               </div>
             </div>

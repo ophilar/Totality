@@ -298,7 +298,7 @@ export function MatchFixModal({
           </div>
 
           {error && (
-            <p className="mt-2 text-label text-red-500">{error}</p>
+            <p className="mt-2 text-label text-destructive">{error}</p>
           )}
         </div>
 
@@ -349,7 +349,7 @@ export function MatchFixModal({
                     <div className="flex items-start justify-between gap-2">
                       <div className="font-medium truncate">{title}</div>
                       {isSelected && (
-                        <Check className="w-5 h-5 text-primary shrink-0" />
+                        <Check className="w-5 h-5 text-foreground shrink-0" />
                       )}
                     </div>
 

@@ -313,13 +313,13 @@ export function TroubleshootTab() {
       case 'warn':
         return <AlertTriangle className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
       case 'info':
-        return <Info className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+        return <Info className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
       case 'debug':
         return <Bug className="w-3.5 h-3.5 text-purple-400 shrink-0" />
       case 'verbose':
         return <MessageSquareText className="w-3.5 h-3.5 text-gray-400 shrink-0" />
       default:
-        return <Info className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+        return <Info className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
     }
   }, [])
 

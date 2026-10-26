@@ -247,8 +247,8 @@ export const WishlistItemCard = memo(function WishlistItemCard({
               <button
                 onClick={() => onMarkCompleted(item.id)}
                 className={isMobile
-                  ? 'min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-green-400 transition-colors'
-                  : 'p-1.5 rounded-md transition-colors text-muted-foreground hover:text-green-500'}
+                  ? 'min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors'
+                  : 'p-1.5 rounded-md transition-colors text-muted-foreground hover:text-foreground'}
                 title="Mark as completed"
               >
                 <CheckCircle2 className={isMobile ? 'w-5 h-5' : 'w-3.5 h-3.5'} />

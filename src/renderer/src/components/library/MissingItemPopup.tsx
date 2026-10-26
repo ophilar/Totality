@@ -158,7 +158,7 @@ export function MissingItemPopup({
             <div className="flex items-center gap-1.5 min-w-0">
               {tmdbId ? (
                 <h3
-                  className="font-semibold text-lg truncate text-primary hover:underline cursor-pointer"
+                  className="font-semibold text-lg truncate text-foreground hover:underline cursor-pointer"
                   onClick={() => window.electronAPI.openExternal(`https://www.themoviedb.org/${type === 'movie' ? 'movie' : 'tv'}/${tmdbId}`)}
                   title="Open on TMDb"
                 >
@@ -177,7 +177,7 @@ export function MissingItemPopup({
                 className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
                 title="Copy title"
               >
-                {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied ? <Check className="w-3.5 h-3.5 text-foreground" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
             </div>
             {subtitle && (

@@ -209,7 +209,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
     return (
       <div className="space-y-4">
         <div className="text-center py-4">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-green-500/20 text-green-500 rounded-full mb-3">
+          <div className="inline-flex items-center justify-center w-12 h-12 bg-muted text-foreground rounded-full mb-3">
             <CheckCircle className="w-6 h-6" />
           </div>
           <p className="font-medium">Connected to Kodi MySQL!</p>
@@ -430,7 +430,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
         }`}>
           {testResult.success ? (
             <div className="space-y-2">
-              <div className="flex items-center gap-2 text-green-500 font-medium">
+              <div className="flex items-center gap-2 text-foreground font-medium">
                 <CheckCircle className="w-4 h-4" />
                 Connection successful
               </div>

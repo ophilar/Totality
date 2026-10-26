@@ -174,7 +174,7 @@ function WishlistSearch() {
                     {!result.release_date && result.year && <span>· {result.year}</span>}
                   </div>
                   {result.physical_release_date && (
-                    <div className="text-caption text-primary/70">Blu-ray/Digital: {new Date(result.physical_release_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                    <div className="text-caption text-muted-foreground">Blu-ray/Digital: {new Date(result.physical_release_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
                   )}
                 </div>
                 {result.owned ? (

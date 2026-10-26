@@ -383,7 +383,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
               <span className="w-2 h-2 bg-green-500 rounded-full" title="Connected" />
             )}
             {connectionStatus === 'error' && (
-              <span className="w-2 h-2 bg-red-500 rounded-full" title="Connection error" />
+              <span className="w-2 h-2 bg-destructive rounded-full" title="Connection error" />
             )}
           </div>
           <div className="text-caption text-muted-foreground">

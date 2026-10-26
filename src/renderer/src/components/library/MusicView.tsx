@@ -1270,7 +1270,7 @@ export function MusicView({
           {stats.hiResAlbums > 0 && (
             <>
               <span className="text-muted-foreground/50">•</span>
-              <span className="text-purple-500">{stats.hiResAlbums} Hi-Res</span>
+              <span className="text-foreground">{stats.hiResAlbums} Hi-Res</span>
             </>
           )}
         </div>
