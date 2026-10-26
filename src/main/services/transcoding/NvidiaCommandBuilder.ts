@@ -5,6 +5,7 @@ import { buildHdrMetadataArgs } from './HdrTranscodingPolicy'
 import { appendStreamMappingArgs } from './StreamSelectionPlan'
 import { applyTargetTranscodePlan } from './TargetTranscodePlan'
 import { APP_CONFIG } from '@main/config'
+import { getEncoderBitDepth } from './EncoderPixelFormat'
 
 export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
   buildFFmpegArgs(input: string, output: string, options: TranscodeOptions, analysis: FileAnalysisResult): string[] {
@@ -12,6 +13,7 @@ export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
     if (process.platform === 'linux' && options.gpuDeviceSelector?.kind !== 'nvenc') throw new Error('The selected NVIDIA adapter could not be mapped to an NVENC device.')
     if (process.platform !== 'win32' && process.platform !== 'linux') throw new Error('Per-device NVIDIA encoding is unavailable on this platform.')
     const hdrArgs = buildHdrMetadataArgs(analysis, options)
+    const bitDepth = getEncoderBitDepth(analysis, options)
     const args: string[] = [
       '-y',
       ...(process.platform === 'win32' ? ['-init_hw_device', `d3d11va=selected:${options.gpuDeviceSelector?.kind === 'directx' ? options.gpuDeviceSelector.index : ''}`, '-filter_hw_device', 'selected'] : []),
@@ -34,16 +36,13 @@ export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
       '-rc-lookahead', '32'
     )
 
-    const is10BitSource = Boolean(
-      analysis?.video?.pixelFormat?.includes('10') ||
-      analysis?.video?.bitDepth === 10
-    )
+    const is10BitSource = bitDepth === 10
 
-    if (process.platform === 'linux' && (is10BitSource || options.targetCodec === 'av1')) {
+    if (process.platform === 'linux' && is10BitSource) {
       args.push('-pix_fmt', 'p010le')
     } else if (process.platform === 'linux') {
       args.push('-pix_fmt', 'nv12')
-    } else if (is10BitSource || options.targetCodec === 'av1') {
+    } else if (is10BitSource) {
       args.push('-vf', 'format=p010le,hwupload')
     } else {
       args.push('-vf', 'format=nv12,hwupload')

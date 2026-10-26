@@ -6,10 +6,12 @@ import { buildHdrMetadataArgs } from './HdrTranscodingPolicy'
 import { appendStreamMappingArgs } from './StreamSelectionPlan'
 import { applyTargetTranscodePlan } from './TargetTranscodePlan'
 import { APP_CONFIG } from '@main/config'
+import { getEncoderBitDepth } from './EncoderPixelFormat'
 
 export class SoftwareCommandBuilder implements ITranscodeCommandBuilder {
   buildFFmpegArgs(input: string, output: string, options: TranscodeOptions, _analysis: FileAnalysisResult): string[] {
     const hdrArgs = buildHdrMetadataArgs(_analysis, options)
+    const bitDepth = getEncoderBitDepth(_analysis, options)
     const codec = options.targetCodec === 'av1' ? 'libsvtav1' : 'libx265'
     const crf = (options.crf ?? APP_CONFIG.transcoding.defaultSoftwareCrf).toString()
     
@@ -29,7 +31,7 @@ export class SoftwareCommandBuilder implements ITranscodeCommandBuilder {
       '-crf', crf,
       '-preset', options.preset || APP_CONFIG.transcoding.defaultSoftwarePreset,
       ...(sourceBitrate ? ['-maxrate', `${sourceBitrate}k`, '-bufsize', `${sourceBitrate * 2}k`] : []),
-      '-pix_fmt', 'yuv420p10le'
+      '-pix_fmt', bitDepth === 10 ? 'yuv420p10le' : 'yuv420p'
     ]
 
     appendStreamMappingArgs(args, _analysis, options)

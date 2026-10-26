@@ -2135,7 +2135,9 @@ export class TranscodingService {
       while (!measurementComplete) {
         const candidates = buildCandidates(candidateParameters)
         if (candidates.length) {
-          const estimatedCandidateSampleBytes = Math.ceil((plannedBitrate ? plannedBitrate / 8 * sampleSeconds : options.maxOutputBytes ?? stat.size) * candidates.length)
+          const estimatedCandidateSampleBytes = Math.ceil((plannedBitrate
+            ? plannedBitrate / 8 * sampleSeconds
+            : (options.maxOutputBytes ?? stat.size) * sampleSeconds / (analysis.durationMs / 1000)) * candidates.length)
           const rateControlBufferBytes = (options.targetConversion?.maximumVideoBitrate ?? 0) / 4
           const estimatedRequiredBytes = Math.ceil(estimatedCandidateSampleBytes + sourceSampleBytes + referenceBytes + rateControlBufferBytes)
           const space = await fs.statfs(outputDirectory)
