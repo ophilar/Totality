@@ -161,7 +161,7 @@ export function MonitoringTab() {
                     ))}
                   </Select>
                 ) : (
-                  <span className="bg-background text-foreground text-label rounded-md px-3 py-2 border border-border/30 min-w-[90px] text-center">
+                  <span className="bg-background text-foreground text-label rounded-lg px-3 py-2 border border-border/30 min-w-[90px] text-center">
                     File Watching
                   </span>
                 )}

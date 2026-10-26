@@ -490,7 +490,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
               role="radio"
               aria-checked={syncMode === 'overwrite'}
               onClick={() => setSyncMode('overwrite')}
-              className={`flex-1 px-2 py-1.5 text-caption font-medium rounded-md transition-colors ${
+              className={`flex-1 px-2 py-1.5 text-caption font-medium rounded-lg transition-colors ${
                 syncMode === 'overwrite'
                   ? 'bg-foreground text-background'
                   : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
@@ -502,7 +502,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
               role="radio"
               aria-checked={syncMode === 'append'}
               onClick={() => setSyncMode('append')}
-              className={`flex-1 px-2 py-1.5 text-caption font-medium rounded-md transition-colors ${
+              className={`flex-1 px-2 py-1.5 text-caption font-medium rounded-lg transition-colors ${
                 syncMode === 'append'
                   ? 'bg-foreground text-background'
                   : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'

@@ -23,7 +23,7 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
 const variantClasses: Record<CardVariant, string> = {
   raised: 'bg-card border border-border rounded-2xl',
   muted: 'bg-muted/30 border border-border/40 rounded-lg',
-  flat: 'bg-muted/20 hover:bg-muted/40 rounded-md transition-colors',
+  flat: 'bg-muted/20 hover:bg-muted/40 rounded-lg transition-colors',
 }
 
 const paddingClasses: Record<CardPadding, string> = {

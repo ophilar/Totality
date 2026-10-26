@@ -825,7 +825,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                     <button
                       key={v.id}
                       onClick={() => setSelectedVersionId(v.id)}
-                      className={`shrink-0 px-3 py-1.5 text-caption font-medium rounded-md transition-colors ${
+                      className={`shrink-0 px-3 py-1.5 text-caption font-medium rounded-lg transition-colors ${
                         isSelected
                           ? 'bg-foreground text-background'
                           : `${qualityColor || 'bg-muted/50'} text-muted-foreground hover:text-foreground hover:bg-muted`
@@ -848,7 +848,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                 Compare Versions ({versions.length})
               </button>
               {showVersionTable && (
-                <div className={`rounded-md border border-border/50 overflow-hidden text-caption ${isMobile ? 'overflow-x-auto' : ''}`}>
+                <div className={`rounded-lg border border-border/50 overflow-hidden text-caption ${isMobile ? 'overflow-x-auto' : ''}`}>
                   <table className={`${isMobile ? 'min-w-[500px]' : ''} w-full`}>
                     <thead>
                       <tr className="bg-muted/40 text-muted-foreground">

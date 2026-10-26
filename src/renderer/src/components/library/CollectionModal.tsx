@@ -132,7 +132,7 @@ export const CollectionModal = memo(function CollectionModal({
         {/* Modal */}
         <div ref={modalRef} className="relative bg-card border border-border rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl shrink-0">
+          <div className="flex items-center justify-between p-4 border-b border-border/30 bg-card rounded-t-xl shrink-0">
             <div>
               <h2 id="collection-modal-title" className="text-xl font-semibold">{collection.collection_name}</h2>
               <p className="text-label text-muted-foreground mt-1">
@@ -147,7 +147,7 @@ export const CollectionModal = memo(function CollectionModal({
               {onDismissAllMissingInCollection && missingMovies.length > 1 && (
                 <button
                   onClick={onDismissAllMissingInCollection}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-caption text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted/50"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-caption text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-muted/50"
                   title="Dismiss all missing films in this collection"
                 >
                   <EyeOff className="w-3.5 h-3.5" />
@@ -172,7 +172,7 @@ export const CollectionModal = memo(function CollectionModal({
                   className="cursor-pointer hover-scale"
                   onClick={() => handleMovieItemClick(movie)}
                 >
-                  <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md">
+                  <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-lg">
                     {/* Poster */}
                     {movie.poster_url ? (
                       <img

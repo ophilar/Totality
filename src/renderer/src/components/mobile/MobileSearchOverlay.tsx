@@ -200,7 +200,7 @@ function ResultRow({ thumb, thumbIcon: Icon, thumbRound, title, subtitle, onClic
       onClick={onClick}
       className="w-full flex items-center gap-3 px-4 min-h-[56px] py-2 text-left active:bg-white/5"
     >
-      <div className={`${thumbRound ? 'w-12 h-12 rounded-full' : 'w-10 h-14 rounded-md'} bg-muted overflow-hidden shrink-0`}>
+      <div className={`${thumbRound ? 'w-12 h-12 rounded-full' : 'w-10 h-14 rounded-lg'} bg-muted overflow-hidden shrink-0`}>
         {thumb ? (
           <img src={thumb} alt="" className="w-full h-full object-cover" />
         ) : (

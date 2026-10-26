@@ -302,7 +302,7 @@ export function QualitySettingsTab() {
                 onClick={() => setSelectedTier(tab.id)}
                 role="tab"
                 aria-selected={selectedTier === tab.id}
-                className={`flex-1 px-3 py-2 text-caption font-medium rounded-md transition-colors ${
+                className={`flex-1 px-3 py-2 text-caption font-medium rounded-lg transition-colors ${
                   selectedTier === tab.id
                     ? 'bg-primary text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -925,7 +925,7 @@ function HandbrakeGuide({
             onClick={() => setSelectedTier(tab.id)}
             role="tab"
             aria-selected={selectedTier === tab.id}
-            className={`flex-1 px-3 py-2 text-caption font-medium rounded-md transition-colors ${
+            className={`flex-1 px-3 py-2 text-caption font-medium rounded-lg transition-colors ${
               selectedTier === tab.id
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -942,7 +942,7 @@ function HandbrakeGuide({
       <div className="flex gap-2">
         <button
           onClick={() => setSelectedCodec('svtav1')}
-          className={`flex-1 px-3 py-2 text-caption font-medium rounded-md transition-colors ${
+          className={`flex-1 px-3 py-2 text-caption font-medium rounded-lg transition-colors ${
             selectedCodec === 'svtav1'
               ? 'bg-primary text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -952,7 +952,7 @@ function HandbrakeGuide({
         </button>
         <button
           onClick={() => setSelectedCodec('x265')}
-          className={`flex-1 px-3 py-2 text-caption font-medium rounded-md transition-colors ${
+          className={`flex-1 px-3 py-2 text-caption font-medium rounded-lg transition-colors ${
             selectedCodec === 'x265'
               ? 'bg-primary text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -962,7 +962,7 @@ function HandbrakeGuide({
         </button>
         <button
           onClick={() => setSelectedCodec('x264')}
-          className={`flex-1 px-3 py-2 text-caption font-medium rounded-md transition-colors ${
+          className={`flex-1 px-3 py-2 text-caption font-medium rounded-lg transition-colors ${
             selectedCodec === 'x264'
               ? 'bg-primary text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'

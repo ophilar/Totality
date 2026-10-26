@@ -367,7 +367,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
         onClick={handleExpand}
       >
         {/* Provider icon */}
-        <div className={`w-8 h-8 ${color} rounded-md flex items-center justify-center text-white`}>
+        <div className={`w-8 h-8 ${color} rounded-lg flex items-center justify-center text-white`}>
           {source.source_type === 'local' ? (
             <HardDrive className="w-4 h-4" />
           ) : (

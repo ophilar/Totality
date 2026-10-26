@@ -59,7 +59,7 @@ export function StoreLinksMenu({ storeLinks, onOpenLink, isLoading }: StoreLinks
       <button
         onClick={() => setIsOpen(!isOpen)}
         disabled={isLoading}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 text-caption font-medium rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 text-caption font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
       >
         <Star className="w-3.5 h-3.5" />
         <span>Shop</span>

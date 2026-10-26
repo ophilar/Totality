@@ -443,7 +443,7 @@ export function ActivityPanel() {
       <button
         ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
-        className={`relative p-2 rounded-md transition-colors shrink-0 focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-black ${
+        className={`relative p-2 rounded-lg transition-colors shrink-0 focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-black ${
           isOpen
             ? 'bg-primary text-primary-foreground'
             : 'text-white hover:bg-white/10'

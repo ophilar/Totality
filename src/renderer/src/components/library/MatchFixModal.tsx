@@ -249,7 +249,7 @@ export function MatchFixModal({
         onKeyDown={handleKeyDown}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
+        <div className="flex items-center justify-between p-4 border-b border-border/30 bg-card rounded-t-xl">
           <div className="min-w-0 flex-1 mr-4">
             <h2 className="text-lg font-semibold">Fix {getTypeLabel()} Match</h2>
             <p className="text-label text-muted-foreground">
@@ -263,7 +263,7 @@ export function MatchFixModal({
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-md hover:bg-muted transition-colors shrink-0"
+            className="p-2 rounded-lg hover:bg-muted transition-colors shrink-0"
           >
             <X className="w-5 h-5" />
           </button>

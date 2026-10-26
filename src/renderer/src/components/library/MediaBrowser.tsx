@@ -1639,7 +1639,7 @@ export function MediaBrowser({
                 {onNavigateHome && (
                   <button
                     onClick={onNavigateHome}
-                    className="px-3 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 bg-card text-muted-foreground hover:bg-muted"
+                    className="px-3 py-2 rounded-lg text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 bg-card text-muted-foreground hover:bg-muted"
                     title="Return to Dashboard"
                     aria-label="Dashboard"
                   >
@@ -1665,7 +1665,7 @@ export function MediaBrowser({
                     setSelectedAlbum(null)
                   }}
                   disabled={!hasMovies}
-                  className={`px-4 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-lg text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     view === 'movies'
                       ? 'bg-foreground text-background'
                       : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1692,7 +1692,7 @@ export function MediaBrowser({
                     setSelectedAlbum(null)
                   }}
                   disabled={!hasTV}
-                  className={`px-4 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-lg text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     view === 'tv'
                       ? 'bg-foreground text-background'
                       : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1719,7 +1719,7 @@ export function MediaBrowser({
                     setSelectedAlbum(null)
                   }}
                   disabled={!hasMusic}
-                  className={`px-4 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-lg text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     view === 'music'
                       ? 'bg-foreground text-background'
                       : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1753,7 +1753,7 @@ export function MediaBrowser({
                 if (newState) setShowWishlistPanel(false)
                 setShowCompletenessPanel(newState)
               }}
-              className={`p-2.5 rounded-md transition-colors flex items-center gap-1 shrink-0 focus:outline-hidden ${
+              className={`p-2.5 rounded-lg transition-colors flex items-center gap-1 shrink-0 focus:outline-hidden ${
                 showCompletenessPanel
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1772,7 +1772,7 @@ export function MediaBrowser({
                 if (newState) setShowCompletenessPanel(false)
                 setShowWishlistPanel(newState)
               }}
-              className={`p-2.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 focus:outline-hidden ${
+              className={`p-2.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 focus:outline-hidden ${
                 showWishlistPanel
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1795,7 +1795,7 @@ export function MediaBrowser({
             <button
               ref={settingsButtonRef}
               onClick={() => onOpenSettings?.()}
-              className="p-2.5 rounded-md transition-colors shrink-0 bg-card text-muted-foreground hover:bg-muted focus:outline-hidden"
+              className="p-2.5 rounded-lg transition-colors shrink-0 bg-card text-muted-foreground hover:bg-muted focus:outline-hidden"
               aria-label="Open settings"
             >
               <Settings className="w-4 h-4" aria-hidden="true" />
@@ -1837,7 +1837,7 @@ export function MediaBrowser({
                             setSelectedAlbum(null)
                             setAlbumTracks([])
                           }}
-                          className={`px-2.5 py-1.5 rounded-md text-caption transition-colors ${
+                          className={`px-2.5 py-1.5 rounded-lg text-caption transition-colors ${
                             musicViewMode === mode
                               ? 'bg-primary text-primary-foreground'
                               : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1881,7 +1881,7 @@ export function MediaBrowser({
                             else tierFilterRefs.current.delete(tier)
                           }}
                           onClick={() => setTierFilter(tier as typeof tierFilter)}
-                          className={`px-2.5 py-1 rounded-md text-caption transition-colors focus:outline-hidden ${
+                          className={`px-2.5 py-1 rounded-lg text-caption transition-colors focus:outline-hidden ${
                             tierFilter === tier
                               ? 'bg-primary text-primary-foreground'
                               : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1912,7 +1912,7 @@ export function MediaBrowser({
                             else qualityFilterRefs.current.delete(quality)
                           }}
                           onClick={() => setQualityFilter(quality as typeof qualityFilter)}
-                          className={`px-2.5 py-1 rounded-md text-caption transition-colors focus:outline-hidden ${
+                          className={`px-2.5 py-1 rounded-lg text-caption transition-colors focus:outline-hidden ${
                             qualityFilter === quality
                               ? 'bg-primary text-primary-foreground'
                               : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1931,7 +1931,7 @@ export function MediaBrowser({
                     <div className="h-6 w-px bg-border/50" />
                     <button
                       onClick={() => setCollectionsOnly(!collectionsOnly)}
-                      className={`px-2.5 py-1 rounded-md text-caption transition-colors focus:outline-hidden flex items-center gap-1.5 ${
+                      className={`px-2.5 py-1 rounded-lg text-caption transition-colors focus:outline-hidden flex items-center gap-1.5 ${
                         collectionsOnly
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1970,7 +1970,7 @@ export function MediaBrowser({
                     <button
                       ref={gridViewRef}
                       onClick={() => setViewType('grid')}
-                      className={`p-1.5 rounded-md transition-colors focus:outline-hidden ${
+                      className={`p-1.5 rounded-lg transition-colors focus:outline-hidden ${
                         viewType === 'grid'
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1981,7 +1981,7 @@ export function MediaBrowser({
                     <button
                       ref={listViewRef}
                       onClick={() => setViewType('list')}
-                      className={`p-1.5 rounded-md transition-colors focus:outline-hidden ${
+                      className={`p-1.5 rounded-lg transition-colors focus:outline-hidden ${
                         viewType === 'list'
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-card text-muted-foreground hover:bg-muted'

@@ -218,7 +218,7 @@ export function MoviesView({
         >
           {Array.from({ length: 18 }).map((_, i) => (
             <div key={i}>
-              <div className="aspect-2/3 bg-muted/50 rounded-md animate-pulse" />
+              <div className="aspect-2/3 bg-muted/50 rounded-lg animate-pulse" />
               <div className="mt-2 h-3 bg-muted/50 rounded animate-pulse" />
               <div className="mt-1 h-3 w-2/3 bg-muted/40 rounded animate-pulse" />
             </div>
@@ -376,7 +376,7 @@ const CollectionCard = memo(({ collection, onClick }: { collection: MovieCollect
       }}
     >
       {/* Poster */}
-      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
+      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-lg shadow-lg shadow-black/30">
         {collection.poster_url ? (
           <img
             src={collection.poster_url}
@@ -432,7 +432,7 @@ function CollectionListItem({ collection, onClick }: { collection: MovieCollecti
     <div
       ref={cardRef}
       tabIndex={0}
-      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-colors duration-200 p-4 flex gap-4 items-center outline-hidden"
+      className="group cursor-pointer rounded-lg bg-muted/20 hover:bg-muted/40 transition-colors duration-200 p-4 flex gap-4 items-center outline-hidden"
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -442,7 +442,7 @@ function CollectionListItem({ collection, onClick }: { collection: MovieCollecti
       }}
     >
       {/* Poster Thumbnail */}
-      <div className="w-16 h-24 bg-muted rounded-md overflow-hidden shrink-0 relative shadow-md shadow-black/20">
+      <div className="w-16 h-24 bg-muted rounded-lg overflow-hidden shrink-0 relative shadow-md shadow-black/20">
         {collection.poster_url ? (
           <img
             src={collection.poster_url}
@@ -529,7 +529,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
       }}
     >
       {/* Poster */}
-      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
+      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-lg shadow-lg shadow-black/30">
         {/* 3-dot menu button */}
         {showMenuButton && (
           <div ref={menuRef} className="absolute top-2 left-2 z-20">
@@ -691,7 +691,7 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
     <div
       ref={cardRef}
       tabIndex={0}
-      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-colors duration-200 p-4 flex gap-4 items-center outline-hidden"
+      className="group cursor-pointer rounded-lg bg-muted/20 hover:bg-muted/40 transition-colors duration-200 p-4 flex gap-4 items-center outline-hidden"
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -701,7 +701,7 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
       }}
     >
       {/* Poster Thumbnail */}
-      <div className="w-16 h-24 bg-muted rounded-md overflow-hidden shrink-0 relative shadow-md shadow-black/20">
+      <div className="w-16 h-24 bg-muted rounded-lg overflow-hidden shrink-0 relative shadow-md shadow-black/20">
         {movie.poster_url ? (
           <img
             src={movie.poster_url}

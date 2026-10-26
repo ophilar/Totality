@@ -222,7 +222,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
             </Button>
             <button
               onClick={handleStartAuth}
-              className="flex-1 px-4 py-2 rounded-md bg-[#e5a00d] text-white hover:bg-[#cc8f0c]"
+              className="flex-1 px-4 py-2 rounded-lg bg-[#e5a00d] text-white hover:bg-[#cc8f0c]"
             >
               Sign in with Plex
             </button>

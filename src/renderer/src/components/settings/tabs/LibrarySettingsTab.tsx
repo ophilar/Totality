@@ -369,7 +369,7 @@ export function LibrarySettingsTab() {
                   )
                   window.dispatchEvent(new CustomEvent('exclusions-changed'))
                 }}
-                className="shrink-0 text-label bg-background border border-border/50 rounded-md px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                className="shrink-0 text-label bg-background border border-border/50 rounded-lg px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
               >
                 {THEATRICAL_LAG_OPTIONS.map(opt => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -444,7 +444,7 @@ export function LibrarySettingsTab() {
                                   <button
                                     type="button"
                                     onClick={() => handleRemoveExclusion(item.id, section.type)}
-                                    className="p-1 rounded-md text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 shrink-0"
+                                    className="p-1 rounded-lg text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 shrink-0"
                                     title="Remove exclusion"
                                   >
                                     <X className="w-3.5 h-3.5" />

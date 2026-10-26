@@ -484,7 +484,7 @@ export function ServicesTab() {
               <button
                 onClick={handleTestTmdb}
                 disabled={!tmdbApiKey.trim() || tmdbStatus === 'testing' || tmdbStatus === 'valid'}
-                className={`px-3 py-2 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2 ${
+                className={`px-3 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 ${
                   tmdbStatus === 'valid' ? 'text-foreground' :
                   tmdbStatus === 'invalid' ? 'text-destructive bg-destructive/10' :
                   'text-label bg-muted hover:bg-muted/80'
@@ -502,7 +502,7 @@ export function ServicesTab() {
                     setTmdbApiKey('')
                     setTmdbStatus('idle')
                   }}
-                  className="px-3 py-2 text-label text-muted-foreground hover:text-destructive rounded-md transition-colors"
+                  className="px-3 py-2 text-label text-muted-foreground hover:text-destructive rounded-lg transition-colors"
                   aria-label="Clear TMDB API key"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -649,7 +649,7 @@ export function ServicesTab() {
               <button
                 onClick={handleTestGemini}
                 disabled={!geminiApiKey.trim() || geminiStatus === 'testing' || geminiStatus === 'valid'}
-                className={`px-3 py-2 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2 ${
+                className={`px-3 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 ${
                   geminiStatus === 'valid' ? 'text-foreground' :
                   geminiStatus === 'invalid' ? 'text-destructive bg-destructive/10' :
                   'text-label bg-muted hover:bg-muted/80'
@@ -668,7 +668,7 @@ export function ServicesTab() {
                     setGeminiStatus('idle')
                     setGeminiError(null)
                   }}
-                  className="px-3 py-2 text-label text-muted-foreground hover:text-destructive rounded-md transition-colors"
+                  className="px-3 py-2 text-label text-muted-foreground hover:text-destructive rounded-lg transition-colors"
                   aria-label="Clear Gemini API key"
                 >
                   <Trash2 className="w-4 h-4" />

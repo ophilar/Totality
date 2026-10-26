@@ -129,7 +129,7 @@ export class SectionErrorBoundary extends Component<Props, State> {
             {allowRetry && (
               <button
                 onClick={this.handleReset}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
               >
                 <RefreshCw className="w-4 h-4" />
                 Try Again
@@ -137,7 +137,7 @@ export class SectionErrorBoundary extends Component<Props, State> {
             )}
             <button
               onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-muted text-foreground rounded-md hover:bg-muted/80 transition-colors"
+              className="px-4 py-2 bg-muted text-foreground rounded-lg hover:bg-muted/80 transition-colors"
             >
               Reload App
             </button>

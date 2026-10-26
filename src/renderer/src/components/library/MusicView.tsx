@@ -502,7 +502,7 @@ export function MusicView({
             <button
               onClick={() => selectedAlbum.id && handleAnalyzeAlbum(selectedAlbum.id)}
               disabled={isAnalyzingAlbum}
-              className="mt-3 flex items-center gap-2 px-3 py-1.5 text-label bg-primary text-primary-foreground hover:bg-primary/90 rounded-md transition-colors disabled:opacity-50"
+              className="mt-3 flex items-center gap-2 px-3 py-1.5 text-label bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors disabled:opacity-50"
             >
               <RefreshCw className={`w-4 h-4 ${isAnalyzingAlbum ? 'animate-spin' : ''}`} />
               {isAnalyzingAlbum ? 'Analyzing...' : 'Analyze for missing tracks'}
@@ -1093,7 +1093,7 @@ export function MusicView({
               {onFixArtistMatch && (
                 <button
                   onClick={() => onFixArtistMatch(selectedArtist.id, selectedArtist.name)}
-                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
+                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
                   title="Fix Match"
                 >
                   <Pencil className="w-4 h-4" />
@@ -1688,7 +1688,7 @@ export function MusicView({
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header — matches MediaDetails pattern */}
-              <div className="flex gap-4 p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
+              <div className="flex gap-4 p-4 border-b border-border/30 bg-card rounded-t-xl">
                 {/* Title & Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
@@ -1964,7 +1964,7 @@ const AlbumCard = memo(({ album, onClick, showArtist = true, showSourceBadge, on
       className="cursor-pointer hover-scale group relative"
       onClick={onClick}
     >
-      <div className="aspect-square bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
+      <div className="aspect-square bg-muted relative overflow-hidden rounded-lg shadow-lg shadow-black/30">
         {/* 3-dot menu button - appears on hover */}
         {onAnalyze && (
           <div ref={menuRef} className="absolute top-2 left-2 z-20">
@@ -2098,7 +2098,7 @@ const ArtistListItem = memo(({ artist, completeness, onClick, showSourceBadge, o
 
   return (
     <div
-      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-colors duration-200 p-4 flex gap-4 items-center"
+      className="group cursor-pointer rounded-lg bg-muted/20 hover:bg-muted/40 transition-colors duration-200 p-4 flex gap-4 items-center"
       onClick={onClick}
     >
       {/* Artist Thumbnail */}
@@ -2191,11 +2191,11 @@ const AlbumListItem = memo(({ album, onClick, showArtist = true, showSourceBadge
 
   return (
     <div
-      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-colors duration-200 p-4 flex gap-4 items-center"
+      className="group cursor-pointer rounded-lg bg-muted/20 hover:bg-muted/40 transition-colors duration-200 p-4 flex gap-4 items-center"
       onClick={onClick}
     >
       {/* Album Thumbnail */}
-      <div className="w-16 h-16 bg-muted rounded-md overflow-hidden shrink-0 relative shadow-md shadow-black/20">
+      <div className="w-16 h-16 bg-muted rounded-lg overflow-hidden shrink-0 relative shadow-md shadow-black/20">
         {album.thumb_url ? (
           <img
             src={album.thumb_url}
@@ -2316,7 +2316,7 @@ const TrackListItem = memo(({ track, index, artistName, albumTitle, columnWidths
 
   return (
     <div
-      className="group cursor-pointer rounded-md overflow-hidden hover:bg-muted/40 transition-colors duration-200 px-4 py-2 flex gap-4 items-center"
+      className="group cursor-pointer rounded-lg overflow-hidden hover:bg-muted/40 transition-colors duration-200 px-4 py-2 flex gap-4 items-center"
       onClick={onClickQuality}
     >
       {/* Track Number */}
@@ -2394,7 +2394,7 @@ const MissingAlbumCard = memo(({ album, artistName, onDismiss }: {
 
   return (
     <div className="hover-scale opacity-60 hover:opacity-80 group">
-      <div className="aspect-square bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30 grayscale">
+      <div className="aspect-square bg-muted relative overflow-hidden rounded-lg shadow-lg shadow-black/30 grayscale">
         {/* Album type badge */}
         {album.album_type !== 'album' && (
           <div className="absolute top-2 right-2 z-10">
@@ -2465,9 +2465,9 @@ const MissingAlbumListItem = memo(({ album, artistName, onDismiss }: {
     : null
 
   return (
-    <div className="rounded-md overflow-hidden bg-muted/20 p-4 flex gap-4 items-center opacity-60 hover:opacity-80 transition-opacity">
+    <div className="rounded-lg overflow-hidden bg-muted/20 p-4 flex gap-4 items-center opacity-60 hover:opacity-80 transition-opacity">
       {/* Album Thumbnail */}
-      <div className="w-16 h-16 bg-muted rounded-md overflow-hidden shrink-0 relative grayscale shadow-md shadow-black/20">
+      <div className="w-16 h-16 bg-muted rounded-lg overflow-hidden shrink-0 relative grayscale shadow-md shadow-black/20">
         {coverUrl && !imageError ? (
           <img
             src={coverUrl}

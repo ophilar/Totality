@@ -210,7 +210,7 @@ export const WishlistItemCard = memo(function WishlistItemCard({
                 onClick={() => onMarkActive(item.id)}
                 className={isMobile
                   ? 'min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors'
-                  : 'p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground'}
+                  : 'p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground'}
                 title="Move back to active"
               >
                 <RotateCcw className={isMobile ? 'w-5 h-5' : 'w-4 h-4'} />
@@ -219,7 +219,7 @@ export const WishlistItemCard = memo(function WishlistItemCard({
                 onClick={handleRemove}
                 className={isMobile
                   ? `min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full transition-colors ${showConfirmDelete ? 'bg-destructive/20 text-destructive' : 'bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground'}`
-                  : `p-1.5 rounded-md transition-colors ${showConfirmDelete ? 'text-destructive' : 'text-muted-foreground hover:text-destructive'}`}
+                  : `p-1.5 rounded-lg transition-colors ${showConfirmDelete ? 'text-destructive' : 'text-muted-foreground hover:text-destructive'}`}
                 title={showConfirmDelete ? 'Click again to confirm' : 'Remove from wishlist'}
               >
                 <Trash2 className={isMobile ? 'w-5 h-5' : 'w-4 h-4'} />
@@ -248,7 +248,7 @@ export const WishlistItemCard = memo(function WishlistItemCard({
                 onClick={() => onMarkCompleted(item.id)}
                 className={isMobile
                   ? 'min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors'
-                  : 'p-1.5 rounded-md transition-colors text-muted-foreground hover:text-foreground'}
+                  : 'p-1.5 rounded-lg transition-colors text-muted-foreground hover:text-foreground'}
                 title="Mark as completed"
               >
                 <CheckCircle2 className={isMobile ? 'w-5 h-5' : 'w-3.5 h-3.5'} />
@@ -257,7 +257,7 @@ export const WishlistItemCard = memo(function WishlistItemCard({
                 onClick={handleRemove}
                 className={isMobile
                   ? `min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full transition-colors ${showConfirmDelete ? 'bg-destructive/20 text-destructive' : 'bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground'}`
-                  : `p-1.5 rounded-md transition-colors ${showConfirmDelete ? 'text-destructive' : 'text-muted-foreground hover:text-destructive'}`}
+                  : `p-1.5 rounded-lg transition-colors ${showConfirmDelete ? 'text-destructive' : 'text-muted-foreground hover:text-destructive'}`}
                 title={showConfirmDelete ? 'Click again to confirm' : 'Remove from wishlist'}
               >
                 <Trash2 className={isMobile ? 'w-5 h-5' : 'w-3.5 h-3.5'} />

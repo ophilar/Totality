@@ -98,7 +98,7 @@ export function MissingItemPopup({
       {/* Popup */}
       <div className="relative bg-card border border-border rounded-xl shadow-xl max-w-sm w-full overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
+        <div className="flex items-center justify-between p-4 border-b border-border/30 bg-card rounded-t-xl">
           <span className="text-label font-medium capitalize">{type}</span>
           <div className="flex items-center gap-1">
             <AddToWishlistButton
@@ -135,7 +135,7 @@ export function MissingItemPopup({
         <div className="p-4 flex gap-4">
           {/* Poster — fixed size, not squeezed */}
           <div className="w-28 shrink-0">
-            <div className="aspect-2/3 bg-muted rounded-md overflow-hidden shadow-lg shadow-black/30">
+            <div className="aspect-2/3 bg-muted rounded-lg overflow-hidden shadow-lg shadow-black/30">
               {posterUrl ? (
                 <img
                   src={posterUrl}

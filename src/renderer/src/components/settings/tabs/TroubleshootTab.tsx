@@ -470,7 +470,7 @@ export function TroubleshootTab() {
 
       {/* Selection toolbar */}
       {selectedIds.size > 0 && (
-        <div className="flex items-center justify-between mb-2 px-3 py-1.5 bg-primary/10 border border-primary/20 rounded-md shrink-0">
+        <div className="flex items-center justify-between mb-2 px-3 py-1.5 bg-primary/10 border border-primary/20 rounded-lg shrink-0">
           <div className="flex items-center gap-3 text-caption">
             <span className="font-medium">{selectedIds.size} selected</span>
             <button

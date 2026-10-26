@@ -53,7 +53,7 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
     <div
       ref={cardRef}
       tabIndex={0}
-      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-colors duration-200 p-4 flex gap-4 items-center outline-hidden"
+      className="group cursor-pointer rounded-lg bg-muted/20 hover:bg-muted/40 transition-colors duration-200 p-4 flex gap-4 items-center outline-hidden"
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -63,7 +63,7 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
       }}
     >
       {/* Poster Thumbnail */}
-      <div className="w-16 h-24 bg-muted rounded-md overflow-hidden shrink-0 relative shadow-md shadow-black/20">
+      <div className="w-16 h-24 bg-muted rounded-lg overflow-hidden shrink-0 relative shadow-md shadow-black/20">
         {show.poster_url ? (
           <img
             src={show.poster_url}
@@ -187,7 +187,7 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, isMobil
       }}
     >
       {/* Episode Thumbnail - 16:9 aspect ratio with shadow */}
-      <div className={`${isMobile ? 'w-24' : 'w-44'} aspect-video bg-muted overflow-hidden rounded-md shadow-md shadow-black/20 shrink-0`}>
+      <div className={`${isMobile ? 'w-24' : 'w-44'} aspect-video bg-muted overflow-hidden rounded-lg shadow-md shadow-black/20 shrink-0`}>
         {episode.episode_thumb_url ? (
           <img
             src={episode.episode_thumb_url}
@@ -439,7 +439,7 @@ export function TVShowsView({
         <div className={`${gridClassName} mt-4`} style={gridStyle}>
           {Array.from({ length: 18 }).map((_, i) => (
             <div key={i}>
-              <div className="aspect-2/3 bg-muted/50 rounded-md animate-pulse" />
+              <div className="aspect-2/3 bg-muted/50 rounded-lg animate-pulse" />
               <div className="mt-2 h-3 bg-muted/50 rounded animate-pulse" />
               <div className="mt-1 h-3 w-2/3 bg-muted/40 rounded animate-pulse" />
             </div>
@@ -639,7 +639,7 @@ export function TVShowsView({
               {onFixMatch && (
                 <button
                   onClick={() => selectedShow && onFixMatch(selectedShow, '', undefined)}
-                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
+                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
                   title="Fix Match"
                 >
                   <Pencil className="w-4 h-4" />
@@ -763,7 +763,7 @@ export function TVShowsView({
                 <button
                   key={tier}
                   onClick={() => setEpisodeTierFilter(tier)}
-                  className={`px-2.5 py-1 rounded-md text-caption transition-colors ${
+                  className={`px-2.5 py-1 rounded-lg text-caption transition-colors ${
                     episodeTierFilter === tier
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-card text-muted-foreground hover:bg-muted'
@@ -782,7 +782,7 @@ export function TVShowsView({
                 <button
                   key={quality}
                   onClick={() => setEpisodeQualityFilter(quality)}
-                  className={`px-2.5 py-1 rounded-md text-caption transition-colors ${
+                  className={`px-2.5 py-1 rounded-lg text-caption transition-colors ${
                     episodeQualityFilter === quality
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-card text-muted-foreground hover:bg-muted'
@@ -882,7 +882,7 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
         }
       }}
     >
-      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
+      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-lg shadow-lg shadow-black/30">
         {/* 3-dot menu button */}
         <div ref={menuRef} className="absolute top-2 left-2 z-20">
           <button
@@ -1072,7 +1072,7 @@ const MissingEpisodeRowWithArtwork = memo(({
       }}
     >
       {/* Missing Episode Thumbnail - 16:9 aspect ratio with shadow */}
-      <div className={`${isMobile ? 'w-24' : 'w-44'} aspect-video bg-muted shrink-0 overflow-hidden rounded-md shadow-md shadow-black/20`}>
+      <div className={`${isMobile ? 'w-24' : 'w-44'} aspect-video bg-muted shrink-0 overflow-hidden rounded-lg shadow-md shadow-black/20`}>
         {stillUrl ? (
           <img
             src={stillUrl}
@@ -1151,7 +1151,7 @@ const SeasonCard = memo(({ season, showTitle, onClick, missingCount = 0 }: { sea
         }
       }}
     >
-      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
+      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-lg shadow-lg shadow-black/30">
         {season.posterUrl ? (
           <img
             src={season.posterUrl}

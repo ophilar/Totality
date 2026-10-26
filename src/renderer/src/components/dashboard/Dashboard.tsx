@@ -796,7 +796,7 @@ export function Dashboard({
     return (
       <div style={style} className="px-2">
         <div
-          className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row cursor-pointer"
+          className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-lg transition-colors group/row cursor-pointer"
           onClick={() => setSelectedMediaId(item.id)}
         >
         <div className="w-10 h-14 bg-muted rounded overflow-hidden shrink-0 shadow-md shadow-black/40">
@@ -848,7 +848,7 @@ export function Dashboard({
     return (
       <div style={style} className="px-2">
         <div
-          className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row cursor-pointer"
+          className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-lg transition-colors group/row cursor-pointer"
           onClick={() => setSelectedMediaId(item.id)}
         >
         <div className="w-10 h-14 bg-muted rounded overflow-hidden shrink-0 shadow-md shadow-black/40">
@@ -905,7 +905,7 @@ export function Dashboard({
     return (
       <div style={style} className="px-2">
         <div
-          className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row cursor-pointer"
+          className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-lg transition-colors group/row cursor-pointer"
           onClick={() => setSelectedMediaId(album.id)}
         >
           <div className="w-10 h-10 bg-muted rounded overflow-hidden shrink-0 shadow-md shadow-black/40">
@@ -968,7 +968,7 @@ export function Dashboard({
         <div
           role="button"
           tabIndex={missingCount > 0 ? 0 : -1}
-          className="flex items-center gap-3 px-2 py-2 cursor-pointer hover:bg-muted/50 rounded-md transition-colors focus:outline-hidden"
+          className="flex items-center gap-3 px-2 py-2 cursor-pointer hover:bg-muted/50 rounded-lg transition-colors focus:outline-hidden"
           onClick={() => missingCount > 0 && toggleCollectionExpand(index)}
           onKeyDown={handleKeyDown}
           aria-expanded={isExpanded}
@@ -1003,7 +1003,7 @@ export function Dashboard({
             {missingMovies.map((movie, idx) => (
               <div
                 key={idx}
-                className="flex items-center gap-2.5 py-1 rounded-md hover:bg-muted/30 transition-colors group/item"
+                className="flex items-center gap-2.5 py-1 rounded-lg hover:bg-muted/30 transition-colors group/item"
               >
                 {/* Poster thumbnail */}
                 <div className="w-7 h-10 rounded overflow-hidden shrink-0 bg-muted/30">
@@ -1078,7 +1078,7 @@ export function Dashboard({
         <div
           role="button"
           tabIndex={missingCount > 0 ? 0 : -1}
-          className="flex items-center gap-3 px-2 py-2 cursor-pointer hover:bg-muted/50 rounded-md transition-colors focus:outline-hidden"
+          className="flex items-center gap-3 px-2 py-2 cursor-pointer hover:bg-muted/50 rounded-lg transition-colors focus:outline-hidden"
           onClick={() => missingCount > 0 && toggleSeriesExpand(index)}
           onKeyDown={handleKeyDown}
           aria-expanded={isExpanded}
@@ -1113,7 +1113,7 @@ export function Dashboard({
             {seasonGroups.map(group => (
               <div
                 key={group.seasonNumber}
-                className="flex items-center justify-between py-1.5 rounded-md hover:bg-muted/30 transition-colors group/item"
+                className="flex items-center justify-between py-1.5 rounded-lg hover:bg-muted/30 transition-colors group/item"
               >
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   {s.tmdb_id ? (
@@ -1201,7 +1201,7 @@ export function Dashboard({
         <div
           role="button"
           tabIndex={totalMissing > 0 ? 0 : -1}
-          className="flex items-center gap-3 px-2 py-2 cursor-pointer hover:bg-muted/50 rounded-md transition-colors focus:outline-hidden"
+          className="flex items-center gap-3 px-2 py-2 cursor-pointer hover:bg-muted/50 rounded-lg transition-colors focus:outline-hidden"
           onClick={() => totalMissing > 0 && toggleArtistExpand(index)}
           onKeyDown={handleKeyDown}
           aria-expanded={isExpanded}
@@ -1248,7 +1248,7 @@ export function Dashboard({
                     return (
                     <div
                       key={item.musicbrainz_id || `${group.prefix}-${idx}`}
-                      className="flex items-center gap-3 py-1.5 rounded-md hover:bg-muted/30 transition-colors group/item"
+                      className="flex items-center gap-3 py-1.5 rounded-lg hover:bg-muted/30 transition-colors group/item"
                     >
                       <div className="w-8 h-8 bg-muted rounded overflow-hidden shrink-0">
                         {coverUrl ? (
@@ -1356,7 +1356,7 @@ export function Dashboard({
       >
         <div className="flex-1 flex gap-4 px-4 pb-4 overflow-x-auto overflow-y-hidden">
           {[0, 1, 2].map((col) => (
-            <div key={col} className="flex-1 min-w-[280px] flex flex-col bg-sidebar-gradient rounded-2xl shadow-xl overflow-hidden">
+            <div key={col} className="flex-1 min-w-[280px] flex flex-col bg-card rounded-2xl shadow-xl overflow-hidden">
               <div className="shrink-0 p-4 border-b border-border/30">
                 <div className="h-4 w-24 bg-muted/50 rounded animate-pulse" />
               </div>
@@ -1444,7 +1444,7 @@ export function Dashboard({
           {/* Row 1: Stats strip — 3 equal cards */}
           <div className="grid grid-cols-3 gap-4">
             {/* Library Overview */}
-            <div className="bg-sidebar-gradient rounded-2xl shadow-xl p-4">
+            <div className="bg-card rounded-2xl shadow-xl p-4">
               <div className="flex items-center gap-2 mb-3">
                 <Library className="w-4 h-4 text-muted-foreground" />
                 <span className="text-caption text-muted-foreground font-medium">Library</span>
@@ -1497,7 +1497,7 @@ export function Dashboard({
             </div>
 
             {/* Quality Health */}
-            <div className="bg-sidebar-gradient rounded-2xl shadow-xl p-4">
+            <div className="bg-card rounded-2xl shadow-xl p-4">
               <div className="flex items-center gap-2 mb-3">
                 <BarChart3 className="w-4 h-4 text-muted-foreground" />
                 <span className="text-caption text-muted-foreground font-medium">Quality</span>
@@ -1602,7 +1602,7 @@ export function Dashboard({
             </div>
 
             {/* Storage & Codecs */}
-            <div className="bg-sidebar-gradient rounded-2xl shadow-xl p-4">
+            <div className="bg-card rounded-2xl shadow-xl p-4">
               <div className="flex items-center gap-2 mb-3">
                 <HardDrive className="w-4 h-4 text-muted-foreground" />
                 <span className="text-caption text-muted-foreground font-medium">Storage</span>
@@ -1657,7 +1657,7 @@ export function Dashboard({
       {!hasNothing && (
         <div className="flex-1 flex gap-4 px-4 pt-2 min-h-0">
           {/* Left: Upgrades Column */}
-          <div className="flex-1 min-w-0 flex flex-col bg-sidebar-gradient rounded-2xl shadow-xl overflow-hidden">
+          <div className="flex-1 min-w-0 flex flex-col bg-card rounded-2xl shadow-xl overflow-hidden">
             <div className="shrink-0 p-4 border-b border-border/30">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
@@ -1717,7 +1717,7 @@ export function Dashboard({
                   {hasMovies && (
                     <button
                       onClick={() => setUpgradeTab('movies')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-caption font-medium transition-colors ${
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-caption font-medium transition-colors ${
                         upgradeTab === 'movies'
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-muted/50 text-muted-foreground hover:bg-muted'
@@ -1730,7 +1730,7 @@ export function Dashboard({
                   {hasTV && (
                     <button
                       onClick={() => setUpgradeTab('tv')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-caption font-medium transition-colors ${
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-caption font-medium transition-colors ${
                         upgradeTab === 'tv'
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-muted/50 text-muted-foreground hover:bg-muted'
@@ -1743,7 +1743,7 @@ export function Dashboard({
                   {hasMusic && (
                     <button
                       onClick={() => setUpgradeTab('music')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-caption font-medium transition-colors ${
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-caption font-medium transition-colors ${
                         upgradeTab === 'music'
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-muted/50 text-muted-foreground hover:bg-muted'
@@ -1849,7 +1849,7 @@ export function Dashboard({
             const activeCount = tabs.find(t => t.key === activeTab)?.count ?? 0
 
             return (
-              <div className="flex-1 min-w-0 flex flex-col bg-sidebar-gradient rounded-2xl shadow-xl overflow-hidden">
+              <div className="flex-1 min-w-0 flex flex-col bg-card rounded-2xl shadow-xl overflow-hidden">
                 <div className="shrink-0 p-4 border-b border-border/30">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
@@ -1873,7 +1873,7 @@ export function Dashboard({
                       {tabs.map(tab => (
                         <button key={tab.key}
                           onClick={() => setCompletenessTab(tab.key)}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-caption font-medium transition-colors ${
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-caption font-medium transition-colors ${
                             activeTab === tab.key
                               ? 'bg-primary text-primary-foreground'
                               : 'bg-muted/50 text-muted-foreground hover:bg-muted'
@@ -1993,7 +1993,7 @@ export function Dashboard({
                           const adjustedPct = adjustedTotal > 0 ? Math.round(person.owned_movies / adjustedTotal * 100) : 100
                           return (
                             <div key={person.id}>
-                              <div className="group/person flex items-center gap-3 mx-2 px-2 py-2 cursor-pointer hover:bg-muted/50 rounded-md transition-colors"
+                              <div className="group/person flex items-center gap-3 mx-2 px-2 py-2 cursor-pointer hover:bg-muted/50 rounded-lg transition-colors"
                                 onClick={() => { setExpandedPersons(prev => { const next = new Set(prev); if (next.has(person.id)) next.delete(person.id); else next.add(person.id); return next }) }}>
                                 {person.profile_url ? (
                                   <img src={person.profile_url} alt="" className="w-10 h-10 rounded-full object-cover shrink-0 shadow-md shadow-black/40" />

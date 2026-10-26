@@ -156,7 +156,7 @@ export function AddSourceModal({ onClose, onSuccess }: AddSourceModalProps) {
     >
       <div ref={modalRef} className="bg-card rounded-xl shadow-xl w-full max-w-xs mx-4 max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between px-3 py-2 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-border/30 bg-card rounded-t-xl">
           <h2 id="add-source-modal-title" className="text-label font-semibold">
             {selectedProvider
               ? `Add ${providers.find(p => p.type === selectedProvider)?.name}`
@@ -185,7 +185,7 @@ export function AddSourceModal({ onClose, onSuccess }: AddSourceModalProps) {
                   ref={el => buttonRefs.current[index] = el}
                   onClick={() => setSelectedProvider(provider.type)}
                   onFocus={() => setFocusedIndex(index)}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted transition-colors text-left outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background ${focusedIndex === index ? 'bg-muted' : ''}`}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted transition-colors text-left outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background ${focusedIndex === index ? 'bg-muted' : ''}`}
                 >
                   <div className={`w-6 h-6 ${provider.color} rounded flex items-center justify-center text-white`}>
                     {provider.type === 'local' ? (

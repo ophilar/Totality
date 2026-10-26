@@ -289,7 +289,7 @@ export function TopBar({
   return (
     <header
       id="top-bar"
-      className="fixed top-4 left-4 right-4 z-100 bg-black text-white rounded-2xl shadow-xl px-4 py-2"
+      className="fixed top-4 left-4 right-4 z-100 bg-black/72 backdrop-blur-xl text-white rounded-2xl shadow-xl px-4 py-2"
       role="banner"
       aria-label="Main navigation"
     >
@@ -567,7 +567,7 @@ export function TopBar({
               <button
                 onClick={canGoBack && onBack ? onBack : undefined}
                 disabled={!canGoBack}
-                className={`p-1.5 rounded-md transition-colors shrink-0 ${
+                className={`p-1.5 rounded-lg transition-colors shrink-0 ${
                   canGoBack
                     ? 'text-white hover:bg-white/10 cursor-pointer'
                     : 'text-neutral-600 cursor-default'
@@ -579,7 +579,7 @@ export function TopBar({
               <button
                 onClick={canGoForward && onForward ? onForward : undefined}
                 disabled={!canGoForward}
-                className={`p-1.5 rounded-md transition-colors shrink-0 ${
+                className={`p-1.5 rounded-lg transition-colors shrink-0 ${
                   canGoForward
                     ? 'text-white hover:bg-white/10 cursor-pointer'
                     : 'text-neutral-600 cursor-default'
@@ -600,7 +600,7 @@ export function TopBar({
               {/* Home Button */}
               <button
                 onClick={onNavigateHome}
-                className={`px-3 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                className={`px-3 py-2 rounded-lg text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                   isDashboard
                     ? 'bg-white text-black'
                     : 'text-white hover:bg-white/10'
@@ -621,7 +621,7 @@ export function TopBar({
               {hasMovies && (
                 <button
                   onClick={() => onNavigateToLibrary('movies')}
-                  className={`px-4 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-lg text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     !isDashboard && libraryTab === 'movies'
                       ? 'bg-white text-black'
                       : 'text-white hover:bg-white/10'
@@ -638,7 +638,7 @@ export function TopBar({
               {hasTV && (
                 <button
                   onClick={() => onNavigateToLibrary('tv')}
-                  className={`px-4 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-lg text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     !isDashboard && libraryTab === 'tv'
                       ? 'bg-white text-black'
                       : 'text-white hover:bg-white/10'
@@ -655,7 +655,7 @@ export function TopBar({
               {hasMusic && (
                 <button
                   onClick={() => onNavigateToLibrary('music')}
-                  className={`px-4 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-lg text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     !isDashboard && libraryTab === 'music'
                       ? 'bg-white text-black'
                       : 'text-white hover:bg-white/10'
@@ -685,7 +685,7 @@ export function TopBar({
           <Tooltip label="AI Chat">
             <button
               onClick={onToggleChat}
-              className={`p-2 rounded-md transition-colors ${
+              className={`p-2 rounded-lg transition-colors ${
                 showChatPanel
                   ? 'bg-white text-black'
                   : 'text-white hover:bg-white/10'
@@ -701,7 +701,7 @@ export function TopBar({
           <Tooltip label={!tmdbApiKeySet ? 'Completeness — TMDB key needed' : 'Completeness'}>
             <button
               onClick={onToggleCompleteness}
-              className={`relative p-2 rounded-md transition-colors ${
+              className={`relative p-2 rounded-lg transition-colors ${
                 showCompletenessPanel
                   ? 'bg-white text-black'
                   : 'text-white hover:bg-white/10'
@@ -723,7 +723,7 @@ export function TopBar({
           <Tooltip label="Tag Sync">
             <button
               onClick={onToggleMoodSync}
-              className={`relative p-2 rounded-md transition-colors ${
+              className={`relative p-2 rounded-lg transition-colors ${
                 showMoodSyncPanel
                   ? 'bg-white text-black'
                   : 'text-white hover:bg-white/10'
@@ -739,7 +739,7 @@ export function TopBar({
           <Tooltip label="Wishlist">
             <button
               onClick={onToggleWishlist}
-              className={`relative p-2 rounded-md transition-colors ${
+              className={`relative p-2 rounded-lg transition-colors ${
                 showWishlistPanel
                   ? 'bg-white text-black'
                   : 'text-white hover:bg-white/10'
@@ -760,7 +760,7 @@ export function TopBar({
           <Tooltip label="Task Queue">
             <button
               onClick={onToggleTaskQueue}
-              className={`relative p-2 rounded-md transition-colors ${
+              className={`relative p-2 rounded-lg transition-colors ${
                 showTaskQueuePanel
                   ? 'bg-white text-black'
                   : 'text-white hover:bg-white/10'
@@ -788,7 +788,7 @@ export function TopBar({
           <Tooltip label="Settings">
             <button
               onClick={onOpenSettings}
-              className="p-2 rounded-md transition-colors text-white hover:bg-white/10"
+              className="p-2 rounded-lg transition-colors text-white hover:bg-white/10"
               aria-label="Open settings"
             >
               <Settings className="w-5 h-5" />

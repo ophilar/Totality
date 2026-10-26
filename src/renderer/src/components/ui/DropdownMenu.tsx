@@ -12,7 +12,7 @@ interface DropdownMenuProps {
  */
 export function DropdownMenu({ children, align = 'right', className = '' }: DropdownMenuProps) {
   return (
-    <div className={`absolute top-8 ${align === 'right' ? 'right-0' : 'left-0'} bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-20 ${className}`}>
+    <div className={`absolute top-8 ${align === 'right' ? 'right-0' : 'left-0'} bg-card border border-border rounded-lg shadow-lg py-1 min-w-[160px] z-20 ${className}`}>
       {children}
     </div>
   )

@@ -278,7 +278,7 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
                     <button
                       key={v.id}
                       onClick={() => setSelectedVersionId(v.id)}
-                      className={`shrink-0 px-3 min-h-[36px] text-caption font-medium rounded-md transition-colors flex items-center gap-1 ${
+                      className={`shrink-0 px-3 min-h-[36px] text-caption font-medium rounded-lg transition-colors flex items-center gap-1 ${
                         isSelected
                           ? 'bg-white text-black'
                           : 'bg-white/10 text-white/70'

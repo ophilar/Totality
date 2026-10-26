@@ -120,7 +120,7 @@ export function NotificationBell() {
       <button
         ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
-        className={`relative p-2 rounded-md transition-colors ${
+        className={`relative p-2 rounded-lg transition-colors ${
           isOpen ? 'bg-white text-black' : 'text-white hover:bg-white/10'
         }`}
         aria-label="Notifications"

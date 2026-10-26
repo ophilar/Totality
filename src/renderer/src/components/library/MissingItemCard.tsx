@@ -48,7 +48,7 @@ export const MissingItemCard = memo(function MissingItemCard({
         }
       }}
     >
-      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
+      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-lg shadow-lg shadow-black/30">
         {/* Grayscale poster or placeholder */}
         {posterUrl ? (
           <img

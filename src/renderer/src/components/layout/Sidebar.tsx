@@ -370,7 +370,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
   // Unified sidebar with conditional collapsed/expanded content
   return (
     <aside
-      className={`fixed left-4 top-[76px] bottom-4 ${isCollapsed ? 'w-16' : 'w-64'} bg-sidebar-gradient rounded-2xl shadow-xl z-40 flex flex-col overflow-hidden transition-[width] duration-300 ease-out will-change-[width]`}
+      className={`fixed left-4 top-[76px] bottom-4 ${isCollapsed ? 'w-16' : 'w-64'} bg-card rounded-2xl shadow-xl z-40 flex flex-col overflow-hidden transition-[width] duration-300 ease-out will-change-[width]`}
       role="navigation"
       aria-label="Media sources"
     >
@@ -383,7 +383,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
         )}
         <button
           onClick={onToggleCollapse}
-          className={`rounded-md text-muted-foreground hover:text-foreground transition-colors shrink-0 ${isCollapsed ? 'w-12 h-10 rounded-lg flex items-center justify-center hover:bg-white/10' : 'p-2 hover:bg-muted/50'}`}
+          className={`rounded-lg text-muted-foreground hover:text-foreground transition-colors shrink-0 ${isCollapsed ? 'w-12 h-10 rounded-lg flex items-center justify-center hover:bg-white/10' : 'p-2 hover:bg-muted/50'}`}
           title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
@@ -416,7 +416,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
                 title={source.display_name}
                 aria-label={`Select ${source.display_name}`}
               >
-                <div className={`w-8 h-8 ${color} rounded-md flex items-center justify-center`}>
+                <div className={`w-8 h-8 ${color} rounded-lg flex items-center justify-center`}>
                   {source.source_type === 'local' ? (
                     <HardDrive className="w-4 h-4 text-white" />
                   ) : (
@@ -459,7 +459,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
             </p>
             <button
               onClick={() => setShowAddModal(true)}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-md text-label hover:bg-primary/90 transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-label hover:bg-primary/90 transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
               aria-label="Add media source"
             >
               <Plus className="w-4 h-4" aria-hidden="true" />
@@ -521,7 +521,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
           <button
             ref={addSourceButtonRef}
             onClick={() => setShowAddModal(true)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-caption text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-caption text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
             aria-label="Add media source"
           >
             <Plus className="w-3.5 h-3.5" aria-hidden="true" />
@@ -537,7 +537,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
         <button
           ref={aboutButtonRef}
           onClick={onOpenAbout}
-          className="w-full flex items-center justify-center gap-2 text-caption text-muted-foreground hover:text-foreground transition-colors py-2 rounded-md focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
+          className="w-full flex items-center justify-center gap-2 text-caption text-muted-foreground hover:text-foreground transition-colors py-2 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
           aria-label="About Totality"
         >
           <Info className={isCollapsed ? 'w-5 h-5' : 'w-3.5 h-3.5'} aria-hidden="true" />
@@ -724,13 +724,13 @@ function SourceItem({
   const ChevronIcon = isExpanded ? ChevronDown : ChevronRight
 
   return (
-    <div className="rounded-md overflow-hidden">
+    <div className="rounded-lg overflow-hidden">
       <button
         ref={buttonRef}
         onClick={onSelect}
         aria-label={`Select ${source.display_name} media source`}
         aria-expanded={isExpanded}
-        className={`w-full flex items-center gap-3 px-4 py-3 rounded-md font-medium transition-colors focus:outline-hidden ${
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors focus:outline-hidden ${
           isActive ? 'bg-primary text-primary-foreground' : 'hover:bg-muted/50 text-foreground'
         }`}
       >
