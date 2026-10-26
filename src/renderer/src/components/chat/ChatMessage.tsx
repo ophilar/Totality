@@ -52,7 +52,7 @@ export function ChatMessage({ message, activeTools }: ChatMessageProps) {
       {/* Avatar */}
       <div
         className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${
-          isUser ? 'bg-primary/20 text-primary' : 'bg-accent/20 text-accent-foreground'
+          isUser ? 'bg-muted text-foreground' : 'bg-muted text-muted-foreground'
         }`}
       >
         {isUser ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
@@ -233,7 +233,7 @@ function InlineMarkdown({ text }: { text: string }) {
     if (linkMatch) {
       parts.push(
         <a key={key++} href={linkMatch[2]} target="_blank" rel="noopener noreferrer"
-          className="text-primary underline hover:text-primary/80 cursor-pointer"
+          className="text-muted-foreground underline hover:text-foreground cursor-pointer transition-colors"
           onClick={(e) => { e.preventDefault(); window.electronAPI.openExternal(linkMatch[2]) }}>
           {linkMatch[1]}
         </a>,

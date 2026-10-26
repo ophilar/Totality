@@ -102,7 +102,7 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
       onClick={onClose}
     />
     <aside
-      className={`fixed top-[76px] bottom-4 right-4 w-80 bg-sidebar-gradient rounded-2xl shadow-xl z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
+      className={`fixed top-[76px] bottom-4 right-4 w-80 bg-card rounded-2xl shadow-xl border border-border z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
         isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
       role="complementary"
@@ -173,15 +173,12 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
                         setInput(suggestion)
                         setTimeout(() => inputRef.current?.focus(), 0)
                       }}
-                      className="w-full text-left px-3 py-2 text-caption bg-muted/30 hover:bg-muted/50 rounded-lg transition-colors text-muted-foreground hover:text-foreground"
+                      className="w-full text-left px-3 py-2 text-caption rounded-lg transition-colors text-muted-foreground hover:text-foreground hover:bg-muted/30"
                     >
                       {suggestion}
                     </button>
                   ))}
                 </div>
-                <p className="text-caption text-muted-foreground/50 mt-4">
-                  Messages are processed by Google Gemini using your API key. Chat history is not saved to disk.
-                </p>
               </div>
             )}
 
@@ -198,11 +195,9 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
 
           {/* Error display */}
           {error && (
-            <div className="px-3 pb-2">
-              <div className="flex items-center gap-2 px-3 py-2 text-caption bg-destructive/10 text-destructive rounded-lg">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">{error}</span>
-              </div>
+            <div className="px-3 pb-2 flex items-center gap-2 text-caption text-destructive">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{error}</span>
             </div>
           )}
 
