@@ -1,4 +1,5 @@
 import { IPC_CHANNELS } from '../../shared/ipcChannels'
+import { SETTING_KEYS } from '../../shared/settingKeys'
 import { getErrorMessage } from './utils/errorUtils'
 /**
  * TaskQueueService - Manages background task queue for scans and analysis
@@ -243,6 +244,7 @@ export class TaskQueueService {
   }
 
   async stopForShutdown(): Promise<void> {
+    const queueWasPaused = this.isPaused
     this.shuttingDown = true
     const interruptedTask = this.currentTask ? structuredClone(this.currentTask) : undefined
     this.pauseQueue()
@@ -251,6 +253,7 @@ export class TaskQueueService {
     if (interruptedTask && this.completedTasks.find(task => task.id === interruptedTask.id)?.status === 'interrupted') {
       this.queue.unshift({ ...interruptedTask, status: 'queued', progress: undefined, completedAt: undefined, error: undefined })
     }
+    this.isPaused = queueWasPaused
   }
 
   /**
@@ -457,6 +460,7 @@ export class TaskQueueService {
     const now = new Date().toISOString()
     try {
       const db = getDatabase()
+      db.config.setSetting(SETTING_KEYS.task_queue_paused_on_shutdown, String(this.isPaused))
 
       // Build the list of tasks to restore on next startup:
       // interrupted running task first, then remaining queued tasks (in order)
@@ -513,6 +517,8 @@ export class TaskQueueService {
   restorePendingQueue(): void {
     try {
       const db = getDatabase()
+      this.isPaused = db.config.getSetting(SETTING_KEYS.task_queue_paused_on_shutdown) === 'true'
+      db.config.deleteSetting(SETTING_KEYS.task_queue_paused_on_shutdown)
       const pending = db.getPendingTasks()
       if (pending.length === 0) return
       const restoredTasks: QueuedTask[] = []
@@ -552,7 +558,7 @@ export class TaskQueueService {
       const restored = restoredTasks.length
       if (restored > 0) {
         this.emitQueueUpdate()
-        this.processNext()
+        if (!this.isPaused) this.processNext()
       }
 
       if (restored > 0) {
