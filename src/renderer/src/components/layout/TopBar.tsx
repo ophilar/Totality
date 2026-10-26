@@ -300,7 +300,7 @@ export function TopBar({
           <img src={logoImage} alt="Totality" className="h-8 shrink-0" />
 
           {/* Search */}
-          <div ref={searchContainerRef} className="relative shrink min-w-24 max-w-80 w-56 focus-within:w-80 transition-[width] duration-300 ease-out">
+          <div ref={searchContainerRef} className="relative shrink min-w-24 max-w-80 w-80">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/50 z-10" />
             <input
               ref={searchInputRef}
@@ -310,7 +310,7 @@ export function TopBar({
               onChange={(e) => handleSearchInputChange(e.target.value)}
               onFocus={() => setShowSearchResults(true)}
               onKeyDown={handleSearchKeyDown}
-              className="w-full pl-10 pr-8 py-2 bg-white/10 border border-white/15 rounded-full text-label text-white placeholder:text-white/40 focus:outline-hidden focus:ring-2 focus:ring-white/30 focus:border-white/25 transition-colors duration-300"
+              className="w-full pl-10 pr-8 py-2 bg-white/10 border border-white/15 rounded-lg text-label text-white placeholder:text-white/40 focus:outline-hidden focus:ring-2 focus:ring-white/30 focus:border-white/25 transition-colors"
               aria-label="Search all libraries"
             />
             {searchInput && (
@@ -329,7 +329,7 @@ export function TopBar({
 
             {/* Search Results Dropdown */}
             {showSearchResults && searchInput.length >= 2 && (
-              <div className="absolute top-full left-0 mt-2 w-96 bg-popover text-popover-foreground border border-border rounded-lg shadow-2xl z-9999 max-h-[400px] overflow-y-auto overflow-x-hidden">
+              <div className="absolute top-full left-0 mt-2 w-96 bg-popover text-popover-foreground border border-border rounded-2xl shadow-xl z-50 max-h-[400px] overflow-y-auto overflow-x-hidden">
                 {isSearching && (
                   <div className="px-3 py-4 text-label text-muted-foreground text-center">Searching...</div>
                 )}
@@ -354,7 +354,7 @@ export function TopBar({
                               key={`movie-${movie.id}`}
                               onClick={() => handleResultClick('movie', movie.id)}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
-                                searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
+                                searchResultIndex === flatIndex ? 'bg-muted' : 'hover:bg-muted/50'
                               }`}
                             >
                               <div className="w-8 h-12 bg-muted rounded overflow-hidden shrink-0">
@@ -390,7 +390,7 @@ export function TopBar({
                               key={`tv-${show.id}`}
                               onClick={() => handleResultClick('tv', show.id, { title: show.title })}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
-                                searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
+                                searchResultIndex === flatIndex ? 'bg-muted' : 'hover:bg-muted/50'
                               }`}
                             >
                               <div className="w-8 h-12 bg-muted rounded overflow-hidden shrink-0">
@@ -423,7 +423,7 @@ export function TopBar({
                               key={`episode-${episode.id}`}
                               onClick={() => handleResultClick('episode', episode.id, { series_title: episode.series_title, season_number: episode.season_number })}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
-                                searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
+                                searchResultIndex === flatIndex ? 'bg-muted' : 'hover:bg-muted/50'
                               }`}
                             >
                               <div className="w-8 h-12 bg-muted rounded overflow-hidden shrink-0">
@@ -461,7 +461,7 @@ export function TopBar({
                               key={`artist-${artist.id}`}
                               onClick={() => handleResultClick('artist', artist.id, { name: artist.name })}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
-                                searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
+                                searchResultIndex === flatIndex ? 'bg-muted' : 'hover:bg-muted/50'
                               }`}
                             >
                               <div className="w-10 h-10 bg-muted rounded-full overflow-hidden shrink-0">
@@ -494,7 +494,7 @@ export function TopBar({
                               key={`album-${album.id}`}
                               onClick={() => handleResultClick('album', album.id)}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
-                                searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
+                                searchResultIndex === flatIndex ? 'bg-muted' : 'hover:bg-muted/50'
                               }`}
                             >
                               <div className="w-10 h-10 bg-muted rounded overflow-hidden shrink-0">
@@ -532,7 +532,7 @@ export function TopBar({
                               key={`track-${track.id}`}
                               onClick={() => handleResultClick('track', track.id, { album_id: track.album_id })}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
-                                searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
+                                searchResultIndex === flatIndex ? 'bg-muted' : 'hover:bg-muted/50'
                               }`}
                             >
                               <div className="w-10 h-10 bg-muted rounded overflow-hidden shrink-0">
