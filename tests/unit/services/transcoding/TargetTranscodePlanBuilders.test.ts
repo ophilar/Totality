@@ -118,4 +118,30 @@ describe('target conversion command parity', () => {
       streamSelection: { audio: 'all', subtitle: 'all' },
     })).toThrow(/Subtitle stream 2 \(ass\).*Test playback target.*mp4.*remove it with the subtitle policy or choose a target profile\/container that supports ass/)
   })
+
+  it('preserves PGS subtitles when the target profile explicitly supports PGS', () => {
+    const source = {
+      ...analysis,
+      durationMs: 3_600_000,
+      fileSizeBytes: 1_000_000_000,
+      video: { ...analysis.video!, frameRate: 24 },
+      subtitleTracks: [{ index: 2, codec: 'hdmv_pgs_subtitle', language: 'eng', title: 'English', isForced: false }],
+    }
+    const profile: PlaybackTargetProfile = {
+      id: 'target', name: 'Test playback target', createdAt: '', updatedAt: '',
+      definition: {
+        containers: ['matroska'],
+        video: { codecs: ['hevc'], profiles: ['Main 10'], levels: [41], maxWidth: 3840, maxHeight: 2160, maxFrameRate: 60, bitDepths: [10] },
+        hdr: { formats: ['SDR'], fallbackRequired: false },
+        audio: { codecs: ['truehd'], maxChannels: 8, objectAudio: true, outputPath: 'passthrough' },
+        subtitles: { formats: ['pgs'], embedded: true, external: false, burnIn: false },
+        network: { sustainableBitrate: 100_000_000 },
+      },
+    }
+
+    expect(() => buildTargetTranscodePlan(source, profile, {
+      targetCodec: 'hevc', targetContainer: 'mkv', maxOutputBytes: 1_000_000_000,
+      streamSelection: { audio: 'all', subtitle: 'all' },
+    })).not.toThrow()
+  })
 })

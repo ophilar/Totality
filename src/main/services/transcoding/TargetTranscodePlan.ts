@@ -5,7 +5,7 @@ import type { PlaybackTargetProfile } from '@main/types/playbackTarget'
 import { getPlaybackTargetContainers } from '@main/types/playbackTarget'
 import { buildStreamSelectionPlan } from './StreamSelectionPlan'
 import { APP_CONFIG } from '@main/config'
-import { normalizeAudioCodec, normalizeVideoCodec } from '../MediaNormalizer'
+import { normalizeAudioCodec, normalizeSubtitleFormat, normalizeVideoCodec } from '../MediaNormalizer'
 
 // Main-tier bitrate limits in bits/s: ITU-T H.265 Annex A and AV1 Annex A.
 const MAIN_TIER_BITRATE_LIMITS: Record<string, Record<number, number>> = {
@@ -74,7 +74,7 @@ export function buildTargetTranscodePlan(analysis: FileAnalysisResult, profile: 
     return { sourceIndex: track.index, codec, bitrateKbps }
   })
   for (const track of analysis.subtitleTracks.filter(track => streams.subtitleStreamIndexes.includes(track.index))) {
-    const codec = track.codec === 'subrip' ? 'srt' : track.codec
+    const codec = normalizeSubtitleFormat(track.codec)
     if (!definition.subtitles.embedded || !definition.subtitles.formats.includes(codec) || (container === 'mp4' && codec !== 'mov_text')) {
       throw new Error(`Subtitle stream ${track.index} (${codec}) is incompatible with ${profile.name} in ${container}; remove it with the subtitle policy or choose a target profile/container that supports ${codec}.`)
     }
