@@ -1386,7 +1386,7 @@ export function MediaBrowser({
                           onClick={() => handleSearchResultClick('movie', movie.id)}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left cursor-pointer focus:outline-hidden ${
                             searchResultIndex === flatIndex
-                              ? 'bg-primary/20 ring-2 ring-inset ring-primary'
+                              ? 'bg-muted ring-2 ring-inset ring-foreground/30'
                               : 'hover:bg-muted/50'
                           }`}
                         >
@@ -1402,7 +1402,7 @@ export function MediaBrowser({
                             {movie.year && <div className="text-caption text-muted-foreground">{movie.year}</div>}
                           </div>
                           {movie.needs_upgrade && (
-                            <CircleFadingArrowUp className="w-5 h-5 text-red-500 shrink-0" aria-label="Upgrade recommended" />
+                            <CircleFadingArrowUp className="w-5 h-5 text-destructive shrink-0" aria-label="Upgrade recommended" />
                           )}
                         </div>
                       )
@@ -1428,7 +1428,7 @@ export function MediaBrowser({
                           onClick={() => handleSearchResultClick('tv', show.id)}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left cursor-pointer focus:outline-hidden ${
                             searchResultIndex === flatIndex
-                              ? 'bg-primary/20 ring-2 ring-inset ring-primary'
+                              ? 'bg-muted ring-2 ring-inset ring-foreground/30'
                               : 'hover:bg-muted/50'
                           }`}
                         >
@@ -1466,7 +1466,7 @@ export function MediaBrowser({
                           onClick={() => handleSearchResultClick('episode', episode.id, { series_title: episode.series_title })}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left cursor-pointer focus:outline-hidden ${
                             searchResultIndex === flatIndex
-                              ? 'bg-primary/20 ring-2 ring-inset ring-primary'
+                              ? 'bg-muted ring-2 ring-inset ring-foreground/30'
                               : 'hover:bg-muted/50'
                           }`}
                         >
@@ -1484,7 +1484,7 @@ export function MediaBrowser({
                             </div>
                           </div>
                           {episode.needs_upgrade && (
-                            <CircleFadingArrowUp className="w-4 h-4 text-red-500 shrink-0" aria-label="Upgrade recommended" />
+                            <CircleFadingArrowUp className="w-4 h-4 text-destructive shrink-0" aria-label="Upgrade recommended" />
                           )}
                         </div>
                       )
@@ -1510,7 +1510,7 @@ export function MediaBrowser({
                           onClick={() => handleSearchResultClick('artist', artist.id)}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left cursor-pointer focus:outline-hidden ${
                             searchResultIndex === flatIndex
-                              ? 'bg-primary/20 ring-2 ring-inset ring-primary'
+                              ? 'bg-muted ring-2 ring-inset ring-foreground/30'
                               : 'hover:bg-muted/50'
                           }`}
                         >
@@ -1548,7 +1548,7 @@ export function MediaBrowser({
                           onClick={() => handleSearchResultClick('album', album.id)}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left cursor-pointer focus:outline-hidden ${
                             searchResultIndex === flatIndex
-                              ? 'bg-primary/20 ring-2 ring-inset ring-primary'
+                              ? 'bg-muted ring-2 ring-inset ring-foreground/30'
                               : 'hover:bg-muted/50'
                           }`}
                         >
@@ -1566,7 +1566,7 @@ export function MediaBrowser({
                             </div>
                           </div>
                           {album.needs_upgrade && (
-                            <CircleFadingArrowUp className="w-5 h-5 text-red-500 shrink-0" aria-label="Upgrade recommended" />
+                            <CircleFadingArrowUp className="w-5 h-5 text-destructive shrink-0" aria-label="Upgrade recommended" />
                           )}
                         </div>
                       )
@@ -1592,7 +1592,7 @@ export function MediaBrowser({
                           onClick={() => handleSearchResultClick('track', track.id, { album_id: track.album_id })}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left cursor-pointer focus:outline-hidden ${
                             searchResultIndex === flatIndex
-                              ? 'bg-primary/20 ring-2 ring-inset ring-primary'
+                              ? 'bg-muted ring-2 ring-inset ring-foreground/30'
                               : 'hover:bg-muted/50'
                           }`}
                         >
@@ -1610,7 +1610,7 @@ export function MediaBrowser({
                             </div>
                           </div>
                           {track.needs_upgrade && (
-                            <CircleFadingArrowUp className="w-5 h-5 text-red-500 shrink-0" aria-label="Upgrade recommended" />
+                            <CircleFadingArrowUp className="w-5 h-5 text-destructive shrink-0" aria-label="Upgrade recommended" />
                           )}
                         </div>
                       )
@@ -1667,7 +1667,7 @@ export function MediaBrowser({
                   disabled={!hasMovies}
                   className={`px-4 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     view === 'movies'
-                      ? 'bg-primary text-primary-foreground'
+                      ? 'bg-foreground text-background'
                       : 'bg-card text-muted-foreground hover:bg-muted'
                   } disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-muted/50`}
                   role="tab"
@@ -1694,7 +1694,7 @@ export function MediaBrowser({
                   disabled={!hasTV}
                   className={`px-4 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     view === 'tv'
-                      ? 'bg-primary text-primary-foreground'
+                      ? 'bg-foreground text-background'
                       : 'bg-card text-muted-foreground hover:bg-muted'
                   } disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-muted/50`}
                   role="tab"
@@ -1721,7 +1721,7 @@ export function MediaBrowser({
                   disabled={!hasMusic}
                   className={`px-4 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     view === 'music'
-                      ? 'bg-primary text-primary-foreground'
+                      ? 'bg-foreground text-background'
                       : 'bg-card text-muted-foreground hover:bg-muted'
                   } disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-muted/50`}
                   role="tab"
