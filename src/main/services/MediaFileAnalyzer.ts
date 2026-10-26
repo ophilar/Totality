@@ -172,6 +172,13 @@ export interface EmbeddedMetadataTags {
 }
 
 export interface FileAnalysisResult {
+  optimizationMeasurement?: {
+    cacheKey: string
+    qualityProfile: import('./MeasuredOptimizationPolicy').OptimizationQualityProfile
+    sourceSize: number
+    sourceMtimeMs: number
+    samplingRole: 'measured' | 'projected'
+  }
   sourceFingerprint?: { size: number; mtimeMs: number; sha256: string }
   success: boolean
   error?: string

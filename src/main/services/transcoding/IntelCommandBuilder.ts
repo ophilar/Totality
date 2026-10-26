@@ -30,7 +30,6 @@ export class IntelCommandBuilder implements ITranscodeCommandBuilder {
       '-c:v', codec,
       '-preset', options.preset || APP_CONFIG.transcoding.defaultIntelPreset,
       '-global_quality', quality,
-      '-look_ahead', '1'
     ]
 
     appendStreamMappingArgs(args, analysis, options)

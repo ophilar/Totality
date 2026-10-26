@@ -28,6 +28,12 @@ export interface TargetTranscodePlan {
   changes: string[]
 }
 
+export function validateTargetTranscodeBitrate(plan: TargetTranscodePlan, analysis: FileAnalysisResult): void {
+  const peakBitrate = analysis.deepAnalysis?.peakBitrate
+  if (peakBitrate === undefined) throw new Error('Measured peak video bitrate is required to verify the playback limit')
+  if (peakBitrate * 1000 > plan.maximumVideoBitrate) throw new Error(`Measured peak video bitrate ${peakBitrate * 1000} bits/s exceeds the playback limit of ${plan.maximumVideoBitrate} bits/s`)
+}
+
 export function buildTargetTranscodePlan(analysis: FileAnalysisResult, profile: PlaybackTargetProfile, options: TranscodeOptions): TargetTranscodePlan {
   const video = analysis.video!
   const definition = profile.definition
@@ -93,13 +99,13 @@ export function applyTargetTranscodePlan(args: string[], options: { targetConver
   const plan = options.targetConversion as TargetTranscodePlan | undefined
   if (!plan) return
   // Target conversion uses software decoding before explicit filter/encoder transfers.
-  for (const flag of ['-hwaccel', '-hwaccel_output_format', '-extra_hw_frames', '-init_hw_device', '-filter_hw_device', '-vf', '-maxrate', '-bufsize', '-pix_fmt']) {
+  for (const flag of ['-hwaccel', '-hwaccel_output_format', '-hwaccel_device', '-extra_hw_frames', ...(options.encoder?.startsWith('qsv') ? [] : ['-init_hw_device']), '-filter_hw_device', '-vf', '-maxrate', '-bufsize', '-pix_fmt']) {
     let index: number
     while ((index = args.indexOf(flag)) >= 0) args.splice(index, 2)
   }
   args.unshift(...plan.inputArgs)
   const bufferSize = Math.min(plan.maximumVideoBitrate * 2, MAIN_TIER_BITRATE_LIMITS[options.targetCodec!][plan.level])
-  args.splice(args.length - 1, 0, '-vf', plan.videoFilter, '-pix_fmt', plan.bitDepth === 10 ? 'yuv420p10le' : 'yuv420p', '-maxrate', String(plan.maximumVideoBitrate), '-bufsize', String(bufferSize))
+  args.splice(args.length - 1, 0, '-vf', plan.videoFilter, '-pix_fmt', plan.bitDepth === 10 ? 'yuv420p10le' : 'yuv420p', ...(options.encoder?.startsWith('qsv') ? [] : ['-maxrate', String(plan.maximumVideoBitrate), '-bufsize', String(bufferSize)]))
   if (options.targetCodec === 'hevc') args.splice(args.length - 1, 0, '-profile:v', plan.profile === 'Main 10' ? 'main10' : 'main')
   const encoderLevel = options.targetCodec === 'av1' && options.encoder?.startsWith('nvenc') ? (Math.floor(plan.level / 10) - 2) * 4 + plan.level % 10 : options.encoder?.startsWith('qsv') || options.encoder === 'svt_av1' ? plan.level : plan.level / 10
   args.splice(args.length - 1, 0, '-level:v', String(encoderLevel))

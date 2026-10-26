@@ -2,9 +2,18 @@ import { describe, expect, it } from 'vitest'
 import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
 import type { PlaybackTargetProfile } from '@main/types/playbackTarget'
 import type { TranscodeOptions } from '@main/services/TranscodingService'
-import { buildTargetTranscodePlan } from '@main/services/transcoding/TargetTranscodePlan'
+import { buildTargetTranscodePlan, validateTargetTranscodeBitrate } from '@main/services/transcoding/TargetTranscodePlan'
 
 describe('buildTargetTranscodePlan audio compatibility', () => {
+  it('rejects measured output peaks above the target ceiling', () => {
+    const plan = { maximumVideoBitrate: 8_000_000 } as Parameters<typeof validateTargetTranscodeBitrate>[0]
+    const output = { deepAnalysis: { peakBitrate: 8_001 } } as FileAnalysisResult
+    expect(() => validateTargetTranscodeBitrate(plan, output)).toThrow('exceeds the playback limit')
+    output.deepAnalysis!.peakBitrate = 8_000
+    expect(() => validateTargetTranscodeBitrate(plan, output)).not.toThrow()
+    delete output.deepAnalysis!.peakBitrate
+    expect(() => validateTargetTranscodeBitrate(plan, output)).toThrow('Measured peak video bitrate is required')
+  })
   it('preserves DTS-HD MA when the target profile supports the normalized codec', () => {
     const analysis: FileAnalysisResult = {
       success: true,

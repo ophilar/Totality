@@ -61,8 +61,17 @@ describe('target conversion command parity', () => {
 
     expect(args.filter(argument => argument === '-vf')).toHaveLength(1)
     expect(args).toContain(targetConversion.videoFilter)
-    expect(args).toContain('-maxrate')
-    expect(args).toContain(String(targetConversion.maximumVideoBitrate))
+    if (encoder.startsWith('qsv')) {
+      expect(args).not.toContain('-maxrate')
+      expect(args).not.toContain('-bufsize')
+      expect(args).not.toContain('-rc_mode')
+      expect(args).not.toContain('-hwaccel_device')
+      expect(args).toContain('-global_quality')
+      expect(args).toContain('-init_hw_device')
+    } else {
+      expect(args).toContain('-maxrate')
+      expect(args).toContain(String(targetConversion.maximumVideoBitrate))
+    }
     expect(args).toContain('-profile:v')
     expect(args).toContain('main10')
     expect(args).toContain('-c:a:0')
