@@ -414,7 +414,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
 
     // Low quality version — regardless of tier
     if (v.tier_quality === 'LOW') {
-      return { type: 'low-quality', label: 'Low quality', color: 'bg-yellow-500/20 text-yellow-400' }
+      return { type: 'low-quality', label: 'Low quality', color: 'bg-amber-500/20 text-amber-400' }
     }
 
     // Redundant: same edition name and best version is same or higher tier
@@ -675,51 +675,50 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
             </div>
           </div>
         ) : (
-          // ── Desktop: Hero artwork layout (inspired by mobile) ──
+          // ── Desktop: backdrop bleed in top-right, title + metadata left ──
           <div className="shrink-0 rounded-t-xl overflow-hidden">
-            {/* Hero artwork with gradient fade */}
-            <div className="relative">
+            <div className="relative px-5 pt-4 pb-3">
+              {/* Backdrop bleed — top-right atmospheric image */}
               {(() => {
                 const heroSrc = media.type === 'episode'
                   ? (media.episode_thumb_url || backdropUrl || media.poster_url)
                   : (backdropUrl || media.poster_url)
-                const isWide = !!(media.type === 'episode' ? (media.episode_thumb_url || backdropUrl) : backdropUrl)
                 return heroSrc ? (
-                  <img
-                    src={heroSrc}
-                    alt=""
-                    className={`w-full object-cover ${isWide ? 'aspect-video' : 'aspect-[3/2]'}`}
-                    onError={(e) => { e.currentTarget.style.display = 'none' }}
-                  />
+                  <>
+                    <img
+                      src={heroSrc}
+                      alt=""
+                      className="absolute top-0 right-0 w-[55%] h-full object-cover object-center"
+                      onError={(e) => { e.currentTarget.style.display = 'none' }}
+                    />
+                    <div className="absolute top-0 right-0 w-[55%] h-full bg-gradient-to-r from-card via-card/80 to-transparent" />
+                    <div className="absolute top-0 right-0 w-[55%] h-full bg-gradient-to-t from-card via-transparent to-transparent" />
+                  </>
                 ) : null
               })()}
-              {/* Gradient fade to card background */}
-              <div className="absolute inset-0 bg-gradient-to-t from-card via-card/60 to-black/20" />
 
-              {/* Close button — top right */}
+              {/* Close button — top right, above backdrop */}
               <button
                 onClick={onClose}
-                className="absolute top-3 right-3 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm hover:bg-white/20 transition-colors z-10"
+                className="absolute top-2 right-2 z-10 min-h-[44px] min-w-[44px] flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Close"
               >
                 <X className="w-5 h-5" />
               </button>
 
-              {/* Title overlaid at bottom of artwork */}
-              <div className="absolute bottom-0 left-0 right-0 px-5 pb-4">
-                <h2 className="text-2xl font-semibold text-foreground leading-tight tracking-tight">{displayTitle}</h2>
+              {/* Title + metadata — left side, above backdrop */}
+              <div className="relative z-[1]">
+                <h2 className="text-xl font-semibold leading-tight tracking-tight">{displayTitle}</h2>
                 {media.type === 'episode' && (
-                  <p className="text-sm text-foreground/80 mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
+                  <p className="text-sm text-muted-foreground mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
                 )}
                 {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
-                  <p className="text-sm text-foreground/70 font-medium">{sv?.edition || versions[0]?.edition}</p>
+                  <p className="text-sm text-muted-foreground font-medium">{sv?.edition || versions[0]?.edition}</p>
                 )}
               </div>
-            </div>
 
-            {/* Metadata + actions — below hero, seamless with card */}
-            <div className="px-5 pt-2 pb-3">
               {/* Stats row */}
-              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <div className="relative z-[1] flex flex-wrap items-center gap-2 text-sm text-muted-foreground mt-2">
                 {media.year && <span>{media.year}</span>}
                 {(sv?.duration ?? media.duration) > 0 && <><span className="mx-0.5">·</span><span>{formatDuration(sv?.duration ?? media.duration)}</span></>}
                 {(sv?.file_size ?? media.file_size) > 0 && <><span className="mx-0.5">·</span><span>{formatFileSize(sv?.file_size ?? media.file_size)}</span></>}
@@ -736,7 +735,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
               </div>
 
               {/* Action buttons row */}
-              <div className="flex items-center gap-2 mt-3">
+              <div className="relative z-[1] flex items-center gap-2 mt-3">
                 {media.tier_quality && media.tier_quality !== 'HIGH' && (
                   <AddToWishlistButton
                     mediaType={media.type as WishlistMediaType}
@@ -793,7 +792,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
 
               {/* Summary */}
               {media.summary && (
-                <p className="mt-3 text-sm text-muted-foreground leading-relaxed line-clamp-3">{media.summary}</p>
+                <p className="relative z-[1] mt-3 text-sm text-muted-foreground leading-relaxed line-clamp-3">{media.summary}</p>
               )}
             </div>
           </div>
@@ -805,7 +804,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
           {/* Version Selector Pills — content, not chrome */}
           {versions.length > 1 && (
             <div className="space-y-2">
-              <div className="flex gap-1.5 overflow-x-auto">
+              <div className="flex gap-2 overflow-x-auto">
                 {versions.map((v) => {
                   const isSelected = selectedVersionId === v.id
                   const qualityColor = getQualityLevelColors(v.tier_quality || '')
@@ -857,12 +856,12 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                             key={v.id}
                             onClick={() => setSelectedVersionId(v.id)}
                             className={`cursor-pointer border-t border-border/30 transition-colors hover:bg-muted/30 ${
-                              isSelected ? 'bg-primary/10' : ''
+                              isSelected ? 'bg-muted/40' : ''
                             }`}
                           >
                             <td className="px-2 py-1.5">
                               <div className="flex items-center gap-1">
-                                {v.is_best && <Star className="w-3 h-3 text-primary shrink-0" />}
+                                {v.is_best && <Star className="w-3 h-3 text-foreground shrink-0" />}
                                 <span className="font-medium truncate max-w-[120px]">{v.edition || v.label || v.resolution}</span>
                               </div>
                             </td>
@@ -878,9 +877,9 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                             <td className="px-2 py-1.5 text-right text-muted-foreground">{formatFileSize(v.file_size)}</td>
                             <td className="px-2 py-1.5 text-right">
                               {v.is_best ? (
-                                <span className="text-primary font-medium">Best</span>
+                                <span className="text-foreground font-medium">Best</span>
                               ) : insight ? (
-                                <span className={insight.type === 'redundant' ? 'text-amber-500' : 'text-yellow-500'}>
+                                <span className="text-amber-500">
                                   {insight.label}
                                 </span>
                               ) : null}
@@ -902,14 +901,14 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                 <div className={`flex ${isMobile ? 'flex-col gap-3' : 'items-center justify-between gap-4'}`}>
                   <div className={`flex items-center gap-4 bg-muted/30 ${isMobile ? 'px-3 py-2 rounded-lg' : 'px-4 py-3 rounded-lg'}`}>
                     <div className="text-center">
-                      <div className="text-2xl font-bold">{sv?.quality_tier ?? media.quality_tier}</div>
+                      <div className="text-2xl font-semibold">{sv?.quality_tier ?? media.quality_tier}</div>
                       <div className="text-xs font-medium text-muted-foreground">{sv?.tier_quality ?? media.tier_quality}</div>
                     </div>
                     {(sv?.tier_score ?? media.tier_score) != null && (
                       <>
                         <div className="h-10 w-px bg-border" />
                         <div className="text-center">
-                          <div className="text-2xl font-bold">{sv?.tier_score ?? media.tier_score}</div>
+                          <div className="text-2xl font-semibold">{sv?.tier_score ?? media.tier_score}</div>
                           <div className="text-xs font-medium text-muted-foreground">Score</div>
                         </div>
                       </>
@@ -966,9 +965,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
             const insight = getVersionInsight(sv)
             if (!insight) return null
             return (
-              <div className={`text-sm px-3 py-2 rounded-lg ${
-                insight.type === 'redundant' ? 'bg-amber-500/10 border border-amber-500/20 text-amber-500' : 'bg-yellow-500/10 border border-yellow-500/20 text-yellow-500'
-              }`}>
+              <div className="text-sm px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500">
                 {insight.type === 'redundant'
                   ? 'A better version exists \u2014 this copy may be safe to remove.'
                   : 'This version scores LOW quality \u2014 consider replacing it.'}
