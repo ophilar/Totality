@@ -296,7 +296,7 @@ export function CompletenessPanel({
     <aside
       ref={panelRef}
       id="completeness-panel"
-      className={`fixed top-[76px] bottom-4 right-4 w-80 bg-sidebar-gradient rounded-2xl shadow-xl z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
+      className={`fixed top-[76px] bottom-4 right-4 w-80 bg-card rounded-2xl shadow-xl border border-border z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
         isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
       onKeyDown={handleKeyDown}
@@ -309,22 +309,22 @@ export function CompletenessPanel({
           <ListChecks className="w-4 h-4 text-muted-foreground" />
           <h2 className="text-label font-semibold" id="completeness-panel-title">Completeness</h2>
         </div>
-        <button
+        <Button
           ref={closeButtonRef}
+          variant="tertiary"
+          size="icon-sm"
           onClick={onClose}
-          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary"
+          icon={<X className="w-4 h-4" />}
           aria-label="Close completeness panel"
-        >
-          <X className="w-4 h-4" aria-hidden="true" />
-        </button>
+        />
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         {/* TMDB API Key Required - show when not configured (unless user only has music) */}
         {!isKeyConfigured && !(hasMusic && !hasTV && !hasMovies) && (
-          <div className="bg-muted/30 rounded-lg p-4">
-            <h3 className="font-medium text-foreground mb-2">TMDB API Key Required</h3>
+          <div>
+            <h3 className="font-medium text-foreground mb-2">TMDB API key required</h3>
             <p className="text-caption text-muted-foreground mb-3">
               To analyze TV/movie completeness, you need to configure a TMDB API key in Settings.
             </p>
@@ -348,7 +348,7 @@ export function CompletenessPanel({
 
         {/* Analysis Progress - show for any analysis (music doesn't need TMDB key) */}
         {isAnalyzing && analysisProgress && (
-          <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+          <div className="space-y-3">
             {/* Header with label and count */}
             <div className="flex justify-between items-start">
               <div className="flex-1 min-w-0">
@@ -404,23 +404,15 @@ export function CompletenessPanel({
             </div>
 
             {seriesStats ? (
-              <div className="bg-muted/30 rounded-lg p-3 space-y-2">
-                <div className="flex justify-between text-label">
-                  <span className="text-muted-foreground">Total</span>
-                  <AnimatedNumber value={seriesStats.totalSeries} className="font-medium" />
-                </div>
-                <div className="flex justify-between text-label">
-                  <span className="text-muted-foreground">Complete</span>
-                  <AnimatedNumber value={seriesStats.completeSeries} className="font-medium text-foreground" />
-                </div>
-                <div className="flex justify-between text-label">
-                  <span className="text-muted-foreground">Incomplete</span>
-                  <AnimatedNumber value={seriesStats.incompleteSeries} className="font-medium text-foreground" />
-                </div>
-                <div className="flex justify-between text-label">
-                  <span className="text-muted-foreground">Missing</span>
-                  <AnimatedNumber value={seriesStats.totalMissingEpisodes} className="font-medium text-foreground" />
-                </div>
+              <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-label">
+                <span className="text-muted-foreground">Total</span>
+                <AnimatedNumber value={seriesStats.totalSeries} className="font-medium text-right" />
+                <span className="text-muted-foreground">Complete</span>
+                <AnimatedNumber value={seriesStats.completeSeries} className="font-medium text-right" />
+                <span className="text-muted-foreground">Incomplete</span>
+                <AnimatedNumber value={seriesStats.incompleteSeries} className="font-medium text-right" />
+                <span className="text-muted-foreground">Missing episodes</span>
+                <AnimatedNumber value={seriesStats.totalMissingEpisodes} className="font-medium text-right" />
               </div>
             ) : (
               <p className="text-label text-muted-foreground">No series data yet</p>
@@ -495,23 +487,15 @@ export function CompletenessPanel({
             </div>
 
             {collectionStats ? (
-              <div className="bg-muted/30 rounded-lg p-3 space-y-2">
-                <div className="flex justify-between text-label">
-                  <span className="text-muted-foreground">Total</span>
-                  <AnimatedNumber value={collectionStats.total} className="font-medium" />
-                </div>
-                <div className="flex justify-between text-label">
-                  <span className="text-muted-foreground">Complete</span>
-                  <AnimatedNumber value={collectionStats.complete} className="font-medium text-foreground" />
-                </div>
-                <div className="flex justify-between text-label">
-                  <span className="text-muted-foreground">Incomplete</span>
-                  <AnimatedNumber value={collectionStats.incomplete} className="font-medium text-foreground" />
-                </div>
-                <div className="flex justify-between text-label">
-                  <span className="text-muted-foreground">Missing</span>
-                  <AnimatedNumber value={collectionStats.totalMissing} className="font-medium text-foreground" />
-                </div>
+              <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-label">
+                <span className="text-muted-foreground">Total</span>
+                <AnimatedNumber value={collectionStats.total} className="font-medium text-right" />
+                <span className="text-muted-foreground">Complete</span>
+                <AnimatedNumber value={collectionStats.complete} className="font-medium text-right" />
+                <span className="text-muted-foreground">Incomplete</span>
+                <AnimatedNumber value={collectionStats.incomplete} className="font-medium text-right" />
+                <span className="text-muted-foreground">Missing movies</span>
+                <AnimatedNumber value={collectionStats.totalMissing} className="font-medium text-right" />
               </div>
             ) : (
               <p className="text-label text-muted-foreground">No collection data yet</p>
@@ -586,23 +570,15 @@ export function CompletenessPanel({
             </div>
 
             {musicStats ? (
-              <div className="bg-muted/30 rounded-lg p-3 space-y-2">
-                <div className="flex justify-between text-label">
-                  <span className="text-muted-foreground">Total</span>
-                  <AnimatedNumber value={musicStats.totalArtists} className="font-medium" />
-                </div>
-                <div className="flex justify-between text-label">
-                  <span className="text-muted-foreground">Complete</span>
-                  <AnimatedNumber value={musicStats.completeArtists} className="font-medium text-foreground" />
-                </div>
-                <div className="flex justify-between text-label">
-                  <span className="text-muted-foreground">Incomplete</span>
-                  <AnimatedNumber value={musicStats.incompleteArtists} className="font-medium text-foreground" />
-                </div>
-                <div className="flex justify-between text-label">
-                  <span className="text-muted-foreground">Missing</span>
-                  <AnimatedNumber value={musicStats.totalMissingAlbums} className="font-medium text-foreground" />
-                </div>
+              <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-label">
+                <span className="text-muted-foreground">Total</span>
+                <AnimatedNumber value={musicStats.totalArtists} className="font-medium text-right" />
+                <span className="text-muted-foreground">Complete</span>
+                <AnimatedNumber value={musicStats.completeArtists} className="font-medium text-right" />
+                <span className="text-muted-foreground">Incomplete</span>
+                <AnimatedNumber value={musicStats.incompleteArtists} className="font-medium text-right" />
+                <span className="text-muted-foreground">Missing albums</span>
+                <AnimatedNumber value={musicStats.totalMissingAlbums} className="font-medium text-right" />
               </div>
             ) : (
               <p className="text-label text-muted-foreground">No music data yet</p>
