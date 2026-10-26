@@ -267,7 +267,7 @@ describe('BetterSQLiteService — Media Items', () => {
     const versionId = service.upsertMediaItemVersion({
       media_item_id: mediaItemId,
       version_source: 'local_file',
-      file_path: '/versions/object-audio.mkv',
+      file_path: '/versions/no-object-audio.mkv',
       file_size_bytes: 1_000_000,
       duration_ms: 7_200,
       resolution: '1080p',
@@ -275,21 +275,21 @@ describe('BetterSQLiteService — Media Items', () => {
       height: 1080,
       video_codec: 'h264',
       video_bitrate_kbps: 2_000,
-      audio_codec: 'truehd',
-      audio_channels: 8,
-      audio_bitrate_kbps: 4_000,
-      has_object_audio: true,
+      audio_codec: 'aac',
+      audio_channels: 2,
+      audio_bitrate_kbps: 192,
+      has_object_audio: false,
       quality_tier: '1080p',
       tier_quality: 'UNKNOWN',
       tier_score: null,
-      is_best: true,
+      is_best: false,
     })
 
     const version = service.getItemVersionsForMediaIds([mediaItemId]).get(mediaItemId)?.[0]
 
     expect(version?.id).toBe(versionId)
-    expect(version?.has_object_audio).toBe(true)
-    expect(version?.is_best).toBe(true)
+    expect(version?.has_object_audio).toBe(false)
+    expect(version?.is_best).toBe(false)
   })
 
   it('leaves equal-resolution versions unselected when no existing selection breaks the tie', () => {

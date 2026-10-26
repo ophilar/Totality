@@ -2135,12 +2135,12 @@ export class TranscodingService {
       while (!measurementComplete) {
         const candidates = buildCandidates(candidateParameters)
         if (candidates.length) {
-          const candidateSampleBytes = Math.ceil((plannedBitrate ? plannedBitrate / 8 * sampleSeconds : options.maxOutputBytes ?? stat.size) * candidates.length)
+          const estimatedCandidateSampleBytes = Math.ceil((plannedBitrate ? plannedBitrate / 8 * sampleSeconds : options.maxOutputBytes ?? stat.size) * candidates.length)
           const rateControlBufferBytes = (options.targetConversion?.maximumVideoBitrate ?? 0) / 4
-          const requiredBytes = Math.ceil(candidateSampleBytes + sourceSampleBytes + referenceBytes + rateControlBufferBytes)
+          const estimatedRequiredBytes = Math.ceil(estimatedCandidateSampleBytes + sourceSampleBytes + referenceBytes + rateControlBufferBytes)
           const space = await fs.statfs(outputDirectory)
           const availableBytes = Number(space.bavail) * Number(space.bsize)
-          if (availableBytes < requiredBytes) throw new Error(`Insufficient disk headroom for episode sampling: volume=${path.parse(outputDirectory).root}, availableBytes=${availableBytes}, requiredBytes=${requiredBytes}, candidateSampleBytes=${candidateSampleBytes}, sourceSampleBytes=${Math.ceil(sourceSampleBytes)}, referenceSampleBytes=${Math.ceil(referenceBytes)}, rateControlBufferBytes=${Math.ceil(rateControlBufferBytes)}, candidateCount=${candidates.length}, sampleDurationSeconds=${sampleSeconds}`)
+          if (availableBytes < estimatedRequiredBytes) throw new Error(`Estimated disk headroom is insufficient for episode sampling: volume=${path.parse(outputDirectory).root}, availableBytes=${availableBytes}, estimatedRequiredBytes=${estimatedRequiredBytes}, estimatedCandidateSampleBytes=${estimatedCandidateSampleBytes}, estimatedSourceSampleBytes=${Math.ceil(sourceSampleBytes)}, estimatedReferenceSampleBytes=${Math.ceil(referenceBytes)}, estimatedRateControlBufferBytes=${Math.ceil(rateControlBufferBytes)}, candidateCount=${candidates.length}, sampleDurationSeconds=${sampleSeconds}`)
           const roundStart = measuredCandidates.length
           const measured = await this.measuredOptimizationService.measure({
             inputPath: filePath,
