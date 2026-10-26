@@ -120,6 +120,13 @@ function connect(): Promise<void> {
         sessionToken = stored
       }
       resolve()
+      if (sessionToken) {
+        void sendRpc('taskQueue:getState', []).then(state => {
+          dispatchEvent('taskQueue:updated', [state])
+        }).catch(error => {
+          console.error('[WebTransport] Failed to refresh task queue after reconnect:', error)
+        })
+      }
     }
 
     ws.onmessage = (event) => {
@@ -174,16 +181,7 @@ function handleMessage(data: { type: string; [key: string]: unknown }): void {
     case 'event': {
       const channel = data.channel as string
       const args = data.args as unknown[]
-      const listeners = eventListeners.get(channel)
-      if (listeners) {
-        for (const cb of listeners) {
-          try {
-            cb(...args)
-          } catch (err) {
-            console.error('[WebTransport] Event listener error:', err)
-          }
-        }
-      }
+      dispatchEvent(channel, args)
       break
     }
 
@@ -202,9 +200,17 @@ function handleMessage(data: { type: string; [key: string]: unknown }): void {
   }
 }
 
-// Deduplication: identical RPC calls within 100ms share the same promise
-const rpcDedup = new Map<string, { promise: Promise<unknown>; timestamp: number }>()
-const RPC_DEDUP_WINDOW_MS = 500
+function dispatchEvent(channel: string, args: unknown[]): void {
+  const listeners = eventListeners.get(channel)
+  if (!listeners) return
+  for (const callback of listeners) {
+    try {
+      callback(...args)
+    } catch (error) {
+      console.error('[WebTransport] Event listener error:', error)
+    }
+  }
+}
 
 function sendRpc(channel: string, args: unknown[]): Promise<unknown> {
   // Build dedup key from channel + args

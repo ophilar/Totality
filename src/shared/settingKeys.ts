@@ -26,6 +26,7 @@ export const SETTING_KEYS = {
   dashboard_series_sort: 'dashboard_series_sort',
   dashboard_artist_sort: 'dashboard_artist_sort',
   dashboard_person_sort: 'dashboard_person_sort',
+  optimization_quality_preferences: 'optimization_quality_preferences',
 
   // Quality settings
   quality_video_sd_medium: 'quality_video_sd_medium',

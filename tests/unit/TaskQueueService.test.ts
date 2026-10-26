@@ -126,6 +126,28 @@ describe('TaskQueueService', () => {
 
       expect(id1).toBe(id2)
     })
+
+    it('deduplicates preflight requests by optimization scope rather than request id', () => {
+      const request = { sourceId: 'plex', libraryId: 'shows', seriesIdentityKey: 'show:42', seasonNumber: 2 }
+      const first = service.addTask({
+        type: 'optimization-preflight',
+        label: 'Preflight Show · Season 2',
+        options: { requestId: 'first', request },
+      })
+      const duplicate = service.addTask({
+        type: 'optimization-preflight',
+        label: 'Preflight Show · Season 2',
+        options: { requestId: 'second', request: { ...request } },
+      })
+      const otherSeason = service.addTask({
+        type: 'optimization-preflight',
+        label: 'Preflight Show · Season 3',
+        options: { requestId: 'third', request: { ...request, seasonNumber: 3 } },
+      })
+
+      expect(duplicate).toBe(first)
+      expect(otherSeason).not.toBe(first)
+    })
   })
 
   describe('queue state', () => {
