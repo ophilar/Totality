@@ -9,6 +9,7 @@ import { DataManagementTab } from './tabs/DataManagementTab'
 import { TroubleshootTab } from './tabs/TroubleshootTab'
 import { MonitoringTab } from './tabs/MonitoringTab'
 import { LibrarySettingsTab } from './tabs/LibrarySettingsTab'
+import { Button } from '../ui/Button'
 type TabId = 'general' | 'services' | 'library' | 'quality' | 'appearance' | 'monitoring' | 'data' | 'troubleshoot'
 
 interface SettingsPanelProps {
@@ -131,7 +132,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 flex items-center justify-center z-150"
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -144,16 +145,16 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-2xl shrink-0">
-          <h2 id={titleId} className="text-lg font-semibold">Settings</h2>
-          <button
+        <div className="flex items-center justify-between p-4 border-b border-border/30 shrink-0">
+          <h2 id={titleId} className="text-title font-semibold">Settings</h2>
+          <Button
             ref={closeButtonRef}
+            variant="tertiary"
+            size="icon-sm"
             onClick={onClose}
-            className="p-2 rounded-md hover:bg-muted transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary"
+            icon={<X className="w-4 h-4" />}
             aria-label="Close settings"
-          >
-            <X className="w-5 h-5" aria-hidden="true" />
-          </button>
+          />
         </div>
 
         {/* Content area with tabs */}
@@ -161,7 +162,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
           {/* Tab navigation (left side) */}
           <div
             ref={tabListRef}
-            className="w-44 border-r border-border/30 p-2 pt-3 flex flex-col gap-1 bg-sidebar-gradient"
+            className="w-44 border-r border-border/30 p-2 pt-3 flex flex-col gap-1"
             role="tablist"
             aria-label="Settings categories"
             aria-orientation="vertical"

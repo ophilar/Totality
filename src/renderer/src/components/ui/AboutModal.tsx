@@ -59,7 +59,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" role="dialog" aria-modal="true" aria-labelledby="about-modal-title">
-      <div ref={modalRef} className="bg-card border border-border rounded-2xl w-full max-w-lg mx-4 shadow-xl max-h-[90vh] flex flex-col">
+      <div ref={modalRef} className="bg-card border border-border rounded-2xl w-full max-w-lg mx-4 shadow-xl h-[80vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border/30">
           <h2 id="about-modal-title" className="text-title font-semibold">About Totality</h2>
