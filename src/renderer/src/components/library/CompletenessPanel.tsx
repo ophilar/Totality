@@ -373,7 +373,7 @@ export function CompletenessPanel({
               <div className="space-y-1">
                 <div className="w-full bg-muted rounded-full h-2">
                   <div
-                    className="bg-primary h-2 rounded-full transition-all duration-300"
+                    className="bg-primary h-2 rounded-full transition-[width] duration-300"
                     style={{ width: `${Math.min((analysisProgress.current / analysisProgress.total) * 100, 100)}%` }}
                   />
                 </div>

@@ -67,7 +67,7 @@ export function WebLoginScreen({ onAuthenticated, authenticate, logoSrc }: WebLo
             value={pin}
             onChange={(e) => setPin(e.target.value)}
             placeholder="Enter PIN"
-            className="w-full px-4 py-3 min-h-[48px] text-center text-lg tracking-[0.3em] bg-white/10 border border-white/15 rounded-full text-foreground placeholder:tracking-normal placeholder:text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/25 transition-all"
+            className="w-full px-4 py-3 min-h-[48px] text-center text-lg tracking-[0.3em] bg-white/10 border border-white/15 rounded-full text-foreground placeholder:tracking-normal placeholder:text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/25 transition-colors"
             autoComplete="off"
             disabled={loading}
           />

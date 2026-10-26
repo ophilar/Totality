@@ -925,7 +925,7 @@ export function MusicView({
                             <span className="text-sm font-medium tabular-nums">{tierScore}</span>
                           </div>
                           <div className="h-1 bg-muted rounded-full overflow-hidden mt-1">
-                            <div className="h-full bg-primary transition-all" style={{ width: `${tierScore}%` }} />
+                            <div className="h-full bg-primary transition-[width]" style={{ width: `${tierScore}%` }} />
                           </div>
                           <div className="text-sm text-muted-foreground mt-0.5">
                             {selectedTrackForQuality.is_lossless
@@ -1742,7 +1742,7 @@ export function MusicView({
                           <span className="text-sm font-medium tabular-nums">{tierScore}</span>
                         </div>
                         <div className="h-1 bg-muted rounded-full overflow-hidden mt-1">
-                          <div className="h-full bg-primary transition-all" style={{ width: `${tierScore}%` }} />
+                          <div className="h-full bg-primary transition-[width]" style={{ width: `${tierScore}%` }} />
                         </div>
                         <div className="text-sm text-muted-foreground mt-0.5">
                           {selectedTrackForQuality.is_lossless
@@ -2084,7 +2084,7 @@ const ArtistListItem = memo(({ artist, completeness, onClick, showSourceBadge, o
 
   return (
     <div
-      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center"
+      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-colors duration-200 p-4 flex gap-4 items-center"
       onClick={onClick}
     >
       {/* Artist Thumbnail */}
@@ -2177,7 +2177,7 @@ const AlbumListItem = memo(({ album, onClick, showArtist = true, showSourceBadge
 
   return (
     <div
-      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center"
+      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-colors duration-200 p-4 flex gap-4 items-center"
       onClick={onClick}
     >
       {/* Album Thumbnail */}
@@ -2302,7 +2302,7 @@ const TrackListItem = memo(({ track, index, artistName, albumTitle, columnWidths
 
   return (
     <div
-      className="group cursor-pointer rounded-md overflow-hidden hover:bg-muted/40 transition-all duration-200 px-4 py-2 flex gap-4 items-center"
+      className="group cursor-pointer rounded-md overflow-hidden hover:bg-muted/40 transition-colors duration-200 px-4 py-2 flex gap-4 items-center"
       onClick={onClickQuality}
     >
       {/* Track Number */}

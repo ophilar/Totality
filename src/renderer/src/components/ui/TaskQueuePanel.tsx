@@ -213,7 +213,7 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
             {queueState.currentTask.progress && (
               <>
                 <div className="h-2 bg-muted rounded-full overflow-hidden mb-1.5">
-                  <div className="h-full bg-primary transition-all duration-300"
+                  <div className="h-full bg-primary transition-[width] duration-300"
                     style={{ width: `${queueState.currentTask.progress.percentage}%` }} />
                 </div>
                 <div className="flex items-center justify-between text-xs text-muted-foreground">

@@ -526,7 +526,7 @@ export function TroubleshootTab() {
             {!autoScroll && filteredLogs.length > 0 && (
               <button
                 onClick={jumpToLatest}
-                className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-full shadow-lg hover:bg-primary/90 transition-all"
+                className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-full shadow-lg hover:bg-primary/90 transition-colors"
               >
                 <ChevronsDown className="w-3.5 h-3.5" />
                 Jump to latest

@@ -243,7 +243,7 @@ export function QualitySettingsTab() {
                 </p>
                 <div className="w-64 h-2 bg-muted rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-primary transition-all duration-300"
+                    className="h-full bg-primary transition-[width] duration-300"
                     style={{ width: `${(reanalyzeProgress.current / reanalyzeProgress.total) * 100}%` }}
                   />
                 </div>

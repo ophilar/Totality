@@ -831,7 +831,7 @@ export function Dashboard({
           />
           <button
             onClick={() => dismissMovieUpgrade(index)}
-            className="opacity-0 group-hover/row:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
+            className="opacity-0 group-hover/row:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-[color,opacity]"
             title="Hide from view"
           >
             <EyeOff className="w-3.5 h-3.5" />
@@ -888,7 +888,7 @@ export function Dashboard({
           />
           <button
             onClick={() => dismissTvUpgrade(index)}
-            className="opacity-0 group-hover/row:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
+            className="opacity-0 group-hover/row:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-[color,opacity]"
             title="Hide from view"
           >
             <EyeOff className="w-3.5 h-3.5" />
@@ -936,7 +936,7 @@ export function Dashboard({
             />
             <button
               onClick={() => dismissMusicUpgrade(index)}
-              className="opacity-0 group-hover/row:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
+              className="opacity-0 group-hover/row:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-[color,opacity]"
               title="Hide from view"
             >
               <EyeOff className="w-3.5 h-3.5" />
@@ -989,7 +989,7 @@ export function Dashboard({
               <AnimatedNumber value={collection.owned_movies} />/<AnimatedNumber value={collection.total_movies} /> · <AnimatedNumber value={Math.round(collection.completeness_percentage)} suffix="%" />
             </div>
             <div className="w-full h-1 bg-muted rounded-full mt-1 overflow-hidden">
-              <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${collection.completeness_percentage}%` }} />
+              <div className="h-full bg-primary rounded-full transition-[width] duration-500" style={{ width: `${collection.completeness_percentage}%` }} />
             </div>
           </div>
           {missingCount > 0 && (
@@ -1044,7 +1044,7 @@ export function Dashboard({
                 />
                 <button
                   onClick={(e) => { e.stopPropagation(); dismissCollectionMovie(index, movie) }}
-                  className="opacity-0 group-hover/item:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
+                  className="opacity-0 group-hover/item:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-[color,opacity]"
                   title="Hide from view"
                 >
                   <EyeOff className="w-3.5 h-3.5" />
@@ -1099,7 +1099,7 @@ export function Dashboard({
               <AnimatedNumber value={s.owned_seasons} />/<AnimatedNumber value={s.total_seasons} /> seasons · <AnimatedNumber value={s.owned_episodes} />/<AnimatedNumber value={s.total_episodes} /> eps · <AnimatedNumber value={Math.round(s.completeness_percentage)} suffix="%" />
             </div>
             <div className="w-full h-1 bg-muted rounded-full mt-1 overflow-hidden">
-              <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${s.completeness_percentage}%` }} />
+              <div className="h-full bg-primary rounded-full transition-[width] duration-500" style={{ width: `${s.completeness_percentage}%` }} />
             </div>
           </div>
           {missingCount > 0 && (
@@ -1154,7 +1154,7 @@ export function Dashboard({
                     e.stopPropagation()
                     group.missingEpisodes.forEach(ep => dismissSeriesEpisode(index, ep))
                   }}
-                  className="opacity-0 group-hover/item:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
+                  className="opacity-0 group-hover/item:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-[color,opacity]"
                   title="Hide season from view"
                 >
                   <EyeOff className="w-3.5 h-3.5" />
@@ -1220,7 +1220,7 @@ export function Dashboard({
               <AnimatedNumber value={ownedReleases} />/<AnimatedNumber value={totalReleases} /> releases · <AnimatedNumber value={Math.round(artist.completeness_percentage)} suffix="%" />
             </div>
             <div className="w-full h-1 bg-muted rounded-full mt-1 overflow-hidden">
-              <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${artist.completeness_percentage}%` }} />
+              <div className="h-full bg-primary rounded-full transition-[width] duration-500" style={{ width: `${artist.completeness_percentage}%` }} />
             </div>
           </div>
           {totalMissing > 0 && (
@@ -1284,7 +1284,7 @@ export function Dashboard({
                       />
                       <button
                         onClick={(e) => { e.stopPropagation(); dismissArtistAlbum(index, item) }}
-                        className="opacity-0 group-hover/item:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
+                        className="opacity-0 group-hover/item:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-[color,opacity]"
                         title="Hide from view"
                       >
                         <EyeOff className="w-3.5 h-3.5" />
@@ -1513,7 +1513,7 @@ export function Dashboard({
                           <AnimatedNumber value={Math.round(libraryStats.movieAverageQualityScore || 0)} className="text-xs font-bold" />
                         </div>
                         <div className="h-1 bg-muted rounded-full overflow-hidden">
-                          <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${libraryStats.movieAverageQualityScore || 0}%` }} />
+                          <div className="h-full bg-primary rounded-full transition-[width] duration-500" style={{ width: `${libraryStats.movieAverageQualityScore || 0}%` }} />
                         </div>
                         {libraryStats.movieNeedsUpgradeCount > 0 && (
                           <div className="text-xs text-muted-foreground mt-0.5"><AnimatedNumber value={libraryStats.movieNeedsUpgradeCount} /> upgrades</div>
@@ -1527,7 +1527,7 @@ export function Dashboard({
                           <AnimatedNumber value={Math.round(libraryStats.tvAverageQualityScore || 0)} className="text-xs font-bold" />
                         </div>
                         <div className="h-1 bg-muted rounded-full overflow-hidden">
-                          <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${libraryStats.tvAverageQualityScore || 0}%` }} />
+                          <div className="h-full bg-primary rounded-full transition-[width] duration-500" style={{ width: `${libraryStats.tvAverageQualityScore || 0}%` }} />
                         </div>
                         {libraryStats.tvNeedsUpgradeCount > 0 && (
                           <div className="text-xs text-muted-foreground mt-0.5"><AnimatedNumber value={libraryStats.tvNeedsUpgradeCount} /> upgrades</div>
@@ -1547,7 +1547,7 @@ export function Dashboard({
                             <AnimatedNumber value={pct} suffix="%" className="text-xs font-bold" />
                           </div>
                           <div className="h-1 bg-muted rounded-full overflow-hidden">
-                            <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                            <div className="h-full bg-primary rounded-full transition-[width] duration-500" style={{ width: `${pct}%` }} />
                           </div>
                           <div className="text-xs text-muted-foreground mt-0.5"><AnimatedNumber value={lossless} /> lossless</div>
                         </div>
@@ -2037,7 +2037,7 @@ export function Dashboard({
                                           window.electronAPI.addExclusion('person_movie', undefined, movie.tmdb_id, personKey, movie.title)
                                           setExcludedPersonMovieSet(prev => new Set(prev).add(`${personKey}:${movie.tmdb_id}`))
                                         }}
-                                        className="opacity-0 group-hover/movie:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all shrink-0"
+                                        className="opacity-0 group-hover/movie:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-[color,opacity] shrink-0"
                                         title="Hide from completeness"
                                       >
                                         <EyeOff className="w-3.5 h-3.5" />

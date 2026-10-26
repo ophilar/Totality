@@ -610,7 +610,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
             <span className="shrink-0">{syncProgress.current}/{syncProgress.total}</span>
           </div>
           <div className="h-1 bg-muted rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round((syncProgress.current / syncProgress.total) * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Sync progress">
-            <div className="h-full bg-primary transition-all duration-300" style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }} />
+            <div className="h-full bg-primary transition-[width] duration-300" style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }} />
           </div>
         </div>
       )}
@@ -664,7 +664,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                 <div
                   key={comp.sourceOfTruthTrackId}
                   role="listitem"
-                  className={`p-2 rounded-lg transition-all duration-300 cursor-pointer ${
+                  className={`p-2 rounded-lg transition-colors duration-300 cursor-pointer ${
                     hasFailed ? 'bg-destructive/10' :
                     wasSynced ? 'bg-green-500/10' :
                     isSyncing ? 'bg-primary/10' :

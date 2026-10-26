@@ -427,7 +427,7 @@ export function AppearanceTab() {
                   </div>
                   <button
                     onClick={() => setTheme(themeConfig.id)}
-                    className={`rounded-xl overflow-hidden shadow-md transition-all ${
+                    className={`rounded-xl overflow-hidden shadow-md transition-[box-shadow,opacity] ${
                       isActive
                         ? 'ring-2 ring-primary ring-offset-2 ring-offset-background'
                         : 'hover:opacity-80'

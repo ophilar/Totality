@@ -63,7 +63,7 @@ function Tooltip({ label, children }: { label: string; children: ReactNode }) {
     <div className="relative" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}>
       {children}
       {visible && (
-        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-1 bg-popover border border-border text-xs text-popover-foreground rounded shadow-md whitespace-nowrap z-[200] pointer-events-none">
+        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-1 bg-popover border border-border text-xs text-popover-foreground rounded shadow-md whitespace-nowrap z-50 pointer-events-none">
           {label}
         </div>
       )}
@@ -300,7 +300,7 @@ export function TopBar({
           <img src={logoImage} alt="Totality" className="h-8 shrink-0" />
 
           {/* Search */}
-          <div ref={searchContainerRef} className="relative shrink min-w-24 max-w-80 w-56 focus-within:w-80 transition-all duration-300 ease-out">
+          <div ref={searchContainerRef} className="relative shrink min-w-24 max-w-80 w-56 focus-within:w-80 transition-[width] duration-300 ease-out">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/50 z-10" />
             <input
               ref={searchInputRef}
@@ -310,7 +310,7 @@ export function TopBar({
               onChange={(e) => handleSearchInputChange(e.target.value)}
               onFocus={() => setShowSearchResults(true)}
               onKeyDown={handleSearchKeyDown}
-              className="w-full pl-10 pr-8 py-2 bg-white/10 border border-white/15 rounded-full text-sm text-white placeholder:text-white/40 focus:outline-hidden focus:ring-2 focus:ring-white/30 focus:border-white/25 transition-all duration-300"
+              className="w-full pl-10 pr-8 py-2 bg-white/10 border border-white/15 rounded-full text-sm text-white placeholder:text-white/40 focus:outline-hidden focus:ring-2 focus:ring-white/30 focus:border-white/25 transition-colors duration-300"
               aria-label="Search all libraries"
             />
             {searchInput && (

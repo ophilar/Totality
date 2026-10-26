@@ -201,7 +201,7 @@ export function GeneralTab() {
           </div>
           {status === 'downloading' && downloadProgress && (
             <div className="w-full bg-muted rounded-full h-1.5">
-              <div className="bg-primary h-1.5 rounded-full transition-all" style={{ width: `${downloadProgress.percent}%` }} />
+              <div className="bg-primary h-1.5 rounded-full transition-[width]" style={{ width: `${downloadProgress.percent}%` }} />
             </div>
           )}
           {/* Release notes */}

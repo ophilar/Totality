@@ -467,7 +467,7 @@ export function ActivityPanel() {
       <div
         ref={dropdownRef}
         className={`${getActiveTheme()} absolute right-0 top-full mt-2 bg-card rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden ${
-          isResizing ? 'select-none' : 'transition-all duration-300 ease-out'
+          isResizing ? 'select-none' : 'transition-[opacity,transform] duration-300 ease-out'
         } ${
           isOpen ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0 pointer-events-none'
         }`}
@@ -532,7 +532,7 @@ export function ActivityPanel() {
               <>
                 <div className="h-2 bg-muted rounded-full overflow-hidden mb-1.5">
                   <div
-                    className="h-full bg-primary transition-all duration-300"
+                    className="h-full bg-primary transition-[width] duration-300"
                     style={{ width: `${queueState.currentTask.progress.percentage}%` }}
                   />
                 </div>

@@ -432,7 +432,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
               </div>
               <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-primary transition-all"
+                  className="h-full bg-primary transition-[width]"
                   style={{ width: `${progress.percentage}%` }}
                 />
               </div>
@@ -570,7 +570,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
                     {ffprobeInstallProgress && (
                       <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-primary transition-all duration-300"
+                          className="h-full bg-primary transition-[width] duration-300"
                           style={{ width: `${ffprobeInstallProgress.percent}%` }}
                         />
                       </div>

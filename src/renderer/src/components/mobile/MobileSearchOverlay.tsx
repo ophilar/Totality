@@ -77,10 +77,11 @@ export function MobileSearchOverlay({
   return (
     <>
       {/* Dimmed backdrop */}
-      <div className="fixed inset-0 z-[58] bg-black/40 backdrop-blur-md" onClick={onClose} />
+      {/* Scrim: z-[45] per design tokens (Z.scrim) */}
+      <div className="fixed inset-0 z-[45] bg-black/40 backdrop-blur-md" onClick={onClose} />
 
       {/* Floating search panel — fixed at top */}
-      <div className="fixed left-4 right-4 z-[59] flex flex-col items-stretch" style={{ top: 'max(env(safe-area-inset-top, 0px), 16px)' }}>
+      <div className="fixed left-4 right-4 z-[46] flex flex-col items-stretch" style={{ top: 'max(env(safe-area-inset-top, 0px), 16px)' }}>
         {/* Search input */}
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50 z-10" />

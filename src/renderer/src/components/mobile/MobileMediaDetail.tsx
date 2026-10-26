@@ -170,7 +170,7 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
 
   if (loading) {
     return (
-      <div className="fixed inset-0 z-[60] bg-black/60 flex items-end">
+      <div className="fixed inset-0 z-50 bg-black/60 flex items-end">
         <div className="w-full bg-card rounded-t-2xl p-6 flex justify-center" style={{ height: `${SNAP_HALF}vh` }}>
           <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
@@ -194,7 +194,7 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
   const displayScore = activeVersion?.tier_score ?? quality?.tier_score
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/60" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/60" onClick={onClose}>
       <div
         className={`absolute bottom-0 left-0 right-0 bg-card rounded-t-2xl flex flex-col ${
           isDragging ? '' : 'transition-[height] duration-300 ease-out'

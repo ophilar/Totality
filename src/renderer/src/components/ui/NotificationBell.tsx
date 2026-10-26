@@ -136,7 +136,7 @@ export function NotificationBell() {
 
       <div
         ref={dropdownRef}
-        className={`${getActiveTheme()} absolute right-0 top-full mt-2 w-80 max-h-96 bg-card rounded-xl shadow-2xl z-50 flex flex-col overflow-hidden transition-all duration-200 ease-out ${
+        className={`${getActiveTheme()} absolute right-0 top-full mt-2 w-80 max-h-96 bg-card rounded-xl shadow-2xl z-50 flex flex-col overflow-hidden transition-[opacity,transform] duration-200 ease-out ${
           isOpen ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0 pointer-events-none'
         }`}
         style={{ boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}

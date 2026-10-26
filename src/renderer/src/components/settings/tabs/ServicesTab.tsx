@@ -576,7 +576,7 @@ export function ServicesTab() {
           {/* Install/Update Progress */}
           {isInstalling && installProgress && (
             <div className="w-full bg-muted rounded-full h-1.5">
-              <div className="bg-primary h-1.5 rounded-full transition-all" style={{ width: `${installProgress.percent}%` }} />
+              <div className="bg-primary h-1.5 rounded-full transition-[width]" style={{ width: `${installProgress.percent}%` }} />
             </div>
           )}
 

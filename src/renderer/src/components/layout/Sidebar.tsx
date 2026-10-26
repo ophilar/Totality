@@ -408,7 +408,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
               <button
                 key={source.source_id}
                 onClick={() => setActiveSource(source.source_id)}
-                className={`w-12 h-12 rounded-lg flex items-center justify-center transition-all ${
+                className={`w-12 h-12 rounded-lg flex items-center justify-center transition-[background-color,box-shadow] ${
                   isActive
                     ? 'bg-primary ring-2 ring-primary-foreground/30'
                     : 'hover:bg-white/10'
@@ -909,7 +909,7 @@ function SourceItem({
                         <div className="flex items-center gap-1">
                           <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
                             <div
-                              className="h-full bg-primary transition-all"
+                              className="h-full bg-primary transition-[width]"
                               style={{ width: `${queueProgress.percentage || 0}%` }}
                             />
                           </div>
@@ -938,7 +938,7 @@ function SourceItem({
                             <div className="flex items-center gap-1">
                               <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
                                 <div
-                                  className="h-full bg-primary transition-all"
+                                  className="h-full bg-primary transition-[width]"
                                   style={{ width: `${(scanPhase === 'scanning' ? progress?.percentage : analysisProgress?.percentage) || 0}%` }}
                                 />
                               </div>
