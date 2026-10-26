@@ -590,10 +590,10 @@ export function DataManagementTab() {
       {/* Status message */}
       {message && (
         <div
-          className={`p-3 rounded-lg text-caption ${
+          className={`text-caption ${
             message.type === 'success'
-              ? 'bg-green-500/10 border border-green-500/30 text-green-400'
-              : 'bg-red-500/10 border border-red-500/30 text-red-400'
+              ? 'text-foreground'
+              : 'text-destructive'
           }`}
         >
           {message.text}

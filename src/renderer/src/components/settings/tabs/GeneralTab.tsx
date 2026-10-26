@@ -176,11 +176,11 @@ export function GeneralTab() {
                 <p className="text-caption text-muted-foreground">Up to date</p>
               )}
               {status === 'checking' && <p className="text-caption text-muted-foreground">Checking for updates...</p>}
-              {status === 'available' && <p className="text-caption text-primary">Version {newVersion} available</p>}
+              {status === 'available' && <p className="text-caption text-foreground">Version {newVersion} available</p>}
               {status === 'downloading' && downloadProgress && (
                 <p className="text-caption text-muted-foreground">Downloading... {Math.round(downloadProgress.percent)}%</p>
               )}
-              {status === 'downloaded' && <p className="text-caption text-green-500">Version {newVersion} ready to install</p>}
+              {status === 'downloaded' && <p className="text-caption text-foreground">Version {newVersion} ready to install</p>}
               {status === 'error' && <p className="text-caption text-destructive">Update check failed</p>}
             </div>
             <Button
@@ -295,7 +295,7 @@ export function GeneralTab() {
                       className="ml-1 p-0.5 text-muted-foreground hover:text-foreground transition-colors"
                       title="Copy URL"
                     >
-                      {urlCopied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                      {urlCopied ? <Check className="w-3 h-3 text-foreground" /> : <Copy className="w-3 h-3" />}
                     </button>
                     {webClients > 0 && (
                       <span className="text-caption text-muted-foreground ml-auto">

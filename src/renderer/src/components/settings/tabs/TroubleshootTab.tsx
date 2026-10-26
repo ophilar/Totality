@@ -370,7 +370,7 @@ export function TroubleshootTab() {
             <span className="text-muted-foreground shrink-0 text-caption">
               {formatTime(entry.timestamp)}
             </span>
-            <span className="text-primary/70 shrink-0 text-caption max-w-[100px] truncate">
+            <span className="text-muted-foreground shrink-0 text-caption max-w-[100px] truncate">
               {entry.source}
             </span>
             <span className="text-foreground flex-1 truncate text-caption">{entry.message}</span>
@@ -475,7 +475,7 @@ export function TroubleshootTab() {
             <span className="font-medium">{selectedIds.size} selected</span>
             <button
               onClick={handleSelectAll}
-              className="flex items-center gap-1 text-primary hover:text-primary/80 transition-colors"
+              className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
             >
               <CheckSquare className="w-3.5 h-3.5" />
               Select All ({filteredLogs.length})
