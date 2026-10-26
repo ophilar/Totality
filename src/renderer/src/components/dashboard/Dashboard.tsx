@@ -1565,11 +1565,11 @@ export function Dashboard({
                         const pct = Math.round(t.count / total * 100)
                         return (
                           <div key={t.tier} className="flex items-center gap-1.5 text-caption mb-0.5">
-                            <span className="w-8 text-muted-foreground">{t.tier}</span>
-                            <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
+                            <span className="w-10 text-muted-foreground shrink-0">{t.tier}</span>
+                            <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                               <div className="h-full bg-primary/60 rounded-full" style={{ width: `${pct}%` }} />
                             </div>
-                            <span className="w-10 text-right text-muted-foreground">{t.count.toLocaleString()}</span>
+                            <span className="w-10 text-right text-muted-foreground shrink-0">{t.count.toLocaleString()}</span>
                           </div>
                         )
                       })}
@@ -1585,11 +1585,11 @@ export function Dashboard({
                           const pct = Math.round(count / total * 100)
                           return (
                             <div key={level} className="flex items-center gap-1.5 text-caption mb-0.5">
-                              <span className="w-8 text-muted-foreground">{level.charAt(0).toUpperCase() + level.slice(1, 3)}</span>
-                              <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
+                              <span className="w-10 text-muted-foreground shrink-0">{level.charAt(0).toUpperCase() + level.slice(1, 3)}</span>
+                              <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                                 <div className="h-full bg-primary/60 rounded-full" style={{ width: `${pct}%` }} />
                               </div>
-                              <span className="w-10 text-right text-muted-foreground">{pct}%</span>
+                              <span className="w-10 text-right text-muted-foreground shrink-0">{pct}%</span>
                             </div>
                           )
                         })
