@@ -2135,10 +2135,12 @@ export class TranscodingService {
       while (!measurementComplete) {
         const candidates = buildCandidates(candidateParameters)
         if (candidates.length) {
-          const requiredBytes = Math.ceil((plannedBitrate ? plannedBitrate / 8 * sampleSeconds : options.maxOutputBytes ?? stat.size) * candidates.length + sourceSampleBytes + referenceBytes + (options.targetConversion?.maximumVideoBitrate ?? 0) / 4)
+          const candidateSampleBytes = Math.ceil((plannedBitrate ? plannedBitrate / 8 * sampleSeconds : options.maxOutputBytes ?? stat.size) * candidates.length)
+          const rateControlBufferBytes = (options.targetConversion?.maximumVideoBitrate ?? 0) / 4
+          const requiredBytes = Math.ceil(candidateSampleBytes + sourceSampleBytes + referenceBytes + rateControlBufferBytes)
           const space = await fs.statfs(outputDirectory)
           const availableBytes = Number(space.bavail) * Number(space.bsize)
-          if (availableBytes < requiredBytes) throw new Error(`Insufficient disk headroom for episode sampling: requires ${requiredBytes} bytes; ${availableBytes} bytes available`)
+          if (availableBytes < requiredBytes) throw new Error(`Insufficient disk headroom for episode sampling: volume=${path.parse(outputDirectory).root}, availableBytes=${availableBytes}, requiredBytes=${requiredBytes}, candidateSampleBytes=${candidateSampleBytes}, sourceSampleBytes=${Math.ceil(sourceSampleBytes)}, referenceSampleBytes=${Math.ceil(referenceBytes)}, rateControlBufferBytes=${Math.ceil(rateControlBufferBytes)}, candidateCount=${candidates.length}, sampleDurationSeconds=${sampleSeconds}`)
           const roundStart = measuredCandidates.length
           const measured = await this.measuredOptimizationService.measure({
             inputPath: filePath,
