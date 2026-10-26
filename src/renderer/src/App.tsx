@@ -295,6 +295,12 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
       setPendingTVOptimizationAction({ kind: 'review', preflightId })
       handleNavigateToLibrary('tv')
     }
+    const openMovieReview = (event: Event) => {
+      const detail = (event as CustomEvent<{ preflightId?: string; mediaItemId?: number }>).detail
+      if (!detail?.preflightId || detail.mediaItemId === undefined) return
+      setPendingTVOptimizationAction({ kind: 'review-movie', preflightId: detail.preflightId, mediaItemId: detail.mediaItemId })
+      handleNavigateToLibrary('movies')
+    }
     const resumePreflight = (event: Event) => {
       const detail = (event as CustomEvent<{ requestId?: string; entity?: Extract<TVOptimizationNavigation, { kind: 'resume' }>['entity'] }>).detail
       if (!detail?.requestId || !detail.entity) return
@@ -302,10 +308,15 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
       handleNavigateToLibrary('tv')
     }
     window.addEventListener('tvOptimization:requestReview', openReview)
+    window.addEventListener('optimization:requestMovieReview', openMovieReview)
     window.addEventListener('tvOptimization:returnToPreflight', resumePreflight)
+    const openTaskQueue = () => setShowTaskQueuePanel(true)
+    window.addEventListener('taskQueue:open', openTaskQueue)
     return () => {
       window.removeEventListener('tvOptimization:requestReview', openReview)
+      window.removeEventListener('optimization:requestMovieReview', openMovieReview)
       window.removeEventListener('tvOptimization:returnToPreflight', resumePreflight)
+      window.removeEventListener('taskQueue:open', openTaskQueue)
     }
   }, [handleNavigateToLibrary])
 

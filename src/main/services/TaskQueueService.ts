@@ -30,6 +30,7 @@ import type { ScanResult } from '../providers/base/MediaProvider'
 import { getWishlistCompletionService } from './WishlistCompletionService'
 import { getTMDBService } from './TMDBService'
 import { getTranscodingService } from './TranscodingService'
+import type { ShowTranscodeRequest, ShowTranscodePreflight, ShowTranscodeEpisodeCheckpoint } from './TranscodingService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { analyzeAlbumQuality } from './MusicQualityAnalyzer'
 import { getArtistAlbumsCombined } from './utils/musicUtils'
@@ -76,6 +77,9 @@ export class TaskQueueService {
   private progressThrottleTimer: NodeJS.Timeout | null = null
   private progressUpdatePending = false
   private processingIdleWaiters: Array<() => void> = []
+  private currentTaskAbortController?: AbortController
+  private preflightPauseRequested = false
+  private readonly taskCompletionWaiters = new Map<string, Set<(task: QueuedTask) => void>>()
 
   private static readonly MAX_COMPLETED_TASKS = 50
   private static readonly MAX_HISTORY_ENTRIES = 100
@@ -95,6 +99,11 @@ export class TaskQueueService {
   addTask(definition: TaskDefinition): string {
     // Check for duplicate: same type + sourceId + libraryId already queued or running
     const isDuplicate = (t: QueuedTask) => {
+      if (definition.type === 'optimization-preflight') {
+        const current = definition.options as { request?: ShowTranscodeRequest } | undefined
+        const existing = t.options as { request?: ShowTranscodeRequest } | undefined
+        return t.type === definition.type && JSON.stringify(current?.request) === JSON.stringify(existing?.request)
+      }
       if (definition.type === 'transcode' && definition.mediaItemId !== undefined) {
         return t.type === 'transcode' && t.mediaItemId === definition.mediaItemId
       }
@@ -162,10 +171,30 @@ export class TaskQueueService {
     const index = this.queue.findIndex(t => t.id === taskId)
     if (index === -1) return false
 
-    this.queue.splice(index, 1)
+    const [removed] = this.queue.splice(index, 1)
+    removed.status = 'cancelled'
+    removed.completedAt = new Date().toISOString()
+    this.resolveTaskCompletion(removed)
+    if (removed.type === 'optimization-preflight') {
+      const payload = removed.options as { requestId: string }
+      getDatabase().config.deleteSetting(`transcoding.backgroundPreflight.${payload.requestId}`)
+    }
     console.log(`[TaskQueue] Removed task: ${taskId}`)
     this.emitQueueUpdate()
     return true
+  }
+
+  waitForTask(taskId: string): Promise<QueuedTask> {
+    if (this.currentTask?.id === taskId || this.queue.some(task => task.id === taskId)) {
+      return new Promise(resolve => {
+        const waiters = this.taskCompletionWaiters.get(taskId) ?? new Set<(task: QueuedTask) => void>()
+        waiters.add(resolve)
+        this.taskCompletionWaiters.set(taskId, waiters)
+      })
+    }
+    const completedTask = this.completedTasks.find(task => task.id === taskId)
+    if (completedTask) return Promise.resolve(completedTask)
+    throw new Error(`Task ${taskId} is no longer available`)
   }
 
   /**
@@ -205,6 +234,10 @@ export class TaskQueueService {
    */
   pauseQueue(): void {
     this.isPaused = true
+    if (this.currentTask?.type === 'optimization-preflight' && !this.preflightPauseRequested) {
+      this.preflightPauseRequested = true
+      this.currentTaskAbortController?.abort(new DOMException('Preflight paused', 'AbortError'))
+    }
     console.log(`[TaskQueue] Queue paused`)
     this.emitQueueUpdate()
   }
@@ -238,6 +271,8 @@ export class TaskQueueService {
 
     console.log(`[TaskQueue] Cancelling current task: ${this.currentTask.label}`)
     this.cancelRequested = true
+    this.preflightPauseRequested = false
+    this.currentTaskAbortController?.abort(new Error('Task cancelled'))
     this.currentTask.status = 'cancelling'
     this.emitQueueUpdate()
 
@@ -258,6 +293,8 @@ export class TaskQueueService {
         break
       case 'transcode':
         getTranscodingService().cancel()
+        break
+      case 'optimization-preflight':
         break
     }
   }
@@ -591,6 +628,8 @@ export class TaskQueueService {
     const task = this.queue.shift()!
     this.currentTask = task
     this.cancelRequested = false
+    this.preflightPauseRequested = false
+    this.currentTaskAbortController = new AbortController()
 
     task.status = 'running'
     task.startedAt = new Date().toISOString()
@@ -615,7 +654,26 @@ export class TaskQueueService {
       const errorMsg = getErrorMessage(error) || 'Unknown error'
       const isCancellation = this.cancelRequested || errorMsg === 'Task cancelled'
 
-      if (isCancellation) {
+      if (this.preflightPauseRequested && task.type === 'optimization-preflight') {
+        task.status = 'queued'
+        task.progress = undefined
+        this.queue.unshift(task)
+        this.preflightPauseRequested = false
+        this.currentTask = null
+        this.isProcessing = false
+        this.currentTaskAbortController = undefined
+        this.emitQueueUpdate()
+        for (const resolve of this.processingIdleWaiters.splice(0)) resolve()
+        return
+      } else if (isCancellation) {
+        if (task.type === 'optimization-preflight') {
+          const payload = task.options as { requestId: string }
+          try {
+            await getDatabase().config.deleteSetting(`transcoding.backgroundPreflight.${payload.requestId}`)
+          } catch (cleanupError) {
+            console.error('[TaskQueue] Failed to clear cancelled preflight migration record:', getErrorMessage(cleanupError))
+          }
+        }
         task.status = this.shuttingDown ? 'interrupted' : 'cancelled'
         this.addTaskHistoryEntry(task, this.shuttingDown ? 'task-interrupted' : 'task-cancelled', `${this.shuttingDown ? 'Interrupted (app quit)' : 'Cancelled'}: ${task.label}`)
         console.log(`[TaskQueue] Task ${this.shuttingDown ? 'interrupted for shutdown' : 'cancelled'}: ${task.label}`)
@@ -667,14 +725,24 @@ export class TaskQueueService {
     this.currentTask = null
     this.isProcessing = false
     this.cancelRequested = false
+    this.preflightPauseRequested = false
+    this.currentTaskAbortController = undefined
     for (const resolve of this.processingIdleWaiters.splice(0)) resolve()
 
     this.emitQueueUpdate()
     this.emitTaskComplete(task)
+    this.resolveTaskCompletion(task)
 
     // Process next task (this will resume monitoring if queue is empty)
     // Use setImmediate to avoid growing call stack with many sequential tasks
     setImmediate(() => this.processNext())
+  }
+
+  private resolveTaskCompletion(task: QueuedTask): void {
+    const waiters = this.taskCompletionWaiters.get(task.id)
+    if (!waiters) return
+    this.taskCompletionWaiters.delete(task.id)
+    for (const resolve of waiters) resolve(task)
   }
 
   /**
@@ -768,9 +836,49 @@ export class TaskQueueService {
         await this.executeTranscode(task, progressCallback)
         break
 
+      case 'optimization-preflight':
+        await this.executeOptimizationPreflight(task, progressCallback)
+        break
+
       default:
         throw new Error(`Unknown task type: ${task.type}`)
     }
+  }
+
+  private async executeOptimizationPreflight(
+    task: QueuedTask,
+    onProgress: (progress: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void,
+  ): Promise<void> {
+    const payload = task.options as { requestId: string; request: ShowTranscodeRequest; preflightId: string; batchId: string; mediaType?: string }
+    const checkpointPrefix = `transcoding.preflightCheckpoint.${payload.requestId}.`
+    const signal = this.currentTaskAbortController!.signal
+    const result: ShowTranscodePreflight = await getTranscodingService().preflightShowTranscode(payload.request, {
+      signal,
+      beginCommit: () => undefined,
+      waitUntilRunning: async () => { signal.throwIfAborted() },
+      update: update => onProgress({
+        current: update.progress?.percentage,
+        total: 100,
+        percentage: update.progress?.percentage,
+        phase: update.phase,
+        currentItem: update.progress?.currentItem,
+      }),
+      preflightId: payload.preflightId,
+      batchId: payload.batchId,
+      loadEpisodeCheckpoint: async mediaItemId => {
+        const raw = await getDatabase().config.getSetting(`${checkpointPrefix}${mediaItemId}`)
+        if (!raw) return undefined
+        const checkpoint = JSON.parse(raw) as ShowTranscodeEpisodeCheckpoint
+        if (checkpoint.version !== 1 || checkpoint.plan.mediaItemId !== mediaItemId) throw new Error(`Invalid optimization checkpoint for media item ${mediaItemId}`)
+        return checkpoint
+      },
+      saveEpisodeCheckpoint: async (mediaItemId, checkpoint) => {
+        await getDatabase().config.setSetting(`${checkpointPrefix}${mediaItemId}`, JSON.stringify(checkpoint))
+      },
+    })
+    task.result = { preflightId: result.preflightId, batchId: result.batchId, episodeCount: result.episodeCount, mediaItemId: payload.request.mediaItemId, mediaType: payload.mediaType }
+    for (const key of Object.keys(getDatabase().config.getAllSettings()).filter(key => key.startsWith(checkpointPrefix))) await getDatabase().config.deleteSetting(key)
+    await getDatabase().config.deleteSetting(`transcoding.backgroundPreflight.${payload.requestId}`)
   }
 
   private async executeTranscode(task: QueuedTask, onProgress: (p: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void): Promise<void> {

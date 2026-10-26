@@ -1,13 +1,15 @@
-import { GripVertical, X } from 'lucide-react'
+import { ArrowUpRight, GripVertical, X } from 'lucide-react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import type { QueuedTask } from '@main/types/taskQueue'
 
 interface SortableQueueItemProps {
-  task: { id: string; label: string }
+  task: QueuedTask
   onRemove: (id: string) => void
+  onOpenPreflight?: (task: QueuedTask) => void
 }
 
-export function SortableQueueItem({ task, onRemove }: SortableQueueItemProps) {
+export function SortableQueueItem({ task, onRemove, onOpenPreflight }: SortableQueueItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id })
 
   return (
@@ -22,6 +24,11 @@ export function SortableQueueItem({ task, onRemove }: SortableQueueItemProps) {
         {...listeners}
       />
       <span className="text-sm flex-1 truncate">{task.label}</span>
+      {task.type === 'optimization-preflight' && (task.options as { mediaType?: string } | undefined)?.mediaType !== 'movie' && onOpenPreflight && <button
+        onClick={event => { event.stopPropagation(); onOpenPreflight(task) }}
+        className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-primary shrink-0"
+        title="Open preflight"
+      ><ArrowUpRight className="w-3.5 h-3.5" /></button>}
       <button
         onClick={event => {
           event.stopPropagation()

@@ -186,8 +186,16 @@ export function MediaBrowser({
   const listViewRef = useRef<HTMLButtonElement>(null)
   const [selectedMediaId, setSelectedMediaId] = useState<number | null>(null)
   const [optimizingMovieId, setOptimizingMovieId] = useState<number | null>(null)
+  const [initialMoviePreflightId, setInitialMoviePreflightId] = useState<string | null>(null)
   const [detailRefreshKey, setDetailRefreshKey] = useState(0) // Increment to force detail view refresh
   const { viewType, gridScale, setViewType, setGridScale, viewPrefsLoadedRef, loadViewPrefs } = useViewPreferences(view, reportViewPreferenceError)
+
+  useEffect(() => {
+    if (pendingTVOptimizationAction?.kind !== 'review-movie') return
+    setOptimizingMovieId(pendingTVOptimizationAction.mediaItemId)
+    setInitialMoviePreflightId(pendingTVOptimizationAction.preflightId)
+    onTVOptimizationActionHandled?.()
+  }, [pendingTVOptimizationAction, onTVOptimizationActionHandled])
 
   // Library filter within current view (declared early — needed by pagination hooks)
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null)
@@ -2240,7 +2248,8 @@ export function MediaBrowser({
       {optimizingMovieId !== null && (
         <TranscodeModal
           mediaId={optimizingMovieId}
-          onClose={() => setOptimizingMovieId(null)}
+          initialPreflightId={initialMoviePreflightId ?? undefined}
+          onClose={() => { setOptimizingMovieId(null); setInitialMoviePreflightId(null) }}
           onOptimizationCompleted={handleMovieOptimizationCompleted}
         />
       )}

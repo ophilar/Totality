@@ -82,6 +82,7 @@ export function registerOptimizationHandlers() {
       originalLanguage: item.original_language,
       durationMs: analysis.durationMs || undefined,
       videoSavingsBytes: savings.videoSavingsBytes,
+      videoTargetCodec: savings.videoTargetCodec,
       videoAvailable: Boolean(analysis.video),
       audioTranscodeSavingsBytes: null,
       audioTracks: mapAnalysisAudioTracksToDecisionTracks(analysis.audioTracks),

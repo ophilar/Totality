@@ -346,6 +346,7 @@ export interface MediaBrowserProps {
 
 export type TVOptimizationNavigation =
   | { kind: 'review'; preflightId: string }
+  | { kind: 'review-movie'; preflightId: string; mediaItemId: number }
   | {
       kind: 'resume'
       requestId: string

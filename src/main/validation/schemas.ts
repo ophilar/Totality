@@ -502,6 +502,7 @@ export const LetterOffsetSchema = z.object({
 // ============================================================================
 
 export const TranscodeOptionsSchema = z.object({
+  playbackPolicy: z.enum(['allow-transcoding', 'avoid-video-transcoding', 'direct-play']).optional(),
   targetCodec: z.enum(['av1', 'hevc']).optional(),
   outputMode: z.enum(['copy', 'quarantine-replace', 'replace']).optional(),
   tempDirectory: z.string().optional(),
@@ -515,7 +516,7 @@ export const TranscodeOptionsSchema = z.object({
   transcodingEngine: z.literal('ffmpeg').optional(),
   optimizationMode: z.enum(['smart', 'remux_only', 'transcode']).optional(),
   qualityProfile: z.enum(['transparent', 'balanced', 'maximum_savings']).optional(),
-  encoderPolicy: z.enum(['hardware', 'software', 'compare']).optional(),
+  encoderPolicy: z.enum(['automatic', 'hardware', 'software', 'compare']).optional(),
   targetProfileId: z.string().min(1).nullable().optional(),
   targetContainer: z.enum(['mkv', 'mp4']).optional(),
   targetContainerSelection: z.enum(['automatic', 'user-selected']).optional(),

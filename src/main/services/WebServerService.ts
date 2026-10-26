@@ -589,6 +589,7 @@ export class WebServerService {
         return
       }
 
+      ws.sessionToken = rpc.token
       await this.handleRpc(ws, rpc)
       return
     }

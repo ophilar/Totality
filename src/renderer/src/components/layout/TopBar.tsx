@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { SETTING_KEYS } from '../../../../shared/settingKeys'
-import { Search, X, Home, Film, Tv, Music, Tags, ListChecks, Star, Settings, RefreshCw, Disc3, User, MessageSquare, ArrowLeft, ArrowRight, Activity, Loader2, ListOrdered } from 'lucide-react'
+import { Search, X, Home, Film, Tv, Music, Tags, ListChecks, Star, Settings, RefreshCw, Disc3, User, MessageSquare, ArrowLeft, ArrowRight, Loader2, ListOrdered, ListTodo } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
 import { useWishlist } from '../../contexts/WishlistContext'
 import { useNavigation } from '../../contexts/NavigationContext'
@@ -777,7 +777,7 @@ export function TopBar({
               {hasRunningTask ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
-                <Activity className="w-5 h-5" />
+                <ListTodo className="w-5 h-5" />
               )}
               {taskPendingCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-white text-black text-[10px] font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">

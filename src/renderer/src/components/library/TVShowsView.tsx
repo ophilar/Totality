@@ -542,7 +542,7 @@ export function TVShowsView({
   }, [shows])
 
   useEffect(() => {
-    if (!pendingTVOptimizationAction) return
+    if (!pendingTVOptimizationAction || pendingTVOptimizationAction.kind === 'review-movie') return
     const detail = pendingTVOptimizationAction.kind === 'review'
       ? { preflightId: pendingTVOptimizationAction.preflightId }
       : { requestId: pendingTVOptimizationAction.requestId, entity: pendingTVOptimizationAction.entity }

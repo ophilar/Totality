@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Zap,
@@ -29,7 +29,7 @@ import { describeDiagnosticError, logOptimizationDiagnostic } from './optimizati
 import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
 import { PlaybackCompatibilityFindings } from './PlaybackCompatibilityPanel'
 import { getTVShowIdentity } from './tv/showIdentity'
-import type { QueueState } from '@main/types/taskQueue'
+import type { QueueState, QueuedTask } from '@main/types/taskQueue'
 import { getPlaybackTargetContainers, recommendPlaybackTargetContainer, type PlaybackTargetProfile } from '@main/types/playbackTarget'
 import type { OptimizationQualityProfile } from '@main/services/MeasuredOptimizationPolicy'
 import { getHardwareEncoder } from '@main/services/TranscodingCapabilities'
@@ -171,6 +171,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
   const [adjustToTarget, setAdjustToTarget] = useState(true)
   const [targetProfileId, setTargetProfileId] = useState('')
   const [targetProfileName, setTargetProfileName] = useState('')
+  const [playbackPolicy, setPlaybackPolicy] = useState<'allow-transcoding' | 'avoid-video-transcoding' | 'direct-play'>('allow-transcoding')
   const [targetProfiles, setTargetProfiles] = useState<PlaybackTargetProfile[]>([])
   const [targetProfilesLoading, setTargetProfilesLoading] = useState(true)
   const targetProfile = targetProfiles.find(profile => profile.id === targetProfileId)
@@ -187,8 +188,13 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
       && targetProfile.definition.audio.codecs.some(supportedCodec => normalizeAudioCodec(supportedCodec) === normalizeAudioCodec(codec))
     )
     : undefined
-  const [qualityProfile, setQualityProfile] = useState<OptimizationQualityProfile | ''>('balanced')
-  const [encoderPolicy, setEncoderPolicy] = useState<'hardware' | 'software' | 'compare' | ''>('')
+  const [qualityProfile, setQualityProfile] = useState<OptimizationQualityProfile | ''>('transparent')
+  const qualityPreferenceScopes = useMemo(() => episode?.id
+    ? [`item:${sourceId}:${episode.id}`, `show:${sourceId}:${libraryId}:${seriesIdentityKey}`]
+    : seasonNumber !== undefined
+      ? [`season:${sourceId}:${libraryId}:${seriesIdentityKey}:${seasonNumber}`, `show:${sourceId}:${libraryId}:${seriesIdentityKey}`]
+      : [`show:${sourceId}:${libraryId}:${seriesIdentityKey}`], [episode, sourceId, libraryId, seriesIdentityKey, seasonNumber])
+  const [encoderPolicy, setEncoderPolicy] = useState<'automatic' | 'hardware' | 'software' | 'compare' | ''>('automatic')
   const useHardwareEncoder = encoderPolicy === 'hardware' || encoderPolicy === 'compare'
   const [targetContainer, setTargetContainer] = useState<'mkv' | 'mp4' | ''>('')
   const [targetContainerSelection, setTargetContainerSelection] = useState<'automatic' | 'user-selected'>('automatic')
@@ -213,10 +219,12 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
   const [preflightData, setPreflightData] = useState<ShowTranscodePreflight | null>(null)
   const [preflightTermination, setPreflightTermination] = useState<'cancelling' | 'finishing' | null>(null)
   const [preflightProgress, setPreflightProgress] = useState<{ percentage: number; phase?: string; currentItem?: string } | null>(null)
-  const [preflightOperationState, setPreflightOperationState] = useState<'running' | 'pausing' | 'paused' | 'finishing' | null>(null)
+  const [preflightOperationState, setPreflightOperationState] = useState<'queued' | 'running' | 'pausing' | 'paused' | 'finishing' | null>(null)
   const [quarantineFiles, setQuarantineFiles] = useState<Array<{ mediaItemId: number; label: string; path: string; size: number; modifiedAt: string; owned: boolean }>>([])
   const modalRef = useRef<HTMLDivElement | null>(null)
   const activePreflightRequestId = useRef<string | null>(null)
+  const activePreflightTaskId = useRef<string | null>(null)
+  const rejectPreflightWait = useRef<((error: Error) => void) | null>(null)
   const backgroundPreflight = useRef(false)
   const startedPreflightHere = useRef(false)
 
@@ -235,7 +243,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
     setPreflightData(initialPreflight)
     setReviewedEpisodes([])
     setMode('preview')
-  }, [initialPreflight?.preflightId])
+  }, [initialPreflight])
 
   useEffect(() => {
     if (initialPreflight || resumeRequestId || targetProfilesLoading) return
@@ -256,6 +264,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
       setRemoveUnnecessaryStreams(options.streamSelection?.audio !== 'all')
       setAdjustToTarget(options.optimizationMode !== 'remux_only')
       setTargetProfileId(options.targetProfileId ?? '')
+      setPlaybackPolicy(options.playbackPolicy ?? 'allow-transcoding')
       setTargetProfileName(targetProfiles.find(profile => profile.id === options.targetProfileId)?.name ?? '')
       setQualityProfile(options.qualityProfile ?? '')
       setEncoderPolicy(options.encoderPolicy ?? '')
@@ -283,25 +292,41 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
     if (initialPreflight) return
     let mounted = true
     let finished = false
-    const updateOperation = async (operation: import('@main/ipc/utils/OperationRequestRegistry').ActivityOperation) => {
+    const requestOf = (task: QueuedTask) => (task.options as { request?: { seriesIdentityKey?: string; sourceId?: string; libraryId?: string; mediaItemId?: number; seasonNumber?: number } } | undefined)?.request
+    const matchesScope = (task: QueuedTask) => {
+      const request = requestOf(task)
+      return task.type === 'optimization-preflight' && request?.sourceId === sourceId && request.libraryId === libraryId &&
+        request.seriesIdentityKey === seriesIdentityKey && request.mediaItemId === episode?.id && request.seasonNumber === seasonNumber
+    }
+    const updateTask = async (state: QueueState) => {
       if (!mounted || finished) return
-      if (!operation.outcome) {
-        activePreflightRequestId.current = operation.requestId
-        backgroundPreflight.current = false
+      const tasks = [state.currentTask, ...state.queue, ...state.completedTasks].filter((task): task is QueuedTask => task !== null)
+      const task = resumeRequestId
+        ? tasks.find(candidate => (candidate.options as { requestId?: string } | undefined)?.requestId === resumeRequestId)
+        : activePreflightTaskId.current
+          ? tasks.find(candidate => candidate.id === activePreflightTaskId.current)
+          : startedPreflightHere.current ? undefined : tasks.filter(candidate => matchesScope(candidate) && ['queued', 'running'].includes(candidate.status))
+            .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]
+      if (!task) return
+      activePreflightTaskId.current = task.id
+      activePreflightRequestId.current = (task.options as { requestId?: string } | undefined)?.requestId ?? null
+      backgroundPreflight.current = false
+      if (task.status === 'queued' || task.status === 'running') {
         setBusy(true)
-        setPreflightOperationState(operation.state === 'paused' || operation.state === 'pausing' || operation.state === 'finishing' ? operation.state : 'running')
+        setPreflightOperationState(state.isPaused ? 'paused' : task.status === 'queued' ? 'queued' : 'running')
         setPreflightProgress({
-          percentage: operation.progress?.percentage ?? 0,
-          phase: operation.phase ?? (seasonNumber === undefined ? 'Preflighting series' : `Preflighting season ${seasonNumber}`),
-          currentItem: operation.progress?.currentItem ?? operation.context,
+          percentage: task.progress?.percentage ?? 0,
+          phase: state.isPaused ? 'Preflight paused' : task.progress?.phase ?? (task.status === 'queued' ? 'Waiting in task queue' : seasonNumber === undefined ? 'Preflighting series' : `Preflighting season ${seasonNumber}`),
+          currentItem: task.progress?.currentItem ?? task.label,
         })
         return
       }
       finished = true
       activePreflightRequestId.current = null
-      if (operation.state === 'completed' && operation.resultId) {
+      activePreflightTaskId.current = null
+      if (task.status === 'completed' && typeof task.result?.preflightId === 'string') {
         try {
-          const saved = await window.electronAPI.getShowPreflight(operation.resultId) as { result: ShowTranscodePreflight } | undefined
+          const saved = await window.electronAPI.getShowPreflight(task.result.preflightId) as { result: ShowTranscodePreflight } | undefined
           if (!mounted) return
           if (!saved) throw new Error('The saved optimization review could not be found')
           setPreflightData(saved.result)
@@ -310,8 +335,8 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
         } catch (error) {
           setMessage(error instanceof Error ? error.message : String(error))
         }
-      } else if (operation.state !== 'cancelled') {
-        setMessage(operation.outcome.message)
+      } else if (task.status === 'failed') {
+        setMessage(task.error ?? 'Optimization preflight failed')
       }
       if (mounted) {
         setBusy(false)
@@ -319,30 +344,16 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
         setPreflightOperationState(null)
       }
     }
-    const matchesCurrentMedia = (operation: import('@main/ipc/utils/OperationRequestRegistry').ActivityOperation) => {
-      const entity = operation.entity
-      return operation.kind === 'optimization-preflight' && entity?.sourceId === sourceId && entity.libraryId === libraryId &&
-        entity.seriesIdentityKey === seriesIdentityKey && entity.mediaItemId === episode?.id && entity.seasonNumber === seasonNumber
-    }
-    const findOperation = (operations: import('@main/ipc/utils/OperationRequestRegistry').ActivityOperation[]) => {
-      if (resumeRequestId) return operations.find(operation => operation.requestId === resumeRequestId)
-      if (startedPreflightHere.current) return undefined
-      return operations.filter(operation => matchesCurrentMedia(operation) && !operation.outcome)
-        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]
-    }
-    const unsubscribe = window.electronAPI.onOperationsUpdated?.(({ operations }) => {
-      const operation = findOperation(operations)
-      if (operation) void updateOperation(operation)
+    const unsubscribe = window.electronAPI.onTaskQueueUpdated?.(state => {
+      if (resumeRequestId || activePreflightTaskId.current || !startedPreflightHere.current) setQueueState(state)
+      void updateTask(state)
     })
-    void window.electronAPI.operationsGetActivity().then(snapshot => {
-      const operation = findOperation(snapshot.operations)
-      if (operation) void updateOperation(operation)
-    }).catch(error => setMessage(error instanceof Error ? error.message : String(error)))
+    void window.electronAPI.taskQueueGetState().then(state => { if (mounted) { setQueueState(state); void updateTask(state) } }).catch(error => setMessage(error instanceof Error ? error.message : String(error)))
     return () => {
       mounted = false
       unsubscribe?.()
     }
-  }, [initialPreflight?.preflightId, resumeRequestId, seriesIdentityKey, sourceId, libraryId, episode?.id, seasonNumber])
+  }, [initialPreflight, resumeRequestId, seriesIdentityKey, sourceId, libraryId, episode?.id, seasonNumber])
 
   useEffect(() => {
     let mounted = true
@@ -362,6 +373,18 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
       .finally(() => { if (mounted) setTargetProfilesLoading(false) })
     return () => { mounted = false }
   }, [addToast])
+
+  useEffect(() => {
+    if (initialPreflight?.episodes.some(item => item.options?.qualityProfile)) return
+    let mounted = true
+    void window.electronAPI.getSetting(SETTING_KEYS.optimization_quality_preferences).then(raw => {
+      if (!mounted || !raw) return
+      const preferences = JSON.parse(raw) as Record<string, OptimizationQualityProfile>
+      const preference = qualityPreferenceScopes.map(scope => preferences[scope]).find(value => value !== undefined)
+      if (preference) setQualityProfile(preference)
+    }).catch(error => setMessage(error instanceof Error ? error.message : String(error)))
+    return () => { mounted = false }
+  }, [initialPreflight, qualityPreferenceScopes, episode])
 
   useEffect(() => {
     if (preflightData) return
@@ -406,13 +429,13 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
       containerSelection: 'automatic',
       allowedContainers: supportedContainers
     })
-  }, [preflightData, episode?.id, episode?.container, episode?.video_codec, episode?.hdr_format, targetProfile])
+  }, [preflightData, episode, seriesIdentityKey, sourceTargetCodec, sourceHdrFormat, sourceContainer, targetProfile])
 
 
   const handleClose = useCallback(() => {
     const requestId = activePreflightRequestId.current
     if (requestId) {
-      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.continue-in-background', { requestId, seriesIdentityKey, mediaItemId: episode?.id })
+      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.continue-in-queue', { requestId, seriesIdentityKey, mediaItemId: episode?.id })
       backgroundPreflight.current = true
       activePreflightRequestId.current = null
       onClose()
@@ -568,6 +591,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
     const effectiveOptimizationMode = shouldAdjustToTarget ? optimizationMode : 'remux_only' as const
     return {
       targetCodec: codec || undefined,
+      playbackPolicy,
       qualityProfile: qualityProfile || undefined,
       encoderPolicy: encoderPolicy || undefined,
       targetContainer: shouldAdjustToTarget ? targetContainer || undefined : undefined,
@@ -600,13 +624,14 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
       const dynamicHdrSource = ['DOLBY VISION', 'HDR10+'].includes(sourceHdrFormat ?? '')
       if (effectiveTargetProfileId && !targetHdrFormat && (optimizationMode === 'transcode' || (episode && !dynamicHdrSource))) missingSettings.push('output color format for the selected playback target')
     }
+    if (playbackPolicy !== 'allow-transcoding' && !effectiveTargetProfileId) missingSettings.push('playback target for the selected playback policy')
     const settings = {
       seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, optimizationMode, outputMode,
       seasonNumber,
       codec: codec || null, qualityProfile: qualityProfile || null, encoderPolicy: encoderPolicy || null,
       targetContainer: targetContainer || null, targetHdrFormat: targetHdrFormat || null,
       gpuId: gpuId || null, removeUnnecessaryStreams: shouldRemoveStreams,
-      adjustToTarget: shouldAdjustToTarget, targetProfileId: effectiveTargetProfileId || null
+      adjustToTarget: shouldAdjustToTarget, targetProfileId: effectiveTargetProfileId || null, playbackPolicy
     }
     logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.requested', settings)
     if (missingSettings.length > 0) {
@@ -626,20 +651,8 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
     setPreflightProgress({ percentage: 0, phase: 'Starting preflight', currentItem: seasonNumber === undefined ? 'Loading series episodes' : `Loading season ${seasonNumber} episodes` })
     setPreflightOperationState('running')
     startedPreflightHere.current = true
-    const unsubscribeProgress = window.electronAPI.onOperationsUpdated?.(({ operations }) => {
-      const operation = operations.find(candidate => candidate.requestId === requestId)
-      if (operation && !backgroundPreflight.current) {
-        if (operation.state === 'running' || operation.state === 'pausing' || operation.state === 'paused' || operation.state === 'finishing') {
-          setPreflightOperationState(operation.state)
-        }
-        setPreflightProgress({
-          percentage: operation.progress?.percentage ?? 0,
-          phase: operation.phase ?? (operation.state === 'finishing' ? 'Saving optimization review' : operation.label),
-          currentItem: operation.state === 'finishing' ? 'Writing the measured review plan' : operation.progress?.currentItem,
-        })
-      }
-    })
     let preflight: ShowTranscodePreflight | undefined
+    let unsubscribeTaskComplete: (() => void) | undefined
     try {
       const started = await window.electronAPI.startPreflightShow({
         requestId,
@@ -652,31 +665,33 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
         options: getCleanOptions(overrides)
       })
       if (started.requestId !== requestId) throw new Error('The background preflight returned a different request identity')
+      activePreflightTaskId.current = started.taskId
       preflight = await new Promise<ShowTranscodePreflight>((resolve, reject) => {
         let settled = false
-        let unsubscribe: (() => void) | undefined
-        const inspect = async (operations: Array<{ requestId: string; state: string; outcome?: { message: string } }>) => {
-          if (settled) return
-          const operation = operations.find(candidate => candidate.requestId === requestId)
-          if (!operation?.outcome) return
+        rejectPreflightWait.current = reject
+        const inspect = async (task: QueuedTask | null) => {
+          if (settled || task?.id !== started.taskId || !['completed', 'failed', 'cancelled'].includes(task.status)) return
           settled = true
-          unsubscribe?.()
-          if (operation.state !== 'completed') {
-            reject(operation.state === 'cancelled' ? new DOMException(operation.outcome.message, 'AbortError') : new Error(operation.outcome.message))
+          unsubscribeTaskComplete?.()
+          if (task.status !== 'completed') {
+            reject(task.status === 'cancelled' ? new DOMException(task.error ?? 'Preflight cancelled', 'AbortError') : new Error(task.error ?? 'Optimization preflight failed'))
             return
           }
           try {
-            const result = await window.electronAPI.operationsGetResult(requestId) as { preflightId?: string }
-            if (!result?.preflightId) throw new Error('The completed preflight did not return its saved review identifier')
-            const saved = await window.electronAPI.getShowPreflight(result.preflightId) as { result: ShowTranscodePreflight } | undefined
+            const preflightId = task.result?.preflightId
+            if (typeof preflightId !== 'string') throw new Error('The completed preflight did not return its saved review identifier')
+            const saved = await window.electronAPI.getShowPreflight(preflightId) as { result: ShowTranscodePreflight } | undefined
             if (!saved) throw new Error('The saved optimization review could not be found')
             resolve(saved.result)
           } catch (error) {
             reject(error)
           }
         }
-        unsubscribe = window.electronAPI.onOperationsUpdated?.(({ operations }) => { void inspect(operations) })
-        void window.electronAPI.operationsGetActivity().then(snapshot => inspect(snapshot.operations)).catch(reject)
+        unsubscribeTaskComplete = window.electronAPI.onTaskQueueTaskComplete(task => { void inspect(task) })
+        void window.electronAPI.taskQueueGetState().then(state => {
+          const task = [state.currentTask, ...state.queue, ...state.completedTasks].find(candidate => candidate?.id === started.taskId) ?? null
+          void inspect(task)
+        }).catch(reject)
       })
       logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.returned', { preflightId: preflight.preflightId, batchId: preflight.batchId, episodeCount: preflight.episodeCount, compatible: preflight.episodes.filter(item => item.compatible).length, savingsBytes: preflight.estimatedSavingsBytes, savingsCoverage: preflight.savingsCoverage })
       if (!backgroundPreflight.current) setPreflightData(preflight)
@@ -689,9 +704,11 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
       })
       throw error
     } finally {
-      unsubscribeProgress?.()
+      unsubscribeTaskComplete?.()
       if (!backgroundPreflight.current) {
         activePreflightRequestId.current = null
+        activePreflightTaskId.current = null
+        rejectPreflightWait.current = null
         setPreflightTermination(null)
         setPreflightProgress(null)
         setPreflightOperationState(null)
@@ -760,6 +777,11 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
       logOptimizationDiagnostic('TVOptimizationUI', 'info', 'queue.requested', { preflightId: preflightData.preflightId, batchId: preflightData.batchId, requiresSampleApproval: requiresApproval, reviewedEpisodeCount: reviewedEpisodes.length })
       if (preflightData.episodes.some(episode => episode.compatible && episode.samplePaths?.length && !reviewedEpisodes.includes(episode.mediaItemId))) throw new Error('Play and approve the winning samples for every eligible episode.')
       if (requiresApproval) await window.electronAPI.approveShow(preflightData.preflightId)
+      if (qualityProfile) {
+        const raw = await window.electronAPI.getSetting(SETTING_KEYS.optimization_quality_preferences)
+        const preferences = raw ? JSON.parse(raw) as Record<string, OptimizationQualityProfile> : {}
+        await window.electronAPI.setSetting(SETTING_KEYS.optimization_quality_preferences, JSON.stringify({ ...preferences, [qualityPreferenceScopes[0]]: qualityProfile }))
+      }
       const queued = await window.electronAPI.queueShow(preflightData.preflightId)
       logOptimizationDiagnostic('TVOptimizationUI', 'info', 'queue.completed', { batchId: queued.batchId, queuedMediaItemIds: queued.queuedMediaItemIds })
       setActiveBatchId(queued.batchId)
@@ -794,8 +816,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
   const softwareEncoder = codec === 'av1' ? 'svt_av1' : codec === 'hevc' ? 'x265' : undefined
   const softwareAvailable = softwareEncoder !== undefined && (deviceEncoders.software ?? []).includes(softwareEncoder)
   useEffect(() => {
-    const recommendedPolicy = hardwareAvailable ? 'hardware' : softwareAvailable ? 'software' : ''
-    setEncoderPolicy(recommendedPolicy)
+    const recommendedPolicy = hardwareAvailable || softwareAvailable ? 'automatic' : ''
     logOptimizationDiagnostic('TVOptimizationUI', 'info', 'encoder.policy.recommended', {
       encoderPolicy: recommendedPolicy || null,
       codec: codec || null,
@@ -865,11 +886,8 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
               if (!requestId) return
               const shouldPause = preflightOperationState !== 'paused'
               setPreflightOperationState(shouldPause ? 'pausing' : 'running')
-              void window.electronAPI.operationsSetPaused(requestId, shouldPause).then(result => {
-                logOptimizationDiagnostic('TVOptimizationUI', 'info', shouldPause ? 'preflight.pause.requested' : 'preflight.resume.requested', { requestId, status: result.status })
-                if (result.status === 'pausing' || result.status === 'paused' || result.status === 'running' || result.status === 'committing') {
-                  setPreflightOperationState(result.status === 'committing' ? 'finishing' : result.status)
-                }
+              void (shouldPause ? window.electronAPI.taskQueuePause() : window.electronAPI.taskQueueResume()).then(() => {
+                logOptimizationDiagnostic('TVOptimizationUI', 'info', shouldPause ? 'preflight.pause.requested' : 'preflight.resume.requested', { requestId, taskId: activePreflightTaskId.current })
               }).catch(error => {
                 logOptimizationDiagnostic('TVOptimizationUI', 'error', 'preflight.pause-control.failed', { requestId, error: describeDiagnosticError(error) })
                 setMessage(error instanceof Error ? error.message : String(error))
@@ -884,11 +902,13 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
             disabled={!activePreflightRequestId.current || preflightTermination !== null || preflightOperationState === 'finishing'}
             onClick={() => {
               const requestId = activePreflightRequestId.current
-              if (!requestId) return
+              const taskId = activePreflightTaskId.current
+              if (!requestId || !taskId) return
               setPreflightTermination('cancelling')
-              void window.electronAPI.dbCancelOperation(requestId).then(result => {
-                logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.cancel.requested', { requestId, status: result.status })
-                if (result.status === 'committing') setPreflightTermination('finishing')
+              const running = queueState.currentTask?.id === taskId
+              void (running ? window.electronAPI.taskQueueCancelCurrent() : window.electronAPI.taskQueueRemoveTask(taskId)).then(() => {
+                logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.cancel.requested', { requestId, taskId })
+                if (!running) rejectPreflightWait.current?.(new DOMException('Preflight cancelled', 'AbortError'))
               }).catch(error => {
                 logOptimizationDiagnostic('TVOptimizationUI', 'error', 'preflight.cancel.failed', { requestId, error: describeDiagnosticError(error) })
                 setPreflightTermination(null)
@@ -912,7 +932,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
         <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${preflightProgress.percentage}%` }} />
       </div>
       <p className="text-xs text-muted-foreground break-words">{preflightProgress.currentItem || 'Preparing episode checks…'}</p>
-      <p className="text-[11px] text-muted-foreground">Pause takes effect after the active file or sample step. Close this window to keep working; manage it later from Activity.</p>
+      <p className="text-[11px] text-muted-foreground">Pause stops the active sample and keeps completed work. Close this window to leave the task in the queue.</p>
     </div>
   ) : null
 
@@ -972,6 +992,17 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
                 }} disabled={busy || targetProfilesLoading} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-foreground">
                   <option value="">{targetProfilesLoading ? 'Loading playback targets…' : 'No playback target'}</option>
                   {targetProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+                </select>
+              </label>
+              <label className="block space-y-1.5 text-xs font-semibold">Playback
+                <select aria-label="Playback policy" value={playbackPolicy} onChange={event => {
+                  const policy = event.target.value as typeof playbackPolicy
+                  logOptimizationDiagnostic('TVOptimizationUI', 'info', 'playback.policy.selected', { playbackPolicy: policy })
+                  setPlaybackPolicy(policy)
+                }} disabled={busy} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-foreground">
+                  <option value="allow-transcoding">Let Plex adapt</option>
+                  <option value="avoid-video-transcoding">Avoid video transcoding</option>
+                  <option value="direct-play">Direct Play only</option>
                 </select>
               </label>
               {!targetProfile && <p className="text-xs text-muted-foreground">Playback compatibility will not be evaluated. Measured quality and output-size checks still apply.</p>}
@@ -1056,7 +1087,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
               <summary className="cursor-pointer list-none text-xs font-bold uppercase tracking-wider text-muted-foreground">Output settings</summary>
               <p className="text-xs text-muted-foreground">Recommended settings are already selected and will be used for measurement. Change any choice if you prefer.</p>
             <div className="grid grid-cols-2 gap-3 text-xs">
-              <label className="space-y-1">Visual quality threshold<select aria-label="Quality" value={qualityProfile} onChange={e => { const value = e.target.value as OptimizationQualityProfile; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'quality.threshold.selected', { qualityProfile: value }); setQualityProfile(value) }}><option value="">Choose quality threshold</option><option value="transparent">Highest measured fidelity</option><option value="balanced">Balanced fidelity and savings</option><option value="maximum_savings">More savings, measured loss allowed</option></select><span className="block text-[10px] text-muted-foreground">Default: Balanced · VMAF mean ≥95, fifth percentile ≥92, CAMBI ≤8.</span></label>
+              <label className="space-y-1">Quality preference<select aria-label="Quality preference" value={qualityProfile} onChange={e => { const value = e.target.value as OptimizationQualityProfile; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'quality.preference.selected', { qualityProfile: value }); setQualityProfile(value) }}><option value="">Choose a quality preference</option><option value="transparent">Higher fidelity</option><option value="maximum_savings">Smaller file</option><option value="balanced">Balanced · advanced</option></select><span className="block text-[10px] text-muted-foreground">The review compares both outcomes from the same measured samples. Keep the original when the savings are not worthwhile.</span></label>
               <EncoderPolicySelector value={encoderPolicy} hardwareAvailable={hardwareAvailable} softwareAvailable={softwareAvailable} recommendation={hardwareAvailable ? `Verified ${hardwareEncoder} on ${selectedGpu?.name ?? 'selected GPU'} for ${codec?.toUpperCase()}.` : softwareAvailable ? `No verified hardware encoder for ${codec?.toUpperCase()}; software is available.` : `No verified encoder is available for ${codec?.toUpperCase()}.`} onChange={policy => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'encoder.policy.selected', { encoderPolicy: policy ?? '' }); setEncoderPolicy(policy ?? '') }} />
               <label className="space-y-1">Output container<select aria-label="Container" value={targetContainer} onChange={e => { const value = e.target.value as typeof targetContainer; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'output.container.selected', { targetContainer: value || null, selection: value ? 'user-selected' : 'automatic' }); setTargetContainer(value); setTargetContainerSelection(value ? 'user-selected' : 'automatic') }}>{!episode && <option value="">Automatic per episode</option>}{episode && !targetContainer && <option value="">No supported container available</option>}{profileSupportedContainers.filter(container => ['matroska', 'mp4'].includes(container.toLowerCase())).map(container => <option key={container} value={container.toLowerCase() === 'matroska' ? 'mkv' : 'mp4'}>{container}</option>)}</select><span className="block text-[10px] text-muted-foreground">{targetContainerSelection === 'automatic' ? 'Automatic' : 'Selected'} · {containerRecommendation}</span></label>
               {targetProfile && episode && ['DOLBY VISION', 'HDR10+'].includes(sourceHdrFormat ?? '') && optimizationMode !== 'transcode'
@@ -1445,6 +1476,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
                     </div>
                     {ep.samplingRole === 'measured' && <p className="text-xs text-primary">Encode samples measured from this episode.</p>}
                     {ep.samplingRole === 'projected' && <p className="text-xs text-amber-300">Uses measured settings from {ep.sampleRepresentativeLabel}; this episode’s savings are projected.</p>}
+                    {ep.qualityChoices?.length ? <div className="grid gap-1 rounded-md bg-muted/30 p-2 text-[11px]">{ep.qualityChoices.map(choice => <p key={choice.profile}><strong>{choice.profile === 'transparent' ? 'Higher fidelity' : 'Smaller file'}:</strong> {choice.status === 'available' ? `${formatBytes(choice.estimatedSavingsBytes ?? 0)} estimated savings · ${choice.candidate?.encoder}/${choice.candidate?.preset} · VMAF ${choice.candidate?.vmafMean.toFixed(1)} mean, ${choice.candidate?.vmafP5.toFixed(1)} p5` : choice.status === 'measurement_incomplete' ? 'More candidate measurements are pending' : choice.status === 'incompatible' ? 'Measured candidates do not meet playback requirements' : 'No measured candidate meets this quality requirement'}</p>)}</div> : null}
                     {ep.changes?.map(change => <p key={change} className="text-xs">{change}</p>)}
                     {ep.targetCompatibility && <PlaybackCompatibilityFindings evaluation={ep.targetCompatibility} targetName={ep.targetProfile?.name} />}
                     {ep.samplePaths?.length && <div className="text-xs space-y-2">{ep.samplePaths.map((sample, index) => <button key={sample} className="mr-2 underline" onClick={() => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'sample.playback.requested', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, sampleIndex: index }); void window.electronAPI.openShowSample(preflightData.preflightId, ep.mediaItemId, index).then(() => logOptimizationDiagnostic('TVOptimizationUI', 'info', 'sample.playback.opened', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, sampleIndex: index })).catch(error => { logOptimizationDiagnostic('TVOptimizationUI', 'error', 'sample.playback.failed', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, sampleIndex: index, error: describeDiagnosticError(error) }); const message = error instanceof Error ? error.message : String(error); setMessage(message); addToast({ type: 'error', title: 'Could not open measured sample', message }) }) }}>Play sample {index + 1}</button>)}<label className="block"><input type="checkbox" checked={reviewedEpisodes.includes(ep.mediaItemId)} onChange={event => { const reviewed = event.target.checked; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'sample.review.acknowledged', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, reviewed }); setReviewedEpisodes(ids => reviewed ? [...ids, ep.mediaItemId] : ids.filter(id => id !== ep.mediaItemId)) }} /> I approve playback of these samples and the listed conversions</label></div>}
@@ -1556,7 +1588,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
 
             <div className="flex items-center justify-between rounded-xl border border-border/30 p-3 text-sm">
               <span>{batchQueue.length} episodes queued{queueState.isPaused ? ' · queue paused' : ''}</span>
-              <button type="button" onClick={() => window.dispatchEvent(new Event('operations:openActivity'))} className="text-primary hover:underline">Open Activity</button>
+              <button type="button" onClick={() => window.dispatchEvent(new Event('taskQueue:open'))} className="text-primary hover:underline">Open Task Queue</button>
             </div>
           </div>
         )}
@@ -1624,7 +1656,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
             </>
           ) : (
             <>
-              <button type="button" onClick={() => window.dispatchEvent(new Event('operations:openActivity'))} className="text-sm text-primary hover:underline">Open Activity</button>
+              <button type="button" onClick={() => window.dispatchEvent(new Event('taskQueue:open'))} className="text-sm text-primary hover:underline">Open Task Queue</button>
 
               <button
                 onClick={() => void handleClose()}

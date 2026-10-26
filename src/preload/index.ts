@@ -2023,7 +2023,7 @@ interface ExistingElectronAPI {
   seriesGetAudioLanguagesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<string[]>
   seriesAnalyzeByIdentity: (seriesIdentityKey: string, sourceId?: string, libraryId?: string) => Promise<any>
   preflightShow: (request: any) => Promise<any>
-  startPreflightShow: (request: any) => Promise<{ requestId: string }>
+  startPreflightShow: (request: any) => Promise<{ requestId: string; taskId: string }>
   getShowPreflight: (preflightId: string) => Promise<any>
   findShowPreflight: (seriesIdentityKey: string, sourceId: string, libraryId: string, seriesTitle: string, mediaItemId?: number, seasonNumber?: number) => Promise<{ request: unknown; result: unknown } | undefined>
   queueShow: (preflightId: string) => Promise<any>

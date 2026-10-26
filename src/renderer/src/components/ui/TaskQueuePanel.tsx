@@ -25,12 +25,12 @@ import {
   XCircle,
   Clock,
   Loader2,
-  Activity,
+  ListTodo,
   CheckCircle2,
   AlertTriangle,
 } from 'lucide-react'
 import { SortableQueueItem } from './SortableQueueItem'
-import type { QueueState } from '@main/types/taskQueue'
+import type { QueueState, QueuedTask } from '@main/types/taskQueue'
 
 interface TaskQueuePanelProps {
   isOpen: boolean
@@ -71,6 +71,25 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
   const handleCancelCurrent = useCallback(() => { window.electronAPI.taskQueueCancelCurrent?.() }, [])
   const handleRemoveTask = useCallback((taskId: string) => { window.electronAPI.taskQueueRemoveTask?.(taskId) }, [])
   const handleClearQueue = useCallback(() => { window.electronAPI.taskQueueClearQueue?.() }, [])
+  const handleOpenPreflight = useCallback((task: QueuedTask) => {
+    const options = task.options as { requestId?: string; mediaType?: string; request?: { seriesTitle?: string; seriesIdentityKey?: string; sourceId?: string; libraryId?: string; mediaItemId?: number; seasonNumber?: number } } | undefined
+    const request = options?.request
+    if (task.type !== 'optimization-preflight' || options?.mediaType === 'movie' || !options?.requestId || !request?.sourceId || !request.libraryId) return
+    window.dispatchEvent(new CustomEvent('tvOptimization:returnToPreflight', {
+      detail: {
+        requestId: options.requestId,
+        entity: {
+          seriesTitle: request.seriesTitle,
+          seriesIdentityKey: request.seriesIdentityKey,
+          sourceId: request.sourceId,
+          libraryId: request.libraryId,
+          mediaItemId: request.mediaItemId,
+          seasonNumber: request.seasonNumber,
+        },
+      },
+    }))
+    onClose()
+  }, [onClose])
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
@@ -108,7 +127,7 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
           <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-muted-foreground" />
+            <ListTodo className="w-4 h-4 text-muted-foreground" />
             <h2 className="text-sm font-semibold">Task Queue</h2>
             {pendingCount > 0 && (
               <span className="px-1.5 py-0.5 text-xs font-medium bg-primary/20 text-primary rounded-full">
@@ -149,6 +168,7 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
                 <XCircle className="w-4 h-4" />
               </button>
             </div>
+            {queueState.currentTask.type === 'optimization-preflight' && (queueState.currentTask.options as { mediaType?: string } | undefined)?.mediaType !== 'movie' && <button onClick={() => { if (queueState.currentTask) handleOpenPreflight(queueState.currentTask) }} className="mb-2 text-xs text-primary hover:underline">Open preflight</button>}
             {queueState.currentTask.progress && (
               <>
                 <div className="h-2 bg-muted rounded-full overflow-hidden mb-1.5">
@@ -189,7 +209,7 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
                 <SortableContext items={queueState.queue.map((t) => t.id)} strategy={verticalListSortingStrategy}>
                   <div className="divide-y divide-border/10">
                     {queueState.queue.map((task) => (
-                      <SortableQueueItem key={task.id} task={task} onRemove={handleRemoveTask} />
+                      <SortableQueueItem key={task.id} task={task} onRemove={handleRemoveTask} onOpenPreflight={handleOpenPreflight} />
                     ))}
                   </div>
                   <p className="px-4 py-1.5 text-xs text-muted-foreground/60 italic border-t border-border/20">Drag to reorder</p>
@@ -214,6 +234,18 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
                   <span className="text-xs flex-1 truncate">{task.label}</span>
                   {task.status === 'failed' && <span className="text-[10px] text-red-400">Failed</span>}
                   {task.status === 'partial' && <span className="text-[10px] text-amber-400">{task.result?.failedCount} item failures</span>}
+                  {task.type === 'optimization-preflight' && typeof task.result?.preflightId === 'string' && (
+                    <button
+                      className="text-xs text-primary hover:text-primary/80"
+                      onClick={() => {
+                        if (task.result?.mediaType === 'movie' && typeof task.result.mediaItemId === 'number') {
+                          window.dispatchEvent(new CustomEvent('optimization:requestMovieReview', { detail: { preflightId: task.result.preflightId, mediaItemId: task.result.mediaItemId } }))
+                        } else {
+                          window.dispatchEvent(new CustomEvent('tvOptimization:requestReview', { detail: { preflightId: task.result?.preflightId } }))
+                        }
+                      }}
+                    >Review</button>
+                  )}
                 </div>
               ))}
             </div>

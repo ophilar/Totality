@@ -28,13 +28,14 @@ import { normalizeAudioCodec, normalizeVideoCodec } from '@main/services/MediaNo
 
 interface TranscodeModalProps {
   mediaId: number
+  initialPreflightId?: string
   onClose: () => void
   onOptimizationCompleted?: () => void
   initialOptimizationMode?: 'remux_only' | 'transcode'
   initialStreamPruning?: boolean
 }
 
-export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, initialOptimizationMode = 'transcode', initialStreamPruning = false }: TranscodeModalProps) {
+export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimizationCompleted, initialOptimizationMode = 'transcode', initialStreamPruning = false }: TranscodeModalProps) {
   const [media, setMedia] = useState<MediaItem | null>(null)
   const [optimizationDecision, setOptimizationDecision] = useState<OptimizationDecision | null>(null)
   const [optimizationDecisionError, setOptimizationDecisionError] = useState<string | null>(null)
@@ -195,6 +196,22 @@ export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, init
   useEffect(() => {
     queueMicrotask(() => { void loadInitialData() })
   }, [loadInitialData])
+
+  useEffect(() => {
+    if (!initialPreflightId) return
+    let cancelled = false
+    void window.electronAPI.getShowPreflight(initialPreflightId)
+      .then((saved: { result: ShowTranscodePreflight } | undefined) => {
+        if (cancelled) return
+        if (!saved) throw new Error(`Saved optimization review ${initialPreflightId} was not found`)
+        setPreflight(saved.result)
+        setActiveTab('review')
+      })
+      .catch(error => {
+        if (!cancelled) addToast({ title: 'Could not reopen optimization review', message: error instanceof Error ? error.message : String(error), type: 'error' })
+      })
+    return () => { cancelled = true }
+  }, [initialPreflightId, addToast])
 
   useEffect(() => {
     const unsub = window.electronAPI.onProgress((p: any) => {
@@ -458,15 +475,15 @@ export function TranscodeModal({ mediaId, onClose, onOptimizationCompleted, init
 
           {optimizationDecision && (
             <section className="space-y-2 rounded-xl border border-border/40 bg-muted/20 p-4" aria-label="Estimated optimization savings">
-              <h4 className="text-sm font-semibold">General potential by operation</h4>
+              <h4 className="text-sm font-semibold">Estimated before sampling</h4>
               {([
                 ['Remove audio tracks', optimizationDecision.trackRemoval],
                 ['Transcode video', optimizationDecision.videoTranscode]
               ] as const).map(([label, mechanism]) => (
                 <div key={label} className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 border-t border-border/30 pt-2 text-sm first:border-t-0 first:pt-0">
-                  <span className="text-muted-foreground">{label}</span>
+                  <span className="text-muted-foreground">{label}{label === 'Transcode video' && optimizationDecision.videoTranscode.assumedTargetCodec ? ` to ${optimizationDecision.videoTranscode.assumedTargetCodec.toUpperCase()}` : ''}</span>
                   <EstimatedSavingsDisplay bytes={mechanism.estimatedSavingsBytes} />
-                  {mechanism.estimatedSavingsBytes == null && <span className="col-span-2 text-xs text-muted-foreground">{mechanism.reason}</span>}
+                  {(mechanism.estimatedSavingsBytes == null || label === 'Transcode video') && <span className="col-span-2 text-xs text-muted-foreground">{mechanism.reason}{mechanism.confidence === 'low' ? ' · Low confidence; measured samples determine whether the estimate is achievable.' : ''}</span>}
                 </div>
               ))}
             </section>
