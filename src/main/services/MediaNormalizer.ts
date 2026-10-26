@@ -112,6 +112,23 @@ export function normalizeVideoCodec(codec: string | null | undefined): string {
   return codec.toUpperCase()
 }
 
+/** Playback profiles store levels as decimal tenths; FFprobe reports HEVC general_level_idc. */
+export function normalizeVideoLevel(codec: string, level: number | undefined): number | undefined {
+  if (level === undefined) return undefined
+  if (normalizeVideoCodec(codec) !== 'HEVC') return level
+  if (!Number.isInteger(level) || level <= 0 || level % 3 !== 0) return undefined
+  return level / 3
+}
+
+export function normalizeSubtitleFormat(codec: string): string {
+  switch (codec.toLowerCase()) {
+    case 'subrip': return 'srt'
+    case 'hdmv_pgs_subtitle': return 'pgs'
+    case 'dvd_subtitle': return 'vobsub'
+    default: return codec.toLowerCase()
+  }
+}
+
 // ============================================================================
 // AUDIO CODEC NORMALIZATION
 // ============================================================================
