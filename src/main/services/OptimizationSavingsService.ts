@@ -37,10 +37,6 @@ export function calculateBitrateSavingsBytes(sourceBitrateKbps: number, targetBi
   return Math.max(0, calculateBytesAtBitrateKbps(sourceBitrateKbps - targetBitrateKbps, durationSeconds))
 }
 
-export function calculateCodecEfficiencySavingsBytes(sourceBytes: number, sourceEfficiency: number, targetEfficiency: number): number {
-  return Math.round(sourceBytes * Math.max(0, 1 - sourceEfficiency / targetEfficiency))
-}
-
 export function sumMeasuredStreamBytes(streamBytes: Readonly<Record<number, number>> | undefined, streamIndexes: readonly number[]): number | null {
   if (streamIndexes.length === 0) return null
   let total = 0

@@ -331,6 +331,21 @@ describe('BetterSQLiteService — Media Items', () => {
     expect(migratedService.getQualityScore(id)?.estimated_savings_bytes).toBe(450)
   })
 
+  it('invalidates version 5 savings without clearing existing quality ratings', () => {
+    const id = service.upsertMediaItem(makeMediaItem())
+    const score = { ...makeQualityScore(id, 300), tier_quality: 'HIGH', tier_score: 87, video_savings_bytes: 125 }
+    service.upsertQualityScore(score)
+    testDb.prepare("UPDATE settings SET value = '5' WHERE key = 'optimization.savings_semantics_version'").run()
+
+    const migratedService = new BetterSQLiteService()
+    migratedService.initialize()
+    expect(migratedService.getQualityScore(id)?.estimated_savings_bytes).toBeNull()
+    expect(migratedService.getQualityScore(id)?.video_savings_bytes).toBeNull()
+    expect(migratedService.getQualityScore(id)?.tier_quality).toBe('HIGH')
+    expect(migratedService.getQualityScore(id)?.tier_score).toBe(87)
+    expect(migratedService.getSetting('optimization.savings_reanalysis_pending')).toBe('true')
+  })
+
   it('preserves media quality values when migrating legacy column names', () => {
     const id = service.upsertMediaItem(makeMediaItem())
     service.upsertQualityScore({ ...makeQualityScore(id, 300), video_savings_bytes: 200 })

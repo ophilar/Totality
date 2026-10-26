@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { IPC_CHANNELS } from '@shared/ipcChannels'
 import { createIpcHandler, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
 import { getDatabase } from '@main/database/getDatabase'
-import { getMediaFileAnalyzer, type AnalyzedAudioStream } from '@main/services/MediaFileAnalyzer'
+import type { AnalyzedAudioStream } from '@main/services/MediaFileAnalyzer'
 import { MediaPathAuthorization } from '@main/services/MediaPathAuthorization'
 import {
   buildOptimizationDecision,
@@ -75,16 +75,14 @@ export function registerOptimizationHandlers() {
       return buildUnavailableOptimizationDecision(e instanceof Error ? e.message : 'Not authorized', item.original_language)
     }
 
-    const analysis = await getMediaFileAnalyzer().analyzeFile(item.file_path)
-    if (!analysis.success) throw new Error(analysis.error || 'Fresh media analysis failed')
-
     const qualityAnalyzer = getQualityAnalyzer()
-    await qualityAnalyzer.loadThresholdsFromDatabase()
+    const { analysis } = await qualityAnalyzer.analyzeMediaItemFileEvidence(item)
     const savings = qualityAnalyzer.getOptimizationSavingsBreakdown(item, analysis)
     return buildOptimizationDecision({
       originalLanguage: item.original_language,
       durationMs: analysis.durationMs || undefined,
       videoSavingsBytes: savings.videoSavingsBytes,
+      videoAvailable: Boolean(analysis.video),
       audioTranscodeSavingsBytes: null,
       audioTracks: mapAnalysisAudioTracksToDecisionTracks(analysis.audioTracks),
     })

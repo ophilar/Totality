@@ -66,8 +66,7 @@ export function ConversionRecommendation({ item, compact = false, onOptimization
   const pruneStreams = decision.trackRemoval.status === 'executable'
   const transcodeAudio = decision.audioTranscode.status === 'executable' &&
     decision.audioTranscode.estimatedSavingsBytes != null && decision.audioTranscode.estimatedSavingsBytes > 0
-  const transcodeVideo = (decision.videoTranscode.status === 'review-required' || decision.videoTranscode.status === 'executable') &&
-    decision.videoTranscode.estimatedSavingsBytes != null && decision.videoTranscode.estimatedSavingsBytes > 0
+  const transcodeVideo = decision.videoTranscode.status === 'review-required' || decision.videoTranscode.status === 'executable'
   const hasSupportedOperation = Boolean(item.file_path) && (pruneStreams || transcodeAudio || transcodeVideo)
   return <div className={`${compact ? 'text-[10px]' : 'text-xs'} mt-3 rounded-md border border-primary/20 bg-primary/5 p-3`}>
     <div className="mb-2 flex items-center gap-2 font-semibold text-primary"><Zap className="h-3.5 w-3.5" />Disk optimization</div>

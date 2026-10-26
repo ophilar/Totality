@@ -6,6 +6,9 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { stat } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+import { MEASUREMENT_VERSION } from '../../src/main/services/MeasuredOptimizationPolicy'
 
 const configuredSettings = new Map<string, string>()
 const mockGetSetting = vi.fn((key: string) => configuredSettings.get(key) ?? null)
@@ -36,6 +39,40 @@ describe('QualityAnalyzer', () => {
     analyzer = new QualityAnalyzer()
   })
 
+  it('reuses a measured plan total, including zero, and invalidates changed source or measurement revisions', async () => {
+    const filePath = fileURLToPath(import.meta.url)
+    const source = await stat(filePath)
+    const measurement = { cacheKey: 'measured-plan', qualityProfile: 'balanced', samplingRole: 'measured', sourceSize: source.size, sourceMtimeMs: source.mtimeMs }
+    const item = createMediaItem({ file_path: filePath, file_size_bytes: source.size, duration_ms: 60_000, deep_analysis: JSON.stringify({ optimizationMeasurement: measurement }) })
+    const candidate = { encoder: 'qsv_h265', quality: 18, preset: 'medium', outputBytes: source.size - 100, sampledDurationSeconds: 60, vmafMean: 95, vmafP5: 92, cambiMean: 0 }
+    const cached = { version: MEASUREMENT_VERSION, cacheKey: measurement.cacheKey, candidates: [candidate] }
+    configuredSettings.set('transcoding.measurement.measured-plan', JSON.stringify(cached))
+    const score = await analyzer.analyzeMediaItem(item)
+    expect(score.estimated_savings_bytes).toBe(100)
+    expect(score.savings_basis).toBe('video_sample_encode')
+    expect(score.evidence_status).toBe('estimated')
+
+    measurement.qualityProfile = 'transparent'
+    item.deep_analysis = JSON.stringify({ optimizationMeasurement: measurement })
+    expect((await analyzer.analyzeMediaItem(item)).estimated_savings_bytes).toBeNull()
+    measurement.qualityProfile = 'balanced'
+    item.deep_analysis = JSON.stringify({ optimizationMeasurement: measurement })
+
+    candidate.outputBytes = source.size
+    configuredSettings.set('transcoding.measurement.measured-plan', JSON.stringify(cached))
+    expect((await analyzer.analyzeMediaItem(item)).estimated_savings_bytes).toBe(0)
+
+    measurement.sourceMtimeMs++
+    item.deep_analysis = JSON.stringify({ optimizationMeasurement: measurement })
+    expect((await analyzer.analyzeMediaItem(item)).estimated_savings_bytes).toBeNull()
+
+    measurement.sourceMtimeMs = source.mtimeMs
+    item.deep_analysis = JSON.stringify({ optimizationMeasurement: measurement })
+    cached.version--
+    configuredSettings.set('transcoding.measurement.measured-plan', JSON.stringify(cached))
+    expect((await analyzer.analyzeMediaItem(item)).estimated_savings_bytes).toBeNull()
+  })
+
   it('estimates only measured subtitle bytes when an explicit language policy removes tracks', () => {
     configuredSettings.set('subtitle_preferred_languages', 'eng')
     const item = createMediaItem({ file_size_bytes: 1_000, original_language: 'en', video_codec: 'hevc' })
@@ -54,10 +91,10 @@ describe('QualityAnalyzer', () => {
     }
 
     const breakdown = analyzer.getOptimizationSavingsBreakdown(item, analysis)
-    expect(breakdown.videoSavingsBytes).toBe(0)
+    expect(breakdown.videoSavingsBytes).toBeNull()
     expect(breakdown.subtitlePruningBytes).toBe(50)
     expect(breakdown.totalEstimatedSavingsBytes).toBe(50)
-    expect(breakdown.coverage).toBe('complete')
+    expect(breakdown.coverage).toBe('partial')
   })
 
   it('keeps every subtitle when no language policy is configured', () => {
@@ -73,10 +110,10 @@ describe('QualityAnalyzer', () => {
     })
     expect(breakdown.subtitlePruningBytes).toBeNull()
     expect(breakdown.totalEstimatedSavingsBytes).toBe(0)
-    expect(breakdown.coverage).toBe('complete')
+    expect(breakdown.coverage).toBe('partial')
   })
 
-  it('uses measured video stream bytes for the H.265 model', () => {
+  it('does not infer video savings from measured source stream size', () => {
     const breakdown = analyzer.getOptimizationSavingsBreakdown(createMediaItem({
       file_size_bytes: 1_000_000_000,
       video_codec: 'h264',
@@ -92,10 +129,10 @@ describe('QualityAnalyzer', () => {
       subtitleTracks: [],
       streamBytes: { 0: 400_000_000 },
     })
-    expect(breakdown.videoSavingsBytes).toBe(200_000_000)
+    expect(breakdown.videoSavingsBytes).toBeNull()
   })
 
-  it('estimates same-codec savings against the configured high bitrate threshold', () => {
+  it('does not infer achievable savings from a same-codec bitrate threshold', () => {
     const breakdown = analyzer.getOptimizationSavingsBreakdown(createMediaItem({
       file_size_bytes: 10_000_000_000,
       video_codec: 'hevc',
@@ -103,10 +140,10 @@ describe('QualityAnalyzer', () => {
       duration_ms: 3_600_000,
     }))
 
-    expect(breakdown.videoSavingsBytes).toBe(5_625_000_000)
+    expect(breakdown.videoSavingsBytes).toBeNull()
   })
 
-  it('uses AV1 for library estimates when the default target supports AV1 but not H.265', async () => {
+  it('does not infer AV1 savings from playback codec support', async () => {
     configuredSettings.set('optimization_default_target_profile_id', 'av1-target')
     mockGetPlaybackTargetProfile.mockResolvedValue({
       id: 'av1-target',
@@ -131,7 +168,7 @@ describe('QualityAnalyzer', () => {
       duration_ms: 3_600_000,
     }))
 
-    expect(breakdown.videoSavingsBytes).toBe(5_400_000_000)
+    expect(breakdown.videoSavingsBytes).toBeNull()
   })
 
   it('leaves unsupported codecs and missing video inputs unknown', () => {
@@ -149,7 +186,7 @@ describe('QualityAnalyzer', () => {
     expect(zeroBitrate.videoSavingsBytes).toBeNull()
   })
 
-  it('allows a modeled codec conversion review without resolution metadata or source labels blocking it', () => {
+  it('requires sample evidence before estimating codec conversion savings', () => {
     const advice = analyzer.getOptimizationAdvice(createMediaItem({
       file_path: 'C:/library/WEB-DL/title.mkv',
       file_size_bytes: 1_000_000_000,
@@ -161,10 +198,10 @@ describe('QualityAnalyzer', () => {
     }))
 
     expect(advice.action).toBe('video_transcode')
-    expect(advice.estimatedSavingsBytes).toBeGreaterThan(0)
+    expect(advice.estimatedSavingsBytes).toBeNull()
   })
 
-  it('combines modeled H.265 video savings with measured removable-audio bytes', async () => {
+  it('retains measured removable-audio savings while video savings remain unknown', async () => {
     const item = createMediaItem({
       file_size_bytes: 1_000_000_000,
       duration_ms: 3_600_000,
@@ -185,11 +222,11 @@ describe('QualityAnalyzer', () => {
     }
     const breakdown = analyzer.getOptimizationSavingsBreakdown(item, analysis)
 
-    expect(breakdown.videoSavingsBytes).toBe(2_250_000_000)
+    expect(breakdown.videoSavingsBytes).toBeNull()
     expect(breakdown.audioPruningBytes).toBe(360_000_000)
     const score = await analyzer.analyzeMediaItem(item, analysis)
-    expect(score.video_savings_bytes).toBe(2_250_000_000)
-    expect(score.estimated_savings_bytes).toBe(2_610_000_000)
+    expect(score.video_savings_bytes).toBeNull()
+    expect(score.estimated_savings_bytes).toBe(360_000_000)
   })
 
   it('does not include audio conversion savings unless selected in a plan', () => {
@@ -215,11 +252,11 @@ describe('QualityAnalyzer', () => {
 
     const breakdown = analyzer.getOptimizationSavingsBreakdown(item, analysis)
 
-    expect(breakdown.videoSavingsBytes).toBe(1_000_000_000)
+    expect(breakdown.videoSavingsBytes).toBeNull()
     expect(breakdown.audioPruningBytes).toBe(100_000_000)
     expect(breakdown.audioTranscodeBytes).toBeNull()
     expect(breakdown.totalEstimatedSavingsBytes).toBeGreaterThan(0)
-    expect(breakdown.coverage).toBe('complete')
+    expect(breakdown.coverage).toBe('partial')
   })
 
   it('preserves the configurable overall media quality rating', async () => {
@@ -236,7 +273,7 @@ describe('QualityAnalyzer', () => {
     expect(score.tier_score).not.toBeNull()
     expect(score.tier_quality).toBe('HIGH')
     expect(score.efficiency_score).toBeNull()
-    expect(score.video_savings_bytes).toBe(2_700_000_000)
+    expect(score.video_savings_bytes).toBeNull()
     expect(score.issues).not.toContain('Low bitrate')
   })
 
