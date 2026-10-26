@@ -271,8 +271,8 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
       }
       setMedia(mediaWithQuality)
 
-      // Fetch TMDB backdrop for mobile hero image
-      if (isMobile && item.tmdb_id) {
+      // Fetch TMDB backdrop for hero image
+      if (item.tmdb_id) {
         try {
           const tmdbDetails = item.type === 'episode'
             ? await window.electronAPI.tmdbGetTVShowDetails((item as unknown as { series_tmdb_id?: string }).series_tmdb_id || item.tmdb_id) as { backdropPath?: string } | null
@@ -584,7 +584,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
 
               {/* Title overlaid at bottom of artwork */}
               <div className="absolute bottom-0 left-0 right-0 px-4 pb-4">
-                <h2 className="text-2xl font-extrabold text-foreground leading-tight tracking-tight">{displayTitle}</h2>
+                <h2 className="text-2xl font-semibold text-foreground leading-tight tracking-tight">{displayTitle}</h2>
                 {media.type === 'episode' && (
                   <p className="text-sm text-foreground/80 mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
                 )}
@@ -655,7 +655,11 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
 
                 {onDismissUpgrade && media.tier_quality !== 'HIGH' && (
                   <button
-                    onClick={handleDismissUpgrade}
+                    onClick={() => {
+                      if (window.confirm(`Remove "${displayTitle}" from upgrade recommendations?`)) {
+                        handleDismissUpgrade()
+                      }
+                    }}
                     className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
                     title="Dismiss Upgrade"
                   >
@@ -671,209 +675,232 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
             </div>
           </div>
         ) : (
-          // ── Desktop: side-by-side poster + info ──
-          <div className="p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl shrink-0">
-            <div className="flex gap-4">
-              {(media.poster_url || media.episode_thumb_url) && (
-                <img
-                  src={media.type === 'episode' && media.episode_thumb_url ? media.episode_thumb_url : media.poster_url}
-                  alt=""
-                  className={`rounded-lg object-cover shrink-0 shadow-lg shadow-black/30 ${
-                    media.type === 'episode' && media.episode_thumb_url ? 'w-44 h-28' : 'w-24 h-36'
-                  }`}
-                  onError={(e) => { e.currentTarget.style.display = 'none' }}
-                />
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <h2 className="text-xl font-medium truncate">{displayTitle}</h2>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          navigator.clipboard.writeText(displayTitle)
-                          setCopied(true)
-                          setTimeout(() => setCopied(false), 1500)
-                        }}
-                        className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                        title="Copy title"
-                      >
-                        {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                    {media.type === 'episode' && (
-                      <p className="text-sm text-muted-foreground">S{media.season_number}E{media.episode_number} · {media.title}</p>
-                    )}
-                    {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
-                      <p className="text-sm text-muted-foreground">{sv?.edition || versions[0]?.edition}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {media.tier_quality && media.tier_quality !== 'HIGH' && (
-                      <AddToWishlistButton
-                        mediaType={media.type as WishlistMediaType}
-                        title={media.title}
-                        year={media.year}
-                        tmdbId={media.tmdb_id}
-                        imdbId={media.imdb_id}
-                        seriesTitle={media.series_title}
-                        seasonNumber={media.season_number}
-                        episodeNumber={media.episode_number}
-                        posterUrl={media.poster_url}
-                        reason="upgrade"
-                        mediaItemId={media.id}
-                        currentQualityTier={media.quality_tier}
-                        currentQualityLevel={media.tier_quality}
-                        currentResolution={media.resolution}
-                        currentVideoCodec={media.video_codec}
-                        currentAudioCodec={media.audio_codec}
-                      />
-                    )}
-                    {(onRescan || onFixMatch || (onDismissUpgrade && media.tier_quality !== 'HIGH')) && (
-                      <div ref={menuRef} className="relative">
-                        <button onClick={() => setShowMenu(!showMenu)} className="text-muted-foreground hover:text-foreground p-1.5" title="More options">
-                          {isRescanning ? <RefreshCw className="w-5 h-5 animate-spin" /> : <MoreVertical className="w-5 h-5" />}
-                        </button>
-                        {showMenu && !isRescanning && (
-                          <DropdownMenu className="min-w-[140px] z-50">
-                            {onRescan && media.file_path && <DropdownMenuItem onClick={handleRescan} icon={<RefreshCw className="w-3.5 h-3.5" />}>Rescan File</DropdownMenuItem>}
-                            {onFixMatch && media.type === 'movie' && <DropdownMenuItem onClick={handleFixMatch} icon={<Pencil className="w-3.5 h-3.5" />}>Fix Match</DropdownMenuItem>}
-                            {onDismissUpgrade && media.tier_quality !== 'HIGH' && <DropdownMenuItem onClick={handleDismissUpgrade} icon={<EyeOff className="w-3.5 h-3.5" />}>Dismiss Upgrade</DropdownMenuItem>}
-                          </DropdownMenu>
-                        )}
-                      </div>
-                    )}
-                    <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-1"><X className="w-5 h-5" /></button>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5 mt-2 text-sm text-muted-foreground">
-                  {media.year && <span>{media.year}</span>}
-                  {(sv?.duration ?? media.duration) > 0 && <><span className="mx-0.5">·</span><span>{formatDuration(sv?.duration ?? media.duration)}</span></>}
-                  {(sv?.file_size ?? media.file_size) > 0 && <><span className="mx-0.5">·</span><span>{formatFileSize(sv?.file_size ?? media.file_size)}</span></>}
-                  {(sv?.container ?? media.container) && <><span className="mx-0.5">·</span><span>{(sv?.container ?? media.container)?.toUpperCase()}</span></>}
-                  {media.tmdb_rating != null && media.tmdb_rating > 0 && (
-                    <><span className="mx-0.5">·</span><span title="TMDB Rating">★ {media.tmdb_rating.toFixed(1)}</span></>
-                  )}
-                  {(media.play_count ?? 0) > 0 && (
-                    <><span className="mx-0.5">·</span><span>{media.play_count === 1 ? 'Watched once' : `Watched ${media.play_count}×`}</span></>
-                  )}
-                  {media.last_watched_at && (
-                    <><span className="mx-0.5">·</span><span title={new Date(media.last_watched_at).toLocaleString()}>Last watched {new Date(media.last_watched_at).toLocaleDateString()}</span></>
-                  )}
-                </div>
+          // ── Desktop: Hero artwork layout (inspired by mobile) ──
+          <div className="shrink-0 rounded-t-xl overflow-hidden">
+            {/* Hero artwork with gradient fade */}
+            <div className="relative">
+              {(() => {
+                const heroSrc = media.type === 'episode'
+                  ? (media.episode_thumb_url || backdropUrl || media.poster_url)
+                  : (backdropUrl || media.poster_url)
+                const isWide = !!(media.type === 'episode' ? (media.episode_thumb_url || backdropUrl) : backdropUrl)
+                return heroSrc ? (
+                  <img
+                    src={heroSrc}
+                    alt=""
+                    className={`w-full object-cover ${isWide ? 'aspect-video' : 'aspect-[3/2]'}`}
+                    onError={(e) => { e.currentTarget.style.display = 'none' }}
+                  />
+                ) : null
+              })()}
+              {/* Gradient fade to card background */}
+              <div className="absolute inset-0 bg-gradient-to-t from-card via-card/60 to-black/20" />
+
+              {/* Close button — top right */}
+              <button
+                onClick={onClose}
+                className="absolute top-3 right-3 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm hover:bg-white/20 transition-colors z-10"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              {/* Title overlaid at bottom of artwork */}
+              <div className="absolute bottom-0 left-0 right-0 px-5 pb-4">
+                <h2 className="text-2xl font-semibold text-foreground leading-tight tracking-tight">{displayTitle}</h2>
+                {media.type === 'episode' && (
+                  <p className="text-sm text-foreground/80 mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
+                )}
+                {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
+                  <p className="text-sm text-foreground/70 font-medium">{sv?.edition || versions[0]?.edition}</p>
+                )}
               </div>
             </div>
 
-            {/* Summary */}
-            {media.summary && (
-              <p className="mt-2 text-sm text-muted-foreground leading-relaxed max-h-20 overflow-y-auto">{media.summary}</p>
-            )}
-
-          {/* Version Selector Pills */}
-          {versions.length > 1 && (
-            <div className="mt-2 space-y-2">
-                <div className="flex gap-1.5 overflow-x-auto">
-                  {versions.map((v) => {
-                    const isSelected = selectedVersionId === v.id
-                    const qualityColor = getQualityLevelColors(v.tier_quality || '')
-                    return (
-                      <button
-                        key={v.id}
-                        onClick={() => setSelectedVersionId(v.id)}
-                        className={`shrink-0 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                          isSelected
-                            ? 'bg-primary text-primary-foreground'
-                            : `${qualityColor || 'bg-muted/50'} text-muted-foreground hover:text-foreground hover:bg-muted`
-                        }`}
-                      >
-                        {v.is_best && <Star className="w-3 h-3 inline-block mr-1 -mt-0.5" />}
-                        {v.edition || v.label || `${v.resolution} ${v.video_codec}`}
-                        {v.tier_score != null && <span className={`ml-1.5 ${isSelected ? 'text-primary-foreground/70' : 'opacity-70'}`}>· {v.tier_score}</span>}
-                      </button>
-                    )
-                  })}
-                </div>
-
-                {/* Version Comparison Table */}
-                <button
-                  onClick={() => setShowVersionTable(prev => !prev)}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <ChevronDown className={`w-3 h-3 transition-transform ${showVersionTable ? '' : '-rotate-90'}`} />
-                  Compare Versions ({versions.length})
-                </button>
-                {showVersionTable && (
-                  <div className={`rounded-md border border-border/50 overflow-hidden text-xs ${isMobile ? 'overflow-x-auto' : ''}`}>
-                    <table className={`${isMobile ? 'min-w-[500px]' : ''} w-full`}>
-                      <thead>
-                        <tr className="bg-muted/40 text-muted-foreground">
-                          <th className="px-2 py-1.5 text-left font-medium">Version</th>
-                          <th className="px-2 py-1.5 text-left font-medium">Quality</th>
-                          <th className="px-2 py-1.5 text-left font-medium">Video</th>
-                          <th className="px-2 py-1.5 text-left font-medium">Audio</th>
-                          <th className="px-2 py-1.5 text-right font-medium">Size</th>
-                          <th className="px-2 py-1.5 text-right font-medium">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {versions.map((v) => {
-                          const insight = getVersionInsight(v)
-                          const isSelected = selectedVersionId === v.id
-                          return (
-                            <tr
-                              key={v.id}
-                              onClick={() => setSelectedVersionId(v.id)}
-                              className={`cursor-pointer border-t border-border/30 transition-colors hover:bg-muted/30 ${
-                                isSelected ? 'bg-primary/10' : ''
-                              }`}
-                            >
-                              <td className="px-2 py-1.5">
-                                <div className="flex items-center gap-1">
-                                  {v.is_best && <Star className="w-3 h-3 text-primary shrink-0" />}
-                                  <span className="font-medium truncate max-w-[120px]">{v.edition || v.label || v.resolution}</span>
-                                </div>
-                              </td>
-                              <td className="px-2 py-1.5 text-muted-foreground">
-                                {v.quality_tier || '--'} {v.tier_score != null && <span className="opacity-70">{v.tier_score}</span>}
-                              </td>
-                              <td className="px-2 py-1.5 text-muted-foreground">
-                                <span className="font-mono">{v.video_codec}</span> {formatBitrate(v.video_bitrate)}
-                              </td>
-                              <td className="px-2 py-1.5 text-muted-foreground">
-                                <span className="font-mono">{v.audio_codec}</span> {v.audio_channels > 0 ? `${v.audio_channels}ch` : ''}
-                              </td>
-                              <td className="px-2 py-1.5 text-right text-muted-foreground">{formatFileSize(v.file_size)}</td>
-                              <td className="px-2 py-1.5 text-right">
-                                {v.is_best ? (
-                                  <span className="text-primary font-medium">Best</span>
-                                ) : insight ? (
-                                  <span className={insight.type === 'redundant' ? 'text-amber-500' : 'text-yellow-500'}>
-                                    {insight.label}
-                                  </span>
-                                ) : null}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+            {/* Metadata + actions — below hero, seamless with card */}
+            <div className="px-5 pt-2 pb-3">
+              {/* Stats row */}
+              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                {media.year && <span>{media.year}</span>}
+                {(sv?.duration ?? media.duration) > 0 && <><span className="mx-0.5">·</span><span>{formatDuration(sv?.duration ?? media.duration)}</span></>}
+                {(sv?.file_size ?? media.file_size) > 0 && <><span className="mx-0.5">·</span><span>{formatFileSize(sv?.file_size ?? media.file_size)}</span></>}
+                {(sv?.container ?? media.container) && <><span className="mx-0.5">·</span><span>{(sv?.container ?? media.container)?.toUpperCase()}</span></>}
+                {media.tmdb_rating != null && media.tmdb_rating > 0 && (
+                  <><span className="mx-0.5">·</span><span title="TMDB Rating">★ {media.tmdb_rating.toFixed(1)}</span></>
+                )}
+                {(media.play_count ?? 0) > 0 && (
+                  <><span className="mx-0.5">·</span><span>{media.play_count === 1 ? 'Watched once' : `Watched ${media.play_count}×`}</span></>
+                )}
+                {media.last_watched_at && (
+                  <><span className="mx-0.5">·</span><span title={new Date(media.last_watched_at).toLocaleString()}>Last watched {new Date(media.last_watched_at).toLocaleDateString()}</span></>
                 )}
               </div>
-            )}
+
+              {/* Action buttons row */}
+              <div className="flex items-center gap-2 mt-3">
+                {media.tier_quality && media.tier_quality !== 'HIGH' && (
+                  <AddToWishlistButton
+                    mediaType={media.type as WishlistMediaType}
+                    title={media.title}
+                    year={media.year}
+                    tmdbId={media.tmdb_id}
+                    imdbId={media.imdb_id}
+                    seriesTitle={media.series_title}
+                    seasonNumber={media.season_number}
+                    episodeNumber={media.episode_number}
+                    posterUrl={media.poster_url}
+                    reason="upgrade"
+                    mediaItemId={media.id}
+                    currentQualityTier={media.quality_tier}
+                    currentQualityLevel={media.tier_quality}
+                    currentResolution={media.resolution}
+                    currentVideoCodec={media.video_codec}
+                    currentAudioCodec={media.audio_codec}
+                  />
+                )}
+                {(onRescan || onFixMatch || (onDismissUpgrade && media.tier_quality !== 'HIGH')) && (
+                  <div ref={menuRef} className="relative">
+                    <button onClick={() => setShowMenu(!showMenu)} className="text-muted-foreground hover:text-foreground p-1.5" title="More options">
+                      {isRescanning ? <RefreshCw className="w-5 h-5 animate-spin" /> : <MoreVertical className="w-5 h-5" />}
+                    </button>
+                    {showMenu && !isRescanning && (
+                      <DropdownMenu className="min-w-[140px] z-50">
+                        {onRescan && media.file_path && <DropdownMenuItem onClick={handleRescan} icon={<RefreshCw className="w-3.5 h-3.5" />}>Rescan File</DropdownMenuItem>}
+                        {onFixMatch && media.type === 'movie' && <DropdownMenuItem onClick={handleFixMatch} icon={<Pencil className="w-3.5 h-3.5" />}>Fix Match</DropdownMenuItem>}
+                        {onDismissUpgrade && media.tier_quality !== 'HIGH' && (
+                          <DropdownMenuItem onClick={() => {
+                            if (window.confirm(`Remove "${displayTitle}" from upgrade recommendations?`)) {
+                              handleDismissUpgrade()
+                            }
+                          }} icon={<EyeOff className="w-3.5 h-3.5" />}>Dismiss Upgrade</DropdownMenuItem>
+                        )}
+                      </DropdownMenu>
+                    )}
+                  </div>
+                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    navigator.clipboard.writeText(displayTitle)
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 1500)
+                  }}
+                  className="text-muted-foreground hover:text-foreground p-1.5 transition-colors"
+                  title="Copy title"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+
+              {/* Summary */}
+              {media.summary && (
+                <p className="mt-3 text-sm text-muted-foreground leading-relaxed line-clamp-3">{media.summary}</p>
+              )}
+            </div>
           </div>
         )}
 
         {/* Scrollable Content — flat layout, no tabs */}
-        <div className={`flex-1 overflow-y-auto ${isMobile ? 'p-3' : 'p-4'} space-y-4`}>
+        <div className={`flex-1 overflow-y-auto ${isMobile ? 'p-3' : 'px-5 py-4'} space-y-6`}>
+
+          {/* Version Selector Pills — content, not chrome */}
+          {versions.length > 1 && (
+            <div className="space-y-2">
+              <div className="flex gap-1.5 overflow-x-auto">
+                {versions.map((v) => {
+                  const isSelected = selectedVersionId === v.id
+                  const qualityColor = getQualityLevelColors(v.tier_quality || '')
+                  return (
+                    <button
+                      key={v.id}
+                      onClick={() => setSelectedVersionId(v.id)}
+                      className={`shrink-0 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                        isSelected
+                          ? 'bg-foreground text-background'
+                          : `${qualityColor || 'bg-muted/50'} text-muted-foreground hover:text-foreground hover:bg-muted`
+                      }`}
+                    >
+                      {v.is_best && <Star className="w-3 h-3 inline-block mr-1 -mt-0.5" />}
+                      {v.edition || v.label || `${v.resolution} ${v.video_codec}`}
+                      {v.tier_score != null && <span className={`ml-1.5 ${isSelected ? 'text-background/70' : 'opacity-70'}`}>· {v.tier_score}</span>}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Version Comparison Table */}
+              <button
+                onClick={() => setShowVersionTable(prev => !prev)}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ChevronDown className={`w-3 h-3 transition-transform ${showVersionTable ? '' : '-rotate-90'}`} />
+                Compare Versions ({versions.length})
+              </button>
+              {showVersionTable && (
+                <div className={`rounded-md border border-border/50 overflow-hidden text-xs ${isMobile ? 'overflow-x-auto' : ''}`}>
+                  <table className={`${isMobile ? 'min-w-[500px]' : ''} w-full`}>
+                    <thead>
+                      <tr className="bg-muted/40 text-muted-foreground">
+                        <th className="px-2 py-1.5 text-left font-medium">Version</th>
+                        <th className="px-2 py-1.5 text-left font-medium">Quality</th>
+                        <th className="px-2 py-1.5 text-left font-medium">Video</th>
+                        <th className="px-2 py-1.5 text-left font-medium">Audio</th>
+                        <th className="px-2 py-1.5 text-right font-medium">Size</th>
+                        <th className="px-2 py-1.5 text-right font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {versions.map((v) => {
+                        const insight = getVersionInsight(v)
+                        const isSelected = selectedVersionId === v.id
+                        return (
+                          <tr
+                            key={v.id}
+                            onClick={() => setSelectedVersionId(v.id)}
+                            className={`cursor-pointer border-t border-border/30 transition-colors hover:bg-muted/30 ${
+                              isSelected ? 'bg-primary/10' : ''
+                            }`}
+                          >
+                            <td className="px-2 py-1.5">
+                              <div className="flex items-center gap-1">
+                                {v.is_best && <Star className="w-3 h-3 text-primary shrink-0" />}
+                                <span className="font-medium truncate max-w-[120px]">{v.edition || v.label || v.resolution}</span>
+                              </div>
+                            </td>
+                            <td className="px-2 py-1.5 text-muted-foreground">
+                              {v.quality_tier || '--'} {v.tier_score != null && <span className="opacity-70">{v.tier_score}</span>}
+                            </td>
+                            <td className="px-2 py-1.5 text-muted-foreground">
+                              <span className="font-mono">{v.video_codec}</span> {formatBitrate(v.video_bitrate)}
+                            </td>
+                            <td className="px-2 py-1.5 text-muted-foreground">
+                              <span className="font-mono">{v.audio_codec}</span> {v.audio_channels > 0 ? `${v.audio_channels}ch` : ''}
+                            </td>
+                            <td className="px-2 py-1.5 text-right text-muted-foreground">{formatFileSize(v.file_size)}</td>
+                            <td className="px-2 py-1.5 text-right">
+                              {v.is_best ? (
+                                <span className="text-primary font-medium">Best</span>
+                              ) : insight ? (
+                                <span className={insight.type === 'redundant' ? 'text-amber-500' : 'text-yellow-500'}>
+                                  {insight.label}
+                                </span>
+                              ) : null}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Quality Score Summary */}
-          <div className="rounded-lg p-3">
+          <div>
             {(sv?.quality_tier ?? media.quality_tier) ? (
               <>
                 <div className={`flex ${isMobile ? 'flex-col gap-3' : 'items-center justify-between gap-4'}`}>
-                  <div className={`flex items-center gap-4 bg-muted/30 ${isMobile ? 'px-3 py-2 rounded-lg' : '-ml-3 -mt-3 -mb-3 px-4 py-3 rounded-l-lg'}`}>
+                  <div className={`flex items-center gap-4 bg-muted/30 ${isMobile ? 'px-3 py-2 rounded-lg' : 'px-4 py-3 rounded-lg'}`}>
                     <div className="text-center">
                       <div className="text-2xl font-bold">{sv?.quality_tier ?? media.quality_tier}</div>
                       <div className="text-xs font-medium text-muted-foreground">{sv?.tier_quality ?? media.tier_quality}</div>
@@ -952,9 +979,9 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
           {/* Video & Audio — 2-column grid (stacks on mobile) */}
           <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
             {/* Video */}
-            <div className="bg-muted/30 rounded-lg p-3">
+            <div>
               <h3 className="text-xs font-semibold text-muted-foreground mb-2">Video</h3>
-              <div className="space-y-1.5 text-sm">
+              <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Dimensions</span>
                   <span className="font-medium">{sv?.width ?? media.width}×{sv?.height ?? media.height}</span>
@@ -996,18 +1023,14 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                 {(sv?.hdr_format ?? media.hdr_format) && (sv?.hdr_format ?? media.hdr_format) !== 'None' && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">HDR</span>
-                    <span className={`font-medium ${
-                      (sv?.hdr_format ?? media.hdr_format) === 'Dolby Vision' ? 'text-purple-400' :
-                      (sv?.hdr_format ?? media.hdr_format) === 'HDR10' ? 'text-orange-400' :
-                      'text-yellow-400'
-                    }`}>{sv?.hdr_format ?? media.hdr_format}</span>
+                    <span className="font-medium">{sv?.hdr_format ?? media.hdr_format}</span>
                   </div>
                 )}
               </div>
             </div>
 
             {/* Audio */}
-            <div className="bg-muted/30 rounded-lg p-3">
+            <div>
               <h3 className="text-xs font-semibold text-muted-foreground mb-2">
                 Audio{svAudioTracks.length > 0 ? ` (${svAudioTracks.length})` : ''}
               </h3>
@@ -1022,10 +1045,10 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                           <span className="font-medium">{track.codec?.toUpperCase()} {formatChannels(track.channels)}</span>
                           {isAudioBitrateLow(track, sv?.quality_tier ?? media.quality_tier) && <LowIndicator />}
                           {track.hasObjectAudio && (
-                            <span className="px-1.5 py-0.5 text-xs bg-blue-500/20 text-blue-300 rounded">Atmos</span>
+                            <span className="px-1.5 py-0.5 text-xs bg-muted text-muted-foreground rounded">Atmos</span>
                           )}
                           {commentary && (
-                            <span className="px-1.5 py-0.5 text-xs bg-amber-500/20 text-amber-300 rounded">Commentary</span>
+                            <span className="px-1.5 py-0.5 text-xs bg-muted text-muted-foreground rounded">Commentary</span>
                           )}
                         </div>
                         {track.title && (
@@ -1063,11 +1086,11 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
 
           {/* Subtitles */}
           {svSubtitleTracks.length > 0 && (
-            <div className="bg-muted/30 rounded-lg p-3">
+            <div>
               <h3 className="text-xs font-semibold text-muted-foreground mb-2">
                 Subtitles ({svSubtitleTracks.length})
               </h3>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-2">
                 {svSubtitleTracks.map((track, idx) => (
                   <div
                     key={idx}
@@ -1089,9 +1112,9 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
           )}
 
           {/* File Info & IDs */}
-          <div className="bg-muted/30 rounded-lg p-3">
+          <div>
             <h3 className="text-xs font-semibold text-muted-foreground mb-2">File Information</h3>
-            <div className="space-y-1.5 text-sm">
+            <div className="space-y-2 text-sm">
               <div className="flex justify-between gap-4">
                 <span className="text-muted-foreground shrink-0">Path</span>
                 <span className="font-mono text-xs text-right truncate" title={sv?.file_path ?? media.file_path}>
@@ -1103,7 +1126,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                   <span className="text-muted-foreground">IMDb</span>
                   <button
                     onClick={() => window.electronAPI.openExternal(`https://www.imdb.com/title/${media.imdb_id}`)}
-                    className="text-primary hover:underline cursor-pointer"
+                    className="text-muted-foreground hover:text-foreground hover:underline transition-colors cursor-pointer"
                   >
                     {media.imdb_id}
                   </button>
@@ -1114,7 +1137,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                   <span className="text-muted-foreground">TMDb</span>
                   <button
                     onClick={() => window.electronAPI.openExternal(`https://www.themoviedb.org/${media.type === 'movie' ? 'movie' : 'tv'}/${media.tmdb_id}`)}
-                    className="text-primary hover:underline cursor-pointer"
+                    className="text-muted-foreground hover:text-foreground hover:underline transition-colors cursor-pointer"
                   >
                     {media.tmdb_id}
                   </button>
