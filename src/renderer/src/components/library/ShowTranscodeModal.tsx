@@ -609,7 +609,8 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
     }
   }
 
-  const runPreflight = async (overrides: { removeUnnecessaryStreams?: boolean; adjustToTarget?: boolean; targetProfileId?: string } = {}) => {
+  const runPreflight = async (overrides: { removeUnnecessaryStreams?: boolean; adjustToTarget?: boolean; targetProfileId?: string; representativeMediaItemId?: number } = {}) => {
+    const { representativeMediaItemId, ...optionOverrides } = overrides
     const shouldRemoveStreams = overrides.removeUnnecessaryStreams ?? removeUnnecessaryStreams
     const shouldAdjustToTarget = overrides.adjustToTarget ?? adjustToTarget
     const effectiveTargetProfileId = overrides.targetProfileId ?? targetProfileId
@@ -662,7 +663,8 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
         seriesIdentityKey,
         sourceId,
         libraryId,
-        options: getCleanOptions(overrides)
+        representativeMediaItemId,
+        options: getCleanOptions(optionOverrides)
       })
       if (started.requestId !== requestId) throw new Error('The background preflight returned a different request identity')
       activePreflightTaskId.current = started.taskId
@@ -1477,6 +1479,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
                     </div>
                     {ep.samplingRole === 'measured' && <p className="text-xs text-primary">Encode samples measured from this episode.</p>}
                     {ep.samplingRole === 'projected' && <p className="text-xs text-amber-300">Uses measured settings from {ep.sampleRepresentativeLabel}; this episode’s savings are projected.</p>}
+                    {ep.decisionStatus === 'insufficient_evidence' && ep.reason?.startsWith('Not sampled:') && ep.sourceAnalysis?.video && <button className="text-xs underline" disabled={busy} onClick={() => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.representative.reselected', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId }); void runPreflight({ representativeMediaItemId: ep.mediaItemId }).catch(error => { const message = error instanceof Error ? error.message : String(error); setMessage(message); addToast({ type: 'error', title: 'Could not retry representative sample', message }) }) }}>Use this episode as the sample for its technical group</button>}
                     {ep.sourceAnalysis?.video ? <details className="text-[11px]"><summary className="cursor-pointer text-muted-foreground">Source technical evidence</summary><p>{ep.sourceAnalysis.video.codec} · {ep.sourceAnalysis.video.width}×{ep.sourceAnalysis.video.height} · {ep.sourceAnalysis.video.frameRate} fps · {ep.sourceAnalysis.video.bitDepth}-bit · {ep.sourceAnalysis.video.bitrateKbps ? `${Math.round(ep.sourceAnalysis.video.bitrateKbps)} kb/s` : 'bitrate unavailable'} · {ep.hdrFormat} · {ep.sourceCambiMean === undefined ? 'source banding metric unavailable' : `source CAMBI ${ep.sourceCambiMean.toFixed(2)}`} · {ep.sourceSelfVmaf === undefined ? 'source-self control unavailable' : `source-self VMAF ${ep.sourceSelfVmaf.toFixed(2)}`}</p></details> : null}
                     {ep.qualityChoices?.length ? <div className="grid gap-1 rounded-md bg-muted/30 p-2 text-[11px]">{ep.qualityChoices.map(choice => <div key={choice.profile}><p><strong>{choice.profile === 'transparent' ? 'Higher fidelity' : 'Smaller file'}:</strong> {choice.status === 'available' ? `${formatBytes(choice.estimatedSavingsBytes ?? 0)} estimated savings · ${choice.candidate?.encoder}/${choice.candidate?.preset} q${choice.candidate?.quality} · ${choice.candidate?.sampledDurationSeconds.toFixed(0)}s sampled · VMAF ${choice.candidate?.vmafMean.toFixed(1)} mean, ${choice.candidate?.vmafP5.toFixed(1)} p5 · CAMBI ${choice.candidate?.cambiMean.toFixed(2)} output / ${choice.candidate?.sourceCambiMean?.toFixed(2) ?? 'source unavailable'} source · source-self VMAF ${choice.candidate?.sourceSelfVmaf?.toFixed(2) ?? 'unavailable'} · ${((choice.candidate?.encodingDurationMs ?? 0) / 1000).toFixed(1)}s sample encode` : choice.status === 'measurement_incomplete' ? 'More candidate measurements are pending' : choice.status === 'incompatible' ? 'Measured candidates do not meet playback requirements' : 'No measured candidate meets this quality requirement'}</p>{choice.alternatives && choice.alternatives.length > 1 ? <details className="mt-1"><summary className="cursor-pointer">Compare {choice.alternatives.length} non-dominated measured configurations</summary><ul className="ml-4 list-disc">{choice.alternatives.map(candidate => <li key={`${candidate.encoder}/${candidate.preset}/${candidate.quality}`}>{candidate.encoder}/{candidate.preset} q{candidate.quality} · {formatBytes(candidate.outputBytes)} / {candidate.sampledDurationSeconds.toFixed(0)}s sampled · VMAF {candidate.vmafMean.toFixed(1)} mean / {candidate.vmafP5.toFixed(1)} p5 · CAMBI {candidate.cambiMean.toFixed(2)} · {((candidate.encodingDurationMs ?? 0) / 1000).toFixed(1)}s</li>)}</ul></details> : null}</div>)}</div> : null}
                     {ep.changes?.map(change => <p key={change} className="text-xs">{change}</p>)}
