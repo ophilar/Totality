@@ -697,10 +697,10 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                 ) : null
               })()}
 
-              {/* Close button — top right, above backdrop */}
+              {/* Close button — top right, above backdrop, glass pill */}
               <button
                 onClick={onClose}
-                className="absolute top-2 right-2 z-10 min-h-[44px] min-w-[44px] flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                className="absolute top-3 right-3 z-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm text-white/80 hover:bg-black/60 hover:text-white transition-colors"
                 aria-label="Close"
               >
                 <X className="w-5 h-5" />
@@ -717,7 +717,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                     <p className="text-sm text-muted-foreground font-medium">{sv?.edition || versions[0]?.edition}</p>
                   )}
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-1 shrink-0 bg-black/20 backdrop-blur-sm rounded-lg px-1">
                   {media.tier_quality && media.tier_quality !== 'HIGH' && (
                     <AddToWishlistButton
                       mediaType={media.type as WishlistMediaType}
