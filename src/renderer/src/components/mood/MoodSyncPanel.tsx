@@ -397,7 +397,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
       id="tag-sync-panel"
       role="complementary"
       aria-label="Tag Sync"
-      className={`fixed top-[76px] bottom-4 right-4 w-[480px] bg-sidebar-gradient rounded-2xl shadow-xl z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
+      className={`fixed top-[76px] bottom-4 right-4 w-[480px] bg-card border border-border rounded-2xl shadow-xl z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
         isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
       onKeyDown={handleKeyDown}
@@ -433,7 +433,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
 
       {/* Step 1: Source of Truth */}
       <div className="px-3 pt-3 pb-2 border-b border-border/30">
-        <label htmlFor="sync-source-select" className="text-caption font-medium text-muted-foreground mb-1.5 block">1. Source of truth</label>
+        <label htmlFor="sync-source-select" className="text-caption font-medium text-muted-foreground mb-1.5 block">Source of truth</label>
         <Select
           id="sync-source-select"
           inputSize="sm"
@@ -455,77 +455,75 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
         </Select>
       </div>
 
-      {/* Step 2: Fields to sync */}
+      {/* Fields + Mode (merged row) */}
       <div className="px-3 pt-2 pb-2 border-b border-border/30">
-        <p className="text-caption font-medium text-muted-foreground mb-1.5">2. Fields</p>
-        <div className="flex items-center gap-4">
-          {(['mood', 'genre'] as const).map(f => (
-            <label key={f} className="flex items-center gap-1.5 cursor-pointer">
-              <button
-                role="checkbox"
-                aria-checked={syncFields[f]}
-                onClick={() => toggleField(f)}
-                className={`w-3.5 h-3.5 rounded border transition-colors flex items-center justify-center ${
-                  syncFields[f]
-                    ? 'bg-primary border-primary'
-                    : 'border-muted-foreground/40 hover:border-muted-foreground'
-                }`}
-              >
-                {syncFields[f] && (
-                  <svg className="w-2.5 h-2.5 text-primary-foreground" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M2 6l3 3 5-5" />
-                  </svg>
-                )}
-              </button>
-              <span className={`text-caption ${syncFields[f] ? 'text-foreground' : 'text-muted-foreground'}`}>
-                {f === 'mood' ? 'Mood' : 'Genre'}
-              </span>
-            </label>
-          ))}
-        </div>
-      </div>
-
-      {/* Step 3: Sync mode */}
-      <div className="px-3 pt-2 pb-2 border-b border-border/30">
-        <p className="text-caption font-medium text-muted-foreground mb-1.5">3. Mode</p>
-        <div className="flex gap-1" role="radiogroup" aria-label="Sync mode">
-          <button
-            role="radio"
-            aria-checked={syncMode === 'overwrite'}
-            onClick={() => setSyncMode('overwrite')}
-            className={`flex-1 px-2 py-1.5 text-caption font-medium rounded-md transition-colors ${
-              syncMode === 'overwrite'
-                ? 'bg-primary/20 text-primary'
-                : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
-            }`}
-          >
-            Overwrite
-          </button>
-          <button
-            role="radio"
-            aria-checked={syncMode === 'append'}
-            onClick={() => setSyncMode('append')}
-            className={`flex-1 px-2 py-1.5 text-caption font-medium rounded-md transition-colors ${
-              syncMode === 'append'
-                ? 'bg-primary/20 text-primary'
-                : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
-            }`}
-          >
-            Append
-          </button>
+        <div className="flex items-center justify-between">
+          {/* Fields */}
+          <div className="flex items-center gap-4">
+            {(['mood', 'genre'] as const).map(f => (
+              <label key={f} className="flex items-center gap-1.5 cursor-pointer">
+                <button
+                  role="checkbox"
+                  aria-checked={syncFields[f]}
+                  onClick={() => toggleField(f)}
+                  className={`w-3.5 h-3.5 rounded border transition-colors flex items-center justify-center ${
+                    syncFields[f]
+                      ? 'bg-primary border-primary'
+                      : 'border-muted-foreground/40 hover:border-muted-foreground'
+                  }`}
+                >
+                  {syncFields[f] && (
+                    <svg className="w-2.5 h-2.5 text-primary-foreground" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M2 6l3 3 5-5" />
+                    </svg>
+                  )}
+                </button>
+                <span className={`text-caption ${syncFields[f] ? 'text-foreground' : 'text-muted-foreground'}`}>
+                  {f === 'mood' ? 'Mood' : 'Genre'}
+                </span>
+              </label>
+            ))}
+          </div>
+          {/* Mode */}
+          <div className="flex gap-1" role="radiogroup" aria-label="Sync mode">
+            <button
+              role="radio"
+              aria-checked={syncMode === 'overwrite'}
+              onClick={() => setSyncMode('overwrite')}
+              className={`flex-1 px-2 py-1.5 text-caption font-medium rounded-md transition-colors ${
+                syncMode === 'overwrite'
+                  ? 'bg-foreground text-background'
+                  : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
+              }`}
+            >
+              Overwrite
+            </button>
+            <button
+              role="radio"
+              aria-checked={syncMode === 'append'}
+              onClick={() => setSyncMode('append')}
+              className={`flex-1 px-2 py-1.5 text-caption font-medium rounded-md transition-colors ${
+                syncMode === 'append'
+                  ? 'bg-foreground text-background'
+                  : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
+              }`}
+            >
+              Append
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Step 4: Targets */}
       {targetSources.size > 0 && (
         <div className="px-3 pt-2 pb-2 border-b border-border/30">
-          <p className="text-caption font-medium text-muted-foreground mb-1.5">4. Sync targets</p>
+          <p className="text-caption font-medium text-muted-foreground mb-1.5">Sync targets</p>
           <div className="space-y-1.5">
             {Array.from(targetSources.values()).map(target => (
               <div key={target.sourceId} className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 min-w-0">
                   {target.mismatchCount === 0 ? (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                    <CheckCircle2 className="w-3.5 h-3.5 text-foreground shrink-0" />
                   ) : (
                     <Circle className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
                   )}
@@ -560,7 +558,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
             {selectedSource && <span>{selectedSource.tracksWithMoods} source {fieldLabel}</span>}
             <span>{comparisons.length} matched</span>
             <span>{totalMismatches} mismatched</span>
-            {selectedTrackIds.size > 0 && <span className="text-primary">{selectedTrackIds.size} selected</span>}
+            {selectedTrackIds.size > 0 && <span className="text-foreground">{selectedTrackIds.size} selected</span>}
           </div>
 
           {/* Search */}
@@ -579,8 +577,8 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
           {/* Selection + filter */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <button onClick={selectAll} className="text-caption text-muted-foreground hover:text-foreground transition-colors">All</button>
-              <button onClick={selectNone} className="text-caption text-muted-foreground hover:text-foreground transition-colors">None</button>
+              <Button variant="tertiary" size="sm" onClick={selectAll}>All</Button>
+              <Button variant="tertiary" size="sm" onClick={selectNone}>None</Button>
               <span className="text-caption text-muted-foreground">{filteredComparisons.length} tracks</span>
             </div>
             <label className="flex items-center gap-1.5 cursor-pointer">
@@ -619,7 +617,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
       {syncResult && (
         <div className="px-3 py-2 border-b border-border/30">
           <div className="flex items-center gap-1.5 text-caption">
-            {syncResult.failed === 0 ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
+            {syncResult.failed === 0 ? <CheckCircle2 className="w-3.5 h-3.5 text-foreground shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
             <span className="text-muted-foreground">{syncResult.synced} synced{syncResult.failed > 0 ? `, ${syncResult.failed} failed` : ''}</span>
           </div>
         </div>
@@ -666,10 +664,9 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                   role="listitem"
                   className={`p-2 rounded-lg transition-colors duration-300 cursor-pointer ${
                     hasFailed ? 'bg-destructive/10' :
-                    wasSynced ? 'bg-green-500/10' :
+                    wasSynced ? 'bg-muted/30' :
                     isSyncing ? 'bg-primary/10' :
-                    isSelected ? 'bg-primary/5' :
-                    'bg-muted/30 hover:bg-muted/50'
+                    'hover:bg-muted/30'
                   }`}
                   onClick={() => {
                     if (!syncing && hasMismatch) {
@@ -686,7 +683,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                       ) : hasFailed ? (
                         <AlertCircle className="w-3.5 h-3.5 text-destructive" />
                       ) : !hasMismatch || wasSynced ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+                        <CheckCircle2 className="w-3.5 h-3.5 text-foreground" />
                       ) : isSelected ? (
                         <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
                       ) : (
