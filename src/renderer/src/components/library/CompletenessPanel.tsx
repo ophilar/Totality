@@ -627,20 +627,6 @@ export function CompletenessPanel({
               )
             })()}
 
-            <p className="text-caption text-muted-foreground">
-              Analyzes artist discographies and album track completeness using the public MusicBrainz API.
-              May take time due to rate limits.
-            </p>
-          </div>
-        )}
-
-        {/* Info Note - show when any section is visible */}
-        {(hasMusic || (isKeyConfigured && (hasTV || hasMovies))) && (
-          <div className="text-caption text-muted-foreground bg-muted/30 rounded-lg p-3">
-            <p>
-              Completeness analysis uses TMDB for TV/movies and MusicBrainz for music to find missing content.
-              Run analysis after adding new content to your library.
-            </p>
           </div>
         )}
       </div>
