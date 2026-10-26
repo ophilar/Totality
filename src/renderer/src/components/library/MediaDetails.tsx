@@ -691,7 +691,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                       className="absolute top-0 right-0 w-[55%] h-full object-cover object-center"
                       onError={(e) => { e.currentTarget.style.display = 'none' }}
                     />
-                    <div className="absolute top-0 right-0 w-[55%] h-full bg-gradient-to-r from-card via-card/80 to-transparent" />
+                    <div className="absolute top-0 right-0 w-[55%] h-full bg-gradient-to-r from-card via-card/50 to-transparent" />
                     <div className="absolute top-0 right-0 w-[55%] h-full bg-gradient-to-t from-card via-transparent to-transparent" />
                   </>
                 ) : null
@@ -706,15 +706,71 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                 <X className="w-5 h-5" />
               </button>
 
-              {/* Title + metadata — left side, above backdrop */}
-              <div className="relative z-[1]">
-                <h2 className="text-xl font-semibold leading-tight tracking-tight">{displayTitle}</h2>
-                {media.type === 'episode' && (
-                  <p className="text-sm text-muted-foreground mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
-                )}
-                {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
-                  <p className="text-sm text-muted-foreground font-medium">{sv?.edition || versions[0]?.edition}</p>
-                )}
+              {/* Title + actions — inline, title left, actions right */}
+              <div className="relative z-[1] flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h2 className="text-xl font-semibold leading-tight tracking-tight">{displayTitle}</h2>
+                  {media.type === 'episode' && (
+                    <p className="text-sm text-muted-foreground mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
+                  )}
+                  {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
+                    <p className="text-sm text-muted-foreground font-medium">{sv?.edition || versions[0]?.edition}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {media.tier_quality && media.tier_quality !== 'HIGH' && (
+                    <AddToWishlistButton
+                      mediaType={media.type as WishlistMediaType}
+                      title={media.title}
+                      year={media.year}
+                      tmdbId={media.tmdb_id}
+                      imdbId={media.imdb_id}
+                      seriesTitle={media.series_title}
+                      seasonNumber={media.season_number}
+                      episodeNumber={media.episode_number}
+                      posterUrl={media.poster_url}
+                      reason="upgrade"
+                      mediaItemId={media.id}
+                      currentQualityTier={media.quality_tier}
+                      currentQualityLevel={media.tier_quality}
+                      currentResolution={media.resolution}
+                      currentVideoCodec={media.video_codec}
+                      currentAudioCodec={media.audio_codec}
+                    />
+                  )}
+                  {(onRescan || onFixMatch || (onDismissUpgrade && media.tier_quality !== 'HIGH')) && (
+                    <div ref={menuRef} className="relative">
+                      <button onClick={() => setShowMenu(!showMenu)} className="text-muted-foreground hover:text-foreground p-1.5" title="More options">
+                        {isRescanning ? <RefreshCw className="w-5 h-5 animate-spin" /> : <MoreVertical className="w-5 h-5" />}
+                      </button>
+                      {showMenu && !isRescanning && (
+                        <DropdownMenu className="min-w-[140px] z-50">
+                          {onRescan && media.file_path && <DropdownMenuItem onClick={handleRescan} icon={<RefreshCw className="w-3.5 h-3.5" />}>Rescan File</DropdownMenuItem>}
+                          {onFixMatch && media.type === 'movie' && <DropdownMenuItem onClick={handleFixMatch} icon={<Pencil className="w-3.5 h-3.5" />}>Fix Match</DropdownMenuItem>}
+                          {onDismissUpgrade && media.tier_quality !== 'HIGH' && (
+                            <DropdownMenuItem onClick={() => {
+                              if (window.confirm(`Remove "${displayTitle}" from upgrade recommendations?`)) {
+                                handleDismissUpgrade()
+                              }
+                            }} icon={<EyeOff className="w-3.5 h-3.5" />}>Dismiss Upgrade</DropdownMenuItem>
+                          )}
+                        </DropdownMenu>
+                      )}
+                    </div>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      navigator.clipboard.writeText(displayTitle)
+                      setCopied(true)
+                      setTimeout(() => setCopied(false), 1500)
+                    }}
+                    className="text-muted-foreground hover:text-foreground p-1.5 transition-colors"
+                    title="Copy title"
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
               </div>
 
               {/* Stats row */}
@@ -733,73 +789,17 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                   <><span className="mx-0.5">·</span><span title={new Date(media.last_watched_at).toLocaleString()}>Last watched {new Date(media.last_watched_at).toLocaleDateString()}</span></>
                 )}
               </div>
-
-              {/* Action buttons row */}
-              <div className="relative z-[1] flex items-center gap-2 mt-3">
-                {media.tier_quality && media.tier_quality !== 'HIGH' && (
-                  <AddToWishlistButton
-                    mediaType={media.type as WishlistMediaType}
-                    title={media.title}
-                    year={media.year}
-                    tmdbId={media.tmdb_id}
-                    imdbId={media.imdb_id}
-                    seriesTitle={media.series_title}
-                    seasonNumber={media.season_number}
-                    episodeNumber={media.episode_number}
-                    posterUrl={media.poster_url}
-                    reason="upgrade"
-                    mediaItemId={media.id}
-                    currentQualityTier={media.quality_tier}
-                    currentQualityLevel={media.tier_quality}
-                    currentResolution={media.resolution}
-                    currentVideoCodec={media.video_codec}
-                    currentAudioCodec={media.audio_codec}
-                  />
-                )}
-                {(onRescan || onFixMatch || (onDismissUpgrade && media.tier_quality !== 'HIGH')) && (
-                  <div ref={menuRef} className="relative">
-                    <button onClick={() => setShowMenu(!showMenu)} className="text-muted-foreground hover:text-foreground p-1.5" title="More options">
-                      {isRescanning ? <RefreshCw className="w-5 h-5 animate-spin" /> : <MoreVertical className="w-5 h-5" />}
-                    </button>
-                    {showMenu && !isRescanning && (
-                      <DropdownMenu className="min-w-[140px] z-50">
-                        {onRescan && media.file_path && <DropdownMenuItem onClick={handleRescan} icon={<RefreshCw className="w-3.5 h-3.5" />}>Rescan File</DropdownMenuItem>}
-                        {onFixMatch && media.type === 'movie' && <DropdownMenuItem onClick={handleFixMatch} icon={<Pencil className="w-3.5 h-3.5" />}>Fix Match</DropdownMenuItem>}
-                        {onDismissUpgrade && media.tier_quality !== 'HIGH' && (
-                          <DropdownMenuItem onClick={() => {
-                            if (window.confirm(`Remove "${displayTitle}" from upgrade recommendations?`)) {
-                              handleDismissUpgrade()
-                            }
-                          }} icon={<EyeOff className="w-3.5 h-3.5" />}>Dismiss Upgrade</DropdownMenuItem>
-                        )}
-                      </DropdownMenu>
-                    )}
-                  </div>
-                )}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    navigator.clipboard.writeText(displayTitle)
-                    setCopied(true)
-                    setTimeout(() => setCopied(false), 1500)
-                  }}
-                  className="text-muted-foreground hover:text-foreground p-1.5 transition-colors"
-                  title="Copy title"
-                >
-                  {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-                </button>
-              </div>
-
-              {/* Summary */}
-              {media.summary && (
-                <p className="relative z-[1] mt-3 text-sm text-muted-foreground leading-relaxed line-clamp-3">{media.summary}</p>
-              )}
             </div>
           </div>
         )}
 
         {/* Scrollable Content — flat layout, no tabs */}
         <div className={`flex-1 overflow-y-auto ${isMobile ? 'p-3' : 'px-5 py-4'} space-y-6`}>
+
+          {/* Summary — below header, in scrollable area */}
+          {!isMobile && media.summary && (
+            <p className="text-sm text-muted-foreground leading-relaxed line-clamp-2">{media.summary}</p>
+          )}
 
           {/* Version Selector Pills — content, not chrome */}
           {versions.length > 1 && (
@@ -978,51 +978,35 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
             {/* Video */}
             <div>
               <h3 className="text-xs font-semibold text-muted-foreground mb-2">Video</h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Dimensions</span>
-                  <span className="font-medium">{sv?.width ?? media.width}×{sv?.height ?? media.height}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Codec</span>
-                  <span className="font-medium">{sv?.video_codec ?? media.video_codec}</span>
-                </div>
-                {(sv?.video_bitrate ?? media.video_bitrate) > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Bitrate</span>
-                    <span className="font-medium">{formatBitrate(sv?.video_bitrate ?? media.video_bitrate)}</span>
-                  </div>
-                )}
-                {(sv?.video_frame_rate ?? media.video_frame_rate) != null && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Frame Rate</span>
-                    <span className="font-medium">{(sv?.video_frame_rate ?? media.video_frame_rate)?.toFixed(2)} fps</span>
-                  </div>
-                )}
-                {(sv?.color_space ?? media.color_space) && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Color Space</span>
-                    <span className="font-medium">{sv?.color_space ?? media.color_space}</span>
-                  </div>
-                )}
-                {(sv?.video_profile ?? media.video_profile) && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Profile</span>
-                    <span className="font-medium">{sv?.video_profile ?? media.video_profile}</span>
-                  </div>
-                )}
-                {(sv?.color_bit_depth ?? media.color_bit_depth) != null && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Bit Depth</span>
-                    <span className="font-medium">{sv?.color_bit_depth ?? media.color_bit_depth}-bit</span>
-                  </div>
-                )}
-                {(sv?.hdr_format ?? media.hdr_format) && (sv?.hdr_format ?? media.hdr_format) !== 'None' && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">HDR</span>
-                    <span className="font-medium">{sv?.hdr_format ?? media.hdr_format}</span>
-                  </div>
-                )}
+              <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+                <span className="text-muted-foreground">Dimensions</span>
+                <span className="font-medium">{sv?.width ?? media.width}×{sv?.height ?? media.height}</span>
+                <span className="text-muted-foreground">Codec</span>
+                <span className="font-medium">{sv?.video_codec ?? media.video_codec}</span>
+                {(sv?.video_bitrate ?? media.video_bitrate) > 0 && <>
+                  <span className="text-muted-foreground">Bitrate</span>
+                  <span className="font-medium">{formatBitrate(sv?.video_bitrate ?? media.video_bitrate)}</span>
+                </>}
+                {(sv?.video_frame_rate ?? media.video_frame_rate) != null && <>
+                  <span className="text-muted-foreground">Frame rate</span>
+                  <span className="font-medium">{(sv?.video_frame_rate ?? media.video_frame_rate)?.toFixed(2)} fps</span>
+                </>}
+                {(sv?.color_space ?? media.color_space) && <>
+                  <span className="text-muted-foreground">Color space</span>
+                  <span className="font-medium">{sv?.color_space ?? media.color_space}</span>
+                </>}
+                {(sv?.video_profile ?? media.video_profile) && <>
+                  <span className="text-muted-foreground">Profile</span>
+                  <span className="font-medium">{sv?.video_profile ?? media.video_profile}</span>
+                </>}
+                {(sv?.color_bit_depth ?? media.color_bit_depth) != null && <>
+                  <span className="text-muted-foreground">Bit depth</span>
+                  <span className="font-medium">{sv?.color_bit_depth ?? media.color_bit_depth}-bit</span>
+                </>}
+                {(sv?.hdr_format ?? media.hdr_format) && (sv?.hdr_format ?? media.hdr_format) !== 'None' && <>
+                  <span className="text-muted-foreground">HDR</span>
+                  <span className="font-medium">{sv?.hdr_format ?? media.hdr_format}</span>
+                </>}
               </div>
             </div>
 
@@ -1111,35 +1095,29 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
           {/* File Info & IDs */}
           <div>
             <h3 className="text-xs font-semibold text-muted-foreground mb-2">File Information</h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground shrink-0">Path</span>
-                <span className="font-mono text-xs text-right truncate" title={sv?.file_path ?? media.file_path}>
-                  {sv?.file_path ?? media.file_path}
-                </span>
-              </div>
-              {media.imdb_id && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">IMDb</span>
-                  <button
-                    onClick={() => window.electronAPI.openExternal(`https://www.imdb.com/title/${media.imdb_id}`)}
-                    className="text-muted-foreground hover:text-foreground hover:underline transition-colors cursor-pointer"
-                  >
-                    {media.imdb_id}
-                  </button>
-                </div>
-              )}
-              {media.tmdb_id && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">TMDb</span>
-                  <button
-                    onClick={() => window.electronAPI.openExternal(`https://www.themoviedb.org/${media.type === 'movie' ? 'movie' : 'tv'}/${media.tmdb_id}`)}
-                    className="text-muted-foreground hover:text-foreground hover:underline transition-colors cursor-pointer"
-                  >
-                    {media.tmdb_id}
-                  </button>
-                </div>
-              )}
+            <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+              <span className="text-muted-foreground">Path</span>
+              <span className="font-mono text-xs truncate" title={sv?.file_path ?? media.file_path}>
+                {sv?.file_path ?? media.file_path}
+              </span>
+              {media.imdb_id && <>
+                <span className="text-muted-foreground">IMDb</span>
+                <button
+                  onClick={() => window.electronAPI.openExternal(`https://www.imdb.com/title/${media.imdb_id}`)}
+                  className="text-left text-muted-foreground hover:text-foreground hover:underline transition-colors cursor-pointer"
+                >
+                  {media.imdb_id}
+                </button>
+              </>}
+              {media.tmdb_id && <>
+                <span className="text-muted-foreground">TMDb</span>
+                <button
+                  onClick={() => window.electronAPI.openExternal(`https://www.themoviedb.org/${media.type === 'movie' ? 'movie' : 'tv'}/${media.tmdb_id}`)}
+                  className="text-left text-muted-foreground hover:text-foreground hover:underline transition-colors cursor-pointer"
+                >
+                  {media.tmdb_id}
+                </button>
+              </>}
             </div>
           </div>
         </div>
