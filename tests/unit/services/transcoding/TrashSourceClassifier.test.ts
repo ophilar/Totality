@@ -8,7 +8,7 @@ describe('TrashSourceClassifier', () => {
       expect(TrashSourceClassifier.classify('Inception.2010.BDRemux.1080p.AVC.mkv')).toBe('Remux')
       expect(TrashSourceClassifier.classify('Avatar.2009.UHD_Remux.2160p.mkv')).toBe('Remux')
       expect(TrashSourceClassifier.classify('Interstellar.2014.UHD-Remux.mkv')).toBe('Remux')
-      expect(TrashSourceClassifier.classify('/media/remux/movies/generic_video.mkv')).toBe('Remux')
+      expect(TrashSourceClassifier.classify('/media/remux/movies/generic_video.mkv')).toBe('Unknown')
     })
 
     it('correctly classifies WEBRip releases and gives precedence over generic web tokens', () => {
@@ -55,31 +55,9 @@ describe('TrashSourceClassifier', () => {
     })
   })
 
-  describe('Stream characteristics heuristic fallback', () => {
-    it('infers Remux for high-bitrate (>25 Mbps) AVC/VC1/MPEG2 streams', () => {
-      expect(TrashSourceClassifier.classify('unnamed_video.mkv', 35000, 'h264')).toBe('Remux')
-      expect(TrashSourceClassifier.classify('unnamed_video.mkv', 28000, 'avc')).toBe('Remux')
-      expect(TrashSourceClassifier.classify('unnamed_video.mkv', 30000, 'vc1')).toBe('Remux')
-      expect(TrashSourceClassifier.classify('unnamed_video.mkv', 26000, 'mpeg2video')).toBe('Remux')
-      expect(TrashSourceClassifier.classify('unnamed_video.mkv', 26000, 'MPEG2')).toBe('Remux')
-    })
-
-    it('infers BluRay for high-bitrate (>14 Mbps) or non-legacy high-bitrate codecs', () => {
-      expect(TrashSourceClassifier.classify('unnamed_video.mkv', 26000, 'hevc')).toBe('BluRay')
-      expect(TrashSourceClassifier.classify('unnamed_video.mkv', 18000, 'h264')).toBe('BluRay')
-      expect(TrashSourceClassifier.classify('unnamed_video.mkv', 15000, 'avc')).toBe('BluRay')
-    })
-
-    it('infers WEB-DL for moderate/low-bitrate (>0 Mbps) streams', () => {
-      expect(TrashSourceClassifier.classify('unnamed_video.mkv', 8000, 'hevc')).toBe('WEB-DL')
-      expect(TrashSourceClassifier.classify('unnamed_video.mkv', 3500, 'h264')).toBe('WEB-DL')
-      expect(TrashSourceClassifier.classify('unnamed_video.mkv', 1200, 'av1')).toBe('WEB-DL')
-    })
-
-    it('returns Unknown when no release tag and no bitrate is provided', () => {
+  describe('Unverified source information', () => {
+    it('returns Unknown when no release tag is provided', () => {
       expect(TrashSourceClassifier.classify('unnamed_video.mkv')).toBe('Unknown')
-      expect(TrashSourceClassifier.classify('unnamed_video.mkv', 0)).toBe('Unknown')
-      expect(TrashSourceClassifier.classify('', 0)).toBe('Unknown')
       expect(TrashSourceClassifier.classify('')).toBe('Unknown')
     })
   })

@@ -19,7 +19,7 @@ export const EncoderPolicySelector = memo(function EncoderPolicySelector({ value
         onChange={event => onChange(event.target.value ? event.target.value as NonNullable<TranscodeOptions['encoderPolicy']> : undefined)}
         className="w-full rounded-xl border border-border/40 bg-muted/40 px-3 py-2 text-xs font-bold"
       >
-        <option value="">Choose encoder policy</option>
+        <option value="automatic">Automatic · verified GPU first</option>
         <option value="hardware" disabled={!hardwareAvailable}>Verified hardware</option>
         <option value="software" disabled={!softwareAvailable}>Software</option>
         <option value="compare" disabled={!hardwareAvailable || !softwareAvailable}>Compare hardware and software</option>

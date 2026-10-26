@@ -2134,6 +2134,7 @@ export class PlexProvider implements MediaProvider {
         generalDecisionText?: string
         transcodeDecisionCode?: number | string
         generalDecisionCode?: number | string
+        Metadata?: Array<{ Media?: Array<{ Part?: Array<{ Stream?: Array<{ streamType?: number | string; decision?: string; selected?: boolean | string }> }> }> }>
       }
     }>(url, {
       headers: {
@@ -2153,11 +2154,22 @@ export class PlexProvider implements MediaProvider {
     const directPlay = decisionCode === 1000 || decisionText.includes('direct play available')
     const overall = directPlay ? 'direct-play' : decisionText.includes('direct stream') ? 'direct-stream' : decisionText.includes('transcod') || decisionCode > 0 ? 'transcode' : undefined
     if (!overall) throw new Error('Plex returned no recognizable playback decision')
+    const streams = container?.Metadata?.flatMap(item => item.Media ?? []).flatMap(media => media.Part ?? []).flatMap(part => part.Stream ?? []) ?? []
+    const streamDecision = (streamType: number): 'copy' | 'transcode' | 'burn' | 'unknown' | 'not-applicable' => {
+      if (!streams.length) return 'unknown'
+      const selected = streams.filter(stream => Number(stream.streamType) === streamType && (stream.selected === true || stream.selected === '1'))
+      if (!selected.length) return streams.some(stream => Number(stream.streamType) === streamType) ? 'unknown' : 'not-applicable'
+      const decisions = selected.map(stream => stream.decision?.toLowerCase())
+      if (decisions.some(decision => decision === 'burn')) return 'burn'
+      if (decisions.some(decision => decision === 'transcode')) return 'transcode'
+      if (decisions.every(decision => decision === 'copy' || decision === 'direct')) return 'copy'
+      return 'unknown'
+    }
     return {
       overall,
-      video: overall,
-      audio: overall,
-      subtitle: overall,
+      video: streamDecision(1),
+      audio: streamDecision(2),
+      subtitle: streamDecision(3),
       evidence: String(container?.transcodeDecisionText || container?.generalDecisionText || `decision code ${decisionCode}`)
     }
   }

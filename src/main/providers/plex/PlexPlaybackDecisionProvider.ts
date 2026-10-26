@@ -1,11 +1,11 @@
-import type { PlaybackDecisionProvider, ProviderPlaybackDecision } from '@main/services/PlaybackCompatibilityService'
+import type { PlaybackDecisionProvider, PlaybackStreamDecision, ProviderPlaybackDecision } from '@main/services/PlaybackCompatibilityService'
 import type { PlaybackTargetDefinition, PlaybackTargetProfile } from '@main/types/playbackTarget'
 
 export interface PlexPlaybackDecisionResponse {
   overall?: string
-  video?: string
-  audio?: string
-  subtitle?: string
+  video?: PlaybackStreamDecision
+  audio?: PlaybackStreamDecision
+  subtitle?: PlaybackStreamDecision
   evidence?: string
 }
 export interface PlexPlaybackDecisionTransport { request(input: { plexId: string; client: NonNullable<PlaybackTargetDefinition['client']> }): Promise<PlexPlaybackDecisionResponse> }
@@ -19,6 +19,6 @@ export class PlexPlaybackDecisionProvider implements PlaybackDecisionProvider {
     const client = input.profile.definition.client
     if (!client) throw new Error('Playback client identity is required')
     const response = await this.transport.request({ plexId: input.plexId, client })
-    return { provider: 'plex', overall: mode(response.overall, 'overall'), video: mode(response.video, 'video'), audio: mode(response.audio, 'audio'), subtitle: mode(response.subtitle, 'subtitle'), evidence: response.evidence || 'Plex playback response' }
+    return { provider: 'plex', overall: mode(response.overall, 'overall'), video: response.video ?? 'unknown', audio: response.audio ?? 'unknown', subtitle: response.subtitle ?? 'unknown', evidence: response.evidence || 'Plex playback response' }
   }
 }
