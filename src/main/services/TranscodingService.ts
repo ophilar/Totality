@@ -26,7 +26,7 @@ import { getStatsCacheService } from './StatsCacheService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import type { MediaSourceTier } from './transcoding/TrashSourceClassifier'
 import { StreamRemuxCommandBuilder } from './transcoding/StreamRemuxCommandBuilder'
-import { buildCandidateLadder, selectMeasuredCandidate, MeasuredQualityError, MEASUREMENT_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, type CachedMeasurement } from './MeasuredOptimizationPolicy'
+import { buildCandidateLadder, selectMeasuredCandidate, MeasuredQualityError, MEASUREMENT_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
 import { buildTargetTranscodePlan, validateTargetTranscodeBitrate, type TargetTranscodePlan } from './transcoding/TargetTranscodePlan'
 import type { MeasuredCandidate } from './MeasuredOptimizationPolicy'
 import { ChildProcessMeasurementRunner, MeasuredOptimizationService } from './MeasuredOptimizationService'
@@ -45,6 +45,7 @@ export class TranscodeError extends Error {
 }
 
 export interface TranscodeOptions {
+  playbackPolicy?: 'allow-transcoding' | 'avoid-video-transcoding' | 'direct-play'
   targetCodec?: 'av1' | 'hevc'
   streamSelection?: StreamSelectionPolicy
   outputMode?: 'copy' | 'quarantine-replace' | 'replace'
@@ -62,7 +63,7 @@ export interface TranscodeOptions {
   maxOutputBytes?: number
   optimizationMode?: 'smart' | 'remux_only' | 'transcode'
   qualityProfile?: 'transparent' | 'balanced' | 'maximum_savings'
-  encoderPolicy?: 'hardware' | 'software' | 'compare'
+  encoderPolicy?: 'automatic' | 'hardware' | 'software' | 'compare'
   targetProfileId?: string | null
   targetContainer?: 'mkv' | 'mp4'
   targetContainerSelection?: 'automatic' | 'user-selected'
@@ -162,8 +163,28 @@ function getPreflightSamplingProfileKey(episode: MediaItem, options: TranscodeOp
     hdrFormat,
     (colorSpace ?? '').toLowerCase(),
     containerFamily,
-    options,
+    options.targetCodec,
+    options.encoderPolicy,
+    options.gpuId ?? null,
+    options.targetConversion && {
+      width: options.targetConversion.width,
+      height: options.targetConversion.height,
+      bitDepth: options.targetConversion.bitDepth,
+      hdrFormat: options.targetConversion.hdrFormat,
+      videoFilter: options.targetConversion.videoFilter,
+    },
   ])
+}
+
+function isCompatibleWithPlaybackPolicy(
+  policy: NonNullable<TranscodeOptions['playbackPolicy']>,
+  evaluation?: PlaybackTargetEvaluation,
+): boolean {
+  if (policy === 'allow-transcoding') return true
+  if (!evaluation) return false
+  if (policy === 'direct-play') return evaluation.overall === 'compatible'
+  return [evaluation.findings.video, evaluation.findings.hdr, evaluation.findings.network, evaluation.findings.subtitle]
+    .every(finding => finding.status !== 'incompatible')
 }
 
 export interface QuarantinedShowFile {
@@ -200,6 +221,44 @@ function estimateAudioConversionSavings(analysis: FileAnalysisResult, conversion
 
 export type PlannedOptimizationOperation = 'video_transcode' | 'audio_transcode' | 'stream_pruning' | 'subtitle_pruning' | 'container_change'
 
+export interface OptimizationQualityChoice {
+  profile: Extract<OptimizationQualityProfile, 'transparent' | 'maximum_savings'>
+  status: 'available' | 'quality_threshold_unmet' | 'incompatible' | 'measurement_incomplete'
+  estimatedSavingsBytes?: number
+  candidate?: Pick<MeasuredCandidate, 'encoder' | 'preset' | 'quality' | 'outputBytes' | 'vmafMean' | 'vmafP5' | 'cambiMean'>
+}
+
+function getOptimizationQualityChoices(
+  sourceSize: number,
+  sourceDurationSeconds: number,
+  cachedMeasurement?: CachedMeasurement,
+): OptimizationQualityChoice[] {
+  if (!cachedMeasurement) return []
+  return (['transparent', 'maximum_savings'] as const).map(profile => {
+    if (!cachedMeasurement.complete) return { profile, status: 'measurement_incomplete' }
+    try {
+      const candidate = selectMeasuredCandidate(profile, cachedMeasurement.candidates)
+      return {
+        profile,
+        status: 'available',
+        estimatedSavingsBytes: projectMeasuredSavingsBytes(sourceSize, sourceDurationSeconds, candidate.outputBytes, candidate.sampledDurationSeconds),
+        candidate: {
+          encoder: candidate.encoder,
+          preset: candidate.preset,
+          quality: candidate.quality,
+          outputBytes: candidate.outputBytes,
+          vmafMean: candidate.vmafMean,
+          vmafP5: candidate.vmafP5,
+          cambiMean: candidate.cambiMean,
+        },
+      }
+    } catch (error) {
+      if (!(error instanceof MeasuredQualityError)) throw error
+      return { profile, status: error.decisionStatus }
+    }
+  })
+}
+
 export interface ShowTranscodePreflight {
   measurementVersion?: number
   preflightId: string
@@ -226,6 +285,7 @@ export interface ShowTranscodePreflight {
     savingsCoverage?: OptimizationSavingsCoverage
     confidence?: 'high' | 'medium' | 'low' | 'none'
     estimatedSavingsBytes?: number | null
+    qualityChoices?: OptimizationQualityChoice[]
     savingsBasis?: string
     sourceTier?: MediaSourceTier
     adviceReason?: string
@@ -393,7 +453,7 @@ export class TranscodingService {
         this.analysisCache.set(episode.file_path, analysis)
         return { episode, status: 'ready', stat, analysis: { ...analysis, video } }
       } catch (error) {
-        if (operation?.signal.aborted) throw error
+        if (operation?.signal?.aborted) throw error
         return { episode, status: 'failed', error }
       }
     }
@@ -410,7 +470,7 @@ export class TranscodingService {
         phase: `Inspected ${preparedEpisodes.length} of ${episodes.length} episodes`,
         progress: { percentage: Math.round(preparedEpisodes.length / episodes.length * 40), currentItem: 'Inspecting source and playback compatibility' },
       })
-      operation?.signal.throwIfAborted()
+      operation?.signal?.throwIfAborted()
     }
     const capabilityFingerprint = needsHardwareSnapshot && preparedEpisodes.some(prepared => prepared.status === 'ready')
       ? this.getCapabilitySnapshotFingerprint(await this.getCapabilities())
@@ -433,8 +493,9 @@ export class TranscodingService {
         : `${request.seriesTitle ?? episode.series_title ?? 'TV episode'}${episode.season_number == null ? '' : ` S${String(episode.season_number).padStart(2, '0')}E${String(episode.episode_number ?? 0).padStart(2, '0')}`} · ${episode.title}`
       const fallbackMediaItemId = episode.id || 0
       const mediaItemId = episode.id ?? fallbackMediaItemId
+      let cachedMeasurement: CachedMeasurement | undefined
       const toInsufficientPlan = (error: unknown): ShowTranscodePreflight['episodes'][number] => {
-        if (operation?.signal.aborted) throw error
+        if (operation?.signal?.aborted) throw error
         const errorMsg = getErrorMessage(error)
         const decisionStatus = error instanceof MeasuredQualityError ? error.decisionStatus : 'measurement_failed'
         getLoggingService().warn('[TVOptimization]', `Episode preflight outcome: preflight=${preflightId}, mediaItem=${mediaItemId}, label="${label}", outcome=${decisionStatus}, reason=${errorMsg}`)
@@ -449,6 +510,7 @@ export class TranscodingService {
           sourceAnalysis: prepared.status === 'ready' ? prepared.analysis : undefined,
           operations: [],
           decisionStatus,
+          qualityChoices: prepared.status === 'ready' ? getOptimizationQualityChoices(prepared.stat.size, prepared.analysis.durationMs! / 1000, cachedMeasurement) : undefined,
           evidenceStatus: 'insufficient',
           confidence: 'none',
           savingsBasis: 'insufficient_data',
@@ -457,7 +519,7 @@ export class TranscodingService {
       if (prepared.status === 'failed') return toInsufficientPlan(prepared.error)
       try {
         await operation?.waitUntilRunning()
-        operation?.signal.throwIfAborted()
+        operation?.signal?.throwIfAborted()
         const { stat, analysis } = prepared
         publishPreflightProgress(episode, 'Planning streams and target compatibility')
         const actualSamplingProfileKey = getPreflightSamplingProfileKey(episode, request.options, analysis)
@@ -486,11 +548,11 @@ export class TranscodingService {
           return conversion ? { ...track, codec: conversion.codec, bitrate: conversion.bitrateKbps } : track
         })
         const allowedTargetContainers = targetProfile ? getPlaybackTargetContainers(targetProfile, analysis.video) : undefined
-        const recommendedTargetContainer = targetProfile
+        const recommendedTargetContainer = targetProfile && request.options.playbackPolicy !== 'allow-transcoding'
           ? recommendPlaybackTargetContainer(targetProfile, analysis.video, analysis.container)
           : undefined
         let plannedContainer: string | undefined
-        if (request.options.targetContainerSelection === 'automatic' && targetProfile) {
+        if (request.options.targetContainerSelection === 'automatic' && targetProfile && request.options.playbackPolicy !== 'allow-transcoding') {
           if (!recommendedTargetContainer) throw new Error(`Playback target ${targetProfile.name} has no supported MKV or MP4 container for this episode's video format`)
           plannedContainer = recommendedTargetContainer === 'mp4' ? 'mp4' : 'matroska'
         } else if (request.options.targetContainerSelection === 'automatic') {
@@ -502,7 +564,7 @@ export class TranscodingService {
           plannedContainer = request.options.targetContainer === 'mp4' ? 'mp4'
             : request.options.targetContainer === 'mkv' ? 'matroska'
               : analysis.container
-          if (targetProfile && (!plannedContainer || !allowedTargetContainers?.some(container => container.toLowerCase() === plannedContainer!.toLowerCase()))) {
+          if (targetProfile && request.options.playbackPolicy !== 'allow-transcoding' && (!plannedContainer || !allowedTargetContainers?.some(container => container.toLowerCase() === plannedContainer!.toLowerCase()))) {
             throw new Error(`Container ${plannedContainer ?? 'unspecified'} is not allowed by ${targetProfile.name}'s matching video/container rule`)
           }
         }
@@ -510,16 +572,17 @@ export class TranscodingService {
         const sourceCompatibility = targetProfile
           ? evaluatePlaybackTarget(targetProfile, { ...selectedAnalysis, audioTracks: compatibleAudioTracks, container: plannedContainer })
           : undefined
-        const preserveDynamicHdr = Boolean(targetProfile && ['Dolby Vision', 'HDR10+'].includes(analysis.video.hdrFormat ?? ''))
-        const shouldEncode = request.options.optimizationMode === 'transcode' || (request.options.optimizationMode === 'smart' && !preserveDynamicHdr && (advice.action === 'video_transcode' || sourceCompatibility?.overall === 'incompatible'))
+        const playbackCompatible = isCompatibleWithPlaybackPolicy(request.options.playbackPolicy ?? 'allow-transcoding', sourceCompatibility)
+        const preserveDynamicHdr = ['Dolby Vision', 'HDR10+'].includes(analysis.video.hdrFormat ?? '')
+        const shouldEncode = request.options.optimizationMode === 'transcode' || (request.options.optimizationMode === 'smart' && !preserveDynamicHdr && (advice.action === 'video_transcode' || !playbackCompatible && request.options.playbackPolicy === 'direct-play'))
         const options: TranscodeOptions = { ...request.options, targetProfileId: targetProfile?.id, targetContainer: plannedContainer === 'mp4' ? 'mp4' : 'mkv', optimizationMode: shouldEncode ? 'transcode' : 'remux_only', audioConversions: shouldEncode && targetProfile ? undefined : plannedAudioConversions, encoderPolicy: request.options.encoderPolicy, useGpu: shouldEncode && request.options.encoderPolicy !== 'software', gpuId: shouldEncode && request.options.encoderPolicy !== 'software' ? request.options.gpuId : undefined }
         if (!shouldEncode && !streamsChanged && !containerChanged && plannedAudioConversions.length === 0) {
-          const compatible = sourceCompatibility?.overall !== 'incompatible'
+          const compatible = playbackCompatible
           return { mediaItemId, label, compatible, reason: compatible ? undefined : 'Retained streams do not satisfy the selected playback profile', hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, operations: [], decisionStatus: compatible ? 'already_optimized' : 'incompatible', targetCompatibility: sourceCompatibility, sourceTier: advice.sourceTier, adviceReason: advice.reason }
         }
         if (shouldEncode) {
           options.maxOutputBytes = stat.size
-          if (targetProfile) options.targetConversion = buildTargetTranscodePlan(analysis, targetProfile, options)
+          if (targetProfile && request.options.playbackPolicy !== 'allow-transcoding') options.targetConversion = buildTargetTranscodePlan(analysis, targetProfile, options)
         }
         if (shouldEncode && samplingState.sampleAttemptedEpisodeLabel && !reusableRepresentativePlan) {
           const reason = `Not sampled: the season/profile sample attempt was made from "${samplingState.sampleAttemptedEpisodeLabel}"; see that episode's review entry for details.`
@@ -549,13 +612,29 @@ export class TranscodingService {
         const subtitlePruningSavings = sumMeasuredStreamBytes(analysis.streamBytes, removedSubtitleTracks.map(track => track.index))
         await operation?.waitUntilRunning()
         const sourceSha256 = await sha256File(episode.file_path)
-        const { qualityProfile: _qualityProfile, outputMode: _outputMode, tempDirectory: _tempDirectory, priority: _priority, ...measurementOptions } = options
+        const measurementOptions = {
+          targetCodec: options.targetCodec,
+          encoderPolicy: options.encoderPolicy,
+          gpuId: options.gpuId,
+          customArgs: options.customArgs,
+          targetHdrFormat: options.targetHdrFormat,
+          videoTransformation: options.targetConversion && {
+            width: options.targetConversion.width,
+            height: options.targetConversion.height,
+            bitDepth: options.targetConversion.bitDepth,
+            profile: options.targetConversion.profile,
+            level: options.targetConversion.level,
+            hdrFormat: options.targetConversion.hdrFormat,
+            videoFilter: options.targetConversion.videoFilter,
+            inputArgs: options.targetConversion.inputArgs,
+            maximumVideoBitrate: options.targetConversion.maximumVideoBitrate,
+          },
+        }
         const measurementCacheKey = shouldEncode
           ? createHash('sha256').update(JSON.stringify({
               version: MEASUREMENT_VERSION,
               sourceSha256,
               options: measurementOptions,
-              targetProfile: targetProfile?.definition,
               capabilityFingerprint,
             })).digest('hex')
           : undefined
@@ -571,7 +650,6 @@ export class TranscodingService {
         }
         let params: TranscodingParams
         let targetCompatibility = sourceCompatibility
-        let cachedMeasurement: CachedMeasurement | undefined
         let measurementCacheHit = false
         let measurementCacheStored = false
         try {
@@ -582,16 +660,21 @@ export class TranscodingService {
             } else {
               samplingState.sampleAttemptedEpisodeLabel = label
               cachedMeasurement = await this.getCachedMeasurement(measurementCacheKey!, sourceSha256, sampleDirectory)
-              if (cachedMeasurement) {
+              if (cachedMeasurement?.complete) {
                 measurementCacheHit = true
                 publishPreflightProgress(episode, 'Reusing verified encode samples from cache')
-                const candidate = selectMeasuredCandidate(options.qualityProfile!, cachedMeasurement.candidates)
-                Object.assign(options, {
-                  encoder: candidate.encoder,
-                  crf: candidate.quality,
-                  preset: candidate.preset,
-                  measuredCandidate: candidate,
-                })
+                Object.assign(options, await this.selectMeasuredParameters(
+                  episode.file_path,
+                  options,
+                  sampleDirectory,
+                  operation?.signal,
+                  async phase => {
+                    publishPreflightProgress(episode, phase)
+                    await operation?.waitUntilRunning()
+                  },
+                  async () => undefined,
+                  cachedMeasurement.candidates,
+                ))
               } else {
                 publishPreflightProgress(episode, 'Measuring encode samples for this episode')
                 const measuredParameters = await this.selectMeasuredParameters(
@@ -603,19 +686,21 @@ export class TranscodingService {
                     publishPreflightProgress(episode, phase)
                     await operation?.waitUntilRunning()
                   },
-                  async candidates => {
+                  async (candidates, complete) => {
                     const cacheRecord: CachedMeasurement = {
                       version: MEASUREMENT_VERSION,
                       cacheKey: measurementCacheKey!,
                       sourceSha256,
-                      targetProfile,
-                      candidates,
+                      complete,
+                      candidates: candidates.map(({ playbackBlockers: _playbackBlockers, ...candidate }) => candidate),
                       sampleHashes: await Promise.all(candidates.map(candidate => Promise.all((candidate.samplePaths ?? []).map(sha256File)))),
                     }
                     await getDatabase().config.setSetting(`${MEASUREMENT_SETTING_PREFIX}${measurementCacheKey}`, JSON.stringify(cacheRecord))
+                    cachedMeasurement = cacheRecord
                     measurementCacheStored = true
                     getLoggingService().info('[TVOptimization]', `Measured candidates cached: mediaItem=${episode.id}, cacheKey=${measurementCacheKey}, candidates=${candidates.length}`)
                   },
+                  cachedMeasurement?.candidates,
                 )
                 Object.assign(options, measuredParameters)
               }
@@ -638,7 +723,7 @@ export class TranscodingService {
               this.verifyPlannedStreams(analysis, sample, options, params)
               if (targetProfile) {
                 targetCompatibility = evaluatePlaybackTarget(targetProfile, sample)
-                if (targetCompatibility.overall !== 'compatible') throw new Error(`Measured sample is incompatible: ${Object.values(targetCompatibility.findings).filter(finding => finding.status === 'incompatible').map(finding => finding.rule).join('; ')}`)
+                if (!isCompatibleWithPlaybackPolicy(options.playbackPolicy ?? 'allow-transcoding', targetCompatibility)) throw new Error(`Measured sample is incompatible: ${Object.values(targetCompatibility.findings).filter(finding => finding.status === 'incompatible').map(finding => finding.rule).join('; ')}`)
               }
             }
             if (!reusableRepresentativePlan && !measurementCacheHit && !measurementCacheStored) {
@@ -654,8 +739,9 @@ export class TranscodingService {
           : undefined
         if (shouldEncode && measuredPlanSavingsBytes === 0) {
           return {
-            mediaItemId, label, compatible: sourceCompatibility?.overall !== 'incompatible', hdrFormat: analysis.video.hdrFormat || 'SDR',
+            mediaItemId, label, compatible: playbackCompatible, hdrFormat: analysis.video.hdrFormat || 'SDR',
             sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256, sourceAnalysis: analysis, targetProfile,
+            qualityChoices: reusableRepresentativePlan?.qualityChoices ?? getOptimizationQualityChoices(stat.size, analysis.durationMs! / 1000, cachedMeasurement),
             options, params, operations: [], decisionStatus: 'no_savings', estimatedSavingsBytes: 0,
             evidenceStatus: 'estimated', confidence: 'medium', savingsCoverage: 'complete', savingsBasis: 'video_sample_encode',
             samplingRole: reusableRepresentativePlan ? 'projected' : 'measured',
@@ -664,7 +750,7 @@ export class TranscodingService {
             reason: 'The tested encodes that meet the selected quality requirement do not project storage savings. Other encoders or settings may differ.',
           }
         }
-        if (targetCompatibility?.overall === 'incompatible') throw new Error('Selected retained streams are incompatible with the playback target')
+        if (targetCompatibility && !isCompatibleWithPlaybackPolicy(options.playbackPolicy ?? 'allow-transcoding', targetCompatibility)) throw new Error('Selected streams are incompatible with the playback policy')
         const plannedSavingsOperations: OptimizationSavingsOperation[] = [
           ...(shouldEncode ? ['video_transcode' as const] : []),
           ...(audioStreamsChanged ? ['audio_pruning' as const] : []),
@@ -701,8 +787,9 @@ export class TranscodingService {
           ],
           decisionStatus: shouldEncode ? 'sample_required' : 'actionable', evidenceStatus, savingsCoverage: reusableRepresentativePlan ? 'partial' : savingsBreakdown.coverage, confidence: evidenceStatus === 'measured' ? 'high' : evidenceStatus === 'estimated' ? 'medium' : 'none',
           estimatedSavingsBytes: savingsBreakdown.totalEstimatedSavingsBytes,
+          qualityChoices: reusableRepresentativePlan?.qualityChoices ?? getOptimizationQualityChoices(stat.size, analysis.durationMs! / 1000, cachedMeasurement),
           savingsBasis, sourceTier: advice.sourceTier, adviceReason: preserveDynamicHdr && !shouldEncode
-            ? sourceCompatibility?.overall === 'compatible' ? 'Dynamic HDR source video is preserved; only the container or selected streams are remuxed.' : 'Dynamic HDR source video is preserved without re-encoding, but the selected playback target is not fully satisfied by the source and allowed remux operations.'
+            ? playbackCompatible ? 'Dynamic HDR source video is preserved; only the container or selected streams are remuxed.' : 'Dynamic HDR source video is preserved, but the selected playback policy is not satisfied by the source and allowed remux operations.'
             : shouldEncode
               ? reusableRepresentativePlan
                 ? `Representative sample from ${reusableRepresentativePlan.label} passed the selected quality gates; savings are projected for this episode.`
@@ -721,12 +808,21 @@ export class TranscodingService {
     }
 
     const episodeResults = new Map<number, ShowTranscodePreflight['episodes'][number]>()
-    const orderedSamplingGroups = [...samplingGroups.values()].map(group => {
-      const ordered = [...group].sort((left, right) =>
+    const orderedSamplingGroups = [...samplingGroups.values()].flatMap(group => {
+      const withBitrate = group.filter((prepared): prepared is Extract<PreparedEpisode, { status: 'ready' }> =>
+        prepared.status === 'ready' && Number.isFinite(prepared.analysis.video.bitrateKbps) && prepared.analysis.video.bitrateKbps! > 0)
+      const withoutBitrate = group.filter(prepared => prepared.status !== 'ready' || !Number.isFinite(prepared.analysis.video.bitrateKbps) || prepared.analysis.video.bitrateKbps! <= 0)
+      if (!withBitrate.length) return group.map(prepared => [prepared])
+      const ordered = [...withBitrate].sort((left, right) =>
         (left.episode.episode_number ?? left.episode.id ?? 0) - (right.episode.episode_number ?? right.episode.id ?? 0)
       )
-      const primaryIndex = Math.floor((ordered.length - 1) / 2)
-      return [ordered[primaryIndex], ...ordered.filter((_, index) => index !== primaryIndex)]
+      const bitrates = withBitrate.map(prepared => prepared.analysis.video.bitrateKbps!).sort((left, right) => left - right)
+      const medianBitrate = bitrates[Math.floor((bitrates.length - 1) / 2)]
+      const representative = [...ordered].sort((left, right) =>
+        Math.abs(left.analysis.video.bitrateKbps! - medianBitrate) - Math.abs(right.analysis.video.bitrateKbps! - medianBitrate) ||
+        (left.episode.episode_number ?? left.episode.id ?? 0) - (right.episode.episode_number ?? right.episode.id ?? 0)
+      )[0]
+      return [[representative, ...ordered.filter(prepared => prepared !== representative)], ...withoutBitrate.map(prepared => [prepared])]
     })
     const processSamplingGroup = async (group: PreparedEpisode[]) => {
       const samplingState: SamplingGroupState = {}
@@ -773,7 +869,7 @@ export class TranscodingService {
           phase: `Reviewed ${completedEpisodes} of ${episodes.length} episodes`,
           progress: { percentage: 40 + Math.round((completedEpisodes / episodes.length) * 60), currentItem: 'Episode checks complete for this sample group' },
         })
-        operation?.signal.throwIfAborted()
+      operation?.signal.throwIfAborted()
       }
     }
     for (let offset = 0; offset < orderedSamplingGroups.length; offset += CONCURRENCY) {
@@ -831,7 +927,7 @@ export class TranscodingService {
     }
     getLoggingService().info('[TVOptimization]', `Preflight completed: preflight=${preflightId}, batch=${batchId}, series=${request.seriesIdentityKey ?? 'episode'}, episodes=${episodes.length}, samplingGroupsSelected=${samplingGroups.size}, unclassifiedProfiles=${unclassifiedSamplingProfiles}, measuredSampleRepresentatives=${results.filter(episode => episode.samplingRole === 'measured').length}, projectedEpisodes=${results.filter(episode => episode.samplingRole === 'projected').length}, insufficientEvidence=${results.filter(episode => episode.decisionStatus === 'insufficient_evidence').length}, compatible=${results.filter(episode => episode.compatible).length}, actionable=${results.filter(episode => episode.compatible && episode.operations.length > 0).length}, savingsBytes=${planMetrics.totalEstimatedSavingsBytes ?? 'unknown'}, coverage=${planMetrics.coverage}`)
     await operation?.waitUntilRunning()
-    operation?.signal.throwIfAborted()
+      operation?.signal.throwIfAborted()
     operation?.beginCommit()
     this.showPreflights.set(preflightId, { request, result })
     await getDatabase().config.setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ request, result }))
@@ -1771,7 +1867,7 @@ export class TranscodingService {
         const toleranceMs = converted ? 2 * (output.codec === 'aac' ? 1024 : 1536) * 1000 / output.sampleRate! : Math.max(source.timestampPrecisionMs!, output.timestampPrecisionMs!)
         if (Math.abs(source.durationMs - output.durationMs) > toleranceMs) throw new Error(`Audio stream ${sourceIndex} duration changed beyond its timestamp or coded sample precision`)
       }
-      if (queuePayload?.targetProfile && evaluatePlaybackTarget(queuePayload.targetProfile, outputAnalysis).overall !== 'compatible') throw new Error('Verified output is incompatible with the approved target')
+      if (queuePayload?.targetProfile && !isCompatibleWithPlaybackPolicy(options.playbackPolicy ?? 'direct-play', evaluatePlaybackTarget(queuePayload.targetProfile, outputAnalysis))) throw new Error('Verified output is incompatible with the approved playback policy')
       controller.signal.throwIfAborted()
       if (await sha256File(inputPath) !== sourceSha256) throw new Error('Source file changed during transcoding')
 
@@ -1890,7 +1986,8 @@ export class TranscodingService {
     sampleDirectory?: string,
     signal?: AbortSignal,
     onProgress?: (phase: string) => Promise<void> | void,
-    onMeasuredCandidates?: (candidates: MeasuredCandidate[]) => Promise<void>,
+    onMeasuredCandidates?: (candidates: MeasuredCandidate[], complete: boolean) => Promise<void>,
+    previouslyMeasured: MeasuredCandidate[] = [],
   ): Promise<Pick<TranscodingParams, 'encoder' | 'crf' | 'preset' | 'measuredCandidate'>> {
     if (!options.targetCodec || !options.qualityProfile || !options.encoderPolicy) throw new Error('Target codec, quality profile, and encoder policy are required for measurement')
     signal?.throwIfAborted()
@@ -1899,20 +1996,29 @@ export class TranscodingService {
     if (!analysis.video.frameRate) throw new Error('A source frame rate is required for measured quality analysis')
     const capabilities = options.encoderPolicy === 'software' ? undefined : await this.getCapabilities()
     const selectedGpu = capabilities?.gpus.find(gpu => gpu.id === (options.gpuId || capabilities.selectedGpuId))
-    const hardwareVendor = selectedGpu?.vendor
+    const automaticGpuCandidates = options.encoderPolicy === 'automatic'
+      ? capabilities?.gpus.filter(gpu => {
+        const encoder = getHardwareEncoder(gpu.vendor, options.targetCodec!)
+        return encoder !== undefined && capabilities.deviceEncoders[gpu.id]?.includes(encoder)
+      })
+      : undefined
+    const automaticGpu = automaticGpuCandidates?.find(gpu => gpu.id === (options.gpuId || capabilities?.selectedGpuId)) ?? automaticGpuCandidates?.[0]
+    const encoderGpu = options.encoderPolicy === 'automatic' ? automaticGpu : selectedGpu
+    const hardwareVendor = encoderGpu?.vendor
     const hardwareEncoder = hardwareVendor && options.encoderPolicy !== 'software'
       ? getHardwareEncoder(hardwareVendor, options.targetCodec)
       : undefined
-    if (options.encoderPolicy !== 'software' && !hardwareEncoder) throw new Error(`The selected hardware does not support ${options.targetCodec.toUpperCase()} encoding.`)
-    if (hardwareEncoder && !capabilities!.deviceEncoders[selectedGpu!.id]?.includes(hardwareEncoder)) throw new Error(`The selected device does not support ${hardwareEncoder} encoding.`)
+    if (options.encoderPolicy !== 'software' && options.encoderPolicy !== 'automatic' && !hardwareEncoder) throw new Error(`The selected hardware does not support ${options.targetCodec.toUpperCase()} encoding.`)
+    if (hardwareEncoder && !capabilities!.deviceEncoders[encoderGpu!.id]?.includes(hardwareEncoder)) throw new Error(`The selected device does not support ${hardwareEncoder} encoding.`)
     const ladder = buildCandidateLadder(options.targetCodec, options.encoderPolicy, hardwareEncoder)
-    const candidates = ladder.map(candidate => {
+    const isMeasured = (candidate: CandidateEncodingParameters) => previouslyMeasured.some(measured => measured.encoder === candidate.encoder && measured.preset === candidate.preset && measured.quality === candidate.quality)
+    const candidates = ladder.filter(candidate => !isMeasured(candidate)).map(candidate => {
       const useGpu = candidate.encoder !== 'x265' && candidate.encoder !== 'svt_av1'
       const candidateOptions = {
         ...options,
         useGpu,
-        gpuId: useGpu ? selectedGpu?.id : undefined,
-        gpuDeviceSelector: useGpu ? selectedGpu?.encoderDeviceSelector : undefined,
+        gpuId: useGpu ? encoderGpu?.id : undefined,
+        gpuDeviceSelector: useGpu ? encoderGpu?.encoderDeviceSelector : undefined,
         encoder: candidate.encoder,
         crf: candidate.quality,
         preset: candidate.preset
@@ -1941,17 +2047,31 @@ export class TranscodingService {
           if (sample.deepAnalysis?.peakBitrate === undefined) throw new Error('Sample has no measured peak bitrate')
           try { validateTargetTranscodeBitrate(options.targetConversion, sample) } catch (error) { blockers.push(getErrorMessage(error)) }
         }
-        if (targetProfile) {
+        if (targetProfile && options.playbackPolicy !== 'allow-transcoding') {
           const evaluation = evaluatePlaybackTarget(targetProfile, sample)
-          for (const finding of Object.values(evaluation.findings)) if (finding.status === 'incompatible') blockers.push(`${finding.rule}: ${finding.evidence}`)
+          if (options.playbackPolicy === 'direct-play') {
+            for (const finding of Object.values(evaluation.findings)) if (finding.status === 'incompatible') blockers.push(`${finding.rule}: ${finding.evidence}`)
+          } else {
+            for (const finding of [evaluation.findings.video, evaluation.findings.hdr, evaluation.findings.network, evaluation.findings.subtitle]) {
+              if (finding.status === 'incompatible') blockers.push(`${finding.rule}: ${finding.evidence}`)
+            }
+          }
         }
         return blockers
       }
-      const measured = await this.measuredOptimizationService.measure({ inputPath: filePath, outputDirectory, durationMs: analysis.durationMs, outputExtension, referenceFilter: options.targetConversion?.videoFilter, referenceInputArgs: options.targetConversion?.inputArgs, candidates, signal, onProgress, validateSample })
+      for (const candidate of previouslyMeasured) {
+        const blockers = new Set<string>()
+        for (const samplePath of candidate.samplePaths ?? []) for (const blocker of await validateSample(samplePath)) blockers.add(blocker)
+        candidate.playbackBlockers = [...blockers]
+      }
+      const measured = candidates.length
+        ? await this.measuredOptimizationService.measure({ inputPath: filePath, outputDirectory, durationMs: analysis.durationMs, outputExtension, referenceFilter: options.targetConversion?.videoFilter, referenceInputArgs: options.targetConversion?.inputArgs, candidates, signal, onProgress, validateSample, onCandidateMeasured: async (newCandidates, complete) => onMeasuredCandidates?.([...previouslyMeasured, ...newCandidates], complete && previouslyMeasured.length + newCandidates.length === ladder.length) })
+        : { candidates: [], vmafAvailable: true, cambiAvailable: true }
       signal?.throwIfAborted()
-      await onMeasuredCandidates?.(measured.candidates)
-      const selected = selectMeasuredCandidate(options.qualityProfile, measured.candidates)
-      if (!onMeasuredCandidates) for (const candidate of measured.candidates) if (candidate !== selected) for (const sample of candidate.samplePaths!) await fs.unlink(sample)
+      const allCandidates = [...previouslyMeasured, ...measured.candidates]
+      if (previouslyMeasured.length === ladder.length) await onMeasuredCandidates?.(previouslyMeasured, true)
+      const selected = selectMeasuredCandidate(options.qualityProfile, allCandidates)
+      if (!onMeasuredCandidates) for (const candidate of allCandidates) if (candidate !== selected) for (const sample of candidate.samplePaths!) await fs.unlink(sample)
       return { encoder: selected.encoder, crf: selected.quality, preset: selected.preset, measuredCandidate: selected }
     } catch (error) {
       if (!onMeasuredCandidates) await fs.rm(outputDirectory, { recursive: true, force: true })

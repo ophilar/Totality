@@ -12,6 +12,7 @@ export interface OptimizationSavingsInput {
   subtitlePruningBytes?: number | null
   plannedOperations: readonly OptimizationSavingsOperation[]
   measuredPlanSavingsBytes?: number | null
+  videoTargetCodec?: 'hevc' | 'av1' | null
 }
 
 export interface OptimizationSavingsBreakdown {
@@ -22,6 +23,7 @@ export interface OptimizationSavingsBreakdown {
   totalEstimatedSavingsBytes: number | null
   percentageSavings: number | null
   coverage: OptimizationSavingsCoverage
+  videoTargetCodec: 'hevc' | 'av1' | null
 }
 
 function normalizeKnownBytes(value: number | null | undefined): number | null {
@@ -95,5 +97,6 @@ export function buildOptimizationSavingsBreakdown(input: OptimizationSavingsInpu
       ? (totalEstimatedSavingsBytes / totalBytes) * 100
       : null,
     coverage,
+    videoTargetCodec: input.videoTargetCodec ?? null,
   }
 }

@@ -29,6 +29,7 @@ export interface OptimizationDecisionInput {
   videoAvailable?: boolean
   audioTranscodeSavingsBytes?: number | null
   audioTracks: OptimizationDecisionAudioTrack[]
+  videoTargetCodec?: 'hevc' | 'av1' | null
 }
 
 export interface OptimizationDecisionMechanism {
@@ -38,6 +39,7 @@ export interface OptimizationDecisionMechanism {
   evidenceStatus: EvidenceStatus
   confidence: EvidenceConfidence
   savingsBasis: SavingsBasis
+  assumedTargetCodec?: 'hevc' | 'av1'
 }
 
 export interface OptimizationDecisionTrackRemoval extends OptimizationDecisionMechanism {
@@ -142,11 +144,13 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
     confidence: hasMeasuredAudioEvidence ? 'medium' : 'none',
     savingsBasis: hasMeasuredAudioEvidence ? 'audio_transcode_model' : 'insufficient_data',
   }
-  const estimatedVideoSavings = videoSavings != null && videoSavings > 0 ? videoSavings : null
+  const estimatedVideoSavings = videoSavings
   const videoTranscode: OptimizationDecisionMechanism = {
-    status: estimatedVideoSavings != null || input.videoAvailable ? 'review-required' : 'unavailable',
+    status: estimatedVideoSavings != null && estimatedVideoSavings > 0 || input.videoAvailable ? 'review-required' : 'unavailable',
     estimatedSavingsBytes: estimatedVideoSavings,
-    reason: estimatedVideoSavings != null
+    reason: videoSavings === 0
+      ? `The codec model predicts no size reduction for ${input.videoTargetCodec?.toUpperCase() ?? 'the selected video target'}; sample encodes are needed to determine actual savings.`
+      : estimatedVideoSavings != null
       ? 'Configured video target estimate only; visual quality is not assessed. Review measured samples before encoding'
       : input.videoAvailable
         ? 'Video savings require measured encode samples that satisfy the selected quality and playback requirements.'
@@ -154,8 +158,9 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
         ? 'Configured video target and bitrate threshold estimate no size reduction; visual quality is not assessed'
         : 'Video bitrate or duration evidence is unavailable, so file-size savings cannot be estimated',
     evidenceStatus: videoSavings == null ? 'insufficient' : 'estimated',
-    confidence: videoSavings == null ? 'none' : 'medium',
+    confidence: videoSavings == null ? 'none' : 'low',
     savingsBasis: estimatedVideoSavings != null ? 'video_bitrate_estimate' : 'insufficient_data',
+    assumedTargetCodec: input.videoTargetCodec ?? undefined,
   }
   const primaryAction = resolveOptimizationPrimaryAction({
     trackRemovalStatus,
