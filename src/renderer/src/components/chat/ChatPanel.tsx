@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Bot, X, Send, Trash2, AlertCircle, Settings } from 'lucide-react'
 import { useChat, type ViewContext } from '../../hooks/useChat'
 import { ChatMessage } from './ChatMessage'
+import { Button } from '../ui/Button'
 
 interface ChatPanelProps {
   isOpen: boolean
@@ -115,21 +116,21 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
         </div>
         <div className="flex items-center gap-1">
           {messages.length > 0 && (
-            <button
+            <Button
+              variant="tertiary"
+              size="icon-sm"
               onClick={clearHistory}
-              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 focus:outline-hidden focus:ring-2 focus:ring-primary transition-colors"
+              icon={<Trash2 className="w-3.5 h-3.5" />}
               title="Clear chat history"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            />
           )}
-          <button
+          <Button
+            variant="tertiary"
+            size="icon-sm"
             onClick={onClose}
-            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 focus:outline-hidden focus:ring-2 focus:ring-primary transition-colors"
+            icon={<X className="w-3.5 h-3.5" />}
             title="Close chat"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+          />
         </div>
       </div>
 
@@ -142,13 +143,14 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
             Get a free Gemini API key from Google AI Studio in Settings &gt; Services.
           </p>
           {onOpenSettings && (
-            <button
+            <Button
+              variant="primary"
+              size="sm"
               onClick={onOpenSettings}
-              className="flex items-center gap-2 px-3 py-2 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+              icon={<Settings className="w-3.5 h-3.5" />}
             >
-              <Settings className="w-3.5 h-3.5" />
-              Open Settings
-            </button>
+              Open settings
+            </Button>
           )}
         </div>
       )}
@@ -177,7 +179,7 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
                     </button>
                   ))}
                 </div>
-                <p className="text-[10px] text-muted-foreground/50 mt-4">
+                <p className="text-xs text-muted-foreground/50 mt-4">
                   Messages are processed by Google Gemini using your API key. Chat history is not saved to disk.
                 </p>
               </div>
@@ -224,14 +226,15 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
                   target.style.height = Math.min(target.scrollHeight, 100) + 'px'
                 }}
               />
-              <button
+              <Button
+                variant="primary"
+                size="icon-sm"
                 onClick={handleSubmit}
                 disabled={!input.trim() || isLoading || rateLimit.limited}
-                className="shrink-0 p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+                icon={<Send className="w-4 h-4" />}
                 title="Send message"
-              >
-                <Send className="w-4 h-4" />
-              </button>
+                className="shrink-0"
+              />
             </div>
           </div>
         </>

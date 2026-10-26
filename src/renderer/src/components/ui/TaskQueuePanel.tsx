@@ -31,6 +31,7 @@ import {
   Activity,
   CheckCircle2,
 } from 'lucide-react'
+import { Button } from './Button'
 
 type TaskType =
   | 'library-scan'
@@ -185,16 +186,14 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
             )}
           </div>
           <div className="flex items-center gap-1">
-            <button onClick={handlePauseResume}
-              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary"
-              title={queueState.isPaused ? 'Resume queue' : 'Pause queue'}>
-              {queueState.isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
-            </button>
-            <button ref={closeButtonRef} onClick={onClose}
-              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary"
-              aria-label="Close task queue panel" title="Close">
-              <X className="w-4 h-4" />
-            </button>
+            <Button variant="tertiary" size="icon-sm" onClick={handlePauseResume}
+              icon={queueState.isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+              title={queueState.isPaused ? 'Resume queue' : 'Pause queue'}
+            />
+            <Button ref={closeButtonRef} variant="tertiary" size="icon-sm" onClick={onClose}
+              icon={<X className="w-4 h-4" />}
+              aria-label="Close task queue panel" title="Close"
+            />
           </div>
         </div>
 
@@ -231,7 +230,7 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
           <div className="flex items-center justify-between px-4 py-2 bg-muted/20 shrink-0">
             <div className="flex items-center gap-2">
               <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              <span className="text-xs font-medium text-muted-foreground">
                 Queued {queueState.queue.length > 0 && `(${queueState.queue.length})`}
               </span>
             </div>
@@ -265,14 +264,14 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
         {queueState.completedTasks.length > 0 && (
           <div className="border-t border-border/30 max-h-40 overflow-y-auto">
             <div className="px-4 py-2 bg-muted/20">
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Recent</span>
+              <span className="text-xs font-medium text-muted-foreground">Recent</span>
             </div>
             <div className="divide-y divide-border/10">
               {queueState.completedTasks.slice(0, 5).map((task) => (
                 <div key={task.id} className="flex items-center gap-2 px-4 py-2 text-muted-foreground/60">
                   <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${task.status === 'failed' ? 'text-red-400' : 'text-green-400'}`} />
                   <span className="text-xs flex-1 truncate">{task.label}</span>
-                  {task.status === 'failed' && <span className="text-[10px] text-red-400">Failed</span>}
+                  {task.status === 'failed' && <span className="text-xs text-red-400">Failed</span>}
                 </div>
               ))}
             </div>

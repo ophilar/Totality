@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
 import { RefreshCw, MoreVertical, Pencil, Folder, CircleFadingArrowUp, EyeOff, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
 import { TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
 import { DropdownMenu, DropdownMenuItem } from '../ui/DropdownMenu'
+import { Button } from '../ui/Button'
 import { AnimatedNumber } from '../ui/AnimatedNumber'
 import { MissingItemCard } from './MissingItemCard'
 import { useMenuClose } from '../../hooks/useMenuClose'
@@ -627,14 +628,14 @@ export function TVShowsView({
 
             {/* Action buttons row */}
             <div className="flex items-center gap-3 mt-3" ref={showDetailMenuRef}>
-              <button
+              <Button
                 onClick={() => selectedShow && onAnalyzeSeries(selectedShow)}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-                title="Analyze Series"
+                size="sm"
+                icon={<RefreshCw className="w-3.5 h-3.5" />}
+                title="Analyze series"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Analyze Series
-              </button>
+                Analyze series
+              </Button>
               {onFixMatch && (
                 <button
                   onClick={() => selectedShow && onFixMatch(selectedShow, '', undefined)}

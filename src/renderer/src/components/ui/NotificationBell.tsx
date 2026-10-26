@@ -4,6 +4,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Bell, X } from 'lucide-react'
+import { Button } from './Button'
 
 interface AppNotification {
   id: number
@@ -127,7 +128,7 @@ export function NotificationBell() {
       >
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 bg-white text-black text-[10px] font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+          <span className="absolute -top-1 -right-1 bg-white text-black text-xs font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
@@ -142,21 +143,21 @@ export function NotificationBell() {
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/30">
-          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Notifications</span>
+          <span className="text-xs font-semibold text-muted-foreground">Notifications</span>
           <div className="flex items-center gap-2">
             {unreadCount > 0 && (
-              <button onClick={handleMarkAllRead} className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+              <button onClick={handleMarkAllRead} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
                 Mark all read
               </button>
             )}
             {notifications.length > 0 && (
-              <button onClick={handleClear} className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+              <button onClick={handleClear} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
                 Clear
               </button>
             )}
-            <button onClick={() => setIsOpen(false)} className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground">
-              <X className="w-3.5 h-3.5" />
-            </button>
+            <Button variant="tertiary" size="icon-sm" onClick={() => setIsOpen(false)}
+              icon={<X className="w-3.5 h-3.5" />}
+            />
           </div>
         </div>
 
@@ -180,7 +181,7 @@ export function NotificationBell() {
                     onClick={() => !n.isRead && handleMarkRead(n.id)}
                   >
                     <div className="flex items-start gap-2">
-                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${style.color}`}>
+                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 ${style.color}`}>
                         {style.icon}
                       </span>
                       <div className="flex-1 min-w-0">
@@ -189,7 +190,7 @@ export function NotificationBell() {
                           {!n.isRead && <span className="w-1.5 h-1.5 bg-accent rounded-full shrink-0" />}
                         </div>
                         <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
-                        <span className="text-[10px] text-muted-foreground/50 mt-0.5 block">
+                        <span className="text-xs text-muted-foreground/50 mt-0.5 block">
                           {new Date(n.createdAt).toLocaleString()}
                         </span>
                       </div>

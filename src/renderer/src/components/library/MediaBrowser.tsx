@@ -18,6 +18,7 @@ import { useWishlist } from '../../contexts/WishlistContext'
 import { useToast } from '../../contexts/ToastContext'
 import logoImage from '../../assets/totality_header_logo.png'
 import { MoviePlaceholder, TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
+import { Select } from '../ui/Input'
 
 // Import extracted hooks (more hooks available in ./hooks for gradual migration)
 import {
@@ -1853,16 +1854,17 @@ export function MediaBrowser({
                 {activeSourceId && currentTypeLibraries.length >= 2 && (
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">Library</span>
-                    <select
+                    <Select
+                      inputSize="sm"
                       value={activeLibraryId || ''}
                       onChange={(e) => setActiveLibraryId(e.target.value || null)}
-                      className="px-2.5 py-1 bg-card border border-border rounded-md text-xs text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
+                      className="w-auto"
                     >
-                      <option value="">All Libraries</option>
+                      <option value="">All libraries</option>
                       {currentTypeLibraries.map(lib => (
                         <option key={lib.id} value={lib.id}>{lib.name}</option>
                       ))}
-                    </select>
+                    </Select>
                   </div>
                 )}
 

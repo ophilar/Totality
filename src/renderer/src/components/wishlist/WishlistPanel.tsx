@@ -4,6 +4,8 @@ import { useWishlist, WishlistMediaType, WishlistPriority, WishlistReason, Wishl
 import { WishlistItemCard } from './WishlistItemCard'
 import { WishlistEmptyState } from './WishlistEmptyState'
 import { SETTING_KEYS } from '../../../../shared/settingKeys'
+import { Button } from '../ui/Button'
+import { Input } from '../ui/Input'
 
 interface SearchResult {
   id: string
@@ -127,13 +129,14 @@ function WishlistSearch() {
     <div className="px-3 pt-2 pb-2 border-b border-border/30">
       <div className="relative">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-        <input
+        <Input
           ref={inputRef}
           type="text"
+          inputSize="sm"
           value={query}
           onChange={(e) => handleInput(e.target.value)}
           placeholder="Search movies, TV shows..."
-          className="w-full pl-8 pr-8 py-1.5 bg-background border border-border/30 rounded-lg text-xs focus:outline-hidden focus:ring-1 focus:ring-primary"
+          className="pl-8 pr-8"
         />
         {isSearching ? (
           <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-muted-foreground" />
@@ -400,29 +403,25 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
         {!inline && (
           <div className="flex items-center gap-1">
             {counts.total > 0 && (
-              <button
+              <Button
                 ref={exportButtonRef}
+                variant="tertiary"
+                size="icon-sm"
                 onClick={handleExport}
-                disabled={isExporting}
-                className="p-1.5 rounded-md hover:bg-muted transition-colors focus:outline-hidden disabled:opacity-50"
+                loading={isExporting}
+                icon={<Download className="w-4 h-4" />}
                 aria-label="Export wishlist to CSV"
                 title="Export to CSV"
-              >
-                {isExporting ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                ) : (
-                  <Download className="w-4 h-4 text-muted-foreground" />
-                )}
-              </button>
+              />
             )}
-            <button
+            <Button
               ref={closeButtonRef}
+              variant="tertiary"
+              size="icon-sm"
               onClick={onClose}
-              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary"
+              icon={<X className="w-4 h-4" />}
               aria-label="Close wishlist panel"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            />
           </div>
         )}
       </div>
@@ -454,7 +453,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
         {/* Trakt sync */}
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground w-14 shrink-0">Trakt</span>
-          <input type="text" value={traktUser} onChange={e => setTraktUser(e.target.value)}
+          <Input type="text" inputSize="sm" value={traktUser} onChange={e => setTraktUser(e.target.value)}
             onKeyDown={async e => {
               if (e.key === 'Enter' && traktUser.trim() && !syncingTrakt) {
                 await window.electronAPI.setSetting(SETTING_KEYS.trakt_username, traktUser.trim())
@@ -469,7 +468,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
               }
             }}
             placeholder="username"
-            className="flex-1 px-2 py-1 bg-background border border-border/30 rounded text-xs focus:outline-hidden focus:ring-1 focus:ring-primary min-w-0" />
+            className="flex-1 min-w-0" />
           <button onClick={async () => {
             if (!traktUser.trim() || syncingTrakt) return
             await window.electronAPI.setSetting(SETTING_KEYS.trakt_username, traktUser.trim())
@@ -527,7 +526,9 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
             })}
           </div>
           <div className="flex items-center gap-2 px-3 py-2 shrink-0 border-t border-border/30">
-            <button
+            <Button
+              variant="primary"
+              size="sm"
               onClick={async () => {
                 setSyncPreviewAdding(true)
                 try {
@@ -552,16 +553,18 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
                 finally { setSyncPreviewAdding(false) }
               }}
               disabled={syncPreviewSelected.size === 0 || syncPreviewAdding}
-              className="flex-1 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+              loading={syncPreviewAdding}
+              className="flex-1"
             >
-              {syncPreviewAdding ? 'Adding...' : `Add ${syncPreviewSelected.size} Selected`}
-            </button>
-            <button
+              {syncPreviewAdding ? 'Adding...' : `Add ${syncPreviewSelected.size} selected`}
+            </Button>
+            <Button
+              variant="tertiary"
+              size="sm"
               onClick={() => { setSyncPreview(null); setSyncPreviewSource(null) }}
-              className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -693,8 +696,8 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
               <div>
                 <div className="flex items-center gap-2 mb-2 px-1">
                   <ListTodo className="w-3.5 h-3.5 text-muted-foreground" />
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Complete Collection ({missingItems.length})
+                  <h3 className="text-xs font-semibold text-muted-foreground">
+                    Complete collection ({missingItems.length})
                   </h3>
                 </div>
                 <div className="space-y-2">
@@ -717,8 +720,8 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
               <div>
                 <div className="flex items-center gap-2 mb-2 px-1">
                   <CircleFadingArrowUp className="w-3.5 h-3.5 text-muted-foreground" />
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Upgrade Quality ({upgradeItems.length})
+                  <h3 className="text-xs font-semibold text-muted-foreground">
+                    Upgrade quality ({upgradeItems.length})
                   </h3>
                 </div>
                 <div className="space-y-2">

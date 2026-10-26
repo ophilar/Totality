@@ -4,6 +4,7 @@ import { FixedSizeList as VirtualList } from 'react-window'
 import { Music, Disc3, User, MoreVertical, RefreshCw, X, Pencil, CircleFadingArrowUp, EyeOff, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import { DropdownMenu, DropdownMenuItem } from '../ui/DropdownMenu'
+import { Button } from '../ui/Button'
 import { AnimatedNumber } from '../ui/AnimatedNumber'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors, formatDuration } from './mediaUtils'
@@ -716,7 +717,7 @@ export function MusicView({
                         )}
                       </div>
                       {!track.isMissing && track.file_path && (
-                        <div className="text-[10px] text-muted-foreground/50 truncate mt-0.5" title={track.file_path}>
+                        <div className="text-xs text-muted-foreground/50 truncate mt-0.5" title={track.file_path}>
                           {track.file_path.split(/[/\\]/).slice(-2).join('/')}
                         </div>
                       )}
@@ -953,11 +954,11 @@ export function MusicView({
 
                   {/* Technical Specs */}
                   <div className="bg-muted/30 rounded-lg p-3">
-                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Audio Specs</h3>
+                    <h3 className="text-xs font-semibold text-muted-foreground mb-2">Audio Specs</h3>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Codec</span>
-                        <span className="font-medium uppercase">{selectedTrackForQuality.codec || 'Unknown'}</span>
+                        <span className="font-medium">{selectedTrackForQuality.codec || 'Unknown'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Bitrate</span>
@@ -1065,15 +1066,16 @@ export function MusicView({
 
             {/* Action buttons row */}
             <div className="flex items-center gap-3 mt-3" ref={artistMenuRef}>
-              <button
+              <Button
                 onClick={() => { handleAnalyzeArtist(selectedArtist.id) }}
                 disabled={isAnalyzingArtist}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
-                title="Analyze Completeness"
+                loading={isAnalyzingArtist}
+                size="sm"
+                icon={!isAnalyzingArtist ? <RefreshCw className="w-3.5 h-3.5" /> : undefined}
+                title="Analyze completeness"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isAnalyzingArtist ? 'animate-spin' : ''}`} />
-                {isAnalyzingArtist ? 'Analyzing...' : 'Analyze Completeness'}
-              </button>
+                {isAnalyzingArtist ? 'Analyzing...' : 'Analyze completeness'}
+              </Button>
               {onFixArtistMatch && (
                 <button
                   onClick={() => onFixArtistMatch(selectedArtist.id, selectedArtist.name)}
@@ -1322,7 +1324,7 @@ export function MusicView({
           ) : viewType === 'list' ? (
             <div>
               {/* Column Headers */}
-              <div className="flex items-center gap-4 px-4 py-2 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider select-none">
+              <div className="flex items-center gap-4 px-4 py-2 border-b border-border text-xs font-medium text-muted-foreground select-none">
                 {/* Thumbnail placeholder */}
                 <div className="w-16" />
 
@@ -1439,7 +1441,7 @@ export function MusicView({
           ) : (
             <div>
               {/* Column Headers */}
-              <div className="flex items-center gap-4 px-4 py-2 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider select-none">
+              <div className="flex items-center gap-4 px-4 py-2 border-b border-border text-xs font-medium text-muted-foreground select-none">
                 {/* # column */}
                 <div className="w-8 text-center">#</div>
 
@@ -1769,11 +1771,11 @@ export function MusicView({
 
                 {/* Technical Specs */}
                 <div className="bg-muted/30 rounded-lg p-3">
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Audio Specs</h3>
+                  <h3 className="text-xs font-semibold text-muted-foreground mb-2">Audio Specs</h3>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Codec</span>
-                      <span className="font-medium uppercase">{selectedTrackForQuality.codec || 'Unknown'}</span>
+                      <span className="font-medium">{selectedTrackForQuality.codec || 'Unknown'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Bitrate</span>

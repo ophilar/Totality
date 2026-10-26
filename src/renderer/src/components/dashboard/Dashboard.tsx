@@ -19,6 +19,8 @@ import {
 } from '../../utils/dismissEvents'
 import { applyCollectionFilters, applySeriesFilters, applyArtistFilters, parseAutoRules, filterMissingMoviesByRules, filterMissingEpisodesByRules } from '../../utils/completenessFilters'
 import { AnimatedNumber } from '../ui/AnimatedNumber'
+import { Button } from '../ui/Button'
+import { Select } from '../ui/Input'
 
 // Music album with quality info from the upgrade query
 interface MusicAlbumUpgrade extends MusicAlbum {
@@ -1235,7 +1237,7 @@ export function Dashboard({
               { items: groupedByType.single, label: 'Singles', prefix: 'single' },
             ] as const).filter(g => g.items.length > 0).map(group => (
               <div key={group.prefix}>
-                <div className="py-2 text-xs font-medium text-foreground/70 uppercase tracking-wider">
+                <div className="py-2 text-xs font-medium text-foreground/70r">
                   {group.label}
                 </div>
                 <div className="space-y-1">
@@ -1389,12 +1391,9 @@ export function Dashboard({
         }}
       >
         <div className="text-destructive mb-4">{error}</div>
-        <button
-          onClick={loadDashboardData}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-        >
-          Try Again
-        </button>
+        <Button onClick={loadDashboardData} size="sm">
+          Try again
+        </Button>
       </div>
     )
   }
@@ -1419,13 +1418,12 @@ export function Dashboard({
                 Connect your media library to start tracking quality and completeness.
               </p>
               {onAddSource && (
-                <button
+                <Button
                   onClick={onAddSource}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors"
+                  icon={<Plus className="w-5 h-5" />}
                 >
-                  <Plus className="w-5 h-5" />
-                  Add Source
-                </button>
+                  Add source
+                </Button>
               )}
             </>
           ) : (
@@ -1454,7 +1452,7 @@ export function Dashboard({
               <div className="grid grid-cols-2 gap-4">
                 {/* Owned */}
                 <div>
-                  <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1.5">Owned</div>
+                  <div className="text-xs text-muted-foreground font-medium mb-1.5">Owned</div>
                   <div className="flex flex-col gap-1 text-xs text-muted-foreground">
                     {libraryStats && libraryStats.totalMovies > 0 && (
                       <span className="flex items-center gap-1.5"><Film className="w-3 h-3" /><AnimatedNumber value={libraryStats.totalMovies} locale /> movies</span>
@@ -1475,7 +1473,7 @@ export function Dashboard({
                 </div>
                 {/* Wishlist */}
                 <div>
-                  <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1.5">Wishlist</div>
+                  <div className="text-xs text-muted-foreground font-medium mb-1.5">Wishlist</div>
                   <div className="flex flex-col gap-1 text-xs text-muted-foreground">
                     {wishlistCounts.active > 0 ? (
                       <>
@@ -1561,7 +1559,7 @@ export function Dashboard({
                   <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/20">
                     {/* Resolution breakdown */}
                     <div>
-                      <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1">Resolution</div>
+                      <div className="text-xs text-muted-foreground font-medium mb-1">Resolution</div>
                       {storageAnalytics?.byTier.map(t => {
                         const total = libraryStats.totalItems || 1
                         const pct = Math.round(t.count / total * 100)
@@ -1578,7 +1576,7 @@ export function Dashboard({
                     </div>
                     {/* Quality level breakdown */}
                     <div>
-                      <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1">Level</div>
+                      <div className="text-xs text-muted-foreground font-medium mb-1">Level</div>
                       {qualityDistribution ? (() => {
                         const q = qualityDistribution.byQuality
                         const total = q.high + q.medium + q.low || 1
@@ -1587,7 +1585,7 @@ export function Dashboard({
                           const pct = Math.round(count / total * 100)
                           return (
                             <div key={level} className="flex items-center gap-1.5 text-xs mb-0.5">
-                              <span className="w-8 text-muted-foreground uppercase">{level.slice(0, 3)}</span>
+                              <span className="w-8 text-muted-foreground">{level.charAt(0).toUpperCase() + level.slice(1, 3)}</span>
                               <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
                                 <div className="h-full bg-primary/60 rounded-full" style={{ width: `${pct}%` }} />
                               </div>
@@ -1620,7 +1618,7 @@ export function Dashboard({
                 <div className="grid grid-cols-2 gap-4">
                   {/* Video Codecs */}
                   <div>
-                    <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1.5">Video</div>
+                    <div className="text-xs text-muted-foreground font-medium mb-1.5">Video</div>
                     <div className="flex flex-col gap-1">
                       {storageAnalytics.byCodec.slice(0, 4).map(c => (
                         <div key={c.codec} className="flex items-center justify-between text-xs">
@@ -1632,7 +1630,7 @@ export function Dashboard({
                   </div>
                   {/* Audio Codecs */}
                   <div>
-                    <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1.5">Audio</div>
+                    <div className="text-xs text-muted-foreground font-medium mb-1.5">Audio</div>
                     <div className="flex flex-col gap-1">
                       {(storageAnalytics.music?.byCodec || []).slice(0, 4).map(c => (
                         <div key={c.codec} className="flex items-center justify-between text-xs">
@@ -1674,30 +1672,32 @@ export function Dashboard({
                 </div>
                 <div className="flex items-center gap-2">
                   {upgradeTab === 'music' ? (
-                    <select
+                    <Select
+                      inputSize="sm"
                       value={musicUpgradeSortBy}
                       onChange={e => { const v = e.target.value as 'quality' | 'recent' | 'title'; setMusicUpgradeSortBy(v) }}
-                      className="text-xs bg-background text-foreground border border-border/50 rounded px-2 py-0.5 cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-primary"
+                      className="w-auto"
                     >
                       <option value="quality">Quality</option>
                       <option value="recent">Recent</option>
                       <option value="title">Name</option>
-                    </select>
+                    </Select>
                   ) : (
-                    <select
+                    <Select
+                      inputSize="sm"
                       value={upgradeTab === 'movies' ? movieSortBy : tvSortBy}
                       onChange={e => {
                         const v = e.target.value as 'quality' | 'recent' | 'title' | 'watch_priority'
                         if (upgradeTab === 'movies') setMovieSortBy(v)
                         else setTvSortBy(v)
                       }}
-                      className="text-xs bg-background text-foreground border border-border/50 rounded px-2 py-0.5 cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-primary"
+                      className="w-auto"
                     >
                       <option value="quality">Quality</option>
-                      <option value="watch_priority">Play Priority</option>
+                      <option value="watch_priority">Play priority</option>
                       <option value="recent">Recent</option>
                       <option value="title">Name</option>
-                    </select>
+                    </Select>
                   )}
                   <button
                     onClick={() => setUpgradeSortDir(d => d === 'asc' ? 'desc' : 'asc')}
@@ -1825,25 +1825,25 @@ export function Dashboard({
 
             // Per-tab sort dropdown
             const sortDropdown = activeTab === 'collections' ? (
-              <select value={collectionSortBy} onChange={e => { const v = e.target.value as 'completeness' | 'name' | 'recent'; setCollectionSortBy(v); window.electronAPI.setSetting(SETTING_KEYS.dashboard_collection_sort, v) }}
-                className="text-xs bg-background text-foreground border border-border/50 rounded px-2 py-0.5 cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-primary">
+              <Select inputSize="sm" value={collectionSortBy} onChange={e => { const v = e.target.value as 'completeness' | 'name' | 'recent'; setCollectionSortBy(v); window.electronAPI.setSetting(SETTING_KEYS.dashboard_collection_sort, v) }}
+                className="w-auto">
                 <option value="completeness">Completeness</option><option value="name">Name</option><option value="recent">Recent</option>
-              </select>
+              </Select>
             ) : activeTab === 'series' ? (
-              <select value={seriesSortBy} onChange={e => { const v = e.target.value as 'completeness' | 'name' | 'recent'; setSeriesSortBy(v); window.electronAPI.setSetting(SETTING_KEYS.dashboard_series_sort, v) }}
-                className="text-xs bg-background text-foreground border border-border/50 rounded px-2 py-0.5 cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-primary">
+              <Select inputSize="sm" value={seriesSortBy} onChange={e => { const v = e.target.value as 'completeness' | 'name' | 'recent'; setSeriesSortBy(v); window.electronAPI.setSetting(SETTING_KEYS.dashboard_series_sort, v) }}
+                className="w-auto">
                 <option value="completeness">Completeness</option><option value="name">Name</option><option value="recent">Recent</option>
-              </select>
+              </Select>
             ) : activeTab === 'music' ? (
-              <select value={artistSortBy} onChange={e => { const v = e.target.value as 'completeness' | 'name'; setArtistSortBy(v); window.electronAPI.setSetting(SETTING_KEYS.dashboard_artist_sort, v) }}
-                className="text-xs bg-background text-foreground border border-border/50 rounded px-2 py-0.5 cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-primary">
+              <Select inputSize="sm" value={artistSortBy} onChange={e => { const v = e.target.value as 'completeness' | 'name'; setArtistSortBy(v); window.electronAPI.setSetting(SETTING_KEYS.dashboard_artist_sort, v) }}
+                className="w-auto">
                 <option value="completeness">Completeness</option><option value="name">Name</option>
-              </select>
+              </Select>
             ) : (
-              <select value={personSortBy} onChange={e => { const v = e.target.value as 'completeness' | 'name'; setPersonSortBy(v); window.electronAPI.setSetting(SETTING_KEYS.dashboard_person_sort, v) }}
-                className="text-xs bg-background text-foreground border border-border/50 rounded px-2 py-0.5 cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-primary">
+              <Select inputSize="sm" value={personSortBy} onChange={e => { const v = e.target.value as 'completeness' | 'name'; setPersonSortBy(v); window.electronAPI.setSetting(SETTING_KEYS.dashboard_person_sort, v) }}
+                className="w-auto">
                 <option value="completeness">Completeness</option><option value="name">Name</option>
-              </select>
+              </Select>
             )
 
             const activeCount = tabs.find(t => t.key === activeTab)?.count ?? 0

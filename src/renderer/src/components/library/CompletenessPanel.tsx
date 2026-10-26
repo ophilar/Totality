@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { SETTING_KEYS } from '../../../../shared/settingKeys'
-import { X, RefreshCw, Tv, Film, Music, Square, Settings, Clock, Loader2, ListChecks } from 'lucide-react'
+import { X, RefreshCw, Tv, Film, Music, Square, Settings, Clock, ListChecks } from 'lucide-react'
 import { AnimatedNumber } from '../ui/AnimatedNumber'
+import { Button } from '../ui/Button'
+import { Select } from '../ui/Input'
 
 type CompletenessTaskType = 'series-completeness' | 'collection-completeness' | 'music-completeness'
 
@@ -326,14 +328,14 @@ export function CompletenessPanel({
             <p className="text-xs text-muted-foreground mb-3">
               To analyze TV/movie completeness, you need to configure a TMDB API key in Settings.
             </p>
-            <button
+            <Button
               ref={settingsButtonRef}
               onClick={() => onOpenSettings?.('services')}
-              className="flex items-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 focus:outline-hidden"
+              size="sm"
+              icon={<Settings className="w-4 h-4" />}
             >
-              <Settings className="w-4 h-4" />
-              Open Settings
-            </button>
+              Open settings
+            </Button>
           </div>
         )}
 
@@ -425,66 +427,60 @@ export function CompletenessPanel({
             )}
 
             {showLibraries.length >= 2 && (
-              <select
+              <Select
+                inputSize="sm"
                 value={selectedShowLibraryId}
                 onChange={(e) => setSelectedShowLibraryId(e.target.value)}
-                className="w-full px-2.5 py-1 bg-card border border-border rounded-md text-xs text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
+                className="w-full"
               >
                 <option value="">All Libraries</option>
                 {showLibraries.map(lib => (
                   <option key={lib.id} value={lib.id}>{lib.name}</option>
                 ))}
-              </select>
+              </Select>
             )}
 
             {(() => {
               const taskStatus = getTaskStatus('series-completeness')
               if (isAnalyzing && analysisType === 'series') {
                 return (
-                  <button
+                  <Button
                     ref={seriesButtonRef}
                     onClick={() => onCancel('series')}
-                    className={`w-full flex items-center justify-center gap-2 px-4 py-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 text-sm focus:outline-hidden`}
+                    variant="danger"
+                    size="sm"
+                    className="w-full justify-center"
+                    icon={<Square className="w-4 h-4" />}
                   >
-                    <Square className="w-4 h-4" />
-                    Stop Analysis
-                  </button>
+                    Stop analysis
+                  </Button>
                 )
               }
               if (taskStatus === 'running') {
                 return (
-                  <button
-                    ref={seriesButtonRef}
-                    disabled
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary/70 text-primary-foreground rounded-md text-sm cursor-not-allowed"
-                  >
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                  <Button ref={seriesButtonRef} disabled loading size="sm" className="w-full justify-center">
                     Analyzing...
-                  </button>
+                  </Button>
                 )
               }
               if (taskStatus === 'queued') {
                 return (
-                  <button
-                    ref={seriesButtonRef}
-                    disabled
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-muted text-muted-foreground rounded-md text-sm cursor-not-allowed"
-                  >
-                    <Clock className="w-4 h-4" />
+                  <Button ref={seriesButtonRef} disabled variant="secondary" size="sm" className="w-full justify-center" icon={<Clock className="w-4 h-4" />}>
                     Queued
-                  </button>
+                  </Button>
                 )
               }
               return (
-                <button
+                <Button
                   ref={seriesButtonRef}
                   onClick={handleAnalyzeSeries}
                   disabled={!isKeyConfigured}
-                  className={`w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm focus:outline-hidden`}
+                  size="sm"
+                  className="w-full justify-center"
+                  icon={<RefreshCw className="w-4 h-4" />}
                 >
-                  <RefreshCw className="w-4 h-4" />
-                  Analyze Series
-                </button>
+                  Analyze series
+                </Button>
               )
             })()}
           </div>
@@ -522,66 +518,60 @@ export function CompletenessPanel({
             )}
 
             {movieLibraries.length >= 2 && (
-              <select
+              <Select
+                inputSize="sm"
                 value={selectedMovieLibraryId}
                 onChange={(e) => setSelectedMovieLibraryId(e.target.value)}
-                className="w-full px-2.5 py-1 bg-card border border-border rounded-md text-xs text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
+                className="w-full"
               >
                 <option value="">All Libraries</option>
                 {movieLibraries.map(lib => (
                   <option key={lib.id} value={lib.id}>{lib.name}</option>
                 ))}
-              </select>
+              </Select>
             )}
 
             {(() => {
               const taskStatus = getTaskStatus('collection-completeness')
               if (isAnalyzing && analysisType === 'collections') {
                 return (
-                  <button
+                  <Button
                     ref={collectionsButtonRef}
                     onClick={() => onCancel('collections')}
-                    className={`w-full flex items-center justify-center gap-2 px-4 py-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 text-sm focus:outline-hidden`}
+                    variant="danger"
+                    size="sm"
+                    className="w-full justify-center"
+                    icon={<Square className="w-4 h-4" />}
                   >
-                    <Square className="w-4 h-4" />
-                    Stop Analysis
-                  </button>
+                    Stop analysis
+                  </Button>
                 )
               }
               if (taskStatus === 'running') {
                 return (
-                  <button
-                    ref={collectionsButtonRef}
-                    disabled
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary/70 text-primary-foreground rounded-md text-sm cursor-not-allowed"
-                  >
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                  <Button ref={collectionsButtonRef} disabled loading size="sm" className="w-full justify-center">
                     Analyzing...
-                  </button>
+                  </Button>
                 )
               }
               if (taskStatus === 'queued') {
                 return (
-                  <button
-                    ref={collectionsButtonRef}
-                    disabled
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-muted text-muted-foreground rounded-md text-sm cursor-not-allowed"
-                  >
-                    <Clock className="w-4 h-4" />
+                  <Button ref={collectionsButtonRef} disabled variant="secondary" size="sm" className="w-full justify-center" icon={<Clock className="w-4 h-4" />}>
                     Queued
-                  </button>
+                  </Button>
                 )
               }
               return (
-                <button
+                <Button
                   ref={collectionsButtonRef}
                   onClick={handleAnalyzeCollections}
                   disabled={!isKeyConfigured}
-                  className={`w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm focus:outline-hidden`}
+                  size="sm"
+                  className="w-full justify-center"
+                  icon={<RefreshCw className="w-4 h-4" />}
                 >
-                  <RefreshCw className="w-4 h-4" />
-                  Analyze Collections
-                </button>
+                  Analyze collections
+                </Button>
               )
             })()}
           </div>
@@ -622,49 +612,42 @@ export function CompletenessPanel({
               const taskStatus = getTaskStatus('music-completeness')
               if (isAnalyzing && analysisType === 'music') {
                 return (
-                  <button
+                  <Button
                     ref={musicButtonRef}
                     onClick={() => onCancel('music')}
-                    className={`w-full flex items-center justify-center gap-2 px-4 py-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 text-sm focus:outline-hidden`}
+                    variant="danger"
+                    size="sm"
+                    className="w-full justify-center"
+                    icon={<Square className="w-4 h-4" />}
                   >
-                    <Square className="w-4 h-4" />
-                    Stop Analysis
-                  </button>
+                    Stop analysis
+                  </Button>
                 )
               }
               if (taskStatus === 'running') {
                 return (
-                  <button
-                    ref={musicButtonRef}
-                    disabled
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary/70 text-primary-foreground rounded-md text-sm cursor-not-allowed"
-                  >
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                  <Button ref={musicButtonRef} disabled loading size="sm" className="w-full justify-center">
                     Analyzing...
-                  </button>
+                  </Button>
                 )
               }
               if (taskStatus === 'queued') {
                 return (
-                  <button
-                    ref={musicButtonRef}
-                    disabled
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-muted text-muted-foreground rounded-md text-sm cursor-not-allowed"
-                  >
-                    <Clock className="w-4 h-4" />
+                  <Button ref={musicButtonRef} disabled variant="secondary" size="sm" className="w-full justify-center" icon={<Clock className="w-4 h-4" />}>
                     Queued
-                  </button>
+                  </Button>
                 )
               }
               return (
-                <button
+                <Button
                   ref={musicButtonRef}
                   onClick={handleAnalyzeMusic}
-                  className={`w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm focus:outline-hidden`}
+                  size="sm"
+                  className="w-full justify-center"
+                  icon={<RefreshCw className="w-4 h-4" />}
                 >
-                  <RefreshCw className="w-4 h-4" />
-                  Analyze Music
-                </button>
+                  Analyze music
+                </Button>
               )
             })()}
 

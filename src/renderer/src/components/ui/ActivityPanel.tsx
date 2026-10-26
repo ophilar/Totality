@@ -37,6 +37,7 @@ import {
   Loader2,
   Scaling,
 } from 'lucide-react'
+import { Button } from './Button'
 
 // ============================================================================
 // Types
@@ -456,7 +457,7 @@ export function ActivityPanel() {
           <Bell className="w-5 h-5" />
         )}
         {pendingCount > 0 && (
-          <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[10px] font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+          <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
             {pendingCount > 99 ? '99+' : pendingCount}
           </span>
         )}
@@ -494,24 +495,20 @@ export function ActivityPanel() {
             )}
           </div>
           <div className="flex items-center gap-1">
-            <button
+            <Button
+              variant="tertiary"
+              size="icon-sm"
               onClick={handlePauseResume}
-              className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+              icon={queueState.isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
               title={queueState.isPaused ? 'Resume queue' : 'Pause queue'}
-            >
-              {queueState.isPaused ? (
-                <Play className="w-4 h-4" />
-              ) : (
-                <Pause className="w-4 h-4" />
-              )}
-            </button>
-            <button
+            />
+            <Button
+              variant="tertiary"
+              size="icon-sm"
               onClick={() => setIsOpen(false)}
-              className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+              icon={<X className="w-4 h-4" />}
               title="Close"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            />
           </div>
         </div>
 
@@ -556,7 +553,7 @@ export function ActivityPanel() {
           <div className="flex items-center justify-between px-4 py-2 bg-muted/20 shrink-0">
             <div className="flex items-center gap-2">
               <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              <span className="text-xs font-medium text-muted-foreground">
                 Queue {queueState.queue.length > 0 && `(${queueState.queue.length})`}
               </span>
             </div>
@@ -611,7 +608,7 @@ export function ActivityPanel() {
           <div className="flex items-center justify-between px-4 py-2 bg-muted/20 shrink-0">
             <div className="flex items-center gap-2">
               <Bell className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              <span className="text-xs font-medium text-muted-foreground">
                 Notifications {unreadCount > 0 && `(${unreadCount})`}
               </span>
             </div>
@@ -654,7 +651,7 @@ export function ActivityPanel() {
                     onClick={() => !n.isRead && handleMarkRead(n.id)}
                   >
                     <div className="flex items-start gap-2">
-                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${getNotificationIconColor(n.type)}`}>
+                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 ${getNotificationIconColor(n.type)}`}>
                         {getNotificationIcon(n.type)}
                       </span>
                       <div className="flex-1 min-w-0">
@@ -663,7 +660,7 @@ export function ActivityPanel() {
                           {!n.isRead && <span className="w-1.5 h-1.5 bg-accent rounded-full shrink-0" />}
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
-                        <span className="text-[10px] text-muted-foreground/50 mt-0.5 block">
+                        <span className="text-xs text-muted-foreground/50 mt-0.5 block">
                           {new Date(n.createdAt).toLocaleString()}
                         </span>
                       </div>

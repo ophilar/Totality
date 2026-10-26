@@ -5,6 +5,7 @@ import { SETTING_KEYS } from '../../../../shared/settingKeys'
 import { getQualityLevelColors } from '../../utils/qualityColors'
 import { formatBitrate } from './mediaUtils'
 import { DropdownMenu, DropdownMenuItem } from '../ui/DropdownMenu'
+import { Button } from '../ui/Button'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import type { WishlistMediaType } from '../../contexts/WishlistContext'
 import { useMenuClose } from '../../hooks/useMenuClose'
@@ -516,9 +517,9 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
       <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-150">
         <div className="bg-card rounded-xl p-8 shadow-2xl text-center">
           <div className="text-destructive mb-4">{error || 'Media not found'}</div>
-          <button onClick={onClose} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg">
+          <Button onClick={onClose} size="sm">
             Close
-          </button>
+          </Button>
         </div>
       </div>,
       document.body
@@ -750,7 +751,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                   {media.year && <span>{media.year}</span>}
                   {(sv?.duration ?? media.duration) > 0 && <><span className="mx-0.5">·</span><span>{formatDuration(sv?.duration ?? media.duration)}</span></>}
                   {(sv?.file_size ?? media.file_size) > 0 && <><span className="mx-0.5">·</span><span>{formatFileSize(sv?.file_size ?? media.file_size)}</span></>}
-                  {(sv?.container ?? media.container) && <><span className="mx-0.5">·</span><span className="uppercase">{sv?.container ?? media.container}</span></>}
+                  {(sv?.container ?? media.container) && <><span className="mx-0.5">·</span><span>{(sv?.container ?? media.container)?.toUpperCase()}</span></>}
                   {media.tmdb_rating != null && media.tmdb_rating > 0 && (
                     <><span className="mx-0.5">·</span><span title="TMDB Rating">★ {media.tmdb_rating.toFixed(1)}</span></>
                   )}
@@ -952,7 +953,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
           <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
             {/* Video */}
             <div className="bg-muted/30 rounded-lg p-3">
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Video</h3>
+              <h3 className="text-xs font-semibold text-muted-foreground mb-2">Video</h3>
               <div className="space-y-1.5 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Dimensions</span>
@@ -1007,7 +1008,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
 
             {/* Audio */}
             <div className="bg-muted/30 rounded-lg p-3">
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+              <h3 className="text-xs font-semibold text-muted-foreground mb-2">
                 Audio{svAudioTracks.length > 0 ? ` (${svAudioTracks.length})` : ''}
               </h3>
               {/* Audio Tracks */}
@@ -1063,7 +1064,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
           {/* Subtitles */}
           {svSubtitleTracks.length > 0 && (
             <div className="bg-muted/30 rounded-lg p-3">
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+              <h3 className="text-xs font-semibold text-muted-foreground mb-2">
                 Subtitles ({svSubtitleTracks.length})
               </h3>
               <div className="flex flex-wrap gap-1.5">
@@ -1089,7 +1090,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
 
           {/* File Info & IDs */}
           <div className="bg-muted/30 rounded-lg p-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">File Information</h3>
+            <h3 className="text-xs font-semibold text-muted-foreground mb-2">File Information</h3>
             <div className="space-y-1.5 text-sm">
               <div className="flex justify-between gap-4">
                 <span className="text-muted-foreground shrink-0">Path</span>

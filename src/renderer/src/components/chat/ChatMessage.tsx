@@ -92,7 +92,7 @@ export function ChatMessage({ message, activeTools }: ChatMessageProps) {
           {/* Actionable items — add to wishlist buttons */}
           {!isUser && message.actionableItems && message.actionableItems.length > 0 && (
             <div className="mt-2 pt-2 border-t border-border/20">
-              <p className="text-[10px] text-muted-foreground mb-1.5">Add to wishlist:</p>
+              <p className="text-xs text-muted-foreground mb-1.5">Add to wishlist:</p>
               <div className="flex flex-col gap-1">
                 {message.actionableItems.map((item, i) => (
                   <ChatWishlistButton key={`${item.tmdb_id || item.title}-${i}`} item={item} />
@@ -108,7 +108,7 @@ export function ChatMessage({ message, activeTools }: ChatMessageProps) {
             {message.toolsUsed.map((tool, i) => (
               <span
                 key={i}
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-muted-foreground bg-muted/30 rounded"
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs text-muted-foreground bg-muted/30 rounded"
               >
                 <Database className="w-2.5 h-2.5" />
                 {TOOL_LABELS[tool] || tool}
