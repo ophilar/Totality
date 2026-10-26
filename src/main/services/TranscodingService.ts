@@ -122,6 +122,7 @@ export interface TranscodingParams {
 export interface ShowTranscodeRequest {
   mediaItemId?: number
   seasonNumber?: number
+  representativeMediaItemId?: number
   seriesTitle?: string
   seriesIdentityKey?: string
   sourceId: string
@@ -432,7 +433,7 @@ export class TranscodingService {
     const batchId = operation?.batchId ?? `batch_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
     const preflightId = operation?.preflightId ?? `${batchId}_preflight`
     const needsHardwareSnapshot = request.options.optimizationMode !== 'remux_only' && request.options.encoderPolicy !== 'software'
-    const optionsFingerprint = createHash('sha256').update(JSON.stringify({ measurementVersion: MEASUREMENT_VERSION, options: request.options })).digest('hex')
+    const optionsFingerprint = createHash('sha256').update(JSON.stringify({ measurementVersion: MEASUREMENT_VERSION, options: request.options, representativeMediaItemId: request.representativeMediaItemId })).digest('hex')
     const queuedMediaIds = new Set((await getTaskQueueService().getTasks()).filter(task => task.type === TaskType.Transcode && ['queued', 'running'].includes(task.status)).map(task => task.mediaItemId).filter((id): id is number => id !== undefined))
     let completedEpisodes = 0
     const activeEpisodeSteps = new Map<number, string>()
@@ -506,7 +507,7 @@ export class TranscodingService {
       const key = profileKey ?? `unclassified:${prepared.episode.id ?? prepared.episode.file_path}`
       samplingGroups.set(key, [...(samplingGroups.get(key) ?? []), prepared])
     }
-    getLoggingService().info('[TVOptimization]', `Sampling groups selected: episodes=${episodes.length}, samplingGroups=${samplingGroups.size}, unclassifiedProfiles=${unclassifiedSamplingProfiles}, policy=one-per-season-and-technical-profile`)
+    getLoggingService().info('[TVOptimization]', `Sampling groups selected: episodes=${episodes.length}, samplingGroups=${samplingGroups.size}, unclassifiedProfiles=${unclassifiedSamplingProfiles}, policy=one-per-season-and-technical-profile, selectedRepresentative=${request.representativeMediaItemId ?? 'median-bitrate'}`)
 
     const processEpisode = async (prepared: PreparedEpisode, samplingState: SamplingGroupState): Promise<ShowTranscodePreflight['episodes'][number]> => {
       const episode = prepared.episode
@@ -876,12 +877,17 @@ export class TranscodingService {
       )
       const bitrates = withBitrate.map(prepared => prepared.analysis.video.bitrateKbps!).sort((left, right) => left - right)
       const medianBitrate = bitrates[Math.floor((bitrates.length - 1) / 2)]
-      const representative = [...ordered].sort((left, right) =>
+      const orderedByMedian = [...ordered].sort((left, right) =>
         Math.abs(left.analysis.video.bitrateKbps! - medianBitrate) - Math.abs(right.analysis.video.bitrateKbps! - medianBitrate) ||
         (left.episode.episode_number ?? left.episode.id ?? 0) - (right.episode.episode_number ?? right.episode.id ?? 0)
-      )[0]
+      )
+      const selectedRepresentative = ordered.find(prepared => prepared.episode.id === request.representativeMediaItemId)
+      const representative = selectedRepresentative ?? orderedByMedian[0]
       return [[representative, ...ordered.filter(prepared => prepared !== representative)], ...withoutBitrate.map(prepared => [prepared])]
     })
+    if (request.representativeMediaItemId !== undefined && !preparedEpisodes.some(prepared => prepared.status === 'ready' && prepared.episode.id === request.representativeMediaItemId)) {
+      throw new Error(`Selected representative episode ${request.representativeMediaItemId} is not available for sampling in this scope`)
+    }
     const processSamplingGroup = async (group: PreparedEpisode[]) => {
       const samplingState: SamplingGroupState = {}
       for (const prepared of group) {

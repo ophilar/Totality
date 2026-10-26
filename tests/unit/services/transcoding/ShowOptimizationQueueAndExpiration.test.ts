@@ -144,6 +144,16 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     expect(mockDb.playbackTargetProfiles.get).not.toHaveBeenCalled()
   })
 
+  it('accepts an explicitly selected representative episode for a show preflight', () => {
+    expect(PreflightShowTranscodeSchema.safeParse([{
+      requestId: 'representative-retry',
+      seasonNumber: 1,
+      representativeMediaItemId: 123,
+      sourceId: 'src1',
+      options: {},
+    }]).success).toBe(true)
+  })
+
   it('queues authorized episodes in sequence when preflight is valid', async () => {
     const transcodingService = getTranscodingService()
     const preflightId = 'valid_preflight_1'
