@@ -7,9 +7,10 @@ import { PlexPlaybackDecisionProvider } from '@main/providers/plex/PlexPlaybackD
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 
 export type PlaybackDeliveryMode = 'direct-play' | 'direct-stream' | 'transcode'
-export interface ProviderPlaybackDecision { provider: 'plex'; overall: PlaybackDeliveryMode; video: PlaybackDeliveryMode; audio: PlaybackDeliveryMode; subtitle: PlaybackDeliveryMode; evidence: string }
+export type PlaybackStreamDecision = 'copy' | 'transcode' | 'burn' | 'unknown' | 'not-applicable'
+export interface ProviderPlaybackDecision { provider: 'plex'; overall: PlaybackDeliveryMode; video: PlaybackStreamDecision; audio: PlaybackStreamDecision; subtitle: PlaybackStreamDecision; evidence: string }
 export interface PlaybackDecisionProvider { getDecision(input: { plexId: string; profile: PlaybackTargetProfile }): Promise<ProviderPlaybackDecision> }
-export type PlaybackPresentationState = 'compatible' | 'incompatible' | 'conflict' | 'provider-decision-unavailable'
+export type PlaybackPresentationState = 'compatible' | 'incompatible' | 'provider-decision-unavailable'
 export interface PlaybackCompatibilityResult { profile: PlaybackTargetProfile; evaluation: PlaybackTargetEvaluation; providerDecision?: ProviderPlaybackDecision; providerDecisionError?: string; presentation: PlaybackPresentationState }
 
 export class PlaybackCompatibilityService {
@@ -31,8 +32,7 @@ export class PlaybackCompatibilityService {
     try {
       if (!item.plex_id) throw new Error('Plex media identifier is missing')
       const providerDecision = await plex.getDecision({ plexId: item.plex_id, profile })
-      const providerCompatible = providerDecision.overall === 'direct-play'
-      return { profile, evaluation, providerDecision, presentation: providerCompatible === (evaluation.overall === 'compatible') ? (evaluation.overall) : 'conflict' }
+      return { profile, evaluation, providerDecision, presentation: evaluation.overall }
     } catch (error) {
       return { profile, evaluation, providerDecisionError: getErrorMessage(error), presentation: 'provider-decision-unavailable' }
     }
