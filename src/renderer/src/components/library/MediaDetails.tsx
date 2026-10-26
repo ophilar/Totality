@@ -1,14 +1,14 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { MoreVertical, RefreshCw, Pencil, EyeOff, X, Copy, Check, ChevronDown, Star } from 'lucide-react'
+import { RefreshCw, Pencil, EyeOff, X, Copy, Check, ChevronDown, Star } from 'lucide-react'
 import { SETTING_KEYS } from '../../../../shared/settingKeys'
 import { getQualityLevelColors } from '../../utils/qualityColors'
 import { formatBitrate } from './mediaUtils'
-import { DropdownMenu, DropdownMenuItem } from '../ui/DropdownMenu'
+// DropdownMenu no longer used — desktop actions now use round icon buttons like mobile
 import { Button } from '../ui/Button'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import type { WishlistMediaType } from '../../contexts/WishlistContext'
-import { useMenuClose } from '../../hooks/useMenuClose'
+// useMenuClose no longer needed — desktop uses individual icon buttons like mobile
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 
 interface MediaDetailsProps {
@@ -152,15 +152,12 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
   const [error, setError] = useState<string | null>(null)
   const [thresholds, setThresholds] = useState<Record<string, QualityThresholds>>(DEFAULT_THRESHOLDS)
   const [videoWeight, setVideoWeight] = useState(70)
-  const [showMenu, setShowMenu] = useState(false)
   const [isRescanning, setIsRescanning] = useState(false)
   const [copied, setCopied] = useState(false)
   const [backdropUrl, setBackdropUrl] = useState<string | null>(null)
-  const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
 
   const handleRescan = async () => {
     if (!media || !onRescan) return
-    setShowMenu(false)
     setIsRescanning(true)
     try {
       await onRescan(media.id, media.source_id, media.library_id || null, media.file_path)
@@ -171,13 +168,13 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
 
   const handleFixMatch = () => {
     if (!media || !onFixMatch) return
-    setShowMenu(false)
+
     onFixMatch(media.id, media.title, media.year, media.file_path)
   }
 
   const handleDismissUpgrade = () => {
     if (!media || !onDismissUpgrade) return
-    setShowMenu(false)
+
     const title = media.type === 'episode' && media.series_title
       ? `${media.series_title} S${media.season_number}E${media.episode_number}`
       : media.title
@@ -706,71 +703,15 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                 <X className="w-5 h-5" />
               </button>
 
-              {/* Title + actions — inline, title left, actions right */}
-              <div className="relative z-[1] flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <h2 className="text-xl font-semibold leading-tight tracking-tight">{displayTitle}</h2>
-                  {media.type === 'episode' && (
-                    <p className="text-sm text-muted-foreground mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
-                  )}
-                  {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
-                    <p className="text-sm text-muted-foreground font-medium">{sv?.edition || versions[0]?.edition}</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-1 shrink-0 bg-black/20 backdrop-blur-sm rounded-lg px-1">
-                  {media.tier_quality && media.tier_quality !== 'HIGH' && (
-                    <AddToWishlistButton
-                      mediaType={media.type as WishlistMediaType}
-                      title={media.title}
-                      year={media.year}
-                      tmdbId={media.tmdb_id}
-                      imdbId={media.imdb_id}
-                      seriesTitle={media.series_title}
-                      seasonNumber={media.season_number}
-                      episodeNumber={media.episode_number}
-                      posterUrl={media.poster_url}
-                      reason="upgrade"
-                      mediaItemId={media.id}
-                      currentQualityTier={media.quality_tier}
-                      currentQualityLevel={media.tier_quality}
-                      currentResolution={media.resolution}
-                      currentVideoCodec={media.video_codec}
-                      currentAudioCodec={media.audio_codec}
-                    />
-                  )}
-                  {(onRescan || onFixMatch || (onDismissUpgrade && media.tier_quality !== 'HIGH')) && (
-                    <div ref={menuRef} className="relative">
-                      <button onClick={() => setShowMenu(!showMenu)} className="text-muted-foreground hover:text-foreground p-1.5" title="More options">
-                        {isRescanning ? <RefreshCw className="w-5 h-5 animate-spin" /> : <MoreVertical className="w-5 h-5" />}
-                      </button>
-                      {showMenu && !isRescanning && (
-                        <DropdownMenu className="min-w-[140px] z-50">
-                          {onRescan && media.file_path && <DropdownMenuItem onClick={handleRescan} icon={<RefreshCw className="w-3.5 h-3.5" />}>Rescan File</DropdownMenuItem>}
-                          {onFixMatch && media.type === 'movie' && <DropdownMenuItem onClick={handleFixMatch} icon={<Pencil className="w-3.5 h-3.5" />}>Fix Match</DropdownMenuItem>}
-                          {onDismissUpgrade && media.tier_quality !== 'HIGH' && (
-                            <DropdownMenuItem onClick={() => {
-                              if (window.confirm(`Remove "${displayTitle}" from upgrade recommendations?`)) {
-                                handleDismissUpgrade()
-                              }
-                            }} icon={<EyeOff className="w-3.5 h-3.5" />}>Dismiss Upgrade</DropdownMenuItem>
-                          )}
-                        </DropdownMenu>
-                      )}
-                    </div>
-                  )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      navigator.clipboard.writeText(displayTitle)
-                      setCopied(true)
-                      setTimeout(() => setCopied(false), 1500)
-                    }}
-                    className="text-muted-foreground hover:text-foreground p-1.5 transition-colors"
-                    title="Copy title"
-                  >
-                    {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
+              {/* Title */}
+              <div className="relative z-[1]">
+                <h2 className="text-xl font-semibold leading-tight tracking-tight pr-12">{displayTitle}</h2>
+                {media.type === 'episode' && (
+                  <p className="text-sm text-muted-foreground mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
+                )}
+                {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
+                  <p className="text-sm text-muted-foreground font-medium">{sv?.edition || versions[0]?.edition}</p>
+                )}
               </div>
 
               {/* Stats row */}
@@ -788,6 +729,78 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                 {media.last_watched_at && (
                   <><span className="mx-0.5">·</span><span title={new Date(media.last_watched_at).toLocaleString()}>Last watched {new Date(media.last_watched_at).toLocaleDateString()}</span></>
                 )}
+              </div>
+
+              {/* Action buttons — round icon buttons, same as mobile */}
+              <div className="relative z-[1] flex items-center gap-3 mt-3">
+                {media.tier_quality && media.tier_quality !== 'HIGH' && (
+                  <AddToWishlistButton
+                    mediaType={media.type as WishlistMediaType}
+                    title={media.title}
+                    year={media.year}
+                    tmdbId={media.tmdb_id}
+                    imdbId={media.imdb_id}
+                    seriesTitle={media.series_title}
+                    seasonNumber={media.season_number}
+                    episodeNumber={media.episode_number}
+                    posterUrl={media.poster_url}
+                    reason="upgrade"
+                    mediaItemId={media.id}
+                    currentQualityTier={media.quality_tier}
+                    currentQualityLevel={media.tier_quality}
+                    currentResolution={media.resolution}
+                    currentVideoCodec={media.video_codec}
+                    currentAudioCodec={media.audio_codec}
+                  />
+                )}
+
+                {onRescan && media.file_path && (
+                  <button
+                    onClick={handleRescan}
+                    disabled={isRescanning}
+                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
+                    title="Rescan file"
+                  >
+                    <RefreshCw className={`w-5 h-5 ${isRescanning ? 'animate-spin' : ''}`} />
+                  </button>
+                )}
+
+                {onFixMatch && media.type === 'movie' && (
+                  <button
+                    onClick={handleFixMatch}
+                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
+                    title="Fix match"
+                  >
+                    <Pencil className="w-5 h-5" />
+                  </button>
+                )}
+
+                {onDismissUpgrade && media.tier_quality !== 'HIGH' && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm(`Remove "${displayTitle}" from upgrade recommendations?`)) {
+                        handleDismissUpgrade()
+                      }
+                    }}
+                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
+                    title="Dismiss upgrade"
+                  >
+                    <EyeOff className="w-5 h-5" />
+                  </button>
+                )}
+
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    navigator.clipboard.writeText(displayTitle)
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 1500)
+                  }}
+                  className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
+                  title="Copy title"
+                >
+                  {copied ? <Check className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
+                </button>
               </div>
             </div>
           </div>
