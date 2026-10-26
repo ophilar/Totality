@@ -109,8 +109,16 @@
     "encoderProbeWidth": 640,
     "encoderProbeHeight": 360,
     "sampleDurationSeconds": 30,
-    "sampleQualities": [18, 22, 26],
-    "qsvSampleQualities": [14, 16, 18, 22, 26],
+    "sampleQualityDomains": {
+      "x265": [18, 22, 26],
+      "svt_av1": [24, 32, 40],
+      "nvenc_hevc": [18, 24, 30],
+      "nvenc_av1": [24, 36, 48],
+      "qsv_hevc": [14, 18, 22, 26],
+      "qsv_av1": [14, 18, 22, 26],
+      "amf_hevc": [18, 24, 30],
+      "amf_av1": [24, 36, 48]
+    },
     "samplePositions": [0.1, 0.5, 0.9]
   }
 }
