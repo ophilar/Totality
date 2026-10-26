@@ -37,6 +37,7 @@ export interface MeasuredSampleRequest {
   signal?: AbortSignal
   onProgress?: (phase: string) => Promise<void> | void
   validateSample?: (filePath: string) => Promise<string[]>
+  onCandidateMeasured?: (candidates: MeasuredCandidate[], complete: boolean) => Promise<void>
   candidates: Array<MeasuredCandidate & { ffmpegArgs: string[] }>
 }
 export interface MeasuredSampleResult { candidates: MeasuredCandidate[]; vmafAvailable: boolean; cambiAvailable: boolean }
@@ -125,7 +126,7 @@ export class MeasuredOptimizationService {
           const args = candidate.ffmpegArgs.map(arg => arg === '<input>' ? sourceSamplePaths[index] : arg === '<output>' ? outputPath : arg)
           if (candidate.encoder.startsWith('qsv')) args.unshift('-v', 'verbose')
           const diagnostics = await this.processRunner.run(binary, args, request.signal)
-          if (candidate.encoder.startsWith('qsv') && !/RateControlMethod: ICQ\b/.test(diagnostics)) throw new Error(`QSV did not initialize ICQ quality control: ${diagnostics}`)
+          if (candidate.encoder.startsWith('qsv') && !/RateControlMethod: (?:ICQ|LA_ICQ)\b/.test(diagnostics)) throw new Error(`QSV did not initialize a quality-based rate-control mode: ${diagnostics}`)
           const outputSample = await this.inspectSample(outputPath, request.signal)
           if (outputSample.frames !== sourceSamples[index].frames) throw new Error(`Encoded sample frame count differs from its source (${outputSample.frames} != ${sourceSamples[index].frames})`)
           const timestampTolerance = sourceSamples[index].timestampPrecisionSeconds + outputSample.timestampPrecisionSeconds
@@ -150,8 +151,10 @@ export class MeasuredOptimizationService {
         if (!scores.length || scores.some(score => !Number.isFinite(score)) || banding.some(score => !Number.isFinite(score))) throw new Error('Measured frame scores are incomplete')
         scores.sort((a, b) => a - b)
         measured.push({ encoder: candidate.encoder, quality: candidate.quality, preset: candidate.preset, outputBytes, sampledDurationSeconds: sourceSamples.reduce((sum, sample) => sum + sample.durationSeconds, 0), vmafMean: scores.reduce((a, b) => a + b, 0) / scores.length, vmafP5: scores[Math.floor(scores.length * 0.05)], cambiMean: banding.reduce((a, b) => a + b, 0) / banding.length, samplePaths, playbackBlockers: [...playbackBlockers] })
+        await request.onCandidateMeasured?.(structuredClone(measured), measured.length === request.candidates.length)
+        if (request.onCandidateMeasured) for (const samplePath of samplePaths) retainedPaths.add(samplePath)
       }
-      for (const candidate of measured) for (const samplePath of candidate.samplePaths!) retainedPaths.add(samplePath)
+      if (!request.onCandidateMeasured) for (const candidate of measured) for (const samplePath of candidate.samplePaths ?? []) retainedPaths.add(samplePath)
       result = { candidates: measured, vmafAvailable: true, cambiAvailable: true }
     } catch (error) {
       failure = error

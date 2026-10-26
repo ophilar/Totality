@@ -45,7 +45,7 @@ describe('QualityAnalyzer', () => {
     const measurement = { cacheKey: 'measured-plan', qualityProfile: 'balanced', samplingRole: 'measured', sourceSize: source.size, sourceMtimeMs: source.mtimeMs }
     const item = createMediaItem({ file_path: filePath, file_size_bytes: source.size, duration_ms: 60_000, deep_analysis: JSON.stringify({ optimizationMeasurement: measurement }) })
     const candidate = { encoder: 'qsv_h265', quality: 18, preset: 'medium', outputBytes: source.size - 100, sampledDurationSeconds: 60, vmafMean: 95, vmafP5: 92, cambiMean: 0 }
-    const cached = { version: MEASUREMENT_VERSION, cacheKey: measurement.cacheKey, candidates: [candidate] }
+    const cached = { version: MEASUREMENT_VERSION, cacheKey: measurement.cacheKey, complete: true, candidates: [candidate] }
     configuredSettings.set('transcoding.measurement.measured-plan', JSON.stringify(cached))
     const score = await analyzer.analyzeMediaItem(item)
     expect(score.estimated_savings_bytes).toBe(100)

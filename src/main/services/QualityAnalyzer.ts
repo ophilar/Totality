@@ -354,10 +354,9 @@ export class QualityAnalyzer {
       const raw = await getDatabase().config.getSetting(`${MEASUREMENT_SETTING_PREFIX}${measurement.cacheKey}`)
       if (raw) {
         const cached = JSON.parse(raw) as CachedMeasurement
-        if (cached.version === MEASUREMENT_VERSION && cached.cacheKey === measurement.cacheKey) {
+        if (cached.version === MEASUREMENT_VERSION && cached.complete && cached.cacheKey === measurement.cacheKey) {
           const source = await stat(mediaItem.file_path)
-          const profile = cached.targetProfile ? await getDatabase().playbackTargetProfiles.get(cached.targetProfile.id) : undefined
-          if (measurement.sourceSize === source.size && measurement.sourceMtimeMs === source.mtimeMs && JSON.stringify(profile) === JSON.stringify(cached.targetProfile)) {
+          if (measurement.sourceSize === source.size && measurement.sourceMtimeMs === source.mtimeMs) {
             hasApplicableMeasurements = true
             try {
               const candidate = selectMeasuredCandidate(measurement.qualityProfile, cached.candidates)
@@ -557,6 +556,7 @@ export class QualityAnalyzer {
       audioPruningBytes: audioPruningEvidence.estimatedSavingsBytes,
       audioTranscodeBytes: null,
       subtitlePruningBytes,
+      videoTargetCodec: targetCodec === 'HEVC' ? 'hevc' : targetCodec === 'AV1' ? 'av1' : null,
       plannedOperations: [
         'audio_pruning',
         'video_transcode',
@@ -861,20 +861,24 @@ export class QualityAnalyzer {
   getOptimizationAdvice(item: MediaItem, analysis?: FileAnalysisResult, targetCodec?: 'hevc' | 'av1'): OptimizationAdvice {
     const video = analysis?.video
     const hasFreshAnalysis = analysis !== undefined
-    const videoBitrate = metadataNumber(hasFreshAnalysis ? video?.bitrateKbps : item.video_bitrate_kbps, 'video bitrate kbps')
     const codec = metadataString(video?.codec ?? item.video_codec, 'video codec')
     const filePath = metadataString(item.file_path, 'file_path')
-    const sourceTier = TrashSourceClassifier.classify(filePath, videoBitrate, codec)
+    const sourceTier = TrashSourceClassifier.classify(filePath)
     const audioEvidence = this.getAudioPruningEvidence(item, analysis)
     const audioSavings = audioEvidence.estimatedSavingsBytes
     const savings = this.calculateOptimizationSavings(item, analysis, { targetCodec }).breakdown
+    const sourceCodec = normalizeVideoCodec(codec)
+    const requestedCodec = targetCodec ? normalizeVideoCodec(targetCodec) : null
+    const modeledTargetCodec = savings.videoTargetCodec?.toUpperCase()
+    const codecMigrationCandidate = (sourceCodec === 'HEVC' && modeledTargetCodec === 'AV1') ||
+      (requestedCodec !== null && requestedCodec !== sourceCodec)
 
-    if (normalizeVideoCodec(codec) === 'H.264' || (savings.videoSavingsBytes != null && savings.videoSavingsBytes > 0)) {
+    if (sourceCodec === 'H.264' || codecMigrationCandidate || (savings.videoSavingsBytes != null && savings.videoSavingsBytes > 0)) {
       return {
         action: 'video_transcode',
         decisionStatus: hasFreshAnalysis ? 'sample_required' : 'insufficient_evidence',
         sourceTier,
-        reason: 'Codec migration is modeled from source video bytes and the configured relative codec efficiencies. Samples must confirm quality, playback compatibility, and achievable savings.',
+        reason: `Savings are estimated from source video bytes using relative codec efficiency, assuming ${modeledTargetCodec ?? 'the selected video target'}. This is a low-confidence estimate; samples must confirm quality, playback compatibility, and achievable savings.`,
         estimatedSavingsBytes: savings.totalEstimatedSavingsBytes,
         evidence_status: savings.videoSavingsBytes == null ? 'insufficient' : 'estimated',
         confidence: savings.videoSavingsBytes == null ? 'none' : 'low',

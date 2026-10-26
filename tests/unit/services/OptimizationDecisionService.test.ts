@@ -187,6 +187,23 @@ describe('buildOptimizationDecision', () => {
     expect(result.primaryAction).toBe('transcode-video')
   })
 
+  it('keeps zero codec-model savings visible with its assumed destination', () => {
+    const result = buildOptimizationDecision({
+      originalLanguage: 'en',
+      durationMs: 3600_000,
+      videoSavingsBytes: 0,
+      videoTargetCodec: 'av1',
+      videoAvailable: true,
+      audioTracks: [],
+    })
+
+    expect(result.videoTranscode.estimatedSavingsBytes).toBe(0)
+    expect(result.videoTranscode.assumedTargetCodec).toBe('av1')
+    expect(result.videoTranscode.confidence).toBe('low')
+    expect(result.videoTranscode.reason).toContain('predicts no size reduction')
+    expect(result.videoTranscode.status).toBe('review-required')
+  })
+
   it('excludes removable tracks from audio-transcode savings', () => {
     const retainedTrack = { index: 1, language: 'en', codec: 'truehd', channels: 8, bitrateKbps: 4800, isDefault: true, hasObjectAudio: false, reliableTag: true }
     const removableTrack = { index: 2, language: 'fr', codec: 'truehd', channels: 8, bitrateKbps: 4800, isDefault: false, hasObjectAudio: false, reliableTag: true }

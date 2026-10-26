@@ -1,10 +1,9 @@
 
 import { APP_CONFIG } from '@main/config'
-import type { PlaybackTargetProfile } from '@main/types/playbackTarget'
 
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
 
-export const MEASUREMENT_VERSION = 4
+export const MEASUREMENT_VERSION = 5
 export const SHOW_PREFLIGHT_SETTING_PREFIX = 'transcoding.preflight.'
 export const MEASUREMENT_SETTING_PREFIX = 'transcoding.measurement.'
 
@@ -12,9 +11,9 @@ export interface CachedMeasurement {
   version: number
   cacheKey: string
   sourceSha256: string
+  complete: boolean
   candidates: MeasuredCandidate[]
   sampleHashes: string[][]
-  targetProfile?: PlaybackTargetProfile
 }
 
 export interface MeasuredCandidate {
@@ -27,6 +26,7 @@ export interface MeasuredCandidate {
   vmafP5: number
   samplePaths?: string[]
   cambiMean: number
+  /** Runtime compatibility evidence; excluded from durable candidate measurements. */
   playbackBlockers?: string[]
 }
 
@@ -36,10 +36,10 @@ export interface CandidateEncodingParameters {
   quality: number
 }
 
-export function buildCandidateLadder(targetCodec: 'av1' | 'hevc', encoderPolicy: 'hardware' | 'software' | 'compare', hardwareEncoder?: string): CandidateEncodingParameters[] {
+export function buildCandidateLadder(targetCodec: 'av1' | 'hevc', encoderPolicy: 'automatic' | 'hardware' | 'software' | 'compare', hardwareEncoder?: string): CandidateEncodingParameters[] {
   const softwareEncoder = targetCodec === 'av1' ? 'svt_av1' : 'x265'
   const hardware = hardwareEncoder ?? ''
-  const encoders = encoderPolicy === 'hardware' ? [hardware] : encoderPolicy === 'software' ? [softwareEncoder] : [hardware, softwareEncoder]
+  const encoders = encoderPolicy === 'hardware' ? [hardware] : encoderPolicy === 'software' ? [softwareEncoder] : encoderPolicy === 'automatic' ? [hardware || softwareEncoder] : [hardware, softwareEncoder]
   if (encoders.some(encoder => !encoder)) throw new Error('A verified hardware encoder is required for hardware candidate measurement')
   return encoders.flatMap(encoder => {
     const presets = encoder.startsWith('nvenc') ? ['p5', 'p6', 'p7'] : encoder === 'svt_av1' ? ['8', '6', '4'] : encoder.startsWith('qsv') ? ['medium', 'slow', 'veryslow'] : encoder.endsWith('_amf') ? ['speed', 'balanced', 'quality'] : encoder === 'vt_h265' ? ['quality', 'quality', 'quality'] : ['medium', 'slow', 'slower']
