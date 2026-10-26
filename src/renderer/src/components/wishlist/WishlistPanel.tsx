@@ -5,7 +5,7 @@ import { WishlistItemCard } from './WishlistItemCard'
 import { WishlistEmptyState } from './WishlistEmptyState'
 import { SETTING_KEYS } from '../../../../shared/settingKeys'
 import { Button } from '../ui/Button'
-import { Input } from '../ui/Input'
+import { Input, Select } from '../ui/Input'
 
 interface SearchResult {
   id: string
@@ -231,6 +231,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
   const [activeCategory, setActiveCategory] = useState<CategoryType>('all')
   const [activeStatus, setActiveStatus] = useState<StatusType>('active')
   const [isExporting, setIsExporting] = useState(false)
+  const [showSyncSection, setShowSyncSection] = useState(false)
 
   // Sync state
   const [syncingPlex, setSyncingPlex] = useState(false)
@@ -318,15 +319,6 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
     }
   }
 
-  const toggleSort = (field: SortOption) => {
-    if (sortBy === field) {
-      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortBy(field)
-      setSortOrder(field === 'priority' ? 'desc' : 'asc')
-    }
-  }
-
   const handleExport = async () => {
     setIsExporting(true)
     try {
@@ -404,6 +396,14 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
         </div>
         {!inline && (
           <div className="flex items-center gap-1">
+            <Button
+              variant="tertiary"
+              size="icon-sm"
+              onClick={() => setShowSyncSection(!showSyncSection)}
+              icon={<RefreshCw className="w-4 h-4" />}
+              aria-label="Sync watchlists"
+              title="Sync from Plex/Trakt"
+            />
             {counts.total > 0 && (
               <Button
                 ref={exportButtonRef}
@@ -428,8 +428,8 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
         )}
       </div>
 
-      {/* Sync sections — hidden in inline/mobile mode */}
-      {!inline && <div className="px-3 pt-2 pb-1 border-b border-border/30 space-y-1.5">
+      {/* Sync sections — hidden in inline/mobile mode, toggled via header button */}
+      {!inline && showSyncSection && <div className="px-3 pt-2 pb-1 border-b border-border/30 space-y-1.5">
         {/* Plex watchlist sync */}
         {hasPlexSource && (
           <div className="flex items-center gap-1.5">
@@ -582,110 +582,89 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
       {/* Search to add */}
       <WishlistSearch />
 
-      {/* Status Tabs (Active / Completed) */}
+      {/* Compact filter row: Status + Category + Media type + Sort */}
       {counts.total > 0 && (
-        <div className="px-3 pt-3 pb-2 border-b border-border/30">
+        <div className="px-3 py-2 border-b border-border/30 flex flex-wrap items-center gap-2">
+          {/* Status toggle */}
           <div className="flex gap-1">
             {statusOptions.map(({ type, icon: Icon, label, count }) => (
               <button
                 key={type}
-                onClick={() => {
-                  setActiveStatus(type)
-                  setActiveCategory('all')
-                  setActiveFilter('all')
-                  setSortBy(type === 'completed' ? 'completed_at' : 'priority')
-                }}
-                className={`flex-1 flex items-center justify-center gap-1.5 ${isMobile ? 'px-3 py-3 min-h-[44px] text-label' : 'px-2 py-2 text-caption'} rounded-lg transition-colors ${
+                onClick={() => { setActiveStatus(type); setActiveCategory('all'); setActiveFilter('all'); setSortBy(type === 'completed' ? 'completed_at' : 'priority') }}
+                className={`flex items-center gap-1 ${isMobile ? 'px-3 py-2 min-h-[44px] text-label' : 'px-2 py-1 text-caption'} rounded-lg transition-colors ${
                   activeStatus === type
-                    ? type === 'completed' ? 'bg-foreground text-background' : 'bg-primary text-primary-foreground'
-                    : 'bg-muted/30 text-muted-foreground hover:bg-muted/50'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{label}</span>
-                {count > 0 && (
-                  <span className={`text-caption ${activeStatus === type ? 'opacity-80' : 'text-muted-foreground/60'}`}>
-                    ({count})
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Combined filter row: Category + Media type */}
-      {counts.total > 0 && activeStatus !== 'completed' && (
-        <div className="px-3 pt-2 pb-2 border-b border-border/30 space-y-1.5">
-          {/* Category pills */}
-          <div className="flex flex-wrap gap-1">
-            {categoryOptions.map(({ type, icon: Icon, label, count }) => (
-              <button
-                key={type}
-                onClick={() => { setActiveCategory(type); if (type === 'all') setActiveFilter('all') }}
-                className={`flex items-center gap-1 ${isMobile ? 'px-3 py-2 min-h-[44px] text-label' : 'px-2 py-1 text-caption'} rounded-full transition-colors ${
-                  activeCategory === type
                     ? 'bg-foreground text-background'
-                    : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 <Icon className="w-3 h-3" />
                 <span>{label}</span>
-                {count > 0 && (
-                  <span className={`text-caption ${activeCategory === type ? 'text-background/80' : 'text-muted-foreground/60'}`}>
-                    ({count})
-                  </span>
-                )}
-              </button>
-            ))}
-            <span className="text-border/60 self-center mx-0.5">·</span>
-            {/* Media type pills inline */}
-            {filterOptions.map(({ type, icon: Icon, label }) => (
-              <button
-                key={type}
-                onClick={() => setActiveFilter(activeFilter === type ? 'all' : type)}
-                className={`flex items-center gap-1 ${isMobile ? 'px-3 py-2 min-h-[44px] text-label' : 'px-2 py-1 text-caption'} rounded-full transition-colors ${
-                  activeFilter === type
-                    ? 'bg-foreground text-background'
-                    : 'bg-muted/30 text-muted-foreground hover:bg-muted/50'
-                }`}
-              >
-                <Icon className="w-3 h-3" />
-                <span>{label}</span>
+                {count > 0 && <span className="text-muted-foreground/60">({count})</span>}
               </button>
             ))}
           </div>
-        </div>
-      )}
 
-      {/* Filters & Sort */}
-      {counts.total > 0 && (
-        <div className="p-3 border-b border-border/30">
+          {/* Separator */}
+          <span className="text-border/40">·</span>
 
-          {/* Sort options */}
-          <div className={`flex items-center gap-2 ${isMobile ? 'text-label' : 'text-caption'}`}>
-            <span className="text-muted-foreground">Sort:</span>
-            <div className="flex gap-1 flex-wrap">
-              {(activeStatus === 'completed'
-                ? (['completed_at', 'added_at', 'title'] as SortOption[])
-                : (['priority', 'added_at', 'title'] as SortOption[])
-              ).map((field) => (
+          {/* Category + media type — only when active */}
+          {activeStatus !== 'completed' && (
+            <>
+              {categoryOptions.filter(o => o.type !== 'all').map(({ type, icon: Icon, label }) => (
                 <button
-                  key={field}
-                  onClick={() => toggleSort(field)}
-                  className={`${isMobile ? 'px-3 py-2 min-h-[44px]' : 'px-2 py-0.5'} rounded transition-colors flex items-center gap-1 ${
-                    sortBy === field
-                      ? 'bg-muted text-foreground'
+                  key={type}
+                  onClick={() => { setActiveCategory(activeCategory === type ? 'all' : type); if (type === 'all') setActiveFilter('all') }}
+                  className={`flex items-center gap-1 ${isMobile ? 'px-3 py-2 min-h-[44px] text-label' : 'px-2 py-1 text-caption'} rounded-full transition-colors ${
+                    activeCategory === type
+                      ? 'bg-foreground text-background'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  {field === 'priority' ? 'Priority' : field === 'completed_at' ? 'Completed' : field === 'added_at' ? 'Added' : 'Title'}
-                  {sortBy === field && (
-                    <ArrowUpDown className={`w-3 h-3 ${sortOrder === 'desc' ? 'rotate-180' : ''}`} />
-                  )}
+                  <Icon className="w-3 h-3" />
+                  <span>{label}</span>
                 </button>
               ))}
-            </div>
+              <span className="text-border/40">·</span>
+              {filterOptions.map(({ type, icon: Icon }) => (
+                <button
+                  key={type}
+                  onClick={() => setActiveFilter(activeFilter === type ? 'all' : type)}
+                  className={`flex items-center gap-1 ${isMobile ? 'px-3 py-2 min-h-[44px] text-label' : 'px-2 py-1 text-caption'} rounded-full transition-colors ${
+                    activeFilter === type
+                      ? 'bg-foreground text-background'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Icon className="w-3 h-3" />
+                </button>
+              ))}
+            </>
+          )}
+
+          {/* Sort — pushed to the right */}
+          <div className="ml-auto flex items-center gap-1">
+            <Select
+              inputSize="sm"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as SortOption)}
+              className="w-auto"
+            >
+              {(activeStatus === 'completed'
+                ? (['completed_at', 'added_at', 'title'] as SortOption[])
+                : (['priority', 'added_at', 'title'] as SortOption[])
+              ).map(field => (
+                <option key={field} value={field}>
+                  {field === 'priority' ? 'Priority' : field === 'added_at' ? 'Added' : field === 'title' ? 'Title' : field === 'year' ? 'Year' : 'Completed'}
+                </option>
+              ))}
+            </Select>
+            <Button
+              variant="tertiary"
+              size="icon-sm"
+              onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+              icon={<ArrowUpDown className="w-3 h-3" />}
+              title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+            />
           </div>
         </div>
       )}
