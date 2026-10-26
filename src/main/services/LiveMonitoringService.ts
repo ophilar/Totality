@@ -722,10 +722,22 @@ export class LiveMonitoringService {
           // Create notification for library changes
           if (totalChanges > 0) {
             try {
+              // Build detailed message with item names
+              const itemNames = changedItems.slice(0, 3).map(item => {
+                if (item.type === 'episode' && item.seriesTitle) {
+                  return `${item.seriesTitle} — ${item.title}`
+                }
+                return item.title
+              })
+              const detailSuffix = changedItems.length > 3 ? ` and ${changedItems.length - 3} more` : ''
+              const detailMessage = itemNames.length > 0
+                ? `${source.display_name}: ${changeDescription} — ${itemNames.join(', ')}${detailSuffix}`
+                : `${source.display_name}: ${changeDescription}`
+
               getDatabase().createNotification({
                 type: 'source_change',
                 title: 'Library updated',
-                message: `${source.display_name}: ${changeDescription}`,
+                message: detailMessage,
                 sourceId,
                 sourceName: source.display_name,
                 itemCount: totalChanges,
@@ -999,10 +1011,25 @@ export class LiveMonitoringService {
       if (totalUpdated > 0) parts.push(`${totalUpdated} updated`)
       if (totalRemoved > 0) parts.push(`${totalRemoved} removed`)
       try {
+        // Collect item names from events that have them
+        const itemNames = events
+          .flatMap(e => (e.items || []).map((item: { title?: string; seriesTitle?: string; type?: string }) => {
+            if (item.type === 'episode' && item.seriesTitle) return `${item.seriesTitle} — ${item.title}`
+            return item.title || ''
+          }))
+          .filter(Boolean)
+          .slice(0, 3)
+        const detailSuffix = events.flatMap(e => e.items || []).length > 3
+          ? ` and ${events.flatMap(e => e.items || []).length - 3} more`
+          : ''
+        const detailMessage = itemNames.length > 0
+          ? `${source.display_name}: ${parts.join(', ')} — ${itemNames.join(', ')}${detailSuffix}`
+          : `${source.display_name}: ${parts.join(', ')}`
+
         getDatabase().createNotification({
           type: 'source_change',
           title: 'Library updated',
-          message: `${source.display_name}: ${parts.join(', ')}`,
+          message: detailMessage,
           sourceId,
           sourceName: source.display_name,
           itemCount: totalAdded + totalUpdated + totalRemoved,

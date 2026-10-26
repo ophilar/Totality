@@ -100,7 +100,7 @@ export class WishlistCompletionService {
     // Group items by type for batch queries
     const movieItems = items.filter((i) => i.media_type === 'movie' && i.tmdb_id)
     const seasonItems = items.filter(
-      (i) => i.media_type === 'season' && i.series_title && i.season_number != null
+      (i) => i.media_type === 'season' && i.series_title
     )
     const episodeItems = items.filter(
       (i) => i.media_type === 'episode' && i.series_title && i.season_number != null && i.episode_number != null
@@ -125,9 +125,11 @@ export class WishlistCompletionService {
       }
     }
 
-    // Check seasons by series_title + season_number
+    // Check seasons by series_title + season_number (or any episodes if no season specified)
     for (const item of seasonItems) {
-      const count = db.getEpisodeCountForSeason(item.series_title!, item.season_number!)
+      const count = item.season_number != null
+        ? db.getEpisodeCountForSeason(item.series_title!, item.season_number!)
+        : db.getEpisodeCountForSeries(item.series_title!)
       if (count > 0) {
         completed.push({
           id: item.id!,

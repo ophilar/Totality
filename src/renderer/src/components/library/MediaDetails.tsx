@@ -674,8 +674,8 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
         ) : (
           // ── Desktop: backdrop bleed in top-right, title + metadata left ──
           <div className="shrink-0 rounded-t-xl overflow-hidden">
-            <div className="relative px-5 pt-4 pb-3">
-              {/* Backdrop bleed — top-right atmospheric image */}
+            <div className="relative px-5 pt-24 pb-3">
+              {/* Full-width backdrop behind header */}
               {(() => {
                 const heroSrc = media.type === 'episode'
                   ? (media.episode_thumb_url || backdropUrl || media.poster_url)
@@ -685,11 +685,11 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                     <img
                       src={heroSrc}
                       alt=""
-                      className="absolute top-0 right-0 w-[55%] h-full object-cover object-center"
+                      className="absolute top-0 right-0 w-3/4 h-full object-cover object-top"
                       onError={(e) => { e.currentTarget.style.display = 'none' }}
                     />
-                    <div className="absolute top-0 right-0 w-[55%] h-full bg-gradient-to-r from-card via-card/50 to-transparent" />
-                    <div className="absolute top-0 right-0 w-[55%] h-full bg-gradient-to-t from-card via-transparent to-transparent" />
+                    <div className="absolute top-0 right-0 w-3/4 h-full bg-gradient-to-r from-card to-transparent" />
+                    <div className="absolute top-0 right-0 w-3/4 h-full bg-gradient-to-t from-card via-card/60 to-transparent" />
                   </>
                 ) : null
               })()}
@@ -731,8 +731,8 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                 )}
               </div>
 
-              {/* Action buttons — round icon buttons, same as mobile */}
-              <div className="relative z-[1] flex items-center gap-3 mt-3">
+              {/* Action buttons — white icons, circle bg on hover */}
+              <div className="relative z-[1] flex items-center gap-2 mt-3">
                 {media.tier_quality && media.tier_quality !== 'HIGH' && (
                   <AddToWishlistButton
                     mediaType={media.type as WishlistMediaType}
@@ -758,7 +758,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                   <button
                     onClick={handleRescan}
                     disabled={isRescanning}
-                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
+                    className="p-1 rounded-lg text-white hover:bg-white/15 transition-colors"
                     title="Rescan file"
                   >
                     <RefreshCw className={`w-5 h-5 ${isRescanning ? 'animate-spin' : ''}`} />
@@ -768,7 +768,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                 {onFixMatch && media.type === 'movie' && (
                   <button
                     onClick={handleFixMatch}
-                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
+                    className="p-1 rounded-lg text-white hover:bg-white/15 transition-colors"
                     title="Fix match"
                   >
                     <Pencil className="w-5 h-5" />
@@ -782,7 +782,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                         handleDismissUpgrade()
                       }
                     }}
-                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
+                    className="p-1 rounded-lg text-white hover:bg-white/15 transition-colors"
                     title="Dismiss upgrade"
                   >
                     <EyeOff className="w-5 h-5" />
@@ -796,7 +796,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                     setCopied(true)
                     setTimeout(() => setCopied(false), 1500)
                   }}
-                  className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
+                  className="p-1 rounded-lg text-white hover:bg-white/15 transition-colors"
                   title="Copy title"
                 >
                   {copied ? <Check className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}

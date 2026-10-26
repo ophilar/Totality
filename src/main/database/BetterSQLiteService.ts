@@ -5738,9 +5738,10 @@ WHERE m.type = 'episode' AND m.series_title = ?`
   createNotification(notification: Omit<Notification, 'id' | 'isRead' | 'createdAt' | 'readAt'>): number {
     if (!this.db) throw new Error('Database not initialized')
 
+    const now = new Date().toISOString()
     const stmt = this.db.prepare(`
       INSERT INTO notifications (type, title, message, source_id, source_name, item_count, metadata, is_read, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'))
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
     `)
 
     const result = stmt.run(
@@ -5750,7 +5751,8 @@ WHERE m.type = 'episode' AND m.series_title = ?`
       notification.sourceId || null,
       notification.sourceName || null,
       notification.itemCount || 0,
-      notification.metadata ? JSON.stringify(notification.metadata) : '{}'
+      notification.metadata ? JSON.stringify(notification.metadata) : '{}',
+      now
     )
 
     this.pruneReadNotifications()
@@ -5764,9 +5766,10 @@ WHERE m.type = 'episode' AND m.series_title = ?`
     if (!this.db) throw new Error('Database not initialized')
 
     const ids: number[] = []
+    const now = new Date().toISOString()
     const stmt = this.db.prepare(`
       INSERT INTO notifications (type, title, message, source_id, source_name, item_count, metadata, is_read, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'))
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
     `)
 
     const transaction = this.db.transaction(() => {
@@ -5778,7 +5781,8 @@ WHERE m.type = 'episode' AND m.series_title = ?`
           notification.sourceId || null,
           notification.sourceName || null,
           notification.itemCount || 0,
-          notification.metadata ? JSON.stringify(notification.metadata) : '{}'
+          notification.metadata ? JSON.stringify(notification.metadata) : '{}',
+          now
         )
         ids.push(Number(result.lastInsertRowid))
       }
@@ -6125,7 +6129,7 @@ WHERE m.type = 'episode' AND m.series_title = ?`
   getEpisodeCountForSeason(seriesTitle: string, seasonNumber: number): number {
     if (!this.db) throw new Error('Database not initialized')
     const stmt = this.db.prepare(
-      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_title = ? AND season_number = ?"
+      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_title COLLATE NOCASE = ? AND season_number = ?"
     )
     return (stmt.get(seriesTitle, seasonNumber) as { count: number }).count
   }
@@ -6136,9 +6140,20 @@ WHERE m.type = 'episode' AND m.series_title = ?`
   getEpisodeCountForSeasonEpisode(seriesTitle: string, seasonNumber: number, episodeNumber: number): number {
     if (!this.db) throw new Error('Database not initialized')
     const stmt = this.db.prepare(
-      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_title = ? AND season_number = ? AND episode_number = ?"
+      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_title COLLATE NOCASE = ? AND season_number = ? AND episode_number = ?"
     )
     return (stmt.get(seriesTitle, seasonNumber, episodeNumber) as { count: number }).count
+  }
+
+  /**
+   * Get count of any episodes for a series (no specific season)
+   */
+  getEpisodeCountForSeries(seriesTitle: string): number {
+    if (!this.db) throw new Error('Database not initialized')
+    const stmt = this.db.prepare(
+      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_title COLLATE NOCASE = ?"
+    )
+    return (stmt.get(seriesTitle) as { count: number }).count
   }
 
   /**

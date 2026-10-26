@@ -297,6 +297,7 @@ export interface DatabaseServiceInterface {
   syncAlbumCompletenessAfterScan(sourceId: string): number
   getEpisodeCountForSeason(seriesTmdbId: string, seasonNumber: number): number
   getEpisodeCountForSeasonEpisode(seriesTmdbId: string, seasonNumber: number, episodeNumber: number): number
+  getEpisodeCountForSeries(seriesTitle: string): number
   getMusicAlbumsByMusicbrainzIds(ids: string[]): Map<string, MusicAlbum>
   getQualityScoresByMediaItemIds(ids: number[]): Map<number, QualityScore>
 
