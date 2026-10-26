@@ -185,7 +185,7 @@ function WishlistSearch() {
                     disabled={alreadyAdded}
                     className={`shrink-0 p-1 rounded transition-colors ${
                       alreadyAdded
-                        ? 'text-green-500'
+                        ? 'text-foreground'
                         : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                     }`}
                     title={alreadyAdded ? 'Already in wishlist' : 'Add to wishlist'}
@@ -381,7 +381,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
       id="wishlist-panel"
       className={inline
         ? 'flex flex-col h-full overflow-hidden'
-        : `fixed top-[76px] bottom-4 right-4 w-80 bg-sidebar-gradient rounded-2xl shadow-xl z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
+        : `fixed top-[76px] bottom-4 right-4 w-80 bg-card border border-border rounded-2xl shadow-xl z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
             isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`
       }
@@ -397,7 +397,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
             Wishlist
           </h2>
           {counts.total > 0 && (
-            <span className="px-1.5 py-0.5 text-caption font-medium bg-primary/20 text-primary rounded-full">
+            <span className="px-1.5 py-0.5 text-caption font-medium bg-muted text-foreground rounded-full">
               {counts.total}
             </span>
           )}
@@ -435,21 +435,26 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
           <div className="flex items-center gap-1.5">
             <span className="text-caption text-muted-foreground w-14 shrink-0">Plex</span>
             <span className="flex-1 text-caption text-muted-foreground/60">Plex Watchlist</span>
-            <button onClick={async () => {
-              if (syncingPlex) return
-              setSyncingPlex(true); setPlexResult(null)
-              try {
-                const items = await window.electronAPI.fetchPlexWatchlist()
-                if (items.length === 0) { setPlexResult('Empty'); return }
-                setSyncPreview(items); setSyncPreviewSource('plex')
-                setSyncPreviewSelected(new Set(items.map((_item: unknown, i: number) => i)))
-              } catch { setPlexResult('Error') }
-              finally { setSyncingPlex(false) }
-            }} disabled={syncingPlex}
-              className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-50 shrink-0" title="Sync Plex watchlist">
-              {syncingPlex ? <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" /> : <RefreshCw className="w-3 h-3 text-muted-foreground" />}
-            </button>
-            {plexResult && <span className={`text-caption shrink-0 ${plexResult === 'Error' ? 'text-destructive' : 'text-primary'}`}>{plexResult}</span>}
+            <Button
+              variant="tertiary"
+              size="icon-sm"
+              onClick={async () => {
+                if (syncingPlex) return
+                setSyncingPlex(true); setPlexResult(null)
+                try {
+                  const items = await window.electronAPI.fetchPlexWatchlist()
+                  if (items.length === 0) { setPlexResult('Empty'); return }
+                  setSyncPreview(items); setSyncPreviewSource('plex')
+                  setSyncPreviewSelected(new Set(items.map((_item: unknown, i: number) => i)))
+                } catch { setPlexResult('Error') }
+                finally { setSyncingPlex(false) }
+              }}
+              disabled={syncingPlex}
+              icon={syncingPlex ? <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" /> : <RefreshCw className="w-3 h-3 text-muted-foreground" />}
+              title="Sync Plex watchlist"
+              className="shrink-0"
+            />
+            {plexResult && <span className={`text-caption shrink-0 ${plexResult === 'Error' ? 'text-destructive' : 'text-foreground'}`}>{plexResult}</span>}
           </div>
         )}
         {/* Trakt sync */}
@@ -471,35 +476,38 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
             }}
             placeholder="username"
             className="flex-1 min-w-0" />
-          <button onClick={async () => {
-            if (!traktUser.trim() || syncingTrakt) return
-            await window.electronAPI.setSetting(SETTING_KEYS.trakt_username, traktUser.trim())
-            setSyncingTrakt(true); setTraktResult(null)
-            try {
-              const items = await window.electronAPI.fetchTraktWatchlist(traktUser.trim())
-              if (items.length === 0) { setTraktResult('Empty'); return }
-              setSyncPreview(items); setSyncPreviewSource('trakt')
-              setSyncPreviewSelected(new Set(items.map((_item: unknown, i: number) => i)))
-            } catch { setTraktResult('Error') }
-            finally { setSyncingTrakt(false) }
-          }} disabled={syncingTrakt || !traktUser.trim()}
-            className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-50 shrink-0" title="Sync Trakt watchlist">
-            {syncingTrakt ? <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" /> : <RefreshCw className="w-3 h-3 text-muted-foreground" />}
-          </button>
-          {traktResult && <span className={`text-caption shrink-0 ${traktResult === 'Error' ? 'text-destructive' : 'text-primary'}`}>{traktResult}</span>}
+          <Button
+            variant="tertiary"
+            size="icon-sm"
+            onClick={async () => {
+              if (!traktUser.trim() || syncingTrakt) return
+              await window.electronAPI.setSetting(SETTING_KEYS.trakt_username, traktUser.trim())
+              setSyncingTrakt(true); setTraktResult(null)
+              try {
+                const items = await window.electronAPI.fetchTraktWatchlist(traktUser.trim())
+                if (items.length === 0) { setTraktResult('Empty'); return }
+                setSyncPreview(items); setSyncPreviewSource('trakt')
+                setSyncPreviewSelected(new Set(items.map((_item: unknown, i: number) => i)))
+              } catch { setTraktResult('Error') }
+              finally { setSyncingTrakt(false) }
+            }}
+            disabled={syncingTrakt || !traktUser.trim()}
+            icon={syncingTrakt ? <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" /> : <RefreshCw className="w-3 h-3 text-muted-foreground" />}
+            title="Sync Trakt watchlist"
+            className="shrink-0"
+          />
+          {traktResult && <span className={`text-caption shrink-0 ${traktResult === 'Error' ? 'text-destructive' : 'text-foreground'}`}>{traktResult}</span>}
         </div>
       </div>}
 
       {/* Sync Preview — hidden in inline mode */}
       {!inline && syncPreview && (
         <div className="flex-1 flex flex-col min-h-0 border-b border-border/30">
-          <div className="flex items-center justify-between px-3 py-2 bg-muted/20 shrink-0">
+          <div className="flex items-center justify-between px-3 py-2 shrink-0">
             <span className="text-caption font-medium">{syncPreview.length} from {syncPreviewSource === 'plex' ? 'Plex' : 'Trakt'}</span>
             <div className="flex items-center gap-2">
-              <button onClick={() => setSyncPreviewSelected(new Set(syncPreview.map((_, i) => i)))}
-                className="text-caption text-muted-foreground hover:text-foreground transition-colors">All</button>
-              <button onClick={() => setSyncPreviewSelected(new Set())}
-                className="text-caption text-muted-foreground hover:text-foreground transition-colors">None</button>
+              <Button variant="tertiary" size="sm" onClick={() => setSyncPreviewSelected(new Set(syncPreview.map((_, i) => i)))}>All</Button>
+              <Button variant="tertiary" size="sm" onClick={() => setSyncPreviewSelected(new Set())}>None</Button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto min-h-0">
@@ -589,7 +597,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
                 }}
                 className={`flex-1 flex items-center justify-center gap-1.5 ${isMobile ? 'px-3 py-3 min-h-[44px] text-label' : 'px-2 py-2 text-caption'} rounded-lg transition-colors ${
                   activeStatus === type
-                    ? type === 'completed' ? 'bg-green-600 text-white' : 'bg-primary text-primary-foreground'
+                    ? type === 'completed' ? 'bg-foreground text-background' : 'bg-primary text-primary-foreground'
                     : 'bg-muted/30 text-muted-foreground hover:bg-muted/50'
                 }`}
               >
@@ -617,14 +625,14 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
                 onClick={() => { setActiveCategory(type); if (type === 'all') setActiveFilter('all') }}
                 className={`flex items-center gap-1 ${isMobile ? 'px-3 py-2 min-h-[44px] text-label' : 'px-2 py-1 text-caption'} rounded-full transition-colors ${
                   activeCategory === type
-                    ? 'bg-primary/20 text-primary'
+                    ? 'bg-foreground text-background'
                     : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
                 }`}
               >
                 <Icon className="w-3 h-3" />
                 <span>{label}</span>
                 {count > 0 && (
-                  <span className={`text-caption ${activeCategory === type ? 'text-primary/80' : 'text-muted-foreground/60'}`}>
+                  <span className={`text-caption ${activeCategory === type ? 'text-background/80' : 'text-muted-foreground/60'}`}>
                     ({count})
                   </span>
                 )}
@@ -638,7 +646,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
                 onClick={() => setActiveFilter(activeFilter === type ? 'all' : type)}
                 className={`flex items-center gap-1 ${isMobile ? 'px-3 py-2 min-h-[44px] text-label' : 'px-2 py-1 text-caption'} rounded-full transition-colors ${
                   activeFilter === type
-                    ? 'bg-primary/20 text-primary'
+                    ? 'bg-foreground text-background'
                     : 'bg-muted/30 text-muted-foreground hover:bg-muted/50'
                 }`}
               >
@@ -698,7 +706,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
               <div>
                 <div className="flex items-center gap-2 mb-2 px-1">
                   <ListTodo className="w-3.5 h-3.5 text-muted-foreground" />
-                  <h3 className="text-caption font-semibold text-muted-foreground">
+                  <h3 className="text-label font-medium text-muted-foreground">
                     Complete collection ({missingItems.length})
                   </h3>
                 </div>
@@ -722,7 +730,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
               <div>
                 <div className="flex items-center gap-2 mb-2 px-1">
                   <CircleFadingArrowUp className="w-3.5 h-3.5 text-muted-foreground" />
-                  <h3 className="text-caption font-semibold text-muted-foreground">
+                  <h3 className="text-label font-medium text-muted-foreground">
                     Upgrade quality ({upgradeItems.length})
                   </h3>
                 </div>

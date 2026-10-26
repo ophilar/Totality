@@ -6,8 +6,8 @@ export function WishlistEmptyState() {
       <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mb-4">
         <Star className="w-8 h-8 text-muted-foreground" />
       </div>
-      <h3 className="font-medium text-foreground mb-2">Your wishlist is empty</h3>
-      <p className="text-label text-muted-foreground max-w-[200px] mb-4">
+      <h3 className="text-title font-semibold text-foreground mb-2">Your wishlist is empty</h3>
+      <p className="text-body text-muted-foreground max-w-[200px] mb-4">
         Add missing items from your library to track what you want to buy.
       </p>
       <div className="flex items-center gap-1 text-caption text-muted-foreground">

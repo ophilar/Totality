@@ -136,11 +136,11 @@ export const WishlistItemCard = memo(function WishlistItemCard({
   }
 
   return (
-    <div className="relative flex gap-2 p-2 rounded-lg transition-colors group bg-muted/30 hover:bg-muted/50">
+    <div className="relative flex gap-2 p-2 rounded-lg transition-colors group hover:bg-muted/30">
       {/* Completed checkmark - top right */}
       {isCompleted && (
         <div className="absolute top-1.5 right-1.5 z-10">
-          <CheckCircle2 className="w-5 h-5 text-green-500" />
+          <CheckCircle2 className="w-5 h-5 text-foreground" />
         </div>
       )}
 
@@ -205,7 +205,7 @@ export const WishlistItemCard = memo(function WishlistItemCard({
                 Completed {getCompletedDate()}
               </span>
             )}
-            <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-1'} ml-auto`}>
+            <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-2'} ml-auto`}>
               <button
                 onClick={() => onMarkActive(item.id)}
                 className={isMobile
@@ -236,7 +236,7 @@ export const WishlistItemCard = memo(function WishlistItemCard({
               onChange={(rating) => onUpdatePriority(item.id, rating)}
               size="sm"
             />
-            <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-1'}`}>
+            <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-2'}`}>
               {!isMobile && (
                 <StoreLinksMenu
                   storeLinks={storeLinks}
