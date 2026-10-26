@@ -5,46 +5,44 @@ Last updated: 2026-10-25
 
 ## Summary
 
-| Category | Count | Status |
-|---|---|---|
-| Hardcoded colors (`text-white`, `bg-white`, hex, Tailwind color classes) | ~231 | Pending |
-| Custom font sizes (`text-[Xpx]`) | 65 | Pending |
-| Uppercase usage | 61 | Pending |
-| `transition-all` (should be specific properties) | 42 | Pending |
-| Bracket z-index values | 15 | Pending |
-| Missing shared components | ~8 | Pending |
-| Spacing inconsistencies | Widespread | Pending |
+| Category | Before | After | Status |
+|---|---|---|---|
+| Hardcoded colors | ~231 | ~220 intentional, ~8 fixed | **Reviewed** — see notes |
+| Custom font sizes (`text-[Xpx]`) | 65 | 0 | **Complete** |
+| Uppercase usage | 61 | 0 | **Complete** |
+| `transition-all` | 42 | 42 | Pending |
+| Bracket z-index values | 15 | 15 | Pending |
+| Missing shared components | ~8 needed | 5 built | **Partial** — Button, Card, Input, Select, Badge, Modal |
+| Files migrated to shared components | 0 | 27 | **In Progress** |
+| Spacing inconsistencies | Widespread | Widespread | Pending |
 
 ---
 
-## 1. Hardcoded Colors
+## 1. Hardcoded Colors — REVIEWED
 
-### `text-white` (68 occurrences)
+**Status: Mostly intentional.** After line-by-line review, the vast majority of hardcoded `text-white`, `bg-white`, and color classes are correct:
 
-| File | Count | Notes |
-|---|---|---|
-| TopBar.tsx | 17 | Forces white on all children |
-| MusicView.tsx | 14 | Poster overlays, badges |
-| MobileSearchOverlay.tsx | 6 | |
-| TVShowsView.tsx | 5 | |
-| MoviesView.tsx | 5 | |
-| Sidebar.tsx | 4 | |
-| PlexAuthFlow.tsx | 3 | |
-| JellyfinAuthFlow.tsx | 2 | |
-| MobileTabBar.tsx | 2 | |
-| 6 other files | 1 each | |
+### Intentional — do NOT change
+- **TopBar** (17 `text-white`, 25 `bg-white/XX`): Permanent black chrome bar. White text, white/opacity hover states, and `bg-white text-black` active toggles are all correct regardless of theme.
+- **Poster/image overlays** (MusicView 14, MoviesView 5, TVShowsView 5): White text on `bg-black/60` scrims over artwork. Theme-independent.
+- **Mobile views** (MobileSearchOverlay, MobileTabBar, MobileMediaDetail): Dark chrome similar to TopBar.
+- **Sidebar** (4): White icons on colored provider badges, collapsed hover states on dark sidebar.
+- **Provider brand colors** (`bg-[#e5a00d]` Plex gold, `bg-purple-500` Jellyfin, etc.): Brand identity, not theme colors.
+- **NotificationBell badge** (`bg-white text-black`): Badge on TopBar needs max contrast on dark background.
+- **AppearanceTab** preview dots (`bg-white/40`): Inside `bg-black` miniature TopBar preview.
+- **Quality tier badges** (`bg-purple-600`, `bg-green-600`, etc.): Semantic meaning (Hi-Res, Lossless), always on dark poster overlays.
 
-### `bg-white` (61 occurrences)
-Scattered across modals, cards, and backgrounds. Should use `bg-background` or `bg-card`.
+### Fixed (8 instances)
+- **Slider thumbs** (QualitySettingsTab 3, MediaBrowser 1): `bg-white` → `bg-foreground` — adapts to theme
+- **Toggle knobs** (SourceCard 2): `bg-white` → `bg-foreground` — adapts to theme
+- **Log viewer hover** (TroubleshootTab 2): `hover:bg-white/5` and `hover:bg-white/10` → `hover:bg-muted/50` — uses semantic token
 
-### Hardcoded hex/bracket colors (6 occurrences)
-- `bg-[#e5a00d]` — Plex provider color (Sidebar, SourceCard, mediaUtils)
-- Provider colors should become semantic tokens
-
-### Non-semantic Tailwind colors (96 occurrences)
-`text-red-500`, `text-blue-500`, `bg-green-500`, `bg-purple-500`, `bg-orange-500`, etc.
-- Status colors should use `text-destructive`, `text-warning`, `text-success` semantic tokens
-- Provider badge colors need a provider color token system
+### Non-semantic Tailwind colors (~96 occurrences) — DEFERRED
+`text-red-500`, `bg-green-500`, `bg-purple-500`, `bg-orange-500`, etc. used for:
+- Quality tier badges on poster overlays (always dark background)
+- Provider color dots (brand identity)
+- Status indicators (success/warning/error)
+These could be migrated to semantic tokens (`text-destructive`, `text-success`, etc.) but the current usage is functional and theme-aware enough. Low priority.
 
 ---
 

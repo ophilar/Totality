@@ -403,7 +403,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
           }`}
         >
           <div
-            className={`w-4 h-4 bg-white rounded-full transition-transform ${
+            className={`w-4 h-4 bg-foreground rounded-full transition-transform ${
               source.is_enabled ? 'translate-x-5' : 'translate-x-0.5'
             }`}
           />
@@ -656,7 +656,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
                       title={ffprobeEnabled ? 'Disable FFprobe analysis' : 'Enable FFprobe analysis'}
                     >
                       <div
-                        className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                        className={`w-4 h-4 bg-foreground rounded-full transition-transform ${
                           ffprobeEnabled ? 'translate-x-5' : 'translate-x-0.5'
                         }`}
                       />

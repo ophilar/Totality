@@ -364,7 +364,7 @@ export function QualitySettingsTab() {
                   className="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer"
                 />
                 <div
-                  className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-md border-2 border-background z-10 pointer-events-none"
+                  className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-foreground rounded-full shadow-md border-2 border-background z-10 pointer-events-none"
                   style={{ left: `${settings.quality_video_weight}%`, marginLeft: '-6px' }}
                 />
               </div>
@@ -631,7 +631,7 @@ function QualityThreshold({
           aria-valuemin={min}
           aria-valuemax={highValue - step}
           aria-valuenow={mediumValue}
-          className={`absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full cursor-grab shadow-md border-2 border-background z-10 ${dragging === 'medium' ? 'cursor-grabbing scale-110' : 'hover:scale-110'} transition-transform`}
+          className={`absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-foreground rounded-full cursor-grab shadow-md border-2 border-background z-10 ${dragging === 'medium' ? 'cursor-grabbing scale-110' : 'hover:scale-110'} transition-transform`}
           style={{ left: `${mediumPercent}%`, marginLeft: '-6px' }}
           onMouseDown={handleMouseDown('medium')}
         />
@@ -643,7 +643,7 @@ function QualityThreshold({
           aria-valuemin={mediumValue + step}
           aria-valuemax={max}
           aria-valuenow={highValue}
-          className={`absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full cursor-grab shadow-md border-2 border-background z-10 ${dragging === 'high' ? 'cursor-grabbing scale-110' : 'hover:scale-110'} transition-transform`}
+          className={`absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-foreground rounded-full cursor-grab shadow-md border-2 border-background z-10 ${dragging === 'high' ? 'cursor-grabbing scale-110' : 'hover:scale-110'} transition-transform`}
           style={{ left: `${highPercent}%`, marginLeft: '-6px' }}
           onMouseDown={handleMouseDown('high')}
         />

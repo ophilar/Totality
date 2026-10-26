@@ -345,7 +345,7 @@ export function TroubleshootTab() {
         <div style={style} className="px-2 py-0.5">
           <div
             className={`rounded h-full flex items-center gap-2 px-2 ${
-              entry.details ? 'cursor-pointer hover:bg-white/5' : ''
+              entry.details ? 'cursor-pointer hover:bg-muted/50' : ''
             } ${isDetailTarget ? 'ring-1 ring-primary' : ''} ${isChecked ? 'bg-primary/10' : ''}`}
             onClick={() => entry.details && setDetailLogId(isDetailTarget ? null : entry.id)}
           >
@@ -540,7 +540,7 @@ export function TroubleshootTab() {
                   <span className="text-xs text-muted-foreground font-medium">Details</span>
                   <button
                     onClick={() => setDetailLogId(null)}
-                    className="p-0.5 rounded hover:bg-white/10"
+                    className="p-0.5 rounded hover:bg-muted/50"
                   >
                     <X className="w-3.5 h-3.5 text-muted-foreground" />
                   </button>
