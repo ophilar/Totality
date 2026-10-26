@@ -213,7 +213,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
             <CheckCircle className="w-6 h-6" />
           </div>
           <p className="font-medium">Connected to Kodi MySQL!</p>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-label text-muted-foreground mt-1">
             {testResult?.serverVersion}
           </p>
         </div>
@@ -221,8 +221,8 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
         {libraries.length > 0 && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium">Select libraries to include:</p>
-              <div className="flex gap-2 text-xs">
+              <p className="text-label font-medium">Select libraries to include:</p>
+              <div className="flex gap-2 text-caption">
                 <Button variant="tertiary" size="sm" onClick={handleSelectAll}>
                   Select all
                 </Button>
@@ -258,14 +258,14 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
                   <span className="text-muted-foreground">
                     {lib.type === 'movie' ? <Film className="w-5 h-5" /> : lib.type === 'show' ? <Tv className="w-5 h-5" /> : lib.type === 'music' ? <Music className="w-5 h-5" /> : <Folder className="w-5 h-5" />}
                   </span>
-                  <span className="text-sm flex-1">{lib.name}</span>
+                  <span className="text-label flex-1">{lib.name}</span>
                   {lib.itemCount !== undefined && (
-                    <span className="text-xs text-muted-foreground">({lib.itemCount} items)</span>
+                    <span className="text-caption text-muted-foreground">({lib.itemCount} items)</span>
                   )}
                 </label>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-caption text-muted-foreground">
               Only selected libraries will appear in your media browser. You can change this later.
             </p>
           </div>
@@ -288,19 +288,19 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
   return (
     <div className="space-y-4">
       {/* Info box */}
-      <div className="p-3 bg-muted/50 rounded-lg text-sm">
+      <div className="p-3 bg-muted/50 rounded-lg text-label">
         <p className="font-medium mb-1 flex items-center gap-2">
           <Database className="w-4 h-4 text-foreground" />
           MySQL/MariaDB Shared Database
         </p>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-caption text-muted-foreground">
           Connect to a Kodi shared database for multi-device setups.
         </p>
       </div>
 
       {/* Display name */}
       <label className="block">
-        <span className="text-sm font-medium">Display Name</span>
+        <span className="text-label font-medium">Display Name</span>
         <Input
           type="text"
           value={displayName}
@@ -313,7 +313,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
       {/* Host and Port */}
       <div className="grid grid-cols-3 gap-2">
         <label className="block col-span-2">
-          <span className="text-sm font-medium">Host</span>
+          <span className="text-label font-medium">Host</span>
           <Input
             type="text"
             value={host}
@@ -326,7 +326,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
           />
         </label>
         <label className="block">
-          <span className="text-sm font-medium">Port</span>
+          <span className="text-label font-medium">Port</span>
           <Input
             type="number"
             value={port}
@@ -345,7 +345,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
       {/* Username and Password */}
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
-          <span className="text-sm font-medium">Username</span>
+          <span className="text-label font-medium">Username</span>
           <Input
             type="text"
             value={username}
@@ -358,7 +358,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
           />
         </label>
         <label className="block">
-          <span className="text-sm font-medium">Password</span>
+          <span className="text-label font-medium">Password</span>
           <Input
             type="password"
             value={password}
@@ -373,13 +373,13 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
       </div>
 
       {/* Advanced options */}
-      <details className="text-sm">
+      <details className="text-label">
         <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
           Advanced options
         </summary>
         <div className="mt-2 space-y-2 pl-2 border-l-2 border-border">
           <label className="block">
-            <span className="text-sm font-medium">Database Prefix</span>
+            <span className="text-label font-medium">Database Prefix</span>
             <Input
               type="text"
               value={databasePrefix}
@@ -390,7 +390,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
               placeholder="kodi_"
               className="mt-1"
             />
-            <p className="text-xs text-muted-foreground mt-1">
+            <p className="text-caption text-muted-foreground mt-1">
               Default: kodi_ (e.g., kodi_video121)
             </p>
           </label>
@@ -423,7 +423,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
 
       {/* Test result */}
       {testResult && (
-        <div className={`p-3 rounded-lg text-sm ${
+        <div className={`p-3 rounded-lg text-label ${
           testResult.success
             ? 'bg-green-500/10 border border-green-500/20'
             : 'bg-destructive/10 border border-destructive/20'
@@ -458,7 +458,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
 
       {/* Error message */}
       {error && !testResult && (
-        <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm flex items-center gap-2">
+        <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-label flex items-center gap-2">
           <AlertCircle className="w-4 h-4" />
           {error}
         </div>

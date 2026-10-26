@@ -229,8 +229,8 @@ export function MoviesView({
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
         <MoviePlaceholder className="w-20 h-20 text-muted-foreground mb-4" />
-        <p className="text-muted-foreground text-lg">No movies found</p>
-        <p className="text-sm text-muted-foreground mt-2">
+        <p className="text-muted-foreground text-title">No movies found</p>
+        <p className="text-label text-muted-foreground mt-2">
           Scan a movie library from the sidebar to get started
         </p>
       </div>
@@ -246,7 +246,7 @@ export function MoviesView({
   ]
 
   const statsBar = (
-    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+    <div className="flex items-center gap-4 text-label text-muted-foreground">
       <span><AnimatedNumber value={totalMovieCount} locale /> Movies</span>
       {onMovieSortChange && (
         <div className="flex items-center gap-1.5 ml-auto">
@@ -254,7 +254,7 @@ export function MoviesView({
           <select
             value={movieSortBy}
             onChange={(e) => onMovieSortChange(e.target.value as MovieSortBy)}
-            className="bg-transparent text-xs text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground transition-colors"
+            className="bg-transparent text-caption text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground transition-colors"
           >
             {sortOptions.map(opt => (
               <option key={opt.value} value={opt.value} className="bg-popover text-popover-foreground">
@@ -299,7 +299,7 @@ export function MoviesView({
           })}
         </div>
         <div ref={movieSentinelRef} className="h-1" />
-        <div className="px-4 py-1.5 text-xs text-muted-foreground flex items-center gap-2">
+        <div className="px-4 py-1.5 text-caption text-muted-foreground flex items-center gap-2">
           {moviesLoading && <RefreshCw className="w-3 h-3 animate-spin" />}
           <span>
             {movies.length === totalMovieCount
@@ -346,7 +346,7 @@ export function MoviesView({
         })}
       </div>
       <div ref={movieSentinelRef} className="h-1" />
-      <div className="px-4 py-1.5 text-xs text-muted-foreground flex items-center gap-2">
+      <div className="px-4 py-1.5 text-caption text-muted-foreground flex items-center gap-2">
         {moviesLoading && <RefreshCw className="w-3 h-3 animate-spin" />}
         <span>
           {movies.length === totalMovieCount
@@ -388,7 +388,7 @@ const CollectionCard = memo(({ collection, onClick }: { collection: MovieCollect
             }}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-4xl bg-linear-to-br from-purple-500/20 to-blue-500/20">
+          <div className="w-full h-full flex items-center justify-center text-display bg-linear-to-br from-purple-500/20 to-blue-500/20">
             <Layers className="w-12 h-12 text-muted-foreground" />
           </div>
         )}
@@ -397,14 +397,14 @@ const CollectionCard = memo(({ collection, onClick }: { collection: MovieCollect
       {/* Title and badge below poster */}
       <div className="pt-2 flex gap-2 items-start">
         <div className="flex-1 min-w-0">
-          <h4 className="font-medium text-sm truncate">{collection.collection_name}</h4>
-          <p className="text-xs text-muted-foreground">
+          <h4 className="font-medium text-label truncate">{collection.collection_name}</h4>
+          <p className="text-caption text-muted-foreground">
             {collection.owned_movies} of {collection.total_movies} movies
           </p>
         </div>
         {/* Collection completion badge */}
         <div
-          className={`shrink-0 text-xs font-bold px-2 py-1 rounded shadow-md flex items-center gap-1 ${
+          className={`shrink-0 text-caption font-semibold px-2 py-1 rounded shadow-md flex items-center gap-1 ${
             collection.completeness_percentage === 100
               ? 'bg-green-500 text-white'
               : 'bg-foreground text-background border border-border'
@@ -462,10 +462,10 @@ function CollectionListItem({ collection, onClick }: { collection: MovieCollecti
 
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <h4 className="font-semibold text-sm truncate">{collection.collection_name}</h4>
+        <h4 className="font-semibold text-label truncate">{collection.collection_name}</h4>
         <div className="flex items-center gap-1 mt-0.5">
           <span
-            className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded flex items-center gap-1"
+            className="px-2 py-0.5 text-caption font-medium bg-foreground text-background rounded flex items-center gap-1"
             title={`${collection.owned_movies} of ${collection.total_movies} movies owned`}
           >
             <Layers className="w-3 h-3" />
@@ -572,7 +572,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
         {/* Version Count Badge */}
         {movie.version_count && movie.version_count > 1 && (
           <div
-            className="absolute top-2 right-2 z-10 bg-primary text-primary-foreground text-xs font-bold px-1.5 py-0.5 rounded shadow-md"
+            className="absolute top-2 right-2 z-10 bg-primary text-primary-foreground text-caption font-semibold px-1.5 py-0.5 rounded shadow-md"
             title={`${movie.version_count} versions available`}
           >
             {movie.version_count}x
@@ -582,7 +582,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
         {/* Source Badge - show which provider this item is from */}
         {showSourceBadge && movie.source_type && (
           <div
-            className={`absolute bottom-2 left-2 ${providerColors[movie.source_type] || 'bg-gray-500'} text-white text-xs font-bold px-1.5 py-0.5 rounded shadow-md`}
+            className={`absolute bottom-2 left-2 ${providerColors[movie.source_type] || 'bg-gray-500'} text-white text-caption font-semibold px-1.5 py-0.5 rounded shadow-md`}
             title={movie.source_type.charAt(0).toUpperCase() + movie.source_type.slice(1)}
           >
             {movie.source_type.charAt(0).toUpperCase()}
@@ -607,14 +607,14 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
       {/* Title and Year below poster */}
       <div className="pt-2 flex gap-2 items-start">
         <div className="flex-1 min-w-0">
-          <h4 className="font-medium text-sm truncate">{movie.title}</h4>
-          {movie.year && <p className="text-xs text-muted-foreground">{movie.year}</p>}
+          <h4 className="font-medium text-label truncate">{movie.title}</h4>
+          {movie.year && <p className="text-caption text-muted-foreground">{movie.year}</p>}
         </div>
         <div className="shrink-0 flex items-center gap-1">
           {/* Collection Badge - shown when movie is part of a collection */}
           {collectionData && (
             <div
-              className={`text-xs font-bold px-2 py-1 rounded shadow-md flex items-center gap-1 ${
+              className={`text-caption font-semibold px-2 py-1 rounded shadow-md flex items-center gap-1 ${
                 collectionData.completeness_percentage === 100
                   ? 'bg-green-500 text-white'
                   : 'bg-foreground text-background border border-border'
@@ -718,7 +718,7 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
         {/* Source badge for list view */}
         {showSourceBadge && movie.source_type && (
           <div
-            className={`absolute bottom-0 right-0 ${providerColors[movie.source_type] || 'bg-gray-500'} text-white text-xs font-bold px-1 py-0.5 rounded`}
+            className={`absolute bottom-0 right-0 ${providerColors[movie.source_type] || 'bg-gray-500'} text-white text-caption font-semibold px-1 py-0.5 rounded`}
           >
             {movie.source_type.charAt(0).toUpperCase()}
           </div>
@@ -727,8 +727,8 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
 
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <h4 className="font-semibold text-sm truncate">{movie.title}</h4>
-        <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
+        <h4 className="font-semibold text-label truncate">{movie.title}</h4>
+        <div className="flex items-center gap-1 mt-0.5 text-caption text-muted-foreground">
           <span>
             {movie.year}{movie.year && movie.resolution ? ' • ' : ''}{movie.resolution}
             {movie.video_bitrate ? ` • ${(movie.video_bitrate / 1000).toFixed(1)} Mbps` : ''}
@@ -742,7 +742,7 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
             </>
           )}
           {collectionData && (
-            <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded flex items-center gap-1 ml-1">
+            <span className="px-2 py-0.5 text-caption font-medium bg-foreground text-background rounded flex items-center gap-1 ml-1">
               <Layers className="w-3 h-3" />
               {collectionData.owned_movies}/{collectionData.total_movies}
             </span>

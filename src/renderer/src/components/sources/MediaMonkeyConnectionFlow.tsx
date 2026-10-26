@@ -150,8 +150,8 @@ export function MediaMonkeyConnectionFlow({ onSuccess, onBack }: MediaMonkeyConn
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <CheckCircle2 className="w-12 h-12 text-green-500" />
-        <h3 className="mt-4 text-lg font-medium text-foreground">Connected to MediaMonkey!</h3>
-        <p className="mt-2 text-sm text-muted-foreground">Initial scan has been queued.</p>
+        <h3 className="mt-4 text-title font-medium text-foreground">Connected to MediaMonkey!</h3>
+        <p className="mt-2 text-label text-muted-foreground">Initial scan has been queued.</p>
       </div>
     )
   }
@@ -167,8 +167,8 @@ export function MediaMonkeyConnectionFlow({ onSuccess, onBack }: MediaMonkeyConn
           <Music className="w-5 h-5 text-orange-400" />
         </div>
         <div>
-          <h3 className="text-lg font-medium text-foreground">Connect MediaMonkey</h3>
-          <p className="text-sm text-muted-foreground">Read your MediaMonkey music library</p>
+          <h3 className="text-title font-medium text-foreground">Connect MediaMonkey</h3>
+          <p className="text-label text-muted-foreground">Read your MediaMonkey music library</p>
         </div>
       </div>
 
@@ -176,7 +176,7 @@ export function MediaMonkeyConnectionFlow({ onSuccess, onBack }: MediaMonkeyConn
       {isRunning && (
         <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
           <AlertCircle className="w-4 h-4 text-yellow-400 mt-0.5 shrink-0" />
-          <p className="text-sm text-yellow-300">
+          <p className="text-label text-yellow-300">
             MediaMonkey is currently running. The database may be locked. Close MediaMonkey first for best results.
           </p>
         </div>
@@ -185,7 +185,7 @@ export function MediaMonkeyConnectionFlow({ onSuccess, onBack }: MediaMonkeyConn
       {/* Auto-detected installations */}
       {foundInstallations.length > 0 && (
         <div className="space-y-2">
-          <label className="text-sm font-medium text-muted-foreground">Detected Installations</label>
+          <label className="text-label font-medium text-muted-foreground">Detected Installations</label>
           <div className="space-y-2">
             {foundInstallations.map((inst) => (
               <button
@@ -202,7 +202,7 @@ export function MediaMonkeyConnectionFlow({ onSuccess, onBack }: MediaMonkeyConn
                 }`}
               >
                 <div className="font-medium text-foreground">MediaMonkey {inst.version}</div>
-                <div className="text-xs text-muted-foreground mt-1 truncate">{inst.databasePath}</div>
+                <div className="text-caption text-muted-foreground mt-1 truncate">{inst.databasePath}</div>
               </button>
             ))}
           </div>
@@ -211,7 +211,7 @@ export function MediaMonkeyConnectionFlow({ onSuccess, onBack }: MediaMonkeyConn
 
       {/* Manual path selection */}
       <div className="space-y-2">
-        <label className="text-sm font-medium text-muted-foreground">
+        <label className="text-label font-medium text-muted-foreground">
           {foundInstallations.length > 0 ? 'Or select manually' : 'Database Path'}
         </label>
         <div className="flex gap-2">
@@ -233,7 +233,7 @@ export function MediaMonkeyConnectionFlow({ onSuccess, onBack }: MediaMonkeyConn
 
       {/* Display name */}
       <div className="space-y-2">
-        <label className="text-sm font-medium text-muted-foreground">Display Name</label>
+        <label className="text-label font-medium text-muted-foreground">Display Name</label>
         <Input
           type="text"
           value={displayName}
@@ -245,7 +245,7 @@ export function MediaMonkeyConnectionFlow({ onSuccess, onBack }: MediaMonkeyConn
       {error && (
         <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
           <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
-          <p className="text-sm text-red-300">{error}</p>
+          <p className="text-label text-red-300">{error}</p>
         </div>
       )}
 

@@ -63,7 +63,7 @@ function Tooltip({ label, children }: { label: string; children: ReactNode }) {
     <div className="relative" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}>
       {children}
       {visible && (
-        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-1 bg-popover border border-border text-xs text-popover-foreground rounded shadow-md whitespace-nowrap z-50 pointer-events-none">
+        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-1 bg-popover border border-border text-caption text-popover-foreground rounded shadow-md whitespace-nowrap z-50 pointer-events-none">
           {label}
         </div>
       )}
@@ -310,7 +310,7 @@ export function TopBar({
               onChange={(e) => handleSearchInputChange(e.target.value)}
               onFocus={() => setShowSearchResults(true)}
               onKeyDown={handleSearchKeyDown}
-              className="w-full pl-10 pr-8 py-2 bg-white/10 border border-white/15 rounded-full text-sm text-white placeholder:text-white/40 focus:outline-hidden focus:ring-2 focus:ring-white/30 focus:border-white/25 transition-colors duration-300"
+              className="w-full pl-10 pr-8 py-2 bg-white/10 border border-white/15 rounded-full text-label text-white placeholder:text-white/40 focus:outline-hidden focus:ring-2 focus:ring-white/30 focus:border-white/25 transition-colors duration-300"
               aria-label="Search all libraries"
             />
             {searchInput && (
@@ -331,11 +331,11 @@ export function TopBar({
             {showSearchResults && searchInput.length >= 2 && (
               <div className="absolute top-full left-0 mt-2 w-96 bg-popover text-popover-foreground border border-border rounded-lg shadow-2xl z-9999 max-h-[400px] overflow-y-auto overflow-x-hidden">
                 {isSearching && (
-                  <div className="px-3 py-4 text-sm text-muted-foreground text-center">Searching...</div>
+                  <div className="px-3 py-4 text-label text-muted-foreground text-center">Searching...</div>
                 )}
 
                 {!isSearching && !hasResults && (
-                  <div className="px-3 py-4 text-sm text-muted-foreground text-center">No results found</div>
+                  <div className="px-3 py-4 text-label text-muted-foreground text-center">No results found</div>
                 )}
 
                 {!isSearching && hasResults && searchResults && (
@@ -343,7 +343,7 @@ export function TopBar({
                     {/* Movies */}
                     {searchResults.movies.length > 0 && (
                       <div>
-                        <div className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
+                        <div className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
                           <Film className="w-3 h-3" />
                           Movies
                         </div>
@@ -367,8 +367,8 @@ export function TopBar({
                                 )}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="text-sm font-medium truncate">{movie.title}</div>
-                                {movie.year && <div className="text-xs text-muted-foreground">{movie.year}</div>}
+                                <div className="text-label font-medium truncate">{movie.title}</div>
+                                {movie.year && <div className="text-caption text-muted-foreground">{movie.year}</div>}
                               </div>
                             </button>
                           )
@@ -379,7 +379,7 @@ export function TopBar({
                     {/* TV Shows */}
                     {searchResults.tvShows.length > 0 && (
                       <div>
-                        <div className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
+                        <div className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
                           <Tv className="w-3 h-3" />
                           TV Shows
                         </div>
@@ -402,7 +402,7 @@ export function TopBar({
                                   </div>
                                 )}
                               </div>
-                              <div className="text-sm font-medium truncate">{show.title}</div>
+                              <div className="text-label font-medium truncate">{show.title}</div>
                             </button>
                           )
                         })}
@@ -412,7 +412,7 @@ export function TopBar({
                     {/* Episodes */}
                     {searchResults.episodes.length > 0 && (
                       <div>
-                        <div className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
+                        <div className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
                           <Tv className="w-3 h-3" />
                           Episodes
                         </div>
@@ -436,8 +436,8 @@ export function TopBar({
                                 )}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="text-sm font-medium truncate">{episode.title}</div>
-                                <div className="text-xs text-muted-foreground truncate">
+                                <div className="text-label font-medium truncate">{episode.title}</div>
+                                <div className="text-caption text-muted-foreground truncate">
                                   {episode.series_title} · S{episode.season_number}E{episode.episode_number}
                                 </div>
                               </div>
@@ -450,7 +450,7 @@ export function TopBar({
                     {/* Artists */}
                     {searchResults.artists.length > 0 && (
                       <div>
-                        <div className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
+                        <div className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
                           <User className="w-3 h-3" />
                           Artists
                         </div>
@@ -473,7 +473,7 @@ export function TopBar({
                                   </div>
                                 )}
                               </div>
-                              <div className="text-sm font-medium truncate">{artist.name}</div>
+                              <div className="text-label font-medium truncate">{artist.name}</div>
                             </button>
                           )
                         })}
@@ -483,7 +483,7 @@ export function TopBar({
                     {/* Albums */}
                     {searchResults.albums.length > 0 && (
                       <div>
-                        <div className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
+                        <div className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
                           <Disc3 className="w-3 h-3" />
                           Albums
                         </div>
@@ -507,8 +507,8 @@ export function TopBar({
                                 )}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="text-sm font-medium truncate">{album.title}</div>
-                                <div className="text-xs text-muted-foreground truncate">
+                                <div className="text-label font-medium truncate">{album.title}</div>
+                                <div className="text-caption text-muted-foreground truncate">
                                   {album.artist_name}{album.year && ` · ${album.year}`}
                                 </div>
                               </div>
@@ -521,7 +521,7 @@ export function TopBar({
                     {/* Tracks */}
                     {searchResults.tracks.length > 0 && (
                       <div>
-                        <div className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
+                        <div className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
                           <Music className="w-3 h-3" />
                           Tracks
                         </div>
@@ -545,9 +545,9 @@ export function TopBar({
                                 )}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="text-sm font-medium truncate">{track.title}</div>
+                                <div className="text-label font-medium truncate">{track.title}</div>
                                 {track.artist_name && (
-                                  <div className="text-xs text-muted-foreground truncate">{track.artist_name}</div>
+                                  <div className="text-caption text-muted-foreground truncate">{track.artist_name}</div>
                                 )}
                               </div>
                             </button>
@@ -600,7 +600,7 @@ export function TopBar({
               {/* Home Button */}
               <button
                 onClick={onNavigateHome}
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                className={`px-3 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                   isDashboard
                     ? 'bg-white text-black'
                     : 'text-white hover:bg-white/10'
@@ -621,7 +621,7 @@ export function TopBar({
               {hasMovies && (
                 <button
                   onClick={() => onNavigateToLibrary('movies')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     !isDashboard && libraryTab === 'movies'
                       ? 'bg-white text-black'
                       : 'text-white hover:bg-white/10'
@@ -638,7 +638,7 @@ export function TopBar({
               {hasTV && (
                 <button
                   onClick={() => onNavigateToLibrary('tv')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     !isDashboard && libraryTab === 'tv'
                       ? 'bg-white text-black'
                       : 'text-white hover:bg-white/10'
@@ -655,7 +655,7 @@ export function TopBar({
               {hasMusic && (
                 <button
                   onClick={() => onNavigateToLibrary('music')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     !isDashboard && libraryTab === 'music'
                       ? 'bg-white text-black'
                       : 'text-white hover:bg-white/10'
@@ -670,7 +670,7 @@ export function TopBar({
 
               {/* Auto-refresh indicator */}
               {isAutoRefreshing && (
-                <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-white/50" title="Checking for new content...">
+                <div className="flex items-center gap-1.5 px-2 py-1 text-caption text-white/50" title="Checking for new content...">
                   <RefreshCw className="w-3 h-3 animate-spin" />
                   <span>Syncing</span>
                 </div>
@@ -749,7 +749,7 @@ export function TopBar({
             >
               <Star className="w-5 h-5" />
               {wishlistCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-white text-black text-xs font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                <span className="absolute -top-1 -right-1 bg-white text-black text-caption font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
                   {wishlistCount > 99 ? '99+' : wishlistCount}
                 </span>
               )}
@@ -774,7 +774,7 @@ export function TopBar({
                 <Activity className="w-5 h-5" />
               )}
               {taskPendingCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-white text-black text-xs font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                <span className="absolute -top-1 -right-1 bg-white text-black text-caption font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
                   {taskPendingCount > 99 ? '99+' : taskPendingCount}
                 </span>
               )}

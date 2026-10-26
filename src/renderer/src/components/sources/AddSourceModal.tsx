@@ -157,7 +157,7 @@ export function AddSourceModal({ onClose, onSuccess }: AddSourceModalProps) {
       <div ref={modalRef} className="bg-card rounded-xl shadow-xl w-full max-w-xs mx-4 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
-          <h2 id="add-source-modal-title" className="text-sm font-semibold">
+          <h2 id="add-source-modal-title" className="text-label font-semibold">
             {selectedProvider
               ? `Add ${providers.find(p => p.type === selectedProvider)?.name}`
               : 'Add Source'}
@@ -194,7 +194,7 @@ export function AddSourceModal({ onClose, onSuccess }: AddSourceModalProps) {
                       <Server className="w-3.5 h-3.5" />
                     )}
                   </div>
-                  <span className="text-sm">{provider.name}</span>
+                  <span className="text-label">{provider.name}</span>
                 </button>
               ))}
             </div>

@@ -54,7 +54,7 @@ export function WebLoginScreen({ onAuthenticated, authenticate, logoSrc }: WebLo
               <Lock className="w-6 h-6 text-primary" />
             </div>
           )}
-          <p className="text-sm text-muted-foreground">Enter PIN to access</p>
+          <p className="text-label text-muted-foreground">Enter PIN to access</p>
         </div>
 
         {/* Form */}
@@ -67,13 +67,13 @@ export function WebLoginScreen({ onAuthenticated, authenticate, logoSrc }: WebLo
             value={pin}
             onChange={(e) => setPin(e.target.value)}
             placeholder="Enter PIN"
-            className="w-full px-4 py-3 min-h-[48px] text-center text-lg tracking-[0.3em] bg-white/10 border border-white/15 rounded-full text-foreground placeholder:tracking-normal placeholder:text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/25 transition-colors"
+            className="w-full px-4 py-3 min-h-[48px] text-center text-title tracking-[0.3em] bg-white/10 border border-white/15 rounded-full text-foreground placeholder:tracking-normal placeholder:text-label placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/25 transition-colors"
             autoComplete="off"
             disabled={loading}
           />
 
           {error && (
-            <div className="flex items-center justify-center gap-2 mt-3 text-sm text-destructive">
+            <div className="flex items-center justify-center gap-2 mt-3 text-label text-destructive">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
             </div>
@@ -82,7 +82,7 @@ export function WebLoginScreen({ onAuthenticated, authenticate, logoSrc }: WebLo
           <button
             type="submit"
             disabled={!pin.trim() || loading}
-            className="w-full mt-4 px-4 min-h-[48px] bg-primary text-primary-foreground rounded-full font-medium text-sm hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full mt-4 px-4 min-h-[48px] bg-primary text-primary-foreground rounded-full font-medium text-label hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? 'Verifying...' : 'Unlock'}
           </button>

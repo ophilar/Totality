@@ -581,12 +581,12 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
 
               {/* Title overlaid at bottom of artwork */}
               <div className="absolute bottom-0 left-0 right-0 px-4 pb-4">
-                <h2 className="text-2xl font-semibold text-foreground leading-tight tracking-tight">{displayTitle}</h2>
+                <h2 className="text-h2 font-semibold text-foreground leading-tight tracking-tight">{displayTitle}</h2>
                 {media.type === 'episode' && (
-                  <p className="text-sm text-foreground/80 mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
+                  <p className="text-label text-foreground/80 mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
                 )}
                 {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
-                  <p className="text-sm text-foreground/70 font-medium">{sv?.edition || versions[0]?.edition}</p>
+                  <p className="text-label text-foreground/70 font-medium">{sv?.edition || versions[0]?.edition}</p>
                 )}
               </div>
             </div>
@@ -594,7 +594,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
             {/* Metadata + actions — seamless with card background */}
             <div className="px-4 pt-2 pb-3">
               {/* Stats row */}
-              <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-1.5 text-label text-muted-foreground">
                 {media.year && <span>{media.year}</span>}
                 {(sv?.duration ?? media.duration) > 0 && <><span className="mx-0.5">·</span><span>{formatDuration(sv?.duration ?? media.duration)}</span></>}
                 {(sv?.file_size ?? media.file_size) > 0 && <><span className="mx-0.5">·</span><span>{formatFileSize(sv?.file_size ?? media.file_size)}</span></>}
@@ -667,7 +667,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
 
               {/* Summary */}
               {media.summary && (
-                <p className="mt-3 text-sm text-muted-foreground leading-relaxed line-clamp-3">{media.summary}</p>
+                <p className="mt-3 text-label text-muted-foreground leading-relaxed line-clamp-3">{media.summary}</p>
               )}
             </div>
           </div>
@@ -705,17 +705,17 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
 
               {/* Title */}
               <div className="relative z-[1]">
-                <h2 className="text-xl font-semibold leading-tight tracking-tight pr-12">{displayTitle}</h2>
+                <h2 className="text-h3 font-semibold leading-tight tracking-tight pr-12">{displayTitle}</h2>
                 {media.type === 'episode' && (
-                  <p className="text-sm text-muted-foreground mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
+                  <p className="text-label text-muted-foreground mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
                 )}
                 {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
-                  <p className="text-sm text-muted-foreground font-medium">{sv?.edition || versions[0]?.edition}</p>
+                  <p className="text-label text-muted-foreground font-medium">{sv?.edition || versions[0]?.edition}</p>
                 )}
               </div>
 
               {/* Stats row */}
-              <div className="relative z-[1] flex flex-wrap items-center gap-2 text-sm text-muted-foreground mt-2">
+              <div className="relative z-[1] flex flex-wrap items-center gap-2 text-label text-muted-foreground mt-2">
                 {media.year && <span>{media.year}</span>}
                 {(sv?.duration ?? media.duration) > 0 && <><span className="mx-0.5">·</span><span>{formatDuration(sv?.duration ?? media.duration)}</span></>}
                 {(sv?.file_size ?? media.file_size) > 0 && <><span className="mx-0.5">·</span><span>{formatFileSize(sv?.file_size ?? media.file_size)}</span></>}
@@ -811,7 +811,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
 
           {/* Summary — below header, in scrollable area */}
           {!isMobile && media.summary && (
-            <p className="text-sm text-muted-foreground leading-relaxed line-clamp-2">{media.summary}</p>
+            <p className="text-label text-muted-foreground leading-relaxed line-clamp-2">{media.summary}</p>
           )}
 
           {/* Version Selector Pills — content, not chrome */}
@@ -825,7 +825,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                     <button
                       key={v.id}
                       onClick={() => setSelectedVersionId(v.id)}
-                      className={`shrink-0 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                      className={`shrink-0 px-3 py-1.5 text-caption font-medium rounded-md transition-colors ${
                         isSelected
                           ? 'bg-foreground text-background'
                           : `${qualityColor || 'bg-muted/50'} text-muted-foreground hover:text-foreground hover:bg-muted`
@@ -842,13 +842,13 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
               {/* Version Comparison Table */}
               <button
                 onClick={() => setShowVersionTable(prev => !prev)}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                className="flex items-center gap-1 text-caption text-muted-foreground hover:text-foreground transition-colors"
               >
                 <ChevronDown className={`w-3 h-3 transition-transform ${showVersionTable ? '' : '-rotate-90'}`} />
                 Compare Versions ({versions.length})
               </button>
               {showVersionTable && (
-                <div className={`rounded-md border border-border/50 overflow-hidden text-xs ${isMobile ? 'overflow-x-auto' : ''}`}>
+                <div className={`rounded-md border border-border/50 overflow-hidden text-caption ${isMobile ? 'overflow-x-auto' : ''}`}>
                   <table className={`${isMobile ? 'min-w-[500px]' : ''} w-full`}>
                     <thead>
                       <tr className="bg-muted/40 text-muted-foreground">
@@ -914,15 +914,15 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                 <div className={`flex ${isMobile ? 'flex-col gap-3' : 'items-center justify-between gap-4'}`}>
                   <div className={`flex items-center gap-4 bg-muted/30 ${isMobile ? 'px-3 py-2 rounded-lg' : 'px-4 py-3 rounded-lg'}`}>
                     <div className="text-center">
-                      <div className="text-2xl font-semibold">{sv?.quality_tier ?? media.quality_tier}</div>
-                      <div className="text-xs font-medium text-muted-foreground">{sv?.tier_quality ?? media.tier_quality}</div>
+                      <div className="text-h2 font-semibold">{sv?.quality_tier ?? media.quality_tier}</div>
+                      <div className="text-caption font-medium text-muted-foreground">{sv?.tier_quality ?? media.tier_quality}</div>
                     </div>
                     {(sv?.tier_score ?? media.tier_score) != null && (
                       <>
                         <div className="h-10 w-px bg-border" />
                         <div className="text-center">
-                          <div className="text-2xl font-semibold">{sv?.tier_score ?? media.tier_score}</div>
-                          <div className="text-xs font-medium text-muted-foreground">Score</div>
+                          <div className="text-h2 font-semibold">{sv?.tier_score ?? media.tier_score}</div>
+                          <div className="text-caption font-medium text-muted-foreground">Score</div>
                         </div>
                       </>
                     )}
@@ -934,14 +934,14 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                       {(sv?.bitrate_tier_score ?? media.bitrate_tier_score) != null && (
                         <div className="flex-1">
                           <div className="flex items-baseline gap-1.5">
-                            <span className="text-sm text-muted-foreground">Video</span>
-                            <span className="text-sm font-medium tabular-nums">{Math.min(sv?.bitrate_tier_score ?? media.bitrate_tier_score ?? 0, 100)}</span>
-                            <span className="text-xs text-muted-foreground/60">· {videoWeight}%</span>
+                            <span className="text-label text-muted-foreground">Video</span>
+                            <span className="text-label font-medium tabular-nums">{Math.min(sv?.bitrate_tier_score ?? media.bitrate_tier_score ?? 0, 100)}</span>
+                            <span className="text-caption text-muted-foreground/60">· {videoWeight}%</span>
                           </div>
                           <div className="h-1 bg-muted rounded-full overflow-hidden mt-1">
                             <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min(sv?.bitrate_tier_score ?? media.bitrate_tier_score ?? 0, 100)}%` }} />
                           </div>
-                          <div className="text-sm text-muted-foreground mt-0.5">
+                          <div className="text-label text-muted-foreground mt-0.5">
                             {formatBitrate(sv?.video_bitrate ?? media.video_bitrate)} · Target: {getVideoThresholdRange(sv?.quality_tier ?? media.quality_tier)}
                           </div>
                         </div>
@@ -949,14 +949,14 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                       {(sv?.audio_tier_score ?? media.audio_tier_score) != null && (
                         <div className="flex-1">
                           <div className="flex items-baseline gap-1.5">
-                            <span className="text-sm text-muted-foreground">Audio</span>
-                            <span className="text-sm font-medium tabular-nums">{Math.min(sv?.audio_tier_score ?? media.audio_tier_score ?? 0, 100)}</span>
-                            <span className="text-xs text-muted-foreground/60">· {100 - videoWeight}%</span>
+                            <span className="text-label text-muted-foreground">Audio</span>
+                            <span className="text-label font-medium tabular-nums">{Math.min(sv?.audio_tier_score ?? media.audio_tier_score ?? 0, 100)}</span>
+                            <span className="text-caption text-muted-foreground/60">· {100 - videoWeight}%</span>
                           </div>
                           <div className="h-1 bg-muted rounded-full overflow-hidden mt-1">
                             <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min(sv?.audio_tier_score ?? media.audio_tier_score ?? 0, 100)}%` }} />
                           </div>
-                          <div className="text-sm text-muted-foreground mt-0.5">
+                          <div className="text-label text-muted-foreground mt-0.5">
                             {bestAudioBitrate > 0 ? formatBitrate(bestAudioBitrate) : 'Lossless'} · Target: {getAudioThresholdRange(sv?.quality_tier ?? media.quality_tier)}
                           </div>
                         </div>
@@ -966,7 +966,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                 </div>
               </>
             ) : (
-              <div className="text-sm text-muted-foreground text-center py-2">
+              <div className="text-label text-muted-foreground text-center py-2">
                 Quality score not available — rescan to analyze
               </div>
             )}
@@ -978,7 +978,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
             const insight = getVersionInsight(sv)
             if (!insight) return null
             return (
-              <div className="text-sm text-amber-500">
+              <div className="text-label text-amber-500">
                 {insight.type === 'redundant'
                   ? 'A better version exists \u2014 this copy may be safe to remove.'
                   : 'This version scores LOW quality \u2014 consider replacing it.'}
@@ -990,8 +990,8 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
           <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
             {/* Video */}
             <div>
-              <h3 className="text-xs font-semibold text-muted-foreground mb-2">Video</h3>
-              <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+              <h3 className="text-caption font-semibold text-muted-foreground mb-2">Video</h3>
+              <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-label">
                 <span className="text-muted-foreground">Dimensions</span>
                 <span className="font-medium">{sv?.width ?? media.width}×{sv?.height ?? media.height}</span>
                 <span className="text-muted-foreground">Codec</span>
@@ -1025,7 +1025,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
 
             {/* Audio */}
             <div>
-              <h3 className="text-xs font-semibold text-muted-foreground mb-2">
+              <h3 className="text-caption font-semibold text-muted-foreground mb-2">
                 Audio{svAudioTracks.length > 0 ? ` (${svAudioTracks.length})` : ''}
               </h3>
               {/* Audio Tracks */}
@@ -1034,21 +1034,21 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                   {svAudioTracks.map((track, idx) => {
                     const commentary = isCommentary(track)
                     return (
-                      <div key={idx} className={`text-sm ${idx > 0 ? 'pt-2 border-t border-border' : ''} ${commentary ? 'opacity-50' : ''}`}>
+                      <div key={idx} className={`text-label ${idx > 0 ? 'pt-2 border-t border-border' : ''} ${commentary ? 'opacity-50' : ''}`}>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-medium">{track.codec?.toUpperCase()} {formatChannels(track.channels)}</span>
                           {isAudioBitrateLow(track, sv?.quality_tier ?? media.quality_tier) && <LowIndicator />}
                           {track.hasObjectAudio && (
-                            <span className="px-1.5 py-0.5 text-xs bg-muted text-muted-foreground rounded">Atmos</span>
+                            <span className="px-1.5 py-0.5 text-caption bg-muted text-muted-foreground rounded">Atmos</span>
                           )}
                           {commentary && (
-                            <span className="px-1.5 py-0.5 text-xs bg-muted text-muted-foreground rounded">Commentary</span>
+                            <span className="px-1.5 py-0.5 text-caption bg-muted text-muted-foreground rounded">Commentary</span>
                           )}
                         </div>
                         {track.title && (
-                          <div className="text-xs text-muted-foreground mt-0.5 truncate" title={track.title}>{track.title}</div>
+                          <div className="text-caption text-muted-foreground mt-0.5 truncate" title={track.title}>{track.title}</div>
                         )}
-                        <div className="text-xs text-muted-foreground mt-0.5">
+                        <div className="text-caption text-muted-foreground mt-0.5">
                           {track.bitrate > 0 ? formatBitrate(track.bitrate) : 'VBR'}
                           {track.sampleRate && ` · ${(track.sampleRate / 1000).toFixed(1)}kHz`}
                           {track.language && ` · ${track.language.toUpperCase()}`}
@@ -1057,7 +1057,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                           const diag = getTrackDiagnostic(track, sv?.quality_tier ?? media.quality_tier)
                           if (!diag) return null
                           return (
-                            <div className="text-xs mt-1 text-muted-foreground">
+                            <div className="text-caption mt-1 text-muted-foreground">
                               {diag.message}
                             </div>
                           )
@@ -1067,9 +1067,9 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                   })}
                 </div>
               ) : (
-                <div className="text-sm">
+                <div className="text-label">
                   <div className="font-medium">{(sv?.audio_codec ?? media.audio_codec)?.toUpperCase()} {formatChannels(sv?.audio_channels ?? media.audio_channels)}</div>
-                  <div className="text-xs text-muted-foreground flex items-center">
+                  <div className="text-caption text-muted-foreground flex items-center">
                     <span>{(sv?.audio_bitrate ?? media.audio_bitrate) > 0 ? formatBitrate(sv?.audio_bitrate ?? media.audio_bitrate) : 'Lossless'}</span>
                     {isAudioBitrateRawLow(sv?.audio_bitrate ?? media.audio_bitrate, sv?.quality_tier ?? media.quality_tier) && <LowIndicator />}
                   </div>
@@ -1081,23 +1081,23 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
           {/* Subtitles */}
           {svSubtitleTracks.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold text-muted-foreground mb-2">
+              <h3 className="text-caption font-semibold text-muted-foreground mb-2">
                 Subtitles ({svSubtitleTracks.length})
               </h3>
               <div className="flex flex-wrap gap-2">
                 {svSubtitleTracks.map((track, idx) => (
                   <div
                     key={idx}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-muted/50 rounded"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 text-caption bg-muted/50 rounded"
                     title={track.title || `${track.language || 'Unknown'} (${track.codec})`}
                   >
                     <span className="font-medium">{track.language?.toUpperCase() || 'UND'}</span>
                     <span className="text-muted-foreground">{track.codec}</span>
                     {track.isForced && (
-                      <span className="px-1.5 py-0.5 text-xs bg-muted text-muted-foreground rounded leading-none">Forced</span>
+                      <span className="px-1.5 py-0.5 text-caption bg-muted text-muted-foreground rounded leading-none">Forced</span>
                     )}
                     {track.isDefault && (
-                      <span className="px-1.5 py-0.5 text-xs bg-muted text-muted-foreground rounded leading-none">Default</span>
+                      <span className="px-1.5 py-0.5 text-caption bg-muted text-muted-foreground rounded leading-none">Default</span>
                     )}
                   </div>
                 ))}
@@ -1107,10 +1107,10 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
 
           {/* File Info & IDs */}
           <div>
-            <h3 className="text-xs font-semibold text-muted-foreground mb-2">File Information</h3>
-            <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+            <h3 className="text-caption font-semibold text-muted-foreground mb-2">File Information</h3>
+            <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-label">
               <span className="text-muted-foreground">Path</span>
-              <span className="font-mono text-xs truncate" title={sv?.file_path ?? media.file_path}>
+              <span className="font-mono text-caption truncate" title={sv?.file_path ?? media.file_path}>
                 {sv?.file_path ?? media.file_path}
               </span>
               {media.imdb_id && <>

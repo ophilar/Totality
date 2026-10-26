@@ -288,8 +288,8 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
         {libraries.length > 0 && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium">Select libraries to include:</p>
-              <div className="flex gap-2 text-xs">
+              <p className="text-label font-medium">Select libraries to include:</p>
+              <div className="flex gap-2 text-caption">
                 <Button variant="tertiary" size="sm" onClick={handleSelectAll}>
                   Select all
                 </Button>
@@ -315,17 +315,17 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
                     onChange={() => handleToggleLibrary(lib.id)}
                     className="w-4 h-4 rounded border-muted-foreground text-primary focus:ring-primary focus:ring-offset-0"
                   />
-                  <span className="text-lg">
+                  <span className="text-title">
                     {lib.type === 'movie' ? '🎬' : lib.type === 'show' ? '📺' : lib.type === 'music' ? '🎵' : '📁'}
                   </span>
-                  <span className="text-sm">{lib.name}</span>
+                  <span className="text-label">{lib.name}</span>
                   {lib.itemCount !== undefined && (
-                    <span className="text-xs text-muted-foreground">({lib.itemCount} items)</span>
+                    <span className="text-caption text-muted-foreground">({lib.itemCount} items)</span>
                   )}
                 </label>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-caption text-muted-foreground">
               Only selected libraries will appear in your media browser. You can change this later by expanding the source card.
             </p>
           </div>
@@ -354,7 +354,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
             </svg>
           </div>
           <p className="font-medium">Connected to Kodi!</p>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-label text-muted-foreground mt-1">
             Your Kodi installation has been added.
           </p>
         </div>
@@ -376,7 +376,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
       <div className="space-y-4">
         <div className="flex items-center justify-center gap-3 py-6">
           <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-500 border-t-transparent" />
-          <span className="text-sm text-muted-foreground">Detecting local Kodi...</span>
+          <span className="text-label text-muted-foreground">Detecting local Kodi...</span>
         </div>
 
         <Button
@@ -396,7 +396,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
       <div className="space-y-4">
         {/* Kodi running warning */}
         {localInstallation?.kodiRunning && (
-          <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-sm">
+          <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-label">
             <svg className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
@@ -408,7 +408,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
 
         {/* No local installation notice */}
         {!localInstallation && (
-          <div className="flex items-center gap-2 p-3 bg-muted/50 border border-border rounded-lg text-sm">
+          <div className="flex items-center gap-2 p-3 bg-muted/50 border border-border rounded-lg text-label">
             <span className="text-muted-foreground">
               No local Kodi installation found. Choose a connection method:
             </span>
@@ -426,11 +426,11 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
             >
               <HardDrive className="w-5 h-5 text-foreground shrink-0" />
               <div className="min-w-0 flex-1">
-                <div className="font-medium text-sm flex items-center gap-2">
+                <div className="font-medium text-label flex items-center gap-2">
                   Local Database
-                  <span className="text-xs text-green-500 font-normal">Found</span>
+                  <span className="text-caption text-green-500 font-normal">Found</span>
                 </div>
-                <div className="text-xs text-muted-foreground">
+                <div className="text-caption text-muted-foreground">
                   {localInstallation.databaseVersion > 0 && `MyVideos${localInstallation.databaseVersion}.db`}
                   {localInstallation.databaseVersion > 0 && localInstallation.musicDatabaseVersion && ' + '}
                   {localInstallation.musicDatabaseVersion && `MyMusic${localInstallation.musicDatabaseVersion}.db`}
@@ -446,8 +446,8 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
           >
             <FolderOpen className="w-5 h-5 text-foreground shrink-0" />
             <div className="min-w-0">
-              <div className="font-medium text-sm">Browse for Database</div>
-              <div className="text-xs text-muted-foreground">Select a Kodi database file manually (portable installs)</div>
+              <div className="font-medium text-label">Browse for Database</div>
+              <div className="text-caption text-muted-foreground">Select a Kodi database file manually (portable installs)</div>
             </div>
           </button>
 
@@ -457,8 +457,8 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
           >
             <Database className="w-5 h-5 text-foreground shrink-0" />
             <div className="min-w-0">
-              <div className="font-medium text-sm">MySQL/MariaDB (Shared)</div>
-              <div className="text-xs text-muted-foreground">Connect to shared database for multi-device setups</div>
+              <div className="font-medium text-label">MySQL/MariaDB (Shared)</div>
+              <div className="text-caption text-muted-foreground">Connect to shared database for multi-device setups</div>
             </div>
           </button>
         </div>
@@ -483,7 +483,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
       <div className="space-y-4">
         {/* Database selection */}
         <div className="space-y-3">
-          <p className="text-sm font-medium">Select databases to access:</p>
+          <p className="text-label font-medium">Select databases to access:</p>
 
           {/* Video database option */}
           {hasVideoDb && (
@@ -507,8 +507,8 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
               />
               <Film className="w-5 h-5 text-foreground shrink-0" />
               <div className="min-w-0 flex-1">
-                <div className="font-medium text-sm">Movies & TV Shows</div>
-                <div className="text-xs text-muted-foreground">
+                <div className="font-medium text-label">Movies & TV Shows</div>
+                <div className="text-caption text-muted-foreground">
                   MyVideos{localInstallation.databaseVersion}.db
                 </div>
               </div>
@@ -537,8 +537,8 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
               />
               <Music className="w-5 h-5 text-foreground shrink-0" />
               <div className="min-w-0 flex-1">
-                <div className="font-medium text-sm">Music</div>
-                <div className="text-xs text-muted-foreground">
+                <div className="font-medium text-label">Music</div>
+                <div className="text-caption text-muted-foreground">
                   MyMusic{localInstallation.musicDatabaseVersion}.db
                 </div>
               </div>
@@ -547,12 +547,12 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
 
           {/* Show message if only one database found */}
           {!hasVideoDb && hasMusicDb && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-caption text-muted-foreground">
               Only music database found. Video database (MyVideos*.db) not detected.
             </p>
           )}
           {hasVideoDb && !hasMusicDb && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-caption text-muted-foreground">
               Only video database found. Music database (MyMusic*.db) not detected.
             </p>
           )}
@@ -560,7 +560,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
 
         {/* Display name */}
         <label className="block">
-          <span className="text-sm font-medium">Display Name</span>
+          <span className="text-label font-medium">Display Name</span>
           <Input
             type="text"
             value={localDisplayName}
@@ -572,7 +572,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
 
         {/* Error message */}
         {error && (
-          <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+          <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-label">
             {error}
           </div>
         )}

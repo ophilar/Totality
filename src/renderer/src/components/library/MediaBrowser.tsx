@@ -1338,7 +1338,7 @@ export function MediaBrowser({
               }}
               onFocus={() => setShowSearchResults(true)}
               onKeyDown={handleSearchKeyDown}
-              className="w-full pl-10 pr-8 py-2 bg-muted/50 border border-border/50 rounded-lg text-sm placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
+              className="w-full pl-10 pr-8 py-2 bg-muted/50 border border-border/50 rounded-lg text-label placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
               aria-label="Search all libraries"
               aria-autocomplete="list"
               aria-controls="search-results-listbox"
@@ -1371,7 +1371,7 @@ export function MediaBrowser({
                 {/* Movies */}
                 {globalSearchResults.movies.length > 0 && (
                   <div role="group" aria-labelledby="search-movies-label">
-                    <div id="search-movies-label" className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
+                    <div id="search-movies-label" className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
                       <Film className="w-3 h-3" aria-hidden="true" />
                       Movies
                     </div>
@@ -1398,8 +1398,8 @@ export function MediaBrowser({
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{movie.title}</div>
-                            {movie.year && <div className="text-xs text-muted-foreground">{movie.year}</div>}
+                            <div className="text-label font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{movie.title}</div>
+                            {movie.year && <div className="text-caption text-muted-foreground">{movie.year}</div>}
                           </div>
                           {movie.needs_upgrade && (
                             <CircleFadingArrowUp className="w-5 h-5 text-red-500 shrink-0" aria-label="Upgrade recommended" />
@@ -1413,7 +1413,7 @@ export function MediaBrowser({
                 {/* TV Shows */}
                 {globalSearchResults.tvShows.length > 0 && (
                   <div role="group" aria-labelledby="search-tv-label">
-                    <div id="search-tv-label" className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
+                    <div id="search-tv-label" className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
                       <Tv className="w-3 h-3" aria-hidden="true" />
                       TV Shows
                     </div>
@@ -1440,7 +1440,7 @@ export function MediaBrowser({
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{show.title}</div>
+                            <div className="text-label font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{show.title}</div>
                           </div>
                         </div>
                       )
@@ -1451,7 +1451,7 @@ export function MediaBrowser({
                 {/* Episodes */}
                 {globalSearchResults.episodes.length > 0 && (
                   <div role="group" aria-labelledby="search-episodes-label">
-                    <div id="search-episodes-label" className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
+                    <div id="search-episodes-label" className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
                       <Tv className="w-3 h-3" aria-hidden="true" />
                       Episodes
                     </div>
@@ -1478,8 +1478,8 @@ export function MediaBrowser({
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{episode.title}</div>
-                            <div className="text-xs text-muted-foreground truncate">
+                            <div className="text-label font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{episode.title}</div>
+                            <div className="text-caption text-muted-foreground truncate">
                               {episode.series_title} • S{episode.season_number}E{episode.episode_number}
                             </div>
                           </div>
@@ -1495,7 +1495,7 @@ export function MediaBrowser({
                 {/* Artists */}
                 {globalSearchResults.artists.length > 0 && (
                   <div role="group" aria-labelledby="search-artists-label">
-                    <div id="search-artists-label" className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
+                    <div id="search-artists-label" className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
                       <User className="w-3 h-3" aria-hidden="true" />
                       Artists
                     </div>
@@ -1522,7 +1522,7 @@ export function MediaBrowser({
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{artist.title}</div>
+                            <div className="text-label font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{artist.title}</div>
                           </div>
                         </div>
                       )
@@ -1533,7 +1533,7 @@ export function MediaBrowser({
                 {/* Albums */}
                 {globalSearchResults.albums.length > 0 && (
                   <div role="group" aria-labelledby="search-albums-label">
-                    <div id="search-albums-label" className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
+                    <div id="search-albums-label" className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
                       <Disc3 className="w-3 h-3" aria-hidden="true" />
                       Albums
                     </div>
@@ -1560,8 +1560,8 @@ export function MediaBrowser({
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{album.title}</div>
-                            <div className="text-xs text-muted-foreground truncate">
+                            <div className="text-label font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{album.title}</div>
+                            <div className="text-caption text-muted-foreground truncate">
                               {album.subtitle}{album.year ? ` • ${album.year}` : ''}
                             </div>
                           </div>
@@ -1577,7 +1577,7 @@ export function MediaBrowser({
                 {/* Tracks */}
                 {globalSearchResults.tracks.length > 0 && (
                   <div role="group" aria-labelledby="search-tracks-label">
-                    <div id="search-tracks-label" className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
+                    <div id="search-tracks-label" className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
                       <Music className="w-3 h-3" aria-hidden="true" />
                       Tracks
                     </div>
@@ -1604,8 +1604,8 @@ export function MediaBrowser({
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{track.title}</div>
-                            <div className="text-xs text-muted-foreground truncate">
+                            <div className="text-label font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{track.title}</div>
+                            <div className="text-caption text-muted-foreground truncate">
                               {track.album_title}{track.artist_name ? ` • ${track.artist_name}` : ''}
                             </div>
                           </div>
@@ -1624,7 +1624,7 @@ export function MediaBrowser({
             {/* No results message (portal to theme-aware container) */}
             {showSearchResults && searchInput.length >= 2 && !hasSearchResults && searchPortalRef.current && createPortal(
               <div className="bg-card border border-border rounded-lg shadow-2xl p-4 text-foreground" style={getSearchDropdownStyle()}>
-                <div className="text-sm text-muted-foreground text-center">No results found</div>
+                <div className="text-label text-muted-foreground text-center">No results found</div>
               </div>,
               searchPortalRef.current
             )}
@@ -1639,7 +1639,7 @@ export function MediaBrowser({
                 {onNavigateHome && (
                   <button
                     onClick={onNavigateHome}
-                    className="px-3 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 bg-card text-muted-foreground hover:bg-muted"
+                    className="px-3 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 bg-card text-muted-foreground hover:bg-muted"
                     title="Return to Dashboard"
                     aria-label="Dashboard"
                   >
@@ -1665,7 +1665,7 @@ export function MediaBrowser({
                     setSelectedAlbum(null)
                   }}
                   disabled={!hasMovies}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     view === 'movies'
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1692,7 +1692,7 @@ export function MediaBrowser({
                     setSelectedAlbum(null)
                   }}
                   disabled={!hasTV}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     view === 'tv'
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1719,7 +1719,7 @@ export function MediaBrowser({
                     setSelectedAlbum(null)
                   }}
                   disabled={!hasMusic}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-md text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     view === 'music'
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1735,7 +1735,7 @@ export function MediaBrowser({
 
                 {/* Auto-refresh indicator */}
                 {isAutoRefreshing && (
-                  <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground" title="Checking for new content...">
+                  <div className="flex items-center gap-1.5 px-2 py-1 text-caption text-muted-foreground" title="Checking for new content...">
                     <RefreshCw className="w-3 h-3 animate-spin" />
                     <span>Syncing</span>
                   </div>
@@ -1784,7 +1784,7 @@ export function MediaBrowser({
               <Star className="w-4 h-4" aria-hidden="true" />
               {wishlistCount > 0 && (
                 <span
-                  className={`text-xs font-medium ${showWishlistPanel ? 'text-primary-foreground' : ''}`}
+                  className={`text-caption font-medium ${showWishlistPanel ? 'text-primary-foreground' : ''}`}
                   style={showWishlistPanel ? undefined : { color: themeAccentColor }}
                 >
                   {wishlistCount}
@@ -1826,7 +1826,7 @@ export function MediaBrowser({
                 {/* Music View Mode Toggle */}
                 {view === 'music' && (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">View</span>
+                    <span className="text-caption text-muted-foreground">View</span>
                     <div className="flex gap-1">
                       {(['artists', 'albums', 'tracks'] as const).map((mode) => (
                         <button
@@ -1837,7 +1837,7 @@ export function MediaBrowser({
                             setSelectedAlbum(null)
                             setAlbumTracks([])
                           }}
-                          className={`px-2.5 py-1.5 rounded-md text-xs transition-colors ${
+                          className={`px-2.5 py-1.5 rounded-md text-caption transition-colors ${
                             musicViewMode === mode
                               ? 'bg-primary text-primary-foreground'
                               : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1853,7 +1853,7 @@ export function MediaBrowser({
                 {/* Library Filter (shown when source has 2+ libraries of current type) */}
                 {activeSourceId && currentTypeLibraries.length >= 2 && (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Library</span>
+                    <span className="text-caption text-muted-foreground">Library</span>
                     <Select
                       inputSize="sm"
                       value={activeLibraryId || ''}
@@ -1871,7 +1871,7 @@ export function MediaBrowser({
                 {/* Resolution Tier Filter (movies only) */}
                 {view === 'movies' && (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Resolution</span>
+                    <span className="text-caption text-muted-foreground">Resolution</span>
                     <div className="flex gap-1">
                       {['all', '4K', '1080p', '720p', 'SD'].map((tier) => (
                         <button
@@ -1881,7 +1881,7 @@ export function MediaBrowser({
                             else tierFilterRefs.current.delete(tier)
                           }}
                           onClick={() => setTierFilter(tier as typeof tierFilter)}
-                          className={`px-2.5 py-1 rounded-md text-xs transition-colors focus:outline-hidden ${
+                          className={`px-2.5 py-1 rounded-md text-caption transition-colors focus:outline-hidden ${
                             tierFilter === tier
                               ? 'bg-primary text-primary-foreground'
                               : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1902,7 +1902,7 @@ export function MediaBrowser({
                 {/* Quality Filter (movies + music tracks) */}
                 {(view === 'movies' || (view === 'music' && musicViewMode === 'tracks')) && (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Quality</span>
+                    <span className="text-caption text-muted-foreground">Quality</span>
                     <div className="flex gap-1">
                       {['all', 'high', 'medium', 'low'].map((quality) => (
                         <button
@@ -1912,7 +1912,7 @@ export function MediaBrowser({
                             else qualityFilterRefs.current.delete(quality)
                           }}
                           onClick={() => setQualityFilter(quality as typeof qualityFilter)}
-                          className={`px-2.5 py-1 rounded-md text-xs transition-colors focus:outline-hidden ${
+                          className={`px-2.5 py-1 rounded-md text-caption transition-colors focus:outline-hidden ${
                             qualityFilter === quality
                               ? 'bg-primary text-primary-foreground'
                               : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1931,7 +1931,7 @@ export function MediaBrowser({
                     <div className="h-6 w-px bg-border/50" />
                     <button
                       onClick={() => setCollectionsOnly(!collectionsOnly)}
-                      className={`px-2.5 py-1 rounded-md text-xs transition-colors focus:outline-hidden flex items-center gap-1.5 ${
+                      className={`px-2.5 py-1 rounded-md text-caption transition-colors focus:outline-hidden flex items-center gap-1.5 ${
                         collectionsOnly
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-card text-muted-foreground hover:bg-muted'
@@ -2005,7 +2005,7 @@ export function MediaBrowser({
         {/* Content Display */}
         {showEmptyState ? (
           <div className="h-full flex flex-col items-center justify-center px-8">
-            <h2 className="text-xl font-semibold text-foreground mb-2 text-center">No Media Sources</h2>
+            <h2 className="text-h3 font-semibold text-foreground mb-2 text-center">No Media Sources</h2>
             <p className="text-muted-foreground text-center max-w-md">Add a media server from the sidebar to start analyzing your library</p>
           </div>
         ) : (
@@ -2170,7 +2170,7 @@ export function MediaBrowser({
                 else alphabetFilterRefs.current.delete('all')
               }}
               onClick={() => scrollToLetter(null)}
-              className={`w-5 h-5 flex items-center justify-center text-xs font-medium transition-colors focus:outline-hidden ${
+              className={`w-5 h-5 flex items-center justify-center text-caption font-medium transition-colors focus:outline-hidden ${
                 alphabetFilter === null
                   ? 'text-foreground'
                   : 'text-muted-foreground hover:text-foreground'
@@ -2187,7 +2187,7 @@ export function MediaBrowser({
                 else alphabetFilterRefs.current.delete('#')
               }}
               onClick={() => availableLetters.has('#') && scrollToLetter('#')}
-              className={`w-5 h-5 flex items-center justify-center text-xs font-medium transition-colors focus:outline-hidden ${
+              className={`w-5 h-5 flex items-center justify-center text-caption font-medium transition-colors focus:outline-hidden ${
                 alphabetFilter === '#'
                   ? 'text-foreground'
                   : availableLetters.has('#')
@@ -2211,7 +2211,7 @@ export function MediaBrowser({
                   else alphabetFilterRefs.current.delete(letter)
                 }}
                 onClick={() => hasItems && scrollToLetter(letter)}
-                className={`w-5 h-5 flex items-center justify-center text-xs font-medium transition-colors focus:outline-hidden ${
+                className={`w-5 h-5 flex items-center justify-center text-caption font-medium transition-colors focus:outline-hidden ${
                   alphabetFilter === letter
                     ? 'text-foreground'
                     : hasItems

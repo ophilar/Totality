@@ -196,7 +196,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
       {/* Step: Start */}
       {step === 'start' && (
         <>
-          <div className="bg-muted/50 rounded-lg p-4 text-sm">
+          <div className="bg-muted/50 rounded-lg p-4 text-label">
             <p className="font-medium mb-2">How it works:</p>
             <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
               <li>Click "Sign in with Plex" below</li>
@@ -207,7 +207,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
           </div>
 
           {error && (
-            <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+            <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-label">
               {error}
             </div>
           )}
@@ -236,7 +236,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
           <div className="text-center py-8">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-[#e5a00d] border-t-transparent mb-4" />
             <p className="font-medium">Waiting for Plex sign in...</p>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-label text-muted-foreground mt-1">
               Complete the sign-in process in your browser
             </p>
           </div>
@@ -247,7 +247,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
                 href={authUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm text-primary hover:underline"
+                className="text-label text-primary hover:underline"
               >
                 Click here if the browser didn't open
               </a>
@@ -267,7 +267,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
       {/* Step: Server Selection */}
       {step === 'servers' && (
         <>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-label text-muted-foreground">
             Select a Plex server to connect:
           </p>
 
@@ -296,12 +296,12 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
                     <div className="font-medium flex items-center gap-2">
                       {server.name}
                       {server.isOwned && (
-                        <span className="text-xs bg-[#e5a00d]/20 text-[#e5a00d] px-1.5 py-0.5 rounded">
+                        <span className="text-caption bg-[#e5a00d]/20 text-[#e5a00d] px-1.5 py-0.5 rounded">
                           Owned
                         </span>
                       )}
                     </div>
-                    <div className="text-sm text-muted-foreground">
+                    <div className="text-label text-muted-foreground">
                       {server.address}:{server.port}
                       {server.isLocal && ' (Local)'}
                     </div>
@@ -312,7 +312,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
           )}
 
           {error && (
-            <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+            <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-label">
               {error}
             </div>
           )}
@@ -342,8 +342,8 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
           {libraries.length > 0 && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">Select libraries to include:</p>
-                <div className="flex gap-2 text-xs">
+                <p className="text-label font-medium">Select libraries to include:</p>
+                <div className="flex gap-2 text-caption">
                   <Button variant="tertiary" size="sm" onClick={handleSelectAll}>
                     Select all
                   </Button>
@@ -372,14 +372,14 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
                     <span className="text-white">
                       {lib.type === 'movie' ? <Film className="w-5 h-5" /> : lib.type === 'show' ? <Tv className="w-5 h-5" /> : lib.type === 'music' ? <Music className="w-5 h-5" /> : <Folder className="w-5 h-5" />}
                     </span>
-                    <span className="text-sm">{lib.name}</span>
+                    <span className="text-label">{lib.name}</span>
                     {lib.itemCount !== undefined && (
-                      <span className="text-xs text-muted-foreground">({lib.itemCount} items)</span>
+                      <span className="text-caption text-muted-foreground">({lib.itemCount} items)</span>
                     )}
                   </label>
                 ))}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-caption text-muted-foreground">
                 Only selected libraries will appear in your media browser. You can change this later by expanding the source card.
               </p>
             </div>

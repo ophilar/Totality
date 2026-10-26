@@ -179,7 +179,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
                   tabIndex={isActive ? 0 : -1}
                   onClick={() => setActiveTab(tab.id)}
                   onKeyDown={(e) => handleTabKeyDown(e, index)}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-left focus:outline-hidden focus:ring-2 focus:ring-primary ${
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-label font-medium transition-colors text-left focus:outline-hidden focus:ring-2 focus:ring-primary ${
                     isActive
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'

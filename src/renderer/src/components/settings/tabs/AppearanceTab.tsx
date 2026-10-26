@@ -383,7 +383,7 @@ export function AppearanceTab() {
     <div className="p-6 space-y-5 overflow-y-auto">
       {/* Mode Toggle */}
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-foreground">Mode</h3>
+        <h3 className="text-label font-medium text-foreground">Mode</h3>
         <Card variant="muted" padding="sm">
           <div className="flex gap-2">
             {MODE_OPTIONS.map((opt) => {
@@ -393,7 +393,7 @@ export function AppearanceTab() {
                 <button
                   key={opt.id}
                   onClick={() => setMode(opt.id)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-label font-medium transition-colors ${
                     isActive
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-muted text-muted-foreground hover:bg-muted/80'
@@ -410,7 +410,7 @@ export function AppearanceTab() {
 
       {/* Theme Selection */}
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-foreground">Theme</h3>
+        <h3 className="text-label font-medium text-foreground">Theme</h3>
         <Card variant="muted">
           <div className="grid grid-cols-3 gap-4">
             {THEMES.filter(t => effectiveIsDark || !t.darkOnly).map((themeConfig) => {
@@ -422,8 +422,8 @@ export function AppearanceTab() {
               return (
                 <div key={themeConfig.id} className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between px-0.5">
-                    <span className="text-xs font-medium">{displayLabel}</span>
-                    <span className="text-xs text-muted-foreground">{displayDesc}</span>
+                    <span className="text-caption font-medium">{displayLabel}</span>
+                    <span className="text-caption text-muted-foreground">{displayDesc}</span>
                   </div>
                   <button
                     onClick={() => setTheme(themeConfig.id)}

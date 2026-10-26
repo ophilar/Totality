@@ -92,7 +92,7 @@ function SortableQueueItem({ task, onRemove }: { task: QueuedTask; onRemove: (id
       className={`flex items-center gap-2 px-4 py-2.5 ${isDragging ? 'bg-primary/5' : 'hover:bg-muted/30'}`}
       {...attributes}>
       <GripVertical className={`w-4 h-4 shrink-0 cursor-grab active:cursor-grabbing transition-colors ${isDragging ? 'text-primary' : 'text-muted-foreground/50'}`} {...listeners} />
-      <span className="text-sm flex-1 truncate">{task.label}</span>
+      <span className="text-label flex-1 truncate">{task.label}</span>
       <button onClick={(e) => { e.stopPropagation(); onRemove(task.id) }}
         className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-red-400 shrink-0" title="Remove">
         <X className="w-3.5 h-3.5" />
@@ -173,14 +173,14 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
           <div className="flex items-center gap-2">
             <Activity className="w-4 h-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold">Task Queue</h2>
+            <h2 className="text-label font-semibold">Task Queue</h2>
             {pendingCount > 0 && (
-              <span className="px-1.5 py-0.5 text-xs font-medium bg-primary/20 text-primary rounded-full">
+              <span className="px-1.5 py-0.5 text-caption font-medium bg-primary/20 text-primary rounded-full">
                 {pendingCount}
               </span>
             )}
             {queueState.isPaused && (
-              <span className="px-1.5 py-0.5 text-xs font-medium bg-yellow-500/20 text-yellow-400 rounded-full">
+              <span className="px-1.5 py-0.5 text-caption font-medium bg-yellow-500/20 text-yellow-400 rounded-full">
                 Paused
               </span>
             )}
@@ -203,7 +203,7 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                <span className="text-sm font-medium">{queueState.currentTask.label}</span>
+                <span className="text-label font-medium">{queueState.currentTask.label}</span>
               </div>
               <button onClick={handleCancelCurrent}
                 className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-red-400" title="Cancel">
@@ -216,7 +216,7 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
                   <div className="h-full bg-primary transition-[width] duration-300"
                     style={{ width: `${queueState.currentTask.progress.percentage}%` }} />
                 </div>
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <div className="flex items-center justify-between text-caption text-muted-foreground">
                   <span>{queueState.currentTask.progress.currentItem || queueState.currentTask.progress.phase}</span>
                   <span>{Math.round(queueState.currentTask.progress.percentage)}%</span>
                 </div>
@@ -230,20 +230,20 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
           <div className="flex items-center justify-between px-4 py-2 bg-muted/20 shrink-0">
             <div className="flex items-center gap-2">
               <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-xs font-medium text-muted-foreground">
+              <span className="text-caption font-medium text-muted-foreground">
                 Queued {queueState.queue.length > 0 && `(${queueState.queue.length})`}
               </span>
             </div>
             {queueState.queue.length > 0 && (
-              <button onClick={handleClearQueue} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Clear</button>
+              <button onClick={handleClearQueue} className="text-caption text-muted-foreground hover:text-foreground transition-colors">Clear</button>
             )}
           </div>
           <div className="flex-1 overflow-y-auto min-h-0">
             {queueState.queue.length === 0 ? (
               <div className="py-8 text-center">
                 <Clock className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">Queue empty</p>
-                <p className="text-xs text-muted-foreground/50 mt-1">Tasks will appear here when queued</p>
+                <p className="text-label text-muted-foreground">Queue empty</p>
+                <p className="text-caption text-muted-foreground/50 mt-1">Tasks will appear here when queued</p>
               </div>
             ) : (
               <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={handleDragEnd}>
@@ -253,7 +253,7 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
                       <SortableQueueItem key={task.id} task={task} onRemove={handleRemoveTask} />
                     ))}
                   </div>
-                  <p className="px-4 py-1.5 text-xs text-muted-foreground/60 italic border-t border-border/20">Drag to reorder</p>
+                  <p className="px-4 py-1.5 text-caption text-muted-foreground/60 italic border-t border-border/20">Drag to reorder</p>
                 </SortableContext>
               </DndContext>
             )}
@@ -264,14 +264,14 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
         {queueState.completedTasks.length > 0 && (
           <div className="border-t border-border/30 max-h-40 overflow-y-auto">
             <div className="px-4 py-2 bg-muted/20">
-              <span className="text-xs font-medium text-muted-foreground">Recent</span>
+              <span className="text-caption font-medium text-muted-foreground">Recent</span>
             </div>
             <div className="divide-y divide-border/10">
               {queueState.completedTasks.slice(0, 5).map((task) => (
                 <div key={task.id} className="flex items-center gap-2 px-4 py-2 text-muted-foreground/60">
                   <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${task.status === 'failed' ? 'text-red-400' : 'text-green-400'}`} />
-                  <span className="text-xs flex-1 truncate">{task.label}</span>
-                  {task.status === 'failed' && <span className="text-xs text-red-400">Failed</span>}
+                  <span className="text-caption flex-1 truncate">{task.label}</span>
+                  {task.status === 'failed' && <span className="text-caption text-red-400">Failed</span>}
                 </div>
               ))}
             </div>

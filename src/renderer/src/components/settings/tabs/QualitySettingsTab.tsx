@@ -94,8 +94,8 @@ function SettingsCard({
 
         {/* Title and description */}
         <div className="flex-1 min-w-0">
-          <span className="font-medium text-sm">{title}</span>
-          <p className="text-xs text-muted-foreground truncate">{description}</p>
+          <span className="font-medium text-label">{title}</span>
+          <p className="text-caption text-muted-foreground truncate">{description}</p>
         </div>
 
         {/* Expand indicator */}
@@ -235,10 +235,10 @@ export function QualitySettingsTab() {
         {isReanalyzing ? (
           <>
             <RefreshCw className="w-8 h-8 animate-spin text-primary mb-4" aria-hidden="true" />
-            <h3 className="text-base font-medium mb-2">Re-analyzing Library</h3>
+            <h3 className="text-body font-medium mb-2">Re-analyzing Library</h3>
             {reanalyzeProgress && reanalyzeProgress.total > 0 ? (
               <>
-                <p className="text-xs text-muted-foreground mb-3">
+                <p className="text-caption text-muted-foreground mb-3">
                   {reanalyzeProgress.current} of {reanalyzeProgress.total} items
                 </p>
                 <div className="w-64 h-2 bg-muted rounded-full overflow-hidden">
@@ -249,7 +249,7 @@ export function QualitySettingsTab() {
                 </div>
               </>
             ) : (
-              <p className="text-xs text-muted-foreground">Starting analysis...</p>
+              <p className="text-caption text-muted-foreground">Starting analysis...</p>
             )}
           </>
         ) : (
@@ -257,8 +257,8 @@ export function QualitySettingsTab() {
             <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center mb-4">
               <Save className="w-6 h-6 text-primary" />
             </div>
-            <h3 className="text-base font-medium mb-2">Settings Saved</h3>
-            <p className="text-xs text-muted-foreground mb-6 max-w-sm">
+            <h3 className="text-body font-medium mb-2">Settings Saved</h3>
+            <p className="text-caption text-muted-foreground mb-6 max-w-sm">
               Would you like to re-analyze your library with the new quality thresholds?
             </p>
             <div className="flex gap-3">
@@ -302,7 +302,7 @@ export function QualitySettingsTab() {
                 onClick={() => setSelectedTier(tab.id)}
                 role="tab"
                 aria-selected={selectedTier === tab.id}
-                className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-colors ${
+                className={`flex-1 px-3 py-2 text-caption font-medium rounded-md transition-colors ${
                   selectedTier === tab.id
                     ? 'bg-primary text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -313,7 +313,7 @@ export function QualitySettingsTab() {
             ))}
           </div>
 
-          <p className="text-xs text-muted-foreground">
+          <p className="text-caption text-muted-foreground">
             {RESOLUTION_TABS.find(t => t.id === selectedTier)?.description}
           </p>
 
@@ -347,7 +347,7 @@ export function QualitySettingsTab() {
             />
             <div className="bg-background/50 rounded-lg p-3 space-y-2 col-span-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium">Score Weighting</span>
+                <span className="text-caption font-medium">Score Weighting</span>
               </div>
               <div className="relative h-4">
                 <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1.5 rounded-full overflow-hidden">
@@ -368,7 +368,7 @@ export function QualitySettingsTab() {
                   style={{ left: `${settings.quality_video_weight}%`, marginLeft: '-6px' }}
                 />
               </div>
-              <div className="flex justify-between text-xs font-medium">
+              <div className="flex justify-between text-caption font-medium">
                 <span className="text-accent/60">Video {settings.quality_video_weight}%</span>
                 <span className="text-accent">Audio {100 - settings.quality_video_weight}%</span>
               </div>
@@ -377,8 +377,8 @@ export function QualitySettingsTab() {
 
           {/* Codec Efficiency */}
           <div className="border-t border-border pt-4 mt-2">
-            <h4 className="text-sm font-medium mb-2">Codec Efficiency</h4>
-            <p className="text-xs text-muted-foreground mb-3">
+            <h4 className="text-label font-medium mb-2">Codec Efficiency</h4>
+            <p className="text-caption text-muted-foreground mb-3">
               Newer codecs like HEVC and AV1 deliver the same picture quality at much lower bitrates
               than H.264. A value of 2.0x means the codec is twice as efficient, so it only needs half
               the bitrate to score the same.
@@ -423,7 +423,7 @@ export function QualitySettingsTab() {
               />
             </div>
 
-            <p className="text-xs text-muted-foreground italic mt-3">
+            <p className="text-caption text-muted-foreground italic mt-3">
               Most users won't need to change these. Adjust if your HEVC or AV1 files are scoring
               higher or lower than they look — lower the value if scores seem too generous, raise it
               if scores seem too harsh.
@@ -442,7 +442,7 @@ export function QualitySettingsTab() {
         onToggle={() => toggleCard('music')}
       >
         <div className="space-y-4">
-          <p className="text-xs text-muted-foreground">
+          <p className="text-caption text-muted-foreground">
             Set bitrate thresholds for lossy music quality tiers and hi-res detection.
           </p>
 
@@ -601,7 +601,7 @@ function QualityThreshold({
   return (
     <div className="bg-background/50 rounded-lg p-3 space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium">{label}</span>
+        <span className="text-caption font-medium">{label}</span>
       </div>
 
       <div className="relative h-4">
@@ -649,13 +649,13 @@ function QualityThreshold({
         />
       </div>
 
-      <div className="flex text-xs font-medium">
+      <div className="flex text-caption font-medium">
         <div className="text-accent/40" style={{ width: `${mediumPercent}%` }}>{lowLabel}</div>
         <div className="text-accent/60 text-center" style={{ width: `${highPercent - mediumPercent}%` }}>{mediumLabel}</div>
         <div className="text-accent text-right flex-1">{highLabel}</div>
       </div>
 
-      <div className="flex justify-between text-xs text-muted-foreground">
+      <div className="flex justify-between text-caption text-muted-foreground">
         <span>{formatValue(min)} {unit}</span>
         <span className="text-accent/60">{formatValue(mediumValue)}</span>
         <span className="text-accent">{formatValue(highValue)}</span>
@@ -688,7 +688,7 @@ function NumberInput({
 
   return (
     <div className="space-y-1">
-      <label htmlFor={inputId} className="block text-xs text-muted-foreground">{label}</label>
+      <label htmlFor={inputId} className="block text-caption text-muted-foreground">{label}</label>
       <Input
         id={inputId}
         inputSize="sm"
@@ -705,7 +705,7 @@ function NumberInput({
         }}
         aria-describedby={hint ? hintId : undefined}
       />
-      {hint && <p id={hintId} className="text-xs text-muted-foreground">{hint}</p>}
+      {hint && <p id={hintId} className="text-caption text-muted-foreground">{hint}</p>}
     </div>
   )
 }
@@ -925,7 +925,7 @@ function HandbrakeGuide({
             onClick={() => setSelectedTier(tab.id)}
             role="tab"
             aria-selected={selectedTier === tab.id}
-            className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-colors ${
+            className={`flex-1 px-3 py-2 text-caption font-medium rounded-md transition-colors ${
               selectedTier === tab.id
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -936,13 +936,13 @@ function HandbrakeGuide({
         ))}
       </div>
 
-      <p className="text-xs text-muted-foreground">{preset.description}</p>
+      <p className="text-caption text-muted-foreground">{preset.description}</p>
 
       {/* Codec Selection */}
       <div className="flex gap-2">
         <button
           onClick={() => setSelectedCodec('svtav1')}
-          className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-colors ${
+          className={`flex-1 px-3 py-2 text-caption font-medium rounded-md transition-colors ${
             selectedCodec === 'svtav1'
               ? 'bg-primary text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -952,7 +952,7 @@ function HandbrakeGuide({
         </button>
         <button
           onClick={() => setSelectedCodec('x265')}
-          className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-colors ${
+          className={`flex-1 px-3 py-2 text-caption font-medium rounded-md transition-colors ${
             selectedCodec === 'x265'
               ? 'bg-primary text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -962,7 +962,7 @@ function HandbrakeGuide({
         </button>
         <button
           onClick={() => setSelectedCodec('x264')}
-          className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-colors ${
+          className={`flex-1 px-3 py-2 text-caption font-medium rounded-md transition-colors ${
             selectedCodec === 'x264'
               ? 'bg-primary text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -973,7 +973,7 @@ function HandbrakeGuide({
       </div>
 
       {/* Codec Info */}
-      <div className="bg-background/50 border border-border/30 rounded-lg p-3 text-xs text-muted-foreground">
+      <div className="bg-background/50 border border-border/30 rounded-lg p-3 text-caption text-muted-foreground">
         {selectedCodec === 'svtav1' && (
           <div><span className="text-foreground font-medium">SVT-AV1</span> — Best quality per bit. ~30% smaller than HEVC at same quality. Slowest to encode. Playback requires a 2018+ device, modern smart TVs, or VLC/Plex. Not supported on older Roku, some budget Android boxes, or Safari before macOS Ventura.</div>
         )}
@@ -988,8 +988,8 @@ function HandbrakeGuide({
       {/* Target Bitrate */}
       <div className="bg-background/50 border border-border/30 rounded-lg p-3">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-foreground">Target for HIGH Quality</span>
-          <span className="text-sm font-mono text-foreground">
+          <span className="text-caption font-medium text-foreground">Target for HIGH Quality</span>
+          <span className="text-label font-mono text-foreground">
             {formatBitrate(adjustedVideoHigh)}+ video / {audioHigh}+ kbps audio
           </span>
         </div>
@@ -997,8 +997,8 @@ function HandbrakeGuide({
 
       {/* Video Settings */}
       <div className="space-y-2">
-        <h4 className="text-xs font-medium text-foreground">Video Encoder Settings</h4>
-        <div className="bg-background/50 rounded-lg p-3 space-y-2 text-xs">
+        <h4 className="text-caption font-medium text-foreground">Video Encoder Settings</h4>
+        <div className="bg-background/50 rounded-lg p-3 space-y-2 text-caption">
           <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Encoder:</span>
@@ -1033,8 +1033,8 @@ function HandbrakeGuide({
 
       {/* Audio Settings */}
       <div className="space-y-2">
-        <h4 className="text-xs font-medium text-foreground">Audio Settings</h4>
-        <div className="bg-background/50 rounded-lg p-3 space-y-1.5 text-xs">
+        <h4 className="text-caption font-medium text-foreground">Audio Settings</h4>
+        <div className="bg-background/50 rounded-lg p-3 space-y-1.5 text-caption">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Primary:</span>
             <span className="text-foreground">{preset.audio.primary}</span>
@@ -1052,8 +1052,8 @@ function HandbrakeGuide({
 
       {/* Tips */}
       <div className="space-y-2">
-        <h4 className="text-xs font-medium text-foreground">Tips for {RESOLUTION_TABS.find(t => t.id === selectedTier)?.label}</h4>
-        <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+        <h4 className="text-caption font-medium text-foreground">Tips for {RESOLUTION_TABS.find(t => t.id === selectedTier)?.label}</h4>
+        <ul className="text-caption text-muted-foreground space-y-1 list-disc list-inside">
           {preset.notes.map((note, i) => (
             <li key={i}>{note}</li>
           ))}
@@ -1062,8 +1062,8 @@ function HandbrakeGuide({
 
       {/* Common Settings */}
       <div className="space-y-2">
-        <h4 className="text-xs font-medium text-foreground">Other Settings</h4>
-        <div className="bg-background/50 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
+        <h4 className="text-caption font-medium text-foreground">Other Settings</h4>
+        <div className="bg-background/50 rounded-lg p-3 text-caption text-muted-foreground space-y-1">
           <div className="flex justify-between">
             <span>Container:</span>
             <span className="text-foreground">MKV (preserves all tracks/chapters)</span>
@@ -1083,7 +1083,7 @@ function HandbrakeGuide({
         </div>
       </div>
 
-      <p className="text-xs text-muted-foreground italic">
+      <p className="text-caption text-muted-foreground italic">
         Based on HandBrake 1.11.2+. Lower RF = higher quality/larger file. SVT-AV1 presets range 1-13
         (lower = slower/better). These settings prioritize visual transparency over file size.
       </p>
@@ -1102,9 +1102,9 @@ function ExtraOptionsCopyable({ extraOptions }: { extraOptions: string }) {
 
   return (
     <div className="space-y-2">
-      <h4 className="text-xs font-medium text-foreground">Extra Options (Advanced)</h4>
+      <h4 className="text-caption font-medium text-foreground">Extra Options (Advanced)</h4>
       <div className="bg-background/50 rounded-lg p-3 flex items-start gap-2">
-        <code className="text-xs text-muted-foreground break-all leading-relaxed block flex-1 select-all">
+        <code className="text-caption text-muted-foreground break-all leading-relaxed block flex-1 select-all">
           {extraOptions}
         </code>
         <button
@@ -1119,7 +1119,7 @@ function ExtraOptionsCopyable({ extraOptions }: { extraOptions: string }) {
           )}
         </button>
       </div>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-caption text-muted-foreground">
         Paste into Handbrake's "Extra Options" field under the Video tab.
       </p>
     </div>

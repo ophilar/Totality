@@ -809,9 +809,9 @@ export function Dashboard({
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm truncate">{item.title}</div>
-          <div className="text-xs text-muted-foreground truncate">{item.year}</div>
-          <div className="text-xs text-muted-foreground mt-1">
+          <div className="font-medium text-label truncate">{item.title}</div>
+          <div className="text-caption text-muted-foreground truncate">{item.year}</div>
+          <div className="text-caption text-muted-foreground mt-1">
             {item.quality_tier} · {item.tier_quality}
           </div>
         </div>
@@ -861,11 +861,11 @@ export function Dashboard({
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm truncate">{item.series_title || item.title}</div>
-          <div className="text-xs text-muted-foreground truncate">
+          <div className="font-medium text-label truncate">{item.series_title || item.title}</div>
+          <div className="text-caption text-muted-foreground truncate">
             S{item.season_number}E{item.episode_number} · {item.title}
           </div>
-          <div className="text-xs text-muted-foreground mt-1">
+          <div className="text-caption text-muted-foreground mt-1">
             {item.quality_tier} · {item.tier_quality}
           </div>
         </div>
@@ -918,9 +918,9 @@ export function Dashboard({
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-sm truncate">{album.title}</div>
-            <div className="text-xs text-muted-foreground truncate">{album.artist_name}</div>
-            <div className="text-xs text-muted-foreground mt-1">
+            <div className="font-medium text-label truncate">{album.title}</div>
+            <div className="text-caption text-muted-foreground truncate">{album.artist_name}</div>
+            <div className="text-caption text-muted-foreground mt-1">
               {formatMusicTier(album.quality_tier)}{album.best_bitrate ? ` · ${Math.round(album.best_bitrate)} kbps` : ''}
             </div>
           </div>
@@ -984,8 +984,8 @@ export function Dashboard({
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-sm truncate">{collection.collection_name}</div>
-            <div className="text-xs text-muted-foreground">
+            <div className="font-medium text-label truncate">{collection.collection_name}</div>
+            <div className="text-caption text-muted-foreground">
               <AnimatedNumber value={collection.owned_movies} />/<AnimatedNumber value={collection.total_movies} /> · <AnimatedNumber value={Math.round(collection.completeness_percentage)} suffix="%" />
             </div>
             <div className="w-full h-1 bg-muted rounded-full mt-1 overflow-hidden">
@@ -1023,13 +1023,13 @@ export function Dashboard({
                 {movie.tmdb_id ? (
                   <button
                     onClick={(e) => { e.stopPropagation(); window.electronAPI.openExternal(`https://www.themoviedb.org/movie/${movie.tmdb_id}`) }}
-                    className="text-sm text-muted-foreground truncate flex-1 text-left hover:text-primary hover:underline cursor-pointer transition-colors"
+                    className="text-label text-muted-foreground truncate flex-1 text-left hover:text-primary hover:underline cursor-pointer transition-colors"
                     title="Open on TMDB"
                   >
                     {movie.title} {movie.year ? `(${movie.year})` : ''}
                   </button>
                 ) : (
-                  <span className="text-sm text-muted-foreground truncate flex-1">
+                  <span className="text-label text-muted-foreground truncate flex-1">
                     {movie.title} {movie.year ? `(${movie.year})` : ''}
                   </span>
                 )}
@@ -1094,8 +1094,8 @@ export function Dashboard({
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-sm truncate">{s.series_title}</div>
-            <div className="text-xs text-muted-foreground">
+            <div className="font-medium text-label truncate">{s.series_title}</div>
+            <div className="text-caption text-muted-foreground">
               <AnimatedNumber value={s.owned_seasons} />/<AnimatedNumber value={s.total_seasons} /> seasons · <AnimatedNumber value={s.owned_episodes} />/<AnimatedNumber value={s.total_episodes} /> eps · <AnimatedNumber value={Math.round(s.completeness_percentage)} suffix="%" />
             </div>
             <div className="w-full h-1 bg-muted rounded-full mt-1 overflow-hidden">
@@ -1119,22 +1119,22 @@ export function Dashboard({
                   {s.tmdb_id ? (
                     <button
                       onClick={(e) => { e.stopPropagation(); window.electronAPI.openExternal(`https://www.themoviedb.org/tv/${s.tmdb_id}/season/${group.seasonNumber}`) }}
-                      className="text-sm text-foreground/80 shrink-0 hover:text-primary hover:underline cursor-pointer transition-colors"
+                      className="text-label text-foreground/80 shrink-0 hover:text-primary hover:underline cursor-pointer transition-colors"
                       title="Open on TMDB"
                     >
                       S{group.seasonNumber}
                     </button>
                   ) : (
-                    <span className="text-sm text-foreground/80 shrink-0">
+                    <span className="text-label text-foreground/80 shrink-0">
                       S{group.seasonNumber}
                     </span>
                   )}
                   {group.isWholeSeason ? (
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-caption text-muted-foreground">
                       All {group.totalEpisodes} episodes
                     </span>
                   ) : (
-                    <span className="text-xs text-muted-foreground truncate">
+                    <span className="text-caption text-muted-foreground truncate">
                       E{group.missingEpisodes.map(ep => ep.episode_number).join(', E')}
                     </span>
                   )}
@@ -1215,8 +1215,8 @@ export function Dashboard({
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-sm truncate">{artist.artist_name}</div>
-            <div className="text-xs text-muted-foreground">
+            <div className="font-medium text-label truncate">{artist.artist_name}</div>
+            <div className="text-caption text-muted-foreground">
               <AnimatedNumber value={ownedReleases} />/<AnimatedNumber value={totalReleases} /> releases · <AnimatedNumber value={Math.round(artist.completeness_percentage)} suffix="%" />
             </div>
             <div className="w-full h-1 bg-muted rounded-full mt-1 overflow-hidden">
@@ -1237,7 +1237,7 @@ export function Dashboard({
               { items: groupedByType.single, label: 'Singles', prefix: 'single' },
             ] as const).filter(g => g.items.length > 0).map(group => (
               <div key={group.prefix}>
-                <div className="py-2 text-xs font-medium text-foreground/70r">
+                <div className="py-2 text-caption font-medium text-foreground/70r">
                   {group.label}
                 </div>
                 <div className="space-y-1">
@@ -1262,13 +1262,13 @@ export function Dashboard({
                       {item.musicbrainz_id ? (
                         <button
                           onClick={(e) => { e.stopPropagation(); window.electronAPI.openExternal(`https://musicbrainz.org/release-group/${item.musicbrainz_id}`) }}
-                          className="text-sm text-muted-foreground truncate flex-1 text-left hover:text-primary hover:underline cursor-pointer transition-colors"
+                          className="text-label text-muted-foreground truncate flex-1 text-left hover:text-primary hover:underline cursor-pointer transition-colors"
                           title="Open on MusicBrainz"
                         >
                           {item.title} {item.year ? `(${item.year})` : ''}
                         </button>
                       ) : (
-                        <span className="text-sm text-muted-foreground truncate flex-1">
+                        <span className="text-label text-muted-foreground truncate flex-1">
                           {item.title} {item.year ? `(${item.year})` : ''}
                         </span>
                       )}
@@ -1413,7 +1413,7 @@ export function Dashboard({
         <div className="flex-1 flex flex-col items-center justify-center py-20 text-center">
           {hasNoSources ? (
             <>
-              <h2 className="text-xl font-medium mb-2">Add a Media Source</h2>
+              <h2 className="text-h3 font-medium mb-2">Add a Media Source</h2>
               <p className="text-muted-foreground max-w-md mb-6">
                 Connect your media library to start tracking quality and completeness.
               </p>
@@ -1429,7 +1429,7 @@ export function Dashboard({
           ) : (
             <>
               <Sparkles className="w-16 h-16 text-accent/50 mb-4" />
-              <h2 className="text-xl font-medium mb-2">All caught up!</h2>
+              <h2 className="text-h3 font-medium mb-2">All caught up!</h2>
               <p className="text-muted-foreground max-w-md">
                 Your library is in great shape. No urgent upgrades needed and all your collections and series are complete.
               </p>
@@ -1447,13 +1447,13 @@ export function Dashboard({
             <div className="bg-sidebar-gradient rounded-2xl shadow-xl p-4">
               <div className="flex items-center gap-2 mb-3">
                 <Library className="w-4 h-4 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground font-medium">Library</span>
+                <span className="text-caption text-muted-foreground font-medium">Library</span>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 {/* Owned */}
                 <div>
-                  <div className="text-xs text-muted-foreground font-medium mb-1.5">Owned</div>
-                  <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  <div className="text-caption text-muted-foreground font-medium mb-1.5">Owned</div>
+                  <div className="flex flex-col gap-1 text-caption text-muted-foreground">
                     {libraryStats && libraryStats.totalMovies > 0 && (
                       <span className="flex items-center gap-1.5"><Film className="w-3 h-3" /><AnimatedNumber value={libraryStats.totalMovies} locale /> movies</span>
                     )}
@@ -1473,8 +1473,8 @@ export function Dashboard({
                 </div>
                 {/* Wishlist */}
                 <div>
-                  <div className="text-xs text-muted-foreground font-medium mb-1.5">Wishlist</div>
-                  <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  <div className="text-caption text-muted-foreground font-medium mb-1.5">Wishlist</div>
+                  <div className="flex flex-col gap-1 text-caption text-muted-foreground">
                     {wishlistCounts.active > 0 ? (
                       <>
                         <span className="flex items-center gap-1.5"><Star className="w-3 h-3" /><AnimatedNumber value={wishlistCounts.active} /> active</span>
@@ -1500,7 +1500,7 @@ export function Dashboard({
             <div className="bg-sidebar-gradient rounded-2xl shadow-xl p-4">
               <div className="flex items-center gap-2 mb-3">
                 <BarChart3 className="w-4 h-4 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground font-medium">Quality</span>
+                <span className="text-caption text-muted-foreground font-medium">Quality</span>
               </div>
               {libraryStats && libraryStats.totalItems > 0 ? (
                 <div className="space-y-3">
@@ -1509,28 +1509,28 @@ export function Dashboard({
                     {libraryStats.totalMovies > 0 && (
                       <div>
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs text-muted-foreground flex items-center gap-1"><Film className="w-3 h-3" />Movies</span>
-                          <AnimatedNumber value={Math.round(libraryStats.movieAverageQualityScore || 0)} className="text-xs font-bold" />
+                          <span className="text-caption text-muted-foreground flex items-center gap-1"><Film className="w-3 h-3" />Movies</span>
+                          <AnimatedNumber value={Math.round(libraryStats.movieAverageQualityScore || 0)} className="text-caption font-semibold" />
                         </div>
                         <div className="h-1 bg-muted rounded-full overflow-hidden">
                           <div className="h-full bg-primary rounded-full transition-[width] duration-500" style={{ width: `${libraryStats.movieAverageQualityScore || 0}%` }} />
                         </div>
                         {libraryStats.movieNeedsUpgradeCount > 0 && (
-                          <div className="text-xs text-muted-foreground mt-0.5"><AnimatedNumber value={libraryStats.movieNeedsUpgradeCount} /> upgrades</div>
+                          <div className="text-caption text-muted-foreground mt-0.5"><AnimatedNumber value={libraryStats.movieNeedsUpgradeCount} /> upgrades</div>
                         )}
                       </div>
                     )}
                     {libraryStats.totalEpisodes > 0 && (
                       <div>
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs text-muted-foreground flex items-center gap-1"><Tv className="w-3 h-3" />TV</span>
-                          <AnimatedNumber value={Math.round(libraryStats.tvAverageQualityScore || 0)} className="text-xs font-bold" />
+                          <span className="text-caption text-muted-foreground flex items-center gap-1"><Tv className="w-3 h-3" />TV</span>
+                          <AnimatedNumber value={Math.round(libraryStats.tvAverageQualityScore || 0)} className="text-caption font-semibold" />
                         </div>
                         <div className="h-1 bg-muted rounded-full overflow-hidden">
                           <div className="h-full bg-primary rounded-full transition-[width] duration-500" style={{ width: `${libraryStats.tvAverageQualityScore || 0}%` }} />
                         </div>
                         {libraryStats.tvNeedsUpgradeCount > 0 && (
-                          <div className="text-xs text-muted-foreground mt-0.5"><AnimatedNumber value={libraryStats.tvNeedsUpgradeCount} /> upgrades</div>
+                          <div className="text-caption text-muted-foreground mt-0.5"><AnimatedNumber value={libraryStats.tvNeedsUpgradeCount} /> upgrades</div>
                         )}
                       </div>
                     )}
@@ -1543,13 +1543,13 @@ export function Dashboard({
                       return (
                         <div>
                           <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs text-muted-foreground flex items-center gap-1"><Music className="w-3 h-3" />Music</span>
-                            <AnimatedNumber value={pct} suffix="%" className="text-xs font-bold" />
+                            <span className="text-caption text-muted-foreground flex items-center gap-1"><Music className="w-3 h-3" />Music</span>
+                            <AnimatedNumber value={pct} suffix="%" className="text-caption font-semibold" />
                           </div>
                           <div className="h-1 bg-muted rounded-full overflow-hidden">
                             <div className="h-full bg-primary rounded-full transition-[width] duration-500" style={{ width: `${pct}%` }} />
                           </div>
-                          <div className="text-xs text-muted-foreground mt-0.5"><AnimatedNumber value={lossless} /> lossless</div>
+                          <div className="text-caption text-muted-foreground mt-0.5"><AnimatedNumber value={lossless} /> lossless</div>
                         </div>
                       )
                     })()}
@@ -1559,12 +1559,12 @@ export function Dashboard({
                   <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/20">
                     {/* Resolution breakdown */}
                     <div>
-                      <div className="text-xs text-muted-foreground font-medium mb-1">Resolution</div>
+                      <div className="text-caption text-muted-foreground font-medium mb-1">Resolution</div>
                       {storageAnalytics?.byTier.map(t => {
                         const total = libraryStats.totalItems || 1
                         const pct = Math.round(t.count / total * 100)
                         return (
-                          <div key={t.tier} className="flex items-center gap-1.5 text-xs mb-0.5">
+                          <div key={t.tier} className="flex items-center gap-1.5 text-caption mb-0.5">
                             <span className="w-8 text-muted-foreground">{t.tier}</span>
                             <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
                               <div className="h-full bg-primary/60 rounded-full" style={{ width: `${pct}%` }} />
@@ -1576,7 +1576,7 @@ export function Dashboard({
                     </div>
                     {/* Quality level breakdown */}
                     <div>
-                      <div className="text-xs text-muted-foreground font-medium mb-1">Level</div>
+                      <div className="text-caption text-muted-foreground font-medium mb-1">Level</div>
                       {qualityDistribution ? (() => {
                         const q = qualityDistribution.byQuality
                         const total = q.high + q.medium + q.low || 1
@@ -1584,7 +1584,7 @@ export function Dashboard({
                           const count = q[level as keyof typeof q]
                           const pct = Math.round(count / total * 100)
                           return (
-                            <div key={level} className="flex items-center gap-1.5 text-xs mb-0.5">
+                            <div key={level} className="flex items-center gap-1.5 text-caption mb-0.5">
                               <span className="w-8 text-muted-foreground">{level.charAt(0).toUpperCase() + level.slice(1, 3)}</span>
                               <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
                                 <div className="h-full bg-primary/60 rounded-full" style={{ width: `${pct}%` }} />
@@ -1598,16 +1598,16 @@ export function Dashboard({
                   </div>
 
                 </div>
-              ) : <div className="text-2xl font-bold text-muted-foreground">—</div>}
+              ) : <div className="text-h2 font-semibold text-muted-foreground">—</div>}
             </div>
 
             {/* Storage & Codecs */}
             <div className="bg-sidebar-gradient rounded-2xl shadow-xl p-4">
               <div className="flex items-center gap-2 mb-3">
                 <HardDrive className="w-4 h-4 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground font-medium">Storage</span>
+                <span className="text-caption text-muted-foreground font-medium">Storage</span>
                 {storageAnalytics && (
-                  <span className="text-xs text-muted-foreground ml-auto">
+                  <span className="text-caption text-muted-foreground ml-auto">
                     {storageAnalytics.totalSize >= 1e12
                       ? `${(storageAnalytics.totalSize / 1e12).toFixed(1)} TB`
                       : `${(storageAnalytics.totalSize / 1e9).toFixed(0)} GB`}
@@ -1618,10 +1618,10 @@ export function Dashboard({
                 <div className="grid grid-cols-2 gap-4">
                   {/* Video Codecs */}
                   <div>
-                    <div className="text-xs text-muted-foreground font-medium mb-1.5">Video</div>
+                    <div className="text-caption text-muted-foreground font-medium mb-1.5">Video</div>
                     <div className="flex flex-col gap-1">
                       {storageAnalytics.byCodec.slice(0, 4).map(c => (
-                        <div key={c.codec} className="flex items-center justify-between text-xs">
+                        <div key={c.codec} className="flex items-center justify-between text-caption">
                           <span className="text-muted-foreground font-mono">{c.codec}</span>
                           <span className="text-muted-foreground">{c.count.toLocaleString()}</span>
                         </div>
@@ -1630,21 +1630,21 @@ export function Dashboard({
                   </div>
                   {/* Audio Codecs */}
                   <div>
-                    <div className="text-xs text-muted-foreground font-medium mb-1.5">Audio</div>
+                    <div className="text-caption text-muted-foreground font-medium mb-1.5">Audio</div>
                     <div className="flex flex-col gap-1">
                       {(storageAnalytics.music?.byCodec || []).slice(0, 4).map(c => (
-                        <div key={c.codec} className="flex items-center justify-between text-xs">
+                        <div key={c.codec} className="flex items-center justify-between text-caption">
                           <span className="text-muted-foreground font-mono">{c.codec}</span>
                           <span className="text-muted-foreground">{c.count.toLocaleString()}</span>
                         </div>
                       ))}
                       {(!storageAnalytics.music || storageAnalytics.music.totalTracks === 0) && (
-                        <span className="text-xs text-muted-foreground/40">No music</span>
+                        <span className="text-caption text-muted-foreground/40">No music</span>
                       )}
                     </div>
                   </div>
                 </div>
-              ) : <div className="text-2xl font-bold text-muted-foreground">—</div>}
+              ) : <div className="text-h2 font-semibold text-muted-foreground">—</div>}
             </div>
           </div>
 
@@ -1662,9 +1662,9 @@ export function Dashboard({
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <CircleFadingArrowUp className="w-4 h-4 text-muted-foreground" />
-                  <h2 className="text-sm font-semibold text-foreground">Upgrades</h2>
+                  <h2 className="text-label font-semibold text-foreground">Upgrades</h2>
                   {duplicateCount > 0 && (
-                    <span className="text-xs bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded-full font-medium"
+                    <span className="text-caption bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded-full font-medium"
                       title={`${duplicateCount} duplicate ${duplicateCount === 1 ? 'movie' : 'movies'} across sources`}>
                       {duplicateCount} dupe{duplicateCount !== 1 ? 's' : ''}
                     </span>
@@ -1706,7 +1706,7 @@ export function Dashboard({
                   >
                     <ArrowUpDown className={`w-3.5 h-3.5 ${upgradeSortDir === 'desc' ? 'rotate-180' : ''}`} />
                   </button>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-caption text-muted-foreground">
                     {upgradeTab === 'movies' ? movieUpgrades.length : upgradeTab === 'tv' ? tvUpgrades.length : musicUpgrades.length}
                   </span>
                 </div>
@@ -1717,7 +1717,7 @@ export function Dashboard({
                   {hasMovies && (
                     <button
                       onClick={() => setUpgradeTab('movies')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-caption font-medium transition-colors ${
                         upgradeTab === 'movies'
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-muted/50 text-muted-foreground hover:bg-muted'
@@ -1730,7 +1730,7 @@ export function Dashboard({
                   {hasTV && (
                     <button
                       onClick={() => setUpgradeTab('tv')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-caption font-medium transition-colors ${
                         upgradeTab === 'tv'
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-muted/50 text-muted-foreground hover:bg-muted'
@@ -1743,7 +1743,7 @@ export function Dashboard({
                   {hasMusic && (
                     <button
                       onClick={() => setUpgradeTab('music')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-caption font-medium transition-colors ${
                         upgradeTab === 'music'
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-muted/50 text-muted-foreground hover:bg-muted'
@@ -1761,7 +1761,7 @@ export function Dashboard({
                 {/* Movies Tab Content */}
                 {upgradeTab === 'movies' && (
                   movieUpgrades.length === 0 ? (
-                    <div className="p-4 text-sm text-muted-foreground text-center">
+                    <div className="p-4 text-label text-muted-foreground text-center">
                       No movie upgrades needed
                     </div>
                   ) : (
@@ -1778,7 +1778,7 @@ export function Dashboard({
                 {/* TV Tab Content */}
                 {upgradeTab === 'tv' && (
                   tvUpgrades.length === 0 ? (
-                    <div className="p-4 text-sm text-muted-foreground text-center">
+                    <div className="p-4 text-label text-muted-foreground text-center">
                       No TV upgrades needed
                     </div>
                   ) : (
@@ -1795,7 +1795,7 @@ export function Dashboard({
                 {/* Music Tab Content */}
                 {upgradeTab === 'music' && (
                   musicUpgrades.length === 0 ? (
-                    <div className="p-4 text-sm text-muted-foreground text-center">
+                    <div className="p-4 text-label text-muted-foreground text-center">
                       No music upgrades needed
                     </div>
                   ) : (
@@ -1854,7 +1854,7 @@ export function Dashboard({
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <ListChecks className="w-4 h-4 text-muted-foreground" />
-                      <h2 className="text-sm font-semibold text-foreground">Completeness</h2>
+                      <h2 className="text-label font-semibold text-foreground">Completeness</h2>
                     </div>
                     <div className="flex items-center gap-2">
                       {sortDropdown}
@@ -1865,7 +1865,7 @@ export function Dashboard({
                       >
                         <ArrowUpDown className={`w-3.5 h-3.5 ${completenessSortDir === 'desc' ? 'rotate-180' : ''}`} />
                       </button>
-                      <span className="text-xs text-muted-foreground">{activeCount}</span>
+                      <span className="text-caption text-muted-foreground">{activeCount}</span>
                     </div>
                   </div>
                   {tabs.length > 1 && (
@@ -1873,7 +1873,7 @@ export function Dashboard({
                       {tabs.map(tab => (
                         <button key={tab.key}
                           onClick={() => setCompletenessTab(tab.key)}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-caption font-medium transition-colors ${
                             activeTab === tab.key
                               ? 'bg-primary text-primary-foreground'
                               : 'bg-muted/50 text-muted-foreground hover:bg-muted'
@@ -1890,7 +1890,7 @@ export function Dashboard({
                     {/* Collections tab */}
                     {activeTab === 'collections' && (
                       collections.length === 0 ? (
-                        <div className="p-4 text-sm text-muted-foreground text-center">All collections complete</div>
+                        <div className="p-4 text-label text-muted-foreground text-center">All collections complete</div>
                       ) : (
                         <VariableSizeList ref={collectionsListInstanceRef} height={completenessListHeight} itemCount={collections.length} itemSize={getCollectionRowHeight} width="100%">
                           {CollectionRow}
@@ -1900,7 +1900,7 @@ export function Dashboard({
                     {/* Series tab */}
                     {activeTab === 'series' && (
                       series.length === 0 ? (
-                        <div className="p-4 text-sm text-muted-foreground text-center">All series complete</div>
+                        <div className="p-4 text-label text-muted-foreground text-center">All series complete</div>
                       ) : (
                         <VariableSizeList ref={seriesListInstanceRef} height={completenessListHeight} itemCount={series.length} itemSize={getSeriesRowHeight} width="100%">
                           {SeriesRow}
@@ -1910,7 +1910,7 @@ export function Dashboard({
                     {/* Music tab */}
                     {activeTab === 'music' && (
                       artists.length === 0 ? (
-                        <div className="p-4 text-sm text-muted-foreground text-center">All artists complete</div>
+                        <div className="p-4 text-label text-muted-foreground text-center">All artists complete</div>
                       ) : (
                         <VariableSizeList ref={artistsListInstanceRef} height={completenessListHeight} itemCount={artists.length} itemSize={getArtistRowHeight} width="100%">
                           {ArtistRow}
@@ -1929,7 +1929,7 @@ export function Dashboard({
                               value={personSearchQuery}
                               onChange={(e) => handlePersonSearch(e.target.value)}
                               placeholder="Track a director or actor..."
-                              className="w-full pl-8 pr-8 py-1.5 bg-background/50 border border-border/30 rounded-lg text-xs focus:outline-hidden focus:ring-1 focus:ring-primary"
+                              className="w-full pl-8 pr-8 py-1.5 bg-background/50 border border-border/30 rounded-lg text-caption focus:outline-hidden focus:ring-1 focus:ring-primary"
                             />
                             {personSearching && <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-muted-foreground" />}
                             {!personSearching && personSearchQuery && (
@@ -1956,8 +1956,8 @@ export function Dashboard({
                                       </div>
                                     )}
                                     <div className="flex-1 min-w-0">
-                                      <div className="text-xs font-medium truncate">{person.name}</div>
-                                      <div className="text-xs text-muted-foreground">{roles.map(r => roleLabels[r] || r).join(' · ')}</div>
+                                      <div className="text-caption font-medium truncate">{person.name}</div>
+                                      <div className="text-caption text-muted-foreground">{roles.map(r => roleLabels[r] || r).join(' · ')}</div>
                                     </div>
                                     {isAdding ? (
                                       <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground shrink-0" />
@@ -1965,10 +1965,10 @@ export function Dashboard({
                                       <div className="flex gap-1 shrink-0 flex-wrap justify-end">
                                         {roles.map(role => (
                                           trackedRoles.includes(role) ? (
-                                            <span key={role} className="px-1.5 py-0.5 text-xs text-muted-foreground/40">{roleLabels[role] || role} ✓</span>
+                                            <span key={role} className="px-1.5 py-0.5 text-caption text-muted-foreground/40">{roleLabels[role] || role} ✓</span>
                                           ) : (
                                             <button key={role} onClick={() => handleAddPerson(person.name, role as 'director' | 'actor')}
-                                              className="px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors"
+                                              className="px-1.5 py-0.5 text-caption text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors"
                                               title={`Track as ${role}`}>{roleLabels[role] || role}</button>
                                           )
                                         ))}
@@ -2002,8 +2002,8 @@ export function Dashboard({
                                   </div>
                                 )}
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium truncate">{person.person_name}</p>
-                                  <p className="text-xs text-muted-foreground">
+                                  <p className="text-label font-medium truncate">{person.person_name}</p>
+                                  <p className="text-caption text-muted-foreground">
                                     <span className="capitalize">{person.person_type}</span> · {person.owned_movies}/{adjustedTotal} ({adjustedPct}%)
                                   </p>
                                 </div>
@@ -2028,8 +2028,8 @@ export function Dashboard({
                                         )}
                                       </div>
                                       <div className="flex-1 min-w-0">
-                                        <p className="text-xs font-medium truncate">{movie.title}</p>
-                                        {movie.year && <p className="text-xs text-muted-foreground">{movie.year}</p>}
+                                        <p className="text-caption font-medium truncate">{movie.title}</p>
+                                        {movie.year && <p className="text-caption text-muted-foreground">{movie.year}</p>}
                                       </div>
                                       <AddToWishlistButton mediaType="movie" title={movie.title} year={movie.year || undefined} tmdbId={movie.tmdb_id} compact />
                                       <button

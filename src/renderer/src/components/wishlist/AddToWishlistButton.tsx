@@ -178,7 +178,7 @@ export function AddToWishlistButton({
       onClick={handleToggle}
       disabled={isLoading}
       title={isInWishlist ? removeLabel : buttonLabel}
-      className={`inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm disabled:opacity-50 transition-colors ${
+      className={`inline-flex items-center gap-2 px-3 py-2 rounded-md text-label disabled:opacity-50 transition-colors ${
         isInWishlist
           ? 'bg-muted/50 text-foreground hover:bg-muted border border-border'
           : 'bg-primary text-primary-foreground hover:bg-primary/90'

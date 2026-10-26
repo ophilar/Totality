@@ -252,11 +252,11 @@ export function MatchFixModal({
         <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
           <div className="min-w-0 flex-1 mr-4">
             <h2 className="text-lg font-semibold">Fix {getTypeLabel()} Match</h2>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-label text-muted-foreground">
               Current: <span className="text-foreground">{currentTitle}</span>
             </p>
             {filePath && (
-              <p className="text-xs text-muted-foreground/70 truncate mt-1" title={filePath}>
+              <p className="text-caption text-muted-foreground/70 truncate mt-1" title={filePath}>
                 {filePath}
               </p>
             )}
@@ -279,14 +279,14 @@ export function MatchFixModal({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={`Search for ${getTypeLabel().toLowerCase()}...`}
-                className="w-full pl-10 pr-4 py-2 bg-background border border-border rounded-lg text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
+                className="w-full pl-10 pr-4 py-2 bg-background border border-border rounded-lg text-label focus:outline-hidden focus:ring-2 focus:ring-primary"
                 autoFocus
               />
             </div>
             <button
               onClick={handleSearch}
               disabled={isSearching || !searchQuery.trim()}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-label font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {isSearching ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -298,7 +298,7 @@ export function MatchFixModal({
           </div>
 
           {error && (
-            <p className="mt-2 text-sm text-red-500">{error}</p>
+            <p className="mt-2 text-label text-red-500">{error}</p>
           )}
         </div>
 
@@ -338,7 +338,7 @@ export function MatchFixModal({
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">
+                      <div className="w-full h-full flex items-center justify-center text-muted-foreground text-caption">
                         No Image
                       </div>
                     )}
@@ -353,7 +353,7 @@ export function MatchFixModal({
                       )}
                     </div>
 
-                    <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-3 mt-1 text-label text-muted-foreground">
                       {year && (
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
@@ -372,7 +372,7 @@ export function MatchFixModal({
                     </div>
 
                     {'overview' in result && result.overview && (
-                      <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                      <p className="mt-1 text-caption text-muted-foreground line-clamp-2">
                         {result.overview}
                       </p>
                     )}
@@ -387,14 +387,14 @@ export function MatchFixModal({
         <div className="flex items-center justify-end gap-3 p-4 border-t border-border/30">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-muted transition-colors"
+            className="px-4 py-2 rounded-lg text-label font-medium hover:bg-muted transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleFixMatch}
             disabled={!selectedResult || isFixing}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-label font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {isFixing ? (
               <Loader2 className="w-4 h-4 animate-spin" />

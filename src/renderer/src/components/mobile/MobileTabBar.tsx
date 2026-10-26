@@ -31,14 +31,14 @@ export function MobileTabBar({ activeTab, onTabChange, onSearchOpen }: MobileTab
               role="tab"
               aria-selected={active}
               aria-label={label}
-              className={`flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[52px] rounded-2xl text-sm font-medium transition-colors ${
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[52px] rounded-2xl text-label font-medium transition-colors ${
                 active
                   ? 'bg-white text-black'
                   : 'text-white hover:bg-white/10'
               }`}
             >
               <Icon className="w-5 h-5" />
-              <span className="text-xs">{label}</span>
+              <span className="text-caption">{label}</span>
             </button>
           )
         })}

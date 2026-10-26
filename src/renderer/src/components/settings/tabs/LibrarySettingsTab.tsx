@@ -89,10 +89,10 @@ function SettingsCard({
         <div className="shrink-0 text-muted-foreground">{icon}</div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-medium text-sm">{title}</span>
-            <span className="text-xs text-muted-foreground">{statusText}</span>
+            <span className="font-medium text-label">{title}</span>
+            <span className="text-caption text-muted-foreground">{statusText}</span>
           </div>
-          <p className="text-xs text-muted-foreground truncate">{description}</p>
+          <p className="text-caption text-muted-foreground truncate">{description}</p>
         </div>
         <ChevronDown
           className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${
@@ -267,7 +267,7 @@ export function LibrarySettingsTab() {
     <div className="p-6 space-y-5 overflow-y-auto h-full">
       {/* Header */}
       <div className="mb-4">
-        <p className="text-xs text-muted-foreground">
+        <p className="text-caption text-muted-foreground">
           Configure library analysis preferences and exclusions.
         </p>
       </div>
@@ -289,14 +289,14 @@ export function LibrarySettingsTab() {
         <div className="space-y-4">
           {/* Completeness Options */}
           <div className="space-y-2">
-            <p className="text-xs font-medium text-foreground">Completeness</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-caption font-medium text-foreground">Completeness</p>
+            <p className="text-caption text-muted-foreground">
               Configure how completeness analysis works across your libraries.
               Changes take effect on next analysis run.
             </p>
             <div className="bg-background/50 rounded-lg divide-y divide-border/30">
               <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm text-foreground">Include EPs</span>
+                <span className="text-label text-foreground">Include EPs</span>
                 <Toggle
                   checked={includeEps}
                   onChange={async (checked) => {
@@ -309,7 +309,7 @@ export function LibrarySettingsTab() {
                 />
               </div>
               <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm text-foreground">Include Singles</span>
+                <span className="text-label text-foreground">Include Singles</span>
                 <Toggle
                   checked={includeSingles}
                   onChange={async (checked) => {
@@ -326,12 +326,12 @@ export function LibrarySettingsTab() {
 
           {/* TV Shows */}
           <div className="space-y-2">
-            <p className="text-xs font-medium text-foreground">TV Shows</p>
+            <p className="text-caption font-medium text-foreground">TV Shows</p>
             <div className="bg-background/50 rounded-lg divide-y divide-border/30">
               <div className="flex items-start justify-between px-4 py-3 gap-4">
                 <div className="flex-1 min-w-0">
-                  <span className="text-sm text-foreground">Exclude seasons I have nothing of</span>
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                  <span className="text-label text-foreground">Exclude seasons I have nothing of</span>
+                  <p className="text-caption text-muted-foreground mt-0.5">
                     Seasons where you own 0 episodes are removed from completion counts. Takes effect immediately.
                   </p>
                 </div>
@@ -352,12 +352,12 @@ export function LibrarySettingsTab() {
 
           {/* Movie Collections */}
           <div className="space-y-2">
-            <p className="text-xs font-medium text-foreground">Movie Collections</p>
+            <p className="text-caption font-medium text-foreground">Movie Collections</p>
             <div className="bg-background/50 rounded-lg divide-y divide-border/30">
               <div className="flex items-start justify-between px-4 py-3 gap-4">
                 <div className="flex-1 min-w-0">
-                  <span className="text-sm text-foreground">Exclude recently released films</span>
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                  <span className="text-label text-foreground">Exclude recently released films</span>
+                  <p className="text-caption text-muted-foreground mt-0.5">
                     Films released within this window (e.g. still in cinemas) are hidden from missing lists. Only applies to collections scanned after enabling.
                   </p>
                 </div>
@@ -372,7 +372,7 @@ export function LibrarySettingsTab() {
                     )
                     window.dispatchEvent(new CustomEvent('exclusions-changed'))
                   }}
-                  className="shrink-0 text-sm bg-background border border-border/50 rounded-md px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="shrink-0 text-label bg-background border border-border/50 rounded-md px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                 >
                   {THEATRICAL_LAG_OPTIONS.map(opt => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -384,8 +384,8 @@ export function LibrarySettingsTab() {
 
           {/* Managed Exclusions */}
           <div className="space-y-2">
-            <p className="text-xs font-medium text-foreground">Managed Exclusions</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-caption font-medium text-foreground">Managed Exclusions</p>
+            <p className="text-caption text-muted-foreground">
               {totalExclusions === 0
                 ? 'Items you dismiss will appear here.'
                 : `${totalExclusions} dismissed item${totalExclusions !== 1 ? 's' : ''}. Remove items to see them again.`}
@@ -405,9 +405,9 @@ export function LibrarySettingsTab() {
                     >
                       <div className="flex items-center gap-3">
                         <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
-                        <span className="text-sm text-foreground">{section.label}</span>
+                        <span className="text-label text-foreground">{section.label}</span>
                         {items.length > 0 && (
-                          <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
+                          <span className="text-caption text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
                             {items.length}
                           </span>
                         )}
@@ -422,7 +422,7 @@ export function LibrarySettingsTab() {
                     {isExpanded && (
                       <div className="border-t border-border/30">
                         {items.length === 0 ? (
-                          <p className="px-4 py-3 text-xs text-muted-foreground italic">
+                          <p className="px-4 py-3 text-caption text-muted-foreground italic">
                             No dismissed items
                           </p>
                         ) : (
@@ -431,7 +431,7 @@ export function LibrarySettingsTab() {
                               <button
                                 type="button"
                                 onClick={() => handleClearAll(section.type)}
-                                className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+                                className="text-caption text-muted-foreground hover:text-destructive transition-colors"
                               >
                                 Clear All
                               </button>
@@ -442,7 +442,7 @@ export function LibrarySettingsTab() {
                                   key={item.id}
                                   className="flex items-center justify-between py-1.5 group"
                                 >
-                                  <span className="text-xs text-foreground truncate mr-2">
+                                  <span className="text-caption text-foreground truncate mr-2">
                                     {item.title || item.reference_key || 'Unknown item'}
                                   </span>
                                   <button

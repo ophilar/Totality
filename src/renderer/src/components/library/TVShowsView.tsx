@@ -80,7 +80,7 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
         {/* Source badge */}
         {showSourceBadge && sourceType && (
           <div
-            className={`absolute bottom-0 right-0 ${providerColors[sourceType] || 'bg-gray-500'} text-white text-xs font-bold px-1 py-0.5 rounded`}
+            className={`absolute bottom-0 right-0 ${providerColors[sourceType] || 'bg-gray-500'} text-white text-caption font-semibold px-1 py-0.5 rounded`}
           >
             {sourceType.charAt(0).toUpperCase()}
           </div>
@@ -89,14 +89,14 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
 
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <h4 className="font-semibold text-sm truncate">{show.series_title}</h4>
-        <p className="text-xs text-muted-foreground mt-0.5">
+        <h4 className="font-semibold text-label truncate">{show.series_title}</h4>
+        <p className="text-caption text-muted-foreground mt-0.5">
           {seasonCount} {seasonCount === 1 ? 'Season' : 'Seasons'} • {totalEpisodes} Episodes
           {completenessData?.status && ` • ${getStatusBadge(completenessData.status)?.text || completenessData.status}`}
         </p>
         {completenessData && (
           <div className="mt-2">
-            <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded">
+            <span className="px-2 py-0.5 text-caption font-medium bg-foreground text-background rounded">
               {completenessData.owned_episodes}/{completenessData.total_episodes}
             </span>
           </div>
@@ -206,12 +206,12 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, isMobil
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-muted-foreground shrink-0">
+          <span className="text-label font-semibold text-muted-foreground shrink-0">
             E{episode.episode_number}
           </span>
           <h4 className="font-semibold truncate">{episode.title}</h4>
         </div>
-        <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1 mt-0.5 text-caption text-muted-foreground">
           <span>{episode.resolution} • {(episode.video_bitrate / 1000).toFixed(1)} Mbps • {episode.audio_channels}.0 Audio</span>
           {needsUpgrade && (
             <>
@@ -452,8 +452,8 @@ export function TVShowsView({
       return (
         <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
           <TvPlaceholder className="w-20 h-20 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground text-lg">No TV shows found</p>
-          <p className="text-sm text-muted-foreground mt-2">
+          <p className="text-muted-foreground text-title">No TV shows found</p>
+          <p className="text-label text-muted-foreground mt-2">
             Scan a TV library from the sidebar to get started
           </p>
         </div>
@@ -461,7 +461,7 @@ export function TVShowsView({
     }
 
     const statsBar = (
-      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+      <div className="flex items-center gap-4 text-label text-muted-foreground">
         <span><AnimatedNumber value={totalShowCount} locale /> Shows</span>
         <span className="text-muted-foreground/50">•</span>
         <span>{totalEpisodeCount.toLocaleString()} Episodes</span>
@@ -470,7 +470,7 @@ export function TVShowsView({
             <select
               value={tvSortBy}
               onChange={(e) => onTvSortChange(e.target.value)}
-              className="bg-transparent text-xs text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground transition-colors"
+              className="bg-transparent text-caption text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground transition-colors"
             >
               <option value="title">Title</option>
               <option value="play_count">Most Watched</option>
@@ -495,7 +495,7 @@ export function TVShowsView({
           <div ref={showSentinelRef} className="h-1" />
           {showsLoading && <div className="flex justify-center py-4"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>}
           {totalShowCount > 0 && (
-            <div className="text-center text-sm text-muted-foreground py-2">
+            <div className="text-center text-label text-muted-foreground py-2">
               {shows.length} of {totalShowCount} TV shows
             </div>
           )}
@@ -519,7 +519,7 @@ export function TVShowsView({
         <div ref={showSentinelRef} className="h-1" />
         {showsLoading && <div className="flex justify-center py-4"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>}
         {totalShowCount > 0 && (
-          <div className="text-center text-sm text-muted-foreground py-2">
+          <div className="text-center text-label text-muted-foreground py-2">
             {shows.length} of {totalShowCount} TV shows
           </div>
         )}
@@ -541,7 +541,7 @@ export function TVShowsView({
     if (!selectedShowData) {
       return (
         <div className="flex flex-col items-center justify-center min-h-[40vh] text-center">
-          <button onClick={handleBack} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4">
+          <button onClick={handleBack} className="flex items-center gap-2 text-label text-muted-foreground hover:text-foreground mb-4">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
             Back to TV Shows
           </button>
@@ -571,7 +571,7 @@ export function TVShowsView({
         {/* Breadcrumb */}
         <button
           onClick={handleBack}
-          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+          className="flex items-center gap-2 text-label text-muted-foreground hover:text-foreground"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -600,7 +600,7 @@ export function TVShowsView({
           <div className="flex-1 min-w-0">
             {/* Title */}
             <div className="flex items-center gap-1.5">
-              <h3 className={`${isMobile ? 'text-lg' : 'text-3xl'} font-bold`}>{selectedShowData.title}</h3>
+              <h3 className={`${isMobile ? 'text-title' : 'text-h1'} font-semibold`}>{selectedShowData.title}</h3>
               <button
                 onClick={(e) => {
                   e.stopPropagation()
@@ -616,7 +616,7 @@ export function TVShowsView({
             </div>
 
             {/* Metadata line */}
-            <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 mt-1 text-label text-muted-foreground">
               <span>{ownedSeasons.length} of {totalSeasons} Seasons</span>
               {completenessData?.status && (
                 <>
@@ -650,12 +650,12 @@ export function TVShowsView({
             {/* Overview */}
             {showOverview && (
               <div className="mt-3 max-w-2xl">
-                <p className={`text-sm text-muted-foreground leading-relaxed ${showOverviewExpanded ? '' : 'line-clamp-3'}`}>
+                <p className={`text-label text-muted-foreground leading-relaxed ${showOverviewExpanded ? '' : 'line-clamp-3'}`}>
                   {showOverview}
                 </p>
                 <button
                   onClick={() => setShowOverviewExpanded(!showOverviewExpanded)}
-                  className="flex items-center gap-1 text-sm text-primary hover:text-primary/80 mt-1 transition-colors"
+                  className="flex items-center gap-1 text-label text-primary hover:text-primary/80 mt-1 transition-colors"
                 >
                   {showOverviewExpanded ? (
                     <><span>Less</span><ChevronUp className="w-4 h-4" /></>
@@ -742,7 +742,7 @@ export function TVShowsView({
         {/* Breadcrumb */}
         <button
           onClick={handleBack}
-          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+          className="flex items-center gap-2 text-label text-muted-foreground hover:text-foreground"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -750,20 +750,20 @@ export function TVShowsView({
           Back to {selectedShowData.title}
         </button>
 
-        <h3 className="text-xl font-bold">
+        <h3 className="text-h3 font-semibold">
           {selectedShowData.title} - {formatSeasonLabel(selectedSeason!)}
         </h3>
 
         {/* Episode filters */}
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Resolution</span>
+            <span className="text-caption text-muted-foreground">Resolution</span>
             <div className="flex gap-1">
               {(['all', '4K', '1080p', '720p', 'SD'] as const).map((tier) => (
                 <button
                   key={tier}
                   onClick={() => setEpisodeTierFilter(tier)}
-                  className={`px-2.5 py-1 rounded-md text-xs transition-colors ${
+                  className={`px-2.5 py-1 rounded-md text-caption transition-colors ${
                     episodeTierFilter === tier
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-card text-muted-foreground hover:bg-muted'
@@ -776,13 +776,13 @@ export function TVShowsView({
           </div>
           <div className="h-6 w-px bg-border/50" />
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Quality</span>
+            <span className="text-caption text-muted-foreground">Quality</span>
             <div className="flex gap-1">
               {(['all', 'high', 'medium', 'low'] as const).map((quality) => (
                 <button
                   key={quality}
                   onClick={() => setEpisodeQualityFilter(quality)}
-                  className={`px-2.5 py-1 rounded-md text-xs transition-colors ${
+                  className={`px-2.5 py-1 rounded-md text-caption transition-colors ${
                     episodeQualityFilter === quality
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-card text-muted-foreground hover:bg-muted'
@@ -794,7 +794,7 @@ export function TVShowsView({
             </div>
           </div>
           {(episodeTierFilter !== 'all' || episodeQualityFilter !== 'all') && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-caption text-muted-foreground">
               {ownedEpisodes.length} of {allOwnedEpisodes.length} episodes
             </span>
           )}
@@ -916,7 +916,7 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
         {/* Source Badge */}
         {showSourceBadge && sourceType && (
           <div
-            className={`absolute bottom-2 left-2 ${providerColors[sourceType] || 'bg-gray-500'} text-white text-xs font-bold px-1.5 py-0.5 rounded shadow-md`}
+            className={`absolute bottom-2 left-2 ${providerColors[sourceType] || 'bg-gray-500'} text-white text-caption font-semibold px-1.5 py-0.5 rounded shadow-md`}
             title={sourceType.charAt(0).toUpperCase() + sourceType.slice(1)}
           >
             {sourceType.charAt(0).toUpperCase()}
@@ -941,8 +941,8 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
       {/* Title and info below poster */}
       <div className="pt-2 flex gap-2 items-start">
         <div className="flex-1 min-w-0">
-          <h4 className="font-medium text-sm truncate">{show.series_title}</h4>
-          <p className="text-xs text-muted-foreground">
+          <h4 className="font-medium text-label truncate">{show.series_title}</h4>
+          <p className="text-caption text-muted-foreground">
             {show.season_count} {show.season_count === 1 ? 'Season' : 'Seasons'} • {totalEpisodes} Episodes
           </p>
         </div>
@@ -952,14 +952,14 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
             title={`${completenessData.owned_episodes} of ${completenessData.total_episodes} episodes`}
           >
             {completenessData.completeness_percentage === 100 ? (
-              <div className="bg-green-500 text-white text-xs font-bold px-2 py-1 rounded shadow-md flex items-center gap-1">
+              <div className="bg-green-500 text-white text-caption font-semibold px-2 py-1 rounded shadow-md flex items-center gap-1">
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
                 100%
               </div>
             ) : (
-              <div className="bg-foreground text-background text-xs font-bold px-2 py-1 rounded shadow-md border border-border">
+              <div className="bg-foreground text-background text-caption font-semibold px-2 py-1 rounded shadow-md border border-border">
                 {Math.round(completenessData.completeness_percentage)}%
               </div>
             )}
@@ -1093,7 +1093,7 @@ const MissingEpisodeRowWithArtwork = memo(({
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-muted-foreground shrink-0">
+          <span className="text-label font-semibold text-muted-foreground shrink-0">
             E{episode.episode_number}
           </span>
           <h4 className="font-semibold truncate text-muted-foreground">
@@ -1101,7 +1101,7 @@ const MissingEpisodeRowWithArtwork = memo(({
           </h4>
         </div>
         {episode.air_date && (
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <p className="text-caption text-muted-foreground mt-0.5">
             Aired: {new Date(episode.air_date).toLocaleDateString()}
           </p>
         )}
@@ -1169,8 +1169,8 @@ const SeasonCard = memo(({ season, showTitle, onClick, missingCount = 0 }: { sea
 
       {/* Title below poster */}
       <div className="pt-2">
-        <h4 className="font-medium text-sm truncate">{formatSeasonLabel(season.seasonNumber)}</h4>
-        <p className="text-xs text-muted-foreground">
+        <h4 className="font-medium text-label truncate">{formatSeasonLabel(season.seasonNumber)}</h4>
+        <p className="text-caption text-muted-foreground">
           {total > 0 && owned < total
             ? `${owned} of ${total} ${total === 1 ? 'Episode' : 'Episodes'}`
             : `${owned} ${owned === 1 ? 'Episode' : 'Episodes'}`

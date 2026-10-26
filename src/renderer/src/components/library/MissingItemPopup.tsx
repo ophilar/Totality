@@ -99,7 +99,7 @@ export function MissingItemPopup({
       <div className="relative bg-card border border-border rounded-xl shadow-xl max-w-sm w-full overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
-          <span className="text-sm font-medium capitalize">{type}</span>
+          <span className="text-label font-medium capitalize">{type}</span>
           <div className="flex items-center gap-1">
             <AddToWishlistButton
               mediaType={type}
@@ -181,15 +181,15 @@ export function MissingItemPopup({
               </button>
             </div>
             {subtitle && (
-              <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>
+              <p className="text-label text-muted-foreground mt-0.5">{subtitle}</p>
             )}
             {infoItems.length > 0 && (
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-caption text-muted-foreground mt-1">
                 {infoItems.join(' · ')}
               </p>
             )}
             {(seasonDetails?.overview || movieOverview) && (
-              <p className="text-xs text-muted-foreground mt-2 max-h-24 overflow-y-auto leading-relaxed">
+              <p className="text-caption text-muted-foreground mt-2 max-h-24 overflow-y-auto leading-relaxed">
                 {seasonDetails?.overview || movieOverview}
               </p>
             )}

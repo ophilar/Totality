@@ -121,13 +121,13 @@ export function GeneralTab() {
       <div className="space-y-2">
         <div className="flex items-center gap-2 mb-1">
           <Monitor className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-sm font-medium text-foreground">Window Behavior</h3>
+          <h3 className="text-label font-medium text-foreground">Window Behavior</h3>
         </div>
         <Card variant="muted" padding="none" className="divide-y divide-border/30">
           <div className="flex items-center justify-between px-4 py-3">
             <div>
-              <p className="text-sm text-foreground">Minimize to tray on close</p>
-              <p className="text-xs text-muted-foreground">Hide to system tray instead of quitting</p>
+              <p className="text-label text-foreground">Minimize to tray on close</p>
+              <p className="text-caption text-muted-foreground">Hide to system tray instead of quitting</p>
             </div>
             <Toggle
               checked={minimizeToTray}
@@ -144,8 +144,8 @@ export function GeneralTab() {
           {minimizeToTray && (
             <div className="flex items-center justify-between px-4 py-3">
               <div>
-                <p className="text-sm text-foreground">Start minimized to tray</p>
-                <p className="text-xs text-muted-foreground">Launch the app hidden in the system tray</p>
+                <p className="text-label text-foreground">Start minimized to tray</p>
+                <p className="text-caption text-muted-foreground">Launch the app hidden in the system tray</p>
               </div>
               <Toggle
                 checked={startMinimized}
@@ -163,25 +163,25 @@ export function GeneralTab() {
       <div className="space-y-2">
         <div className="flex items-center gap-2 mb-1">
           <ArrowUpCircle className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-sm font-medium text-foreground">Updates</h3>
+          <h3 className="text-label font-medium text-foreground">Updates</h3>
         </div>
         <Card variant="muted" className="space-y-3">
           <div className="flex items-center gap-3">
             <div className="flex-1">
-              <p className="text-sm font-medium">Totality v{appVersion}</p>
+              <p className="text-label font-medium">Totality v{appVersion}</p>
               {(status === 'idle' || status === 'not-available') && lastChecked && (
-                <p className="text-xs text-muted-foreground">Up to date · Last checked {new Date(lastChecked).toLocaleString()}</p>
+                <p className="text-caption text-muted-foreground">Up to date · Last checked {new Date(lastChecked).toLocaleString()}</p>
               )}
               {(status === 'idle' || status === 'not-available') && !lastChecked && (
-                <p className="text-xs text-muted-foreground">Up to date</p>
+                <p className="text-caption text-muted-foreground">Up to date</p>
               )}
-              {status === 'checking' && <p className="text-xs text-muted-foreground">Checking for updates...</p>}
-              {status === 'available' && <p className="text-xs text-primary">Version {newVersion} available</p>}
+              {status === 'checking' && <p className="text-caption text-muted-foreground">Checking for updates...</p>}
+              {status === 'available' && <p className="text-caption text-primary">Version {newVersion} available</p>}
               {status === 'downloading' && downloadProgress && (
-                <p className="text-xs text-muted-foreground">Downloading... {Math.round(downloadProgress.percent)}%</p>
+                <p className="text-caption text-muted-foreground">Downloading... {Math.round(downloadProgress.percent)}%</p>
               )}
-              {status === 'downloaded' && <p className="text-xs text-green-500">Version {newVersion} ready to install</p>}
-              {status === 'error' && <p className="text-xs text-destructive">Update check failed</p>}
+              {status === 'downloaded' && <p className="text-caption text-green-500">Version {newVersion} ready to install</p>}
+              {status === 'error' && <p className="text-caption text-destructive">Update check failed</p>}
             </div>
             <Button
               variant="primary"
@@ -207,8 +207,8 @@ export function GeneralTab() {
           {/* Release notes */}
           {releaseNotes && (status === 'available' || status === 'downloaded' || status === 'downloading') && (
             <div className="border-t border-border/30 pt-3 mt-1">
-              <p className="text-xs font-medium text-foreground mb-2">What's new in v{newVersion}</p>
-              <div className="text-xs text-muted-foreground space-y-1 max-h-40 overflow-y-auto pr-1">
+              <p className="text-caption font-medium text-foreground mb-2">What's new in v{newVersion}</p>
+              <div className="text-caption text-muted-foreground space-y-1 max-h-40 overflow-y-auto pr-1">
                 {releaseNotes.split('\n').filter(line => line.trim()).map((line, i) => {
                   const trimmed = line.replace(/^#+\s*/, '').replace(/^\*\s*/, '').replace(/^-\s*/, '').trim()
                   if (!trimmed) return null
@@ -230,8 +230,8 @@ export function GeneralTab() {
         <Card variant="muted" padding="none">
           <div className="flex items-center justify-between px-4 py-3">
             <div>
-              <p className="text-sm text-foreground">Check for updates automatically</p>
-              <p className="text-xs text-muted-foreground">Periodically checks GitHub for new releases</p>
+              <p className="text-label text-foreground">Check for updates automatically</p>
+              <p className="text-caption text-muted-foreground">Periodically checks GitHub for new releases</p>
             </div>
             <Toggle
               checked={autoUpdateEnabled}
@@ -248,13 +248,13 @@ export function GeneralTab() {
       <div className="space-y-2">
         <div className="flex items-center gap-2 mb-1">
           <Globe className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-sm font-medium text-foreground">Web Access</h3>
+          <h3 className="text-label font-medium text-foreground">Web Access</h3>
         </div>
         <Card variant="muted" padding="none" className="divide-y divide-border/30">
           <div className="flex items-center justify-between px-4 py-3">
             <div>
-              <p className="text-sm text-foreground">Enable web access</p>
-              <p className="text-xs text-muted-foreground">Access Totality from a browser on your network</p>
+              <p className="text-label text-foreground">Enable web access</p>
+              <p className="text-caption text-muted-foreground">Access Totality from a browser on your network</p>
             </div>
             <Toggle
               checked={webEnabled}
@@ -282,7 +282,7 @@ export function GeneralTab() {
                 <div className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-green-500" />
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-caption text-muted-foreground">
                       Available at{' '}
                       <span className="font-mono text-foreground">{webUrl}</span>
                     </span>
@@ -298,7 +298,7 @@ export function GeneralTab() {
                       {urlCopied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
                     </button>
                     {webClients > 0 && (
-                      <span className="text-xs text-muted-foreground ml-auto">
+                      <span className="text-caption text-muted-foreground ml-auto">
                         {webClients} client{webClients !== 1 ? 's' : ''} connected
                       </span>
                     )}
@@ -309,8 +309,8 @@ export function GeneralTab() {
               {/* Port */}
               <div className="flex items-center justify-between px-4 py-3">
                 <div>
-                  <p className="text-sm text-foreground">Port</p>
-                  <p className="text-xs text-muted-foreground">Restart required after changing</p>
+                  <p className="text-label text-foreground">Port</p>
+                  <p className="text-caption text-muted-foreground">Restart required after changing</p>
                 </div>
                 <Input
                   inputSize="sm"
@@ -332,8 +332,8 @@ export function GeneralTab() {
               {/* PIN */}
               <div className="flex items-center justify-between px-4 py-3">
                 <div>
-                  <p className="text-sm text-foreground">PIN</p>
-                  <p className="text-xs text-muted-foreground">Required to access from browser (leave empty for no PIN)</p>
+                  <p className="text-label text-foreground">PIN</p>
+                  <p className="text-caption text-muted-foreground">Required to access from browser (leave empty for no PIN)</p>
                 </div>
                 <div className="flex items-center gap-1">
                   <Input
@@ -360,8 +360,8 @@ export function GeneralTab() {
               {/* Session timeout */}
               <div className="flex items-center justify-between px-4 py-3">
                 <div>
-                  <p className="text-sm text-foreground">Session timeout</p>
-                  <p className="text-xs text-muted-foreground">How long before requiring PIN again</p>
+                  <p className="text-label text-foreground">Session timeout</p>
+                  <p className="text-caption text-muted-foreground">How long before requiring PIN again</p>
                 </div>
                 <Select
                   inputSize="sm"

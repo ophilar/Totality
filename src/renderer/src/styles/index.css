@@ -878,8 +878,22 @@
 
   h1, h2, h3, h4, h5, h6 {
     font-weight: 600;
-    letter-spacing: -0.012em;
   }
+}
+
+/* SKILL.md Typography Scale (§2) — Plus Jakarta Sans */
+/* Each class bakes in size + line-height + letter-spacing */
+@layer utilities {
+  .text-display { font-size: 48px; line-height: 52px; letter-spacing: -0.020em; }
+  .text-h1 { font-size: 32px; line-height: 38px; letter-spacing: -0.014em; }
+  .text-h2 { font-size: 24px; line-height: 30px; letter-spacing: -0.012em; }
+  .text-h3 { font-size: 20px; line-height: 26px; letter-spacing: -0.009em; }
+  .text-title { font-size: 17px; line-height: 24px; letter-spacing: -0.006em; }
+  .text-body-lg { font-size: 17px; line-height: 26px; letter-spacing: -0.006em; }
+  .text-body { font-size: 15px; line-height: 22px; letter-spacing: -0.004em; }
+  .text-label { font-size: 14px; line-height: 20px; letter-spacing: -0.002em; }
+  .text-caption { font-size: 13px; line-height: 18px; letter-spacing: 0em; }
+  .text-micro { font-size: 11px; line-height: 14px; letter-spacing: 0.020em; }
 }
 
 /* Backdrop blur styles for artwork backgrounds */

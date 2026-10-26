@@ -76,7 +76,7 @@ export function Modal({ isOpen, onClose, title, size = 'md', children, footer, h
         {/* Header */}
         {(title || !hideCloseButton) && (
           <div className="flex items-center justify-between px-4 py-3 border-b border-border/30 shrink-0">
-            {title && <h2 className="text-sm font-semibold">{title}</h2>}
+            {title && <h2 className="text-label font-semibold">{title}</h2>}
             {!hideCloseButton && (
               <button
                 onClick={onClose}

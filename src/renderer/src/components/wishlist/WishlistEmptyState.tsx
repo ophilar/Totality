@@ -7,10 +7,10 @@ export function WishlistEmptyState() {
         <Star className="w-8 h-8 text-muted-foreground" />
       </div>
       <h3 className="font-medium text-foreground mb-2">Your wishlist is empty</h3>
-      <p className="text-sm text-muted-foreground max-w-[200px] mb-4">
+      <p className="text-label text-muted-foreground max-w-[200px] mb-4">
         Add missing items from your library to track what you want to buy.
       </p>
-      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+      <div className="flex items-center gap-1 text-caption text-muted-foreground">
         <span>Use</span>
         <span className="flex gap-0.5">
           {[1, 2, 3, 4, 5].map((i) => (

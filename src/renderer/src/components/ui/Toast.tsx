@@ -39,15 +39,15 @@ function ToastItem({ toast, onRemove }: { toast: ToastType; onRemove: () => void
         {icons[toast.type]}
 
         <div className="flex-1 min-w-0">
-          <p className="font-medium text-foreground text-sm">{toast.title}</p>
+          <p className="font-medium text-foreground text-label">{toast.title}</p>
           {toast.message && (
-            <p className="text-muted-foreground text-xs mt-0.5">{toast.message}</p>
+            <p className="text-muted-foreground text-caption mt-0.5">{toast.message}</p>
           )}
 
           {toast.action && (
             <button
               onClick={handleActionClick}
-              className="mt-2 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+              className="mt-2 text-caption font-medium text-primary hover:text-primary/80 transition-colors"
             >
               {toast.action.label}
             </button>

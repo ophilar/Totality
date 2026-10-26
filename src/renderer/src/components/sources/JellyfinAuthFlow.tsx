@@ -222,8 +222,8 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
         {libraries.length > 0 && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium">Select libraries to include:</p>
-              <div className="flex gap-2 text-xs">
+              <p className="text-label font-medium">Select libraries to include:</p>
+              <div className="flex gap-2 text-caption">
                 <Button variant="tertiary" size="sm" onClick={handleSelectAll}>
                   Select all
                 </Button>
@@ -259,14 +259,14 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
                   <span className="text-muted-foreground">
                     {lib.type === 'movie' ? <Film className="w-5 h-5" /> : lib.type === 'show' ? <Tv className="w-5 h-5" /> : lib.type === 'music' ? <Music className="w-5 h-5" /> : <Folder className="w-5 h-5" />}
                   </span>
-                  <span className="text-sm flex-1">{lib.name}</span>
+                  <span className="text-label flex-1">{lib.name}</span>
                   {lib.itemCount !== undefined && (
-                    <span className="text-xs text-muted-foreground">({lib.itemCount} items)</span>
+                    <span className="text-caption text-muted-foreground">({lib.itemCount} items)</span>
                   )}
                 </label>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-caption text-muted-foreground">
               Only selected libraries will appear in your media browser. You can change this later.
             </p>
           </div>
@@ -295,15 +295,15 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
               <Server className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="font-medium text-sm">{selectedServer.name}</div>
-              <div className="text-xs text-muted-foreground truncate">{selectedServer.url}</div>
+              <div className="font-medium text-label">{selectedServer.name}</div>
+              <div className="text-caption text-muted-foreground truncate">{selectedServer.url}</div>
             </div>
             <Button variant="tertiary" size="sm" onClick={() => setStep('discover')}>Change</Button>
           </div>
         )}
 
         <label className="block">
-          <span className="text-sm font-medium">Display Name</span>
+          <span className="text-label font-medium">Display Name</span>
           <Input
             type="text"
             value={displayName}
@@ -316,7 +316,7 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
         {/* Both Jellyfin and Emby use API key authentication */}
         <div className="space-y-3">
           <label className="block">
-            <span className="text-sm font-medium">API Key</span>
+            <span className="text-label font-medium">API Key</span>
             <Input
               type="password"
               value={apiKey}
@@ -325,14 +325,14 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
               className="mt-1"
             />
           </label>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-caption text-muted-foreground">
             {isEmby
               ? 'Find your API key in Emby Dashboard → Advanced → API Keys'
               : 'Find your API key in Jellyfin Dashboard → Advanced → API Keys'}
           </p>
         </div>
 
-        {error && <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>}
+        {error && <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-label">{error}</div>}
 
         <div className="flex gap-2">
           <Button onClick={onBack} disabled={isConnecting} variant="secondary" className="flex-1">
@@ -358,7 +358,7 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
       {discoveredServers.length > 0 && (
         <>
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Found on your network</span>
+            <span className="text-label font-medium">Found on your network</span>
             <Button variant="tertiary" size="sm" onClick={handleDiscover} disabled={isDiscovering}>
               {isDiscovering ? 'Scanning...' : 'Rescan'}
             </Button>
@@ -374,8 +374,8 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
                   <Server className="w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm">{server.name}</div>
-                  <div className="text-xs text-muted-foreground truncate">{server.address}</div>
+                  <div className="font-medium text-label">{server.name}</div>
+                  <div className="text-caption text-muted-foreground truncate">{server.address}</div>
                 </div>
                 <ChevronRight className="w-5 h-5 text-muted-foreground" />
               </button>
@@ -383,13 +383,13 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
           </div>
           <div className="relative">
             <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
-            <div className="relative flex justify-center text-xs"><span className="bg-background px-2 text-muted-foreground">or</span></div>
+            <div className="relative flex justify-center text-caption"><span className="bg-background px-2 text-muted-foreground">or</span></div>
           </div>
         </>
       )}
 
       {discoveredServers.length === 0 && !isDiscovering && (
-        <div className="bg-muted/50 rounded-lg p-4 text-sm">
+        <div className="bg-muted/50 rounded-lg p-4 text-label">
           <p className="text-muted-foreground">
             No {providerName} servers found on your network. Enter address below.
           </p>
@@ -399,12 +399,12 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
       {isDiscovering && discoveredServers.length === 0 && (
         <div className="text-center py-8">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent mb-4" />
-          <p className="text-sm text-muted-foreground">Searching for {providerName} servers...</p>
+          <p className="text-label text-muted-foreground">Searching for {providerName} servers...</p>
         </div>
       )}
 
       <label className="block">
-        <span className="text-sm font-medium">Server URL</span>
+        <span className="text-label font-medium">Server URL</span>
         <div className="mt-1 flex gap-2">
           <Input
             type="url"
@@ -425,7 +425,7 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
         </div>
       </label>
 
-      {error && <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>}
+      {error && <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-label">{error}</div>}
 
       <Button onClick={onBack} variant="secondary" className="w-full">
         Back

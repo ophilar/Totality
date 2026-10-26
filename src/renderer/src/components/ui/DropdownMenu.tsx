@@ -32,7 +32,7 @@ export function DropdownMenuItem({ onClick, icon, children, destructive }: Dropd
   return (
     <button
       onClick={onClick}
-      className={`w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2 ${destructive ? 'text-red-500' : ''}`}
+      className={`w-full px-3 py-1.5 text-left text-label hover:bg-muted flex items-center gap-2 ${destructive ? 'text-red-500' : ''}`}
     >
       {icon}
       {children}

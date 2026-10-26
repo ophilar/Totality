@@ -216,15 +216,15 @@ export function DataManagementTab() {
     <div className="p-6 space-y-5 overflow-y-auto">
       {/* Database Location Section */}
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-foreground">Database</h3>
+        <h3 className="text-label font-medium text-foreground">Database</h3>
 
         <Card variant="muted" padding="none">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-3 min-w-0">
               <Database className="w-5 h-5 text-muted-foreground shrink-0" />
               <div className="min-w-0">
-                <span className="text-sm text-foreground">Database Location</span>
-                <p className="text-xs text-muted-foreground truncate">{dbPath}</p>
+                <span className="text-label text-foreground">Database Location</span>
+                <p className="text-caption text-muted-foreground truncate">{dbPath}</p>
               </div>
             </div>
             <Button
@@ -243,7 +243,7 @@ export function DataManagementTab() {
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <HardDrive className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-sm font-medium text-foreground">Storage Analytics</h3>
+          <h3 className="text-label font-medium text-foreground">Storage Analytics</h3>
         </div>
 
         <Card variant="muted" className="space-y-4">
@@ -254,7 +254,7 @@ export function DataManagementTab() {
           ) : (
               <>
                 {/* Summary */}
-                <div className="flex items-center gap-6 text-sm">
+                <div className="flex items-center gap-6 text-label">
                   <div>
                     <span className="text-muted-foreground">Total Size:</span>{' '}
                     <span className="font-medium">{formatSize(storageData.totalSize)}</span>
@@ -268,10 +268,10 @@ export function DataManagementTab() {
                 {/* By Codec */}
                 {storageData.byCodec.length > 0 && (
                   <div className="space-y-1">
-                    <h4 className="text-xs font-medium text-muted-foreground">By Codec</h4>
+                    <h4 className="text-caption font-medium text-muted-foreground">By Codec</h4>
                     <div className="space-y-1">
                       {storageData.byCodec.map(c => (
-                        <div key={c.codec} className="flex items-center justify-between text-xs">
+                        <div key={c.codec} className="flex items-center justify-between text-caption">
                           <span className="font-mono">{c.codec || 'Unknown'}</span>
                           <span className="text-muted-foreground">{c.count} items · {formatSize(c.size)}</span>
                         </div>
@@ -283,10 +283,10 @@ export function DataManagementTab() {
                 {/* By Quality Tier */}
                 {storageData.byTier.length > 0 && (
                   <div className="space-y-1">
-                    <h4 className="text-xs font-medium text-muted-foreground">By Quality Tier</h4>
+                    <h4 className="text-caption font-medium text-muted-foreground">By Quality Tier</h4>
                     <div className="space-y-1">
                       {storageData.byTier.map(t => (
-                        <div key={t.tier} className="flex items-center justify-between text-xs">
+                        <div key={t.tier} className="flex items-center justify-between text-caption">
                           <span>{t.tier}</span>
                           <span className="text-muted-foreground">{t.count} items · {formatSize(t.size)}</span>
                         </div>
@@ -298,8 +298,8 @@ export function DataManagementTab() {
                 {/* Multi-Version Storage */}
                 {storageData.versionStats && storageData.versionStats.itemsWithVersions > 0 && (
                   <div className="space-y-1">
-                    <h4 className="text-xs font-medium text-muted-foreground">Multi-Version Items</h4>
-                    <div className="space-y-1 text-xs">
+                    <h4 className="text-caption font-medium text-muted-foreground">Multi-Version Items</h4>
+                    <div className="space-y-1 text-caption">
                       <div className="flex items-center justify-between">
                         <span>Items with multiple versions</span>
                         <span className="text-muted-foreground">{storageData.versionStats.itemsWithVersions} items · {storageData.versionStats.totalVersions} versions</span>
@@ -317,7 +317,7 @@ export function DataManagementTab() {
                 {/* Music Storage */}
                 {storageData.music && storageData.music.totalTracks > 0 && (
                   <div className="space-y-2 pt-2 border-t border-border/30">
-                    <div className="flex items-center gap-6 text-sm">
+                    <div className="flex items-center gap-6 text-label">
                       <div>
                         <span className="text-muted-foreground">Music:</span>{' '}
                         <span className="font-medium">{formatSize(storageData.music.totalSize)}</span>
@@ -330,10 +330,10 @@ export function DataManagementTab() {
 
                     {storageData.music.byCodec.length > 0 && (
                       <div className="space-y-1">
-                        <h4 className="text-xs font-medium text-muted-foreground">Audio Codecs</h4>
+                        <h4 className="text-caption font-medium text-muted-foreground">Audio Codecs</h4>
                         <div className="space-y-1">
                           {storageData.music.byCodec.map(c => (
-                            <div key={c.codec} className="flex items-center justify-between text-xs">
+                            <div key={c.codec} className="flex items-center justify-between text-caption">
                               <span className="font-mono">{c.codec || 'Unknown'}</span>
                               <span className="text-muted-foreground">{c.count} tracks · {formatSize(c.size)}</span>
                             </div>
@@ -344,10 +344,10 @@ export function DataManagementTab() {
 
                     {storageData.music.byTier.length > 0 && (
                       <div className="space-y-1">
-                        <h4 className="text-xs font-medium text-muted-foreground">Audio Quality</h4>
+                        <h4 className="text-caption font-medium text-muted-foreground">Audio Quality</h4>
                         <div className="space-y-1">
                           {storageData.music.byTier.map(t => (
-                            <div key={t.tier} className="flex items-center justify-between text-xs">
+                            <div key={t.tier} className="flex items-center justify-between text-caption">
                               <span>{t.tier}</span>
                               <span className="text-muted-foreground">{t.count} tracks · {formatSize(t.size)}</span>
                             </div>
@@ -361,10 +361,10 @@ export function DataManagementTab() {
                 {/* Duplicates */}
                 {duplicates.length > 0 && (
                   <div className="space-y-1">
-                    <h4 className="text-xs font-medium text-muted-foreground">Duplicate Movies ({duplicates.length})</h4>
+                    <h4 className="text-caption font-medium text-muted-foreground">Duplicate Movies ({duplicates.length})</h4>
                     <div className="space-y-2 max-h-48 overflow-y-auto">
                       {duplicates.map(dup => (
-                        <div key={dup.tmdb_id} className="text-xs border border-border/30 rounded p-2">
+                        <div key={dup.tmdb_id} className="text-caption border border-border/30 rounded p-2">
                           <div className="font-medium">{dup.title}{dup.year ? ` (${dup.year})` : ''}</div>
                           <div className="mt-1 space-y-0.5">
                             {dup.copies.map((copy, i) => (
@@ -391,7 +391,7 @@ export function DataManagementTab() {
 
       {/* Export Options */}
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-foreground">Export Options</h3>
+        <h3 className="text-label font-medium text-foreground">Export Options</h3>
 
         <Card variant="muted" padding="none" className="divide-y divide-border/30">
           {/* Working Document */}
@@ -399,8 +399,8 @@ export function DataManagementTab() {
             <div className="flex items-center gap-3">
               <FileSpreadsheet className="w-5 h-5 text-muted-foreground" />
               <div>
-                <span className="text-sm text-foreground">Working Document</span>
-                <p className="text-xs text-muted-foreground">
+                <span className="text-label text-foreground">Working Document</span>
+                <p className="text-caption text-muted-foreground">
                   CSV with upgrade candidates and missing items
                 </p>
               </div>
@@ -420,8 +420,8 @@ export function DataManagementTab() {
             <div className="flex items-center gap-3">
               <FolderOpen className="w-5 h-5 text-muted-foreground" />
               <div>
-                <span className="text-sm text-foreground">Full Backup</span>
-                <p className="text-xs text-muted-foreground">
+                <span className="text-label text-foreground">Full Backup</span>
+                <p className="text-caption text-muted-foreground">
                   Complete database backup (JSON)
                 </p>
               </div>
@@ -441,15 +441,15 @@ export function DataManagementTab() {
 
       {/* Import Options */}
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-foreground">Import</h3>
+        <h3 className="text-label font-medium text-foreground">Import</h3>
 
         <Card variant="muted" padding="none">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-3">
               <Upload className="w-5 h-5 text-muted-foreground" />
               <div>
-                <span className="text-sm text-foreground">Restore Backup</span>
-                <p className="text-xs text-muted-foreground">
+                <span className="text-label text-foreground">Restore Backup</span>
+                <p className="text-caption text-muted-foreground">
                   Import a previously exported database
                 </p>
               </div>
@@ -469,7 +469,7 @@ export function DataManagementTab() {
 
       {/* Reset Options */}
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-foreground">Reset</h3>
+        <h3 className="text-label font-medium text-foreground">Reset</h3>
 
         {/* Reset Library Data (preserves settings) */}
         <Card variant="muted" padding="none">
@@ -478,10 +478,10 @@ export function DataManagementTab() {
               <div className="flex items-start gap-3">
                 <RefreshCw className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-foreground">
+                  <p className="text-label font-medium text-foreground">
                     Reset library data?
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="text-caption text-muted-foreground mt-1">
                     This will clear all scanned media, quality scores, and completeness data. Your settings, API keys, sources, exclusions, and wishlist will be preserved.
                   </p>
                 </div>
@@ -511,8 +511,8 @@ export function DataManagementTab() {
               <div className="flex items-center gap-3">
                 <RefreshCw className="w-5 h-5 text-muted-foreground" />
                 <div>
-                  <span className="text-sm text-foreground">Reset Library Data</span>
-                  <p className="text-xs text-muted-foreground">
+                  <span className="text-label text-foreground">Reset Library Data</span>
+                  <p className="text-caption text-muted-foreground">
                     Clear scanned media and start fresh. Keeps settings, exclusions, and wishlist.
                   </p>
                 </div>
@@ -535,10 +535,10 @@ export function DataManagementTab() {
               <div className="flex items-start gap-3">
                 <AlertTriangle className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-foreground">
+                  <p className="text-label font-medium text-foreground">
                     Are you sure you want to reset the database?
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="text-caption text-muted-foreground mt-1">
                     This will permanently delete all your scanned media, quality scores, completeness data, and settings. This action cannot be undone.
                   </p>
                 </div>
@@ -568,8 +568,8 @@ export function DataManagementTab() {
               <div className="flex items-center gap-3">
                 <Trash2 className="w-5 h-5 text-muted-foreground" />
                 <div>
-                  <span className="text-sm text-foreground">Reset Database</span>
-                  <p className="text-xs text-muted-foreground">
+                  <span className="text-label text-foreground">Reset Database</span>
+                  <p className="text-caption text-muted-foreground">
                     Delete all data and start fresh
                   </p>
                 </div>
@@ -590,7 +590,7 @@ export function DataManagementTab() {
       {/* Status message */}
       {message && (
         <div
-          className={`p-3 rounded-lg text-xs ${
+          className={`p-3 rounded-lg text-caption ${
             message.type === 'success'
               ? 'bg-green-500/10 border border-green-500/30 text-green-400'
               : 'bg-red-500/10 border border-red-500/30 text-red-400'
@@ -606,7 +606,7 @@ export function DataManagementTab() {
           <div className="bg-background border border-border rounded-lg shadow-xl w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
             {/* Modal Header */}
             <div className="flex items-center justify-between p-4 border-b border-border">
-              <h2 className="text-base font-medium">Export Working Document</h2>
+              <h2 className="text-body font-medium">Export Working Document</h2>
               <button
                 onClick={() => setShowCSVExportModal(false)}
                 className="p-1 hover:bg-muted rounded transition-colors"
@@ -617,7 +617,7 @@ export function DataManagementTab() {
 
             {/* Modal Content */}
             <div className="p-4 space-y-3">
-              <p className="text-xs text-muted-foreground">
+              <p className="text-caption text-muted-foreground">
                 Select what to include in the CSV export:
               </p>
 
@@ -625,8 +625,8 @@ export function DataManagementTab() {
                 {/* Upgrade Candidates */}
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <div>
-                    <span className="text-sm text-foreground">Upgrade Candidates</span>
-                    <p className="text-xs text-muted-foreground">
+                    <span className="text-label text-foreground">Upgrade Candidates</span>
+                    <p className="text-caption text-muted-foreground">
                       Movies and episodes that need quality upgrades
                     </p>
                   </div>
@@ -639,8 +639,8 @@ export function DataManagementTab() {
                 {/* Missing Movies */}
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <div>
-                    <span className="text-sm text-foreground">Missing Movies</span>
-                    <p className="text-xs text-muted-foreground">
+                    <span className="text-label text-foreground">Missing Movies</span>
+                    <p className="text-caption text-muted-foreground">
                       Movies missing from incomplete collections
                     </p>
                   </div>
@@ -653,8 +653,8 @@ export function DataManagementTab() {
                 {/* Missing Episodes */}
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <div>
-                    <span className="text-sm text-foreground">Missing TV Episodes</span>
-                    <p className="text-xs text-muted-foreground">
+                    <span className="text-label text-foreground">Missing TV Episodes</span>
+                    <p className="text-caption text-muted-foreground">
                       Episodes missing from incomplete TV series
                     </p>
                   </div>
@@ -667,8 +667,8 @@ export function DataManagementTab() {
                 {/* Missing Albums */}
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <div>
-                    <span className="text-sm text-foreground">Missing Albums</span>
-                    <p className="text-xs text-muted-foreground">
+                    <span className="text-label text-foreground">Missing Albums</span>
+                    <p className="text-caption text-muted-foreground">
                       Albums missing from artist discographies
                     </p>
                   </div>
@@ -681,8 +681,8 @@ export function DataManagementTab() {
                 {/* Music Quality Upgrades */}
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <div>
-                    <span className="text-sm text-foreground">Music Quality Upgrades</span>
-                    <p className="text-xs text-muted-foreground">
+                    <span className="text-label text-foreground">Music Quality Upgrades</span>
+                    <p className="text-caption text-muted-foreground">
                       Albums that could benefit from higher quality versions
                     </p>
                   </div>

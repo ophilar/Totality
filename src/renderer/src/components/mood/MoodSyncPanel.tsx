@@ -406,9 +406,9 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
       <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
         <div className="flex items-center gap-2">
           <Tags className="w-4 h-4 text-muted-foreground" />
-          <h2 className="text-sm font-semibold">Tag Sync</h2>
+          <h2 className="text-label font-semibold">Tag Sync</h2>
           {totalMismatches > 0 && (
-            <span className="text-xs text-muted-foreground">{totalMismatches}</span>
+            <span className="text-caption text-muted-foreground">{totalMismatches}</span>
           )}
         </div>
         <div className="flex items-center gap-1">
@@ -433,7 +433,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
 
       {/* Step 1: Source of Truth */}
       <div className="px-3 pt-3 pb-2 border-b border-border/30">
-        <label htmlFor="sync-source-select" className="text-xs font-medium text-muted-foreground mb-1.5 block">1. Source of truth</label>
+        <label htmlFor="sync-source-select" className="text-caption font-medium text-muted-foreground mb-1.5 block">1. Source of truth</label>
         <Select
           id="sync-source-select"
           inputSize="sm"
@@ -457,7 +457,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
 
       {/* Step 2: Fields to sync */}
       <div className="px-3 pt-2 pb-2 border-b border-border/30">
-        <p className="text-xs font-medium text-muted-foreground mb-1.5">2. Fields</p>
+        <p className="text-caption font-medium text-muted-foreground mb-1.5">2. Fields</p>
         <div className="flex items-center gap-4">
           {(['mood', 'genre'] as const).map(f => (
             <label key={f} className="flex items-center gap-1.5 cursor-pointer">
@@ -477,7 +477,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                   </svg>
                 )}
               </button>
-              <span className={`text-xs ${syncFields[f] ? 'text-foreground' : 'text-muted-foreground'}`}>
+              <span className={`text-caption ${syncFields[f] ? 'text-foreground' : 'text-muted-foreground'}`}>
                 {f === 'mood' ? 'Mood' : 'Genre'}
               </span>
             </label>
@@ -487,13 +487,13 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
 
       {/* Step 3: Sync mode */}
       <div className="px-3 pt-2 pb-2 border-b border-border/30">
-        <p className="text-xs font-medium text-muted-foreground mb-1.5">3. Mode</p>
+        <p className="text-caption font-medium text-muted-foreground mb-1.5">3. Mode</p>
         <div className="flex gap-1" role="radiogroup" aria-label="Sync mode">
           <button
             role="radio"
             aria-checked={syncMode === 'overwrite'}
             onClick={() => setSyncMode('overwrite')}
-            className={`flex-1 px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            className={`flex-1 px-2 py-1.5 text-caption font-medium rounded-md transition-colors ${
               syncMode === 'overwrite'
                 ? 'bg-primary/20 text-primary'
                 : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
@@ -505,7 +505,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
             role="radio"
             aria-checked={syncMode === 'append'}
             onClick={() => setSyncMode('append')}
-            className={`flex-1 px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            className={`flex-1 px-2 py-1.5 text-caption font-medium rounded-md transition-colors ${
               syncMode === 'append'
                 ? 'bg-primary/20 text-primary'
                 : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
@@ -519,7 +519,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
       {/* Step 4: Targets */}
       {targetSources.size > 0 && (
         <div className="px-3 pt-2 pb-2 border-b border-border/30">
-          <p className="text-xs font-medium text-muted-foreground mb-1.5">4. Sync targets</p>
+          <p className="text-caption font-medium text-muted-foreground mb-1.5">4. Sync targets</p>
           <div className="space-y-1.5">
             {Array.from(targetSources.values()).map(target => (
               <div key={target.sourceId} className="flex items-center justify-between">
@@ -529,8 +529,8 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                   ) : (
                     <Circle className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
                   )}
-                  <span className="text-xs truncate">{target.sourceName}</span>
-                  <span className="text-xs text-muted-foreground shrink-0">
+                  <span className="text-caption truncate">{target.sourceName}</span>
+                  <span className="text-caption text-muted-foreground shrink-0">
                     {target.mismatchCount === 0 ? 'synced' : `${target.mismatchCount} pending`}
                   </span>
                 </div>
@@ -556,7 +556,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
       {comparisons.length > 0 && (
         <div className="px-3 pt-2 pb-2 border-b border-border/30 space-y-2">
           {/* Stats */}
-          <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5">
+          <div className="text-caption text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5">
             {selectedSource && <span>{selectedSource.tracksWithMoods} source {fieldLabel}</span>}
             <span>{comparisons.length} matched</span>
             <span>{totalMismatches} mismatched</span>
@@ -579,12 +579,12 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
           {/* Selection + filter */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <button onClick={selectAll} className="text-xs text-muted-foreground hover:text-foreground transition-colors">All</button>
-              <button onClick={selectNone} className="text-xs text-muted-foreground hover:text-foreground transition-colors">None</button>
-              <span className="text-xs text-muted-foreground">{filteredComparisons.length} tracks</span>
+              <button onClick={selectAll} className="text-caption text-muted-foreground hover:text-foreground transition-colors">All</button>
+              <button onClick={selectNone} className="text-caption text-muted-foreground hover:text-foreground transition-colors">None</button>
+              <span className="text-caption text-muted-foreground">{filteredComparisons.length} tracks</span>
             </div>
             <label className="flex items-center gap-1.5 cursor-pointer">
-              <span className="text-xs text-muted-foreground">Mismatches</span>
+              <span className="text-caption text-muted-foreground">Mismatches</span>
               <button
                 role="switch"
                 aria-checked={showMismatchOnly}
@@ -605,7 +605,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
       {/* Progress */}
       {syncProgress && (
         <div className="px-3 py-2 border-b border-border/30 space-y-1">
-          <div className="flex justify-between text-xs text-muted-foreground">
+          <div className="flex justify-between text-caption text-muted-foreground">
             <span className="truncate pr-2">{syncProgress.currentTrack}</span>
             <span className="shrink-0">{syncProgress.current}/{syncProgress.total}</span>
           </div>
@@ -618,7 +618,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
       {/* Result */}
       {syncResult && (
         <div className="px-3 py-2 border-b border-border/30">
-          <div className="flex items-center gap-1.5 text-xs">
+          <div className="flex items-center gap-1.5 text-caption">
             {syncResult.failed === 0 ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
             <span className="text-muted-foreground">{syncResult.synced} synced{syncResult.failed > 0 ? `, ${syncResult.failed} failed` : ''}</span>
           </div>
@@ -636,14 +636,14 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
             <div className="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center mb-3">
               <Tags className="w-6 h-6 text-muted-foreground" />
             </div>
-            <p className="text-sm font-medium mb-1">
+            <p className="text-label font-medium mb-1">
               {sourceOfTruthId
                 ? comparisons.length === 0
                   ? 'No matched tracks'
                   : searchQuery ? 'No results' : 'All synced'
                 : 'No source selected'}
             </p>
-            <p className="text-xs text-muted-foreground max-w-[220px]">
+            <p className="text-caption text-muted-foreground max-w-[220px]">
               {sourceOfTruthId
                 ? comparisons.length === 0
                   ? `No tracks with ${fieldLabel} were found in both sources`
@@ -694,27 +694,27 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium truncate leading-tight">{comp.trackTitle}</p>
-                      <p className="text-xs text-muted-foreground truncate">{comp.artist}</p>
+                      <p className="text-caption font-medium truncate leading-tight">{comp.trackTitle}</p>
+                      <p className="text-caption text-muted-foreground truncate">{comp.artist}</p>
                     </div>
                   </div>
 
                   {/* Source tags */}
                   <div className="mt-1.5 ml-5.5 space-y-0.5">
                     {syncFields.mood && comp.sourceMoods.length > 0 && (
-                      <p className="text-xs">
-                        <span className="text-muted-foreground/50 text-xs mr-1">mood</span>
+                      <p className="text-caption">
+                        <span className="text-muted-foreground/50 text-caption mr-1">mood</span>
                         <span className="text-foreground">{comp.sourceMoods.join(' / ')}</span>
                       </p>
                     )}
                     {syncFields.genre && comp.sourceGenres.length > 0 && (
-                      <p className="text-xs">
-                        <span className="text-muted-foreground/50 text-xs mr-1">genre</span>
+                      <p className="text-caption">
+                        <span className="text-muted-foreground/50 text-caption mr-1">genre</span>
                         <span className="text-foreground">{comp.sourceGenres.join(' / ')}</span>
                       </p>
                     )}
                     {comp.sourceMoods.length === 0 && comp.sourceGenres.length === 0 && (
-                      <p className="text-xs text-muted-foreground/50 italic">No {fieldLabel}</p>
+                      <p className="text-caption text-muted-foreground/50 italic">No {fieldLabel}</p>
                     )}
                   </div>
 
@@ -727,14 +727,14 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
 
                     return (
                       <div key={j} className="mt-1.5 ml-5.5 pt-1.5 border-t border-border/20">
-                        <p className="text-xs text-muted-foreground/50 mb-0.5">
+                        <p className="text-caption text-muted-foreground/50 mb-0.5">
                           {target.sourceName}
                           {target.trackId === syncingTrackId && <Loader2 className="w-2 h-2 text-primary animate-spin inline ml-1" />}
                         </p>
 
                         {showMood && (
-                          <p className="text-xs">
-                            <span className="text-muted-foreground/50 text-xs mr-1">mood</span>
+                          <p className="text-caption">
+                            <span className="text-muted-foreground/50 text-caption mr-1">mood</span>
                             {target.targetMoods.length > 0 ? target.targetMoods.map((m, k) => (
                               <span key={k}>
                                 {k > 0 && <span className="text-muted-foreground/30"> / </span>}
@@ -759,8 +759,8 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                         )}
 
                         {showGenre && (
-                          <p className="text-xs">
-                            <span className="text-muted-foreground/50 text-xs mr-1">genre</span>
+                          <p className="text-caption">
+                            <span className="text-muted-foreground/50 text-caption mr-1">genre</span>
                             {target.targetGenres.length > 0 ? target.targetGenres.map((m, k) => (
                               <span key={k}>
                                 {k > 0 && <span className="text-muted-foreground/30"> / </span>}
@@ -784,7 +784,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                         )}
 
                         {!showMood && !showGenre && !wasSynced && (
-                          <p className="text-xs text-muted-foreground/40 italic">No {fieldLabel}</p>
+                          <p className="text-caption text-muted-foreground/40 italic">No {fieldLabel}</p>
                         )}
                       </div>
                     )
@@ -793,7 +793,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
               )
             })}
             {filteredComparisons.length > 200 && (
-              <p className="text-xs text-muted-foreground text-center py-2">Showing 200 of {filteredComparisons.length}</p>
+              <p className="text-caption text-muted-foreground text-center py-2">Showing 200 of {filteredComparisons.length}</p>
             )}
           </div>
         )}
@@ -805,12 +805,12 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
           <div className="bg-card rounded-xl p-4 w-full max-w-[300px] space-y-3 shadow-lg border border-border/30">
             <div className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
-              <h3 id="sync-confirm-title" className="text-sm font-semibold">Write to {confirmDialog.targetName}</h3>
+              <h3 id="sync-confirm-title" className="text-label font-semibold">Write to {confirmDialog.targetName}</h3>
             </div>
 
             {confirmDialog.isRunning ? (
               <div className="space-y-2">
-                <p className="text-xs text-destructive">
+                <p className="text-caption text-destructive">
                   {confirmDialog.targetName} is currently running. Close it before syncing to prevent database corruption.
                 </p>
                 <Button variant="secondary" size="sm" onClick={() => setConfirmDialog(null)} className="w-full">
@@ -819,7 +819,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="text-xs text-muted-foreground space-y-1.5">
+                <div className="text-caption text-muted-foreground space-y-1.5">
                   <p>This will modify the {confirmDialog.targetName} database:</p>
                   <ul className="space-y-1 ml-3">
                     <li>Update {fieldLabel} on {confirmDialog.trackCount} tracks</li>
@@ -827,7 +827,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                     <li>{syncMode === 'overwrite' ? `Existing ${fieldLabel} will be replaced` : `New values will be added to existing ${fieldLabel}`}</li>
                   </ul>
                   {confirmDialog.databasePath && (
-                    <p className="text-xs text-muted-foreground/70 truncate mt-2">{confirmDialog.databasePath}</p>
+                    <p className="text-caption text-muted-foreground/70 truncate mt-2">{confirmDialog.databasePath}</p>
                   )}
                 </div>
 

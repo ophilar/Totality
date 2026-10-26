@@ -367,15 +367,15 @@ export function TroubleshootTab() {
               )}
             </button>
             {getLevelIcon(entry.level)}
-            <span className="text-muted-foreground shrink-0 text-xs">
+            <span className="text-muted-foreground shrink-0 text-caption">
               {formatTime(entry.timestamp)}
             </span>
-            <span className="text-primary/70 shrink-0 text-xs max-w-[100px] truncate">
+            <span className="text-primary/70 shrink-0 text-caption max-w-[100px] truncate">
               {entry.source}
             </span>
-            <span className="text-foreground flex-1 truncate text-xs">{entry.message}</span>
+            <span className="text-foreground flex-1 truncate text-caption">{entry.message}</span>
             {entry.details && (
-              <span className="text-muted-foreground text-xs shrink-0">
+              <span className="text-muted-foreground text-caption shrink-0">
                 {isDetailTarget ? '▼' : '▶'}
               </span>
             )}
@@ -398,7 +398,7 @@ export function TroubleshootTab() {
     <div className="p-6 flex flex-col flex-1 min-h-0">
       {/* Header */}
       <div className="flex items-center justify-between mb-4 shrink-0">
-        <h3 className="text-sm font-medium text-foreground">Application Logs</h3>
+        <h3 className="text-label font-medium text-foreground">Application Logs</h3>
 
         <div className="flex items-center gap-2">
           {/* Search input */}
@@ -440,7 +440,7 @@ export function TroubleshootTab() {
                 </svg>
               )}
             </button>
-            <span className="text-sm text-muted-foreground">Verbose</span>
+            <span className="text-label text-muted-foreground">Verbose</span>
           </div>
 
           {/* Clear button */}
@@ -471,7 +471,7 @@ export function TroubleshootTab() {
       {/* Selection toolbar */}
       {selectedIds.size > 0 && (
         <div className="flex items-center justify-between mb-2 px-3 py-1.5 bg-primary/10 border border-primary/20 rounded-md shrink-0">
-          <div className="flex items-center gap-3 text-xs">
+          <div className="flex items-center gap-3 text-caption">
             <span className="font-medium">{selectedIds.size} selected</span>
             <button
               onClick={handleSelectAll}
@@ -501,7 +501,7 @@ export function TroubleshootTab() {
       {/* Log viewer with virtualization - min-h-0 is critical for flex shrinking */}
       <div ref={logViewerRef} tabIndex={-1} className="flex-1 min-h-0 bg-muted/30 rounded-lg border border-border/40 font-mono overflow-hidden relative outline-hidden">
         {filteredLogs.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+          <div className="flex items-center justify-center h-full text-muted-foreground text-label">
             No logs to display
           </div>
         ) : (
@@ -526,7 +526,7 @@ export function TroubleshootTab() {
             {!autoScroll && filteredLogs.length > 0 && (
               <button
                 onClick={jumpToLatest}
-                className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-full shadow-lg hover:bg-primary/90 transition-colors"
+                className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 text-caption bg-primary text-primary-foreground rounded-full shadow-lg hover:bg-primary/90 transition-colors"
               >
                 <ChevronsDown className="w-3.5 h-3.5" />
                 Jump to latest
@@ -537,7 +537,7 @@ export function TroubleshootTab() {
             {detailLog?.details && (
               <div className="absolute bottom-0 left-0 right-0 z-20 border-t border-border/30 bg-muted h-[120px] overflow-y-auto">
                 <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/20 sticky top-0 bg-muted">
-                  <span className="text-xs text-muted-foreground font-medium">Details</span>
+                  <span className="text-caption text-muted-foreground font-medium">Details</span>
                   <button
                     onClick={() => setDetailLogId(null)}
                     className="p-0.5 rounded hover:bg-muted/50"
@@ -545,7 +545,7 @@ export function TroubleshootTab() {
                     <X className="w-3.5 h-3.5 text-muted-foreground" />
                   </button>
                 </div>
-                <pre className="px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap break-all">
+                <pre className="px-3 py-2 text-caption text-muted-foreground whitespace-pre-wrap break-all">
                   {detailLog.details}
                 </pre>
               </div>
@@ -573,12 +573,12 @@ export function TroubleshootTab() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="font-medium text-sm">File Logging</span>
-                <span className="text-xs text-muted-foreground">
+                <span className="font-medium text-label">File Logging</span>
+                <span className="text-caption text-muted-foreground">
                   {fileLoggingSettings.enabled ? `${fileLoggingSettings.minLevel} level · ${fileLoggingSettings.retentionDays} day retention` : 'Disabled'}
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground truncate">Save logs to disk with automatic daily rotation</p>
+              <p className="text-caption text-muted-foreground truncate">Save logs to disk with automatic daily rotation</p>
             </div>
             <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${fileLoggingExpanded ? 'rotate-180' : ''}`} />
           </button>
@@ -593,7 +593,7 @@ export function TroubleshootTab() {
           <div className="px-4 pb-4 pt-2 border-t border-border/30 bg-muted/10 space-y-3">
             <div className="bg-background/50 rounded-lg divide-y divide-border/30">
               <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm text-foreground">Minimum level</span>
+                <span className="text-label text-foreground">Minimum level</span>
                 <Select
                   inputSize="sm"
                   value={fileLoggingSettings.minLevel}
@@ -608,7 +608,7 @@ export function TroubleshootTab() {
                 </Select>
               </div>
               <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm text-foreground">Retention period</span>
+                <span className="text-label text-foreground">Retention period</span>
                 <Select
                   inputSize="sm"
                   value={fileLoggingSettings.retentionDays}
@@ -622,7 +622,7 @@ export function TroubleshootTab() {
                 </Select>
               </div>
               <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm text-foreground">Log files location</span>
+                <span className="text-label text-foreground">Log files location</span>
                 <Button
                   variant="primary"
                   size="sm"
@@ -639,7 +639,7 @@ export function TroubleshootTab() {
 
       {/* Footer */}
       <div className="mt-3 pt-3 border-t border-border/30 shrink-0">
-        <p className="text-xs text-muted-foreground">
+        <p className="text-caption text-muted-foreground">
           Logs are stored in memory and will be cleared when the app restarts. Export logs before
           closing the app to share with support.
         </p>

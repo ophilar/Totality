@@ -14,9 +14,9 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 const sizeClasses: Record<InputSize, string> = {
-  sm: 'px-3 py-1.5 text-xs',
-  md: 'px-3 py-2 text-sm',
-  lg: 'px-4 py-2.5 text-sm',
+  sm: 'px-3 py-1.5 text-caption',
+  md: 'px-3 py-2 text-label',
+  lg: 'px-4 py-2.5 text-label',
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(

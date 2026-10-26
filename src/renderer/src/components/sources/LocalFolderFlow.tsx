@@ -273,7 +273,7 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
       {/* FFprobe warning */}
       {ffprobeAvailable === false && (
         <div className="p-2 rounded bg-amber-500/10 border border-amber-500/20">
-          <p className="text-xs text-amber-500">
+          <p className="text-caption text-amber-500">
             FFprobe is not installed. Quality data will be limited without file analysis.
           </p>
         </div>
@@ -281,7 +281,7 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
 
       {/* Folder selection */}
       <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">Folder</label>
+        <label className="text-caption text-muted-foreground">Folder</label>
         <div className="flex gap-2">
           <Input
             type="text"
@@ -306,7 +306,7 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
       {/* Display name */}
       {hasLibraries && (
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">Display Name</label>
+          <label className="text-caption text-muted-foreground">Display Name</label>
           <Input
             type="text"
             value={displayName}
@@ -322,12 +322,12 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
         <>
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-medium">Select Libraries</h3>
-              <p className="text-xs text-muted-foreground">
+              <h3 className="text-label font-medium">Select Libraries</h3>
+              <p className="text-caption text-muted-foreground">
                 Found {libraries.length} subfolders
               </p>
             </div>
-            <div className="flex gap-2 text-xs">
+            <div className="flex gap-2 text-caption">
               <Button variant="tertiary" size="sm" onClick={handleSelectAll}>
                 Select all
               </Button>
@@ -370,7 +370,7 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
                 </span>
 
                 {/* Name */}
-                <span className={`flex-1 text-sm truncate ${lib.enabled ? '' : 'text-muted-foreground'}`}>
+                <span className={`flex-1 text-label truncate ${lib.enabled ? '' : 'text-muted-foreground'}`}>
                   {lib.name}
                 </span>
 
@@ -388,7 +388,7 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
             ))}
           </div>
 
-          <p className="text-xs text-muted-foreground">
+          <p className="text-caption text-muted-foreground">
             Assign each folder a media type. Only selected folders will be scanned.
           </p>
         </>
@@ -402,8 +402,8 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
               {getTypeIcon(libraries[0].selectedType)}
             </span>
             <div className="flex-1">
-              <p className="text-sm font-medium">{libraries[0].name}</p>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-label font-medium">{libraries[0].name}</p>
+              <p className="text-caption text-muted-foreground">
                 Detected as {libraries[0].selectedType === 'movies' ? 'Movies' : libraries[0].selectedType === 'tvshows' ? 'TV Shows' : 'Music'} library
               </p>
             </div>
@@ -423,7 +423,7 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
       {/* Info box - only show when no folder selected */}
       {!hasLibraries && !error && (
         <div className="p-2 rounded bg-muted/50 border border-border/50">
-          <p className="text-xs text-muted-foreground">
+          <p className="text-caption text-muted-foreground">
             Select a folder containing your media libraries. Totality will auto-detect subfolders named Movies, TV Shows, Music, etc. and let you choose which to include.
           </p>
         </div>
@@ -432,7 +432,7 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
       {/* Error message */}
       {error && (
         <div className="p-2 rounded bg-destructive/10 border border-destructive/20">
-          <p className="text-xs text-destructive">{error}</p>
+          <p className="text-caption text-destructive">{error}</p>
         </div>
       )}
 

@@ -156,7 +156,7 @@ export const WishlistItemCard = memo(function WishlistItemCard({
             }}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-xl bg-muted/50">
+          <div className="w-full h-full flex items-center justify-center text-h3 bg-muted/50">
             {placeholderIcon}
           </div>
         )}
@@ -169,7 +169,7 @@ export const WishlistItemCard = memo(function WishlistItemCard({
           <MediaIcon className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5" />
           <div className="min-w-0 flex-1 pr-5">
             <div className="flex items-center gap-1.5">
-              <h4 className="font-medium text-sm truncate leading-tight">{item.title}</h4>
+              <h4 className="font-medium text-label truncate leading-tight">{item.title}</h4>
               {isUpgrade && !isCompleted && (
                 <span title="Upgrade">
                   <CircleFadingArrowUp className="w-3 h-3 text-amber-500 shrink-0" />
@@ -177,7 +177,7 @@ export const WishlistItemCard = memo(function WishlistItemCard({
               )}
             </div>
             {subtitle && (
-              <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
+              <p className="text-caption text-muted-foreground truncate">{subtitle}</p>
             )}
           </div>
         </div>
@@ -185,12 +185,12 @@ export const WishlistItemCard = memo(function WishlistItemCard({
         {/* Current quality info for upgrade items — hidden on mobile */}
         {!isMobile && isUpgrade && item.current_quality_tier && (
           <div className="flex items-center gap-1.5 mt-1">
-            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${tierColorClass}`}>
+            <span className={`px-1.5 py-0.5 text-caption font-medium rounded ${tierColorClass}`}>
               {item.current_quality_tier}
               {item.current_quality_level && ` (${item.current_quality_level})`}
             </span>
             {qualityDisplay && (
-              <span className="text-xs text-muted-foreground truncate">
+              <span className="text-caption text-muted-foreground truncate">
                 {qualityDisplay}
               </span>
             )}
@@ -201,7 +201,7 @@ export const WishlistItemCard = memo(function WishlistItemCard({
         {isCompleted && (
           <div className="flex items-center justify-between mt-1">
             {item.completed_at && (
-              <span className="text-xs text-muted-foreground">
+              <span className="text-caption text-muted-foreground">
                 Completed {getCompletedDate()}
               </span>
             )}

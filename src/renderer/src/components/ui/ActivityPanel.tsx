@@ -152,7 +152,7 @@ function SortableQueueItem({
         }`}
         {...listeners}
       />
-      <span className="text-sm flex-1 truncate">{task.label}</span>
+      <span className="text-label flex-1 truncate">{task.label}</span>
       <button
         onClick={(e) => {
           e.stopPropagation()
@@ -457,7 +457,7 @@ export function ActivityPanel() {
           <Bell className="w-5 h-5" />
         )}
         {pendingCount > 0 && (
-          <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+          <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-caption font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
             {pendingCount > 99 ? '99+' : pendingCount}
           </span>
         )}
@@ -487,9 +487,9 @@ export function ActivityPanel() {
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border/30">
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold">Activity</h3>
+            <h3 className="text-label font-semibold">Activity</h3>
             {queueState.isPaused && (
-              <span className="px-1.5 py-0.5 text-xs font-medium bg-yellow-500/20 text-yellow-400 rounded-full">
+              <span className="px-1.5 py-0.5 text-caption font-medium bg-yellow-500/20 text-yellow-400 rounded-full">
                 Paused
               </span>
             )}
@@ -518,7 +518,7 @@ export function ActivityPanel() {
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                <span className="text-sm font-medium">{queueState.currentTask.label}</span>
+                <span className="text-label font-medium">{queueState.currentTask.label}</span>
               </div>
               <button
                 onClick={handleCancelCurrent}
@@ -536,7 +536,7 @@ export function ActivityPanel() {
                     style={{ width: `${queueState.currentTask.progress.percentage}%` }}
                   />
                 </div>
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <div className="flex items-center justify-between text-caption text-muted-foreground">
                   <span>
                     {queueState.currentTask.progress.currentItem ||
                       queueState.currentTask.progress.phase}
@@ -553,14 +553,14 @@ export function ActivityPanel() {
           <div className="flex items-center justify-between px-4 py-2 bg-muted/20 shrink-0">
             <div className="flex items-center gap-2">
               <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-xs font-medium text-muted-foreground">
+              <span className="text-caption font-medium text-muted-foreground">
                 Queue {queueState.queue.length > 0 && `(${queueState.queue.length})`}
               </span>
             </div>
             {queueState.queue.length > 0 && (
               <button
                 onClick={handleClearQueue}
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                className="text-caption text-muted-foreground hover:text-foreground transition-colors"
               >
                 Clear
               </button>
@@ -570,8 +570,8 @@ export function ActivityPanel() {
             {queueState.queue.length === 0 ? (
               <div className="py-6 text-center">
                 <Clock className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">Queue empty</p>
-                <p className="text-xs text-muted-foreground/50 mt-1">
+                <p className="text-label text-muted-foreground">Queue empty</p>
+                <p className="text-caption text-muted-foreground/50 mt-1">
                   Tasks will appear here when queued
                 </p>
               </div>
@@ -594,7 +594,7 @@ export function ActivityPanel() {
                       />
                     ))}
                   </div>
-                  <p className="px-4 py-1.5 text-xs text-muted-foreground/60 italic border-t border-border/20">
+                  <p className="px-4 py-1.5 text-caption text-muted-foreground/60 italic border-t border-border/20">
                     Drag to reorder
                   </p>
                 </SortableContext>
@@ -608,7 +608,7 @@ export function ActivityPanel() {
           <div className="flex items-center justify-between px-4 py-2 bg-muted/20 shrink-0">
             <div className="flex items-center gap-2">
               <Bell className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-xs font-medium text-muted-foreground">
+              <span className="text-caption font-medium text-muted-foreground">
                 Notifications {unreadCount > 0 && `(${unreadCount})`}
               </span>
             </div>
@@ -616,7 +616,7 @@ export function ActivityPanel() {
               {unreadCount > 0 && (
                 <button
                   onClick={handleMarkAllRead}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  className="text-caption text-muted-foreground hover:text-foreground transition-colors"
                 >
                   Mark all read
                 </button>
@@ -624,7 +624,7 @@ export function ActivityPanel() {
               {notifications.length > 0 && (
                 <button
                   onClick={handleClearNotifications}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  className="text-caption text-muted-foreground hover:text-foreground transition-colors"
                 >
                   Clear
                 </button>
@@ -635,8 +635,8 @@ export function ActivityPanel() {
             {notifications.length === 0 ? (
               <div className="py-6 text-center">
                 <Bell className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">No notifications</p>
-                <p className="text-xs text-muted-foreground/50 mt-1">
+                <p className="text-label text-muted-foreground">No notifications</p>
+                <p className="text-caption text-muted-foreground/50 mt-1">
                   Scan completions and library changes will appear here
                 </p>
               </div>
@@ -651,16 +651,16 @@ export function ActivityPanel() {
                     onClick={() => !n.isRead && handleMarkRead(n.id)}
                   >
                     <div className="flex items-start gap-2">
-                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 ${getNotificationIconColor(n.type)}`}>
+                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-caption font-semibold shrink-0 mt-0.5 ${getNotificationIconColor(n.type)}`}>
                         {getNotificationIcon(n.type)}
                       </span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-medium truncate">{n.title}</span>
+                          <span className="text-caption font-medium truncate">{n.title}</span>
                           {!n.isRead && <span className="w-1.5 h-1.5 bg-accent rounded-full shrink-0" />}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
-                        <span className="text-xs text-muted-foreground/50 mt-0.5 block">
+                        <p className="text-caption text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
+                        <span className="text-caption text-muted-foreground/50 mt-0.5 block">
                           {new Date(n.createdAt).toLocaleString()}
                         </span>
                       </div>

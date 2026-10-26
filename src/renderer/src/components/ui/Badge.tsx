@@ -31,7 +31,7 @@ export function Badge({ variant = 'default', children, className = '' }: BadgePr
   return (
     <span
       className={[
-        'inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium rounded-full',
+        'inline-flex items-center gap-1 px-1.5 py-0.5 text-caption font-medium rounded-full',
         variantClasses[variant],
         className,
       ].join(' ')}

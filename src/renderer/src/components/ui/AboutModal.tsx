@@ -61,7 +61,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
       <div ref={modalRef} className="bg-card border border-border rounded-xl w-full max-w-lg mx-4 shadow-xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
-          <h2 id="about-modal-title" className="text-lg font-semibold">About Totality</h2>
+          <h2 id="about-modal-title" className="text-title font-semibold">About Totality</h2>
           <button
             onClick={onClose}
             className="p-2 rounded-md hover:bg-muted transition-colors"
@@ -79,7 +79,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                className={`flex items-center gap-2 px-4 py-3 text-label font-medium border-b-2 transition-colors ${
                   activeTab === tab.id
                     ? 'border-primary text-primary'
                     : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -103,7 +103,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
         <div className="p-4 border-t border-border/30 flex justify-center">
           <button
             onClick={onClose}
-            className="px-6 py-2 text-sm bg-muted hover:bg-muted/80 rounded-md transition-colors"
+            className="px-6 py-2 text-label bg-muted hover:bg-muted/80 rounded-md transition-colors"
           >
             Close
           </button>
@@ -127,20 +127,20 @@ function AboutTab() {
       {/* Logo and Version */}
       <div className="flex flex-col items-center">
         <img src={effectiveIsDark ? logoImage : logoBlackImage} alt="Totality" className="h-24 w-auto object-contain mb-3" />
-        <p className="text-sm text-muted-foreground">Version {version}</p>
+        <p className="text-label text-muted-foreground">Version {version}</p>
       </div>
 
       {/* Description */}
-      <p className="text-sm text-muted-foreground text-center">
+      <p className="text-label text-muted-foreground text-center">
         Analyze media library quality, track completeness, and discover upgrades across your Plex, Jellyfin, Emby, Kodi, and local folder collections.
       </p>
 
       {/* Features */}
       <div className="bg-muted/30 rounded-lg p-4">
-        <h3 className="text-xs font-semibold text-muted-foreground mb-3">
+        <h3 className="text-caption font-semibold text-muted-foreground mb-3">
           Features
         </h3>
-        <ul className="text-sm text-muted-foreground space-y-2">
+        <ul className="text-label text-muted-foreground space-y-2">
           <li>• Multi-source library scanning (Plex, Jellyfin, Emby, Kodi, Local Folders, MediaMonkey)</li>
           <li>• Video and audio quality analysis with tier-based scoring and TMDB ratings</li>
           <li>• TV series, movie collection, music, and director/actor filmography completeness</li>
@@ -154,7 +154,7 @@ function AboutTab() {
       </div>
 
       {/* Links */}
-      <div className="flex justify-center gap-4 text-sm">
+      <div className="flex justify-center gap-4 text-label">
         <ExtLink href="https://github.com/bbidwell85/totality">
           GitHub
         </ExtLink>
@@ -173,14 +173,14 @@ function CreditsTab() {
     <div className="space-y-6">
       {/* Data APIs */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground mb-4">
+        <h3 className="text-caption font-semibold text-muted-foreground mb-4">
           Data sources
         </h3>
 
         {/* TMDB - Required attribution per terms of use */}
         <div className="flex items-start gap-3 mb-4 p-3 bg-muted/30 rounded-lg">
           <img src={tmdbLogo} alt="TMDB" className="h-5 mt-0.5 shrink-0" />
-          <div className="text-xs text-muted-foreground leading-relaxed">
+          <div className="text-caption text-muted-foreground leading-relaxed">
             <p className="font-medium text-foreground mb-1">The Movie Database (TMDB)</p>
             <p>
               This product uses the{' '}
@@ -195,7 +195,7 @@ function CreditsTab() {
         {/* MusicBrainz - Required CC BY-SA attribution */}
         <div className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg">
           <img src={musicbrainzLogo} alt="MusicBrainz" className="h-5 mt-0.5 shrink-0" />
-          <div className="text-xs text-muted-foreground leading-relaxed">
+          <div className="text-caption text-muted-foreground leading-relaxed">
             <p className="font-medium text-foreground mb-1">MusicBrainz</p>
             <p>
               Music metadata provided by{' '}
@@ -218,11 +218,11 @@ function CreditsTab() {
 
       {/* Watchlist Services */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground mb-4">
+        <h3 className="text-caption font-semibold text-muted-foreground mb-4">
           Watchlist services
         </h3>
         <div className="p-3 bg-muted/30 rounded-lg">
-          <div className="text-xs text-muted-foreground leading-relaxed">
+          <div className="text-caption text-muted-foreground leading-relaxed">
             <p className="font-medium text-foreground mb-1">Trakt</p>
             <p>
               Watchlist import powered by the{' '}
@@ -237,11 +237,11 @@ function CreditsTab() {
 
       {/* AI Assistant */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground mb-4">
+        <h3 className="text-caption font-semibold text-muted-foreground mb-4">
           AI assistant
         </h3>
         <div className="p-3 bg-muted/30 rounded-lg">
-          <div className="text-xs text-muted-foreground leading-relaxed">
+          <div className="text-caption text-muted-foreground leading-relaxed">
             <p className="font-medium text-foreground mb-1">Google Gemini</p>
             <p>
               AI chat and library analysis powered by{' '}
@@ -260,11 +260,11 @@ function CreditsTab() {
 
       {/* Media Analysis */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground mb-4">
+        <h3 className="text-caption font-semibold text-muted-foreground mb-4">
           Media analysis
         </h3>
         <div className="p-3 bg-muted/30 rounded-lg">
-          <div className="text-xs text-muted-foreground leading-relaxed">
+          <div className="text-caption text-muted-foreground leading-relaxed">
             <p className="font-medium text-foreground mb-1">FFmpeg / FFprobe</p>
             <p>
               Media file analysis powered by{' '}
@@ -288,10 +288,10 @@ function CreditsTab() {
 
       {/* Open Source Technologies */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground mb-4">
+        <h3 className="text-caption font-semibold text-muted-foreground mb-4">
           Built with open source
         </h3>
-        <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="grid grid-cols-2 gap-2 text-caption">
           <TechLink name="Electron" url="https://www.electronjs.org" license="MIT" />
           <TechLink name="React" url="https://react.dev" license="MIT" />
           <TechLink name="TypeScript" url="https://www.typescriptlang.org" license="Apache 2.0" />
@@ -310,10 +310,10 @@ function CreditsTab() {
 
       {/* External Services */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground mb-4">
+        <h3 className="text-caption font-semibold text-muted-foreground mb-4">
           External services
         </h3>
-        <div className="text-xs text-muted-foreground leading-relaxed p-3 bg-muted/30 rounded-lg space-y-2">
+        <div className="text-caption text-muted-foreground leading-relaxed p-3 bg-muted/30 rounded-lg space-y-2">
           <p>
             <strong className="text-foreground">Watchlist Sync:</strong> Import watchlists from Plex and Trakt to track movies and shows you want to acquire.
           </p>
@@ -333,10 +333,10 @@ function CreditsTab() {
 /** Legal Tab - Privacy, trademarks, disclaimer, license */
 function LegalTab() {
   return (
-    <div className="space-y-6 text-xs text-muted-foreground leading-relaxed">
+    <div className="space-y-6 text-caption text-muted-foreground leading-relaxed">
       {/* Privacy */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground mb-3">
+        <h3 className="text-caption font-semibold text-muted-foreground mb-3">
           Privacy and data
         </h3>
         <div className="p-3 bg-muted/30 rounded-lg space-y-2">
@@ -363,7 +363,7 @@ function LegalTab() {
 
       {/* Trademarks */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground mb-3">
+        <h3 className="text-caption font-semibold text-muted-foreground mb-3">
           Trademarks
         </h3>
         <div className="p-3 bg-muted/30 rounded-lg space-y-2">
@@ -390,7 +390,7 @@ function LegalTab() {
 
       {/* Disclaimer */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground mb-3">
+        <h3 className="text-caption font-semibold text-muted-foreground mb-3">
           Disclaimer
         </h3>
         <div className="p-3 bg-muted/30 rounded-lg space-y-2">
@@ -411,7 +411,7 @@ function LegalTab() {
 
       {/* License */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground mb-3">
+        <h3 className="text-caption font-semibold text-muted-foreground mb-3">
           License
         </h3>
         <div className="p-3 bg-muted/30 rounded-lg">

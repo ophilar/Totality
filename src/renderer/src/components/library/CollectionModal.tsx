@@ -135,7 +135,7 @@ export const CollectionModal = memo(function CollectionModal({
           <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl shrink-0">
             <div>
               <h2 id="collection-modal-title" className="text-xl font-semibold">{collection.collection_name}</h2>
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="text-label text-muted-foreground mt-1">
                 {collection.owned_movies} of {collection.total_movies} movies owned
                 <span className="mx-2">•</span>
                 <span className={collection.completeness_percentage === 100 ? 'text-green-500' : 'text-orange-500'}>
@@ -147,7 +147,7 @@ export const CollectionModal = memo(function CollectionModal({
               {onDismissAllMissingInCollection && missingMovies.length > 1 && (
                 <button
                   onClick={onDismissAllMissingInCollection}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted/50"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-caption text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted/50"
                   title="Dismiss all missing films in this collection"
                 >
                   <EyeOff className="w-3.5 h-3.5" />
@@ -198,8 +198,8 @@ export const CollectionModal = memo(function CollectionModal({
                   {/* Title, year, and action icons below poster */}
                   <div className="mt-1.5 flex items-start justify-between gap-1">
                     <div className="min-w-0 flex-1">
-                      <h4 className="font-medium text-sm truncate">{movie.title}</h4>
-                      {movie.year && <p className="text-xs text-muted-foreground">{movie.year}</p>}
+                      <h4 className="font-medium text-label truncate">{movie.title}</h4>
+                      {movie.year && <p className="text-caption text-muted-foreground">{movie.year}</p>}
                     </div>
                     {movie.type === 'missing' && (
                       <div onClick={(e) => e.stopPropagation()} className="shrink-0 flex items-center gap-1">

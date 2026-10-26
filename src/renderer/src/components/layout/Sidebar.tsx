@@ -377,7 +377,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
       {/* Header - adapts to collapsed/expanded state */}
       <div className={`flex items-center transition-[padding,border] duration-300 ease-out ${isCollapsed ? 'p-2 border-b border-border justify-center' : 'p-4 pb-0 justify-between'}`}>
         {!isCollapsed && (
-          <h2 className="text-xs font-semibold text-muted-foreground px-2 whitespace-nowrap">
+          <h2 className="text-caption font-semibold text-muted-foreground px-2 whitespace-nowrap">
             Media sources
           </h2>
         )}
@@ -454,12 +454,12 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
         {/* No Sources */}
         {!isLoading && sources.length === 0 && (
           <div className="space-y-2">
-            <p className="text-xs text-muted-foreground text-left px-2">
+            <p className="text-caption text-muted-foreground text-left px-2">
               No media sources configured
             </p>
             <button
               onClick={() => setShowAddModal(true)}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-md text-label hover:bg-primary/90 transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
               aria-label="Add media source"
             >
               <Plus className="w-4 h-4" aria-hidden="true" />
@@ -521,7 +521,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
           <button
             ref={addSourceButtonRef}
             onClick={() => setShowAddModal(true)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-caption text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
             aria-label="Add media source"
           >
             <Plus className="w-3.5 h-3.5" aria-hidden="true" />
@@ -537,7 +537,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
         <button
           ref={aboutButtonRef}
           onClick={onOpenAbout}
-          className="w-full flex items-center justify-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors py-2 rounded-md focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
+          className="w-full flex items-center justify-center gap-2 text-caption text-muted-foreground hover:text-foreground transition-colors py-2 rounded-md focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
           aria-label="About Totality"
         >
           <Info className={isCollapsed ? 'w-5 h-5' : 'w-3.5 h-3.5'} aria-hidden="true" />
@@ -751,10 +751,10 @@ function SourceItem({
               onBlur={handleRenameSubmit}
               onKeyDown={handleRenameKeyDown}
               onClick={(e) => e.stopPropagation()}
-              className="w-full text-sm font-medium bg-muted text-foreground border border-primary rounded px-2 py-0.5 focus:outline-hidden focus:ring-2 focus:ring-primary"
+              className="w-full text-label font-medium bg-muted text-foreground border border-primary rounded px-2 py-0.5 focus:outline-hidden focus:ring-2 focus:ring-primary"
             />
           ) : (
-            <div className="text-sm font-medium truncate">{source.display_name}</div>
+            <div className="text-label font-medium truncate">{source.display_name}</div>
           )}
         </div>
         <span
@@ -786,7 +786,7 @@ function SourceItem({
           {/* Manage Libraries Mode */}
           {!isLoadingLibraries && isManaging && allLibraries.length > 0 && (
             <div className="space-y-1">
-              <div className="text-xs text-muted-foreground px-2 mb-2">
+              <div className="text-caption text-muted-foreground px-2 mb-2">
                 Toggle libraries to show/hide them
               </div>
               {allLibraries.map((library) => (
@@ -796,7 +796,7 @@ function SourceItem({
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <LibraryIcon type={library.type} />
-                    <span className="text-xs truncate">{library.name}</span>
+                    <span className="text-caption truncate">{library.name}</span>
                   </div>
                   <button
                     onClick={(e) => {
@@ -870,14 +870,14 @@ function SourceItem({
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 min-w-0">
                         <LibraryIcon type={library.type} />
-                        <span className="text-xs truncate">{library.name}</span>
+                        <span className="text-caption truncate">{library.name}</span>
                         {newItemCount && !isQueueScanning && !isQueued && (
-                          <span className="bg-primary text-primary-foreground text-xs px-1.5 py-0.5 rounded-full font-medium">
+                          <span className="bg-primary text-primary-foreground text-caption px-1.5 py-0.5 rounded-full font-medium">
                             +{newItemCount}
                           </span>
                         )}
                         {isQueued && (
-                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1 text-caption text-muted-foreground">
                             <Clock className="w-3 h-3" />
                             <span>#{queueStatus.queuePosition}</span>
                           </span>
@@ -885,7 +885,7 @@ function SourceItem({
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         {!showScanningUI && !isQueued && lastScan && (
-                          <span className="text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+                          <span className="text-caption text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
                             {lastScan}
                           </span>
                         )}
@@ -914,7 +914,7 @@ function SourceItem({
                             />
                           </div>
                         </div>
-                        <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                        <div className="text-caption text-muted-foreground mt-0.5 truncate">
                           <span className="font-medium">Scanning:</span>{' '}
                           {queueProgress.percentage?.toFixed(0) || 0}%
                           {queueProgress.currentItem && (
@@ -925,7 +925,7 @@ function SourceItem({
                     )}
                     {isQueueScanning && !queueProgress && (
                       <div className="mt-1.5">
-                        <div className="text-xs text-muted-foreground truncate">
+                        <div className="text-caption text-muted-foreground truncate">
                           <span className="font-medium">Scanning...</span>
                         </div>
                       </div>
@@ -954,7 +954,7 @@ function SourceItem({
                                 <Square className="w-3 h-3" />
                               </button>
                             </div>
-                            <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                            <div className="text-caption text-muted-foreground mt-0.5 truncate">
                               <span className="font-medium">
                                 {scanPhase === 'scanning' ? 'Scanning' : 'Analyzing Quality'}:
                               </span>{' '}
@@ -969,7 +969,7 @@ function SourceItem({
                           </>
                         ) : (
                           <div className="flex items-center gap-1">
-                            <div className="flex-1 text-xs text-muted-foreground truncate">
+                            <div className="flex-1 text-caption text-muted-foreground truncate">
                               <span className="font-medium">
                                 {scanPhase === 'scanning' ? 'Scanning...' : 'Analyzing Quality...'}
                               </span>
@@ -996,7 +996,7 @@ function SourceItem({
           )}
 
           {!isLoadingLibraries && !isManaging && !progress && libraries.length === 0 && (
-            <div className="text-xs text-muted-foreground px-2">No libraries enabled</div>
+            <div className="text-caption text-muted-foreground px-2">No libraries enabled</div>
           )}
 
           {/* Action Buttons */}
