@@ -216,7 +216,7 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, isMobil
           {needsUpgrade && (
             <>
               <span>•</span>
-              <span title="Quality upgrade recommended"><CircleFadingArrowUp className="w-4 h-4 text-red-500 shrink-0" /></span>
+              <span title="Quality upgrade recommended"><CircleFadingArrowUp className="w-4 h-4 text-destructive shrink-0" /></span>
             </>
           )}
         </div>
@@ -611,7 +611,7 @@ export function TVShowsView({
                 className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
                 title="Copy title"
               >
-                {copiedTitle ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                {copiedTitle ? <Check className="w-4 h-4 text-foreground" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
 
@@ -655,7 +655,7 @@ export function TVShowsView({
                 </p>
                 <button
                   onClick={() => setShowOverviewExpanded(!showOverviewExpanded)}
-                  className="flex items-center gap-1 text-label text-primary hover:text-primary/80 mt-1 transition-colors"
+                  className="flex items-center gap-1 text-label text-muted-foreground hover:text-foreground mt-1 transition-colors"
                 >
                   {showOverviewExpanded ? (
                     <><span>Less</span><ChevronUp className="w-4 h-4" /></>

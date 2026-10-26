@@ -459,7 +459,7 @@ export function MusicView({
                 className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
                 title="Copy title"
               >
-                {copiedTitle ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                {copiedTitle ? <Check className="w-4 h-4 text-foreground" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
             <p className="text-title text-muted-foreground">{selectedAlbum.artist_name}</p>
@@ -724,7 +724,7 @@ export function MusicView({
                         {tierConfig && qualityTier === 'low' && (
                           <>
                             <span>•</span>
-                            <span title={tierConfig.title}><CircleFadingArrowUp className="w-4 h-4 text-red-500 shrink-0" /></span>
+                            <span title={tierConfig.title}><CircleFadingArrowUp className="w-4 h-4 text-destructive shrink-0" /></span>
                           </>
                         )}
                       </div>
@@ -977,7 +977,7 @@ export function MusicView({
                       <span className="text-muted-foreground">Bitrate</span>
                       <span className="font-medium flex items-center">
                         {selectedTrackForQuality.bitrate ? `${Math.round(selectedTrackForQuality.bitrate)} kbps` : 'N/A'}
-                        {bitrateLow && <span className="inline-block w-2 h-2 rounded-full bg-red-500 ml-1.5" title="Below quality threshold" />}
+                        {bitrateLow && <span className="inline-block w-2 h-2 rounded-full bg-destructive ml-1.5" title="Below quality threshold" />}
                       </span>
                       <span className="text-muted-foreground">Sample Rate</span>
                       <span className="font-medium">{selectedTrackForQuality.sample_rate ? `${(selectedTrackForQuality.sample_rate / 1000).toFixed(1)} kHz` : 'N/A'}</span>
@@ -1048,7 +1048,7 @@ export function MusicView({
                 className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
                 title="Copy title"
               >
-                {copiedTitle ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                {copiedTitle ? <Check className="w-4 h-4 text-foreground" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
 
@@ -1109,7 +1109,7 @@ export function MusicView({
                 </p>
                 <button
                   onClick={() => setBioExpanded(!bioExpanded)}
-                  className="flex items-center gap-1 text-label text-primary hover:text-primary/80 mt-1 transition-colors"
+                  className="flex items-center gap-1 text-label text-muted-foreground hover:text-foreground mt-1 transition-colors"
                 >
                   {bioExpanded ? (
                     <><span>Less</span><ChevronUp className="w-4 h-4" /></>
@@ -1264,7 +1264,7 @@ export function MusicView({
           {stats.losslessAlbums > 0 && (
             <>
               <span className="text-muted-foreground/50">•</span>
-              <span className="text-green-500">{stats.losslessAlbums} Lossless</span>
+              <span className="text-foreground">{stats.losslessAlbums} Lossless</span>
             </>
           )}
           {stats.hiResAlbums > 0 && (
@@ -1349,7 +1349,7 @@ export function MusicView({
                 >
                   <span>Album</span>
                   {albumSortColumn === 'title' && (
-                    <span className="text-primary">{albumSortDirection === 'asc' ? '↑' : '↓'}</span>
+                    <span className="text-foreground">{albumSortDirection === 'asc' ? '↑' : '↓'}</span>
                   )}
                 </div>
 
@@ -1360,7 +1360,7 @@ export function MusicView({
                 >
                   <span>Artist</span>
                   {albumSortColumn === 'artist' && (
-                    <span className="text-primary">{albumSortDirection === 'asc' ? '↑' : '↓'}</span>
+                    <span className="text-foreground">{albumSortDirection === 'asc' ? '↑' : '↓'}</span>
                   )}
                 </div>
 
@@ -1468,7 +1468,7 @@ export function MusicView({
                 >
                   <span>Title</span>
                   {trackSortColumn === 'title' && (
-                    <span className="text-primary">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
+                    <span className="text-foreground">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
                   )}
                   <div
                     className="ml-auto w-1 h-4 cursor-col-resize hover:bg-primary/50 rounded"
@@ -1485,7 +1485,7 @@ export function MusicView({
                 >
                   <span>Artist</span>
                   {trackSortColumn === 'artist' && (
-                    <span className="text-primary">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
+                    <span className="text-foreground">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
                   )}
                   <div
                     className="ml-auto w-1 h-4 cursor-col-resize hover:bg-primary/50 rounded"
@@ -1502,7 +1502,7 @@ export function MusicView({
                 >
                   <span>Album</span>
                   {trackSortColumn === 'album' && (
-                    <span className="text-primary">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
+                    <span className="text-foreground">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
                   )}
                   <div
                     className="ml-auto w-1 h-4 cursor-col-resize hover:bg-primary/50 rounded"
@@ -1523,7 +1523,7 @@ export function MusicView({
                 >
                   <span>Codec</span>
                   {trackSortColumn === 'codec' && (
-                    <span className="text-primary">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
+                    <span className="text-foreground">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
                   )}
                 </div>
 
@@ -1535,7 +1535,7 @@ export function MusicView({
                 >
                   <span>Time</span>
                   {trackSortColumn === 'duration' && (
-                    <span className="text-primary">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
+                    <span className="text-foreground">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
                   )}
                 </div>
               </div>
@@ -1770,7 +1770,7 @@ export function MusicView({
                         </div>
                       </div>
                       {(selectedTrackForQuality.bit_depth ?? 0) >= 24 && (
-                        <span className="px-2 py-0.5 text-caption font-medium rounded bg-purple-500/20 text-purple-400">Hi-Res</span>
+                        <span className="px-2 py-0.5 text-caption font-medium rounded bg-muted text-muted-foreground">Hi-Res</span>
                       )}
                     </div>
                   </div>
@@ -1784,7 +1784,7 @@ export function MusicView({
                 </div>
 
                 {/* Technical Specs */}
-                <div className="bg-muted/30 rounded-lg p-3">
+                <div className="rounded-lg p-3">
                   <h3 className="text-caption font-semibold text-muted-foreground mb-2">Audio Specs</h3>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-label">
                     <div className="flex justify-between">
@@ -1795,7 +1795,7 @@ export function MusicView({
                       <span className="text-muted-foreground">Bitrate</span>
                       <span className="font-medium flex items-center">
                         {selectedTrackForQuality.bitrate ? `${Math.round(selectedTrackForQuality.bitrate)} kbps` : 'N/A'}
-                        {bitrateLow && <span className="inline-block w-2 h-2 rounded-full bg-red-500 ml-1.5" title="Below quality threshold" />}
+                        {bitrateLow && <span className="inline-block w-2 h-2 rounded-full bg-destructive ml-1.5" title="Below quality threshold" />}
                       </span>
                     </div>
                     <div className="flex justify-between">
@@ -2348,7 +2348,7 @@ const TrackListItem = memo(({ track, index, artistName, albumTitle, columnWidths
         )}
         {qualityTier === 'low' && (
           <span title="Quality upgrade recommended">
-            <CircleFadingArrowUp className="w-4 h-4 text-red-500" />
+            <CircleFadingArrowUp className="w-4 h-4 text-destructive" />
           </span>
         )}
       </div>

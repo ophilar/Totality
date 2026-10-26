@@ -628,7 +628,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
           {/* Quality Upgrade Badge */}
           {(movie.tier_quality === 'LOW' || !!movie.needs_upgrade) && (
             <div title="Quality upgrade recommended">
-              <CircleFadingArrowUp className="w-5 h-5 text-red-500" />
+              <CircleFadingArrowUp className="w-5 h-5 text-destructive" />
             </div>
           )}
         </div>
@@ -738,7 +738,7 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
           {needsUpgrade && (
             <>
               <span>•</span>
-              <span title="Quality upgrade recommended"><CircleFadingArrowUp className="w-4 h-4 text-red-500 shrink-0" /></span>
+              <span title="Quality upgrade recommended"><CircleFadingArrowUp className="w-4 h-4 text-destructive shrink-0" /></span>
             </>
           )}
           {collectionData && (
