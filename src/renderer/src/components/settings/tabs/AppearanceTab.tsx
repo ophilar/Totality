@@ -423,7 +423,7 @@ export function AppearanceTab() {
                 <div key={themeConfig.id} className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between px-0.5">
                     <span className="text-xs font-medium">{displayLabel}</span>
-                    <span className="text-[10px] text-muted-foreground">{displayDesc}</span>
+                    <span className="text-xs text-muted-foreground">{displayDesc}</span>
                   </div>
                   <button
                     onClick={() => setTheme(themeConfig.id)}

@@ -177,7 +177,7 @@ export function MobileSearchOverlay({
 function ResultSection({ icon: Icon, label, children }: { icon: typeof Film; label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="px-4 py-2.5 text-xs font-bold text-white/90 uppercase tracking-wider bg-black/70 backdrop-blur-2xl flex items-center gap-2 sticky top-0 z-10 border-b border-white/10">
+      <div className="px-4 py-2.5 text-xs font-bold text-white/90 bg-black/70 backdrop-blur-2xl flex items-center gap-2 sticky top-0 z-10 border-b border-white/10">
         <Icon className="w-3 h-3" />
         {label}
       </div>

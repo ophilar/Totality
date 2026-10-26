@@ -375,7 +375,7 @@ export function TroubleshootTab() {
             </span>
             <span className="text-foreground flex-1 truncate text-xs">{entry.message}</span>
             {entry.details && (
-              <span className="text-muted-foreground text-[10px] shrink-0">
+              <span className="text-muted-foreground text-xs shrink-0">
                 {isDetailTarget ? '▼' : '▶'}
               </span>
             )}

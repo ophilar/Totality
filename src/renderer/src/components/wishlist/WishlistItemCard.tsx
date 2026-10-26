@@ -185,12 +185,12 @@ export const WishlistItemCard = memo(function WishlistItemCard({
         {/* Current quality info for upgrade items — hidden on mobile */}
         {!isMobile && isUpgrade && item.current_quality_tier && (
           <div className="flex items-center gap-1.5 mt-1">
-            <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${tierColorClass}`}>
+            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${tierColorClass}`}>
               {item.current_quality_tier}
               {item.current_quality_level && ` (${item.current_quality_level})`}
             </span>
             {qualityDisplay && (
-              <span className="text-[10px] text-muted-foreground truncate">
+              <span className="text-xs text-muted-foreground truncate">
                 {qualityDisplay}
               </span>
             )}

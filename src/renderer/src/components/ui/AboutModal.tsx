@@ -137,7 +137,7 @@ function AboutTab() {
 
       {/* Features */}
       <div className="bg-muted/30 rounded-lg p-4">
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+        <h3 className="text-xs font-semibold text-muted-foreground mb-3">
           Features
         </h3>
         <ul className="text-sm text-muted-foreground space-y-2">
@@ -173,8 +173,8 @@ function CreditsTab() {
     <div className="space-y-6">
       {/* Data APIs */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">
-          Data Sources
+        <h3 className="text-xs font-semibold text-muted-foreground mb-4">
+          Data sources
         </h3>
 
         {/* TMDB - Required attribution per terms of use */}
@@ -218,8 +218,8 @@ function CreditsTab() {
 
       {/* Watchlist Services */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">
-          Watchlist Services
+        <h3 className="text-xs font-semibold text-muted-foreground mb-4">
+          Watchlist services
         </h3>
         <div className="p-3 bg-muted/30 rounded-lg">
           <div className="text-xs text-muted-foreground leading-relaxed">
@@ -237,8 +237,8 @@ function CreditsTab() {
 
       {/* AI Assistant */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">
-          AI Assistant
+        <h3 className="text-xs font-semibold text-muted-foreground mb-4">
+          AI assistant
         </h3>
         <div className="p-3 bg-muted/30 rounded-lg">
           <div className="text-xs text-muted-foreground leading-relaxed">
@@ -260,8 +260,8 @@ function CreditsTab() {
 
       {/* Media Analysis */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">
-          Media Analysis
+        <h3 className="text-xs font-semibold text-muted-foreground mb-4">
+          Media analysis
         </h3>
         <div className="p-3 bg-muted/30 rounded-lg">
           <div className="text-xs text-muted-foreground leading-relaxed">
@@ -288,8 +288,8 @@ function CreditsTab() {
 
       {/* Open Source Technologies */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">
-          Built With Open Source
+        <h3 className="text-xs font-semibold text-muted-foreground mb-4">
+          Built with open source
         </h3>
         <div className="grid grid-cols-2 gap-2 text-xs">
           <TechLink name="Electron" url="https://www.electronjs.org" license="MIT" />
@@ -310,8 +310,8 @@ function CreditsTab() {
 
       {/* External Services */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">
-          External Services
+        <h3 className="text-xs font-semibold text-muted-foreground mb-4">
+          External services
         </h3>
         <div className="text-xs text-muted-foreground leading-relaxed p-3 bg-muted/30 rounded-lg space-y-2">
           <p>
@@ -336,8 +336,8 @@ function LegalTab() {
     <div className="space-y-6 text-xs text-muted-foreground leading-relaxed">
       {/* Privacy */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-          Privacy & Data
+        <h3 className="text-xs font-semibold text-muted-foreground mb-3">
+          Privacy and data
         </h3>
         <div className="p-3 bg-muted/30 rounded-lg space-y-2">
           <p>
@@ -363,7 +363,7 @@ function LegalTab() {
 
       {/* Trademarks */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+        <h3 className="text-xs font-semibold text-muted-foreground mb-3">
           Trademarks
         </h3>
         <div className="p-3 bg-muted/30 rounded-lg space-y-2">
@@ -390,7 +390,7 @@ function LegalTab() {
 
       {/* Disclaimer */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+        <h3 className="text-xs font-semibold text-muted-foreground mb-3">
           Disclaimer
         </h3>
         <div className="p-3 bg-muted/30 rounded-lg space-y-2">
@@ -411,7 +411,7 @@ function LegalTab() {
 
       {/* License */}
       <section>
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+        <h3 className="text-xs font-semibold text-muted-foreground mb-3">
           License
         </h3>
         <div className="p-3 bg-muted/30 rounded-lg">

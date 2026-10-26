@@ -368,7 +368,7 @@ export function QualitySettingsTab() {
                   style={{ left: `${settings.quality_video_weight}%`, marginLeft: '-6px' }}
                 />
               </div>
-              <div className="flex justify-between text-[10px] font-medium">
+              <div className="flex justify-between text-xs font-medium">
                 <span className="text-accent/60">Video {settings.quality_video_weight}%</span>
                 <span className="text-accent">Audio {100 - settings.quality_video_weight}%</span>
               </div>
@@ -423,7 +423,7 @@ export function QualitySettingsTab() {
               />
             </div>
 
-            <p className="text-[10px] text-muted-foreground italic mt-3">
+            <p className="text-xs text-muted-foreground italic mt-3">
               Most users won't need to change these. Adjust if your HEVC or AV1 files are scoring
               higher or lower than they look — lower the value if scores seem too generous, raise it
               if scores seem too harsh.
@@ -649,13 +649,13 @@ function QualityThreshold({
         />
       </div>
 
-      <div className="flex text-[10px] font-medium">
+      <div className="flex text-xs font-medium">
         <div className="text-accent/40" style={{ width: `${mediumPercent}%` }}>{lowLabel}</div>
         <div className="text-accent/60 text-center" style={{ width: `${highPercent - mediumPercent}%` }}>{mediumLabel}</div>
         <div className="text-accent text-right flex-1">{highLabel}</div>
       </div>
 
-      <div className="flex justify-between text-[10px] text-muted-foreground">
+      <div className="flex justify-between text-xs text-muted-foreground">
         <span>{formatValue(min)} {unit}</span>
         <span className="text-accent/60">{formatValue(mediumValue)}</span>
         <span className="text-accent">{formatValue(highValue)}</span>
@@ -705,7 +705,7 @@ function NumberInput({
         }}
         aria-describedby={hint ? hintId : undefined}
       />
-      {hint && <p id={hintId} className="text-[10px] text-muted-foreground">{hint}</p>}
+      {hint && <p id={hintId} className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   )
 }
@@ -973,7 +973,7 @@ function HandbrakeGuide({
       </div>
 
       {/* Codec Info */}
-      <div className="bg-background/50 border border-border/30 rounded-lg p-3 text-[10px] text-muted-foreground">
+      <div className="bg-background/50 border border-border/30 rounded-lg p-3 text-xs text-muted-foreground">
         {selectedCodec === 'svtav1' && (
           <div><span className="text-foreground font-medium">SVT-AV1</span> — Best quality per bit. ~30% smaller than HEVC at same quality. Slowest to encode. Playback requires a 2018+ device, modern smart TVs, or VLC/Plex. Not supported on older Roku, some budget Android boxes, or Safari before macOS Ventura.</div>
         )}
@@ -1053,7 +1053,7 @@ function HandbrakeGuide({
       {/* Tips */}
       <div className="space-y-2">
         <h4 className="text-xs font-medium text-foreground">Tips for {RESOLUTION_TABS.find(t => t.id === selectedTier)?.label}</h4>
-        <ul className="text-[10px] text-muted-foreground space-y-1 list-disc list-inside">
+        <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
           {preset.notes.map((note, i) => (
             <li key={i}>{note}</li>
           ))}
@@ -1083,7 +1083,7 @@ function HandbrakeGuide({
         </div>
       </div>
 
-      <p className="text-[10px] text-muted-foreground italic">
+      <p className="text-xs text-muted-foreground italic">
         Based on HandBrake 1.11.2+. Lower RF = higher quality/larger file. SVT-AV1 presets range 1-13
         (lower = slower/better). These settings prioritize visual transparency over file size.
       </p>
@@ -1104,7 +1104,7 @@ function ExtraOptionsCopyable({ extraOptions }: { extraOptions: string }) {
     <div className="space-y-2">
       <h4 className="text-xs font-medium text-foreground">Extra Options (Advanced)</h4>
       <div className="bg-background/50 rounded-lg p-3 flex items-start gap-2">
-        <code className="text-[10px] text-muted-foreground break-all leading-relaxed block flex-1 select-all">
+        <code className="text-xs text-muted-foreground break-all leading-relaxed block flex-1 select-all">
           {extraOptions}
         </code>
         <button
@@ -1119,7 +1119,7 @@ function ExtraOptionsCopyable({ extraOptions }: { extraOptions: string }) {
           )}
         </button>
       </div>
-      <p className="text-[10px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         Paste into Handbrake's "Extra Options" field under the Video tab.
       </p>
     </div>

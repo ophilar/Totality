@@ -77,8 +77,8 @@ export function StoreLinksMenu({ storeLinks, onOpenLink, isLoading }: StoreLinks
               {/* Aggregators */}
               {aggregators.length > 0 && (
                 <>
-                  <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Where to Watch
+                  <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+                    Where to watch
                   </div>
                   {aggregators.map((store) => (
                     <StoreMenuItem
@@ -94,8 +94,8 @@ export function StoreLinksMenu({ storeLinks, onOpenLink, isLoading }: StoreLinks
               {/* Physical Media */}
               {physical.length > 0 && (
                 <>
-                  <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider mt-1">
-                    Physical Media
+                  <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground mt-1">
+                    Physical media
                   </div>
                   {physical.map((store) => (
                     <StoreMenuItem
@@ -111,7 +111,7 @@ export function StoreLinksMenu({ storeLinks, onOpenLink, isLoading }: StoreLinks
               {/* Digital Stores */}
               {digital.length > 0 && (
                 <>
-                  <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider mt-1">
+                  <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground mt-1">
                     Digital
                   </div>
                   {digital.map((store) => (

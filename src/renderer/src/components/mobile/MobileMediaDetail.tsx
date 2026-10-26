@@ -312,14 +312,14 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
             {/* Audio tracks */}
             {audioTracks.length > 1 && (
               <div className="mt-4">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Audio Tracks</p>
+                <p className="text-xs text-muted-foreground mb-2">Audio tracks</p>
                 <div className="space-y-1.5">
                   {audioTracks.map((t, i) => (
                     <div key={i} className="flex items-center gap-2 text-xs">
                       <span className="font-mono text-foreground">{t.codec || '?'}</span>
                       <span className="text-muted-foreground">{t.channels}ch</span>
                       {t.bitrate && <span className="text-muted-foreground">{formatBitrate(t.bitrate)}</span>}
-                      {t.language && <span className="text-muted-foreground uppercase">{t.language}</span>}
+                      {t.language && <span className="text-muted-foreground">{t.language}</span>}
                     </div>
                   ))}
                 </div>
@@ -352,7 +352,7 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
 function DetailItem({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
       <p className="text-sm text-foreground font-mono">{value}</p>
     </div>
   )

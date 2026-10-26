@@ -2170,7 +2170,7 @@ export function MediaBrowser({
                 else alphabetFilterRefs.current.delete('all')
               }}
               onClick={() => scrollToLetter(null)}
-              className={`w-5 h-5 flex items-center justify-center text-[10px] font-medium transition-colors focus:outline-hidden ${
+              className={`w-5 h-5 flex items-center justify-center text-xs font-medium transition-colors focus:outline-hidden ${
                 alphabetFilter === null
                   ? 'text-foreground'
                   : 'text-muted-foreground hover:text-foreground'
@@ -2187,7 +2187,7 @@ export function MediaBrowser({
                 else alphabetFilterRefs.current.delete('#')
               }}
               onClick={() => availableLetters.has('#') && scrollToLetter('#')}
-              className={`w-5 h-5 flex items-center justify-center text-[10px] font-medium transition-colors focus:outline-hidden ${
+              className={`w-5 h-5 flex items-center justify-center text-xs font-medium transition-colors focus:outline-hidden ${
                 alphabetFilter === '#'
                   ? 'text-foreground'
                   : availableLetters.has('#')
@@ -2211,7 +2211,7 @@ export function MediaBrowser({
                   else alphabetFilterRefs.current.delete(letter)
                 }}
                 onClick={() => hasItems && scrollToLetter(letter)}
-                className={`w-5 h-5 flex items-center justify-center text-[10px] font-medium transition-colors focus:outline-hidden ${
+                className={`w-5 h-5 flex items-center justify-center text-xs font-medium transition-colors focus:outline-hidden ${
                   alphabetFilter === letter
                     ? 'text-foreground'
                     : hasItems

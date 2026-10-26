@@ -189,7 +189,7 @@ export function NotificationBell() {
                           <span className="text-xs font-medium truncate text-foreground">{n.title}</span>
                           {!n.isRead && <span className="w-1.5 h-1.5 bg-accent rounded-full shrink-0" />}
                         </div>
-                        <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
                         <span className="text-xs text-muted-foreground/50 mt-0.5 block">
                           {new Date(n.createdAt).toLocaleString()}
                         </span>

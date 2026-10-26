@@ -572,7 +572,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
         {/* Version Count Badge */}
         {movie.version_count && movie.version_count > 1 && (
           <div
-            className="absolute top-2 right-2 z-10 bg-primary text-primary-foreground text-[0.625rem] font-bold px-1.5 py-0.5 rounded shadow-md"
+            className="absolute top-2 right-2 z-10 bg-primary text-primary-foreground text-xs font-bold px-1.5 py-0.5 rounded shadow-md"
             title={`${movie.version_count} versions available`}
           >
             {movie.version_count}x

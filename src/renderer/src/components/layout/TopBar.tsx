@@ -749,7 +749,7 @@ export function TopBar({
             >
               <Star className="w-5 h-5" />
               {wishlistCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-white text-black text-[10px] font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                <span className="absolute -top-1 -right-1 bg-white text-black text-xs font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
                   {wishlistCount > 99 ? '99+' : wishlistCount}
                 </span>
               )}
@@ -774,7 +774,7 @@ export function TopBar({
                 <Activity className="w-5 h-5" />
               )}
               {taskPendingCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-white text-black text-[10px] font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                <span className="absolute -top-1 -right-1 bg-white text-black text-xs font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
                   {taskPendingCount > 99 ? '99+' : taskPendingCount}
                 </span>
               )}

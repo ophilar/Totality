@@ -377,8 +377,8 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
       {/* Header - adapts to collapsed/expanded state */}
       <div className={`flex items-center transition-[padding,border] duration-300 ease-out ${isCollapsed ? 'p-2 border-b border-border justify-center' : 'p-4 pb-0 justify-between'}`}>
         {!isCollapsed && (
-          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2 whitespace-nowrap">
-            Media Sources
+          <h2 className="text-xs font-semibold text-muted-foreground px-2 whitespace-nowrap">
+            Media sources
           </h2>
         )}
         <button
@@ -872,7 +872,7 @@ function SourceItem({
                         <LibraryIcon type={library.type} />
                         <span className="text-xs truncate">{library.name}</span>
                         {newItemCount && !isQueueScanning && !isQueued && (
-                          <span className="bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5 rounded-full font-medium">
+                          <span className="bg-primary text-primary-foreground text-xs px-1.5 py-0.5 rounded-full font-medium">
                             +{newItemCount}
                           </span>
                         )}
