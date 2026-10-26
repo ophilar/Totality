@@ -5,6 +5,7 @@ import { buildHdrMetadataArgs } from './HdrTranscodingPolicy'
 import { appendStreamMappingArgs } from './StreamSelectionPlan'
 import { applyTargetTranscodePlan } from './TargetTranscodePlan'
 import { APP_CONFIG } from '@main/config'
+import { getEncoderBitDepth } from './EncoderPixelFormat'
 
 export class IntelCommandBuilder implements ITranscodeCommandBuilder {
   buildFFmpegArgs(input: string, output: string, options: TranscodeOptions, analysis: FileAnalysisResult): string[] {
@@ -12,6 +13,7 @@ export class IntelCommandBuilder implements ITranscodeCommandBuilder {
     if (process.platform === 'linux' && options.gpuDeviceSelector?.kind !== 'drm') throw new Error('The selected Intel adapter has no DRM render device.')
     if (process.platform !== 'win32' && process.platform !== 'linux') throw new Error('Per-device Intel QSV encoding is unavailable on this platform.')
     const hdrArgs = buildHdrMetadataArgs(analysis, options)
+    const bitDepth = getEncoderBitDepth(analysis, options)
     const codec = options.targetCodec === 'av1' ? 'av1_qsv' : 'hevc_qsv'
     const quality = (options.crf ?? APP_CONFIG.transcoding.defaultIntelQuality).toString()
 
@@ -26,7 +28,7 @@ export class IntelCommandBuilder implements ITranscodeCommandBuilder {
       '-hwaccel_device', 'selected',
       '-i', input,
       '-fps_mode', 'passthrough',
-      '-vf', 'vpp_qsv=format=p010le',
+      '-vf', `vpp_qsv=format=${bitDepth === 10 ? 'p010le' : 'nv12'}`,
       '-c:v', codec,
       '-preset', options.preset || APP_CONFIG.transcoding.defaultIntelPreset,
       '-global_quality', quality,
