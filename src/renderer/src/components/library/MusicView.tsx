@@ -213,7 +213,18 @@ export function MusicView({
     album_title?: string
     mood?: string
     genres?: string
+    file_path?: string
   } | null>(null)
+
+  // Close track quality modal on Escape
+  useEffect(() => {
+    if (!selectedTrackForQuality) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectedTrackForQuality(null)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedTrackForQuality])
 
   // Track list column state
   const [trackColumnWidths, setTrackColumnWidths] = useState({
@@ -680,6 +691,7 @@ export function MusicView({
                           album_title: selectedAlbum.title,
                           mood: track.originalTrack?.mood,
                           genres: track.originalTrack?.genres,
+                          file_path: track.file_path || track.originalTrack?.file_path,
                         })
                       }
                     }}
@@ -815,60 +827,69 @@ export function MusicView({
 
           return createPortal(
             <div
-              className="fixed inset-0 bg-black/60 flex items-center justify-center z-200 p-6"
+              className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-6"
               onClick={() => setSelectedTrackForQuality(null)}
             >
               <div
-                className="bg-card rounded-xl w-full max-w-lg overflow-hidden shadow-2xl border border-border"
+                className="bg-card rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl border border-border flex flex-col max-h-[90vh]"
                 onClick={(e) => e.stopPropagation()}
               >
-                {/* Header — matches MediaDetails pattern */}
-                <div className="flex gap-4 p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
-                  {/* Album Art */}
-                  {selectedAlbum?.thumb_url && (
-                    <img
-                      src={selectedAlbum.thumb_url}
-                      alt=""
-                      className="w-16 h-16 rounded-lg object-cover shrink-0"
-                      onError={(e) => { e.currentTarget.style.display = 'none' }}
-                    />
-                  )}
+                {/* Header — backdrop image pattern matching MediaDetails */}
+                <div className="shrink-0 rounded-t-2xl overflow-hidden">
+                  <div className="relative px-5 pt-20 pb-3">
+                    {/* Album art as backdrop */}
+                    {selectedAlbum?.thumb_url && (
+                      <>
+                        <img
+                          src={selectedAlbum.thumb_url}
+                          alt=""
+                          className="absolute top-0 right-0 w-3/4 h-full object-cover object-top"
+                          onError={(e) => { e.currentTarget.style.display = 'none' }}
+                        />
+                        <div className="absolute top-0 right-0 w-3/4 h-full bg-gradient-to-r from-card to-transparent" />
+                        <div className="absolute top-0 right-0 w-3/4 h-full bg-gradient-to-t from-card via-card/60 to-transparent" />
+                      </>
+                    )}
 
-                  {/* Title & Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <h2 className="text-lg font-medium truncate">{selectedTrackForQuality.title}</h2>
-                        {(selectedTrackForQuality.artist_name || selectedTrackForQuality.album_title) && (
-                          <p className="text-sm text-muted-foreground truncate">
-                            {[selectedTrackForQuality.artist_name, selectedTrackForQuality.album_title].filter(Boolean).join(' · ')}
-                          </p>
-                        )}
-                        {(() => {
-                          let genres: string[] = []
-                          let moods: string[] = []
-                          try { genres = selectedTrackForQuality.genres ? JSON.parse(selectedTrackForQuality.genres) : [] } catch { /* malformed */ }
-                          try { moods = selectedTrackForQuality.mood ? JSON.parse(selectedTrackForQuality.mood) : [] } catch { /* malformed */ }
-                          if (genres.length === 0 && moods.length === 0) return null
-                          return (
-                            <div className="mt-1.5 space-y-0.5">
-                              {genres.length > 0 && (
-                                <p className="text-xs text-muted-foreground truncate">
-                                  <span className="text-muted-foreground/60">Genre: </span>
-                                  {genres.join(', ')}
-                                </p>
-                              )}
-                              {moods.length > 0 && (
-                                <p className="text-xs text-muted-foreground truncate">
-                                  <span className="text-muted-foreground/60">Mood: </span>
-                                  {moods.join(', ')}
-                                </p>
-                              )}
-                            </div>
-                          )
-                        })()}
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
+                    {/* Close button — glass pill top-right */}
+                    <button
+                      onClick={() => setSelectedTrackForQuality(null)}
+                      className="absolute top-3 right-3 z-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm text-white/80 hover:bg-black/60 hover:text-white transition-colors"
+                      aria-label="Close"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+
+                    {/* Title & subtitle */}
+                    <div className="relative z-[1]">
+                      <h2 className="text-xl font-semibold leading-tight tracking-tight pr-12">{selectedTrackForQuality.title}</h2>
+                      {(selectedTrackForQuality.artist_name || selectedTrackForQuality.album_title) && (
+                        <p className="text-sm text-muted-foreground mt-1">
+                          {[selectedTrackForQuality.artist_name, selectedTrackForQuality.album_title].filter(Boolean).join(' · ')}
+                        </p>
+                      )}
+
+                      {/* Genre/mood tags */}
+                      {(() => {
+                        let genres: string[] = []
+                        let moods: string[] = []
+                        try { genres = selectedTrackForQuality.genres ? JSON.parse(selectedTrackForQuality.genres) : [] } catch { /* malformed */ }
+                        try { moods = selectedTrackForQuality.mood ? JSON.parse(selectedTrackForQuality.mood) : [] } catch { /* malformed */ }
+                        if (genres.length === 0 && moods.length === 0) return null
+                        return (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {genres.map((g) => (
+                              <span key={g} className="px-2 py-0.5 text-xs rounded bg-muted text-muted-foreground">{g}</span>
+                            ))}
+                            {moods.map((m) => (
+                              <span key={m} className="px-2 py-0.5 text-xs rounded bg-muted text-muted-foreground">{m}</span>
+                            ))}
+                          </div>
+                        )
+                      })()}
+
+                      {/* Action buttons — bare icons */}
+                      <div className="flex items-center gap-2 mt-3">
                         {(tier === 'low' || tier === 'medium') && (
                           <AddToWishlistButton
                             mediaType="track"
@@ -883,41 +904,36 @@ export function MusicView({
                         {(tier === 'low' || tier === 'medium') && (
                           <button
                             onClick={() => setSelectedTrackForQuality(null)}
-                            className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-                            title="Hide from completeness"
+                            className="p-1 rounded-lg text-white hover:bg-white/15 transition-colors"
+                            title="Dismiss upgrade"
                           >
-                            <EyeOff className="w-4 h-4" />
+                            <EyeOff className="w-5 h-5" />
                           </button>
                         )}
-                        <button
-                          onClick={() => setSelectedTrackForQuality(null)}
-                          className="text-muted-foreground hover:text-foreground p-1"
-                        >
-                          <X className="w-5 h-5" />
-                        </button>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Content */}
-                <div className="p-4 space-y-4">
-                  {/* Quality Score Card */}
-                  <div className="rounded-lg p-3">
+                {/* Scrollable Content */}
+                <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+
+                  {/* Quality Score */}
+                  <div>
                     <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-4 bg-muted/30 -ml-3 -mt-3 -mb-3 px-4 py-3 rounded-l-lg">
+                      <div className="flex items-center gap-4 bg-muted/30 px-4 py-3 rounded-lg">
                         <div className="text-center">
-                          <div className="text-2xl font-bold">{tierLabel}</div>
+                          <div className="text-2xl font-semibold">{tierLabel}</div>
                           <div className="text-xs font-medium text-muted-foreground">{tierDescription}</div>
                         </div>
                         <div className="h-10 w-px bg-border" />
                         <div className="text-center">
-                          <div className="text-2xl font-bold">{tierScore}</div>
+                          <div className="text-2xl font-semibold">{tierScore}</div>
                           <div className="text-xs font-medium text-muted-foreground">Score</div>
                         </div>
                       </div>
 
-                      {/* Quality Bar + Premium Badges */}
+                      {/* Quality Bar + Hi-Res badge */}
                       <div className="flex-1 flex items-center gap-4">
                         <div className="flex-1">
                           <div className="flex items-baseline gap-1.5">
@@ -939,42 +955,40 @@ export function MusicView({
                           </div>
                         </div>
                         {(selectedTrackForQuality.bit_depth ?? 0) >= 24 && (
-                          <span className="px-2 py-0.5 text-xs font-medium rounded bg-purple-500/20 text-purple-400">Hi-Res</span>
+                          <span className="px-2 py-0.5 text-xs font-medium rounded bg-muted text-muted-foreground">Hi-Res</span>
                         )}
                       </div>
                     </div>
-
-                    {/* Issue text */}
-                    {issueText && (
-                      <div className="mt-3">
-                        <div className="text-sm text-muted-foreground">{issueText}</div>
-                      </div>
-                    )}
                   </div>
 
-                  {/* Technical Specs */}
-                  <div className="bg-muted/30 rounded-lg p-3">
+                  {/* Issue warning banner */}
+                  {issueText && (
+                    <div className="text-sm px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500">
+                      {issueText}
+                    </div>
+                  )}
+
+                  {/* Audio Specs */}
+                  <div>
                     <h3 className="text-xs font-semibold text-muted-foreground mb-2">Audio Specs</h3>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Codec</span>
-                        <span className="font-medium">{selectedTrackForQuality.codec || 'Unknown'}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Bitrate</span>
-                        <span className="font-medium flex items-center">
-                          {selectedTrackForQuality.bitrate ? `${Math.round(selectedTrackForQuality.bitrate)} kbps` : 'N/A'}
-                          {bitrateLow && <span className="inline-block w-2 h-2 rounded-full bg-red-500 ml-1.5" title="Below quality threshold" />}
+                    <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+                      <span className="text-muted-foreground">Codec</span>
+                      <span className="font-medium">{selectedTrackForQuality.codec || 'Unknown'}</span>
+                      <span className="text-muted-foreground">Bitrate</span>
+                      <span className="font-medium flex items-center">
+                        {selectedTrackForQuality.bitrate ? `${Math.round(selectedTrackForQuality.bitrate)} kbps` : 'N/A'}
+                        {bitrateLow && <span className="inline-block w-2 h-2 rounded-full bg-red-500 ml-1.5" title="Below quality threshold" />}
+                      </span>
+                      <span className="text-muted-foreground">Sample Rate</span>
+                      <span className="font-medium">{selectedTrackForQuality.sample_rate ? `${(selectedTrackForQuality.sample_rate / 1000).toFixed(1)} kHz` : 'N/A'}</span>
+                      <span className="text-muted-foreground">Bit Depth</span>
+                      <span className="font-medium">{selectedTrackForQuality.bit_depth ? `${selectedTrackForQuality.bit_depth}-bit` : 'N/A'}</span>
+                      {selectedTrackForQuality.file_path && <>
+                        <span className="text-muted-foreground">Path</span>
+                        <span className="font-mono text-xs truncate" title={selectedTrackForQuality.file_path}>
+                          {selectedTrackForQuality.file_path}
                         </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Sample Rate</span>
-                        <span className="font-medium">{selectedTrackForQuality.sample_rate ? `${(selectedTrackForQuality.sample_rate / 1000).toFixed(1)} kHz` : 'N/A'}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Bit Depth</span>
-                        <span className="font-medium">{selectedTrackForQuality.bit_depth ? `${selectedTrackForQuality.bit_depth}-bit` : 'N/A'}</span>
-                      </div>
+                      </>}
                     </div>
                   </div>
                 </div>
