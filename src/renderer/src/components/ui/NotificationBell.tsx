@@ -92,9 +92,9 @@ export function NotificationBell() {
 
   const getIconStyle = (type: string) => {
     switch (type) {
-      case 'scan_complete': return { icon: '✓', color: 'text-muted-foreground' }
-      case 'source_change': return { icon: '↻', color: 'text-muted-foreground' }
-      case 'error': return { icon: '!', color: 'text-muted-foreground' }
+      case 'scan_complete': return { icon: '✓', color: 'text-foreground' }
+      case 'source_change': return { icon: '↻', color: 'text-foreground' }
+      case 'error': return { icon: '!', color: 'text-destructive' }
       default: return { icon: 'i', color: 'text-muted-foreground' }
     }
   }
@@ -136,24 +136,19 @@ export function NotificationBell() {
 
       <div
         ref={dropdownRef}
-        className={`${getActiveTheme()} absolute right-0 top-full mt-2 w-80 max-h-96 bg-card rounded-xl shadow-2xl z-50 flex flex-col overflow-hidden transition-[opacity,transform] duration-200 ease-out ${
-          isOpen ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0 pointer-events-none'
+        className={`${getActiveTheme()} absolute right-0 top-full mt-2 w-80 max-h-96 bg-card border border-border rounded-2xl shadow-xl z-50 flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
+          isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
-        style={{ boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/30">
-          <span className="text-caption font-semibold text-muted-foreground">Notifications</span>
-          <div className="flex items-center gap-2">
+          <span className="text-label font-semibold text-foreground">Notifications</span>
+          <div className="flex items-center gap-1">
             {unreadCount > 0 && (
-              <button onClick={handleMarkAllRead} className="text-caption text-muted-foreground hover:text-foreground transition-colors">
-                Mark all read
-              </button>
+              <Button variant="tertiary" size="sm" onClick={handleMarkAllRead}>Mark all read</Button>
             )}
             {notifications.length > 0 && (
-              <button onClick={handleClear} className="text-caption text-muted-foreground hover:text-foreground transition-colors">
-                Clear
-              </button>
+              <Button variant="tertiary" size="sm" onClick={handleClear}>Clear</Button>
             )}
             <Button variant="tertiary" size="icon-sm" onClick={() => setIsOpen(false)}
               icon={<X className="w-3.5 h-3.5" />}
@@ -187,7 +182,7 @@ export function NotificationBell() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
                           <span className="text-caption font-medium truncate text-foreground">{n.title}</span>
-                          {!n.isRead && <span className="w-1.5 h-1.5 bg-accent rounded-full shrink-0" />}
+                          {!n.isRead && <span className="w-1.5 h-1.5 bg-foreground rounded-full shrink-0" />}
                         </div>
                         <p className="text-caption text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
                         <span className="text-caption text-muted-foreground/50 mt-0.5 block">
