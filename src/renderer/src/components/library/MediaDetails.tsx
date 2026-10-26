@@ -978,7 +978,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
             const insight = getVersionInsight(sv)
             if (!insight) return null
             return (
-              <div className="text-sm px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500">
+              <div className="text-sm text-amber-500">
                 {insight.type === 'redundant'
                   ? 'A better version exists \u2014 this copy may be safe to remove.'
                   : 'This version scores LOW quality \u2014 consider replacing it.'}

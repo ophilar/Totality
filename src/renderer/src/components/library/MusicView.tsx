@@ -963,7 +963,7 @@ export function MusicView({
 
                   {/* Issue warning banner */}
                   {issueText && (
-                    <div className="text-sm px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500">
+                    <div className="text-sm text-amber-500">
                       {issueText}
                     </div>
                   )}
