@@ -7,6 +7,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Server, HardDrive, Film, Tv, Music, Folder } from 'lucide-react'
 import { useSources, type ProviderType } from '../../contexts/SourceContext'
+import { Button } from '../ui/Button'
+import { Select } from '../ui/Input'
 import type { MediaSourceResponse, MediaLibraryResponse } from '../../../../preload/index'
 
 // Extended library type with enabled status and upgrade target
@@ -476,7 +478,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
             <div className="text-sm text-muted-foreground">Unable to load libraries due to connection error</div>
           ) : libraries.length > 0 ? (
             <div className="space-y-2">
-              <div className="text-xs font-medium text-muted-foreground uppercase">Libraries</div>
+              <div className="text-xs font-medium text-muted-foreground">Libraries</div>
               {libraries.map(lib => (
                 <div
                   key={lib.id}
@@ -518,26 +520,28 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
                   <div className="flex items-center gap-2">
                     {/* Per-library upgrade target (video/TV only) */}
                     {lib.type !== 'music' && (
-                      <select
+                      <Select
                         value={lib.upgradeMinTier ?? ''}
                         onChange={e => handleSetUpgradeTier(lib.id, e.target.value)}
                         disabled={!lib.isEnabled}
-                        className="text-xs bg-background border border-border rounded px-1.5 py-0.5 text-muted-foreground hover:text-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        inputSize="sm"
+                        className="text-xs text-muted-foreground hover:text-foreground"
                         title="Flag for upgrade if below this tier"
                       >
                         {UPGRADE_TIER_OPTIONS.map(o => (
                           <option key={o.value} value={o.value}>{o.label}</option>
                         ))}
-                      </select>
+                      </Select>
                     )}
-                    <button
+                    <Button
                       onClick={() => handleScanLibrary(lib.id)}
                       disabled={isScanning || !lib.isEnabled}
-                      className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                      variant="primary"
+                      size="sm"
                       title={!lib.isEnabled ? 'Enable library to scan' : 'Scan library'}
                     >
                       Scan
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -549,7 +553,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
           {/* FFprobe Settings (Kodi-local only) */}
           {isKodiLocal && (
             <div className="space-y-2 pt-2 border-t border-border">
-              <div className="text-xs font-medium text-muted-foreground uppercase">File Analysis</div>
+              <div className="text-xs font-medium text-muted-foreground">File analysis</div>
 
               {ffprobeLoading ? (
                 <div className="text-sm text-muted-foreground">Checking FFprobe availability...</div>
@@ -588,15 +592,16 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
                       {ffprobeCanInstall ? (
                         <div className="mt-3 space-y-2">
                           <div className="flex items-center gap-3">
-                            <button
+                            <Button
                               onClick={(e) => {
                                 e.stopPropagation()
                                 handleInstallFFprobe()
                               }}
-                              className="px-3 py-1.5 text-xs font-medium rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                              variant="primary"
+                              size="sm"
                             >
                               Install FFprobe
-                            </button>
+                            </Button>
                             <span className="text-xs text-muted-foreground">~30-80 MB download</span>
                           </div>
                           {ffprobeError && (
@@ -671,17 +676,15 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
 
           {/* Actions */}
           <div className="flex justify-end gap-2 pt-2 border-t border-border">
-            <button
+            <Button
               onClick={handleDelete}
               disabled={isDeleting}
-              className={`text-xs px-3 py-1.5 rounded border disabled:opacity-50 transition-colors ${
-                confirmDelete
-                  ? 'border-destructive bg-destructive text-destructive-foreground'
-                  : 'border-destructive text-destructive hover:bg-destructive/10'
-              }`}
+              variant={confirmDelete ? 'danger' : 'danger-secondary'}
+              size="sm"
+              loading={isDeleting}
             >
               {isDeleting ? 'Removing...' : confirmDelete ? 'Click again to confirm' : 'Remove'}
-            </button>
+            </Button>
           </div>
         </div>
       )}

@@ -9,6 +9,8 @@
 import { useState, useEffect } from 'react'
 import { Database, HardDrive, FolderOpen, Film, Music } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
+import { Button } from '../ui/Button'
+import { Input } from '../ui/Input'
 import { KodiMySQLFlow } from './KodiMySQLFlow'
 
 interface KodiConnectionFlowProps {
@@ -288,13 +290,13 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium">Select libraries to include:</p>
               <div className="flex gap-2 text-xs">
-                <button onClick={handleSelectAll} className="text-primary hover:underline">
-                  Select All
-                </button>
+                <Button variant="tertiary" size="sm" onClick={handleSelectAll}>
+                  Select all
+                </Button>
                 <span className="text-muted-foreground">|</span>
-                <button onClick={handleDeselectAll} className="text-primary hover:underline">
-                  Deselect All
-                </button>
+                <Button variant="tertiary" size="sm" onClick={handleDeselectAll}>
+                  Deselect all
+                </Button>
               </div>
             </div>
             <div className="space-y-2 max-h-48 overflow-y-auto">
@@ -329,13 +331,14 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
           </div>
         )}
 
-        <button
+        <Button
           onClick={handleComplete}
           disabled={selectedLibraries.size === 0}
-          className="w-full px-4 py-2 rounded-md bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          variant="primary"
+          className="w-full"
         >
           {selectedLibraries.size === 0 ? 'Select at least one library' : 'Continue'}
-        </button>
+        </Button>
       </div>
     )
   }
@@ -356,12 +359,13 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
           </p>
         </div>
 
-        <button
+        <Button
           onClick={onSuccess}
-          className="w-full px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+          variant="primary"
+          className="w-full"
         >
           Done
-        </button>
+        </Button>
       </div>
     )
   }
@@ -375,12 +379,13 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
           <span className="text-sm text-muted-foreground">Detecting local Kodi...</span>
         </div>
 
-        <button
+        <Button
           onClick={onBack}
-          className="w-full px-4 py-2 rounded-md border border-border hover:bg-muted"
+          variant="secondary"
+          className="w-full"
         >
           Cancel
-        </button>
+        </Button>
       </div>
     )
   }
@@ -458,12 +463,13 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
           </button>
         </div>
 
-        <button
+        <Button
           onClick={onBack}
-          className="w-full px-4 py-2 rounded-md border border-border hover:bg-muted"
+          variant="secondary"
+          className="w-full"
         >
           Back
-        </button>
+        </Button>
       </div>
     )
   }
@@ -555,12 +561,12 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
         {/* Display name */}
         <label className="block">
           <span className="text-sm font-medium">Display Name</span>
-          <input
+          <Input
             type="text"
             value={localDisplayName}
             onChange={(e) => setLocalDisplayName(e.target.value)}
             placeholder="Kodi (Local)"
-            className="mt-1 w-full px-3 py-2 rounded-md border border-border bg-background focus:outline-hidden focus:ring-2 focus:ring-primary text-sm"
+            className="mt-1"
           />
         </label>
 
@@ -573,23 +579,26 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
 
         {/* Buttons */}
         <div className="flex gap-2">
-          <button
+          <Button
             onClick={() => {
               setMode('select-mode')
               setError(null)
             }}
             disabled={isConnecting}
-            className="flex-1 px-4 py-2 rounded-md border border-border hover:bg-muted disabled:opacity-50"
+            variant="secondary"
+            className="flex-1"
           >
             Back
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={handleLocalConnect}
             disabled={isConnecting || (!includeVideoDb && !includeMusicDb)}
-            className="flex-1 px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            variant="primary"
+            loading={isConnecting}
+            className="flex-1"
           >
             {isConnecting ? 'Connecting...' : 'Connect'}
-          </button>
+          </Button>
         </div>
       </div>
     )

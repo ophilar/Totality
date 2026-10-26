@@ -8,6 +8,9 @@
 import { useState, useEffect } from 'react'
 import { useSources } from '../../contexts/SourceContext'
 import { Film, Tv, Music, HelpCircle } from 'lucide-react'
+import { Button } from '../ui/Button'
+import { Input } from '../ui/Input'
+import { Select } from '../ui/Input'
 
 interface LocalFolderFlowProps {
   onSuccess: () => void
@@ -256,15 +259,16 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
   return (
     <div className="space-y-3">
       {/* Back button */}
-      <button
+      <Button
         onClick={onBack}
-        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        variant="tertiary"
+        size="sm"
       >
         <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
         </svg>
         Back
-      </button>
+      </Button>
 
       {/* FFprobe warning */}
       {ffprobeAvailable === false && (
@@ -279,20 +283,23 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
       <div className="space-y-1">
         <label className="text-xs text-muted-foreground">Folder</label>
         <div className="flex gap-2">
-          <input
+          <Input
             type="text"
             value={folderPath}
             readOnly
             placeholder="Select a folder..."
-            className="flex-1 px-2 py-1.5 text-sm bg-muted border border-border rounded outline-hidden focus:ring-1 focus:ring-primary"
+            inputSize="sm"
+            className="flex-1"
           />
-          <button
+          <Button
             onClick={handleSelectFolder}
             disabled={isDetecting}
-            className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors disabled:opacity-50"
+            variant="primary"
+            size="sm"
+            loading={isDetecting}
           >
             {isDetecting ? 'Detecting...' : 'Browse'}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -300,12 +307,12 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
       {hasLibraries && (
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">Display Name</label>
-          <input
+          <Input
             type="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder="My Media Library"
-            className="w-full px-2 py-1.5 text-sm bg-muted border border-border rounded outline-hidden focus:ring-1 focus:ring-primary"
+            inputSize="sm"
           />
         </div>
       )}
@@ -321,13 +328,13 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
               </p>
             </div>
             <div className="flex gap-2 text-xs">
-              <button onClick={handleSelectAll} className="text-primary hover:underline">
-                Select All
-              </button>
+              <Button variant="tertiary" size="sm" onClick={handleSelectAll}>
+                Select all
+              </Button>
               <span className="text-muted-foreground">|</span>
-              <button onClick={handleDeselectAll} className="text-primary hover:underline">
-                Deselect All
-              </button>
+              <Button variant="tertiary" size="sm" onClick={handleDeselectAll}>
+                Deselect all
+              </Button>
             </div>
           </div>
 
@@ -368,15 +375,15 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
                 </span>
 
                 {/* Type selector */}
-                <select
+                <Select
                   value={lib.selectedType}
                   onChange={(e) => setLibraryType(index, e.target.value as 'movies' | 'tvshows' | 'music')}
-                  className="text-xs bg-muted border border-border rounded px-2 py-1 outline-hidden focus:ring-1 focus:ring-primary"
+                  inputSize="sm"
                 >
                   <option value="movies">Movies</option>
                   <option value="tvshows">TV Shows</option>
                   <option value="music">Music</option>
-                </select>
+                </Select>
               </div>
             ))}
           </div>
@@ -400,15 +407,15 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
                 Detected as {libraries[0].selectedType === 'movies' ? 'Movies' : libraries[0].selectedType === 'tvshows' ? 'TV Shows' : 'Music'} library
               </p>
             </div>
-            <select
+            <Select
               value={libraries[0].selectedType}
               onChange={(e) => setLibraryType(0, e.target.value as 'movies' | 'tvshows' | 'music')}
-              className="text-xs bg-muted border border-border rounded px-2 py-1 outline-hidden focus:ring-1 focus:ring-primary"
+              inputSize="sm"
             >
               <option value="movies">Movies</option>
               <option value="tvshows">TV Shows</option>
               <option value="music">Music</option>
-            </select>
+            </Select>
           </div>
         </div>
       )}
@@ -431,20 +438,22 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
 
       {/* Add button */}
       {hasLibraries && (
-        <button
+        <Button
           onClick={handleAdd}
           disabled={isAdding || enabledCount === 0}
-          className="w-full py-2 text-sm font-medium bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          variant="primary"
+          loading={isAdding}
+          className="w-full"
         >
           {isAdding
             ? 'Adding...'
             : enabledCount === 0
               ? 'Select at least one library'
               : isSingleLibrary
-                ? 'Add Library'
-                : `Add ${enabledCount} ${enabledCount === 1 ? 'Library' : 'Libraries'}`
+                ? 'Add library'
+                : `Add ${enabledCount} ${enabledCount === 1 ? 'library' : 'libraries'}`
           }
-        </button>
+        </Button>
       )}
     </div>
   )

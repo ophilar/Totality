@@ -8,6 +8,8 @@
 import { useState } from 'react'
 import { Film, Tv, Music, Folder, Database, Server, AlertCircle, CheckCircle } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
+import { Button } from '../ui/Button'
+import { Input } from '../ui/Input'
 
 interface KodiMySQLFlowProps {
   onSuccess: () => void
@@ -221,13 +223,13 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium">Select libraries to include:</p>
               <div className="flex gap-2 text-xs">
-                <button onClick={handleSelectAll} className="text-primary hover:underline">
-                  Select All
-                </button>
+                <Button variant="tertiary" size="sm" onClick={handleSelectAll}>
+                  Select all
+                </Button>
                 <span className="text-muted-foreground">|</span>
-                <button onClick={handleDeselectAll} className="text-primary hover:underline">
-                  Deselect All
-                </button>
+                <Button variant="tertiary" size="sm" onClick={handleDeselectAll}>
+                  Deselect all
+                </Button>
               </div>
             </div>
             <div className="space-y-1 max-h-48 overflow-y-auto">
@@ -270,13 +272,13 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
         )}
 
         <div className="flex justify-end">
-          <button
+          <Button
             onClick={handleComplete}
             disabled={selectedLibraries.size === 0}
-            className="px-6 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            variant="primary"
           >
             {selectedLibraries.size === 0 ? 'Select at least one library' : 'Done'}
-          </button>
+          </Button>
         </div>
       </div>
     )
@@ -299,12 +301,12 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
       {/* Display name */}
       <label className="block">
         <span className="text-sm font-medium">Display Name</span>
-        <input
+        <Input
           type="text"
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
           placeholder="Kodi (MySQL)"
-          className="mt-1 w-full px-3 py-2 rounded-md border border-border bg-background focus:outline-hidden focus:ring-1 focus:ring-primary text-sm"
+          className="mt-1"
         />
       </label>
 
@@ -312,7 +314,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
       <div className="grid grid-cols-3 gap-2">
         <label className="block col-span-2">
           <span className="text-sm font-medium">Host</span>
-          <input
+          <Input
             type="text"
             value={host}
             onChange={(e) => {
@@ -320,12 +322,12 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
               setTestResult(null)
             }}
             placeholder="192.168.1.100 or localhost"
-            className="mt-1 w-full px-3 py-2 rounded-md border border-border bg-background focus:outline-hidden focus:ring-1 focus:ring-primary text-sm"
+            className="mt-1"
           />
         </label>
         <label className="block">
           <span className="text-sm font-medium">Port</span>
-          <input
+          <Input
             type="number"
             value={port}
             onChange={(e) => {
@@ -335,7 +337,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
             placeholder="3306"
             min="1"
             max="65535"
-            className="mt-1 w-full px-3 py-2 rounded-md border border-border bg-background focus:outline-hidden focus:ring-1 focus:ring-primary text-sm"
+            className="mt-1"
           />
         </label>
       </div>
@@ -344,7 +346,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
           <span className="text-sm font-medium">Username</span>
-          <input
+          <Input
             type="text"
             value={username}
             onChange={(e) => {
@@ -352,12 +354,12 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
               setTestResult(null)
             }}
             placeholder="kodi"
-            className="mt-1 w-full px-3 py-2 rounded-md border border-border bg-background focus:outline-hidden focus:ring-1 focus:ring-primary text-sm"
+            className="mt-1"
           />
         </label>
         <label className="block">
           <span className="text-sm font-medium">Password</span>
-          <input
+          <Input
             type="password"
             value={password}
             onChange={(e) => {
@@ -365,7 +367,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
               setTestResult(null)
             }}
             placeholder="Enter password"
-            className="mt-1 w-full px-3 py-2 rounded-md border border-border bg-background focus:outline-hidden focus:ring-1 focus:ring-primary text-sm"
+            className="mt-1"
           />
         </label>
       </div>
@@ -378,7 +380,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
         <div className="mt-2 space-y-2 pl-2 border-l-2 border-border">
           <label className="block">
             <span className="text-sm font-medium">Database Prefix</span>
-            <input
+            <Input
               type="text"
               value={databasePrefix}
               onChange={(e) => {
@@ -386,7 +388,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
                 setTestResult(null)
               }}
               placeholder="kodi_"
-              className="mt-1 w-full px-3 py-2 rounded-md border border-border bg-background focus:outline-hidden focus:ring-1 focus:ring-primary text-sm"
+              className="mt-1"
             />
             <p className="text-xs text-muted-foreground mt-1">
               Default: kodi_ (e.g., kodi_video121)
@@ -408,23 +410,16 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
       </details>
 
       {/* Test connection button */}
-      <button
+      <Button
         onClick={handleTestConnection}
         disabled={isTesting || !host.trim() || !username.trim()}
-        className="w-full px-4 py-2 rounded-md border border-border hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm"
+        variant="secondary"
+        loading={isTesting}
+        icon={!isTesting ? <Server className="w-4 h-4" /> : undefined}
+        className="w-full"
       >
-        {isTesting ? (
-          <>
-            <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent" />
-            Testing connection...
-          </>
-        ) : (
-          <>
-            <Server className="w-4 h-4 text-foreground" />
-            Test Connection
-          </>
-        )}
-      </button>
+        {isTesting ? 'Testing connection...' : 'Test connection'}
+      </Button>
 
       {/* Test result */}
       {testResult && (
@@ -471,20 +466,23 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
 
       {/* Connect button */}
       <div className="flex gap-2">
-        <button
+        <Button
           onClick={onBack}
           disabled={isConnecting}
-          className="flex-1 px-4 py-2 rounded-md border border-border hover:bg-muted disabled:opacity-50 text-sm"
+          variant="secondary"
+          className="flex-1"
         >
           Back
-        </button>
-        <button
+        </Button>
+        <Button
           onClick={handleConnect}
           disabled={isConnecting || !testResult?.success}
-          className="flex-1 px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+          variant="primary"
+          loading={isConnecting}
+          className="flex-1"
         >
           {isConnecting ? 'Connecting...' : 'Connect'}
-        </button>
+        </Button>
       </div>
     </div>
   )

@@ -11,6 +11,7 @@
 import { useState, useEffect } from 'react'
 import { Loader2, FolderOpen, Download, Upload, Trash2, AlertTriangle, FileSpreadsheet, X, Database, RefreshCw, HardDrive } from 'lucide-react'
 import { Toggle } from '../../ui/Toggle'
+import { Button, Card } from '../../ui'
 
 interface CSVExportOptions {
   includeUpgrades: boolean
@@ -217,7 +218,7 @@ export function DataManagementTab() {
       <div className="space-y-2">
         <h3 className="text-sm font-medium text-foreground">Database</h3>
 
-        <div className="bg-muted/30 rounded-lg border border-border/40">
+        <Card variant="muted" padding="none">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-3 min-w-0">
               <Database className="w-5 h-5 text-muted-foreground shrink-0" />
@@ -226,15 +227,16 @@ export function DataManagementTab() {
                 <p className="text-xs text-muted-foreground truncate">{dbPath}</p>
               </div>
             </div>
-            <button
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<FolderOpen className="w-3.5 h-3.5" />}
               onClick={() => window.electronAPI.dbOpenFolder()}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
             >
-              <FolderOpen className="w-3.5 h-3.5" />
               Open Folder
-            </button>
+            </Button>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Storage Analytics */}
@@ -244,7 +246,7 @@ export function DataManagementTab() {
           <h3 className="text-sm font-medium text-foreground">Storage Analytics</h3>
         </div>
 
-        <div className="bg-muted/30 rounded-lg border border-border/40 p-4 space-y-4">
+        <Card variant="muted" className="space-y-4">
           {!storageData ? (
             <div className="flex items-center justify-center py-4">
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
@@ -266,7 +268,7 @@ export function DataManagementTab() {
                 {/* By Codec */}
                 {storageData.byCodec.length > 0 && (
                   <div className="space-y-1">
-                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">By Codec</h4>
+                    <h4 className="text-xs font-medium text-muted-foreground">By Codec</h4>
                     <div className="space-y-1">
                       {storageData.byCodec.map(c => (
                         <div key={c.codec} className="flex items-center justify-between text-xs">
@@ -281,7 +283,7 @@ export function DataManagementTab() {
                 {/* By Quality Tier */}
                 {storageData.byTier.length > 0 && (
                   <div className="space-y-1">
-                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">By Quality Tier</h4>
+                    <h4 className="text-xs font-medium text-muted-foreground">By Quality Tier</h4>
                     <div className="space-y-1">
                       {storageData.byTier.map(t => (
                         <div key={t.tier} className="flex items-center justify-between text-xs">
@@ -296,7 +298,7 @@ export function DataManagementTab() {
                 {/* Multi-Version Storage */}
                 {storageData.versionStats && storageData.versionStats.itemsWithVersions > 0 && (
                   <div className="space-y-1">
-                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Multi-Version Items</h4>
+                    <h4 className="text-xs font-medium text-muted-foreground">Multi-Version Items</h4>
                     <div className="space-y-1 text-xs">
                       <div className="flex items-center justify-between">
                         <span>Items with multiple versions</span>
@@ -328,7 +330,7 @@ export function DataManagementTab() {
 
                     {storageData.music.byCodec.length > 0 && (
                       <div className="space-y-1">
-                        <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Audio Codecs</h4>
+                        <h4 className="text-xs font-medium text-muted-foreground">Audio Codecs</h4>
                         <div className="space-y-1">
                           {storageData.music.byCodec.map(c => (
                             <div key={c.codec} className="flex items-center justify-between text-xs">
@@ -342,7 +344,7 @@ export function DataManagementTab() {
 
                     {storageData.music.byTier.length > 0 && (
                       <div className="space-y-1">
-                        <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Audio Quality</h4>
+                        <h4 className="text-xs font-medium text-muted-foreground">Audio Quality</h4>
                         <div className="space-y-1">
                           {storageData.music.byTier.map(t => (
                             <div key={t.tier} className="flex items-center justify-between text-xs">
@@ -359,7 +361,7 @@ export function DataManagementTab() {
                 {/* Duplicates */}
                 {duplicates.length > 0 && (
                   <div className="space-y-1">
-                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Duplicate Movies ({duplicates.length})</h4>
+                    <h4 className="text-xs font-medium text-muted-foreground">Duplicate Movies ({duplicates.length})</h4>
                     <div className="space-y-2 max-h-48 overflow-y-auto">
                       {duplicates.map(dup => (
                         <div key={dup.tmdb_id} className="text-xs border border-border/30 rounded p-2">
@@ -382,7 +384,7 @@ export function DataManagementTab() {
                 )}
               </>
             )}
-          </div>
+          </Card>
       </div>
 
       {/* Auto-Hide Rules — moved to Library tab */}
@@ -391,7 +393,7 @@ export function DataManagementTab() {
       <div className="space-y-2">
         <h3 className="text-sm font-medium text-foreground">Export Options</h3>
 
-        <div className="bg-muted/30 rounded-lg border border-border/40 divide-y divide-border/30">
+        <Card variant="muted" padding="none" className="divide-y divide-border/30">
           {/* Working Document */}
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-3">
@@ -403,13 +405,14 @@ export function DataManagementTab() {
                 </p>
               </div>
             </div>
-            <button
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Download className="w-3.5 h-3.5" />}
               onClick={() => setShowCSVExportModal(true)}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
             >
-              <Download className="w-3.5 h-3.5" />
               Export
-            </button>
+            </Button>
           </div>
 
           {/* Full Backup */}
@@ -423,27 +426,24 @@ export function DataManagementTab() {
                 </p>
               </div>
             </div>
-            <button
+            <Button
+              variant="primary"
+              size="sm"
+              icon={isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
               onClick={handleExport}
               disabled={isExporting}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              {isExporting ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Download className="w-3.5 h-3.5" />
-              )}
               Export
-            </button>
+            </Button>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Import Options */}
       <div className="space-y-2">
         <h3 className="text-sm font-medium text-foreground">Import</h3>
 
-        <div className="bg-muted/30 rounded-lg border border-border/40">
+        <Card variant="muted" padding="none">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-3">
               <Upload className="w-5 h-5 text-muted-foreground" />
@@ -454,20 +454,17 @@ export function DataManagementTab() {
                 </p>
               </div>
             </div>
-            <button
+            <Button
+              variant="primary"
+              size="sm"
+              icon={isImporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
               onClick={handleImport}
               disabled={isImporting}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              {isImporting ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Upload className="w-3.5 h-3.5" />
-              )}
               Import
-            </button>
+            </Button>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Reset Options */}
@@ -475,7 +472,7 @@ export function DataManagementTab() {
         <h3 className="text-sm font-medium text-foreground">Reset</h3>
 
         {/* Reset Library Data (preserves settings) */}
-        <div className="bg-muted/30 rounded-lg border border-border/40">
+        <Card variant="muted" padding="none">
           {showLibraryResetConfirm ? (
             <div className="p-4 space-y-4">
               <div className="flex items-start gap-3">
@@ -490,25 +487,23 @@ export function DataManagementTab() {
                 </div>
               </div>
               <div className="flex gap-3 justify-end">
-                <button
+                <Button
+                  variant="tertiary"
+                  size="sm"
                   onClick={() => setShowLibraryResetConfirm(false)}
                   disabled={isResettingLibrary}
-                  className="px-3 py-1.5 text-xs hover:bg-muted rounded-md transition-colors"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={isResettingLibrary ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                   onClick={handleResetLibraryData}
                   disabled={isResettingLibrary}
-                  className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
-                  {isResettingLibrary ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-3.5 h-3.5" />
-                  )}
                   Yes, Reset Library Data
-                </button>
+                </Button>
               </div>
             </div>
           ) : (
@@ -522,18 +517,19 @@ export function DataManagementTab() {
                   </p>
                 </div>
               </div>
-              <button
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<RefreshCw className="w-3.5 h-3.5" />}
                 onClick={() => setShowLibraryResetConfirm(true)}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
                 Reset
-              </button>
+              </Button>
             </div>
           )}
-        </div>
+        </Card>
 
-        <div className="bg-muted/30 rounded-lg border border-border/40">
+        <Card variant="muted" padding="none">
           {showResetConfirm ? (
             <div className="p-4 space-y-4">
               <div className="flex items-start gap-3">
@@ -548,25 +544,23 @@ export function DataManagementTab() {
                 </div>
               </div>
               <div className="flex gap-3 justify-end">
-                <button
+                <Button
+                  variant="tertiary"
+                  size="sm"
                   onClick={() => setShowResetConfirm(false)}
                   disabled={isResetting}
-                  className="px-3 py-1.5 text-xs hover:bg-muted rounded-md transition-colors"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  icon={isResetting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                   onClick={handleReset}
                   disabled={isResetting}
-                  className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
-                  {isResetting ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="w-3.5 h-3.5" />
-                  )}
                   Yes, Reset Database
-                </button>
+                </Button>
               </div>
             </div>
           ) : (
@@ -580,16 +574,17 @@ export function DataManagementTab() {
                   </p>
                 </div>
               </div>
-              <button
+              <Button
+                variant="danger-secondary"
+                size="sm"
+                icon={<Trash2 className="w-3.5 h-3.5" />}
                 onClick={() => setShowResetConfirm(true)}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
               >
-                <Trash2 className="w-3.5 h-3.5" />
                 Reset
-              </button>
+              </Button>
             </div>
           )}
-        </div>
+        </Card>
       </div>
 
       {/* Status message */}
@@ -626,7 +621,7 @@ export function DataManagementTab() {
                 Select what to include in the CSV export:
               </p>
 
-              <div className="bg-muted/30 rounded-lg border border-border/40 divide-y divide-border/30">
+              <Card variant="muted" padding="none" className="divide-y divide-border/30">
                 {/* Upgrade Candidates */}
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <div>
@@ -696,29 +691,27 @@ export function DataManagementTab() {
                     onChange={() => toggleCSVOption('includeMusicUpgrades')}
                   />
                 </div>
-              </div>
+              </Card>
             </div>
 
             {/* Modal Footer */}
             <div className="flex gap-3 justify-end p-4 border-t border-border">
-              <button
+              <Button
+                variant="tertiary"
+                size="sm"
                 onClick={() => setShowCSVExportModal(false)}
-                className="px-3 py-1.5 text-xs hover:bg-muted rounded-md transition-colors"
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={isExportingCSV ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                 onClick={handleExportCSV}
                 disabled={isExportingCSV}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
-                {isExportingCSV ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Download className="w-3.5 h-3.5" />
-                )}
                 Export CSV
-              </button>
+              </Button>
             </div>
           </div>
         </div>

@@ -10,6 +10,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Loader2, Radio, Bell } from 'lucide-react'
 import { Toggle } from '../../ui/Toggle'
+import { Button, Card, Select, Input } from '../../ui'
 import { SETTING_KEYS } from '../../../../../shared/settingKeys'
 
 interface MonitoringConfig {
@@ -122,7 +123,7 @@ export function MonitoringTab() {
   return (
     <div className="p-6 space-y-5 overflow-y-auto">
       {/* Status */}
-      <div className="flex items-center gap-3 bg-muted/30 rounded-lg border border-border/40 p-4">
+      <Card variant="muted" className="flex items-center gap-3">
         <Radio className="w-5 h-5 text-muted-foreground shrink-0" />
         <div className="flex-1">
           <h3 className="text-sm font-medium">Live Monitoring</h3>
@@ -133,31 +134,32 @@ export function MonitoringTab() {
           onChange={(enabled) => saveMonitoringConfig({ enabled })}
           disabled={isSaving}
         />
-      </div>
+      </Card>
 
       {/* Source Detection */}
       <div className={`space-y-2 transition-opacity ${!monitoringConfig.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
         <h3 className="text-sm font-medium text-foreground">Source Detection</h3>
-        <div className="bg-muted/30 rounded-lg border border-border/40 divide-y divide-border/30">
+        <Card variant="muted" padding="none" className="divide-y divide-border/30">
           {PROVIDERS.map((provider) => {
             const isConfigured = configuredProviders.has(provider.key)
             return (
               <div key={provider.key} className={`flex items-center justify-between px-4 py-2.5 ${!isConfigured ? 'opacity-40' : ''}`}>
                 <span className="text-sm text-foreground">{provider.name}</span>
                 {provider.method === 'polling' ? (
-                  <select
+                  <Select
+                    inputSize="sm"
                     value={monitoringConfig.pollingIntervals[provider.key] || 300000}
                     onChange={(e) => {
                       const newIntervals = { ...monitoringConfig.pollingIntervals, [provider.key]: parseInt(e.target.value, 10) }
                       saveMonitoringConfig({ pollingIntervals: newIntervals })
                     }}
                     disabled={isSaving || !monitoringConfig.enabled || !isConfigured}
-                    className="bg-background text-foreground text-sm rounded-md px-3 py-2 border border-border/30 focus:outline-hidden focus:ring-2 focus:ring-primary min-w-[90px] disabled:opacity-50"
+                    className="min-w-[90px]"
                   >
                     {INTERVAL_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
-                  </select>
+                  </Select>
                 ) : (
                   <span className="bg-background text-foreground text-sm rounded-md px-3 py-2 border border-border/30 min-w-[90px] text-center">
                     File Watching
@@ -166,13 +168,13 @@ export function MonitoringTab() {
               </div>
             )
           })}
-        </div>
+        </Card>
       </div>
 
       {/* Behavior */}
       <div className={`space-y-2 transition-opacity ${!monitoringConfig.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
         <h3 className="text-sm font-medium text-foreground">Behavior</h3>
-        <div className="bg-muted/30 rounded-lg border border-border/40 divide-y divide-border/30">
+        <Card variant="muted" padding="none" className="divide-y divide-border/30">
           <div className="flex items-center justify-between px-4 py-3">
             <span className="text-sm text-foreground">Start on app launch</span>
             <Toggle checked={monitoringConfig.startOnLaunch} onChange={(startOnLaunch) => saveMonitoringConfig({ startOnLaunch })} disabled={isSaving || !monitoringConfig.enabled} />
@@ -181,7 +183,7 @@ export function MonitoringTab() {
             <span className="text-sm text-foreground">Pause during manual scans</span>
             <Toggle checked={monitoringConfig.pauseDuringManualScan} onChange={(pauseDuringManualScan) => saveMonitoringConfig({ pauseDuringManualScan })} disabled={isSaving || !monitoringConfig.enabled} />
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Release Alerts */}
@@ -190,7 +192,7 @@ export function MonitoringTab() {
           <Bell className="w-4 h-4 text-muted-foreground" />
           <h3 className="text-sm font-medium text-foreground">Release Alerts</h3>
         </div>
-        <div className="bg-muted/30 rounded-lg border border-border/40 divide-y divide-border/30">
+        <Card variant="muted" padding="none" className="divide-y divide-border/30">
           <div className="flex items-center justify-between px-4 py-3">
             <div>
               <p className="text-sm text-foreground">Wishlist release alerts</p>
@@ -205,29 +207,41 @@ export function MonitoringTab() {
             <>
               <div className="flex items-center justify-between px-4 py-3">
                 <span className="text-sm text-foreground">Alert window (days ahead)</span>
-                <input type="number" value={releaseAlertDays} onChange={async e => {
-                  setReleaseAlertDays(e.target.value)
-                  await window.electronAPI.setSetting(SETTING_KEYS.release_alert_days_ahead, e.target.value)
-                }} min={7} max={180} className="w-20 px-2 py-1 bg-background border border-border/30 rounded text-sm text-right focus:outline-hidden focus:ring-2 focus:ring-primary" />
+                <Input
+                  type="number"
+                  inputSize="sm"
+                  value={releaseAlertDays}
+                  onChange={async e => {
+                    setReleaseAlertDays(e.target.value)
+                    await window.electronAPI.setSetting(SETTING_KEYS.release_alert_days_ahead, e.target.value)
+                  }}
+                  min={7}
+                  max={180}
+                  className="w-20 text-right"
+                />
               </div>
               <div className="flex items-center justify-between px-4 py-3">
                 <span className="text-sm text-foreground">Check for upcoming releases</span>
                 <div className="flex items-center gap-2">
                   {alertStatus && <span className="text-xs text-muted-foreground">{alertStatus}</span>}
-                  <button onClick={async () => {
-                    setAlertStatus(null)
-                    try {
-                      const c = await window.electronAPI.releaseAlertsCheck()
-                      setAlertStatus(c > 0 ? `${c} found` : 'None found')
-                    } catch { setAlertStatus('Error') }
-                  }} className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={async () => {
+                      setAlertStatus(null)
+                      try {
+                        const c = await window.electronAPI.releaseAlertsCheck()
+                        setAlertStatus(c > 0 ? `${c} found` : 'None found')
+                      } catch { setAlertStatus('Error') }
+                    }}
+                  >
                     Check Now
-                  </button>
+                  </Button>
                 </div>
               </div>
             </>
           )}
-        </div>
+        </Card>
       </div>
     </div>
   )

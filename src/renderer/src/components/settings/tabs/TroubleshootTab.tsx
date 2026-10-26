@@ -33,6 +33,7 @@ import {
   Circle,
 } from 'lucide-react'
 import { Toggle } from '../../ui/Toggle'
+import { Button, Input, Select } from '../../ui'
 
 interface LogEntry {
   id: string
@@ -401,19 +402,20 @@ export function TroubleshootTab() {
 
         <div className="flex items-center gap-2">
           {/* Search input */}
-          <input
+          <Input
+            inputSize="sm"
             type="text"
             placeholder="Search logs..."
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            className="bg-muted text-foreground text-sm rounded-md px-3 py-1.5 w-44 border border-border focus:outline-hidden focus:ring-2 focus:ring-primary placeholder:text-muted-foreground"
+            className="w-44"
           />
 
           {/* Filter dropdown */}
-          <select
+          <Select
+            inputSize="sm"
             value={filter}
             onChange={(e) => setFilter(e.target.value as LogFilter)}
-            className="bg-muted text-foreground text-sm rounded-md px-3 py-1.5 border border-border focus:outline-hidden focus:ring-2 focus:ring-primary"
           >
             <option value="all">All Levels</option>
             <option value="verbose">Verbose</option>
@@ -421,7 +423,7 @@ export function TroubleshootTab() {
             <option value="info">Info</option>
             <option value="warn">Warnings</option>
             <option value="error">Errors</option>
-          </select>
+          </Select>
 
           {/* Verbose mode toggle */}
           <div className="flex items-center gap-2 cursor-pointer" title="Enable verbose logging for detailed operational logs" onClick={handleVerboseToggle}>
@@ -485,13 +487,14 @@ export function TroubleshootTab() {
               Clear
             </button>
           </div>
-          <button
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<Copy className="w-3.5 h-3.5" />}
             onClick={handleCopySelected}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
           >
-            <Copy className="w-3.5 h-3.5" />
-            {copyFeedback ? 'Copied!' : 'Copy Selected'}
-          </button>
+            {copyFeedback ? 'Copied!' : 'Copy selected'}
+          </Button>
         </div>
       )}
 
@@ -591,42 +594,43 @@ export function TroubleshootTab() {
             <div className="bg-background/50 rounded-lg divide-y divide-border/30">
               <div className="flex items-center justify-between px-4 py-3">
                 <span className="text-sm text-foreground">Minimum level</span>
-                <select
+                <Select
+                  inputSize="sm"
                   value={fileLoggingSettings.minLevel}
                   onChange={(e) => handleFileLoggingSetting({ minLevel: e.target.value })}
                   disabled={!fileLoggingSettings.enabled}
-                  className="bg-background text-foreground text-sm rounded-md px-3 py-2 border border-border/30 focus:outline-hidden focus:ring-2 focus:ring-primary disabled:opacity-50"
                 >
                   <option value="verbose">Verbose</option>
                   <option value="debug">Debug</option>
                   <option value="info">Info</option>
                   <option value="warn">Warn</option>
                   <option value="error">Error</option>
-                </select>
+                </Select>
               </div>
               <div className="flex items-center justify-between px-4 py-3">
                 <span className="text-sm text-foreground">Retention period</span>
-                <select
+                <Select
+                  inputSize="sm"
                   value={fileLoggingSettings.retentionDays}
                   onChange={(e) => handleFileLoggingSetting({ retentionDays: parseInt(e.target.value, 10) })}
                   disabled={!fileLoggingSettings.enabled}
-                  className="bg-background text-foreground text-sm rounded-md px-3 py-2 border border-border/30 focus:outline-hidden focus:ring-2 focus:ring-primary disabled:opacity-50"
                 >
                   <option value={3}>3 days</option>
                   <option value={7}>7 days</option>
                   <option value={14}>14 days</option>
                   <option value={30}>30 days</option>
-                </select>
+                </Select>
               </div>
               <div className="flex items-center justify-between px-4 py-3">
                 <span className="text-sm text-foreground">Log files location</span>
-                <button
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={<FolderOpen className="w-3.5 h-3.5" />}
                   onClick={() => window.electronAPI.openLogFolder()}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
                 >
-                  <FolderOpen className="w-3.5 h-3.5" />
                   Open Folder
-                </button>
+                </Button>
               </div>
             </div>
           </div>

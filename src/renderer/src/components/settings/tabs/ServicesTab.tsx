@@ -18,6 +18,7 @@ import {
   Bot,
 } from 'lucide-react'
 import { Toggle } from '../../ui/Toggle'
+import { Button, Input, Select } from '../../ui'
 
 interface ServiceCardProps {
   title: string
@@ -460,7 +461,7 @@ export function ServicesTab() {
         <div className="space-y-3">
           <div className="flex gap-2">
               <div className="relative flex-1">
-                <input
+                <Input
                   id={tmdbId}
                   type={showTmdbKey ? 'text' : 'password'}
                   value={tmdbApiKey}
@@ -469,7 +470,7 @@ export function ServicesTab() {
                     setTmdbStatus('idle')
                   }}
                   placeholder="Enter your TMDB API key"
-                  className="w-full px-3 py-2 pr-10 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
+                  className="pr-10"
                 />
                 <button
                   type="button"
@@ -546,27 +547,29 @@ export function ServicesTab() {
               )}
             </div>
             {ffprobeAvailable ? (
-              <button
-                onClick={updateAvailable ? handleInstallFFprobe : handleCheckForUpdate}
-                disabled={checkingUpdate || isInstalling}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
-              >
-                {(checkingUpdate) ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> :
+              <Button
+                variant="primary"
+                size="sm"
+                icon={(checkingUpdate) ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> :
                  updateAvailable ? <Download className="w-3.5 h-3.5" /> :
                  <RefreshCw className="w-3.5 h-3.5" />}
+                onClick={updateAvailable ? handleInstallFFprobe : handleCheckForUpdate}
+                disabled={checkingUpdate || isInstalling}
+              >
                 {checkingUpdate ? 'Checking...' :
                  updateAvailable ? 'Update' :
-                 'Check for Updates'}
-              </button>
+                 'Check for updates'}
+              </Button>
             ) : (
-              <button
+              <Button
+                variant="primary"
+                size="sm"
+                icon={isInstalling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                 onClick={handleInstallFFprobe}
                 disabled={isInstalling}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
-                {isInstalling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                 Install (~80MB)
-              </button>
+              </Button>
             )}
           </div>
 
@@ -622,7 +625,7 @@ export function ServicesTab() {
         <div className="space-y-3">
           <div className="flex gap-2">
               <div className="relative flex-1">
-                <input
+                <Input
                   id={geminiId}
                   type={showGeminiKey ? 'text' : 'password'}
                   value={geminiApiKey}
@@ -632,7 +635,7 @@ export function ServicesTab() {
                     setGeminiError(null)
                   }}
                   placeholder="Enter your Gemini API key"
-                  className="w-full px-3 py-2 pr-10 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
+                  className="pr-10"
                 />
                 <button
                   type="button"
@@ -682,15 +685,15 @@ export function ServicesTab() {
             <label htmlFor={geminiModelId} className="block text-xs font-medium text-muted-foreground">
               Model
             </label>
-            <select
+            <Select
               id={geminiModelId}
               value={geminiModel}
               onChange={(e) => setGeminiModel(e.target.value)}
-              className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
+              className="w-full"
             >
               <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended)</option>
               <option value="gemini-2.5-pro">Gemini 2.5 Pro (Most capable)</option>
-            </select>
+            </Select>
           </div>
 
         </div>
@@ -784,32 +787,31 @@ export function ServicesTab() {
             <div className="flex items-end gap-2">
               <div className="flex-1 space-y-1">
                 <label className="text-xs text-muted-foreground">NFS Path (without nfs://)</label>
-                <input
+                <Input
                   type="text"
                   value={newNfsPath}
                   onChange={(e) => setNewNfsPath(e.target.value)}
                   placeholder="nas.local/media"
-                  className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
                 />
               </div>
               <div className="flex-1 space-y-1">
                 <label className="text-xs text-muted-foreground">Local Path</label>
-                <input
+                <Input
                   type="text"
                   value={newLocalPath}
                   onChange={(e) => setNewLocalPath(e.target.value)}
                   placeholder="Z:\"
-                  className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
                 />
               </div>
-              <button
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<Plus className="w-4 h-4" />}
                 onClick={handleAddNfsMapping}
                 disabled={!newNfsPath.trim() || !newLocalPath.trim()}
-                className="flex items-center gap-1 px-3 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
-                <Plus className="w-4 h-4" />
                 Add
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -826,14 +828,14 @@ export function ServicesTab() {
       {/* Save button */}
       {hasChanges && (
         <div className="flex justify-end pt-3">
-          <button
+          <Button
+            variant="primary"
+            icon={isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             onClick={handleSave}
             disabled={isSaving}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
-            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            {isSaving ? 'Saving...' : 'Save Changes'}
-          </button>
+            {isSaving ? 'Saving...' : 'Save changes'}
+          </Button>
         </div>
       )}
     </div>

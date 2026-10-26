@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useRef, useCallback, useId } from 'react'
 import { RotateCcw, Save, Loader2, RefreshCw, ChevronDown, Film, Music, Clapperboard, Copy, Check } from 'lucide-react'
+import { Button, Input } from '../../ui'
 
 // Default values for all quality settings
 const DEFAULT_SETTINGS = {
@@ -261,18 +262,12 @@ export function QualitySettingsTab() {
               Would you like to re-analyze your library with the new quality thresholds?
             </p>
             <div className="flex gap-3">
-              <button
-                onClick={handleSkipReanalyze}
-                className="px-3 py-1.5 text-xs rounded-md hover:bg-muted transition-colors"
-              >
+              <Button variant="tertiary" size="sm" onClick={handleSkipReanalyze}>
                 Skip
-              </button>
-              <button
-                onClick={handleReanalyze}
-                className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-              >
+              </Button>
+              <Button variant="primary" size="sm" onClick={handleReanalyze}>
                 Re-analyze Library
-              </button>
+              </Button>
             </div>
           </>
         )}
@@ -503,23 +498,25 @@ export function QualitySettingsTab() {
 
       {/* Footer */}
       <div className="flex items-center justify-end gap-2 pt-3">
-        <button
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={<RotateCcw className="w-3.5 h-3.5" />}
           onClick={handleReset}
           disabled={isSaving}
-          className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
-          <RotateCcw className="w-3.5 h-3.5" />
-          Reset to Defaults
-        </button>
+          Reset to defaults
+        </Button>
         {hasChanges && (
-          <button
+          <Button
+            variant="primary"
+            size="sm"
+            icon={isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
             onClick={handleSave}
             disabled={isSaving}
-            className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
-            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-            {isSaving ? 'Saving...' : 'Save Changes'}
-          </button>
+            {isSaving ? 'Saving...' : 'Save changes'}
+          </Button>
         )}
       </div>
     </div>
@@ -692,8 +689,9 @@ function NumberInput({
   return (
     <div className="space-y-1">
       <label htmlFor={inputId} className="block text-xs text-muted-foreground">{label}</label>
-      <input
+      <Input
         id={inputId}
+        inputSize="sm"
         type="number"
         min={min}
         max={max}
@@ -706,7 +704,6 @@ function NumberInput({
           }
         }}
         aria-describedby={hint ? hintId : undefined}
-        className="w-full px-3 py-1.5 bg-background border border-border/30 rounded-md text-sm text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
       />
       {hint && <p id={hintId} className="text-[10px] text-muted-foreground">{hint}</p>}
     </div>

@@ -9,6 +9,7 @@
 
 import { Sun, Moon, Monitor } from 'lucide-react'
 import { useTheme, type BaseTheme, type ThemeMode } from '../../../contexts/ThemeContext'
+import { Card } from '../../ui'
 
 interface ThemeColors {
   background: string
@@ -383,7 +384,7 @@ export function AppearanceTab() {
       {/* Mode Toggle */}
       <div className="space-y-2">
         <h3 className="text-sm font-medium text-foreground">Mode</h3>
-        <div className="bg-muted/30 rounded-lg border border-border/40 p-3">
+        <Card variant="muted" padding="sm">
           <div className="flex gap-2">
             {MODE_OPTIONS.map((opt) => {
               const Icon = opt.icon
@@ -404,13 +405,13 @@ export function AppearanceTab() {
               )
             })}
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Theme Selection */}
       <div className="space-y-2">
         <h3 className="text-sm font-medium text-foreground">Theme</h3>
-        <div className="bg-muted/30 rounded-lg border border-border/40 p-4">
+        <Card variant="muted">
           <div className="grid grid-cols-3 gap-4">
             {THEMES.filter(t => effectiveIsDark || !t.darkOnly).map((themeConfig) => {
               const isActive = theme === themeConfig.id
@@ -438,7 +439,7 @@ export function AppearanceTab() {
               )
             })}
           </div>
-        </div>
+        </Card>
       </div>
 
     </div>

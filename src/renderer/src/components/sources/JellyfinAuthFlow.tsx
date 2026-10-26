@@ -7,6 +7,8 @@
 import { useState, useEffect } from 'react'
 import { Film, Tv, Music, Folder, Server, ChevronRight } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
+import { Button } from '../ui/Button'
+import { Input } from '../ui/Input'
 
 interface JellyfinAuthFlowProps {
   onSuccess: () => void
@@ -222,13 +224,13 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium">Select libraries to include:</p>
               <div className="flex gap-2 text-xs">
-                <button onClick={handleSelectAll} className="text-primary hover:underline">
-                  Select All
-                </button>
+                <Button variant="tertiary" size="sm" onClick={handleSelectAll}>
+                  Select all
+                </Button>
                 <span className="text-muted-foreground">|</span>
-                <button onClick={handleDeselectAll} className="text-primary hover:underline">
-                  Deselect All
-                </button>
+                <Button variant="tertiary" size="sm" onClick={handleDeselectAll}>
+                  Deselect all
+                </Button>
               </div>
             </div>
             <div className="space-y-1 max-h-48 overflow-y-auto">
@@ -271,13 +273,13 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
         )}
 
         <div className="flex justify-end">
-          <button
+          <Button
             onClick={handleComplete}
             disabled={selectedLibraries.size === 0}
-            className="px-6 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            variant="primary"
           >
             {selectedLibraries.size === 0 ? 'Select at least one library' : 'Done'}
-          </button>
+          </Button>
         </div>
       </div>
     )
@@ -296,18 +298,18 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
               <div className="font-medium text-sm">{selectedServer.name}</div>
               <div className="text-xs text-muted-foreground truncate">{selectedServer.url}</div>
             </div>
-            <button onClick={() => setStep('discover')} className="text-xs text-primary hover:underline">Change</button>
+            <Button variant="tertiary" size="sm" onClick={() => setStep('discover')}>Change</Button>
           </div>
         )}
 
         <label className="block">
           <span className="text-sm font-medium">Display Name</span>
-          <input
+          <Input
             type="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder={selectedServer?.name || `My ${providerName}`}
-            className="mt-1 w-full px-3 py-2 rounded-md border border-border bg-background focus:outline-hidden focus:ring-1 focus:ring-primary text-sm"
+            className="mt-1"
           />
         </label>
 
@@ -315,12 +317,12 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
         <div className="space-y-3">
           <label className="block">
             <span className="text-sm font-medium">API Key</span>
-            <input
+            <Input
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder="Enter your API key"
-              className="mt-1 w-full px-3 py-2 rounded-md border border-border bg-background focus:outline-hidden focus:ring-1 focus:ring-primary text-sm"
+              className="mt-1"
             />
           </label>
           <p className="text-xs text-muted-foreground">
@@ -333,16 +335,18 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
         {error && <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>}
 
         <div className="flex gap-2">
-          <button onClick={onBack} disabled={isConnecting} className="flex-1 px-4 py-2 rounded-md border border-border hover:bg-muted disabled:opacity-50">
+          <Button onClick={onBack} disabled={isConnecting} variant="secondary" className="flex-1">
             Back
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={handleApiKeyAuth}
             disabled={isConnecting}
-            className="flex-1 px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            variant="primary"
+            loading={isConnecting}
+            className="flex-1"
           >
             {isConnecting ? 'Connecting...' : 'Connect'}
-          </button>
+          </Button>
         </div>
       </div>
     )
@@ -355,9 +359,9 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
         <>
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Found on your network</span>
-            <button onClick={handleDiscover} disabled={isDiscovering} className="text-xs text-primary hover:underline disabled:opacity-50">
+            <Button variant="tertiary" size="sm" onClick={handleDiscover} disabled={isDiscovering}>
               {isDiscovering ? 'Scanning...' : 'Rescan'}
-            </button>
+            </Button>
           </div>
           <div className="space-y-2">
             {discoveredServers.map((server) => (
@@ -402,29 +406,30 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
       <label className="block">
         <span className="text-sm font-medium">Server URL</span>
         <div className="mt-1 flex gap-2">
-          <input
+          <Input
             type="url"
             value={manualUrl}
             onChange={(e) => setManualUrl(e.target.value)}
             placeholder="http://192.168.1.100:8096"
-            className="flex-1 px-3 py-2 rounded-md border border-border bg-background focus:outline-hidden focus:ring-1 focus:ring-primary text-sm"
+            className="flex-1"
             onKeyDown={(e) => e.key === 'Enter' && handleTestManualUrl()}
           />
-          <button
+          <Button
             onClick={handleTestManualUrl}
             disabled={isTestingUrl || !manualUrl.trim()}
-            className="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            variant="primary"
+            loading={isTestingUrl}
           >
             {isTestingUrl ? '...' : 'Connect'}
-          </button>
+          </Button>
         </div>
       </label>
 
       {error && <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>}
 
-      <button onClick={onBack} className="w-full px-4 py-2 rounded-md border border-border hover:bg-muted">
+      <Button onClick={onBack} variant="secondary" className="w-full">
         Back
-      </button>
+      </Button>
     </div>
   )
 }

@@ -172,12 +172,15 @@ Current ad-hoc values:
 - [x] Create this audit file
 - [x] Update CLAUDE.md
 
-### Phase 2: Shared Components (next session)
-- [ ] Build Button component (primary, secondary, tertiary, danger variants)
-- [ ] Build Card component (raised surface styling)
-- [ ] Build Input/Field component
-- [ ] Build Badge component
-- [ ] Build Modal/Dialog component
+### Phase 2: Shared Components
+- [x] Build Button component (primary, secondary, tertiary, danger, danger-secondary, danger-tertiary)
+- [x] Build Card component (raised, muted, flat variants)
+- [x] Build Input/Select components (sm, md, lg sizes)
+- [x] Build Badge component (default, success, warning, danger, primary)
+- [x] Build Modal/Dialog component (sm, md, lg, xl, full sizes with focus trap)
+- [ ] Migrate existing inline buttons to use `<Button>` component
+- [ ] Migrate existing inline cards to use `<Card>` component
+- [ ] Migrate existing modals to use `<Modal>` component
 
 ### Phase 3: Token Migration (per-file)
 - [ ] Remove all `uppercase` (61 instances, 15 files)
@@ -188,7 +191,8 @@ Current ad-hoc values:
 - [ ] Centralize z-index values (15 instances)
 
 ### Phase 4: Typography & Font
-- [ ] Install Plus Jakarta Sans
-- [ ] Define typography scale in CSS tokens
+- [x] Install Plus Jakarta Sans (variable font)
+- [ ] Define typography scale in CSS tokens (letter-spacing ramp)
 - [ ] Apply letter-spacing per SKILL.md ramp
-- [ ] Remove font-bold (700) — use only 400/500/600
+- [x] Heading weight changed from 700 to 600
+- [ ] Remove remaining font-bold (700) uses — use only 400/500/600
