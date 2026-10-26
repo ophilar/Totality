@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { getTranscodingService } from '../../../../src/main/services/TranscodingService'
 import { PreflightShowTranscodeSchema } from '../../../../src/main/validation/schemas'
+import { MEASUREMENT_VERSION } from '../../../../src/main/services/MeasuredOptimizationPolicy'
 
 vi.mock('@main/database/getDatabase')
 vi.mock('@main/services/LoggingService', () => ({
@@ -83,6 +84,20 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     await expect(transcodingService.queueShowTranscode('nonexistent')).rejects.toThrow(
       'Show transcode preflight was not found'
     )
+    expect(mockAddTasks).not.toHaveBeenCalled()
+  })
+
+  it('requires new measurement before approving or queuing plans from an older measurement method', async () => {
+    const service = getTranscodingService()
+    mockDb.config.getSetting.mockResolvedValue(JSON.stringify({
+      request: { sourceId: 'src1', libraryId: 'lib1', options: { optimizationMode: 'transcode' } },
+      result: {
+        preflightId: 'old-measurement', batchId: 'batch-old', measurementVersion: MEASUREMENT_VERSION - 1,
+        episodes: [{ mediaItemId: 101, decisionStatus: 'sample_required', compatible: true, params: { measuredCandidate: { encoder: 'qsv_h265', quality: 14, preset: 'medium', outputBytes: 100, sampledDurationSeconds: 30, vmafMean: 96, vmafP5: 93, cambiMean: 1 } } }],
+      },
+    }))
+    await expect(service.approveShowTranscode('old-measurement')).rejects.toThrow('Measurement method changed')
+    await expect(service.queueShowTranscode('old-measurement')).rejects.toThrow('Measurement method changed')
     expect(mockAddTasks).not.toHaveBeenCalled()
   })
 

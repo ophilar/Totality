@@ -86,7 +86,12 @@ function getSourceTierBadge(tier?: string) {
 
 function getAdvisoryBadges(operations: PlannedOptimizationOperation[], compatible: boolean = true, decisionStatus?: string) {
   const badges: ReactNode[] = []
-  if (decisionStatus === 'insufficient_evidence') {
+  const outcome = decisionStatus === 'quality_threshold_unmet' ? 'Quality threshold unmet'
+    : decisionStatus === 'measurement_failed' ? 'Measurement failed'
+      : decisionStatus === 'no_savings' ? 'No savings in tested encodes' : undefined
+  if (outcome) {
+    badges.push(<span key={decisionStatus} className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{outcome}</span>)
+  } else if (decisionStatus === 'insufficient_evidence') {
     badges.push(
       <span key="insufficient-evidence" className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
         <AlertCircle className="w-3 h-3" /> Insufficient Evidence
@@ -1387,7 +1392,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
                 </details>
                 <details className="group">
                   <summary className="flex cursor-pointer list-none items-center gap-3 p-3">
-                    <span className="text-amber-300">?</span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Review or analysis required</span><span className="block text-xs text-muted-foreground">{preflightData.episodes.filter(e => e.decisionStatus === 'insufficient_evidence').length} episodes will be skipped</span></span>
+                    <span className="text-amber-300">?</span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Review or analysis required</span><span className="block text-xs text-muted-foreground">{preflightData.episodes.filter(e => e.decisionStatus === 'insufficient_evidence').length} awaiting evidence · {preflightData.episodes.filter(e => e.decisionStatus === 'measurement_failed').length} measurement failures · {preflightData.episodes.filter(e => e.decisionStatus === 'quality_threshold_unmet').length} below quality requirements · {preflightData.episodes.filter(e => e.decisionStatus === 'no_savings').length} without savings in tested encodes</span></span>
                   </summary>
                 </details>
               </div>
