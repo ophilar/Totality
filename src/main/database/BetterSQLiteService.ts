@@ -543,7 +543,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     const savingsSemantics = db.prepare(
       "SELECT value FROM settings WHERE key = 'optimization.savings_semantics_version'"
     ).get() as { value: string } | undefined
-    if (savingsSemantics?.value !== '5' && savingsSemantics?.value !== '6') {
+    if (savingsSemantics?.value !== '5' && savingsSemantics?.value !== '6' && savingsSemantics?.value !== '7') {
       db.transaction(() => {
         db.prepare(`UPDATE quality_scores SET
           video_savings_bytes = NULL,
@@ -577,16 +577,16 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       console.info('[BetterSQLite] Cleared proxy-derived quality and savings values for recalculation under the current evidence model')
     }
 
-    if (savingsSemantics?.value !== '6') {
+    if (savingsSemantics?.value !== '7') {
       db.transaction(() => {
         db.prepare(`UPDATE quality_scores SET video_savings_bytes = NULL, estimated_savings_bytes = NULL,
           savings_coverage = NULL, evidence_status = NULL, confidence = NULL, savings_basis = NULL`).run()
-        db.prepare(`INSERT INTO settings (key, value) VALUES ('optimization.savings_semantics_version', '6')
+        db.prepare(`INSERT INTO settings (key, value) VALUES ('optimization.savings_semantics_version', '7')
           ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run()
         db.prepare(`INSERT INTO settings (key, value) VALUES ('optimization.savings_reanalysis_pending', 'true')
           ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run()
       })()
-      console.info('[BetterSQLite] Invalidated unverified savings estimates; quality ratings retained')
+      console.info('[BetterSQLite] Scheduled savings recalculation with codec-aware modeled estimates and measured overrides; quality ratings retained')
     }
 
     // Migrate provider CHECK constraints using the canonical schema types.
