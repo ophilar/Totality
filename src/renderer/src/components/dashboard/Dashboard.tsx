@@ -20,7 +20,7 @@ import {
 import { applyCollectionFilters, applySeriesFilters, applyArtistFilters, parseAutoRules, filterMissingMoviesByRules, filterMissingEpisodesByRules } from '../../utils/completenessFilters'
 import { AnimatedNumber } from '../ui/AnimatedNumber'
 import { Button } from '../ui/Button'
-import { Select } from '../ui/Input'
+import { Input, Select } from '../ui/Input'
 
 // Music album with quality info from the upgrade query
 interface MusicAlbumUpgrade extends MusicAlbum {
@@ -999,7 +999,7 @@ export function Dashboard({
 
         {/* Expanded: Missing movies */}
         {isExpanded && missingMovies.length > 0 && (
-          <div className="ml-14 mt-1 mb-1 space-y-0.5 bg-muted/20 rounded-md px-2 py-1.5">
+          <div className="ml-14 mt-1 mb-1 space-y-0.5">
             {missingMovies.map((movie, idx) => (
               <div
                 key={idx}
@@ -1023,7 +1023,7 @@ export function Dashboard({
                 {movie.tmdb_id ? (
                   <button
                     onClick={(e) => { e.stopPropagation(); window.electronAPI.openExternal(`https://www.themoviedb.org/movie/${movie.tmdb_id}`) }}
-                    className="text-label text-muted-foreground truncate flex-1 text-left hover:text-primary hover:underline cursor-pointer transition-colors"
+                    className="text-label text-muted-foreground truncate flex-1 text-left hover:text-foreground hover:underline cursor-pointer transition-colors"
                     title="Open on TMDB"
                   >
                     {movie.title} {movie.year ? `(${movie.year})` : ''}
@@ -1109,7 +1109,7 @@ export function Dashboard({
 
         {/* Expanded: Missing by season */}
         {isExpanded && seasonGroups.length > 0 && (
-          <div className="ml-14 mt-1 mb-1 space-y-0.5 bg-muted/20 rounded-md px-2 py-1.5">
+          <div className="ml-14 mt-1 mb-1 space-y-0.5">
             {seasonGroups.map(group => (
               <div
                 key={group.seasonNumber}
@@ -1119,7 +1119,7 @@ export function Dashboard({
                   {s.tmdb_id ? (
                     <button
                       onClick={(e) => { e.stopPropagation(); window.electronAPI.openExternal(`https://www.themoviedb.org/tv/${s.tmdb_id}/season/${group.seasonNumber}`) }}
-                      className="text-label text-foreground/80 shrink-0 hover:text-primary hover:underline cursor-pointer transition-colors"
+                      className="text-label text-foreground/80 shrink-0 hover:text-foreground hover:underline cursor-pointer transition-colors"
                       title="Open on TMDB"
                     >
                       S{group.seasonNumber}
@@ -1230,7 +1230,7 @@ export function Dashboard({
 
         {/* Expanded: Missing releases */}
         {isExpanded && allMissing.length > 0 && (
-          <div className="ml-14 mt-1 mb-1 space-y-3 bg-muted/20 rounded-md px-2 py-1.5">
+          <div className="ml-14 mt-1 mb-1 space-y-3">
             {([
               { items: groupedByType.album, label: 'Albums', prefix: 'album' },
               { items: groupedByType.ep, label: 'EPs', prefix: 'ep' },
@@ -1262,7 +1262,7 @@ export function Dashboard({
                       {item.musicbrainz_id ? (
                         <button
                           onClick={(e) => { e.stopPropagation(); window.electronAPI.openExternal(`https://musicbrainz.org/release-group/${item.musicbrainz_id}`) }}
-                          className="text-label text-muted-foreground truncate flex-1 text-left hover:text-primary hover:underline cursor-pointer transition-colors"
+                          className="text-label text-muted-foreground truncate flex-1 text-left hover:text-foreground hover:underline cursor-pointer transition-colors"
                           title="Open on MusicBrainz"
                         >
                           {item.title} {item.year ? `(${item.year})` : ''}
@@ -1924,12 +1924,13 @@ export function Dashboard({
                         <div className="px-3 pt-3 pb-2">
                           <div className="relative">
                             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-                            <input
+                            <Input
+                              inputSize="sm"
                               type="text"
                               value={personSearchQuery}
                               onChange={(e) => handlePersonSearch(e.target.value)}
                               placeholder="Track a director or actor..."
-                              className="w-full pl-8 pr-8 py-1.5 bg-background/50 border border-border/30 rounded-lg text-caption focus:outline-hidden focus:ring-1 focus:ring-primary"
+                              className="pl-8 pr-8"
                             />
                             {personSearching && <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-muted-foreground" />}
                             {!personSearching && personSearchQuery && (
@@ -1940,7 +1941,7 @@ export function Dashboard({
                             )}
                           </div>
                           {personSearchResults.length > 0 && (
-                            <div className="mt-1.5 max-h-48 overflow-y-auto rounded-lg border border-border/30 bg-background/50">
+                            <div className="mt-1.5 max-h-48 overflow-y-auto rounded-lg border border-border/30 bg-card">
                               {personSearchResults.map((person) => {
                                 const trackedRoles = personCompleteness.filter(p => p.tmdb_person_id === person.id).map(p => p.person_type)
                                 const isAdding = personAdding === person.name
@@ -2017,7 +2018,7 @@ export function Dashboard({
                                 <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                               </div>
                               {isExpanded && missingMovies.length > 0 && (
-                                <div className="ml-14 mx-2 mt-1 mb-1 space-y-0.5 bg-muted/20 rounded-md px-2 py-1.5">
+                                <div className="ml-14 mx-2 mt-1 mb-1 space-y-0.5">
                                   {missingMovies.map(movie => (
                                     <div key={movie.tmdb_id} className="group/movie flex items-center gap-2 px-2 py-1">
                                       <div className="w-6 h-8 bg-muted rounded overflow-hidden shrink-0">
