@@ -89,12 +89,12 @@ function SortableQueueItem({ task, onRemove }: { task: QueuedTask; onRemove: (id
 
   return (
     <div ref={setNodeRef} style={style}
-      className={`flex items-center gap-2 px-4 py-2.5 ${isDragging ? 'bg-primary/5' : 'hover:bg-muted/30'}`}
+      className={`flex items-center gap-2 px-4 py-2.5 ${isDragging ? 'bg-muted/30' : 'hover:bg-muted/30'}`}
       {...attributes}>
-      <GripVertical className={`w-4 h-4 shrink-0 cursor-grab active:cursor-grabbing transition-colors ${isDragging ? 'text-primary' : 'text-muted-foreground/50'}`} {...listeners} />
+      <GripVertical className={`w-4 h-4 shrink-0 cursor-grab active:cursor-grabbing transition-colors ${isDragging ? 'text-foreground' : 'text-muted-foreground/50'}`} {...listeners} />
       <span className="text-label flex-1 truncate">{task.label}</span>
       <button onClick={(e) => { e.stopPropagation(); onRemove(task.id) }}
-        className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-red-400 shrink-0" title="Remove">
+        className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0" title="Remove">
         <X className="w-3.5 h-3.5" />
       </button>
     </div>
@@ -162,7 +162,7 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
         onClick={onClose}
       />
       <aside
-        className={`fixed top-[76px] bottom-4 right-4 w-80 bg-sidebar-gradient rounded-2xl shadow-xl z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
+        className={`fixed top-[76px] bottom-4 right-4 w-80 bg-card rounded-2xl shadow-xl border border-border z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
           isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
         onKeyDown={handleKeyDown}
@@ -175,12 +175,12 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
             <Activity className="w-4 h-4 text-muted-foreground" />
             <h2 className="text-label font-semibold">Task Queue</h2>
             {pendingCount > 0 && (
-              <span className="px-1.5 py-0.5 text-caption font-medium bg-primary/20 text-primary rounded-full">
+              <span className="px-1.5 py-0.5 text-caption font-medium bg-muted text-foreground rounded-full">
                 {pendingCount}
               </span>
             )}
             {queueState.isPaused && (
-              <span className="px-1.5 py-0.5 text-caption font-medium bg-yellow-500/20 text-yellow-400 rounded-full">
+              <span className="text-caption font-medium text-amber-500">
                 Paused
               </span>
             )}
@@ -199,16 +199,15 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
 
         {/* Current Task */}
         {queueState.currentTask && (
-          <div className="p-4 border-b border-border/30 bg-muted/30">
+          <div className="p-4 border-b border-border/30">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-primary" />
                 <span className="text-label font-medium">{queueState.currentTask.label}</span>
               </div>
-              <button onClick={handleCancelCurrent}
-                className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-red-400" title="Cancel">
-                <XCircle className="w-4 h-4" />
-              </button>
+              <Button variant="tertiary" size="icon-sm" onClick={handleCancelCurrent} title="Cancel"
+                icon={<XCircle className="w-4 h-4" />}
+              />
             </div>
             {queueState.currentTask.progress && (
               <>
@@ -227,15 +226,12 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
 
         {/* Queue */}
         <div className="flex-1 min-h-0 flex flex-col">
-          <div className="flex items-center justify-between px-4 py-2 bg-muted/20 shrink-0">
-            <div className="flex items-center gap-2">
-              <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-caption font-medium text-muted-foreground">
-                Queued {queueState.queue.length > 0 && `(${queueState.queue.length})`}
-              </span>
-            </div>
+          <div className="flex items-center justify-between px-4 py-2 shrink-0">
+            <span className="text-caption font-medium text-muted-foreground">
+              Queued{queueState.queue.length > 0 ? ` (${queueState.queue.length})` : ''}
+            </span>
             {queueState.queue.length > 0 && (
-              <button onClick={handleClearQueue} className="text-caption text-muted-foreground hover:text-foreground transition-colors">Clear</button>
+              <Button variant="tertiary" size="sm" onClick={handleClearQueue}>Clear</Button>
             )}
           </div>
           <div className="flex-1 overflow-y-auto min-h-0">
@@ -253,7 +249,6 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
                       <SortableQueueItem key={task.id} task={task} onRemove={handleRemoveTask} />
                     ))}
                   </div>
-                  <p className="px-4 py-1.5 text-caption text-muted-foreground/60 italic border-t border-border/20">Drag to reorder</p>
                 </SortableContext>
               </DndContext>
             )}
@@ -263,15 +258,15 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
         {/* Recent completed tasks */}
         {queueState.completedTasks.length > 0 && (
           <div className="border-t border-border/30 max-h-40 overflow-y-auto">
-            <div className="px-4 py-2 bg-muted/20">
+            <div className="px-4 py-2">
               <span className="text-caption font-medium text-muted-foreground">Recent</span>
             </div>
             <div className="divide-y divide-border/10">
               {queueState.completedTasks.slice(0, 5).map((task) => (
                 <div key={task.id} className="flex items-center gap-2 px-4 py-2 text-muted-foreground/60">
-                  <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${task.status === 'failed' ? 'text-red-400' : 'text-green-400'}`} />
+                  <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${task.status === 'failed' ? 'text-destructive' : 'text-foreground'}`} />
                   <span className="text-caption flex-1 truncate">{task.label}</span>
-                  {task.status === 'failed' && <span className="text-caption text-red-400">Failed</span>}
+                  {task.status === 'failed' && <span className="text-caption text-destructive">Failed</span>}
                 </div>
               ))}
             </div>
