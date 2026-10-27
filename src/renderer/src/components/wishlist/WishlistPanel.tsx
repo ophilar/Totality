@@ -19,7 +19,7 @@ interface SearchResult {
   physical_release_date?: string
 }
 
-function WishlistSearch() {
+function WishlistSearch({ isMobile = false }: { isMobile?: boolean }) {
   const { addItem, items } = useWishlist()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
@@ -156,12 +156,12 @@ function WishlistSearch() {
             return (
               <div
                 key={result.id}
-                className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-muted/30 transition-colors"
+                className={`flex items-center gap-2 ${isMobile ? 'px-3 py-2.5' : 'px-2.5 py-1.5'} hover:bg-muted/30 transition-colors`}
               >
                 {result.poster_url ? (
-                  <img src={result.poster_url} alt="" className="w-7 h-10 object-cover rounded shrink-0" />
+                  <img src={result.poster_url} alt="" className={`${isMobile ? 'w-9 h-[52px]' : 'w-7 h-10'} object-cover rounded shrink-0`} />
                 ) : (
-                  <div className="w-7 h-10 bg-muted/50 rounded flex items-center justify-center shrink-0">
+                  <div className={`${isMobile ? 'w-9 h-[52px]' : 'w-7 h-10'} bg-muted/50 rounded flex items-center justify-center shrink-0`}>
                     {typeIcon(result.type)}
                   </div>
                 )}
@@ -183,14 +183,14 @@ function WishlistSearch() {
                   <button
                     onClick={() => handleAdd(result)}
                     disabled={alreadyAdded}
-                    className={`shrink-0 p-1 rounded transition-colors ${
+                    className={`shrink-0 ${isMobile ? 'p-2 min-h-[44px] min-w-[44px] flex items-center justify-center' : 'p-1'} rounded-lg transition-colors ${
                       alreadyAdded
                         ? 'text-foreground'
                         : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                     }`}
                     title={alreadyAdded ? 'Already in wishlist' : 'Add to wishlist'}
                   >
-                    {alreadyAdded ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                    {alreadyAdded ? <Check className={`${isMobile ? 'w-5 h-5' : 'w-3.5 h-3.5'}`} /> : <Plus className={`${isMobile ? 'w-5 h-5' : 'w-3.5 h-3.5'}`} />}
                   </button>
                 )}
               </div>
@@ -580,7 +580,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
       )}
 
       {/* Search to add */}
-      <WishlistSearch />
+      <WishlistSearch isMobile={isMobile} />
 
       {/* Compact filter row: Status + Category + Media type + Sort */}
       {counts.total > 0 && (
