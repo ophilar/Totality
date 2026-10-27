@@ -584,12 +584,12 @@ export function TVShowsView({
         <div className={`flex ${isMobile ? 'gap-3 mb-4' : 'gap-6 mb-6'}`}>
           {/* Poster */}
           {selectedShowData.poster_url && (
-            <div className={`${isMobile ? 'w-24' : 'w-44'} aspect-2/3 bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30`}>
+            <div className={`${isMobile ? 'w-28' : 'w-44'} bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30`}>
               <img
                 src={selectedShowData.poster_url}
                 alt={selectedShowData.title}
                 loading="lazy"
-                className="w-full h-full object-cover"
+                className="w-full h-auto rounded-lg"
                 onError={(e) => {
                   e.currentTarget.style.display = 'none'
                 }}
