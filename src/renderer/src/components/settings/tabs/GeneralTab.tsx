@@ -382,9 +382,10 @@ export function GeneralTab() {
               </div>
 
               {/* IP Allowlist */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-label text-muted-foreground">IP allowlist</span>
+              <div className="flex items-center justify-between px-4 py-3">
+                <div>
+                  <p className="text-label text-foreground">IP allowlist</p>
+                  <p className="text-caption text-muted-foreground">Comma-separated. Empty allows all.</p>
                 </div>
                 <Input
                   inputSize="sm"
@@ -393,11 +394,9 @@ export function GeneralTab() {
                   onBlur={async () => {
                     await window.electronAPI.setSetting(SETTING_KEYS.web_access_ip_allowlist, webIpAllowlist.trim())
                   }}
-                  placeholder="Leave empty to allow all IPs"
+                  placeholder="All IPs allowed"
+                  className="w-44"
                 />
-                <p className="text-caption text-muted-foreground mt-1">
-                  Comma-separated IPs. Only these IPs can connect. Empty allows all.
-                </p>
               </div>
             </>
           )}
