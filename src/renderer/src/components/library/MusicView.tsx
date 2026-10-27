@@ -1018,7 +1018,7 @@ export function MusicView({
         {/* Artist Header */}
         <div className={`${isMobile ? 'flex flex-col items-center text-center gap-4' : 'flex gap-6'} mb-6`}>
           {/* Artist Image */}
-          <div className={`${isMobile ? 'w-28 h-28' : 'w-44 h-44'} bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30`}>
+          <div className={`${isMobile ? 'w-36 h-36' : 'w-44 h-44'} bg-muted rounded-full overflow-hidden shrink-0 shadow-lg shadow-black/30`}>
             {selectedArtist.thumb_url ? (
               <img
                 src={selectedArtist.thumb_url}
