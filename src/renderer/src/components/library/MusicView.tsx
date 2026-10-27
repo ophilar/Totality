@@ -1456,82 +1456,90 @@ export function MusicView({
           ) : (
             <div>
               {/* Column Headers */}
-              <div className="flex items-center gap-4 px-4 py-2 border-b border-border text-caption font-medium text-muted-foreground select-none">
+              <div className={`flex items-center ${isMobile ? 'gap-2 px-3' : 'gap-4 px-4'} py-2 border-b border-border text-caption font-medium text-muted-foreground select-none`}>
                 {/* # column */}
-                <div className="w-8 text-center">#</div>
+                <div className="w-8 text-center shrink-0">#</div>
 
                 {/* Title column */}
                 <div
                   data-resize-column="title"
-                  className="flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors"
-                  style={{ width: trackColumnWidths.title, minWidth: 50 }}
+                  className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors"
+                  style={!isMobile ? { width: trackColumnWidths.title, minWidth: 50, flex: 'none' } : undefined}
                   onClick={() => handleTrackSort('title')}
                 >
                   <span>Title</span>
                   {trackSortColumn === 'title' && (
                     <span className="text-foreground">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
                   )}
-                  <div
-                    className="ml-auto w-1 h-4 cursor-col-resize hover:bg-primary/50 rounded"
-                    onMouseDown={(e) => handleResizeStart('title', e)}
-                  />
+                  {!isMobile && (
+                    <div
+                      className="ml-auto w-1 h-4 cursor-col-resize hover:bg-foreground/20 rounded"
+                      onMouseDown={(e) => handleResizeStart('title', e)}
+                    />
+                  )}
                 </div>
 
-                {/* Artist column */}
-                <div
-                  data-resize-column="artist"
-                  className="flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors"
-                  style={{ width: trackColumnWidths.artist, minWidth: 50 }}
-                  onClick={() => handleTrackSort('artist')}
-                >
-                  <span>Artist</span>
-                  {trackSortColumn === 'artist' && (
-                    <span className="text-foreground">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
-                  )}
+                {/* Artist column — hidden on mobile */}
+                {!isMobile && (
                   <div
-                    className="ml-auto w-1 h-4 cursor-col-resize hover:bg-primary/50 rounded"
-                    onMouseDown={(e) => handleResizeStart('artist', e)}
-                  />
-                </div>
+                    data-resize-column="artist"
+                    className="flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors"
+                    style={{ width: trackColumnWidths.artist, minWidth: 50 }}
+                    onClick={() => handleTrackSort('artist')}
+                  >
+                    <span>Artist</span>
+                    {trackSortColumn === 'artist' && (
+                      <span className="text-foreground">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                    <div
+                      className="ml-auto w-1 h-4 cursor-col-resize hover:bg-foreground/20 rounded"
+                      onMouseDown={(e) => handleResizeStart('artist', e)}
+                    />
+                  </div>
+                )}
 
-                {/* Album column */}
-                <div
-                  data-resize-column="album"
-                  className="flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors"
-                  style={{ width: trackColumnWidths.album, minWidth: 50 }}
-                  onClick={() => handleTrackSort('album')}
-                >
-                  <span>Album</span>
-                  {trackSortColumn === 'album' && (
-                    <span className="text-foreground">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
-                  )}
+                {/* Album column — hidden on mobile */}
+                {!isMobile && (
                   <div
-                    className="ml-auto w-1 h-4 cursor-col-resize hover:bg-primary/50 rounded"
-                    onMouseDown={(e) => handleResizeStart('album', e)}
-                  />
-                </div>
+                    data-resize-column="album"
+                    className="flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors"
+                    style={{ width: trackColumnWidths.album, minWidth: 50 }}
+                    onClick={() => handleTrackSort('album')}
+                  >
+                    <span>Album</span>
+                    {trackSortColumn === 'album' && (
+                      <span className="text-foreground">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                    <div
+                      className="ml-auto w-1 h-4 cursor-col-resize hover:bg-foreground/20 rounded"
+                      onMouseDown={(e) => handleResizeStart('album', e)}
+                    />
+                  </div>
+                )}
 
                 {/* Quality column */}
-                <div style={{ width: trackColumnWidths.quality, minWidth: 50 }}>
-                  <span>Quality</span>
+                <div className="shrink-0" style={{ width: isMobile ? 40 : trackColumnWidths.quality, minWidth: 40 }}>
+                  <span>{isMobile ? 'Qual' : 'Quality'}</span>
                 </div>
 
-                {/* Codec column */}
-                <div
-                  className="flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors"
-                  style={{ width: trackColumnWidths.codec, minWidth: 50 }}
-                  onClick={() => handleTrackSort('codec')}
-                >
-                  <span>Codec</span>
-                  {trackSortColumn === 'codec' && (
-                    <span className="text-foreground">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
-                  )}
-                </div>
+                {/* Codec column — hidden on mobile */}
+                {!isMobile && (
+                  <div
+                    className="flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors"
+                    style={{ width: trackColumnWidths.codec, minWidth: 50 }}
+                    onClick={() => handleTrackSort('codec')}
+                  >
+                    <span>Codec</span>
+                    {trackSortColumn === 'codec' && (
+                      <span className="text-foreground">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
+                )}
 
                 {/* Duration column */}
                 <div
-                  className="flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors text-right"
-                  style={{ width: trackColumnWidths.duration, minWidth: 50 }}
+                  className="flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors text-right shrink-0"
+                  style={{ width: isMobile ? 40 : trackColumnWidths.duration, minWidth: 40 }}
                   onClick={() => handleTrackSort('duration')}
                 >
                   <span>Time</span>
@@ -1559,7 +1567,8 @@ export function MusicView({
                   artistNameMap,
                   albumInfoMap,
                   columnWidths: trackColumnWidths,
-                  setSelectedTrackForQuality
+                  setSelectedTrackForQuality,
+                  isMobile,
                 }}
               >
                 {({ index, style, data }: { index: number; style: React.CSSProperties; data: {
@@ -1568,6 +1577,7 @@ export function MusicView({
                   albumInfoMap: Map<number, { title: string; artistName?: string }>
                   columnWidths: typeof trackColumnWidths
                   setSelectedTrackForQuality: typeof setSelectedTrackForQuality
+                  isMobile: boolean
                 }}) => {
                   const track = data.tracks[index]
                   // Use denormalized fields directly — maps may not have all entries loaded
@@ -1581,6 +1591,7 @@ export function MusicView({
                         artistName={artistName}
                         albumTitle={albumTitle}
                         columnWidths={data.columnWidths}
+                        isMobile={data.isMobile}
                         onClickQuality={() => {
                           // Compute quality tier
                           const LOSSLESS_CODECS = ['flac', 'alac', 'wav', 'aiff', 'pcm', 'dsd', 'ape', 'wavpack', 'wv']
@@ -2262,12 +2273,13 @@ const AlbumListItem = memo(({ album, onClick, showArtist = true, showSourceBadge
 })
 
 // List item component for tracks in tracks view
-const TrackListItem = memo(({ track, index, artistName, albumTitle, columnWidths, onClickQuality }: {
+const TrackListItem = memo(({ track, index, artistName, albumTitle, columnWidths, isMobile = false, onClickQuality }: {
   track: MusicTrack
   index: number
   artistName?: string
   albumTitle?: string
   columnWidths?: { title: number; artist: number; album: number; quality: number; codec: number; duration: number }
+  isMobile?: boolean
   onClickQuality: () => void
 }) => {
   // Quality tier calculation
@@ -2321,66 +2333,78 @@ const TrackListItem = memo(({ track, index, artistName, albumTitle, columnWidths
 
   return (
     <div
-      className="group cursor-pointer rounded-lg overflow-hidden hover:bg-muted/40 transition-colors duration-200 px-4 py-2 flex gap-4 items-center"
+      className={`group cursor-pointer rounded-lg overflow-hidden hover:bg-muted/40 transition-colors duration-200 ${isMobile ? 'px-3 py-2 flex gap-2 items-center' : 'px-4 py-2 flex gap-4 items-center'}`}
       onClick={onClickQuality}
     >
       {/* Track Number */}
-      <div className="w-8 text-center text-label text-muted-foreground">
+      <div className="w-8 text-center text-label text-muted-foreground shrink-0">
         {index}
       </div>
 
-      {/* Track Title */}
-      <div className="min-w-0 truncate" style={{ width: widths.title }}>
+      {/* Track Title — flex-1 on mobile to fill space */}
+      <div className="min-w-0 truncate" style={!isMobile ? { width: widths.title } : { flex: 1 }}>
         <h4 className="font-medium text-label truncate">{track.title}</h4>
+        {/* Show artist as subtitle on mobile */}
+        {isMobile && artistName && (
+          <p className="text-caption text-muted-foreground truncate">{artistName}</p>
+        )}
       </div>
 
-      {/* Artist */}
-      <div className="min-w-0 truncate" style={{ width: widths.artist }}>
-        <span className="text-label text-muted-foreground truncate block">{artistName || '—'}</span>
-      </div>
+      {/* Artist — hidden on mobile (shown as subtitle under title) */}
+      {!isMobile && (
+        <div className="min-w-0 truncate" style={{ width: widths.artist }}>
+          <span className="text-label text-muted-foreground truncate block">{artistName || '—'}</span>
+        </div>
+      )}
 
-      {/* Album */}
-      <div className="min-w-0 truncate" style={{ width: widths.album }}>
-        <span className="text-label text-muted-foreground truncate block">{albumTitle || '—'}</span>
-      </div>
+      {/* Album — hidden on mobile */}
+      {!isMobile && (
+        <div className="min-w-0 truncate" style={{ width: widths.album }}>
+          <span className="text-label text-muted-foreground truncate block">{albumTitle || '—'}</span>
+        </div>
+      )}
 
       {/* Quality Badge */}
-      <div className="flex items-center gap-2" style={{ width: widths.quality }}>
+      <div className="flex items-center gap-1 shrink-0" style={{ width: isMobile ? 40 : widths.quality }}>
         {qualityTier && (
-          <span className={`px-2 py-0.5 text-caption font-semibold rounded ${qualityTierConfig[qualityTier].color}`}>
+          <span className={`px-1.5 py-0.5 text-caption font-semibold rounded ${qualityTierConfig[qualityTier].color}`}>
             {qualityTierConfig[qualityTier].label}
           </span>
         )}
-        {qualityTier === 'low' && (
+        {qualityTier === 'low' && !isMobile && (
           <span title="Quality upgrade recommended">
             <CircleFadingArrowUp className="w-4 h-4 text-destructive" />
           </span>
         )}
       </div>
 
-      {/* Codec */}
-      <div className="text-caption text-muted-foreground" style={{ width: widths.codec }}>
-        {track.audio_codec?.toUpperCase() || '—'}
-      </div>
+      {/* Codec — hidden on mobile */}
+      {!isMobile && (
+        <div className="text-caption text-muted-foreground" style={{ width: widths.codec }}>
+          {track.audio_codec?.toUpperCase() || '—'}
+        </div>
+      )}
 
       {/* Duration */}
-      <div className="text-caption text-muted-foreground text-right" style={{ width: widths.duration }}>
+      <div className="text-caption text-muted-foreground text-right shrink-0" style={{ width: isMobile ? 40 : widths.duration }}>
         {formatDuration(track.duration)}
       </div>
 
-      {/* Add to Wishlist - for low quality tracks that need upgrade */}
-      <div className="w-8 flex justify-center" onClick={(e) => e.stopPropagation()}>
-        {qualityTier === 'low' && (
-          <AddToWishlistButton
-            mediaType="track"
-            title={track.title}
-            artistName={artistName}
-            albumTitle={albumTitle}
-            reason="upgrade"
-            compact
-          />
-        )}
-      </div>
+      {/* Add to Wishlist — hidden on mobile (accessible via track detail) */}
+      {!isMobile && (
+        <div className="w-8 flex justify-center" onClick={(e) => e.stopPropagation()}>
+          {qualityTier === 'low' && (
+            <AddToWishlistButton
+              mediaType="track"
+              title={track.title}
+              artistName={artistName}
+              albumTitle={albumTitle}
+              reason="upgrade"
+              compact
+            />
+          )}
+        </div>
+      )}
     </div>
   )
 })
