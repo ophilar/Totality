@@ -143,7 +143,16 @@ export class WishlistCompletionService {
         count = db.getEpisodeCountForSeries(seriesName)
       }
 
-      // Fallback: check by TMDB ID if title didn't match
+      // Fallback: check series_completeness table by TMDB ID
+      if (count === 0 && item.tmdb_id) {
+        // series_completeness stores the series TMDB ID, media_items stores episode TMDB IDs
+        const seriesRecord = db.getSeriesCompletenessByTmdbId?.(item.tmdb_id)
+        if (seriesRecord && seriesRecord.owned_episodes > 0) {
+          count = seriesRecord.owned_episodes
+        }
+      }
+
+      // Final fallback: check media_items by TMDB ID directly (works for movies in collections)
       if (count === 0 && item.tmdb_id) {
         const found = db.getMediaItemsByTmdbIds([item.tmdb_id])
         if (found.size > 0) count = 1

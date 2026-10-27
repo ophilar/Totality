@@ -299,6 +299,7 @@ export interface DatabaseServiceInterface {
   getEpisodeCountForSeason(seriesTmdbId: string, seasonNumber: number): number
   getEpisodeCountForSeasonEpisode(seriesTmdbId: string, seasonNumber: number, episodeNumber: number): number
   getEpisodeCountForSeries(seriesTitle: string): number
+  getSeriesCompletenessByTmdbId?(tmdbId: string): { owned_episodes: number } | null
   getMusicAlbumsByMusicbrainzIds(ids: string[]): Map<string, MusicAlbum>
   getQualityScoresByMediaItemIds(ids: number[]): Map<number, QualityScore>
 

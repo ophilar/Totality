@@ -3906,6 +3906,16 @@ export class BetterSQLiteService {
   }
 
   /**
+   * Get series completeness record by TMDB ID
+   */
+  getSeriesCompletenessByTmdbId(tmdbId: string): SeriesCompleteness | null {
+    if (!this.db) throw new Error('Database not initialized')
+    const stmt = this.db.prepare('SELECT * FROM series_completeness WHERE tmdb_id = ? LIMIT 1')
+    const row = (stmt.get(tmdbId) as SeriesCompleteness) || null
+    return row ? BetterSQLiteService.parseSeriesRow(row) : null
+  }
+
+  /**
    * Get incomplete series (completeness < 100%)
    * @param sourceId Optional source ID to filter by
    */
