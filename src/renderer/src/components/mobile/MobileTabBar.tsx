@@ -18,10 +18,8 @@ const tabs: { id: MobileTab; label: string; icon: typeof Film }[] = [
 export function MobileTabBar({ activeTab, onTabChange, onSearchOpen }: MobileTabBarProps) {
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 safe-area-bottom pointer-events-none">
-      {/* Gradient behind tab bar — fades content into theme background */}
-      <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-background via-background/80 to-transparent" />
-      <div className="relative px-4 pb-4 mt-auto pointer-events-auto" style={{ paddingTop: '80px' }}>
-        <div className="bg-black rounded-3xl shadow-2xl px-2 py-2.5 flex items-center gap-1.5" role="tablist" aria-label="Navigation">
+      <div className="relative px-4 pb-4 pt-2 mt-auto pointer-events-auto">
+        <div className="bg-black/72 backdrop-blur-xl rounded-2xl shadow-xl px-2 py-2 flex items-center gap-1" role="tablist" aria-label="Navigation">
         {tabs.map(({ id, label, icon: Icon }) => {
           const active = activeTab === id
           return (
@@ -31,14 +29,14 @@ export function MobileTabBar({ activeTab, onTabChange, onSearchOpen }: MobileTab
               role="tab"
               aria-selected={active}
               aria-label={label}
-              className={`flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[52px] rounded-2xl text-label font-medium transition-colors ${
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[52px] rounded-2xl transition-colors ${
                 active
-                  ? 'bg-white text-black'
-                  : 'text-white hover:bg-white/10'
+                  ? 'bg-foreground text-background'
+                  : 'text-white'
               }`}
             >
               <Icon className="w-5 h-5" />
-              <span className="text-caption">{label}</span>
+              <span className="text-micro">{label}</span>
             </button>
           )
         })}
@@ -49,10 +47,11 @@ export function MobileTabBar({ activeTab, onTabChange, onSearchOpen }: MobileTab
         {/* Search */}
         <button
           onClick={onSearchOpen}
-          className="min-h-[52px] min-w-[44px] flex flex-col items-center justify-center gap-0.5 rounded-2xl text-white hover:bg-white/10 transition-colors"
+          className="min-h-[52px] min-w-[44px] flex flex-col items-center justify-center gap-0.5 rounded-2xl text-white transition-colors"
           aria-label="Search"
         >
           <Search className="w-5 h-5" />
+          <span className="text-micro">Search</span>
         </button>
         </div>
       </div>
