@@ -136,7 +136,7 @@ export const WishlistItemCard = memo(function WishlistItemCard({
   }
 
   return (
-    <div className="relative flex gap-2 p-2 rounded-lg transition-colors group hover:bg-muted/30">
+    <div className={`relative flex gap-3 ${isMobile ? 'p-3' : 'p-2'} rounded-lg transition-colors group hover:bg-muted/30`}>
       {/* Completed checkmark - top right */}
       {isCompleted && (
         <div className="absolute top-1.5 right-1.5 z-10">
@@ -145,7 +145,7 @@ export const WishlistItemCard = memo(function WishlistItemCard({
       )}
 
       {/* Poster/Album Art */}
-      <div className={`w-10 ${isMusic ? 'h-10' : 'h-[60px]'} bg-muted rounded overflow-hidden shrink-0`}>
+      <div className={`${isMobile ? 'w-12' : 'w-10'} ${isMusic ? (isMobile ? 'h-12' : 'h-10') : (isMobile ? 'h-[72px]' : 'h-[60px]')} bg-muted rounded overflow-hidden shrink-0`}>
         {item.poster_url ? (
           <img
             src={item.poster_url}
@@ -156,7 +156,7 @@ export const WishlistItemCard = memo(function WishlistItemCard({
             }}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-h3 bg-muted/50">
+          <div className="w-full h-full flex items-center justify-center bg-muted/50 text-muted-foreground">
             {placeholderIcon}
           </div>
         )}
