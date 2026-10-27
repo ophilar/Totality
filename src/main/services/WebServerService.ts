@@ -51,6 +51,7 @@ interface Session {
 interface RateLimitEntry {
   failures: number
   lockedUntil: number
+  lockoutCount: number
 }
 
 type WebMessage = RpcMessage | AuthMessage
@@ -107,6 +108,7 @@ const PROTECTED_SETTINGS: Set<string> = new Set([
   SETTING_KEYS.tmdb_api_key,
   SETTING_KEYS.musicbrainz_api_token,
   SETTING_KEYS.plex_token,
+  SETTING_KEYS.web_access_ip_allowlist,
 ])
 
 export class WebServerService {
@@ -177,6 +179,14 @@ export class WebServerService {
       }
 
       ws.clientIp = req.socket.remoteAddress || 'unknown'
+
+      // IP allowlist check
+      if (!this.isIpAllowed(ws.clientIp)) {
+        console.warn(`[WebServer] Rejected WebSocket from non-allowlisted IP: ${ws.clientIp}`)
+        ws.close(4003, 'IP not allowed')
+        return
+      }
+
       getLoggingService().verbose('WebServer', `WebSocket connected from ${ws.clientIp}`)
 
       ws.on('message', (data) => this.handleWebSocket(ws, data))
@@ -317,6 +327,14 @@ export class WebServerService {
   private handleHttp(req: http.IncomingMessage, res: http.ServerResponse): void {
     try {
     this.setSecurityHeaders(res)
+
+    // IP allowlist check
+    const clientIp = req.socket.remoteAddress || 'unknown'
+    if (!this.isIpAllowed(clientIp)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' })
+      res.end('Forbidden')
+      return
+    }
 
     const url = new URL(req.url || '/', `http://${req.headers.host}`)
 
@@ -589,6 +607,18 @@ export class WebServerService {
     ws.send(JSON.stringify({ type: 'error', error: 'Unknown message type' }))
   }
 
+  /** Check if an IP is allowed by the allowlist (empty = allow all) */
+  private isIpAllowed(ip: string): boolean {
+    const db = getDatabase()
+    const allowlist = db.getSetting(SETTING_KEYS.web_access_ip_allowlist)
+    if (!allowlist) return true // empty = allow all
+    const allowed = allowlist.split(',').map(s => s.trim()).filter(Boolean)
+    if (allowed.length === 0) return true
+    // Normalize IPv6-mapped IPv4 (::ffff:192.168.1.1 → 192.168.1.1)
+    const normalizedIp = ip.replace(/^::ffff:/, '')
+    return allowed.some(a => a === normalizedIp || a === ip)
+  }
+
   private async handleAuth(ws: AuthenticatedWebSocket, msg: AuthMessage): Promise<void> {
     const ip = ws.clientIp || 'unknown'
 
@@ -603,12 +633,19 @@ export class WebServerService {
     // Validate PIN (always required) — uses constant-time comparison
     const storedPin = this.getStoredPin()
     if (!storedPin || !timingSafeCompare(msg.pin, storedPin)) {
-      const entry = this.rateLimits.get(ip) || { failures: 0, lockedUntil: 0 }
+      const entry = this.rateLimits.get(ip) || { failures: 0, lockedUntil: 0, lockoutCount: 0 }
       entry.failures++
       if (entry.failures >= MAX_AUTH_FAILURES) {
-        entry.lockedUntil = Date.now() + AUTH_LOCKOUT_MS
+        entry.lockoutCount++
+        const lockoutDuration = entry.lockoutCount >= 3
+          ? 24 * 60 * 60 * 1000   // 24 hours after 3rd lockout
+          : entry.lockoutCount >= 2
+          ? 15 * 60 * 1000         // 15 minutes after 2nd lockout
+          : AUTH_LOCKOUT_MS        // 60 seconds after 1st lockout
+        entry.lockedUntil = Date.now() + lockoutDuration
         entry.failures = 0
-        console.warn(`[WebServer] Auth lockout for IP ${ip} — ${MAX_AUTH_FAILURES} failed attempts`)
+        const durationLabel = lockoutDuration >= 86400000 ? '24 hours' : lockoutDuration >= 900000 ? '15 minutes' : '60 seconds'
+        console.warn(`[WebServer] Auth lockout #${entry.lockoutCount} for IP ${ip} — locked for ${durationLabel}`)
       }
       this.rateLimits.set(ip, entry)
       ws.send(JSON.stringify({ type: 'auth', success: false, error: 'Invalid PIN' }))

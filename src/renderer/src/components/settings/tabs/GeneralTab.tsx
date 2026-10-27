@@ -48,6 +48,7 @@ export function GeneralTab() {
   const [webClients, setWebClients] = useState(0)
   const [urlCopied, setUrlCopied] = useState(false)
   const [webSessionTimeout, setWebSessionTimeout] = useState('86400000')
+  const [webIpAllowlist, setWebIpAllowlist] = useState('')
 
   const loadWebStatus = useCallback(async () => {
     try {
@@ -61,7 +62,7 @@ export function GeneralTab() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [trayVal, startVal, version, uState, uSetting, weVal, wpVal, wpinVal, wtVal] = await Promise.all([
+        const [trayVal, startVal, version, uState, uSetting, weVal, wpVal, wpinVal, wtVal, wAllow] = await Promise.all([
           window.electronAPI.getSetting('minimize_to_tray'),
           window.electronAPI.getSetting('start_minimized_to_tray'),
           window.electronAPI.getAppVersion(),
@@ -71,6 +72,7 @@ export function GeneralTab() {
           window.electronAPI.getSetting(SETTING_KEYS.web_access_port),
           window.electronAPI.getSetting(SETTING_KEYS.web_access_pin),
           window.electronAPI.getSetting(SETTING_KEYS.web_access_session_timeout),
+          window.electronAPI.getSetting(SETTING_KEYS.web_access_ip_allowlist),
         ])
         setMinimizeToTray(trayVal === 'true')
         setStartMinimized(startVal === 'true')
@@ -81,6 +83,7 @@ export function GeneralTab() {
         if (wpVal) setWebPort(wpVal)
         if (wpinVal) setWebPin(wpinVal)
         if (wtVal) setWebSessionTimeout(wtVal)
+        if (wAllow) setWebIpAllowlist(wAllow)
         await loadWebStatus()
       } catch (error) {
         console.error('Failed to load general settings:', error)
@@ -376,6 +379,25 @@ export function GeneralTab() {
                   <option value="86400000">24 hours</option>
                   <option value="604800000">7 days</option>
                 </Select>
+              </div>
+
+              {/* IP Allowlist */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-label text-muted-foreground">IP allowlist</span>
+                </div>
+                <Input
+                  inputSize="sm"
+                  value={webIpAllowlist}
+                  onChange={(e) => setWebIpAllowlist(e.target.value)}
+                  onBlur={async () => {
+                    await window.electronAPI.setSetting(SETTING_KEYS.web_access_ip_allowlist, webIpAllowlist.trim())
+                  }}
+                  placeholder="Leave empty to allow all IPs"
+                />
+                <p className="text-caption text-muted-foreground mt-1">
+                  Comma-separated IPs. Only these IPs can connect. Empty allows all.
+                </p>
               </div>
             </>
           )}
