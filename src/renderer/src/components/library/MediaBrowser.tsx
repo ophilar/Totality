@@ -1826,7 +1826,7 @@ export function MediaBrowser({
                 {/* Music View Mode Toggle — hidden when viewing artist/album detail */}
                 {view === 'music' && !selectedArtist && !selectedAlbum && (
                   <div className="flex items-center gap-2">
-                    <span className="text-caption text-muted-foreground">View</span>
+                    {!isMobile && <span className="text-caption text-muted-foreground">View</span>}
                     <div className="flex gap-1">
                       {(['artists', 'albums', 'tracks'] as const).map((mode) => (
                         <button
@@ -1837,7 +1837,7 @@ export function MediaBrowser({
                             setSelectedAlbum(null)
                             setAlbumTracks([])
                           }}
-                          className={`px-2.5 py-1.5 rounded-lg text-caption transition-colors ${
+                          className={`${isMobile ? 'px-3 py-2 min-h-[44px]' : 'px-2.5 py-1.5'} rounded-lg text-caption transition-colors ${
                             musicViewMode === mode
                               ? 'bg-foreground text-background'
                               : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1853,7 +1853,7 @@ export function MediaBrowser({
                 {/* Library Filter (shown when source has 2+ libraries of current type) */}
                 {activeSourceId && currentTypeLibraries.length >= 2 && (
                   <div className="flex items-center gap-2">
-                    <span className="text-caption text-muted-foreground">Library</span>
+                    {!isMobile && <span className="text-caption text-muted-foreground">Library</span>}
                     <Select
                       inputSize="sm"
                       value={activeLibraryId || ''}
@@ -1871,7 +1871,7 @@ export function MediaBrowser({
                 {/* Resolution Tier Filter (movies only) */}
                 {view === 'movies' && (
                   <div className="flex items-center gap-2">
-                    <span className="text-caption text-muted-foreground">Resolution</span>
+                    {!isMobile && <span className="text-caption text-muted-foreground">Resolution</span>}
                     <div className="flex gap-1">
                       {['all', '4K', '1080p', '720p', 'SD'].map((tier) => (
                         <button
@@ -1881,7 +1881,7 @@ export function MediaBrowser({
                             else tierFilterRefs.current.delete(tier)
                           }}
                           onClick={() => setTierFilter(tier as typeof tierFilter)}
-                          className={`px-2.5 py-1 rounded-lg text-caption transition-colors focus:outline-hidden ${
+                          className={`${isMobile ? 'px-3 py-2 min-h-[44px]' : 'px-2.5 py-1'} rounded-lg text-caption transition-colors focus:outline-hidden ${
                             tierFilter === tier
                               ? 'bg-foreground text-background'
                               : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1894,15 +1894,15 @@ export function MediaBrowser({
                   </div>
                 )}
 
-                {/* Divider between Resolution and Quality */}
-                {view === 'movies' && (
+                {/* Divider between Resolution and Quality — desktop only */}
+                {view === 'movies' && !isMobile && (
                   <div className="h-6 w-px bg-border/50" />
                 )}
 
                 {/* Quality Filter (movies + music tracks) */}
                 {(view === 'movies' || (view === 'music' && musicViewMode === 'tracks')) && (
                   <div className="flex items-center gap-2">
-                    <span className="text-caption text-muted-foreground">Quality</span>
+                    {!isMobile && <span className="text-caption text-muted-foreground">Quality</span>}
                     <div className="flex gap-1">
                       {['all', 'high', 'medium', 'low'].map((quality) => (
                         <button
@@ -1912,7 +1912,7 @@ export function MediaBrowser({
                             else qualityFilterRefs.current.delete(quality)
                           }}
                           onClick={() => setQualityFilter(quality as typeof qualityFilter)}
-                          className={`px-2.5 py-1 rounded-lg text-caption transition-colors focus:outline-hidden ${
+                          className={`${isMobile ? 'px-3 py-2 min-h-[44px]' : 'px-2.5 py-1'} rounded-lg text-caption transition-colors focus:outline-hidden ${
                             qualityFilter === quality
                               ? 'bg-foreground text-background'
                               : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1928,10 +1928,10 @@ export function MediaBrowser({
                 {/* Collections Filter (movies only) */}
                 {view === 'movies' && movieCollections.length > 0 && (
                   <>
-                    <div className="h-6 w-px bg-border/50" />
+                    {!isMobile && <div className="h-6 w-px bg-border/50" />}
                     <button
                       onClick={() => setCollectionsOnly(!collectionsOnly)}
-                      className={`px-2.5 py-1 rounded-lg text-caption transition-colors focus:outline-hidden flex items-center gap-1.5 ${
+                      className={`${isMobile ? 'px-3 py-2 min-h-[44px]' : 'px-2.5 py-1'} rounded-lg text-caption transition-colors focus:outline-hidden flex items-center gap-1.5 ${
                         collectionsOnly
                           ? 'bg-foreground text-background'
                           : 'bg-card text-muted-foreground hover:bg-muted'
