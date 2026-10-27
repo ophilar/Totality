@@ -881,6 +881,26 @@
   }
 }
 
+/* SKILL.md §5: disable hover effects on touch-only devices.
+   On touch, :hover sticks after tap — controls look permanently hovered.
+   This makes all hover: utilities no-ops on touch-only devices by
+   raising specificity of the base state above the hover state. */
+@media (hover: none) and (pointer: coarse) {
+  /* Force all interactive elements to ignore :hover by resetting
+     the properties that Tailwind hover utilities commonly set */
+  button, a, [role="button"], [role="tab"], [role="menuitem"],
+  [role="option"], [role="listitem"], [role="checkbox"], [role="radio"],
+  [role="switch"], label, summary {
+    &:hover {
+      background-color: revert-layer;
+      color: revert-layer;
+      border-color: revert-layer;
+      opacity: revert-layer;
+      text-decoration: revert-layer;
+    }
+  }
+}
+
 /* SKILL.md Typography Scale (§2) — Plus Jakarta Sans */
 /* Each class bakes in size + line-height + letter-spacing */
 @layer utilities {
