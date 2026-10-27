@@ -17,9 +17,8 @@ const tabs: { id: MobileTab; label: string; icon: typeof Film }[] = [
 
 export function MobileTabBar({ activeTab, onTabChange, onSearchOpen }: MobileTabBarProps) {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 safe-area-bottom pointer-events-none">
-      <div className="relative px-4 pb-4 pt-2 mt-auto pointer-events-auto">
-        <div className="bg-black/72 backdrop-blur-xl rounded-2xl shadow-xl px-2 py-2 flex items-center gap-1" role="tablist" aria-label="Navigation">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 safe-area-bottom">
+      <div className="bg-black/72 backdrop-blur-xl border-t border-white/10 px-2 py-2 flex items-center gap-1" role="tablist" aria-label="Navigation">
         {tabs.map(({ id, label, icon: Icon }) => {
           const active = activeTab === id
           return (
@@ -53,7 +52,6 @@ export function MobileTabBar({ activeTab, onTabChange, onSearchOpen }: MobileTab
           <Search className="w-5 h-5" />
           <span className="text-micro">Search</span>
         </button>
-        </div>
       </div>
     </nav>
   )
