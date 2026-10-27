@@ -396,22 +396,32 @@ All setting keys are defined in `src/shared/settingKeys.ts` as `SETTING_KEYS` �
 
 ## Design System
 
-**Authority:** `docs/SKILL.md` is the single source of truth for all UI design decisions. Every component, screen, modal, panel, and flow must follow its rules.
+**Authority:** `docs/SKILL.md` is the single source of truth for all UI design decisions. Every component, screen, modal, panel, and flow must follow its rules. The app is ~95% SKILL.md compliant.
 
-**Audit:** `docs/design-audit.md` tracks all known violations and migration progress.
+**Font:** Plus Jakarta Sans (variable weight, 400/500/600 only — no bold/700). Declared in `index.css` with `@font-face`.
 
-**Tokens:** `src/renderer/src/styles/design-tokens.ts` exports centralized constants for typography, spacing, z-index, animation, radius, and sizing. Import these instead of magic numbers.
+**Typography Scale** (defined in `index.css` `@layer utilities`): `text-display` (48px) · `text-h1` (32px) · `text-h2` (24px) · `text-h3` (20px) · `text-title` (17px) · `text-body-lg` (17px) · `text-body` (15px) · `text-label` (14px) · `text-caption` (13px) · `text-micro` (11px). Each includes line-height and letter-spacing. **Never use** `text-xs`, `text-sm`, `text-base`, `text-lg`, `text-xl`, `text-2xl` — use the named steps above.
+
+**Radius Scale:** `rounded` (4px, chips) · `rounded-lg` (8px, controls) · `rounded-2xl` (16px, cards/modals) · `rounded-full` (pills). **Never use** `rounded-md` (6px, off-scale).
+
+**Tokens:** `src/renderer/src/styles/design-tokens.ts` exports centralized constants for TYPE, SPACE, Z, DURATION, RADIUS, BUTTON_SIZE, CONTAINER, SHADOW.
+
+**Shared Components** (`src/renderer/src/components/ui/`): Button, Card, Input, Select, Badge, Modal. Always use these instead of inline button/input/select/card styling.
 
 ### Hard Rules (enforced on all new and modified UI code)
 
-1. **No hardcoded colors.** Never write hex values, `text-white`, `bg-white`, or bare Tailwind color classes (`text-red-500`). Use semantic tokens: `text-foreground`, `bg-background`, `text-destructive`, `text-muted-foreground`, etc.
-2. **No uppercase.** Never use `uppercase` or `text-transform: uppercase`. Use `font-medium` or `font-semibold` at the same size to signal label/category text. Sentence case everywhere.
-3. **No bracket font sizes.** Never use `text-[10px]` or similar. Use the typography scale from `design-tokens.ts` (`TYPE.micro`, `TYPE.caption`, `TYPE.label`, `TYPE.body`, etc.) or standard Tailwind classes.
-4. **No `transition-all`.** Animate only: `opacity`, `transform`, `background-color`, `border-color`, `color`, `box-shadow`, `filter`. Use `transition-colors` or `transition-opacity` instead.
-5. **Shared components first.** New UI primitives (buttons, cards, inputs, badges, modals) go in `src/renderer/src/components/ui/`. Check for existing shared components before creating inline variants.
-6. **Space is the default grouping tool.** Use spacing to show relationships (8px within, 16px between related, 32px between sections). Lines and boxes only when spacing alone isn't enough.
-7. **One emphasis per screen.** Exactly one element is the most important. Everything else steps down in a visible order.
-8. **Color carries meaning, not mood.** Green = success, amber = warning, red = failure/destructive. Nothing else is colored.
+1. **No hardcoded colors.** Never write hex values or bare Tailwind color classes (`text-red-500`). Use semantic tokens: `text-foreground`, `text-destructive`, `text-muted-foreground`, etc. Exception: poster overlay badges on dark image backgrounds and provider brand colors.
+2. **No uppercase.** Sentence case everywhere. Use `font-medium` or `font-semibold` for emphasis.
+3. **No old font classes.** Never use `text-xs`, `text-sm`, `text-base`, `text-lg`, `text-xl`, `text-2xl`, `text-3xl`. Use `text-caption`, `text-label`, `text-body`, `text-title`, `text-h3`, `text-h2`, `text-h1`.
+4. **No `font-bold`.** Only weights 400 (`font-normal`), 500 (`font-medium`), 600 (`font-semibold`).
+5. **No `transition-all`.** Use `transition-colors`, `transition-opacity`, or specific `transition-[property]`.
+6. **No `rounded-md`.** Use `rounded-lg` (8px) for controls or `rounded` (4px) for chips.
+7. **No decorative boxes.** No `bg-muted/30 rounded-lg p-3` inner containers. Space groups content. `<Card variant="muted">` for top-level settings sections only.
+8. **No `bg-sidebar-gradient`.** Use `bg-card` for raised surfaces.
+9. **Selection state pattern.** Selected items use `bg-foreground text-background` (not `bg-primary`).
+10. **Color carries meaning, not mood.** Amber = warning/attention, red (`text-destructive`) = failure/destructive. Success is just `text-foreground` (the check icon IS the feedback).
+11. **Hover disabled on touch.** CSS `@media (hover: none)` handles this globally. The `.hover-scale` class is wrapped in `@media (hover: hover)`.
+12. **Shared components first.** Use `<Button>`, `<Card>`, `<Input>`, `<Select>`, `<Badge>`, `<Modal>` from `ui/`.
 
 ## Important Patterns
 
