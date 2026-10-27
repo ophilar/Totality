@@ -638,13 +638,13 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
                 <button
                   key={type}
                   onClick={() => { setActiveCategory(activeCategory === type ? 'all' : type); if (type === 'all') setActiveFilter('all') }}
-                  className={`flex items-center gap-1 ${isMobile ? 'px-2.5 py-1.5 min-h-[44px] text-label' : 'px-2 py-1 text-caption'} rounded-full transition-colors ${
+                  className={`flex items-center gap-1.5 ${isMobile ? 'px-3 py-2 min-h-[44px] text-label' : 'px-2 py-1 text-caption'} rounded-full transition-colors ${
                     activeCategory === type
                       ? 'bg-foreground text-background'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  <Icon className="w-3 h-3" />
+                  <Icon className="w-4 h-4" />
                   <span>{label}</span>
                 </button>
               ))}
@@ -653,13 +653,13 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
                 <button
                   key={type}
                   onClick={() => setActiveFilter(activeFilter === type ? 'all' : type)}
-                  className={`flex items-center gap-1 ${isMobile ? 'px-2.5 py-1.5 min-h-[44px] text-label' : 'px-2 py-1 text-caption'} rounded-full transition-colors ${
+                  className={`flex items-center justify-center ${isMobile ? 'p-2 min-h-[44px] min-w-[44px]' : 'px-2 py-1'} rounded-full transition-colors ${
                     activeFilter === type
                       ? 'bg-foreground text-background'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  <Icon className="w-3 h-3" />
+                  <Icon className="w-4 h-4" />
                 </button>
               ))}
             </div>
