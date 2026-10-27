@@ -776,6 +776,40 @@ export class LiveMonitoringService {
       hasChanges: events.length > 0,
     })
 
+    // Check for quality upgrades after items were updated
+    if (events.some((e) => e.changeType === 'updated' || e.changeType === 'mixed')) {
+      try {
+        const db = getDatabase()
+        const scanStart = events.reduce((earliest, e) => e.detectedAt < earliest ? e.detectedAt : earliest, events[0].detectedAt)
+        const videoUpgrades = db.getRecentlyUpgraded(1)
+          .filter((u: { upgraded_at: string }) => u.upgraded_at >= scanStart)
+          .map((u: { title: string; previous_quality_tier: string; quality_tier: string }) =>
+            `${u.title}: ${u.previous_quality_tier} → ${u.quality_tier}`)
+        const musicUpgrades = db.getRecentlyUpgradedMusic(1)
+          .filter((u: { upgraded_at: string }) => u.upgraded_at >= scanStart)
+          .map((u: { title: string; artist_name: string; previous_quality_tier: string; quality_tier: string }) =>
+            `${u.title} (${u.artist_name}): ${u.previous_quality_tier} → ${u.quality_tier}`)
+        const allUpgrades = [...videoUpgrades, ...musicUpgrades]
+        if (allUpgrades.length > 0) {
+          const summaries = allUpgrades.slice(0, 5)
+          const message = allUpgrades.length <= 5
+            ? summaries.join(', ')
+            : `${summaries.join(', ')} + ${allUpgrades.length - 5} more`
+          db.createNotification({
+            type: 'info',
+            title: `${allUpgrades.length} quality upgrade${allUpgrades.length !== 1 ? 's' : ''} detected`,
+            message,
+            sourceId,
+            sourceName: source.display_name,
+            itemCount: allUpgrades.length,
+          })
+          emitNotificationCreated()
+        }
+      } catch (err) {
+        console.error('[LiveMonitoring] Failed to check upgrades:', err)
+      }
+    }
+
     // Check wishlist for auto-completion after items were added or updated
     if (events.some((e) => e.changeType === 'added' || e.changeType === 'updated' || e.changeType === 'mixed')) {
       getWishlistCompletionService().checkAndComplete().catch((err) => {
@@ -1061,6 +1095,40 @@ export class LiveMonitoringService {
       sourceId,
       hasChanges: events.length > 0,
     })
+
+    // Check for quality upgrades after items were updated
+    if (events.some((e) => e.changeType === 'updated' || e.changeType === 'mixed')) {
+      try {
+        const db = getDatabase()
+        const scanStart = events.reduce((earliest, e) => e.detectedAt < earliest ? e.detectedAt : earliest, events[0].detectedAt)
+        const videoUpgrades = db.getRecentlyUpgraded(1)
+          .filter((u: { upgraded_at: string }) => u.upgraded_at >= scanStart)
+          .map((u: { title: string; previous_quality_tier: string; quality_tier: string }) =>
+            `${u.title}: ${u.previous_quality_tier} → ${u.quality_tier}`)
+        const musicUpgrades = db.getRecentlyUpgradedMusic(1)
+          .filter((u: { upgraded_at: string }) => u.upgraded_at >= scanStart)
+          .map((u: { title: string; artist_name: string; previous_quality_tier: string; quality_tier: string }) =>
+            `${u.title} (${u.artist_name}): ${u.previous_quality_tier} → ${u.quality_tier}`)
+        const allUpgrades = [...videoUpgrades, ...musicUpgrades]
+        if (allUpgrades.length > 0) {
+          const summaries = allUpgrades.slice(0, 5)
+          const message = allUpgrades.length <= 5
+            ? summaries.join(', ')
+            : `${summaries.join(', ')} + ${allUpgrades.length - 5} more`
+          db.createNotification({
+            type: 'info',
+            title: `${allUpgrades.length} quality upgrade${allUpgrades.length !== 1 ? 's' : ''} detected`,
+            message,
+            sourceId,
+            sourceName: source.display_name,
+            itemCount: allUpgrades.length,
+          })
+          emitNotificationCreated()
+        }
+      } catch (err) {
+        console.error('[LiveMonitoring] Failed to check upgrades:', err)
+      }
+    }
 
     // Check wishlist for auto-completion after items were added or updated
     if (events.some((e) => e.changeType === 'added' || e.changeType === 'updated' || e.changeType === 'mixed')) {
