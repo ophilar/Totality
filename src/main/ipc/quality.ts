@@ -3,6 +3,7 @@ import { getQualityAnalyzer } from '../services/QualityAnalyzer'
 import { getDatabase } from '../database/getDatabase'
 import { validateInput, PositiveIntSchema } from '../validation/schemas'
 import { safeSend } from './utils/safeSend'
+import { getWishlistCompletionService } from '../services/WishlistCompletionService'
 
 /**
  * Register all quality analysis IPC handlers
@@ -37,6 +38,11 @@ export function registerQualityHandlers() {
 
       // Send final update when analysis completes
       safeSend(win,'library:updated', { type: 'media' })
+
+      // Check wishlist for auto-completion
+      getWishlistCompletionService().checkAndComplete().catch((err) => {
+        console.error('[quality:analyzeAll] Wishlist check failed:', err)
+      })
 
       return count
     } catch (error) {

@@ -188,6 +188,7 @@ export interface DatabaseServiceInterface {
   getMusicTrackById(id: number): MusicTrack | null
   getMusicTrackByPath(filePath: string): MusicTrack | null
   getMusicTrackByMusicbrainzId(id: string): MusicTrack | null
+  getMusicTracksByMusicbrainzIds(ids: string[]): Map<string, MusicTrack>
   deleteMusicTrack(id: number): void | Promise<void>
   updateMusicTrackMood(trackId: number, mood: string): void | Promise<void>
   updateMusicTrackTag(trackId: number, field: 'mood' | 'genre', value: string): void | Promise<void>

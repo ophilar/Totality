@@ -7,6 +7,7 @@ import { getWindowFromEvent } from './utils/safeSend'
 import { createProgressUpdater } from './utils/progressUpdater'
 import { validateInput, NonEmptyStringSchema, OptionalSourceIdSchema, PositiveIntSchema } from '../validation/schemas'
 import { getTaskQueueService } from '../services/TaskQueueService'
+import { getWishlistCompletionService } from '../services/WishlistCompletionService'
 
 /**
  * Register all series completeness IPC handlers
@@ -69,7 +70,14 @@ export function registerSeriesHandlers() {
     const validSeriesTitle = validateInput(NonEmptyStringSchema, seriesTitle, 'series:analyze.seriesTitle')
     try {
       const service = getSeriesCompletenessService()
-      return await service.analyzeSeries(validSeriesTitle)
+      const result = await service.analyzeSeries(validSeriesTitle)
+
+      // Check wishlist for auto-completion
+      getWishlistCompletionService().checkAndComplete().catch((err) => {
+        console.error('[series:analyze] Wishlist check failed:', err)
+      })
+
+      return result
     } catch (error) {
       console.error(`Error analyzing series "${validSeriesTitle}":`, error)
       throw error
@@ -310,6 +318,11 @@ export function registerSeriesHandlers() {
 
       // Re-analyze the series with the new title
       const completeness = await service.analyzeSeries(newSeriesTitle, validSourceId)
+
+      // Check wishlist for auto-completion
+      getWishlistCompletionService().checkAndComplete().catch((err) => {
+        console.error('[series:fixMatch] Wishlist check failed:', err)
+      })
 
       return {
         success: true,

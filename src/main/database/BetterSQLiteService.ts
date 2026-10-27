@@ -6188,6 +6188,27 @@ WHERE m.type = 'episode' AND m.series_title = ?`
   }
 
   /**
+   * Batch lookup music tracks by MusicBrainz IDs
+   * Returns a Map of musicbrainz_id → MusicTrack
+   */
+  getMusicTracksByMusicbrainzIds(ids: string[]): Map<string, MusicTrack> {
+    if (!this.db) throw new Error('Database not initialized')
+    const result = new Map<string, MusicTrack>()
+    if (ids.length === 0) return result
+    const batchSize = 500
+    for (let i = 0; i < ids.length; i += batchSize) {
+      const batch = ids.slice(i, i + batchSize)
+      const placeholders = batch.map(() => '?').join(',')
+      const stmt = this.db.prepare(`SELECT * FROM music_tracks WHERE musicbrainz_id IN (${placeholders})`)
+      const rows = stmt.all(...batch) as MusicTrack[]
+      for (const row of rows) {
+        if (row.musicbrainz_id) result.set(row.musicbrainz_id, row)
+      }
+    }
+    return result
+  }
+
+  /**
    * Batch lookup quality scores by media item IDs
    * Returns a Map of media_item_id → QualityScore
    */

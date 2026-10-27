@@ -21,6 +21,7 @@ import { z } from 'zod'
 import { getTaskQueueService } from '../services/TaskQueueService'
 import { analyzeAlbumQuality } from '../services/MusicQualityAnalyzer'
 import { getArtistAlbumsCombined } from '../services/utils/musicUtils'
+import { getWishlistCompletionService } from '../services/WishlistCompletionService'
 
 export function registerMusicHandlers(): void {
   // ============================================================================
@@ -124,6 +125,11 @@ export function registerMusicHandlers(): void {
         )
         console.log(`[music:scanLibrary] Updated scan timestamp for library ${library.name}`)
       }
+
+      // Check wishlist for auto-completion
+      getWishlistCompletionService().checkAndComplete().catch((err) => {
+        console.error('[music:scanLibrary] Wishlist check failed:', err)
+      })
 
       return result
     } catch (error: unknown) {

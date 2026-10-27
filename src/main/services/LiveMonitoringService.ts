@@ -23,6 +23,7 @@ import { getLoggingService } from './LoggingService'
 import { getSeriesCompletenessService } from './SeriesCompletenessService'
 import { getTMDBService } from './TMDBService'
 import { getTaskQueueService } from './TaskQueueService'
+import { getWishlistCompletionService } from './WishlistCompletionService'
 import type { ScanResult } from '../providers/base/MediaProvider'
 import { safeSend } from '../ipc/utils/safeSend'
 import { emitNotificationCreated } from '../ipc/utils/notificationEmitter'
@@ -777,10 +778,8 @@ export class LiveMonitoringService {
 
     // Check wishlist for auto-completion after items were added or updated
     if (events.some((e) => e.changeType === 'added' || e.changeType === 'updated' || e.changeType === 'mixed')) {
-      import('./WishlistCompletionService').then(({ getWishlistCompletionService }) => {
-        getWishlistCompletionService().checkAndComplete().catch((err) => {
-          console.error('[LiveMonitoring] Wishlist completion check failed:', getErrorMessage(err))
-        })
+      getWishlistCompletionService().checkAndComplete().catch((err) => {
+        console.error('[LiveMonitoring] Wishlist completion check failed:', getErrorMessage(err))
       })
     }
 
@@ -1065,10 +1064,8 @@ export class LiveMonitoringService {
 
     // Check wishlist for auto-completion after items were added or updated
     if (events.some((e) => e.changeType === 'added' || e.changeType === 'updated' || e.changeType === 'mixed')) {
-      import('./WishlistCompletionService').then(({ getWishlistCompletionService }) => {
-        getWishlistCompletionService().checkAndComplete().catch((err) => {
-          console.error('[LiveMonitoring] Wishlist completion check failed:', getErrorMessage(err))
-        })
+      getWishlistCompletionService().checkAndComplete().catch((err) => {
+        console.error('[LiveMonitoring] Wishlist completion check failed:', getErrorMessage(err))
       })
     }
 

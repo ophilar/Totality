@@ -190,16 +190,20 @@ export class WishlistCompletionService {
       }
     }
 
-    // Check tracks by MusicBrainz ID
-    for (const item of trackItems) {
-      const track = db.getMusicTrackByMusicbrainzId(item.musicbrainz_id!)
-      if (track) {
-        completed.push({
-          id: item.id!,
-          title: item.title,
-          reason: 'missing',
-          media_type: item.media_type,
-        })
+    // Batch check tracks by MusicBrainz ID
+    if (trackItems.length > 0) {
+      const mbIds = trackItems.map((i) => i.musicbrainz_id!)
+      const foundTracks = db.getMusicTracksByMusicbrainzIds(mbIds)
+
+      for (const item of trackItems) {
+        if (foundTracks.has(item.musicbrainz_id!)) {
+          completed.push({
+            id: item.id!,
+            title: item.title,
+            reason: 'missing',
+            media_type: item.media_type,
+          })
+        }
       }
     }
 
@@ -260,6 +264,33 @@ export class WishlistCompletionService {
           reason: 'upgrade',
           media_type: item.media_type,
         })
+      }
+    }
+
+    // Check track upgrades via album quality
+    const trackItems = items.filter(
+      (i) => i.media_type === 'track' && i.musicbrainz_id && i.current_quality_tier
+    )
+
+    if (trackItems.length > 0) {
+      const mbIds = trackItems.map((i) => i.musicbrainz_id!)
+      const foundTracks = db.getMusicTracksByMusicbrainzIds(mbIds)
+
+      for (const item of trackItems) {
+        const track = foundTracks.get(item.musicbrainz_id!)
+        if (!track || !track.album_id) continue
+
+        const qualityScore = db.getMusicQualityScore(track.album_id)
+        if (!qualityScore) continue
+
+        if (this.isMusicQualityImproved(item, qualityScore.quality_tier)) {
+          completed.push({
+            id: item.id!,
+            title: item.title,
+            reason: 'upgrade',
+            media_type: item.media_type,
+          })
+        }
       }
     }
 

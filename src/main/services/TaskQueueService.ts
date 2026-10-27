@@ -1094,12 +1094,10 @@ export class TaskQueueService {
         }
       } catch (err) { console.error('[TaskQueue] Failed to create upgrade notification:', err) }
 
-      // Check wishlist for auto-completion after items were added or updated
-      if ((task.result?.itemsAdded || 0) > 0 || (task.result?.itemsUpdated || 0) > 0) {
-        getWishlistCompletionService().checkAndComplete().catch((err) => {
-          console.error('[TaskQueue] Wishlist completion check failed:', getErrorMessage(err))
-        })
-      }
+      // Always check wishlist after any task completes
+      getWishlistCompletionService().checkAndComplete().catch((err) => {
+        console.error('[TaskQueue] Wishlist completion check failed:', getErrorMessage(err))
+      })
 
       // Auto-queue completeness analysis for scanned libraries
       if ((task.type === 'library-scan' || task.type === 'source-scan' || task.type === 'music-scan') &&
