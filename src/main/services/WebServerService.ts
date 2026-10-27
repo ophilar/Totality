@@ -19,6 +19,7 @@ import https from 'https'
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
+import zlib from 'zlib'
 import os from 'os'
 import { app } from 'electron'
 import selfsigned from 'selfsigned'
@@ -125,6 +126,14 @@ export class WebServerService {
   private devServerUrl: string | null = null
   private artworkBasePath: string
   private tlsDir: string
+  private eventThrottles = new Map<WebSocket, Map<string, number>>()
+
+  private readonly THROTTLED_EVENTS = new Set([
+    'library:updated', 'quality:analysisProgress', 'music:scanProgress',
+    'music:qualityProgress', 'music:completenessProgress', 'sources:scanProgress',
+    'series:progress', 'collections:progress',
+  ])
+  private readonly EVENT_THROTTLE_MS = 1000
 
   constructor(handlerMap: Map<string, Function>, devServerUrl?: string) {
     this.handlerMap = handlerMap
@@ -157,6 +166,11 @@ export class WebServerService {
     this.wss = new WebSocketServer({
       server: this.httpServer,
       maxPayload: MAX_WS_MESSAGE_SIZE,
+      perMessageDeflate: {
+        zlibDeflateOptions: { chunkSize: 1024, memLevel: 7, level: 3 },
+        zlibInflateOptions: { chunkSize: 10 * 1024 },
+        threshold: 1024, // Only compress messages > 1KB
+      },
     })
 
     this.wss.on('connection', (ws: AuthenticatedWebSocket, req) => {
@@ -191,6 +205,7 @@ export class WebServerService {
 
       ws.on('message', (data) => this.handleWebSocket(ws, data))
       ws.on('close', () => {
+        this.eventThrottles.delete(ws)
         getLoggingService().verbose('WebServer', `WebSocket disconnected from ${ws.clientIp}`)
       })
       ws.on('error', (err) => {
@@ -302,9 +317,22 @@ export class WebServerService {
     if (!this.wss) return
 
     const message = JSON.stringify({ type: 'event', channel, args })
+    const now = Date.now()
+    const isThrottled = this.THROTTLED_EVENTS.has(channel)
+
     for (const client of this.wss.clients) {
       const ws = client as AuthenticatedWebSocket
       if (ws.readyState === WebSocket.OPEN && ws.sessionToken && this.sessions.has(ws.sessionToken)) {
+        if (isThrottled) {
+          let clientThrottles = this.eventThrottles.get(ws)
+          if (!clientThrottles) {
+            clientThrottles = new Map()
+            this.eventThrottles.set(ws, clientThrottles)
+          }
+          const lastSent = clientThrottles.get(channel) || 0
+          if (now - lastSent < this.EVENT_THROTTLE_MS) continue
+          clientThrottles.set(channel, now)
+        }
         ws.send(message)
       }
     }
@@ -377,7 +405,7 @@ export class WebServerService {
     }
 
     // Serve static files from dist/
-    this.serveStatic(url.pathname, res)
+    this.serveStatic(url.pathname, req, res)
     } catch (err) {
       console.error('[WebServer] HTTP handler error:', err)
       if (!res.headersSent) {
@@ -610,7 +638,12 @@ export class WebServerService {
     req.pipe(proxyReq)
   }
 
-  private serveStatic(pathname: string, res: http.ServerResponse): void {
+  private static readonly COMPRESSIBLE_EXTS = new Set([
+    '.html', '.js', '.css', '.json', '.svg', '.map',
+  ])
+  private static readonly GZIP_MIN_SIZE = 1024 // Only compress files > 1KB
+
+  private serveStatic(pathname: string, req: http.IncomingMessage, res: http.ServerResponse): void {
     let filePath = path.join(this.staticRoot, pathname === '/' ? 'index.html' : pathname)
 
     // Security: prevent path traversal
@@ -629,8 +662,19 @@ export class WebServerService {
             res.end('Not found')
             return
           }
-          res.writeHead(200, { 'Content-Type': 'text/html' })
-          res.end(data)
+          const acceptEncoding = req.headers['accept-encoding'] || ''
+          const useGzip = typeof acceptEncoding === 'string'
+            && acceptEncoding.includes('gzip')
+            && data.length > WebServerService.GZIP_MIN_SIZE
+          if (useGzip) {
+            res.writeHead(200, { 'Content-Type': 'text/html', 'Content-Encoding': 'gzip' })
+            const gzipStream = zlib.createGzip()
+            gzipStream.pipe(res)
+            gzipStream.end(data)
+          } else {
+            res.writeHead(200, { 'Content-Type': 'text/html' })
+            res.end(data)
+          }
         })
         return
       }
@@ -642,18 +686,41 @@ export class WebServerService {
         ? 'public, max-age=31536000, immutable'
         : 'public, max-age=0, must-revalidate'
 
-      fs.readFile(filePath, (err2, data) => {
-        if (err2) {
-          res.writeHead(500)
-          res.end('Internal Server Error')
-          return
-        }
+      const acceptEncoding = req.headers['accept-encoding'] || ''
+      const canGzip = typeof acceptEncoding === 'string'
+        && acceptEncoding.includes('gzip')
+        && WebServerService.COMPRESSIBLE_EXTS.has(ext)
+        && stats.size > WebServerService.GZIP_MIN_SIZE
+
+      if (canGzip) {
         res.writeHead(200, {
           'Content-Type': contentType,
           'Cache-Control': cacheControl,
+          'Content-Encoding': 'gzip',
         })
-        res.end(data)
-      })
+        const fileStream = fs.createReadStream(filePath)
+        const gzipStream = zlib.createGzip()
+        fileStream.pipe(gzipStream).pipe(res)
+        fileStream.on('error', () => {
+          if (!res.headersSent) {
+            res.writeHead(500)
+          }
+          res.end()
+        })
+      } else {
+        fs.readFile(filePath, (err2, data) => {
+          if (err2) {
+            res.writeHead(500)
+            res.end('Internal Server Error')
+            return
+          }
+          res.writeHead(200, {
+            'Content-Type': contentType,
+            'Cache-Control': cacheControl,
+          })
+          res.end(data)
+        })
+      }
     })
   }
 

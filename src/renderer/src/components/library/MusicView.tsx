@@ -1901,6 +1901,7 @@ const ArtistCard = memo(({ artist, onClick, showSourceBadge, onFixMatch, onAnaly
             src={artist.thumb_url}
             alt={artist.name}
             loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => { e.currentTarget.style.display = 'none' }}
           />
@@ -2037,6 +2038,7 @@ const AlbumCard = memo(({ album, onClick, showArtist = true, showSourceBadge, on
             src={album.thumb_url}
             alt={album.title}
             loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => { e.currentTarget.style.display = 'none' }}
           />
@@ -2108,6 +2110,7 @@ const ArtistListItem = memo(({ artist, completeness, onClick, showSourceBadge, o
             src={artist.thumb_url}
             alt={artist.name}
             loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
@@ -2201,6 +2204,7 @@ const AlbumListItem = memo(({ album, onClick, showArtist = true, showSourceBadge
             src={album.thumb_url}
             alt={album.title}
             loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
@@ -2409,6 +2413,7 @@ const MissingAlbumCard = memo(({ album, artistName, onDismiss }: {
             src={coverUrl}
             alt={album.title}
             loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
             onError={() => setImageError(true)}
           />
@@ -2473,6 +2478,7 @@ const MissingAlbumListItem = memo(({ album, artistName, onDismiss }: {
             src={coverUrl}
             alt={album.title}
             loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
             onError={() => setImageError(true)}
           />

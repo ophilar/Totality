@@ -201,7 +201,7 @@ export function MediaBrowser({
     totalCount: totalArtistCount, loading: artistsLoading,
     load: loadPaginatedArtists, loadMore: loadMoreArtists,
   } = usePagination<MusicArtist>({
-    pageSize: 10000,
+    pageSize: isMobile ? 100 : 10000,
     fetchItems: (f) => window.electronAPI.musicGetArtists(f) as Promise<MusicArtist[]>,
     fetchCount: (f) => window.electronAPI.musicCountArtists(f) as Promise<number>,
     buildFilters: () => {
@@ -237,7 +237,7 @@ export function MediaBrowser({
     totalCount: totalAlbumCount, loading: albumsLoading,
     load: loadPaginatedAlbums, loadMore: loadMoreAlbums,
   } = usePagination<MusicAlbum>({
-    pageSize: 10000,
+    pageSize: isMobile ? 100 : 10000,
     fetchItems: (f) => window.electronAPI.musicGetAlbums(f) as Promise<MusicAlbum[]>,
     fetchCount: (f) => window.electronAPI.musicCountAlbums(f) as Promise<number>,
     buildFilters: () => {

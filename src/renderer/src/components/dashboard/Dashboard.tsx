@@ -198,59 +198,34 @@ export function Dashboard({
       // Filter by active source if one is selected
       const sourceId = activeSourceId || undefined
 
-      // All IPC calls in one parallel batch — settings, data, and exclusions together
       const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
         r.status === 'fulfilled' ? r.value : fallback
 
-      const allResults = await Promise.allSettled([
-        // Settings (0-5)
+      // --- Tier 1: Critical — settings + bento card stats (render skeleton immediately) ---
+      const tier1 = await Promise.allSettled([
+        // Settings (0-7)
         window.electronAPI.getSetting(SETTING_KEYS.completeness_include_eps),
         window.electronAPI.getSetting(SETTING_KEYS.completeness_include_singles),
         window.electronAPI.getSetting(SETTING_KEYS.dashboard_upgrade_sort),
         window.electronAPI.getSetting(SETTING_KEYS.dashboard_collection_sort),
         window.electronAPI.getSetting(SETTING_KEYS.dashboard_series_sort),
         window.electronAPI.getSetting(SETTING_KEYS.dashboard_artist_sort),
-        // Data (6-11)
-        window.electronAPI.getMediaItems({ needsUpgrade: true, type: 'movie', sortBy: 'tier_score', sortOrder: 'asc', sourceId }),
-        window.electronAPI.getMediaItems({ needsUpgrade: true, type: 'episode', sortBy: 'tier_score', sortOrder: 'asc', sourceId }),
-        window.electronAPI.musicGetAlbumsNeedingUpgrade(undefined, sourceId),
-        window.electronAPI.collectionsGetIncomplete(sourceId),
-        window.electronAPI.seriesGetIncomplete(sourceId),
-        window.electronAPI.musicGetAllArtistCompleteness(sourceId),
-        // Exclusions (12-15)
-        window.electronAPI.getExclusions('collection_movie'),
-        window.electronAPI.getExclusions('series_episode'),
-        window.electronAPI.getExclusions('artist_album'),
-        window.electronAPI.getExclusions('media_upgrade'),
-        window.electronAPI.getExclusions('person_movie'),
-        // Dashboard features (17-21)
-        window.electronAPI.getDuplicateMedia(),
-        window.electronAPI.getRecentlyUpgraded(30),
-        window.electronAPI.getStorageAnalytics(),
-        window.electronAPI.personGetCompleteness(),
         window.electronAPI.getSetting(SETTING_KEYS.auto_dismiss_rules),
         window.electronAPI.getSetting(SETTING_KEYS.dashboard_person_sort),
-        // Bento cards (22-26)
+        // Bento card stats (8-9)
         window.electronAPI.getLibraryStats(sourceId),
         window.electronAPI.musicGetStats(sourceId),
-        window.electronAPI.collectionsGetStats(),
-        window.electronAPI.seriesGetStats(),
-        window.electronAPI.qualityGetDistribution(),
-        window.electronAPI.wishlistGetCountsByReason(),
       ])
 
-      const failures = allResults.filter(r => r.status === 'rejected')
-      if (failures.length > 0) {
-        console.warn(`[Dashboard] ${failures.length}/${allResults.length} IPC calls failed:`,
-          failures.map(f => (f as PromiseRejectedResult).reason))
-      }
-
-      const epsSettingVal = val(allResults[0], null)
-      const singlesSettingVal = val(allResults[1], null)
-      const upgSort = val(allResults[2], null)
-      const collSort = val(allResults[3], null)
-      const serSort = val(allResults[4], null)
-      const artSort = val(allResults[5], null)
+      const epsSettingVal = val(tier1[0], null)
+      const singlesSettingVal = val(tier1[1], null)
+      const upgSort = val(tier1[2], null)
+      const collSort = val(tier1[3], null)
+      const serSort = val(tier1[4], null)
+      const artSort = val(tier1[5], null)
+      const autoRulesJson = val(tier1[6], null) as string | null
+      const autoRules = parseAutoRules(autoRulesJson)
+      const personSort = val(tier1[7], null) as string | null
 
       const epsEnabled = epsSettingVal !== 'false'
       const singlesEnabled = singlesSettingVal !== 'false'
@@ -260,65 +235,60 @@ export function Dashboard({
       const effectiveCollSort = (collSort as 'completeness' | 'name' | 'recent') || 'completeness'
       const effectiveSerSort = (serSort as 'completeness' | 'name' | 'recent') || 'completeness'
       const effectiveArtSort = (artSort as 'completeness' | 'name') || 'completeness'
+      const effectivePersonSort = (personSort as 'completeness' | 'name') || 'completeness'
       setMovieSortBy(effectiveUpgSort as typeof movieSortBy)
       setTvSortBy(effectiveUpgSort as typeof tvSortBy)
       if (effectiveUpgSort !== 'watch_priority') setMusicUpgradeSortBy(effectiveUpgSort as typeof musicUpgradeSortBy)
       setCollectionSortBy(effectiveCollSort)
       setSeriesSortBy(effectiveSerSort)
       setArtistSortBy(effectiveArtSort)
+      setPersonSortBy(effectivePersonSort)
 
-      const movieUpgradeData = val(allResults[6], []) as MediaItem[]
-      const tvUpgradeData = val(allResults[7], []) as MediaItem[]
-      const musicUpgradeData = val(allResults[8], []) as MusicAlbumUpgrade[]
-      const collectionsData = val(allResults[9], []) as MovieCollectionData[]
-      const seriesData = val(allResults[10], []) as SeriesCompletenessData[]
-      const artistsData = val(allResults[11], []) as ArtistCompletenessData[]
+      setLibraryStats(val(tier1[8], null) as typeof libraryStats)
+      setMusicStats(val(tier1[9], null) as typeof musicStats)
 
-      const collectionExclusions = val(allResults[12], []) as Array<{ parent_key: string | null; reference_key: string | null; reference_id: number | null }>
-      const seriesExclusions = val(allResults[13], []) as Array<{ parent_key: string | null; reference_key: string | null; reference_id: number | null }>
-      const artistExclusions = val(allResults[14], []) as Array<{ parent_key: string | null; reference_key: string | null; reference_id: number | null }>
-      const upgradeExclusions = val(allResults[15], []) as Array<{ parent_key: string | null; reference_key: string | null; reference_id: number | null }>
+      // Show UI with stats — remove skeleton
+      setIsLoading(false)
+      hasLoadedOnce.current = true
+
+      // --- Tier 2: Secondary — upgrade lists, completeness, exclusions ---
+      const tier2 = await Promise.allSettled([
+        // Upgrade data (0-2)
+        window.electronAPI.getMediaItems({ needsUpgrade: true, type: 'movie', sortBy: 'tier_score', sortOrder: 'asc', sourceId }),
+        window.electronAPI.getMediaItems({ needsUpgrade: true, type: 'episode', sortBy: 'tier_score', sortOrder: 'asc', sourceId }),
+        window.electronAPI.musicGetAlbumsNeedingUpgrade(undefined, sourceId),
+        // Completeness data (3-5)
+        window.electronAPI.collectionsGetIncomplete(sourceId),
+        window.electronAPI.seriesGetIncomplete(sourceId),
+        window.electronAPI.musicGetAllArtistCompleteness(sourceId),
+        // Exclusions (6-10)
+        window.electronAPI.getExclusions('collection_movie'),
+        window.electronAPI.getExclusions('series_episode'),
+        window.electronAPI.getExclusions('artist_album'),
+        window.electronAPI.getExclusions('media_upgrade'),
+        window.electronAPI.getExclusions('person_movie'),
+      ])
+
+      const movieUpgradeData = val(tier2[0], []) as MediaItem[]
+      const tvUpgradeData = val(tier2[1], []) as MediaItem[]
+      const musicUpgradeData = val(tier2[2], []) as MusicAlbumUpgrade[]
+      const collectionsData = val(tier2[3], []) as MovieCollectionData[]
+      const seriesData = val(tier2[4], []) as SeriesCompletenessData[]
+      const artistsData = val(tier2[5], []) as ArtistCompletenessData[]
+
+      const collectionExclusions = val(tier2[6], []) as Array<{ parent_key: string | null; reference_key: string | null; reference_id: number | null }>
+      const seriesExclusions = val(tier2[7], []) as Array<{ parent_key: string | null; reference_key: string | null; reference_id: number | null }>
+      const artistExclusions = val(tier2[8], []) as Array<{ parent_key: string | null; reference_key: string | null; reference_id: number | null }>
+      const upgradeExclusions = val(tier2[9], []) as Array<{ parent_key: string | null; reference_key: string | null; reference_id: number | null }>
+      const personMovieExclusions = val(tier2[10], []) as Array<{ parent_key: string | null; reference_key: string | null }>
 
       // Build exclusion lookup sets
       const excludedCollectionMovies = new Set(collectionExclusions.map(e => `${e.parent_key}:${e.reference_key}`))
       const excludedSeriesEpisodes = new Set(seriesExclusions.map(e => `${e.parent_key}:${e.reference_key}`))
       const excludedArtistAlbums = new Set(artistExclusions.map(e => `${e.parent_key}:${e.reference_key}`))
       const excludedUpgradeIds = new Set(upgradeExclusions.map(e => e.reference_id))
-
-      // Dashboard features
-      const personMovieExclusions = val(allResults[16], []) as Array<{ parent_key: string | null; reference_key: string | null }>
       const excludedPersonMovies = new Set(personMovieExclusions.map(e => `${e.parent_key}:${e.reference_key}`))
-
-      const dupData = val(allResults[17], []) as Array<{ copies: unknown[] }>
-      const upgradeData = val(allResults[18], []) as typeof _recentlyUpgraded
-      const storData = val(allResults[19], null) as typeof storageAnalytics
-      const personData = val(allResults[20], []) as typeof personCompleteness
-      const autoRulesJson = val(allResults[21], null) as string | null
-      const autoRules = parseAutoRules(autoRulesJson)
-      const personSort = val(allResults[22], null) as string | null
-      const effectivePersonSort = (personSort as 'completeness' | 'name') || 'completeness'
-      setPersonSortBy(effectivePersonSort)
-      const statsData = val(allResults[23], null)
-      const mStats = val(allResults[24], null) as typeof musicStats
-      const cStatsData = val(allResults[25], null) as typeof _collectionStatsData
-      const sStatsData = val(allResults[26], null) as typeof _seriesStatsData
-      const qDistribution = val(allResults[27], null) as typeof qualityDistribution
-      const wCounts = val(allResults[28], { missing: 0, upgrade: 0, active: 0, completed: 0, total: 0 }) as typeof wishlistCounts
-
-      setDuplicateCount(dupData.length)
-      setRecentlyUpgraded(upgradeData)
-      setStorageAnalytics(storData)
-      setLibraryStats(statsData as typeof libraryStats)
-      setMusicStats(mStats)
-      setCollectionStatsData(cStatsData)
-      setSeriesStatsData(sStatsData)
-      setQualityDistribution(qDistribution)
-      setWishlistCounts(wCounts)
       setExcludedPersonMovieSet(excludedPersonMovies)
-      setPersonCompleteness(personData.filter(p => p.completeness_percentage < 100)
-        .sort((a, b) => effectivePersonSort === 'completeness'
-          ? b.completeness_percentage - a.completeness_percentage
-          : a.person_name.localeCompare(b.person_name)))
 
       // Filter and sort upgrades, excluding dismissed items
       const sortUpgrades = <T extends { tier_score?: number; title: string; id: number }>(items: T[]): T[] => items.sort((a, b) => {
@@ -388,6 +358,31 @@ export function Dashboard({
           return a.artist_name.localeCompare(b.artist_name)
         })
       setArtists(incompleteArtists)
+
+      // --- Tier 3: Optional — analytics, filmography, extra bento cards ---
+      const tier3 = await Promise.allSettled([
+        window.electronAPI.getDuplicateMedia(),
+        window.electronAPI.getRecentlyUpgraded(30),
+        window.electronAPI.getStorageAnalytics(),
+        window.electronAPI.personGetCompleteness(),
+        window.electronAPI.collectionsGetStats(),
+        window.electronAPI.seriesGetStats(),
+        window.electronAPI.qualityGetDistribution(),
+        window.electronAPI.wishlistGetCountsByReason(),
+      ])
+
+      setDuplicateCount((val(tier3[0], []) as Array<{ copies: unknown[] }>).length)
+      setRecentlyUpgraded(val(tier3[1], []) as typeof _recentlyUpgraded)
+      setStorageAnalytics(val(tier3[2], null) as typeof storageAnalytics)
+      const personData = val(tier3[3], []) as typeof personCompleteness
+      setPersonCompleteness(personData.filter(p => p.completeness_percentage < 100)
+        .sort((a, b) => effectivePersonSort === 'completeness'
+          ? b.completeness_percentage - a.completeness_percentage
+          : a.person_name.localeCompare(b.person_name)))
+      setCollectionStatsData(val(tier3[4], null) as typeof _collectionStatsData)
+      setSeriesStatsData(val(tier3[5], null) as typeof _seriesStatsData)
+      setQualityDistribution(val(tier3[6], null) as typeof qualityDistribution)
+      setWishlistCounts(val(tier3[7], { missing: 0, upgrade: 0, active: 0, completed: 0, total: 0 }) as typeof wishlistCounts)
     } catch (err) {
       console.error('Failed to load dashboard data:', err)
       setError('Failed to load dashboard data. Please try again.')

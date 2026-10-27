@@ -382,6 +382,7 @@ const CollectionCard = memo(({ collection, onClick }: { collection: MovieCollect
             src={collection.poster_url}
             alt={collection.collection_name}
             loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
@@ -448,6 +449,7 @@ function CollectionListItem({ collection, onClick }: { collection: MovieCollecti
             src={collection.poster_url}
             alt={collection.collection_name}
             loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
@@ -594,6 +596,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
             src={movie.poster_url}
             alt={movie.title}
             loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
@@ -707,6 +710,7 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
             src={movie.poster_url}
             alt={movie.title}
             loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none'

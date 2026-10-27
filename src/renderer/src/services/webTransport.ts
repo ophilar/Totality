@@ -64,6 +64,7 @@ for (const [method, channel] of Object.entries(EVENT_CHANNEL_MAP)) {
 
 let ws: WebSocket | null = null
 let requestId = 0
+let reconnectAttempts = 0
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
 const eventListeners = new Map<string, Set<Function>>()
 let sessionToken: string | null = null
@@ -81,6 +82,7 @@ function connect(): Promise<void> {
     ws = new WebSocket(getWsUrl())
 
     ws.onopen = () => {
+      reconnectAttempts = 0
       // Try to restore session
       const stored = sessionStorage.getItem('web_session_token')
       if (stored) {
@@ -100,10 +102,14 @@ function connect(): Promise<void> {
 
     ws.onclose = () => {
       ws = null
-      // Reconnect after delay
+      // Reconnect with exponential backoff (1s, 1.5s, 2.25s, ... capped at 30s)
+      const delayMs = Math.min(30000, 1000 * Math.pow(1.5, reconnectAttempts))
+      reconnectAttempts++
       setTimeout(() => {
-        connect().catch(() => {})
-      }, 3000)
+        connect()
+          .then(() => { reconnectAttempts = 0 })
+          .catch(() => {})
+      }, delayMs)
     }
 
     ws.onerror = () => {

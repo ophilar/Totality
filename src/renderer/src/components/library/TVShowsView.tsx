@@ -69,6 +69,7 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
             src={show.poster_url}
             alt={show.series_title}
             loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
@@ -193,6 +194,7 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, isMobil
             src={episode.episode_thumb_url}
             alt={episode.title}
             loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
@@ -928,6 +930,7 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
             src={show.poster_url}
             alt={show.series_title}
             loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
@@ -1078,6 +1081,7 @@ const MissingEpisodeRowWithArtwork = memo(({
             src={stillUrl}
             alt={episode.title || `Episode ${episode.episode_number}`}
             loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover grayscale opacity-50"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
@@ -1157,6 +1161,7 @@ const SeasonCard = memo(({ season, showTitle, onClick, missingCount = 0 }: { sea
             src={season.posterUrl}
             alt={`${showTitle} - ${formatSeasonLabel(season.seasonNumber)}`}
             loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
