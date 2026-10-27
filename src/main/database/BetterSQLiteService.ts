@@ -5131,7 +5131,7 @@ WHERE m.type = 'episode' AND m.series_title = ?`
    */
   getWishlistCount(): number {
     if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM wishlist_items')
+    const stmt = this.db.prepare("SELECT COUNT(*) as count FROM wishlist_items WHERE status = 'active'")
     return (stmt.get() as { count: number }).count
   }
 
