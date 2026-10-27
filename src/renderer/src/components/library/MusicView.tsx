@@ -421,19 +421,18 @@ export function MusicView({
     return (
       <div className="space-y-6">
         {/* Breadcrumb */}
-        <button
+        <Button
+          variant="tertiary"
+          size="sm"
           onClick={onBack}
-          className="flex items-center gap-2 text-label text-muted-foreground hover:text-foreground"
+          icon={<ChevronLeft className="w-4 h-4" />}
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Back to {selectedArtist ? selectedArtist.name : 'Albums'}
-        </button>
+          Back to {selectedArtist ? selectedArtist.name : 'albums'}
+        </Button>
 
         {/* Album Header */}
-        <div className="flex items-start gap-6">
-          <div className="w-44 aspect-square bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30">
+        <div className={`${isMobile ? 'flex flex-col items-center text-center gap-4' : 'flex items-start gap-6'}`}>
+          <div className={`${isMobile ? 'w-36' : 'w-44'} aspect-square bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30`}>
             {selectedAlbum.thumb_url ? (
               <img
                 src={selectedAlbum.thumb_url}
@@ -442,13 +441,13 @@ export function MusicView({
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
-                <Disc3 className="w-16 h-16 text-muted-foreground" />
+                <Disc3 className={`${isMobile ? 'w-12 h-12' : 'w-16 h-16'} text-muted-foreground`} />
               </div>
             )}
           </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-1.5">
-              <h2 className="text-h1 font-semibold">{selectedAlbum.title}</h2>
+          <div className="flex-1 min-w-0">
+            <div className={`flex items-center gap-1.5 ${isMobile ? 'justify-center' : ''}`}>
+              <h2 className={`${isMobile ? 'text-h2' : 'text-h1'} font-semibold`}>{selectedAlbum.title}</h2>
               <button
                 onClick={(e) => {
                   e.stopPropagation()
@@ -472,7 +471,7 @@ export function MusicView({
               const isLossless = losslessCodecs.some(c => codec.includes(c))
               const isHiRes = isLossless && ((selectedAlbum.best_bit_depth || 0) > 16 || (selectedAlbum.best_sample_rate || 0) > 48000)
               return (
-                <div className="flex flex-wrap gap-2 mt-3">
+                <div className={`flex flex-wrap gap-2 mt-3 ${isMobile ? 'justify-center' : ''}`}>
                   {isHiRes && (
                     <span className="px-2 py-1 text-caption font-semibold bg-purple-600 text-white rounded">Hi-Res</span>
                   )}
@@ -499,14 +498,17 @@ export function MusicView({
               )}
             </p>
             {/* Analyze button */}
-            <button
-              onClick={() => selectedAlbum.id && handleAnalyzeAlbum(selectedAlbum.id)}
-              disabled={isAnalyzingAlbum}
-              className="mt-3 flex items-center gap-2 px-3 py-1.5 text-label bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={`w-4 h-4 ${isAnalyzingAlbum ? 'animate-spin' : ''}`} />
-              {isAnalyzingAlbum ? 'Analyzing...' : 'Analyze for missing tracks'}
-            </button>
+            <div className={`mt-3 ${isMobile ? 'flex justify-center' : ''}`}>
+              <Button
+                onClick={() => selectedAlbum.id && handleAnalyzeAlbum(selectedAlbum.id)}
+                disabled={isAnalyzingAlbum}
+                loading={isAnalyzingAlbum}
+                size="sm"
+                icon={!isAnalyzingAlbum ? <RefreshCw className="w-3.5 h-3.5" /> : undefined}
+              >
+                {isAnalyzingAlbum ? 'Analyzing...' : 'Analyze for missing tracks'}
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -728,7 +730,7 @@ export function MusicView({
                           </>
                         )}
                       </div>
-                      {!track.isMissing && track.file_path && (
+                      {!isMobile && !track.isMissing && track.file_path && (
                         <div className="text-caption text-muted-foreground/50 truncate mt-0.5" title={track.file_path}>
                           {track.file_path.split(/[/\\]/).slice(-2).join('/')}
                         </div>
