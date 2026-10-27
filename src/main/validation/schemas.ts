@@ -145,7 +145,7 @@ export const WishlistMediaTypeSchema = z.enum(['movie', 'episode', 'season', 'al
  * Wishlist filter options
  */
 export const WishlistFiltersSchema = z.object({
-  media_type: WishlistMediaTypeSchema.optional(),
+  media_type: z.enum(['movie', 'episode', 'season', 'album', 'track', 'tv', 'music']).optional(),
   priority: z.number().int().min(1).max(5).optional(),
   reason: z.enum(['missing', 'upgrade']).optional(),
   status: z.enum(['active', 'completed']).optional(),
