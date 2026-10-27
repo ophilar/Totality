@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { FixedSizeList as VirtualList } from 'react-window'
-import { Music, Disc3, User, MoreVertical, RefreshCw, X, Pencil, CircleFadingArrowUp, EyeOff, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
+import { Music, Disc3, User, MoreVertical, RefreshCw, X, Pencil, CircleFadingArrowUp, EyeOff, ChevronDown, ChevronUp, ChevronLeft, Copy, Check } from 'lucide-react'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import { DropdownMenu, DropdownMenuItem } from '../ui/DropdownMenu'
 import { Button } from '../ui/Button'
@@ -1006,20 +1006,19 @@ export function MusicView({
     return (
       <div className="space-y-6">
         {/* Breadcrumb */}
-        <button
+        <Button
+          variant="tertiary"
+          size="sm"
           onClick={onBack}
-          className="flex items-center gap-2 text-label text-muted-foreground hover:text-foreground"
+          icon={<ChevronLeft className="w-4 h-4" />}
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Back to Artists
-        </button>
+          Back to artists
+        </Button>
 
         {/* Artist Header */}
-        <div className="flex gap-6 mb-6">
-          {/* Artist Image — larger, prominent */}
-          <div className="w-44 h-44 bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30">
+        <div className={`${isMobile ? 'flex flex-col items-center text-center gap-4' : 'flex gap-6'} mb-6`}>
+          {/* Artist Image */}
+          <div className={`${isMobile ? 'w-28 h-28' : 'w-44 h-44'} bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30`}>
             {selectedArtist.thumb_url ? (
               <img
                 src={selectedArtist.thumb_url}
@@ -1028,7 +1027,7 @@ export function MusicView({
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
-                <User className="w-20 h-20 text-muted-foreground" />
+                <User className={`${isMobile ? 'w-12 h-12' : 'w-20 h-20'} text-muted-foreground`} />
               </div>
             )}
           </div>
@@ -1036,8 +1035,8 @@ export function MusicView({
           {/* Info */}
           <div className="flex-1 min-w-0">
             {/* Title */}
-            <div className="flex items-center gap-1.5">
-              <h3 className="text-h1 font-semibold">{selectedArtist.name}</h3>
+            <div className={`flex items-center gap-1.5 ${isMobile ? 'justify-center' : ''}`}>
+              <h3 className={`${isMobile ? 'text-h2' : 'text-h1'} font-semibold`}>{selectedArtist.name}</h3>
               <button
                 onClick={(e) => {
                   e.stopPropagation()
@@ -1053,7 +1052,7 @@ export function MusicView({
             </div>
 
             {/* Metadata line */}
-            <div className="flex items-center gap-2 mt-1 text-label text-muted-foreground">
+            <div className={`flex items-center gap-2 mt-1 text-label text-muted-foreground ${isMobile ? 'justify-center flex-wrap' : ''}`}>
               {selectedArtist.country && (
                 <>
                   <span>{selectedArtist.country}</span>
@@ -1079,7 +1078,7 @@ export function MusicView({
             )}
 
             {/* Action buttons row */}
-            <div className="flex items-center gap-3 mt-3" ref={artistMenuRef}>
+            <div className={`flex items-center gap-3 mt-3 ${isMobile ? 'justify-center' : ''}`} ref={artistMenuRef}>
               <Button
                 onClick={() => { handleAnalyzeArtist(selectedArtist.id) }}
                 disabled={isAnalyzingArtist}
@@ -1091,13 +1090,13 @@ export function MusicView({
                 {isAnalyzingArtist ? 'Analyzing...' : 'Analyze completeness'}
               </Button>
               {onFixArtistMatch && (
-                <button
+                <Button
+                  variant="tertiary"
+                  size="icon-sm"
                   onClick={() => onFixArtistMatch(selectedArtist.id, selectedArtist.name)}
-                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
-                  title="Fix Match"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
+                  icon={<Pencil className="w-4 h-4" />}
+                  title="Fix match"
+                />
               )}
             </div>
 
