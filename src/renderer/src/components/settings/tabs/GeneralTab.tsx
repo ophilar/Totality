@@ -252,6 +252,7 @@ export function GeneralTab() {
         <div className="flex items-center gap-2 mb-1">
           <Globe className="w-4 h-4 text-muted-foreground" />
           <h3 className="text-label font-medium text-foreground">Web Access</h3>
+          <span className="text-caption font-medium text-amber-500">Beta</span>
         </div>
         <Card variant="muted" padding="none" className="divide-y divide-border/30">
           <div className="flex items-center justify-between px-4 py-3">
