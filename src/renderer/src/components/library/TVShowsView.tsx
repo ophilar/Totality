@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
-import { RefreshCw, MoreVertical, Pencil, Folder, CircleFadingArrowUp, EyeOff, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
+import { RefreshCw, MoreVertical, Pencil, Folder, CircleFadingArrowUp, EyeOff, ChevronDown, ChevronUp, ChevronLeft, Copy, Check } from 'lucide-react'
 import { TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
 import { DropdownMenu, DropdownMenuItem } from '../ui/DropdownMenu'
 import { Button } from '../ui/Button'
@@ -571,15 +571,14 @@ export function TVShowsView({
     return (
       <div className="space-y-6">
         {/* Breadcrumb */}
-        <button
+        <Button
+          variant="tertiary"
+          size="sm"
           onClick={handleBack}
-          className="flex items-center gap-2 text-label text-muted-foreground hover:text-foreground"
+          icon={<ChevronLeft className="w-4 h-4" />}
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Back to TV Shows
-        </button>
+          Back to TV shows
+        </Button>
 
         {/* Show Header */}
         <div className={`flex ${isMobile ? 'gap-3 mb-4' : 'gap-6 mb-6'}`}>
@@ -619,7 +618,7 @@ export function TVShowsView({
 
             {/* Metadata line */}
             <div className="flex items-center gap-2 mt-1 text-label text-muted-foreground">
-              <span>{ownedSeasons.length} of {totalSeasons} Seasons</span>
+              <span>{ownedSeasons.length} of {totalSeasons} seasons</span>
               {completenessData?.status && (
                 <>
                   <span>•</span>
@@ -639,13 +638,13 @@ export function TVShowsView({
                 Analyze series
               </Button>
               {onFixMatch && (
-                <button
+                <Button
+                  variant="tertiary"
+                  size="icon-sm"
                   onClick={() => selectedShow && onFixMatch(selectedShow, '', undefined)}
-                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
-                  title="Fix Match"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
+                  icon={<Pencil className="w-4 h-4" />}
+                  title="Fix match"
+                />
               )}
             </div>
 
