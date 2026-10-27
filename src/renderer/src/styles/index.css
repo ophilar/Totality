@@ -897,6 +897,7 @@
       border-color: revert-layer;
       opacity: revert-layer;
       text-decoration: revert-layer;
+      transform: revert-layer;
     }
   }
 }
@@ -967,8 +968,10 @@ textarea:focus-visible,
   transition: transform 200ms ease-out;
 }
 
-.hover-scale:hover {
-  transform: scale(1.05);
+@media (hover: hover) and (pointer: fine) {
+  .hover-scale:hover {
+    transform: scale(1.05);
+  }
 }
 
 .hover-scale.active {
