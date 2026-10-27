@@ -336,7 +336,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
   // Status tabs
   const statusOptions: { type: StatusType; icon: typeof Circle; label: string; count: number }[] = [
     { type: 'active', icon: Circle, label: 'Active', count: counts.active },
-    { type: 'completed', icon: CheckCircle2, label: 'Completed', count: counts.completed }
+    { type: 'completed', icon: CheckCircle2, label: 'Completed', count: 0 }
   ]
 
   // Category options with counts
@@ -388,9 +388,9 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
           <h2 className="text-label font-semibold">
             Wishlist
           </h2>
-          {counts.total > 0 && (
+          {counts.active > 0 && (
             <span className="px-1.5 py-0.5 text-caption font-medium bg-muted text-foreground rounded-full">
-              {counts.total}
+              {counts.active}
             </span>
           )}
         </div>
