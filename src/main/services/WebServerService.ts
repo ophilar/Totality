@@ -221,6 +221,9 @@ export class WebServerService {
         const proto = useHttps ? 'https' : 'http'
         console.log(`[WebServer] Listening on ${proto}://0.0.0.0:${this.port}`)
 
+        // Prune stale image cache on startup
+        this.pruneImageCache()
+
         // When HTTPS is enabled, start an HTTP companion on port+1 for cert download + redirect
         if (useHttps) {
           const httpPort = this.port + 1
@@ -441,6 +444,10 @@ export class WebServerService {
     })
   }
 
+  private imageCacheDir = path.join(app.getPath('userData'), 'image-cache')
+  private imageCacheMaxBytes = 500 * 1024 * 1024 // 500MB
+  private imageCacheMaxAge = 7 * 24 * 60 * 60 * 1000 // 7 days
+
   private handleProxyImage(url: URL, res: http.ServerResponse): void {
     const imageUrl = url.searchParams.get('url')
     if (!imageUrl) {
@@ -474,16 +481,65 @@ export class WebServerService {
       return
     }
 
+    // Add Plex thumbnail sizing if not already specified
+    const isPlexUrl = hostname.startsWith('192.168.') || hostname.startsWith('10.') ||
+      hostname.endsWith('.plex.direct') || parsedUrl.searchParams.has('X-Plex-Token')
+    if (isPlexUrl && !parsedUrl.searchParams.has('width')) {
+      parsedUrl.searchParams.set('width', '600')
+      parsedUrl.searchParams.set('height', '900')
+    }
+    const finalUrl = parsedUrl.toString()
+
+    // Check disk cache first
+    const cacheKey = crypto.createHash('sha256').update(finalUrl).digest('hex')
+    const cachePath = path.join(this.imageCacheDir, `${cacheKey}.img`)
+
+    try {
+      const stat = fs.statSync(cachePath)
+      if (Date.now() - stat.mtimeMs < this.imageCacheMaxAge) {
+        // Serve from cache
+        res.writeHead(200, {
+          'Content-Type': 'image/jpeg',
+          'Cache-Control': 'public, max-age=604800',
+          'Content-Length': String(stat.size),
+        })
+        fs.createReadStream(cachePath).pipe(res)
+        return
+      }
+    } catch {
+      // Cache miss — fetch from source
+    }
+
     const fetchOptions = parsedUrl.protocol === 'https:'
-      ? { rejectUnauthorized: false } as https.RequestOptions // Accept self-signed Plex certs
+      ? { rejectUnauthorized: false } as https.RequestOptions
       : {}
     const fetcher = parsedUrl.protocol === 'https:' ? https : http
-    const proxyReq = fetcher.get(imageUrl, fetchOptions, (proxyRes) => {
-      res.writeHead(proxyRes.statusCode || 200, {
-        'Content-Type': proxyRes.headers['content-type'] || 'image/jpeg',
-        'Cache-Control': 'public, max-age=86400',
+    const proxyReq = fetcher.get(finalUrl, fetchOptions, (proxyRes) => {
+      if (proxyRes.statusCode !== 200) {
+        res.writeHead(proxyRes.statusCode || 502)
+        res.end()
+        return
+      }
+
+      const contentType = proxyRes.headers['content-type'] || 'image/jpeg'
+      res.writeHead(200, {
+        'Content-Type': contentType,
+        'Cache-Control': 'public, max-age=604800',
       })
-      proxyRes.pipe(res)
+
+      // Write to cache and response simultaneously
+      try {
+        fs.mkdirSync(this.imageCacheDir, { recursive: true })
+        const cacheStream = fs.createWriteStream(cachePath)
+        proxyRes.pipe(cacheStream)
+        proxyRes.pipe(res)
+        cacheStream.on('error', () => {
+          try { fs.unlinkSync(cachePath) } catch { /* ignore */ }
+        })
+      } catch {
+        // Cache write failed — still serve response
+        proxyRes.pipe(res)
+      }
     })
     proxyReq.on('error', () => {
       if (!res.headersSent) {
@@ -493,7 +549,7 @@ export class WebServerService {
         res.end()
       }
     })
-    proxyReq.setTimeout(10000, () => {
+    proxyReq.setTimeout(30000, () => {
       proxyReq.destroy()
       if (!res.headersSent) {
         res.writeHead(504)
@@ -502,6 +558,34 @@ export class WebServerService {
         res.end()
       }
     })
+  }
+
+  /** Prune image cache if it exceeds max size */
+  pruneImageCache(): void {
+    try {
+      if (!fs.existsSync(this.imageCacheDir)) return
+      const files = fs.readdirSync(this.imageCacheDir)
+        .map(f => {
+          const fp = path.join(this.imageCacheDir, f)
+          try { const s = fs.statSync(fp); return { path: fp, size: s.size, mtime: s.mtimeMs } }
+          catch { return null }
+        })
+        .filter(Boolean) as { path: string; size: number; mtime: number }[]
+
+      const totalSize = files.reduce((sum, f) => sum + f.size, 0)
+      if (totalSize <= this.imageCacheMaxBytes) return
+
+      // Remove oldest files until under limit
+      files.sort((a, b) => a.mtime - b.mtime)
+      let freed = 0
+      const target = totalSize - this.imageCacheMaxBytes
+      for (const file of files) {
+        try { fs.unlinkSync(file.path); freed += file.size }
+        catch { /* ignore */ }
+        if (freed >= target) break
+      }
+      console.log(`[WebServer] Pruned image cache: freed ${Math.round(freed / 1024 / 1024)}MB`)
+    } catch { /* ignore */ }
   }
 
   private proxyToDevServer(req: http.IncomingMessage, res: http.ServerResponse): void {
