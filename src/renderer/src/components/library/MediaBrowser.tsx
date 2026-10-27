@@ -1755,7 +1755,7 @@ export function MediaBrowser({
               }}
               className={`p-2.5 rounded-lg transition-colors flex items-center gap-1 shrink-0 focus:outline-hidden ${
                 showCompletenessPanel
-                  ? 'bg-primary text-primary-foreground'
+                  ? 'bg-foreground text-background'
                   : 'bg-card text-muted-foreground hover:bg-muted'
               }`}
               aria-label={showCompletenessPanel ? 'Hide completeness panel' : 'Show completeness panel'}
@@ -1774,7 +1774,7 @@ export function MediaBrowser({
               }}
               className={`p-2.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 focus:outline-hidden ${
                 showWishlistPanel
-                  ? 'bg-primary text-primary-foreground'
+                  ? 'bg-foreground text-background'
                   : 'bg-card text-muted-foreground hover:bg-muted'
               }`}
               aria-label={showWishlistPanel ? 'Hide wishlist panel' : 'Show wishlist panel'}
@@ -1823,8 +1823,8 @@ export function MediaBrowser({
             <div className={`flex items-center justify-between ${isMobile ? 'flex-wrap gap-2' : ''}`}>
               {/* Left side: Filters */}
               <div className={`flex items-center ${isMobile ? 'gap-2 flex-wrap' : 'gap-4'}`}>
-                {/* Music View Mode Toggle */}
-                {view === 'music' && (
+                {/* Music View Mode Toggle — hidden when viewing artist/album detail */}
+                {view === 'music' && !selectedArtist && !selectedAlbum && (
                   <div className="flex items-center gap-2">
                     <span className="text-caption text-muted-foreground">View</span>
                     <div className="flex gap-1">
@@ -1839,7 +1839,7 @@ export function MediaBrowser({
                           }}
                           className={`px-2.5 py-1.5 rounded-lg text-caption transition-colors ${
                             musicViewMode === mode
-                              ? 'bg-primary text-primary-foreground'
+                              ? 'bg-foreground text-background'
                               : 'bg-card text-muted-foreground hover:bg-muted'
                           }`}
                         >
@@ -1883,7 +1883,7 @@ export function MediaBrowser({
                           onClick={() => setTierFilter(tier as typeof tierFilter)}
                           className={`px-2.5 py-1 rounded-lg text-caption transition-colors focus:outline-hidden ${
                             tierFilter === tier
-                              ? 'bg-primary text-primary-foreground'
+                              ? 'bg-foreground text-background'
                               : 'bg-card text-muted-foreground hover:bg-muted'
                           }`}
                         >
@@ -1914,7 +1914,7 @@ export function MediaBrowser({
                           onClick={() => setQualityFilter(quality as typeof qualityFilter)}
                           className={`px-2.5 py-1 rounded-lg text-caption transition-colors focus:outline-hidden ${
                             qualityFilter === quality
-                              ? 'bg-primary text-primary-foreground'
+                              ? 'bg-foreground text-background'
                               : 'bg-card text-muted-foreground hover:bg-muted'
                           }`}
                         >
@@ -1933,7 +1933,7 @@ export function MediaBrowser({
                       onClick={() => setCollectionsOnly(!collectionsOnly)}
                       className={`px-2.5 py-1 rounded-lg text-caption transition-colors focus:outline-hidden flex items-center gap-1.5 ${
                         collectionsOnly
-                          ? 'bg-primary text-primary-foreground'
+                          ? 'bg-foreground text-background'
                           : 'bg-card text-muted-foreground hover:bg-muted'
                       }`}
                       title="Show only collections"
@@ -1972,7 +1972,7 @@ export function MediaBrowser({
                       onClick={() => setViewType('grid')}
                       className={`p-1.5 rounded-lg transition-colors focus:outline-hidden ${
                         viewType === 'grid'
-                          ? 'bg-primary text-primary-foreground'
+                          ? 'bg-foreground text-background'
                           : 'bg-card text-muted-foreground hover:bg-muted'
                       }`}
                     >
@@ -1983,7 +1983,7 @@ export function MediaBrowser({
                       onClick={() => setViewType('list')}
                       className={`p-1.5 rounded-lg transition-colors focus:outline-hidden ${
                         viewType === 'list'
-                          ? 'bg-primary text-primary-foreground'
+                          ? 'bg-foreground text-background'
                           : 'bg-card text-muted-foreground hover:bg-muted'
                       }`}
                     >
