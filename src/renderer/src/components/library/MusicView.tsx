@@ -1201,7 +1201,7 @@ export function MusicView({
                 </div>
               ) : (
                 <div
-                  className="grid gap-6"
+                  className={gridClassName}
                   style={gridStyle}
                 >
                   {allMissing.map((album, idx) => (
