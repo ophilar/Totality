@@ -105,23 +105,40 @@ export class WishlistCompletionService {
     const completed: CompletionResult[] = []
 
     // Group items by type for batch queries
-    const movieItems = items.filter((i) => i.media_type === 'movie' && i.tmdb_id)
+    const movieItems = items.filter((i) => i.media_type === 'movie' && (i.tmdb_id || i.title))
     const seasonItems = items.filter(
       (i) => i.media_type === 'season' && (i.series_title || i.tmdb_id)
     )
     const episodeItems = items.filter(
       (i) => i.media_type === 'episode' && i.series_title && i.season_number != null && i.episode_number != null
     )
-    const albumItems = items.filter((i) => i.media_type === 'album' && i.musicbrainz_id)
-    const trackItems = items.filter((i) => i.media_type === 'track' && i.musicbrainz_id)
+    const albumItems = items.filter((i) => i.media_type === 'album' && (i.musicbrainz_id || i.title))
+    const trackItems = items.filter((i) => i.media_type === 'track' && (i.musicbrainz_id || i.title))
 
-    // Batch check movies by TMDB ID
+    // Batch check movies by TMDB ID, with title fallback
     if (movieItems.length > 0) {
-      const tmdbIds = movieItems.map((i) => i.tmdb_id!)
-      const foundMovies = db.getMediaItemsByTmdbIds(tmdbIds)
+      const itemsWithTmdb = movieItems.filter(i => i.tmdb_id)
+      const tmdbIds = itemsWithTmdb.map((i) => i.tmdb_id!)
+      const foundMovies = tmdbIds.length > 0 ? db.getMediaItemsByTmdbIds(tmdbIds) : new Map()
 
       for (const item of movieItems) {
-        if (foundMovies.has(item.tmdb_id!)) {
+        let found = false
+
+        // Primary: match by TMDB ID
+        if (item.tmdb_id && foundMovies.has(item.tmdb_id)) {
+          found = true
+        }
+
+        // Fallback: match by title + year (case-insensitive)
+        if (!found && item.title) {
+          const matches = db.getMediaItems({ type: 'movie', searchQuery: item.title })
+          found = matches.some((m: { title?: string; year?: number }) =>
+            m.title?.toLowerCase() === item.title.toLowerCase() &&
+            (!item.year || m.year === item.year)
+          )
+        }
+
+        if (found) {
           completed.push({
             id: item.id!,
             title: item.title,
@@ -182,13 +199,29 @@ export class WishlistCompletionService {
       }
     }
 
-    // Batch check albums by MusicBrainz ID
+    // Batch check albums by MusicBrainz ID, with title+artist fallback
     if (albumItems.length > 0) {
-      const mbIds = albumItems.map((i) => i.musicbrainz_id!)
-      const foundAlbums = db.getMusicAlbumsByMusicbrainzIds(mbIds)
+      const itemsWithMb = albumItems.filter(i => i.musicbrainz_id)
+      const mbIds = itemsWithMb.map((i) => i.musicbrainz_id!)
+      const foundAlbums = mbIds.length > 0 ? db.getMusicAlbumsByMusicbrainzIds(mbIds) : new Map()
 
       for (const item of albumItems) {
-        if (foundAlbums.has(item.musicbrainz_id!)) {
+        let found = false
+
+        // Primary: match by MusicBrainz ID
+        if (item.musicbrainz_id && foundAlbums.has(item.musicbrainz_id)) {
+          found = true
+        }
+
+        // Fallback: match by title + artist_name (case-insensitive)
+        if (!found && item.title) {
+          const albums = db.getMusicAlbums({ artistName: item.artist_name })
+          found = (albums as { title?: string }[]).some((a) =>
+            a.title?.toLowerCase() === item.title.toLowerCase()
+          )
+        }
+
+        if (found) {
           completed.push({
             id: item.id!,
             title: item.title,
@@ -199,13 +232,29 @@ export class WishlistCompletionService {
       }
     }
 
-    // Batch check tracks by MusicBrainz ID
+    // Batch check tracks by MusicBrainz ID, with title+artist fallback
     if (trackItems.length > 0) {
-      const mbIds = trackItems.map((i) => i.musicbrainz_id!)
-      const foundTracks = db.getMusicTracksByMusicbrainzIds(mbIds)
+      const itemsWithMb = trackItems.filter(i => i.musicbrainz_id)
+      const mbIds = itemsWithMb.map((i) => i.musicbrainz_id!)
+      const foundTracks = mbIds.length > 0 ? db.getMusicTracksByMusicbrainzIds(mbIds) : new Map()
 
       for (const item of trackItems) {
-        if (foundTracks.has(item.musicbrainz_id!)) {
+        let found = false
+
+        // Primary: match by MusicBrainz ID
+        if (item.musicbrainz_id && foundTracks.has(item.musicbrainz_id)) {
+          found = true
+        }
+
+        // Fallback: match by title + artist_name (case-insensitive)
+        if (!found && item.title && item.artist_name) {
+          const tracks = db.getMusicTracks({ artistName: item.artist_name, limit: 100 })
+          found = (tracks as { title?: string }[]).some((t) =>
+            t.title?.toLowerCase() === item.title.toLowerCase()
+          )
+        }
+
+        if (found) {
           completed.push({
             id: item.id!,
             title: item.title,
