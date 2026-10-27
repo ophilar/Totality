@@ -582,67 +582,30 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
       {/* Search to add */}
       <WishlistSearch isMobile={isMobile} />
 
-      {/* Compact filter row: Status + Category + Media type + Sort */}
+      {/* Status toggle — top level view selector */}
       {counts.total > 0 && (
-        <div className="px-3 py-2 border-b border-border/30 flex flex-wrap items-center gap-2">
-          {/* Status toggle */}
-          <div className="flex gap-1">
-            {statusOptions.map(({ type, icon: Icon, label, count }) => (
-              <button
-                key={type}
-                onClick={() => { setActiveStatus(type); setActiveCategory('all'); setActiveFilter('all'); setSortBy(type === 'completed' ? 'completed_at' : 'priority') }}
-                className={`flex items-center gap-1 ${isMobile ? 'px-3 py-2 min-h-[44px] text-label' : 'px-2 py-1 text-caption'} rounded-lg transition-colors ${
-                  activeStatus === type
-                    ? 'bg-foreground text-background'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <Icon className="w-3 h-3" />
-                <span>{label}</span>
-                {count > 0 && <span className="text-muted-foreground/60">({count})</span>}
-              </button>
-            ))}
-          </div>
-
-          {/* Separator */}
-          <span className="text-border/40">·</span>
-
-          {/* Category + media type — only when active */}
-          {activeStatus !== 'completed' && (
-            <>
-              {categoryOptions.filter(o => o.type !== 'all').map(({ type, icon: Icon, label }) => (
+        <div className="border-b border-border/30">
+          <div className="px-3 py-2 flex items-center gap-2">
+            <div className="flex gap-1">
+              {statusOptions.map(({ type, icon: Icon, label, count }) => (
                 <button
                   key={type}
-                  onClick={() => { setActiveCategory(activeCategory === type ? 'all' : type); if (type === 'all') setActiveFilter('all') }}
-                  className={`flex items-center gap-1 ${isMobile ? 'px-3 py-2 min-h-[44px] text-label' : 'px-2 py-1 text-caption'} rounded-full transition-colors ${
-                    activeCategory === type
+                  onClick={() => { setActiveStatus(type); setActiveCategory('all'); setActiveFilter('all'); setSortBy(type === 'completed' ? 'completed_at' : 'priority') }}
+                  className={`flex items-center gap-1.5 ${isMobile ? 'px-3 py-2 min-h-[44px] text-label' : 'px-2.5 py-1.5 text-caption'} rounded-lg transition-colors ${
+                    activeStatus === type
                       ? 'bg-foreground text-background'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  <Icon className="w-3 h-3" />
+                  <Icon className="w-3.5 h-3.5" />
                   <span>{label}</span>
+                  {count > 0 && <span className="opacity-60">({count})</span>}
                 </button>
               ))}
-              <span className="text-border/40">·</span>
-              {filterOptions.map(({ type, icon: Icon }) => (
-                <button
-                  key={type}
-                  onClick={() => setActiveFilter(activeFilter === type ? 'all' : type)}
-                  className={`flex items-center gap-1 ${isMobile ? 'px-3 py-2 min-h-[44px] text-label' : 'px-2 py-1 text-caption'} rounded-full transition-colors ${
-                    activeFilter === type
-                      ? 'bg-foreground text-background'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <Icon className="w-3 h-3" />
-                </button>
-              ))}
-            </>
-          )}
+            </div>
 
-          {/* Sort — pushed to the right */}
-          <div className="ml-auto flex items-center gap-1">
+            {/* Sort — pushed to the right */}
+            <div className="ml-auto flex items-center gap-1">
             <Select
               inputSize="sm"
               value={sortBy}
@@ -666,6 +629,41 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
               title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
             />
           </div>
+          </div>
+
+          {/* Category + media type filters — only when viewing active items */}
+          {activeStatus !== 'completed' && (
+            <div className="px-3 py-1.5 flex flex-wrap items-center gap-1">
+              {categoryOptions.filter(o => o.type !== 'all').map(({ type, icon: Icon, label }) => (
+                <button
+                  key={type}
+                  onClick={() => { setActiveCategory(activeCategory === type ? 'all' : type); if (type === 'all') setActiveFilter('all') }}
+                  className={`flex items-center gap-1 ${isMobile ? 'px-2.5 py-1.5 min-h-[44px] text-label' : 'px-2 py-1 text-caption'} rounded-full transition-colors ${
+                    activeCategory === type
+                      ? 'bg-foreground text-background'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Icon className="w-3 h-3" />
+                  <span>{label}</span>
+                </button>
+              ))}
+              <span className="text-border/40 mx-0.5">·</span>
+              {filterOptions.map(({ type, icon: Icon }) => (
+                <button
+                  key={type}
+                  onClick={() => setActiveFilter(activeFilter === type ? 'all' : type)}
+                  className={`flex items-center gap-1 ${isMobile ? 'px-2.5 py-1.5 min-h-[44px] text-label' : 'px-2 py-1 text-caption'} rounded-full transition-colors ${
+                    activeFilter === type
+                      ? 'bg-foreground text-background'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Icon className="w-3 h-3" />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
