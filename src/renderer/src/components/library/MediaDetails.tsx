@@ -536,7 +536,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
   const bestAudioBitrate = bestAudioTrack?.bitrate ?? sv?.audio_bitrate ?? media.audio_bitrate
 
   return createPortal(
-    <div className={`fixed inset-0 bg-black/60 flex justify-center z-150 ${isMobile ? 'items-end p-3 pt-12' : 'items-center p-6'}`} role="dialog" aria-modal="true" onClick={onClose}>
+    <div className={`fixed inset-0 bg-black/60 flex justify-center z-50 ${isMobile ? 'items-center p-4' : 'items-center p-6'}`} role="dialog" aria-modal="true" onClick={onClose}>
       <div
         ref={modalRef}
         className={`bg-card overflow-hidden flex flex-col shadow-2xl border border-border ${
