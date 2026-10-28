@@ -6,9 +6,10 @@ import * as path from 'node:path'
 import { getMediaFileAnalyzer } from './MediaFileAnalyzer'
 import { PathUtils } from './utils/PathUtils'
 import { APP_CONFIG } from '@main/config'
-import type { MeasuredCandidate, MeasuredCandidateSample } from './MeasuredOptimizationPolicy'
+import { getImpossibleQualityReason, type MeasuredCandidate, type MeasuredCandidateSample, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
 import { getErrorMessage } from './utils/errorUtils'
 import { requireFfmpegFilters } from './transcoding/FfmpegFilterCapabilities'
+import { getLoggingService } from './LoggingService'
 
 export interface MeasurementProcessRunner {
   run(binary: string, args: string[], signal?: AbortSignal): Promise<string>
@@ -35,6 +36,8 @@ export interface MeasuredSampleRequest {
   outputExtension?: string
   referenceFilter?: string
   referenceInputArgs?: string[]
+  sourcePreparation?: MeasurementSourcePreparation
+  qualityProfile?: OptimizationQualityProfile
   signal?: AbortSignal
   onProgress?: (phase: string) => Promise<void> | void
   validateSample?: (filePath: string) => Promise<string[]>
@@ -58,6 +61,17 @@ export interface SampleTimingEvidence {
   colorSpace?: string
   colorTransfer?: string
   colorPrimaries?: string
+}
+
+export interface MeasurementSourcePreparation {
+  samples: Array<{
+    sourcePath: string
+    source: SampleTimingEvidence & { durationSeconds: number }
+    referencePath?: string
+    reference: SampleTimingEvidence & { durationSeconds: number }
+    sourceSelfVmaf: number
+    sourceCambiMean: number
+  }>
 }
 
 export function verifyQsvQualityMode(diagnostics: string, expectedQuality: number): void {
@@ -202,7 +216,18 @@ export class MeasuredOptimizationService {
     let result: MeasuredSampleResult | undefined
     let cleanupFailure: Error | undefined
     try {
-      for (const [index, start] of starts.entries()) {
+      const preparationStartedAt = performance.now()
+      const reusedSources = Boolean(request.sourcePreparation?.samples.length)
+      if (request.sourcePreparation?.samples.length) {
+        for (const sample of request.sourcePreparation.samples) {
+          sourceSamplePaths.push(sample.sourcePath)
+          sourceSamples.push(sample.source)
+          referenceSamples.push(sample.reference)
+          sourceSelfVmafs.push(sample.sourceSelfVmaf)
+          sourceCambiMeans.push(sample.sourceCambiMean)
+          if (sample.referencePath) referencePaths.push(sample.referencePath)
+        }
+      } else for (const [index, start] of starts.entries()) {
         await request.onProgress?.(`Preparing source sample ${index + 1} of ${starts.length}`)
         const sourceSamplePath = path.join(request.outputDirectory, `source-${index}.mkv`)
         ownedPaths.add(sourceSamplePath)
@@ -230,11 +255,17 @@ export class MeasuredOptimizationService {
           referenceSamples[index] = referenceSample
         }
       }
+      if (request.sourcePreparation) {
+        request.sourcePreparation.samples = sourceSamples.map((source, index) => ({ sourcePath: sourceSamplePaths[index], source, referencePath: referencePaths[index], reference: referenceSamples[index], sourceSelfVmaf: sourceSelfVmafs[index], sourceCambiMean: sourceCambiMeans[index] }))
+        for (const sourcePath of [...sourceSamplePaths, ...referencePaths]) retainedPaths.add(sourcePath)
+      }
+      getLoggingService().info('[MeasuredOptimization]', `stage=source-preparation directory=${request.outputDirectory} reused=${reusedSources} samples=${sourceSamples.length} durationMs=${Math.round(performance.now() - preparationStartedAt)}`)
       const measured: MeasuredCandidate[] = []
       const measuredSamples = [...(request.previouslyMeasuredSamples ?? [])]
       for (const candidate of request.candidates) {
         const candidateSamples: MeasuredCandidateSample[] = []
         const playbackBlockers = new Set<string>()
+        let qualityRejectedReason: string | undefined
         for (const index of starts.keys()) {
           request.signal?.throwIfAborted()
           const outputPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}${request.outputExtension ?? '.mkv'}`)
@@ -247,6 +278,7 @@ export class MeasuredOptimizationService {
             const encodingStartedAt = performance.now()
             const diagnostics = await this.processRunner.run(binary, args, request.signal)
             const encodingDurationMs = performance.now() - encodingStartedAt
+            getLoggingService().info('[MeasuredOptimization]', `stage=encoding encoder=${candidate.encoder} preset=${candidate.preset} quality=${candidate.quality} sample=${index} durationMs=${Math.round(encodingDurationMs)}`)
             if (candidate.encoder.startsWith('qsv')) verifyQsvQualityMode(diagnostics, candidate.quality)
             const outputSample = await this.inspectSample(outputPath, request.signal)
             verifySampleFrameAlignment(referenceSamples[index], outputSample)
@@ -254,7 +286,9 @@ export class MeasuredOptimizationService {
             const logPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}.json`)
             ownedPaths.add(logPath)
             await request.onProgress?.(`Scoring sample ${index + 1} of ${starts.length} with VMAF and CAMBI`)
+            const scoringStartedAt = performance.now()
             const { vmafScores, cambiScores } = await this.measureFrameMetrics(binary, outputPath, referencePath, logPath, referenceSamples[index].frames, request.signal)
+            getLoggingService().info('[MeasuredOptimization]', `stage=scoring encoder=${candidate.encoder} preset=${candidate.preset} quality=${candidate.quality} sample=${index} durationMs=${Math.round(performance.now() - scoringStartedAt)}`)
             sample = {
               encoder: candidate.encoder,
               preset: candidate.preset,
@@ -275,13 +309,22 @@ export class MeasuredOptimizationService {
             await fs.unlink(logPath)
           }
           candidateSamples.push(sample)
-          for (const blocker of await request.validateSample?.(sample.samplePath) ?? []) playbackBlockers.add(blocker)
+          qualityRejectedReason = request.qualityProfile ? getImpossibleQualityReason(request.qualityProfile, candidateSamples.flatMap(sample => sample.vmafScores), candidateSamples.flatMap(sample => sample.cambiScores), referenceSamples.reduce((sum, sample) => sum + sample.frames, 0)) : undefined
+          if (!qualityRejectedReason) {
+            const validationStartedAt = performance.now()
+            for (const blocker of await request.validateSample?.(sample.samplePath) ?? []) playbackBlockers.add(blocker)
+            getLoggingService().info('[MeasuredOptimization]', `stage=playback-validation encoder=${candidate.encoder} preset=${candidate.preset} quality=${candidate.quality} sample=${index} durationMs=${Math.round(performance.now() - validationStartedAt)}`)
+          }
+          if (playbackBlockers.size || qualityRejectedReason) {
+            getLoggingService().info('[MeasuredOptimization]', `stage=candidate-rejected encoder=${candidate.encoder} preset=${candidate.preset} quality=${candidate.quality} measuredSamples=${candidateSamples.length}/${starts.length} reason=${qualityRejectedReason ?? [...playbackBlockers].join('; ')}`)
+            break
+          }
         }
         const scores = candidateSamples.flatMap(sample => sample.vmafScores)
         const banding = candidateSamples.flatMap(sample => sample.cambiScores)
         if (!scores.length || scores.some(score => !Number.isFinite(score)) || banding.some(score => !Number.isFinite(score))) throw new Error('Measured frame scores are incomplete')
         scores.sort((a, b) => a - b)
-        measured.push({ encoder: candidate.encoder, quality: candidate.quality, preset: candidate.preset, outputBytes: candidateSamples.reduce((sum, sample) => sum + sample.outputBytes, 0), sampledDurationSeconds: candidateSamples.reduce((sum, sample) => sum + sample.sampledDurationSeconds, 0), encodingDurationMs: candidateSamples.reduce((sum, sample) => sum + sample.encodingDurationMs, 0), vmafMean: scores.reduce((a, b) => a + b, 0) / scores.length, vmafP5: scores[Math.floor(scores.length * 0.05)], cambiMean: banding.reduce((a, b) => a + b, 0) / banding.length, sourceSelfVmaf: candidateSamples.reduce((sum, sample) => sum + sample.sourceSelfVmaf, 0) / candidateSamples.length, sourceCambiMean: candidateSamples.reduce((sum, sample) => sum + sample.sourceCambiMean, 0) / candidateSamples.length, samplePaths: candidateSamples.map(sample => sample.samplePath), playbackBlockers: [...playbackBlockers] })
+        measured.push({ incompleteMeasurement: candidateSamples.length < starts.length, qualityRejectedReason, encoder: candidate.encoder, quality: candidate.quality, preset: candidate.preset, outputBytes: candidateSamples.reduce((sum, sample) => sum + sample.outputBytes, 0), sampledDurationSeconds: candidateSamples.reduce((sum, sample) => sum + sample.sampledDurationSeconds, 0), encodingDurationMs: candidateSamples.reduce((sum, sample) => sum + sample.encodingDurationMs, 0), vmafMean: scores.reduce((a, b) => a + b, 0) / scores.length, vmafP5: scores[Math.floor(scores.length * 0.05)], cambiMean: banding.reduce((a, b) => a + b, 0) / banding.length, sourceSelfVmaf: candidateSamples.reduce((sum, sample) => sum + sample.sourceSelfVmaf, 0) / candidateSamples.length, sourceCambiMean: candidateSamples.reduce((sum, sample) => sum + sample.sourceCambiMean, 0) / candidateSamples.length, samplePaths: candidateSamples.map(sample => sample.samplePath), playbackBlockers: [...playbackBlockers] })
         await request.onCandidateMeasured?.(structuredClone(measured), measured.length === request.candidates.length)
         if (request.onCandidateMeasured) for (const sample of candidateSamples) retainedPaths.add(sample.samplePath)
       }
