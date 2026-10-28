@@ -3,7 +3,7 @@ import { APP_CONFIG } from '@main/config'
 
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
 
-export const MEASUREMENT_VERSION = 10
+export const MEASUREMENT_VERSION = 11
 export const SHOW_PREFLIGHT_SETTING_PREFIX = 'transcoding.preflight.'
 export const MEASUREMENT_SETTING_PREFIX = 'transcoding.measurement.'
 
@@ -48,12 +48,67 @@ export interface MeasuredCandidate {
   cambiMean: number
   /** Runtime compatibility evidence; excluded from durable candidate measurements. */
   playbackBlockers?: string[]
+  qualityRejectedReason?: string
+  incompleteMeasurement?: boolean
 }
 
 export interface CandidateEncodingParameters {
   encoder: string
   preset: string
   quality: number
+}
+
+/** Returns the next measurement batch for adaptive, preset-ordered search. */
+export function nextCandidateSearch(
+  domainCatalogue: CandidateEncodingParameters[],
+  measuredCandidates: MeasuredCandidate[],
+  profile: OptimizationQualityProfile,
+  maximumOutputBytesPerSecond?: number,
+): CandidateEncodingParameters[] {
+  const presets = [...new Map(domainCatalogue.map(candidate => [`${candidate.encoder}/${candidate.preset}`, candidate])).values()]
+  const evaluation = (candidate: MeasuredCandidate) => evaluateMeasuredCandidates(profile, [candidate])[0]
+  const eligible = (candidate: MeasuredCandidate) => evaluation(candidate).passed &&
+    (maximumOutputBytesPerSecond === undefined || candidate.outputBytes / candidate.sampledDurationSeconds < maximumOutputBytesPerSecond)
+  const qualityPasses = (candidate: MeasuredCandidate) => evaluation(candidate).qualityPassed
+  const encoders = [...new Set(presets.map(candidate => candidate.encoder))]
+  for (const encoder of encoders) {
+    let encoderHasAcceptableResult = false
+    for (const presetCandidate of presets.filter(candidate => candidate.encoder === encoder)) {
+      const domain = domainCatalogue.filter(candidate => candidate.encoder === encoder && candidate.preset === presetCandidate.preset)
+      const measured = measuredCandidates.filter(candidate => candidate.encoder === encoder && candidate.preset === presetCandidate.preset)
+      const qualities = [...new Set(domain.map(candidate => candidate.quality))].sort((a, b) => a - b)
+      const tested = new Set(measured.map(candidate => candidate.quality))
+      const untested = (values: number[]) => values.filter(quality => !tested.has(quality)).map(quality => domain.find(candidate => candidate.quality === quality) ?? { encoder: presetCandidate.encoder, preset: presetCandidate.preset, quality })
+      if (measured.length === 0) {
+        const middle = qualities[Math.floor((qualities.length - 1) / 2)]
+        return untested([middle])
+      }
+      const ordered = [...measured].sort((a, b) => a.quality - b.quality)
+      const passFlags = ordered.map(qualityPasses)
+      const passTransitions = passFlags.reduce((count, pass, index) => count + (index > 0 && pass !== passFlags[index - 1] ? 1 : 0), 0)
+      const contradictory = passTransitions > 1 || ordered.some((candidate, index) => index > 0 && (candidate.vmafMean > ordered[index - 1].vmafMean || candidate.vmafP5 > ordered[index - 1].vmafP5))
+      if (contradictory) {
+        const relevant = Array.from({ length: ordered[ordered.length - 1].quality - ordered[0].quality + 1 }, (_, index) => ordered[0].quality + index)
+        const remaining = untested(relevant)
+        if (remaining.length) return remaining
+      }
+      const next = new Set<number>()
+      if (measured.length === 1) {
+        const direction = qualityPasses(measured[0]) ? qualities[qualities.length - 1] : qualities[0]
+        if (!tested.has(direction)) next.add(direction)
+      }
+      for (let index = 1; index < ordered.length; index += 1) {
+        if (passFlags[index] !== passFlags[index - 1]) {
+          const midpoint = Math.floor((ordered[index].quality + ordered[index - 1].quality) / 2)
+          if (!tested.has(midpoint)) next.add(midpoint)
+        }
+      }
+      if (next.size) return untested([...next].sort((a, b) => a - b))
+      encoderHasAcceptableResult ||= measured.some(eligible)
+      if (encoderHasAcceptableResult) break
+    }
+  }
+  return []
 }
 
 function getQualityDomainKey(encoder: string, targetCodec: 'av1' | 'hevc'): keyof typeof APP_CONFIG.transcoding.sampleQualityDomains {
@@ -76,42 +131,6 @@ export function buildCandidateLadder(targetCodec: 'av1' | 'hevc', encoderPolicy:
   })
 }
 
-export function buildQualityBoundaryCandidates(
-  candidates: CandidateEncodingParameters[],
-  measurements: MeasuredCandidate[],
-): CandidateEncodingParameters[] {
-  const additions = new Map<string, CandidateEncodingParameters>()
-  const candidateKeys = new Set(candidates.map(candidate => `${candidate.encoder}/${candidate.preset}/${candidate.quality}`))
-  const measuredByEncoderAndPreset = new Map<string, MeasuredCandidate[]>()
-  for (const measurement of measurements) {
-    const key = `${measurement.encoder}/${measurement.preset}`
-    measuredByEncoderAndPreset.set(key, [...(measuredByEncoderAndPreset.get(key) ?? []), measurement])
-  }
-
-  for (const { encoder, preset } of candidates) {
-    const key = `${encoder}/${preset}`
-    const measured = measuredByEncoderAndPreset.get(key) ?? []
-    const testedQualities = new Set(measured.map(candidate => candidate.quality))
-    const ordered = [...measured].sort((left, right) => left.quality - right.quality)
-    for (const profile of ['transparent', 'balanced', 'maximum_savings'] as const) {
-      for (let index = 1; index < ordered.length; index += 1) {
-        const betterQuality = ordered[index - 1]
-        const smallerFile = ordered[index]
-        const qualityPasses = (candidate: MeasuredCandidate) => {
-          const gates = QUALITY_GATES[profile]
-          return candidate.vmafMean >= gates.vmafMean && candidate.vmafP5 >= gates.vmafP5 && candidate.cambiMean <= gates.cambiMean
-        }
-        if (qualityPasses(betterQuality) === qualityPasses(smallerFile) || smallerFile.quality - betterQuality.quality <= 1) continue
-        const quality = Math.floor((betterQuality.quality + smallerFile.quality) / 2)
-        if (testedQualities.has(quality) || candidateKeys.has(`${encoder}/${preset}/${quality}`)) continue
-        additions.set(`${encoder}/${preset}/${quality}`, { encoder, preset, quality })
-      }
-    }
-  }
-
-  return [...additions.values()]
-}
-
 interface QualityGates {
   vmafMean: number
   vmafP5: number
@@ -129,6 +148,24 @@ const QUALITY_GATES: Record<OptimizationQualityProfile, QualityGates> = {
   transparent: { vmafMean: 96, vmafP5: 93, cambiMean: 5 },
   balanced: { vmafMean: 95, vmafP5: 92, cambiMean: 8 },
   maximum_savings: { vmafMean: 93, vmafP5: 88, cambiMean: 12 }
+}
+
+export function getImpossibleQualityReason(
+  profile: OptimizationQualityProfile,
+  vmafScores: number[],
+  cambiScores: number[],
+  totalFrames: number,
+): string | undefined {
+  if (!Number.isInteger(totalFrames) || totalFrames <= 0 || vmafScores.length > totalFrames || cambiScores.length > totalFrames) throw new Error('Quality bound requires valid accumulated scores and total frame count')
+  const gates = QUALITY_GATES[profile]
+  const remaining = totalFrames - vmafScores.length
+  const optimisticMean = (vmafScores.reduce((sum, score) => sum + score, 0) + remaining * 100) / totalFrames
+  if (optimisticMean < gates.vmafMean) return `VMAF mean cannot reach ${gates.vmafMean} even if all remaining frames score 100`
+  const failedTailFrames = vmafScores.filter(score => score < gates.vmafP5).length
+  if (failedTailFrames > Math.floor(totalFrames * 0.05)) return `VMAF p5 cannot reach ${gates.vmafP5} with ${failedTailFrames} below-threshold frames`
+  const optimisticCambi = cambiScores.reduce((sum, score) => sum + score, 0) / totalFrames
+  if (optimisticCambi > gates.cambiMean) return `CAMBI cannot reach ${gates.cambiMean} even if all remaining frames score 0`
+  return undefined
 }
 
 export class MeasuredQualityError extends Error {
@@ -175,11 +212,13 @@ function evaluateMeasuredCandidates(profile: OptimizationQualityProfile, candida
   const gates = QUALITY_GATES[profile]
   return candidates.map(candidate => {
     const failedGates = [
+      ...(candidate.qualityRejectedReason ? [candidate.qualityRejectedReason] : []),
       ...(candidate.vmafMean >= gates.vmafMean ? [] : [`VMAF mean < ${gates.vmafMean}`]),
       ...(candidate.vmafP5 >= gates.vmafP5 ? [] : [`VMAF p5 < ${gates.vmafP5}`]),
       ...(candidate.cambiMean <= gates.cambiMean ? [] : [`CAMBI > ${gates.cambiMean}`]),
     ]
     const qualityPassed = failedGates.length === 0
+    if (candidate.incompleteMeasurement) failedGates.push('Measurement did not cover all sample segments')
     failedGates.push(...candidate.playbackBlockers ?? [])
     return { candidate, passed: failedGates.length === 0, qualityPassed, failedGates }
   })

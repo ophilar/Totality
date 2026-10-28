@@ -26,10 +26,10 @@ import { getStatsCacheService } from './StatsCacheService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import type { MediaSourceTier } from './transcoding/TrashSourceClassifier'
 import { StreamRemuxCommandBuilder } from './transcoding/StreamRemuxCommandBuilder'
-import { buildCandidateLadder, buildQualityBoundaryCandidates, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MEASUREMENT_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
+import { buildCandidateLadder, nextCandidateSearch, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MEASUREMENT_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
 import { buildTargetTranscodePlan, validateTargetTranscodeBitrate, type TargetTranscodePlan } from './transcoding/TargetTranscodePlan'
 import type { MeasuredCandidate, MeasuredCandidateSample } from './MeasuredOptimizationPolicy'
-import { ChildProcessMeasurementRunner, MeasuredOptimizationService, VMAF_MODEL_VERSION } from './MeasuredOptimizationService'
+import { ChildProcessMeasurementRunner, MeasuredOptimizationService, VMAF_MODEL_VERSION, type MeasurementSourcePreparation } from './MeasuredOptimizationService'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { evaluatePlaybackTarget, getPlaybackTargetContainers, recommendPlaybackTargetContainer, type PlaybackTargetEvaluation, type PlaybackTargetProfile } from '@main/types/playbackTarget'
 import { getTaskQueueService } from './TaskQueueService'
@@ -235,10 +235,11 @@ function getOptimizationQualityChoices(
   sourceSize: number,
   sourceDurationSeconds: number,
   cachedMeasurement?: CachedMeasurement,
+  searchedProfile?: OptimizationQualityProfile,
 ): OptimizationQualityChoice[] {
   if (!cachedMeasurement) return []
   return (['transparent', 'maximum_savings'] as const).map(profile => {
-    if (!cachedMeasurement.complete) return { profile, status: 'measurement_incomplete' }
+    if (!cachedMeasurement.complete || profile !== searchedProfile) return { profile, status: 'measurement_incomplete' }
     try {
       const candidate = selectMeasuredCandidate(profile, cachedMeasurement.candidates)
       const alternatives = getNonDominatedMeasuredCandidates(profile, cachedMeasurement.candidates)
@@ -535,7 +536,7 @@ export class TranscodingService {
           sourceAnalysis: prepared.status === 'ready' ? prepared.analysis : undefined,
           operations: [],
           decisionStatus,
-          qualityChoices: prepared.status === 'ready' ? getOptimizationQualityChoices(prepared.stat.size, prepared.analysis.durationMs! / 1000, cachedMeasurement) : undefined,
+          qualityChoices: prepared.status === 'ready' ? getOptimizationQualityChoices(prepared.stat.size, prepared.analysis.durationMs! / 1000, cachedMeasurement, request.options.qualityProfile) : undefined,
           evidenceStatus: 'insufficient',
           confidence: 'none',
           savingsBasis: 'insufficient_data',
@@ -599,11 +600,12 @@ export class TranscodingService {
           : undefined
         const playbackCompatible = isCompatibleWithPlaybackPolicy(request.options.playbackPolicy ?? 'allow-transcoding', sourceCompatibility)
         const preserveDynamicHdr = ['Dolby Vision', 'HDR10+'].includes(analysis.video.hdrFormat ?? '')
-        const shouldEncode = request.options.optimizationMode === 'transcode' || (request.options.optimizationMode === 'smart' && !preserveDynamicHdr && (advice.action === 'video_transcode' || !playbackCompatible && request.options.playbackPolicy === 'direct-play'))
+        const preserveCompatibleHevc = normalizeVideoCodec(analysis.video.codec) === 'HEVC' && normalizeVideoCodec(request.options.targetCodec) === 'HEVC' && playbackCompatible
+        const shouldEncode = request.options.optimizationMode === 'transcode' || (request.options.optimizationMode === 'smart' && !preserveDynamicHdr && !preserveCompatibleHevc && (advice.action === 'video_transcode' || !playbackCompatible && request.options.playbackPolicy === 'direct-play'))
         const options: TranscodeOptions = { ...request.options, targetProfileId: targetProfile?.id, targetContainer: plannedContainer === 'mp4' ? 'mp4' : 'mkv', optimizationMode: shouldEncode ? 'transcode' : 'remux_only', audioConversions: shouldEncode && targetProfile ? undefined : plannedAudioConversions, encoderPolicy: request.options.encoderPolicy, useGpu: shouldEncode && request.options.encoderPolicy !== 'software', gpuId: shouldEncode && request.options.encoderPolicy !== 'software' ? request.options.gpuId : undefined }
         if (!shouldEncode && !streamsChanged && !containerChanged && plannedAudioConversions.length === 0) {
           const compatible = playbackCompatible
-          return { mediaItemId, label, compatible, reason: compatible ? undefined : 'Retained streams do not satisfy the selected playback profile', hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, operations: [], decisionStatus: compatible ? 'already_optimized' : 'incompatible', targetCompatibility: sourceCompatibility, sourceTier: advice.sourceTier, adviceReason: advice.reason }
+          return { mediaItemId, label, compatible, reason: compatible ? undefined : 'Retained streams do not satisfy the selected playback profile', hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, operations: [], decisionStatus: compatible ? 'already_optimized' : 'incompatible', targetCompatibility: sourceCompatibility, sourceTier: advice.sourceTier, adviceReason: preserveCompatibleHevc ? 'Compatible H.265 video is preserved; no same-codec recompression was measured.' : advice.reason }
         }
         if (shouldEncode) {
           options.maxOutputBytes = stat.size
@@ -639,6 +641,10 @@ export class TranscodingService {
         const sourceSha256 = await sha256File(episode.file_path)
         const measurementOptions = {
           targetCodec: options.targetCodec,
+          qualityProfile: options.qualityProfile,
+          targetProfileId: options.targetProfileId,
+          playbackPolicy: options.playbackPolicy,
+          maxOutputBytes: options.maxOutputBytes,
           encoderPolicy: options.encoderPolicy,
           gpuId: options.gpuId,
           customArgs: options.customArgs,
@@ -802,7 +808,7 @@ export class TranscodingService {
           return {
             mediaItemId, label, compatible: playbackCompatible, hdrFormat: analysis.video.hdrFormat || 'SDR',
             sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256, sourceAnalysis: analysis, sourceCambiMean: reusableRepresentativePlan ? undefined : params.measuredCandidate?.sourceCambiMean, sourceSelfVmaf: reusableRepresentativePlan ? undefined : params.measuredCandidate?.sourceSelfVmaf, targetProfile,
-            qualityChoices: reusableRepresentativePlan?.qualityChoices ?? getOptimizationQualityChoices(stat.size, analysis.durationMs! / 1000, cachedMeasurement),
+            qualityChoices: reusableRepresentativePlan?.qualityChoices ?? getOptimizationQualityChoices(stat.size, analysis.durationMs! / 1000, cachedMeasurement, request.options.qualityProfile),
             options, params, operations: [], decisionStatus: 'no_savings', estimatedSavingsBytes: 0,
             evidenceStatus: 'estimated', confidence: 'medium', savingsCoverage: 'complete', savingsBasis: 'video_sample_encode',
             samplingRole: reusableRepresentativePlan ? 'projected' : 'measured',
@@ -848,14 +854,14 @@ export class TranscodingService {
           ],
           decisionStatus: shouldEncode ? 'sample_required' : 'actionable', evidenceStatus, savingsCoverage: reusableRepresentativePlan ? 'partial' : savingsBreakdown.coverage, confidence: evidenceStatus === 'measured' ? 'high' : evidenceStatus === 'estimated' ? 'medium' : 'none',
           estimatedSavingsBytes: savingsBreakdown.totalEstimatedSavingsBytes,
-          qualityChoices: reusableRepresentativePlan?.qualityChoices ?? getOptimizationQualityChoices(stat.size, analysis.durationMs! / 1000, cachedMeasurement),
+          qualityChoices: reusableRepresentativePlan?.qualityChoices ?? getOptimizationQualityChoices(stat.size, analysis.durationMs! / 1000, cachedMeasurement, request.options.qualityProfile),
           savingsBasis, sourceTier: advice.sourceTier, adviceReason: preserveDynamicHdr && !shouldEncode
             ? playbackCompatible ? 'Dynamic HDR source video is preserved; only the container or selected streams are remuxed.' : 'Dynamic HDR source video is preserved, but the selected playback policy is not satisfied by the source and allowed remux operations.'
             : shouldEncode
               ? reusableRepresentativePlan
                 ? `Representative sample from ${reusableRepresentativePlan.label} passed the selected quality gates; savings are projected for this episode.`
                 : 'Measured encoding passed the selected quality gates. Review the samples before approval.'
-              : advice.reason,
+              : preserveCompatibleHevc ? 'Compatible H.265 video is preserved; only selected stream or container changes are applied.' : advice.reason,
           targetCompatibility, options, params, sourceAnalysis: analysis, targetProfile,
           samplingRole: shouldEncode ? reusableRepresentativePlan ? 'projected' : 'measured' : undefined,
           sampleRepresentativeMediaItemId: reusableRepresentativePlan?.mediaItemId,
@@ -2101,7 +2107,6 @@ export class TranscodingService {
     const ladder = buildCandidateLadder(options.targetCodec, options.encoderPolicy, hardwareEncoder)
     const measuredCandidates = [...previouslyMeasured]
     let measuredSamples = [...previouslyMeasuredSamples]
-    const candidateParameters = [...ladder]
     const isMeasured = (candidate: CandidateEncodingParameters) => measuredCandidates.some(measured => measured.encoder === candidate.encoder && measured.preset === candidate.preset && measured.quality === candidate.quality)
     const buildCandidates = (parameters: CandidateEncodingParameters[]) => parameters.filter(candidate => !isMeasured(candidate)).map(candidate => {
       const useGpu = candidate.encoder !== 'x265' && candidate.encoder !== 'svt_av1'
@@ -2117,10 +2122,12 @@ export class TranscodingService {
       return { ...candidate, outputBytes: 0, sampledDurationSeconds: 0, encodingDurationMs: 0, vmafMean: 0, vmafP5: 0, cambiMean: 0, ffmpegArgs: TranscodeCommandFactory.getBuilder(hardwareVendor, candidateOptions).buildFFmpegArgs('<input>', '<output>', candidateOptions, analysis) }
     })
     const outputDirectory = sampleDirectory ?? path.join(app.getPath('userData'), 'transcoding-samples', randomUUID())
+    const sourcePreparation: MeasurementSourcePreparation = { samples: [] }
     try {
       const stat = await fs.stat(filePath)
       await fs.mkdir(outputDirectory, { recursive: true })
       const sampleSeconds = Math.min(analysis.durationMs / 1000, APP_CONFIG.transcoding.sampleDurationSeconds * APP_CONFIG.transcoding.samplePositions.length)
+      const maximumOutputBytesPerSecond = (options.maxOutputBytes ?? stat.size) / (analysis.durationMs / 1000)
       const plannedBitrate = options.targetConversion ? options.targetConversion.maximumVideoBitrate + options.targetConversion.audio.reduce((sum, track) => sum + (track.bitrateKbps ?? analysis.audioTracks.find(audio => audio.index === track.sourceIndex)?.bitrateKbps ?? 0) * 1000, 0) : undefined
       const sourceSampleBytes = stat.size * sampleSeconds / (analysis.durationMs / 1000)
       const referenceBytes = options.targetConversion?.videoFilter ? options.targetConversion.width * options.targetConversion.height * (options.targetConversion.bitDepth > 8 ? 3 : 1.5) * analysis.video.frameRate * sampleSeconds : 0
@@ -2148,12 +2155,13 @@ export class TranscodingService {
         return blockers
       }
       for (const candidate of previouslyMeasured) {
+        if (candidate.qualityRejectedReason || candidate.incompleteMeasurement) continue
         const blockers = new Set<string>()
         for (const samplePath of candidate.samplePaths ?? []) for (const blocker of await validateSample(samplePath)) blockers.add(blocker)
         candidate.playbackBlockers = [...blockers]
       }
       while (!measurementComplete) {
-        const candidates = buildCandidates(candidateParameters)
+        const candidates = buildCandidates(nextCandidateSearch(ladder, measuredCandidates, options.qualityProfile, maximumOutputBytesPerSecond))
         if (candidates.length) {
           const estimatedCandidateSampleBytes = Math.ceil((plannedBitrate
             ? plannedBitrate / 8 * sampleSeconds
@@ -2171,6 +2179,8 @@ export class TranscodingService {
             outputExtension,
             referenceFilter: options.targetConversion?.videoFilter,
             referenceInputArgs: options.targetConversion?.inputArgs,
+            sourcePreparation,
+            qualityProfile: options.qualityProfile,
             candidates,
             signal,
             onProgress,
@@ -2186,13 +2196,11 @@ export class TranscodingService {
           signal?.throwIfAborted()
         }
         if (measurementComplete) break
-        const refinements = buildQualityBoundaryCandidates(candidateParameters, measuredCandidates)
-        if (!refinements.length) {
+        if (!nextCandidateSearch(ladder, measuredCandidates, options.qualityProfile, maximumOutputBytesPerSecond).length) {
           measurementComplete = true
           await onMeasuredCandidates?.(measuredCandidates, true)
           break
         }
-        candidateParameters.push(...refinements)
         await onMeasuredCandidates?.(measuredCandidates, false)
       }
       signal?.throwIfAborted()
@@ -2203,6 +2211,8 @@ export class TranscodingService {
     } catch (error) {
       if (!onMeasuredCandidates) await fs.rm(outputDirectory, { recursive: true, force: true })
       throw error
+    } finally {
+      await Promise.all([...new Set(sourcePreparation.samples.flatMap(sample => [sample.sourcePath, ...(sample.referencePath ? [sample.referencePath] : [])]))].map(filePath => fs.rm(filePath, { force: true })))
     }
   }
 
