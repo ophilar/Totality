@@ -76,7 +76,21 @@ vi.mock('../../src/main/services/utils/ProgressTracker', () => ({
   wasRecentlyAnalyzed: vi.fn(() => false),
 }))
 
-import { MusicBrainzService } from '@main/services/MusicBrainzService'
+import { buildArtistLiteralQuery, isExactArtistIdentityMatch, MusicBrainzService } from '@main/services/MusicBrainzService'
+
+describe('MusicBrainz artist identity helpers', () => {
+  it('quotes artist literals and escapes Lucene phrase delimiters', () => {
+    expect(buildArtistLiteralQuery('Bornkamp, Arno')).toBe('(artist:"Bornkamp, Arno" OR sortname:"Bornkamp, Arno")')
+    expect(buildArtistLiteralQuery('The "Band" \\ Name')).toBe('(artist:"The \\"Band\\" \\\\ Name" OR sortname:"The \\"Band\\" \\\\ Name")')
+  })
+
+  it('matches exact canonical or sort names only', () => {
+    const artist = { id: 'a1', name: 'Arno Bornkamp', 'sort-name': 'Bornkamp, Arno' }
+    expect(isExactArtistIdentityMatch(artist, 'bornkamp, arno')).toBe(true)
+    expect(isExactArtistIdentityMatch(artist, ' ARNO BORNKAMP ')).toBe(true)
+    expect(isExactArtistIdentityMatch(artist, 'Arno')).toBe(false)
+  })
+})
 
 describe('MusicBrainzService', () => {
   let service: MusicBrainzService
