@@ -430,7 +430,7 @@ export const WishlistItemSchema = z.object({
   tmdb_id: z.string().max(20).optional().nullable(),
   imdb_id: z.string().max(20).optional().nullable(),
   musicbrainz_id: z.string().max(100).optional().nullable(),
-  poster_url: z.string().url().optional().nullable(),
+  poster_url: z.string().max(2000).optional().nullable(),
   media_item_id: z.number().int().positive().optional().nullable(),
   current_quality_tier: z.string().max(10).optional().nullable(),
   current_quality_level: z.string().max(10).optional().nullable(),

@@ -175,7 +175,7 @@ export function AddToWishlistButton({
 
   return (
     <button
-      onClick={handleToggle}
+      onClick={(e) => { e.stopPropagation(); handleToggle() }}
       disabled={isLoading}
       title={isInWishlist ? removeLabel : buttonLabel}
       className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-label disabled:opacity-50 transition-colors ${
