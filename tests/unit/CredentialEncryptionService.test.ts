@@ -15,9 +15,19 @@ describe('CredentialEncryptionService — encryption unavailable', () => {
     vi.mocked(safeStorage.isEncryptionAvailable).mockReturnValue(false)
   })
 
-  it('encrypt() returns the original value unchanged', () => {
+  it('encrypt() refuses to store plaintext when OS encryption is unavailable', () => {
     const svc = new CredentialEncryptionService()
-    expect(svc.encrypt('my-secret-token')).toBe('my-secret-token')
+    expect(() => svc.encrypt('my-secret-token')).toThrow('refusing to store a credential as plaintext')
+  })
+
+  it('encryptSetting() refuses sensitive values without OS encryption', () => {
+    const svc = new CredentialEncryptionService()
+    expect(() => svc.encryptSetting('plex_token', 'my-secret-token')).toThrow('refusing to store a credential as plaintext')
+  })
+
+  it('encryptConnectionConfig() refuses sensitive values without OS encryption', () => {
+    const svc = new CredentialEncryptionService()
+    expect(() => svc.encryptConnectionConfig({ token: 'my-secret-token' })).toThrow('refusing to store a credential as plaintext')
   })
 
   it('isEncryptionAvailable() returns false', () => {
@@ -33,6 +43,11 @@ describe('CredentialEncryptionService — encryption unavailable', () => {
   it('decrypt() returns plain value as-is for non-ENC: values', () => {
     const svc = new CredentialEncryptionService()
     expect(svc.decrypt('plain-text')).toBe('plain-text')
+  })
+
+  it('decrypt() rejects encrypted credentials when OS encryption is unavailable', () => {
+    const svc = new CredentialEncryptionService()
+    expect(() => svc.decrypt('ENC:c2VjcmV0')).toThrow('cannot be decrypted')
   })
 })
 
@@ -95,7 +110,7 @@ describe('CredentialEncryptionService — encryption available', () => {
     expect(svc.hasDecryptionFailed()).toBe(false)
   })
 
-  it('encrypt() throws instead of silently storing plaintext when encryptString fails', () => {
+  it('encrypt() throws instead of storing plaintext when encryptString fails', () => {
     vi.mocked(safeStorage.encryptString).mockImplementation(() => {
       throw new Error('OS encryption error')
     })
