@@ -6,6 +6,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { Lock, AlertCircle } from 'lucide-react'
+import { Button } from '../ui/Button'
 
 interface WebLoginScreenProps {
   onAuthenticated: () => void
@@ -50,15 +51,15 @@ export function WebLoginScreen({ onAuthenticated, authenticate, logoSrc }: WebLo
           {logoSrc ? (
             <img src={logoSrc} alt="Totality" className="h-20 mx-auto mb-4" />
           ) : (
-            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
-              <Lock className="w-6 h-6 text-primary" />
+            <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+              <Lock className="w-6 h-6 text-foreground" />
             </div>
           )}
           <p className="text-label text-muted-foreground">Enter PIN to access</p>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} className="space-y-4">
           <input
             ref={inputRef}
             type="password"
@@ -66,26 +67,28 @@ export function WebLoginScreen({ onAuthenticated, authenticate, logoSrc }: WebLo
             pattern="[0-9]*"
             value={pin}
             onChange={(e) => setPin(e.target.value)}
-            placeholder="Enter PIN"
-            className="w-full px-4 py-3 min-h-[48px] text-center text-title tracking-[0.3em] bg-white/10 border border-white/15 rounded-full text-foreground placeholder:tracking-normal placeholder:text-label placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/25 transition-colors"
+            placeholder="PIN"
+            className="w-full px-4 py-3 h-12 text-center text-title tracking-widest bg-background border border-border/30 rounded-lg text-foreground placeholder:tracking-normal placeholder:text-label placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary transition-colors"
             autoComplete="off"
             disabled={loading}
           />
 
           {error && (
-            <div className="flex items-center justify-center gap-2 mt-3 text-label text-destructive">
+            <div className="flex items-center justify-center gap-2 text-label text-destructive">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
-          <button
+          <Button
             type="submit"
             disabled={!pin.trim() || loading}
-            className="w-full mt-4 px-4 min-h-[48px] bg-primary text-primary-foreground rounded-full font-medium text-label hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            loading={loading}
+            size="lg"
+            className="w-full"
           >
             {loading ? 'Verifying...' : 'Unlock'}
-          </button>
+          </Button>
         </form>
       </div>
     </div>
