@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Zap,
@@ -16,7 +16,7 @@ import { PlaybackCompatibilityFindings } from './PlaybackCompatibilityPanel'
 import type { OptimizationDecision } from '@main/services/OptimizationDecisionService'
 import type { QueueState } from '@main/types/taskQueue'
 
-import type { TranscodeOptions, TranscodingParams, Availability, TranscodeProgress, ShowTranscodePreflight, SavedShowPreflight } from './transcoding'
+import type { TranscodeOptions, TranscodingParams, Availability, TranscodeProgress, SavedShowPreflight } from './transcoding'
 import { QuickPresetsTab, AdvancedTab, LiveEncodingTab, EncoderPolicySelector, OutputHandlingSelection, OptimizationDialogShell, buildEffectiveOptimizationOptions } from './transcoding'
 import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
 import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
@@ -26,7 +26,7 @@ import { SETTING_KEYS } from '@shared/settingKeys'
 import { normalizeAudioCodec, normalizeVideoCodec } from '@main/services/MediaNormalizer'
 import { getMissingOptimizationSettings } from './transcoding/readiness'
 import { SeriesOptimizationFlow, type SeriesOptimizationFlowProps } from './SeriesOptimizationFlow'
-import { summarizeOptimizationBatch } from './tv/batchOutcomeSummary'
+import { useOptimizationWorkflow } from './transcoding/useOptimizationWorkflow'
 
 interface MediaOptimizationFlowProps {
   mediaId: number
@@ -63,21 +63,25 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [params, setParams] = useState<TranscodingParams | null>(null)
-  const [activeTab, setActiveTab] = useState<'presets' | 'advanced' | 'monitor' | 'review'>('presets')
-  const [preflight, setPreflight] = useState<ShowTranscodePreflight | null>(null)
-  const [preflightOptionsFingerprint, setPreflightOptionsFingerprint] = useState<string | null>(null)
-  const [samplesReviewed, setSamplesReviewed] = useState(false)
+  const [optionsTab, setOptionsTab] = useState<'presets' | 'advanced'>('presets')
   const [audioTranscodeEnabled, setAudioTranscodeEnabled] = useState(false)
   const [subtitleWhitelist, setSubtitleWhitelist] = useState('')
   const [analysisRequired, setAnalysisRequired] = useState(false)
   const [analyzingItem, setAnalyzingItem] = useState(false)
   const [outputModeSettingError, setOutputModeSettingError] = useState<string | null>(null)
   const [queueState, setQueueState] = useState<QueueState>({ currentTask: null, queue: [], isPaused: false, completedTasks: [] })
-  const [submittedBatchId, setSubmittedBatchId] = useState<string>()
-  const [submittedTaskIds, setSubmittedTaskIds] = useState<string[]>([])
-  const [submittedMediaItemIds, setSubmittedMediaItemIds] = useState<number[]>([])
-  const [queueControlState, setQueueControlState] = useState<'pausing' | 'resuming' | null>(null)
   const completionReportedRef = useRef(false)
+  const workflow = useOptimizationWorkflow(queueState)
+  const { stage, setStage, review: preflight, reviewedSampleGroups, batchId: submittedBatchId, submittedTaskIds, submittedMediaItemIds, queueControlState, batchSummary, reviewMatches, replaceReview, clearReview, submitBatch, toggleQueuePause: toggleWorkflowQueuePause, retryFailedTasks: retryWorkflowFailedTasks, setReviewedSampleGroups } = workflow
+  const activeTab = stage === 'review' ? 'review' : stage === 'results' ? 'monitor' : optionsTab
+  const setActiveTab = useCallback((tab: 'presets' | 'advanced' | 'monitor' | 'review') => {
+    if (tab === 'presets' || tab === 'advanced') {
+      setOptionsTab(tab)
+      setStage('options')
+    } else setStage(tab === 'review' ? 'review' : 'results')
+  }, [setOptionsTab, setStage])
+  const samplesReviewed = reviewedSampleGroups.includes('item-sample')
+  const setSamplesReviewed = useCallback((reviewed: boolean) => setReviewedSampleGroups(reviewed ? ['item-sample'] : []), [setReviewedSampleGroups])
 
   const [options, setOptions] = useState<TranscodeOptions>(() => ({
     targetCodec: undefined,
@@ -243,17 +247,14 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
       .then((saved: SavedShowPreflight | undefined) => {
         if (cancelled) return
         if (!saved) throw new Error(`Saved optimization review ${initialPreflightId} was not found`)
-        setPreflight(saved.result)
+        replaceReview(saved.result, saved.request.options)
         setOptions(previous => ({ ...previous, ...saved.request.options }))
         setTargetProfileId(saved.request.options.targetProfileId ?? '')
         setTargetContainer(saved.request.options.targetContainer ?? '')
         setAudioTranscodeEnabled(Boolean(saved.request.options.targetAudioCodec))
         setSubtitleWhitelist(saved.request.options.streamSelection?.subtitleLanguageWhitelist?.join(', ') ?? '')
         if (saved.request.options.streamSelection?.audio === 'original-and-protected') setOriginalAudioLanguage(saved.request.options.streamSelection.originalLanguage)
-        setPreflightOptionsFingerprint(JSON.stringify(saved.request.options))
-        setSubmittedBatchId(saved.result.batchId)
-        setSubmittedMediaItemIds(saved.result.queuedMediaItemIds ?? [])
-        setSubmittedTaskIds(saved.result.queuedTaskIds ?? [])
+        submitBatch(saved.result.batchId, saved.result.queuedMediaItemIds ?? [], saved.result.queuedTaskIds ?? [])
         setStatus(saved.result.queuedAt ? 'queued' : 'idle')
         setActiveTab(saved.result.queuedAt ? 'monitor' : 'review')
       })
@@ -261,7 +262,7 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
         if (!cancelled) addToast({ title: 'Could not reopen optimization review', message: error instanceof Error ? error.message : String(error), type: 'error' })
       })
     return () => { cancelled = true }
-  }, [initialPreflightId, addToast])
+  }, [initialPreflightId, addToast, replaceReview, submitBatch, setActiveTab])
 
   useEffect(() => {
     const unsub = window.electronAPI.onProgress(p => {
@@ -295,7 +296,7 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
     return () => {
       if (typeof unsub === 'function') unsub()
     }
-  }, [mediaId, addToast, queueState.currentTask, submittedBatchId, submittedTaskIds, submittedMediaItemIds])
+  }, [mediaId, addToast, queueState.currentTask, submittedBatchId, submittedTaskIds, submittedMediaItemIds, setActiveTab])
 
   const getEffectivePreflightOptions = () => {
     return buildEffectiveOptimizationOptions(options, {
@@ -305,11 +306,7 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
       subtitleLanguageWhitelist: parseLanguageWhitelist(subtitleWhitelist),
     })
   }
-  const preflightMatchesCurrentSettings = Boolean(preflight && preflightOptionsFingerprint === JSON.stringify(getEffectivePreflightOptions()))
-  const batchSummary = useMemo(
-    () => submittedBatchId ? summarizeOptimizationBatch(queueState, submittedBatchId, submittedMediaItemIds, submittedTaskIds) : null,
-    [queueState, submittedBatchId, submittedMediaItemIds, submittedTaskIds],
-  )
+  const preflightMatchesCurrentSettings = reviewMatches(getEffectivePreflightOptions())
 
   useEffect(() => {
     if (!batchSummary) return
@@ -324,7 +321,7 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
       setStatus('failed')
       setActiveTab('monitor')
     }
-  }, [batchSummary, onOptimizationCompleted])
+  }, [batchSummary, onOptimizationCompleted, setActiveTab])
   const missingSettings = getMissingOptimizationSettings({
     outputModeSelected: Boolean(options.outputMode),
     videoTranscode: options.optimizationMode !== 'remux_only',
@@ -340,7 +337,7 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
 
   useEffect(() => {
     if (preflight && !preflightMatchesCurrentSettings && samplesReviewed) setSamplesReviewed(false)
-  }, [preflight, preflightMatchesCurrentSettings, samplesReviewed])
+  }, [preflight, preflightMatchesCurrentSettings, samplesReviewed, setSamplesReviewed])
 
   const generateParams = async () => {
     if (!media || !media.file_path) return
@@ -395,8 +392,7 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
           options: preflightOptions
         }) as typeof preflight
         if (!result) throw new Error('Optimization review could not be created')
-        setPreflight(result)
-        setPreflightOptionsFingerprint(JSON.stringify(preflightOptions))
+        replaceReview(result, preflightOptions)
         setSamplesReviewed(false)
         setStatus('idle')
         setActiveTab('review')
@@ -407,9 +403,7 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
       if (item.decisionStatus === 'sample_required' && !samplesReviewed) throw new Error('Review the measured samples before queuing this transcode')
       if (item.decisionStatus === 'sample_required') await window.electronAPI.approveShow(preflight.preflightId)
       const queued = await window.electronAPI.queueShow(preflight.preflightId)
-      setSubmittedBatchId(queued.batchId)
-      setSubmittedMediaItemIds(queued.queuedMediaItemIds)
-      setSubmittedTaskIds(queued.queuedTaskIds)
+      submitBatch(queued.batchId, queued.queuedMediaItemIds, queued.queuedTaskIds)
       completionReportedRef.current = false
       setProgress(null)
       setStatus('queued')
@@ -448,30 +442,17 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
   }
 
   const retryFailedTasks = async () => {
-    if (!preflight || !batchSummary || batchSummary.activeCount > 0 || batchSummary.failedMediaItemIds.length + batchSummary.cancelledMediaItemIds.length === 0) return
-    try {
-      const queued = await window.electronAPI.queueShow(preflight.preflightId)
-      setSubmittedMediaItemIds(ids => [...new Set([...ids, ...queued.queuedMediaItemIds])])
-      setSubmittedTaskIds(ids => [...new Set([...ids, ...queued.queuedTaskIds])])
+    await retryWorkflowFailedTasks(() => {
       completionReportedRef.current = false
       setStatus('queued')
       setProgress(null)
-    } catch (error) {
-      addToast({ title: 'Could not retry optimization', message: error instanceof Error ? error.message : String(error), type: 'error' })
-    }
+    }, error => addToast({ title: 'Could not retry optimization', message: error instanceof Error ? error.message : String(error), type: 'error' }))
   }
 
   const toggleQueuePause = async () => {
-    const resuming = queueState.isPaused
-    setQueueControlState(resuming ? 'resuming' : 'pausing')
-    try {
-      if (resuming) await window.electronAPI.taskQueueResume()
-      else await window.electronAPI.taskQueuePause()
-    } catch (error) {
+    await toggleWorkflowQueuePause((error, resuming) => {
       addToast({ title: `Could not ${resuming ? 'resume' : 'pause'} optimization`, message: error instanceof Error ? error.message : String(error), type: 'error' })
-    } finally {
-      setQueueControlState(null)
-    }
+    })
   }
 
   if (loading) {
@@ -802,7 +783,7 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
             <section className="space-y-4 rounded-xl border border-border p-4">
               <h4 className="font-bold">Review optimization plan</h4>
               <p className="text-sm">Selected plan total: <EstimatedSavingsDisplay bytes={preflight.estimatedSavingsBytes} /> · {preflight.savingsCoverage ?? 'insufficient'} evidence{preflight.savingsBasis === 'sample_based_projection' ? ' · Sample-based projection' : ''}</p>
-              <button className="text-sm underline" onClick={() => { setPreflight(null); setSamplesReviewed(false); setActiveTab('advanced') }}>Change optimization settings</button>
+              <button className="text-sm underline" onClick={() => { clearReview(); setActiveTab('advanced') }}>Change optimization settings</button>
               {preflight.episodes.map(item => <div key={item.mediaItemId} className="space-y-2 text-sm">
                 <p className="font-semibold">{item.label}: {item.compatible ? item.decisionStatus?.replace(/_/g, ' ') : item.reason}</p>
                 {!targetProfileId && !item.targetCompatibility && <p className="text-muted-foreground">Playback compatibility was not evaluated because no target profile is selected.</p>}
@@ -819,7 +800,7 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
           {analysisRequired && <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-2 text-sm">
             <p className="font-semibold text-amber-200">Current persisted file analysis is required before optimization.</p>
             <p className="text-muted-foreground">Run file analysis for this item, then refresh this review. Analysis does not approve or queue optimization.</p>
-            {analyzingItem ? <p>Analyzing media file…</p> : <button className="underline" onClick={() => { setPreflight(null); setAnalysisRequired(false); void startTranscode() }}>Refresh optimization review</button>}
+            {analyzingItem ? <p>Analyzing media file…</p> : <button className="underline" onClick={() => { clearReview(); setAnalysisRequired(false); void startTranscode() }}>Refresh optimization review</button>}
           </div>}
         </div>
 
