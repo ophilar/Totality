@@ -915,13 +915,22 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
           )}
         </div>
 
-        {/* Source Badge */}
-        {showSourceBadge && sourceType && (
+        {/* Source Badge — hidden when completeness badge present */}
+        {showSourceBadge && sourceType && !completenessData && (
           <div
             className={`absolute bottom-2 left-2 ${providerColors[sourceType] || 'bg-gray-500'} text-white text-caption font-semibold px-1.5 py-0.5 rounded shadow-md`}
             title={sourceType.charAt(0).toUpperCase() + sourceType.slice(1)}
           >
             {sourceType.charAt(0).toUpperCase()}
+          </div>
+        )}
+
+        {/* Completeness badge — over poster */}
+        {completenessData && (
+          <div className="absolute bottom-2 right-2 z-10">
+            <div className="bg-foreground text-background text-caption font-semibold px-1.5 py-0.5 rounded shadow-md">
+              {completenessData.owned_episodes}/{completenessData.total_episodes}
+            </div>
           </div>
         )}
 
@@ -942,32 +951,11 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
       </div>
 
       {/* Title and info below poster */}
-      <div className="pt-2 flex gap-2 items-start">
-        <div className="flex-1 min-w-0">
-          <h4 className="font-medium text-label truncate">{show.series_title}</h4>
-          <p className="text-caption text-muted-foreground">
-            {show.season_count} {show.season_count === 1 ? 'Season' : 'Seasons'} • {totalEpisodes} Episodes
-          </p>
-        </div>
-        {completenessData && (
-          <div
-            className="shrink-0"
-            title={`${completenessData.owned_episodes} of ${completenessData.total_episodes} episodes`}
-          >
-            {completenessData.completeness_percentage === 100 ? (
-              <div className="bg-green-500 text-white text-caption font-semibold px-2 py-1 rounded shadow-md flex items-center gap-1">
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-                100%
-              </div>
-            ) : (
-              <div className="bg-foreground text-background text-caption font-semibold px-2 py-1 rounded shadow-md border border-border">
-                {Math.round(completenessData.completeness_percentage)}%
-              </div>
-            )}
-          </div>
-        )}
+      <div className="pt-2">
+        <h4 className="font-medium text-label truncate">{show.series_title}</h4>
+        <p className="text-caption text-muted-foreground">
+          {show.season_count} {show.season_count === 1 ? 'season' : 'seasons'} · {totalEpisodes} episodes
+        </p>
       </div>
     </div>
   )

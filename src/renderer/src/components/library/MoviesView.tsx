@@ -389,32 +389,24 @@ const CollectionCard = memo(({ collection, onClick }: { collection: MovieCollect
             }}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-display bg-linear-to-br from-purple-500/20 to-blue-500/20">
+          <div className="w-full h-full flex items-center justify-center bg-muted/50">
             <Layers className="w-12 h-12 text-muted-foreground" />
           </div>
         )}
+        {/* Completeness badge — over poster */}
+        <div className="absolute bottom-2 right-2 z-10">
+          <div className="bg-foreground text-background text-caption font-semibold px-1.5 py-0.5 rounded shadow-md">
+            {collection.owned_movies}/{collection.total_movies}
+          </div>
+        </div>
       </div>
 
-      {/* Title and badge below poster */}
-      <div className="pt-2 flex gap-2 items-start">
-        <div className="flex-1 min-w-0">
-          <h4 className="font-medium text-label truncate">{collection.collection_name}</h4>
-          <p className="text-caption text-muted-foreground">
-            {collection.owned_movies} of {collection.total_movies} movies
-          </p>
-        </div>
-        {/* Collection completion badge */}
-        <div
-          className={`shrink-0 text-caption font-semibold px-2 py-1 rounded shadow-md flex items-center gap-1 ${
-            collection.completeness_percentage === 100
-              ? 'bg-green-500 text-white'
-              : 'bg-foreground text-background border border-border'
-          }`}
-          title={`${collection.owned_movies} of ${collection.total_movies} movies owned`}
-        >
-          <Layers className="w-3 h-3" />
-          <span>{collection.owned_movies}/{collection.total_movies}</span>
-        </div>
+      {/* Title below poster */}
+      <div className="pt-2">
+        <h4 className="font-medium text-label truncate">{collection.collection_name}</h4>
+        <p className="text-caption text-muted-foreground">
+          {collection.owned_movies} of {collection.total_movies} movies
+        </p>
       </div>
     </div>
   )
