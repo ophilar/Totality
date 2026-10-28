@@ -14,6 +14,8 @@ import { getKodiLocalDiscoveryService } from '../services/KodiLocalDiscoveryServ
 import { getKodiMySQLConnectionService, type KodiMySQLConfig } from '../services/KodiMySQLConnectionService'
 import { getMediaMonkeyDiscoveryService } from '../services/MediaMonkeyDiscoveryService'
 import { getMediaFileAnalyzer } from '../services/MediaFileAnalyzer'
+import { getQualityAnalyzer } from '../services/QualityAnalyzer'
+import { MediaPathAuthorization } from '../services/MediaPathAuthorization'
 import type { ProviderType } from '../providers/base/MediaProvider'
 import type { KodiLocalProvider } from '../providers/kodi/KodiLocalProvider'
 import { KodiMySQLProvider } from '../providers/kodi/KodiMySQLProvider'
@@ -833,8 +835,13 @@ export function registerSourceHandlers(): void {
   createIpcHandler(IPC_CHANNELS.ffprobeAnalyzeFile, async (filePath: unknown) => {
     try {
       const validFilePath = validateInput(FilePathSchema, filePath, 'ffprobe:analyzeFile')
-      const analyzer = getMediaFileAnalyzer()
-      return await analyzer.analyzeFile(validFilePath)
+      const db = getDatabase()
+      const item = db.getMediaItemByPath(validFilePath)
+      if (!item || !item.source_id) throw new Error('File analysis requires an indexed media item')
+      const source = db.getMediaSourceById(item.source_id)
+      if (!source) throw new Error('Media source was not found')
+      MediaPathAuthorization.assertMediaAuthorized(item, source)
+      return (await getQualityAnalyzer().analyzeMediaItemFileEvidence(item)).analysis
     } catch (error: unknown) {
       console.error('Error analyzing file:', error)
       return {

@@ -12,6 +12,8 @@ import {
 import { getLoggingService } from '@main/services/LoggingService'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
 import { normalizeAudioCodec } from '@main/services/MediaNormalizer'
+import { PathUtils } from '@main/services/utils/PathUtils'
+import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
 
 const pendingRecord = z.object({
   requestedAt: z.string(),
@@ -47,6 +49,26 @@ function mapAnalysisAudioTracksToDecisionTracks(audioTracks: AnalyzedAudioStream
   }))
 }
 
+function readCurrentAnalysis(item: Awaited<ReturnType<ReturnType<typeof getDatabase>['media']['getItemById']>> & { file_path: string }): {
+  analysis?: FileAnalysisResult
+  rejectionReason: string
+} {
+  if (!item.deep_analysis) return { rejectionReason: 'no persisted analysis' }
+  let storedAnalysis: FileAnalysisResult & { fileAnalysisFingerprint?: { size: number; mtimeMs: number } }
+  try {
+    storedAnalysis = JSON.parse(item.deep_analysis) as typeof storedAnalysis
+  } catch (error) {
+    getLoggingService().warn('[Optimization]', `Ignoring malformed persisted analysis for mediaItem=${item.id}: ${error instanceof Error ? error.message : String(error)}`)
+    return { rejectionReason: 'malformed persisted analysis' }
+  }
+  if (!storedAnalysis.success) return { rejectionReason: 'persisted analysis was unsuccessful' }
+  if (!storedAnalysis.fileAnalysisFingerprint) return { rejectionReason: 'persisted analysis has no source fingerprint' }
+  if (storedAnalysis.fileAnalysisFingerprint.size !== item.file_size_bytes) return { rejectionReason: 'source size changed since analysis' }
+  if (storedAnalysis.fileAnalysisFingerprint.mtimeMs !== item.file_mtime) return { rejectionReason: 'source modification time changed since analysis' }
+  if (!PathUtils.arePathsEqual(storedAnalysis.filePath, item.file_path)) return { rejectionReason: 'source path changed since analysis' }
+  return { analysis: storedAnalysis, rejectionReason: 'current persisted analysis' }
+}
+
 export function registerOptimizationHandlers() {
   const db = getDatabase()
 
@@ -76,16 +98,18 @@ export function registerOptimizationHandlers() {
     }
 
     const qualityAnalyzer = getQualityAnalyzer()
-    const { analysis } = await qualityAnalyzer.analyzeMediaItemFileEvidence(item)
+    const { analysis, rejectionReason } = readCurrentAnalysis(item)
+    getLoggingService().debug('[Optimization]', `Recommendation evidence ${analysis ? 'reused' : 'metadata-only'}: mediaItem=${item.id}, analysisEvidence=${rejectionReason}`)
     const savings = qualityAnalyzer.getOptimizationSavingsBreakdown(item, analysis)
+    const audioTracks = analysis?.audioTracks ?? (item.audio_tracks ? JSON.parse(item.audio_tracks) as AnalyzedAudioStream[] : [])
     return buildOptimizationDecision({
       originalLanguage: item.original_language,
-      durationMs: analysis.durationMs || undefined,
+      durationMs: analysis?.durationMs ?? item.duration_ms ?? undefined,
       videoSavingsBytes: savings.videoSavingsBytes,
       videoTargetCodec: savings.videoTargetCodec,
-      videoAvailable: Boolean(analysis.video),
+      videoAvailable: Boolean(analysis?.video ?? item.video_codec),
       audioTranscodeSavingsBytes: null,
-      audioTracks: mapAnalysisAudioTracksToDecisionTracks(analysis.audioTracks),
+      audioTracks: mapAnalysisAudioTracksToDecisionTracks(audioTracks),
     })
   })
 }

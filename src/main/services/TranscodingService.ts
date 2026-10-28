@@ -36,6 +36,7 @@ import { getTaskQueueService } from './TaskQueueService'
 import { buildOptimizationSavingsBreakdown, calculateBitrateSavingsBytes, projectMeasuredSavingsBytes, sumMeasuredStreamBytes, type OptimizationSavingsCoverage, type OptimizationSavingsOperation } from './OptimizationSavingsService'
 import { normalizeAudioCodec, normalizeVideoCodec } from './MediaNormalizer'
 import { aggregateShowOptimizationMetrics } from './ShowOptimizationMetricsService'
+import { SETTING_KEYS } from '@shared/settingKeys'
 
 export class TranscodeError extends Error {
   constructor(message: string, public readonly exitCode?: number, public readonly stderr?: string) {
@@ -331,6 +332,7 @@ export interface ShowTranscodePreflight {
   savingsBasis?: 'sample_based_projection' | 'mixed_sample_projection' | 'representative_sample_projection' | 'mixed_representative_sample_projection' | 'planned_operations'
   queuedAt?: string
   queuedMediaItemIds?: number[]
+  queuedTaskIds?: string[]
 }
 
 interface TranscodingCapabilitiesCacheRecord {
@@ -1042,7 +1044,7 @@ export class TranscodingService {
     return result
   }
 
-  async queueShowTranscode(preflightId: string): Promise<{ batchId: string; queuedMediaItemIds: number[] }> {
+  async queueShowTranscode(preflightId: string): Promise<{ batchId: string; queuedMediaItemIds: number[]; queuedTaskIds: string[] }> {
     let preflight = this.showPreflights.get(preflightId)
     if (!preflight) {
       const saved = await getDatabase().config.getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
@@ -1056,13 +1058,28 @@ export class TranscodingService {
     }
     if (!preflight) throw new Error('Show transcode preflight was not found')
     if (preflight.result.measurementVersion !== MEASUREMENT_VERSION && preflight.result.episodes.some(episode => episode.params?.measuredCandidate)) throw new Error('Measurement method changed; run preflight again before queuing this plan')
-    if (preflight.result.queuedAt) return { batchId: preflight.result.batchId, queuedMediaItemIds: preflight.result.queuedMediaItemIds ?? [] }
+    const retryableMediaItemIds = preflight.result.queuedAt
+      ? (() => {
+          const state = getTaskQueueService().getQueueState()
+          const activeTasks = [state.currentTask, ...state.queue].filter((task): task is NonNullable<typeof task> => task !== null)
+          const activeMediaItemIds = new Set(activeTasks.filter(task => task.batchId === preflight!.result.batchId).map(task => task.mediaItemId).filter((id): id is number => id !== undefined))
+          const latestTaskByMediaItemId = new Map<number, (typeof state.completedTasks)[number]>()
+          for (const task of [...state.completedTasks].filter(task => task.batchId === preflight!.result.batchId).sort((left, right) => right.createdAt.localeCompare(left.createdAt))) {
+            if (task.mediaItemId !== undefined && !latestTaskByMediaItemId.has(task.mediaItemId)) latestTaskByMediaItemId.set(task.mediaItemId, task)
+          }
+          return new Set((preflight!.result.queuedMediaItemIds ?? []).filter(mediaItemId =>
+            !activeMediaItemIds.has(mediaItemId) && ['failed', 'cancelled'].includes(latestTaskByMediaItemId.get(mediaItemId)?.status ?? '')
+          ))
+        })()
+      : undefined
+    if (retryableMediaItemIds?.size === 0) return { batchId: preflight.result.batchId, queuedMediaItemIds: [], queuedTaskIds: [] }
     if (preflight.result.capabilityFingerprint) {
       const currentFingerprint = this.getCapabilitySnapshotFingerprint(await this.getCapabilities())
       if (currentFingerprint !== preflight.result.capabilityFingerprint) throw new Error('Hardware capabilities changed after review; run preflight again')
     }
     const queueableEpisodes = preflight.result.episodes.filter(episode =>
-      episode.compatible && (episode.decisionStatus === 'actionable' || (episode.decisionStatus === 'sample_required' && preflight?.result.userApproved === true))
+      episode.compatible && (episode.decisionStatus === 'actionable' || (episode.decisionStatus === 'sample_required' && preflight?.result.userApproved === true)) &&
+      (retryableMediaItemIds === undefined || retryableMediaItemIds.has(episode.mediaItemId))
     )
     if (queueableEpisodes.length === 0) {
       throw new Error('No episodes have sufficient evidence for a safe optimization action.')
@@ -1093,12 +1110,13 @@ export class TranscodingService {
     const queued = {
       ...preflight.result,
       queuedAt: new Date().toISOString(),
-      queuedMediaItemIds: queueableEpisodes.map(episode => episode.mediaItemId),
+      queuedMediaItemIds: [...new Set([...(preflight.result.queuedMediaItemIds ?? []), ...queueableEpisodes.map(episode => episode.mediaItemId)])],
+      queuedTaskIds: [...new Set([...(preflight.result.queuedTaskIds ?? []), ...taskIds])],
     }
     this.showPreflights.set(preflightId, { ...preflight, result: queued })
     await getDatabase().config.setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ ...preflight, result: queued }))
     getLoggingService().info('[TVOptimization]', `Queue completed: preflight=${preflightId}, batch=${preflight.result.batchId}, queuedMediaItems=${queueableEpisodes.length}`)
-    return { batchId: preflight.result.batchId, queuedMediaItemIds: queueableEpisodes.map(episode => episode.mediaItemId) }
+    return { batchId: preflight.result.batchId, queuedMediaItemIds: queueableEpisodes.map(episode => episode.mediaItemId), queuedTaskIds: taskIds }
   }
 
   async getShowPreflight(preflightId: string): Promise<{ request: ShowTranscodeRequest; result: ShowTranscodePreflight } | undefined> {
@@ -1854,7 +1872,7 @@ export class TranscodingService {
         `.totality_tmp_${Date.now()}_${path.basename(inputPath, path.extname(inputPath))}${outputExt}`
       ))
 
-      const configuredDefaultOutputMode = (await db.config.getSetting('transcoding_default_output_mode')) as 'copy' | 'quarantine-replace' | 'replace' | null
+      const configuredDefaultOutputMode = (await db.config.getSetting(SETTING_KEYS.transcoding_default_output_mode)) as 'copy' | 'quarantine-replace' | 'replace' | null
       const requestedOutputMode = options.outputMode || configuredDefaultOutputMode
       const effectiveOutputMode = TranscodeCommandFactory.resolveOutputMode(
         requestedOutputMode,

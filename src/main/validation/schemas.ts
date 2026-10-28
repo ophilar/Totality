@@ -576,6 +576,9 @@ export const PreflightShowTranscodeSchema = z.tuple([
     options: TranscodeOptionsSchema.unwrap()
   }).refine(request => request.mediaItemId === undefined || request.seasonNumber === undefined, {
     message: 'An optimization preflight can target an episode or a season, not both.'
+  }).refine(request => request.options.outputMode !== undefined, {
+    message: 'Select output handling before preparing an optimization review.',
+    path: ['options', 'outputMode'],
   })
 ])
 

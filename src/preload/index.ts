@@ -8,7 +8,8 @@ import type { TimelineParserPlugin, TimelineParserPluginInput } from '@main/serv
 import type { TimelineFetchOptions, TimelineDefinition } from '@main/services/timelines/ITimelineRecipeProvider'
 import type { PlexPlaylistSummary, PlexPlaylistSyncResult } from '@main/services/timelines/PlexPlaylistSyncService'
 import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
-import type { TranscodeOptions } from '@main/services/TranscodingService'
+import type { TranscodeOptions, TranscodeProgress, TranscodingParams } from '@main/services/TranscodingService'
+import type { ShowTranscodeRequest, ShowTranscodePreflight } from '@main/services/TranscodingService'
 import type { MediaDuplicate, MediaSource as DatabaseMediaSource, WishlistFilters, WishlistItem } from '@main/types/database'
 import type { ActivityLogEntry, QueueState, QueuedTask, TaskDefinition, TaskQueueHistory } from '@main/types/taskQueue'
 import type { DuplicateResolutionOutcome } from '@shared/duplicateResolution'
@@ -878,8 +879,8 @@ const electronAPI = {
   seriesGetEpisodesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke(IPC_CHANNELS.seriesGetEpisodesByIdentity, seriesTitle, sourceId, seriesIdentityKey, libraryId),
   seriesGetAudioLanguagesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke(IPC_CHANNELS.seriesGetAudioLanguagesByIdentity, seriesTitle, sourceId, seriesIdentityKey, libraryId),
   seriesAnalyzeByIdentity: (seriesIdentityKey: string, sourceId?: string, libraryId?: string) => ipcRenderer.invoke(IPC_CHANNELS.seriesAnalyzeByIdentity, seriesIdentityKey, sourceId, libraryId),
-  preflightShow: (request: unknown) => ipcRenderer.invoke(IPC_CHANNELS.transcodingPreflightShow, request),
-  startPreflightShow: (request: unknown) => ipcRenderer.invoke(IPC_CHANNELS.transcodingStartPreflightShow, request),
+  preflightShow: (request: ShowTranscodeRequest & { requestId: string }) => ipcRenderer.invoke(IPC_CHANNELS.transcodingPreflightShow, request),
+  startPreflightShow: (request: ShowTranscodeRequest & { requestId: string }) => ipcRenderer.invoke(IPC_CHANNELS.transcodingStartPreflightShow, request),
   getShowPreflight: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingGetShowPreflight, preflightId),
   findShowPreflight: (seriesIdentityKey: string, sourceId: string, libraryId: string, seriesTitle: string, mediaItemId?: number, seasonNumber?: number) => ipcRenderer.invoke(IPC_CHANNELS.transcodingFindShowPreflight, seriesIdentityKey, sourceId, libraryId, seriesTitle, mediaItemId, seasonNumber),
   queueShow: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingQueueShow, preflightId),
@@ -895,10 +896,10 @@ const electronAPI = {
   refreshCapabilities: () => ipcRenderer.invoke(IPC_CHANNELS.transcodingRefreshCapabilities),
   checkAvailability: () => ipcRenderer.invoke(IPC_CHANNELS.transcodingCheckAvailability),
   setSelectedGpu: (gpuId: string | null) => ipcRenderer.invoke(IPC_CHANNELS.transcodingSetSelectedGpu, gpuId),
-  getParameters: (mediaItemId: number, options?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.transcodingGetParameters, mediaItemId, options),
+  getParameters: (mediaItemId: number, options?: TranscodeOptions) => ipcRenderer.invoke(IPC_CHANNELS.transcodingGetParameters, mediaItemId, options),
   cancel: (mediaItemId?: number) => ipcRenderer.invoke(IPC_CHANNELS.transcodingCancel, mediaItemId),
-  onProgress: (callback: (data: any) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, progress: any) => callback(progress)
+  onProgress: (callback: (data: TranscodeProgress & { mediaItemId: number }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, progress: TranscodeProgress & { mediaItemId: number }) => callback(progress)
     ipcRenderer.on(IPC_CHANNELS.transcodingProgress, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.transcodingProgress, handler)
   },
@@ -2022,12 +2023,12 @@ interface ExistingElectronAPI {
   seriesGetEpisodesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<any[]>
   seriesGetAudioLanguagesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<string[]>
   seriesAnalyzeByIdentity: (seriesIdentityKey: string, sourceId?: string, libraryId?: string) => Promise<any>
-  preflightShow: (request: any) => Promise<any>
-  startPreflightShow: (request: any) => Promise<{ requestId: string; taskId: string }>
-  getShowPreflight: (preflightId: string) => Promise<any>
-  findShowPreflight: (seriesIdentityKey: string, sourceId: string, libraryId: string, seriesTitle: string, mediaItemId?: number, seasonNumber?: number) => Promise<{ request: unknown; result: unknown } | undefined>
-  queueShow: (preflightId: string) => Promise<any>
-  approveShow: (preflightId: string) => Promise<any>
+  preflightShow: (request: ShowTranscodeRequest & { requestId: string }) => Promise<ShowTranscodePreflight>
+  startPreflightShow: (request: ShowTranscodeRequest & { requestId: string }) => Promise<{ requestId: string; taskId: string }>
+  getShowPreflight: (preflightId: string) => Promise<{ request: ShowTranscodeRequest; result: ShowTranscodePreflight } | undefined>
+  findShowPreflight: (seriesIdentityKey: string, sourceId: string, libraryId: string, seriesTitle: string, mediaItemId?: number, seasonNumber?: number) => Promise<{ request: ShowTranscodeRequest; result: ShowTranscodePreflight } | undefined>
+  queueShow: (preflightId: string) => Promise<{ batchId: string; queuedMediaItemIds: number[]; queuedTaskIds: string[] }>
+  approveShow: (preflightId: string) => Promise<ShowTranscodePreflight>
   discardShow: (preflightId: string) => Promise<any>
   openShowSample: (preflightId: string, mediaItemId: number, index: number) => Promise<void>
   listShowQuarantine: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<any[]>
@@ -2037,9 +2038,9 @@ interface ExistingElectronAPI {
   refreshCapabilities: () => Promise<TranscodingCapabilities>
   checkAvailability: () => Promise<any>
   setSelectedGpu: (gpuId: string | null) => Promise<TranscodingCapabilities>
-  getParameters: (mediaItemId: number, options?: any) => Promise<any>
+  getParameters: (mediaItemId: number, options?: TranscodeOptions) => Promise<TranscodingParams>
   cancel: (mediaItemId?: number) => Promise<boolean>
-  onProgress: (callback: (data: any) => void) => () => void
+  onProgress: (callback: (data: TranscodeProgress & { mediaItemId: number }) => void) => () => void
 }
 
 export type ElectronAPI = Omit<typeof electronAPI, keyof ExistingElectronAPI> & ExistingElectronAPI
