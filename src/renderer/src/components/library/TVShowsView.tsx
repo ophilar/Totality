@@ -582,7 +582,7 @@ export function TVShowsView({
 
         {/* Show Header */}
         {isMobile ? (
-          <div className="relative px-4 pt-16 pb-3 mb-4 -mx-2 rounded-2xl overflow-hidden text-center">
+          <div className="relative px-4 pt-20 pb-3 mb-4 -mx-2 -mt-6 overflow-hidden">
             {selectedShowData.poster_url && (
               <>
                 <img src={selectedShowData.poster_url} alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
@@ -590,7 +590,7 @@ export function TVShowsView({
               </>
             )}
             <div className="relative z-[1]">
-              <div className="flex items-center gap-1.5 justify-center">
+              <div className="flex items-center gap-1.5">
                 <h3 className="text-h2 font-semibold">{selectedShowData.title}</h3>
                 <button
                   onClick={(e) => {
@@ -605,7 +605,7 @@ export function TVShowsView({
                   {copiedTitle ? <Check className="w-4 h-4 text-foreground" /> : <Copy className="w-4 h-4" />}
                 </button>
               </div>
-              <div className="flex items-center gap-2 mt-1 text-label text-muted-foreground justify-center">
+              <div className="flex items-center gap-2 mt-1 text-label text-muted-foreground">
                 <span>{ownedSeasons.length} of {totalSeasons} seasons</span>
                 {completenessData?.status && (
                   <>
@@ -614,7 +614,7 @@ export function TVShowsView({
                   </>
                 )}
               </div>
-              <div className="flex items-center gap-3 mt-3 justify-center" ref={showDetailMenuRef}>
+              <div className="flex items-center gap-3 mt-3" ref={showDetailMenuRef}>
                 <Button
                   onClick={() => selectedShow && onAnalyzeSeries(selectedShow)}
                   size="sm"
@@ -640,7 +640,7 @@ export function TVShowsView({
                   </p>
                   <button
                     onClick={() => setShowOverviewExpanded(!showOverviewExpanded)}
-                    className="flex items-center gap-1 text-label text-muted-foreground hover:text-foreground mt-1 transition-colors mx-auto"
+                    className="flex items-center gap-1 text-label text-muted-foreground hover:text-foreground mt-1 transition-colors"
                   >
                     {showOverviewExpanded ? (
                       <><span>Less</span><ChevronUp className="w-4 h-4" /></>

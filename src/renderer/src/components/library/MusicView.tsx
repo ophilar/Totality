@@ -432,7 +432,7 @@ export function MusicView({
 
         {/* Album Header */}
         {isMobile ? (
-          <div className="relative px-4 pt-16 pb-3 mb-4 -mx-2 rounded-2xl overflow-hidden text-center">
+          <div className="relative px-4 pt-20 pb-3 mb-4 -mx-2 -mt-6 overflow-hidden">
             {selectedAlbum.thumb_url && (
               <>
                 <img src={selectedAlbum.thumb_url} alt="" className="absolute inset-0 w-full h-full object-cover object-center" />
@@ -440,7 +440,7 @@ export function MusicView({
               </>
             )}
             <div className="relative z-[1]">
-              <div className="flex items-center gap-1.5 justify-center">
+              <div className="flex items-center gap-1.5 ">
                 <h2 className="text-h2 font-semibold">{selectedAlbum.title}</h2>
                 <button
                   onClick={(e) => {
@@ -465,7 +465,7 @@ export function MusicView({
                 const isLossless = losslessCodecs.some(c => codec.includes(c))
                 const isHiRes = isLossless && ((selectedAlbum.best_bit_depth || 0) > 16 || (selectedAlbum.best_sample_rate || 0) > 48000)
                 return (
-                  <div className="flex flex-wrap gap-2 mt-3 justify-center">
+                  <div className="flex flex-wrap gap-2 mt-3 ">
                     {isHiRes && (
                       <span className="px-2 py-1 text-caption font-semibold bg-purple-600 text-white rounded">Hi-Res</span>
                     )}
@@ -491,7 +491,7 @@ export function MusicView({
                   <> • {Math.floor(selectedAlbum.duration_ms / 60000)} min</>
                 )}
               </p>
-              <div className="mt-3 flex justify-center">
+              <div className="mt-3 flex ">
                 <Button
                   onClick={() => selectedAlbum.id && handleAnalyzeAlbum(selectedAlbum.id)}
                   disabled={isAnalyzingAlbum}
@@ -1093,7 +1093,7 @@ export function MusicView({
 
         {/* Artist Header */}
         {isMobile ? (
-          <div className="relative px-4 pt-16 pb-3 mb-4 -mx-2 rounded-2xl overflow-hidden text-center">
+          <div className="relative px-4 pt-20 pb-3 mb-4 -mx-2 -mt-6 overflow-hidden">
             {selectedArtist.thumb_url && (
               <>
                 <img src={selectedArtist.thumb_url} alt="" className="absolute inset-0 w-full h-full object-cover object-center" />
@@ -1101,7 +1101,7 @@ export function MusicView({
               </>
             )}
             <div className="relative z-[1]">
-              <div className="flex items-center gap-1.5 justify-center">
+              <div className="flex items-center gap-1.5 ">
                 <h3 className="text-h2 font-semibold">{selectedArtist.name}</h3>
                 <button
                   onClick={(e) => {
@@ -1116,7 +1116,7 @@ export function MusicView({
                   {copiedTitle ? <Check className="w-4 h-4 text-foreground" /> : <Copy className="w-4 h-4" />}
                 </button>
               </div>
-              <div className="flex items-center gap-2 mt-1 text-label text-muted-foreground justify-center flex-wrap">
+              <div className="flex items-center gap-2 mt-1 text-label text-muted-foreground flex-wrap">
                 {selectedArtist.country && (
                   <>
                     <span>{selectedArtist.country}</span>
@@ -1138,7 +1138,7 @@ export function MusicView({
                   {artistCompleteness.get(selectedArtist.name)!.owned_albums} of {artistCompleteness.get(selectedArtist.name)!.total_albums} albums in discography
                 </p>
               )}
-              <div className="flex items-center gap-3 mt-3 justify-center" ref={artistMenuRef}>
+              <div className="flex items-center gap-3 mt-3 " ref={artistMenuRef}>
                 <Button
                   onClick={() => { handleAnalyzeArtist(selectedArtist.id) }}
                   disabled={isAnalyzingArtist}
@@ -1166,7 +1166,7 @@ export function MusicView({
                   </p>
                   <button
                     onClick={() => setBioExpanded(!bioExpanded)}
-                    className="flex items-center gap-1 text-label text-muted-foreground hover:text-foreground mt-1 transition-colors mx-auto"
+                    className="flex items-center gap-1 text-label text-muted-foreground hover:text-foreground mt-1 transition-colors "
                   >
                     {bioExpanded ? (
                       <><span>Less</span><ChevronUp className="w-4 h-4" /></>
