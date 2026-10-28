@@ -544,10 +544,9 @@ export function TVShowsView({
     if (!selectedShowData) {
       return (
         <div className="flex flex-col items-center justify-center min-h-[40vh] text-center">
-          <button onClick={handleBack} className="flex items-center gap-2 text-label text-muted-foreground hover:text-foreground mb-4">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-            Back to TV Shows
-          </button>
+          <Button variant="tertiary" size="sm" onClick={handleBack} icon={<ChevronLeft className="w-4 h-4" />} className="mb-4">
+            Back to TV shows
+          </Button>
           <p className="text-muted-foreground">No episodes found for this show</p>
         </div>
       )
@@ -582,10 +581,10 @@ export function TVShowsView({
         </Button>
 
         {/* Show Header */}
-        <div className={`flex ${isMobile ? 'gap-3 mb-4' : 'gap-6 mb-6'}`}>
+        <div className={`${isMobile ? 'flex flex-col items-center text-center gap-4' : 'flex gap-6'} mb-6`}>
           {/* Poster */}
           {selectedShowData.poster_url && (
-            <div className={`${isMobile ? 'w-28' : 'w-44'} shrink-0`}>
+            <div className={`${isMobile ? 'w-36' : 'w-44'} shrink-0`}>
               <img
                 src={selectedShowData.poster_url}
                 alt={selectedShowData.title}
@@ -601,8 +600,8 @@ export function TVShowsView({
           {/* Info */}
           <div className="flex-1 min-w-0">
             {/* Title */}
-            <div className="flex items-center gap-1.5">
-              <h3 className={`${isMobile ? 'text-title' : 'text-h1'} font-semibold`}>{selectedShowData.title}</h3>
+            <div className={`flex items-center gap-1.5 ${isMobile ? 'justify-center' : ''}`}>
+              <h3 className={`${isMobile ? 'text-h2' : 'text-h1'} font-semibold`}>{selectedShowData.title}</h3>
               <button
                 onClick={(e) => {
                   e.stopPropagation()
@@ -618,7 +617,7 @@ export function TVShowsView({
             </div>
 
             {/* Metadata line */}
-            <div className="flex items-center gap-2 mt-1 text-label text-muted-foreground">
+            <div className={`flex items-center gap-2 mt-1 text-label text-muted-foreground ${isMobile ? 'justify-center' : ''}`}>
               <span>{ownedSeasons.length} of {totalSeasons} seasons</span>
               {completenessData?.status && (
                 <>
@@ -629,7 +628,7 @@ export function TVShowsView({
             </div>
 
             {/* Action buttons row */}
-            <div className="flex items-center gap-3 mt-3" ref={showDetailMenuRef}>
+            <div className={`flex items-center gap-3 mt-3 ${isMobile ? 'justify-center' : ''}`} ref={showDetailMenuRef}>
               <Button
                 onClick={() => selectedShow && onAnalyzeSeries(selectedShow)}
                 size="sm"
@@ -742,15 +741,14 @@ export function TVShowsView({
     return (
       <div className="space-y-6">
         {/* Breadcrumb */}
-        <button
+        <Button
+          variant="tertiary"
+          size="sm"
           onClick={handleBack}
-          className="flex items-center gap-2 text-label text-muted-foreground hover:text-foreground"
+          icon={<ChevronLeft className="w-4 h-4" />}
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
           Back to {selectedShowData.title}
-        </button>
+        </Button>
 
         <h3 className="text-h3 font-semibold">
           {selectedShowData.title} - {formatSeasonLabel(selectedSeason!)}
