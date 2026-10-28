@@ -15,7 +15,7 @@
     "build:app": "npm run generate-windows-icon && npm run test:run && npm run typecheck && npm run renderer:build && npm run package:electron",
     "generate-windows-icon": "node scripts/generate-icons.js --windows-only",
     "renderer:build": "vite build",
-    "package:electron": "electron-builder",
+    "package:electron": "node scripts/package-electron.cjs",
     "generate-icons": "node scripts/generate-icons.js",
     "test": "vitest",
     "test:run": "vitest run",
