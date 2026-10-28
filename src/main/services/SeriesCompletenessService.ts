@@ -566,14 +566,12 @@ export class SeriesCompletenessService extends CancellableOperation {
 
     // Build set of owned episodes for fast lookup
     const ownedSet = new Set<string>()
-    const ownedSeasonSet = new Set<number>()
 
     for (const ep of ownedEpisodes) {
       // Skip season 0 (specials)
       if (ep.seasonNumber === 0) continue
 
       ownedSet.add(`${ep.seasonNumber}-${ep.episodeNumber}`)
-      ownedSeasonSet.add(ep.seasonNumber)
     }
 
     // Build a map of media items by S##E## key for artwork updates
@@ -590,6 +588,8 @@ export class SeriesCompletenessService extends CancellableOperation {
 
     const missingSeasons: number[] = []
     const missingEpisodes: MissingEpisode[] = []
+    const airedOwnedEpisodes = new Set<string>()
+    const airedOwnedSeasons = new Set<number>()
     let totalEpisodes = 0
 
     // Get season numbers to fetch (skip season 0 - specials, skip unaired seasons)
@@ -602,11 +602,11 @@ export class SeriesCompletenessService extends CancellableOperation {
       return {
         totalSeasons: 0,
         totalEpisodes: 0,
-        ownedSeasons: ownedSeasonSet.size,
-        ownedEpisodes: ownedEpisodes.filter((ep) => ep.seasonNumber !== 0).length,
+        ownedSeasons: 0,
+        ownedEpisodes: 0,
         missingSeasons: [],
         missingEpisodes: [],
-        completenessPercentage: 100,
+        completenessPercentage: 0,
         tmdbId,
         posterUrl: showPosterUrl,
         backdropUrl: tmdb.buildImageUrl(showDetails.backdrop_path) || undefined,
@@ -671,6 +671,8 @@ export class SeriesCompletenessService extends CancellableOperation {
         const key = `${episode.season_number}-${episode.episode_number}`
 
         if (ownedSet.has(key)) {
+          airedOwnedEpisodes.add(key)
+          airedOwnedSeasons.add(season.season_number)
           seasonOwnedEpisodes++
 
           // Update artwork for local sources
@@ -702,21 +704,18 @@ export class SeriesCompletenessService extends CancellableOperation {
       }
     }
 
-    const ownedEpisodeCount = ownedEpisodes.filter((ep) => ep.seasonNumber !== 0).length
+    const ownedEpisodeCount = airedOwnedEpisodes.size
     const completenessPercentage =
       totalEpisodes > 0 ? Math.round((ownedEpisodeCount / totalEpisodes) * 100) : 0
-
-    // Clamp to 100% max (in case user has more episodes than TMDB knows about)
-    const clampedPercentage = Math.min(completenessPercentage, 100)
 
     return {
       totalSeasons: regularSeasons.length,
       totalEpisodes,
-      ownedSeasons: ownedSeasonSet.size,
+      ownedSeasons: airedOwnedSeasons.size,
       ownedEpisodes: ownedEpisodeCount,
       missingSeasons,
       missingEpisodes,
-      completenessPercentage: clampedPercentage,
+      completenessPercentage,
       tmdbId,
       posterUrl: showPosterUrl,
       backdropUrl: tmdb.buildImageUrl(showDetails.backdrop_path) || undefined,

@@ -224,11 +224,12 @@ export function registerDatabaseHandlers() {
       const validKey = validateInput(SettingKeySchema, key, 'db:setSetting')
       const validValue = validateInput(SettingValueSchema, value, 'db:setSetting')
       console.log('[IPC db:setSetting]', validKey, sensitiveSettingKeys.has(validKey) ? '(redacted)' : validValue)
-      const previousValue = validKey === SETTING_KEYS.optimization_default_target_profile_id
+      const previousValue = validKey === SETTING_KEYS.optimization_default_target_profile_id || validKey.startsWith('quality_')
         ? await db.getSetting(validKey)
         : null
       await db.setSetting(validKey, validValue)
       const targetProfileChanged = validKey === SETTING_KEYS.optimization_default_target_profile_id && previousValue !== validValue
+      const mediaQualitySettingChanged = validKey.startsWith('quality_') && !validKey.startsWith('quality_music_') && previousValue !== validValue
 
       // Invalidate quality analyzer cache when quality settings change
       if (validKey.startsWith('quality_') || targetProfileChanged) {
@@ -236,7 +237,11 @@ export function registerDatabaseHandlers() {
       }
       if (targetProfileChanged) {
         await db.setSetting('optimization.savings_reanalysis_pending', 'true')
-        getTaskQueueService().addTask({ type: 'quality-analysis', label: 'Refresh media quality and savings estimates' })
+        getTaskQueueService().addTask({ type: 'media-analysis', label: 'Measure media files', options: { completedMediaItemIds: [] } })
+      }
+      if (mediaQualitySettingChanged) {
+        await db.setSetting('optimization.quality_reanalysis_pending', 'true')
+        getTaskQueueService().addTask({ type: 'quality-analysis', label: 'Refresh media quality' })
       }
 
       // Refresh TMDB API key when it changes (no restart needed)

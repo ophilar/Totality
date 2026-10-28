@@ -246,28 +246,6 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
     }
   }, [mediaId, addToast, onOptimizationCompleted])
 
-  const paramSequenceRef = useRef(0)
-
-  // Dynamically update parameters preview when options change
-  useEffect(() => {
-    if (status === 'encoding' || status === 'generating' || !media || !media.file_path) return
-
-    const currentSeq = ++paramSequenceRef.current
-    const timer = setTimeout(async () => {
-      try {
-        const p = await window.electronAPI.getParameters(media.id!, options)
-        if (paramSequenceRef.current === currentSeq) {
-          setParams(p)
-        }
-      } catch (err) {
-        if (paramSequenceRef.current === currentSeq) {
-          console.error('Failed to update parameters preview:', err)
-        }
-      }
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [options, media, status])
-
   const generateParams = async () => {
     if (!media || !media.file_path) return
     setGenerating(true)
@@ -727,7 +705,7 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
               {analysisRequired && <button onClick={() => void analyzeRequiredEvidence()} disabled={analyzingItem} className="px-5 py-2.5 rounded-xl border border-border text-xs font-bold disabled:opacity-50">{analyzingItem ? 'Analyzing…' : 'Analyze item'}</button>}
               <button
                 onClick={generateParams}
-                disabled={generating || !availability?.ffmpeg}
+                disabled={generating || !availability?.ffmpeg || (options.optimizationMode !== 'remux_only' && (!options.targetCodec || !options.qualityProfile || !options.encoderPolicy))}
                 className="flex items-center gap-2 px-5 py-2.5 bg-muted/60 hover:bg-muted rounded-xl text-xs font-bold transition-all disabled:opacity-50"
               >
                 {generating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-primary" />}

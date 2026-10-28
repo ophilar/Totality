@@ -145,6 +145,8 @@ describe('SeriesCompletenessService', () => {
       mockDb.getEpisodes.mockReturnValue([
         { season_number: 0, episode_number: 1, series_tmdb_id: '100', series_title: 'Show', series_identity_key: 'tmdb:100' }, // Special
         { season_number: 1, episode_number: 1, series_tmdb_id: '100', series_title: 'Show', series_identity_key: 'tmdb:100' },
+        { season_number: 1, episode_number: 1, series_tmdb_id: '100', series_title: 'Show', series_identity_key: 'tmdb:100' }, // Duplicate file
+        { season_number: 1, episode_number: 2, series_tmdb_id: '100', series_title: 'Show', series_identity_key: 'tmdb:100' }, // Not in TMDB aired catalogue
       ])
 
       mockTmdb.getTVShowDetails.mockResolvedValue({
@@ -171,11 +173,14 @@ describe('SeriesCompletenessService', () => {
       const upsertCall = mockDb.upsertSeriesCompleteness.mock.calls[0][0]
       // owned_episodes should be 1 (season 0 excluded)
       expect(upsertCall.owned_episodes).toBe(1)
+      expect(upsertCall.owned_seasons).toBe(1)
+      expect(upsertCall.total_episodes).toBe(1)
+      expect(upsertCall.missing_episodes).toEqual([])
       expect(upsertCall.completeness_percentage).toBe(100)
     })
 
-    it('clamps completeness to 100% max', async () => {
-      // User has more episodes than TMDB knows about
+    it('counts only unique owned coordinates in the aired TMDB catalogue', async () => {
+      // User has duplicate files and an extra coordinate beyond the aired TMDB catalogue.
       mockDb.getEpisodes.mockReturnValue([
         { season_number: 1, episode_number: 1, series_tmdb_id: '200', series_title: 'Show', series_identity_key: 'tmdb:200' },
         { season_number: 1, episode_number: 2, series_tmdb_id: '200', series_title: 'Show', series_identity_key: 'tmdb:200' },
@@ -192,6 +197,7 @@ describe('SeriesCompletenessService', () => {
           poster_path: null,
           episodes: [
             { season_number: 1, episode_number: 1, name: 'Ep', air_date: '2020-01-01' },
+            { season_number: 1, episode_number: 2, name: 'Unaired', air_date: '2099-01-01' },
           ],
         },
       })
@@ -201,7 +207,10 @@ describe('SeriesCompletenessService', () => {
       await service.analyzeSeries('tmdb:200', 'src1', 'lib1', '200')
 
       const upsertCall = mockDb.upsertSeriesCompleteness.mock.calls[0][0]
-      expect(upsertCall.completeness_percentage).toBeLessThanOrEqual(100)
+      expect(upsertCall.owned_episodes).toBe(1)
+      expect(upsertCall.total_episodes).toBe(1)
+      expect(upsertCall.missing_episodes).toEqual([])
+      expect(upsertCall.completeness_percentage).toBe(100)
     })
   })
 

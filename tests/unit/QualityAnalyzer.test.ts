@@ -445,6 +445,15 @@ describe('QualityAnalyzer', () => {
   // ============================================================================
 
   describe('issues reporting', () => {
+    it('reports unknown audio language for review without inferring it', async () => {
+      const item = createMediaItem({
+        original_language: 'en',
+        audio_tracks: JSON.stringify([{ index: 0, codec: 'aac', channels: 2, bitrate: 128 }]),
+      })
+      const score = await analyzer.analyzeMediaItem(item)
+      expect(JSON.parse(score.issues)).toContain('One or more audio tracks have unknown or unreliable language evidence (audio track indexes: 0)')
+    })
+
     it('does not report low bitrate as a visual-quality issue', async () => {
       const item = createMediaItem({
         resolution: '1080p',

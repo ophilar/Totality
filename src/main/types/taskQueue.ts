@@ -79,6 +79,10 @@ export interface TaskDefinition {
   options?: unknown
 }
 
+export interface MediaAnalysisOptions {
+  completedMediaItemIds: number[]
+}
+
 export interface QueueState {
   currentTask: QueuedTask | null
   queue: QueuedTask[]
@@ -101,4 +105,3 @@ export interface TaskQueueHistory {
   taskHistory: ActivityLogEntry[]
   monitoringHistory: ActivityLogEntry[]
 }
-

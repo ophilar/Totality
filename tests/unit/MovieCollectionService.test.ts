@@ -159,7 +159,7 @@ describe('MovieCollectionService', () => {
       mockDb.getMediaItems.mockReturnValue([
         { id: 1, title: 'No TMDB', type: 'movie', tmdb_id: null },
       ])
-      mockDb.getMediaSourceById.mockReturnValue({ source_type: 'plex' })
+      mockDb.getMediaSourceById.mockReturnValue({ source_type: 'plex', connection_config: '{}' })
 
       const result = await service.analyzeAllCollections(undefined, 'src1')
 
@@ -169,7 +169,7 @@ describe('MovieCollectionService', () => {
 
     it('respects cancellation during scanning phase', async () => {
       mockDb.getSetting.mockReturnValue('key')
-      mockDb.getMediaSourceById.mockReturnValue({ source_type: 'plex' })
+      mockDb.getMediaSourceById.mockReturnValue({ source_type: 'plex', connection_config: '{}' })
       mockDb.getMediaItems.mockReturnValue([
         { id: 1, title: 'Movie 1', type: 'movie', tmdb_id: '550', plex_id: 'p1' },
         { id: 2, title: 'Movie 2', type: 'movie', tmdb_id: '551', plex_id: 'p2' },
@@ -190,7 +190,7 @@ describe('MovieCollectionService', () => {
 
     it('sets incomplete flag on cancellation', async () => {
       mockDb.getSetting.mockReturnValue('key')
-      mockDb.getMediaSourceById.mockReturnValue({ source_type: 'plex' })
+      mockDb.getMediaSourceById.mockReturnValue({ source_type: 'plex', connection_config: '{}' })
       mockDb.getMediaItems.mockReturnValue([
         { id: 1, title: 'Movie', type: 'movie', tmdb_id: '550', plex_id: 'p1' },
       ])
@@ -212,7 +212,7 @@ describe('MovieCollectionService', () => {
         if (key === 'collection_analysis_incomplete') return 'true'
         return null
       })
-      mockDb.getMediaSourceById.mockReturnValue({ source_type: 'plex' })
+      mockDb.getMediaSourceById.mockReturnValue({ source_type: 'plex', connection_config: '{}' })
       mockDb.getMediaItems.mockReturnValue([])
 
       await service.analyzeAllCollections(undefined, 'src1')

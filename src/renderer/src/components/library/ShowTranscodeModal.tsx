@@ -649,7 +649,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
     backgroundPreflight.current = false
     activePreflightRequestId.current = requestId
     setPreflightTermination(null)
-    setPreflightProgress({ percentage: 0, phase: 'Starting preflight', currentItem: seasonNumber === undefined ? 'Loading series episodes' : `Loading season ${seasonNumber} episodes` })
+    setPreflightProgress({ percentage: 0, phase: 'Starting preflight', currentItem: episode ? `Loading ${episode.title}` : seasonNumber === undefined ? 'Loading series episodes' : `Loading season ${seasonNumber} episodes` })
     setPreflightOperationState('running')
     startedPreflightHere.current = true
     let preflight: ShowTranscodePreflight | undefined

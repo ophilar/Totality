@@ -520,8 +520,12 @@ app.whenReady().then(async () => {
     // Load persisted history and re-enqueue any tasks that were pending at last quit
     taskQueueService.loadPersistedHistory()
     resumeBackgroundPreflights()
-    if (getDatabase().getSetting('optimization.savings_reanalysis_pending') === 'true') {
-      taskQueueService.addTask({ type: 'quality-analysis', label: 'Refresh media quality and savings estimates' })
+    const database = getDatabase()
+    if (database.getSetting('optimization.quality_reanalysis_pending') === 'true') {
+      taskQueueService.addTask({ type: 'quality-analysis', label: 'Refresh media quality' })
+    }
+    if (database.getSetting('optimization.savings_reanalysis_pending') === 'true') {
+      taskQueueService.addTask({ type: 'media-analysis', label: 'Measure media files', options: { completedMediaItemIds: [] } })
     }
     console.log('Task queue service initialized')
 

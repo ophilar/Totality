@@ -21,6 +21,7 @@ interface PreparedStatement {
 }
 
 export interface TestDatabase {
+  readonly inTransaction: boolean
   prepare(sql: string): PreparedStatement
   exec(sql: string): void
   pragma(str: string): unknown
@@ -33,7 +34,11 @@ function bindValues(params: unknown[]): SqlValue[] {
 }
 
 function createAdapter(db: SqliteDatabase): TestDatabase {
+  let inTransaction = false
   return {
+    get inTransaction() {
+      return inTransaction
+    },
     prepare(sql: string): PreparedStatement {
       return {
         run(...params: unknown[]): RunResult {
@@ -87,12 +92,15 @@ function createAdapter(db: SqliteDatabase): TestDatabase {
     transaction<T>(fn: (...args: unknown[]) => T): (...args: unknown[]) => T {
       return (...args: unknown[]) => {
         db.exec('BEGIN TRANSACTION')
+        inTransaction = true
         try {
           const result = fn(...args)
           db.exec('COMMIT')
+          inTransaction = false
           return result
         } catch (error) {
           db.exec('ROLLBACK')
+          inTransaction = false
           throw error
         }
       }

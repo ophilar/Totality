@@ -1,5 +1,4 @@
 
-import { getLoggingService } from '@main/services/LoggingService'
 
 export type LanguageDecisionStatus = 'approved' | 'review-required'
 export type AudioTrackAction = 'retain' | 'remove' | 'review-required'
@@ -123,13 +122,11 @@ export class LanguageDecisionService {
 
     if (!normOrig) {
       const rationale = 'Original language metadata is unknown'
-      getLoggingService().debug('[LanguageDecision]', `Track ${stream.index ?? '?'}: original language metadata is unknown`)
       return { action: 'review-required', decision: 'review-required', rationale, reason: rationale, originalLanguage: normOrig, streamLanguage: normLang }
     }
 
     if (!normLang) {
       const rationale = 'Missing or unreliable language tag requires review'
-      getLoggingService().debug('[LanguageDecision]', `Track ${stream.index ?? '?'}: missing or unreliable language tag "${rawLanguage ?? ''}"`)
       return { action: 'review-required', decision: 'review-required', rationale, reason: rationale, originalLanguage: normOrig, streamLanguage: normLang }
     }
 
@@ -147,11 +144,9 @@ export class LanguageDecisionService {
     const evidenceSources = original ? ['matched-original-language-metadata'] : []
     const retained: number[] = [], removable: number[] = [], review: number[] = []
     if (!original) {
-      getLoggingService().debug('[LanguageDecision]', 'Original language metadata is unknown for audio decision')
       return { originalLanguage: original, evidenceSources, confidence: 'none', status: 'review-required', retainedTrackIndexes: [], removableTrackIndexes: [], reviewRequiredTrackIndexes: tracks.map(t => t.index), reason: 'Original language metadata is unknown' }
     }
     if (!metadataAgreesWithTags) {
-      getLoggingService().warn('[LanguageDecision]', `Original language metadata (${original}) conflicts with embedded audio evidence`)
       return { originalLanguage: original, evidenceSources, confidence: 'none', status: 'review-required', retainedTrackIndexes: [], removableTrackIndexes: [], reviewRequiredTrackIndexes: tracks.map(t => t.index), reason: 'Original language metadata conflicts with embedded audio evidence' }
     }
     for (const track of tracks) {
@@ -159,7 +154,6 @@ export class LanguageDecisionService {
       const protectedTrack = isProtectedAudioTrack(track)
       if (track.reliableTag) evidenceSources.push(`embedded-audio-tag:${track.index}`)
       if (!track.reliableTag || !language) {
-        getLoggingService().warn('[LanguageDecision]', `Audio track ${track.index} has unknown or missing language tag`)
         review.push(track.index)
       } else if (language === original || protectedTrack) {
         retained.push(track.index)

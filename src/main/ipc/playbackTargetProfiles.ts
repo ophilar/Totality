@@ -26,7 +26,7 @@ export function registerPlaybackTargetProfileHandlers(): void {
     if (await db.config.getSetting(SETTING_KEYS.optimization_default_target_profile_id) === input.id) {
       getQualityAnalyzer().invalidateThresholdsCache()
       await db.setSetting('optimization.savings_reanalysis_pending', 'true')
-      getTaskQueueService().addTask({ type: 'quality-analysis', label: 'Refresh media quality and savings estimates' })
+      getTaskQueueService().addTask({ type: 'media-analysis', label: 'Measure media files', options: { completedMediaItemIds: [] } })
     }
     return db.playbackTargetProfiles.get(input.id)
   })
