@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
 import type { TVShowSummary, MediaItem } from './types'
-import type { GpuInfo, PlannedOptimizationOperation, ShowTranscodePreflight } from './transcoding/types'
+import type { GpuInfo, PlannedOptimizationOperation, SavedShowPreflight, ShowTranscodePreflight } from './transcoding/types'
 import { EncoderPolicySelector } from './transcoding/EncoderPolicySelector'
 import { formatLanguage, getOptimizationContainer, isSameLanguage, LANGUAGE_OPTIONS, parseLanguageWhitelist } from './mediaUtils'
 import { describeDiagnosticError, logOptimizationDiagnostic } from './optimizationDiagnostics'
@@ -34,7 +34,7 @@ import { SETTING_KEYS } from '@shared/settingKeys'
 import { normalizeAudioCodec, normalizeVideoCodec } from '@main/services/MediaNormalizer'
 import { OptimizationDialogShell } from './transcoding/OptimizationDialogShell'
 import { buildSampleApprovalGroups } from './tv/sampleApprovalGroups'
-import { summarizeOptimizationBatch } from './tv/batchOutcomeSummary'
+import { useOptimizationWorkflow } from './transcoding/useOptimizationWorkflow'
 import { getMissingOptimizationSettings } from './transcoding/readiness'
 import { OutputHandlingSelection } from './transcoding/OutputHandlingSelection'
 import { buildEffectiveOptimizationOptions } from './transcoding/buildEffectiveOptimizationOptions'
@@ -182,7 +182,6 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
   const initialPreflight = initialReview?.result
   const { addToast } = useToast()
   const { seriesIdentityKey, sourceId, libraryId } = getTVShowIdentity(show)
-  const [mode, setMode] = useState<'config' | 'preview' | 'monitoring'>('config')
   const [optimizationMode, setOptimizationMode] = useState<'smart' | 'remux_only' | 'transcode'>('smart')
   const [removeUnnecessaryStreams, setRemoveUnnecessaryStreams] = useState(true)
   const [adjustToTarget, setAdjustToTarget] = useState(true)
@@ -217,11 +216,6 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
   const [targetContainerSelection, setTargetContainerSelection] = useState<'automatic' | 'user-selected'>('automatic')
   const [targetAudioCodec, setTargetAudioCodec] = useState<'aac' | 'ac3' | 'eac3' | ''>('')
   const [targetHdrFormat, setTargetHdrFormat] = useState<'SDR' | 'HDR10' | ''>('')
-  const [reviewedSampleGroups, setReviewedSampleGroups] = useState<string[]>([])
-  const [activeBatchId, setActiveBatchId] = useState<string>()
-  const [submittedMediaItemIds, setSubmittedMediaItemIds] = useState<number[]>([])
-  const [submittedTaskIds, setSubmittedTaskIds] = useState<string[]>([])
-  const [batchQueueControlState, setBatchQueueControlState] = useState<'pausing' | 'resuming' | null>(null)
   const [codec, setCodec] = useState<'hevc' | 'av1' | ''>('')
   const [audio, setAudio] = useState<'all' | 'original-and-protected'>('original-and-protected')
   const [language, setLanguage] = useState('')
@@ -236,8 +230,6 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
   const [message, setMessage] = useState('')
   const [isSuccess, setIsSuccess] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [preflightData, setPreflightData] = useState<ShowTranscodePreflight | null>(null)
-  const sampleApprovalGroups = useMemo(() => buildSampleApprovalGroups(preflightData), [preflightData])
   const [preflightTermination, setPreflightTermination] = useState<'cancelling' | 'finishing' | null>(null)
   const [preflightProgress, setPreflightProgress] = useState<{ percentage?: number; phase?: string; currentItem?: string } | null>(null)
   const [preflightOperationState, setPreflightOperationState] = useState<'queued' | 'running' | 'pausing' | 'paused' | 'finishing' | null>(null)
@@ -255,6 +247,12 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
     isPaused: false,
     completedTasks: []
   })
+
+  const workflow = useOptimizationWorkflow(queueState)
+  const { stage, setStage, review: preflightData, reviewedSampleGroups, setReviewedSampleGroups, batchId: activeBatchId, submittedMediaItemIds, submittedTaskIds, queueControlState: batchQueueControlState, batchSummary, reviewMatches, replaceReview, clearReview, submitBatch, toggleQueuePause, retryFailedTasks } = workflow
+  const mode = stage === 'options' ? 'config' : stage === 'review' ? 'preview' : 'monitoring'
+  const setMode = useCallback((nextMode: 'config' | 'preview' | 'monitoring') => setStage(nextMode === 'config' ? 'options' : nextMode === 'preview' ? 'review' : 'results'), [setStage])
+  const sampleApprovalGroups = useMemo(() => buildSampleApprovalGroups(preflightData), [preflightData])
 
   const restoreSavedReview = useCallback((saved: { request: import('@main/services/TranscodingService').ShowTranscodeRequest; result: ShowTranscodePreflight }) => {
     const { request, result } = saved
@@ -277,18 +275,16 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
     setSubtitleWhitelist(options.streamSelection?.subtitleLanguageWhitelist?.join(', ') ?? '')
     setOutputMode(options.outputMode ?? '')
     setGpuId(options.gpuId ?? '')
-    setActiveBatchId(result.batchId)
-    setPreflightData(result)
-    setReviewedSampleGroups([])
+    replaceReview(result, options)
+    submitBatch(result.batchId, result.queuedMediaItemIds ?? [], result.queuedTaskIds ?? [])
     setMode(result.queuedAt ? 'monitoring' : 'preview')
-  }, [targetProfiles])
+  }, [targetProfiles, replaceReview, submitBatch, setMode])
 
   useEffect(() => {
     if (!initialReview || !initialPreflight) return
     restoreSavedReview({ request: initialReview.request, result: initialPreflight })
-    setSubmittedMediaItemIds(initialPreflight.queuedMediaItemIds ?? [])
-    setSubmittedTaskIds(initialPreflight.queuedTaskIds ?? [])
-  }, [initialReview, initialPreflight, restoreSavedReview])
+    submitBatch(initialPreflight.batchId, initialPreflight.queuedMediaItemIds ?? [], initialPreflight.queuedTaskIds ?? [])
+  }, [initialReview, initialPreflight, restoreSavedReview, submitBatch])
 
   useEffect(() => {
     if (initialPreflight || resumeRequestId || targetProfilesLoading) return
@@ -304,13 +300,12 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
       if (!mounted || startedPreflightHere.current || !saved) return
       const result = saved.result as ShowTranscodePreflight
       restoreSavedReview({ request: saved.request as import('@main/services/TranscodingService').ShowTranscodeRequest, result })
-      setSubmittedMediaItemIds(result.queuedMediaItemIds ?? [])
-      setSubmittedTaskIds(result.queuedTaskIds ?? [])
+      submitBatch(result.batchId, result.queuedMediaItemIds ?? [], result.queuedTaskIds ?? [])
       setMessage('')
       logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.reused', { preflightId: result.preflightId, batchId: result.batchId, seriesIdentityKey, seasonNumber, mediaItemId: episode?.id })
     }).catch(error => setMessage(error instanceof Error ? error.message : String(error)))
     return () => { mounted = false }
-  }, [initialPreflight, resumeRequestId, targetProfilesLoading, seriesIdentityKey, sourceId, libraryId, show.series_title, episode?.id, seasonNumber, restoreSavedReview])
+  }, [initialPreflight, resumeRequestId, targetProfilesLoading, seriesIdentityKey, sourceId, libraryId, show.series_title, episode?.id, seasonNumber, restoreSavedReview, submitBatch])
 
   useEffect(() => {
     if (initialPreflight) return
@@ -350,11 +345,10 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
       activePreflightTaskId.current = null
       if (task.status === 'completed' && typeof task.result?.preflightId === 'string') {
         try {
-          const saved = await window.electronAPI.getShowPreflight(task.result.preflightId) as { result: ShowTranscodePreflight } | undefined
+          const saved = await window.electronAPI.getShowPreflight(task.result.preflightId) as SavedShowPreflight | undefined
           if (!mounted) return
           if (!saved) throw new Error('The saved optimization review could not be found')
-          setPreflightData(saved.result)
-          setReviewedSampleGroups([])
+          replaceReview(saved.result, saved.request.options)
           setMode('preview')
         } catch (error) {
           setMessage(error instanceof Error ? error.message : String(error))
@@ -377,7 +371,7 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
       mounted = false
       unsubscribe?.()
     }
-  }, [initialPreflight, resumeRequestId, seriesIdentityKey, sourceId, libraryId, episode?.id, seasonNumber])
+  }, [initialPreflight, resumeRequestId, seriesIdentityKey, sourceId, libraryId, episode?.id, seasonNumber, replaceReview, setMode])
 
   useEffect(() => {
     let mounted = true
@@ -647,6 +641,15 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
     })
   }
 
+  const currentOptions = getCleanOptions()
+  const currentOptionsFingerprint = JSON.stringify(currentOptions)
+  const reviewMatchesCurrentSettings = reviewMatches(currentOptions)
+  useEffect(() => {
+    if (preflightData && !reviewMatchesCurrentSettings && reviewedSampleGroups.length > 0) {
+      setReviewedSampleGroups([])
+    }
+  }, [preflightData, currentOptionsFingerprint, reviewMatchesCurrentSettings, reviewedSampleGroups.length, setReviewedSampleGroups])
+
   const getMissingSettings = (overrides: { removeUnnecessaryStreams?: boolean; adjustToTarget?: boolean; targetProfileId?: string } = {}) => {
     const shouldRemoveStreams = overrides.removeUnnecessaryStreams ?? removeUnnecessaryStreams
     const shouldAdjustToTarget = overrides.adjustToTarget ?? adjustToTarget
@@ -692,10 +695,9 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
       logOptimizationDiagnostic('TVOptimizationUI', 'warn', 'preflight.validation.failed', { ...settings, missingSettings })
       throw new Error(error)
     }
-    setReviewedSampleGroups([])
     if (preflightData) {
       await window.electronAPI.discardShow(preflightData.preflightId)
-      setPreflightData(null)
+      clearReview()
     }
     backgroundPreflight.current = false
     activePreflightRequestId.current = requestId
@@ -747,7 +749,7 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
         }).catch(reject)
       })
       logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.returned', { requestId, scope: episode ? 'episode' : seasonNumber === undefined ? 'series' : 'season', mediaItemId: episode?.id, stage: 'review.saved', durationMs: Date.now() - requestedAt, preflightId: preflight.preflightId, batchId: preflight.batchId, episodeCount: preflight.episodeCount, compatible: preflight.episodes.filter(item => item.compatible).length, savingsBytes: preflight.estimatedSavingsBytes, savingsCoverage: preflight.savingsCoverage })
-      if (!backgroundPreflight.current) setPreflightData(preflight)
+      if (!backgroundPreflight.current) replaceReview(preflight, getCleanOptions(optionOverrides))
       return preflight
     } catch (error) {
       const cancelled = error instanceof DOMException && error.name === 'AbortError'
@@ -827,6 +829,7 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
     setBusy(true)
     setMessage('')
     try {
+      if (!reviewMatchesCurrentSettings) throw new Error('Optimization settings changed. Prepare a new review before queueing.')
       const requiresApproval = preflightData.episodes.some(episode => episode.compatible && episode.decisionStatus === 'sample_required')
       logOptimizationDiagnostic('TVOptimizationUI', 'info', 'queue.requested', { preflightId: preflightData.preflightId, batchId: preflightData.batchId, requiresSampleApproval: requiresApproval, reviewedSampleGroupCount: reviewedSampleGroups.length })
       if (sampleApprovalGroups.some(group => !reviewedSampleGroups.includes(group.id))) throw new Error('Play and approve the measured sample for every representative group.')
@@ -838,9 +841,7 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
       }
       const queued = await window.electronAPI.queueShow(preflightData.preflightId)
       logOptimizationDiagnostic('TVOptimizationUI', 'info', 'queue.completed', { batchId: queued.batchId, queuedMediaItemIds: queued.queuedMediaItemIds })
-      setActiveBatchId(queued.batchId)
-      setSubmittedMediaItemIds(queued.queuedMediaItemIds)
-      setSubmittedTaskIds(queued.queuedTaskIds)
+      submitBatch(queued.batchId, queued.queuedMediaItemIds, queued.queuedTaskIds)
       setIsSuccess(false)
       setMode('monitoring')
       const count = queued.queuedMediaItemIds.length
@@ -865,35 +866,23 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
   }
 
   const retryFailedBatchTasks = async () => {
-    if (!preflightData || !batchSummary || batchSummary.activeCount > 0 || batchSummary.failedMediaItemIds.length + batchSummary.cancelledMediaItemIds.length === 0) return
     setBusy(true)
-    try {
-      const queued = await window.electronAPI.queueShow(preflightData.preflightId)
-      setSubmittedMediaItemIds(ids => [...new Set([...ids, ...queued.queuedMediaItemIds])])
-      setSubmittedTaskIds(ids => [...new Set([...ids, ...queued.queuedTaskIds])])
-      setMessage(`Queued ${queued.queuedMediaItemIds.length} failed or cancelled episode${queued.queuedMediaItemIds.length === 1 ? '' : 's'} for retry.`)
-    } catch (error) {
+    await retryFailedTasks(count => {
+      setMessage(`Queued ${count} failed or cancelled episode${count === 1 ? '' : 's'} for retry.`)
+    }, error => {
       const message = error instanceof Error ? error.message : String(error)
       setMessage(message)
       addToast({ type: 'error', title: 'Could not retry optimization', message })
-    } finally {
-      setBusy(false)
-    }
+    })
+    setBusy(false)
   }
 
   const toggleBatchPause = async () => {
-    const resuming = queueState.isPaused
-    setBatchQueueControlState(resuming ? 'resuming' : 'pausing')
-    try {
-      if (resuming) await window.electronAPI.taskQueueResume()
-      else await window.electronAPI.taskQueuePause()
-    } catch (error) {
+    await toggleQueuePause((error, resuming) => {
       const message = error instanceof Error ? error.message : String(error)
       setMessage(message)
       addToast({ type: 'error', title: `Could not ${resuming ? 'resume' : 'pause'} optimization`, message })
-    } finally {
-      setBatchQueueControlState(null)
-    }
+    })
   }
 
   // Filter tasks belonging to transcoding
@@ -948,7 +937,6 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
   const verifiedResults = queueState.completedTasks.filter(task => task.batchId === activeBatchId && task.status === 'completed' && typeof task.result?.physicallyReclaimedBytes === 'number').map(task => task.result!)
   const isSubmittedTask = (task: QueuedTask) => task.batchId === activeBatchId && (submittedTaskIds.length > 0 ? submittedTaskIds.includes(task.id) : submittedMediaItemIds.includes(task.mediaItemId ?? -1))
   const batchQueue = queueState.queue.filter(isSubmittedTask)
-  const batchSummary = activeBatchId ? summarizeOptimizationBatch(queueState, activeBatchId, submittedMediaItemIds, submittedTaskIds) : null
   const currentTask = queueState.currentTask && isSubmittedTask(queueState.currentTask) ? queueState.currentTask : null
   const isCurrentTranscode = currentTask?.type === TaskType.Transcode
   const currentTaskStatusLabel = currentTask?.status === 'cancelling' ? 'Cancelling' : 'Running'
