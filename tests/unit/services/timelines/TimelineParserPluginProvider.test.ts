@@ -6,16 +6,34 @@ import { TimelineParserPluginProvider } from '@main/services/timelines/TimelineP
 describe('TimelineParserPluginProvider', () => {
   afterEach(() => vi.restoreAllMocks())
 
-  it('parses the captured Babylon table in broadcast order', async () => {
-    const html = readFileSync('tests/fixtures/timelines/babylon-viewing-order-table.html', 'utf8')
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ parse: { text: { '*': html } } })))
+  it('reports candidate table headers when none matches the configured source schema', async () => {
+    const html = '<table><tr><th>Unrelated heading</th></tr><tr><td>Unrelated row</td></tr></table>'
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ parse: { text: { '*': html } } })))
     const cache = { getRecipe: vi.fn().mockResolvedValue(null), setRecipe: vi.fn(), invalidate: vi.fn() }
     const provider = new TimelineParserPluginProvider(cache as never)
 
-    const timeline = await provider.fetchTimeline('babylon-project:original-broadcast')
+    await expect(provider.fetchTimeline('babylon-project:original-broadcast'))
+      .rejects.toThrow(/failed while parsing timeline items: Error: Parser 'babylon-project' found no table matching .*best table=0, headers=\["Unrelated heading"\], requiredMatches=0\/7, rows=2/)
+  })
 
-    expect(timeline.items).toHaveLength(131)
-    expect(timeline.items.slice(0, 3).map(item => item.title)).toEqual(['The Gathering (Pilot)', 'Midnight on the Firing Line', 'Soul Hunter'])
-    expect(timeline.items[1]).toMatchObject({ order: 2, type: 'episode', seasonNumber: 1, episodeNumber: 1 })
+  it('parses Babylon orders when the episode table is nested in a one-row wrapper', async () => {
+    const episodeTable = readFileSync('tests/fixtures/timelines/babylon-viewing-order-table.html', 'utf8')
+    const wrappedHtml = `<table class="wrapper"><tr><td>${episodeTable}</td></tr></table>`
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ parse: { text: { '*': wrappedHtml } } })))
+    const cache = { getRecipe: vi.fn().mockResolvedValue(null), setRecipe: vi.fn(), invalidate: vi.fn() }
+    const provider = new TimelineParserPluginProvider(cache as never)
+
+    for (const order of ['original-broadcast', 'lurkers-guide', 'historical-database']) {
+      const timeline = await provider.fetchTimeline(`babylon-project:${order}`)
+      expect(timeline.items).toHaveLength(131)
+      expect(timeline.items[0].order).toBe(1)
+    }
+
+    // This captured episode-table fragment has no group-placement table, so the
+    // two configured Focused Story orders cannot be parsed from this fixture.
+    for (const order of ['focused-story-first', 'focused-story-last']) {
+      await expect(provider.fetchTimeline(`babylon-project:${order}`))
+        .rejects.toThrow(/found no group table matching its configured headers \(\d+ candidates; best table=\d+, headers=/)
+    }
   })
 })

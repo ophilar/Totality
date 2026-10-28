@@ -4,6 +4,7 @@ import { parseDocument } from 'htmlparser2'
 import type { AnyNode, Document, Element } from 'domhandler'
 import { removeElement, textContent } from 'domutils'
 import { getDatabase } from '../../database/getDatabase'
+import { getLoggingService } from '../LoggingService'
 import { fetchWithTimeout } from '../utils/httpClient'
 import { validateTimelineDefinition } from './TimelineValidation'
 import type { ITimelineRecipeProvider, TimelineDefinition, TimelineItem, TimelineRecipeSummary, TimelineFetchOptions } from './ITimelineRecipeProvider'
@@ -31,6 +32,15 @@ const BUILT_IN_PLUGINS = [
   TimelineParserPluginSchema.parse(alienPredatorParser),
 ]
 
+function describeErrorCause(error: unknown): string {
+  const causes: string[] = []
+  for (let current: unknown = error; current instanceof Error; current = (current as Error & { cause?: unknown }).cause) {
+    const code = 'code' in current ? ` (${String(current.code)})` : ''
+    causes.push(`${current.name}${code}: ${current.message}`)
+  }
+  return causes.join(' <- ') || String(error)
+}
+
 export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
   constructor(private readonly cacheService: TimelineCacheService = getTimelineCacheService()) {}
 
@@ -55,39 +65,55 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
       if (cached && !options.refresh) return cached
     }
     const fetchUrl = selected.plugin.fetchUrl ?? selected.plugin.sourceUrl
-    const response = await fetchWithTimeout(fetchUrl, {
-      headers: { Accept: 'text/html,application/xhtml+xml' },
-    }, 15000)
-    if (!response.ok) {
-      throw new Error(`Failed to fetch timeline source ${fetchUrl} (${response.status}: ${response.statusText}).`)
-    }
+    let stage = 'requesting source'
+    try {
+      const response = await fetchWithTimeout(fetchUrl, {
+        headers: { Accept: 'text/html,application/xhtml+xml' },
+        signal: options.signal,
+      }, 15000)
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}; content-type=${response.headers.get('content-type') ?? 'missing'}`)
+      }
+      stage = 'reading response body'
+      const responseBody = await response.text()
+      getLoggingService().debug('[TimelineParser]', `Source response: recipe=${selected.plugin.id}:${selected.order.id}, status=${response.status}, contentType=${response.headers.get('content-type') ?? 'missing'}, bodyCharacters=${responseBody.length}`)
+      stage = 'extracting source HTML'
+      const html = selected.plugin.responseHtmlPath
+        ? this.readResponsePath(JSON.parse(responseBody), selected.plugin.responseHtmlPath, selected.plugin.id)
+        : responseBody
+      stage = 'parsing source markup'
+      const document = parseDocument(html)
+      const orderDefinition = selected.order.order
+      const isListOrder = typeof orderDefinition !== 'string' && 'kind' in orderDefinition
+      stage = 'parsing timeline items'
+      const rows = isListOrder
+        ? this.parseListItems(document, selected.plugin, orderDefinition)
+        : this.parseTableItems(document, selected.plugin, orderDefinition)
 
-    const responseBody = await response.text()
-    const html = selected.plugin.responseHtmlPath
-      ? this.readResponsePath(JSON.parse(responseBody), selected.plugin.responseHtmlPath, selected.plugin.id)
-      : responseBody
-    const document = parseDocument(html)
-    const orderDefinition = selected.order.order
-    const isListOrder = typeof orderDefinition !== 'string' && 'kind' in orderDefinition
-    const rows = isListOrder
-      ? this.parseListItems(document, selected.plugin, orderDefinition)
-      : this.parseTableItems(document, selected.plugin, orderDefinition)
-
-    const definition: TimelineDefinition = {
-      id: `${selected.plugin.id}:${selected.order.id}`,
-      franchise: selected.plugin.franchise,
-      name: selected.order.name,
-      description: `${selected.order.description} Source: ${selected.plugin.attribution}.`,
-      sourceUrl: this.orderSourceUrl(selected.plugin, selected.order),
-      version: isListOrder ? 1 : 2,
-      granularity: isListOrder && orderDefinition.format !== 'star-trek-guide' ? 'series-blocks' : 'episode-interleaved',
-      items: rows,
+      stage = 'validating parsed timeline'
+      const definition: TimelineDefinition = {
+        id: `${selected.plugin.id}:${selected.order.id}`,
+        franchise: selected.plugin.franchise,
+        name: selected.order.name,
+        description: `${selected.order.description} Source: ${selected.plugin.attribution}.`,
+        sourceUrl: this.orderSourceUrl(selected.plugin, selected.order),
+        version: isListOrder ? 1 : 2,
+        granularity: isListOrder && orderDefinition.format !== 'star-trek-guide' ? 'series-blocks' : 'episode-interleaved',
+        items: rows,
+      }
+      const validation = validateTimelineDefinition(definition)
+      if (!validation.valid) throw new Error(`Parser '${selected.plugin.id}' produced an invalid timeline: ${validation.reason}.`)
+      if (rows.length === 0) throw new Error(`Parser '${selected.plugin.id}' found no timeline items.`)
+      stage = 'caching parsed timeline'
+      await this.cacheService.setRecipe(definition.id, definition)
+      getLoggingService().debug('[TimelineParser]', `Source parsed: recipe=${definition.id}, itemCount=${rows.length}, order=${selected.order.id}`)
+      return validation.value
+    } catch (error) {
+      if (options.signal?.aborted) throw error
+      const contextualError = new Error(`Timeline ${selected.plugin.id}:${selected.order.id} failed while ${stage}: ${describeErrorCause(error)}`) as Error & { cause?: unknown }
+      contextualError.cause = error
+      throw contextualError
     }
-    const validation = validateTimelineDefinition(definition)
-    if (!validation.valid) throw new Error(`Parser '${selected.plugin.id}' produced an invalid timeline: ${validation.reason}.`)
-    if (rows.length === 0) throw new Error(`Parser '${selected.plugin.id}' found no timeline items.`)
-    await this.cacheService.setRecipe(definition.id, definition)
-    return validation.value
   }
 
   private parseTableItems(
@@ -95,15 +121,27 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
     plugin: TimelineParserPlugin,
     orderDefinition: string | { groupingId: string; placement: 'first' | 'last' }
   ): TimelineItem[] {
-    const table = selectAll<AnyNode, Element>(plugin.tableSelector!, document).find(candidate => {
-      const header = this.directTableRows(candidate).find(row => is(row, plugin.headerRowSelector!))
-      const names = this.expandTableCells(header ? selectAll<AnyNode, Element>('th,td', header) : []).map(cell => this.readCellText(cell))
-      return plugin.requiredHeaders!.every(name => names.includes(name))
+    const candidates = selectAll<AnyNode, Element>(plugin.tableSelector!, document).map((table, index) => {
+      const header = this.directTableRows(table).find(row => is(row, plugin.headerRowSelector!))
+      const headers = this.expandTableCells(header ? this.directTableCells(header) : []).map(cell => this.readCellText(cell))
+      const matches = plugin.requiredHeaders!.filter(name => headers.includes(name))
+      return { table, index, header, headers, matches }
     })
-    if (!table) throw new Error(`Parser '${plugin.id}' found no table matching '${plugin.tableSelector}' and its required headers.`)
-    const headerRow = this.directTableRows(table).find(row => is(row, plugin.headerRowSelector!))!
+    const candidate = candidates.find(({ matches }) => matches.length === plugin.requiredHeaders!.length)
+    if (!candidate) {
+      const bestCandidate = candidates.reduce<(typeof candidates)[number] | undefined>(
+        (best, current) => !best || current.matches.length > best.matches.length ? current : best,
+        undefined
+      )
+      const evidence = bestCandidate
+        ? `best table=${bestCandidate.index}, headers=${JSON.stringify(bestCandidate.headers)}, requiredMatches=${bestCandidate.matches.length}/${plugin.requiredHeaders!.length}, rows=${this.directTableRows(bestCandidate.table).length}`
+        : 'no candidate tables found'
+      throw new Error(`Parser '${plugin.id}' found no table matching '${plugin.tableSelector}' and its required headers (${candidates.length} candidates; ${evidence}).`)
+    }
+    const table = candidate.table
+    const headerRow = candidate.header!
     const tableRows = this.directTableRows(table).filter(row => is(row, plugin.rowSelector!))
-    const headers = this.expandTableCells(selectAll<AnyNode, Element>('th,td', headerRow))
+    const headers = this.expandTableCells(this.directTableCells(headerRow))
       .map(cell => this.readCellText(cell))
     const headerIndex = (name: string): number => {
       const index = headers.indexOf(name)
@@ -188,7 +226,7 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
         .map(({ item }, index) => ({ ...item, order: index + 1 }))
 
     if (items.length === 0) {
-      throw new Error(`Parser '${plugin.id}' found no timeline items in the matched table (${tableRows.length} rows, ${contentRows.length} non-structural rows, ${rowsWithTitle} rows with a title).`)
+      throw new Error(`Parser '${plugin.id}' found no timeline items in matched table ${candidate.index} (${tableRows.length} direct rows, ${contentRows.length} non-structural rows, ${rowsWithTitle} rows with a title; headers=${JSON.stringify(headers)}).`)
     }
     return items
   }
@@ -229,6 +267,10 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
       () => cell
     ))
     return columnCount === undefined ? expanded : expanded.slice(0, columnCount)
+  }
+
+  private directTableCells(row: Element): Element[] {
+    return row.children.filter((child): child is Element => child.type === 'tag' && (child.name === 'th' || child.name === 'td'))
   }
 
   private directTableRows(table: Element): Element[] {
@@ -419,15 +461,26 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
     pluginId: string,
     config: TimelineParserGroupDefinition
   ): Map<string, number[]> {
-    const table = selectAll<AnyNode, Element>(config.groupTableSelector, document).find(candidate => {
-      const row = this.directTableRows(candidate).find(candidateRow => is(candidateRow, config.groupHeaderRowSelector))
-      const names = (row ? selectAll<AnyNode, Element>('th,td', row) : []).map(cell => this.readCellText(cell))
-      return names.includes(config.groupHeader) && names.includes(config.groupOrderHeader)
+    const candidates = selectAll<AnyNode, Element>(config.groupTableSelector, document).map((table, index) => {
+      const row = this.directTableRows(table).find(candidateRow => is(candidateRow, config.groupHeaderRowSelector))
+      const names = (row ? this.directTableCells(row) : []).map(cell => this.readCellText(cell))
+      return { table, index, names }
     })
-    if (!table) throw new Error(`Parser '${pluginId}' found no group table matching its configured headers.`)
+    const candidate = candidates.find(({ names }) => names.includes(config.groupHeader) && names.includes(config.groupOrderHeader))
+    if (!candidate) {
+      const bestCandidate = candidates.reduce<(typeof candidates)[number] | undefined>(
+        (best, current) => !best || current.names.length > best.names.length ? current : best,
+        undefined
+      )
+      const evidence = bestCandidate
+        ? `best table=${bestCandidate.index}, headers=${JSON.stringify(bestCandidate.names)}`
+        : 'no candidate tables found'
+      throw new Error(`Parser '${pluginId}' found no group table matching its configured headers (${candidates.length} candidates; ${evidence}).`)
+    }
+    const table = candidate.table
     const header = this.directTableRows(table).find(row => is(row, config.groupHeaderRowSelector))!
     const rows = this.directTableRows(table).filter(row => is(row, config.groupRowSelector))
-    const headers = selectAll<AnyNode, Element>('th,td', header).map(cell => this.readCellText(cell))
+    const headers = this.directTableCells(header).map(cell => this.readCellText(cell))
     const groupIndex = headers.indexOf(config.groupHeader)
     const orderIndex = headers.indexOf(config.groupOrderHeader)
     if (groupIndex < 0 || orderIndex < 0) throw new Error(`Parser '${pluginId}' group table is missing a configured header.`)

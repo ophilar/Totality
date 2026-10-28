@@ -16,6 +16,7 @@ import { TimelineRecipeProviderFactory } from '../services/timelines/TimelineRec
 import { TimelineResolutionEngine, type ResolvedTimelineResult } from '../services/timelines/TimelineResolutionEngine'
 import { PlexPlaylistCleanupError, PlexPlaylistSyncService } from '../services/timelines/PlexPlaylistSyncService'
 import { getErrorMessage } from '../services/utils/errorUtils'
+import { getLoggingService } from '../services/LoggingService'
 import type { ITimelineRecipeProvider } from '../services/timelines/ITimelineRecipeProvider'
 import { operationRequestRegistry } from './utils/OperationRequestRegistry'
 import { createIpcHandler, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from './utils/createHandler'
@@ -46,6 +47,7 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
     IPC_CHANNELS.timelinesResolveTimeline,
     z.tuple([z.string().min(1), z.string().optional(), z.object({ refresh: z.boolean().optional(), snapshotId: z.string().min(1).optional() }).optional(), z.string().min(1).max(100), z.boolean()]),
     async (event, recipeId, sourceId, options, requestId, showInActivity) => {
+    let stage = 'checking cancellation'
     const operation = operationRequestRegistry.register(event.sender, requestId, showInActivity ? {
       kind: 'timeline',
       label: 'Resolve viewing timeline',
@@ -54,6 +56,7 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
     try {
       operation.signal.throwIfAborted()
       if (options?.snapshotId) {
+        stage = 'loading saved timeline snapshot'
         const raw = getDatabase().getSetting(snapshotKey(options.snapshotId))
         if (!raw) throw new Error('The saved timeline snapshot no longer exists; reopen the guide.')
         const saved = JSON.parse(raw) as ResolvedTimelineResult
@@ -61,9 +64,11 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
         operation.complete('completed', 'Loaded the saved timeline snapshot.')
         return saved
       }
+      stage = 'fetching timeline source'
       operation.update({ phase: 'Loading timeline source' })
       const timeline = await timelineProvider.fetchTimeline(recipeId, { ...options, signal: operation.signal })
       operation.signal.throwIfAborted()
+      stage = 'matching timeline items to the library'
       operation.update({ phase: 'Matching timeline items to the library' })
       const resolved = await new TimelineResolutionEngine(
         sourceId => getDatabase().getMediaItems({ sourceId }),
@@ -71,6 +76,7 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
       ).resolveTimeline(timeline, sourceId, operation.signal)
       operation.signal.throwIfAborted()
       resolved.snapshotId = randomUUID()
+      stage = 'saving resolved timeline snapshot'
       operation.beginCommit()
       await getDatabase().setSetting(snapshotKey(resolved.snapshotId), JSON.stringify(resolved))
       operation.complete('completed', `Resolved ${resolved.totalCount} timeline items.`, {
@@ -85,8 +91,14 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
         operation.complete('cancelled', 'Timeline resolution cancelled.')
         return { cancelled: true as const }
       }
-      operation.complete('failed', getErrorMessage(error))
-      throw error
+      const message = getErrorMessage(error)
+      getLoggingService().error(
+        '[Timelines]',
+        `Timeline resolution failed: stage=${stage}, recipe=${recipeId}, source=${sourceId ?? 'all'}, request=${requestId}: ${message}`,
+        error
+      )
+      operation.complete('failed', message)
+      return { error: message }
     } finally {
       operation.dispose()
     }
