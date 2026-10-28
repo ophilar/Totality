@@ -4,7 +4,7 @@ import { TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
 import { DropdownMenu, DropdownMenuItem } from '../ui/DropdownMenu'
 import { AnimatedNumber } from '../ui/AnimatedNumber'
 import { MissingItemCard } from './MissingItemCard'
-import { ShowTranscodeModal } from './ShowTranscodeModal'
+import { TranscodeModal } from './TranscodeModal'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors, formatBytes, formatSeasonLabel, getStatusBadge } from './mediaUtils'
 import type { MediaItem, TVShow, TVShowSummary, SeasonInfo, TVSeason, SeriesCompletenessData, MissingEpisode, TVOptimizationNavigation } from './types'
@@ -482,7 +482,7 @@ export function TVShowsView({
   const [optimizingShow, setOptimizingShow] = useState<TVShowSummary | null>(null)
   const [optimizingEpisode, setOptimizingEpisode] = useState<MediaItem | null>(null)
   const [optimizingSeason, setOptimizingSeason] = useState<number | null>(null)
-  const [reviewingPreflight, setReviewingPreflight] = useState<ShowTranscodePreflight | null>(null)
+  const [reviewingPreflight, setReviewingPreflight] = useState<{ request: import('@main/services/TranscodingService').ShowTranscodeRequest; result: ShowTranscodePreflight } | null>(null)
   const [resumePreflightRequestId, setResumePreflightRequestId] = useState<string | null>(null)
   useEffect(() => {
     const openReview = (event: Event) => {
@@ -490,7 +490,7 @@ export function TVShowsView({
       if (!preflightId) return
       void window.electronAPI.getShowPreflight(preflightId).then(async saved => {
         if (!saved) return
-        const { request, result } = saved as { request: { seriesTitle?: string; seriesIdentityKey?: string; sourceId: string; libraryId?: string; mediaItemId?: number; seasonNumber?: number }; result: ShowTranscodePreflight }
+        const { request, result } = saved as { request: import('@main/services/TranscodingService').ShowTranscodeRequest; result: ShowTranscodePreflight }
         const episode = request.mediaItemId ? await window.electronAPI.getMediaItem(request.mediaItemId) as MediaItem | null : null
         const title = request.seriesTitle || episode?.series_title || result.seriesTitle
         setOptimizingEpisode(episode)
@@ -505,7 +505,7 @@ export function TVShowsView({
           library_id: request.libraryId,
           series_identity_key: request.seriesIdentityKey,
         })
-        setReviewingPreflight(result)
+        setReviewingPreflight({ request, result })
         setResumePreflightRequestId(null)
       }).catch(error => console.error('Could not reopen completed optimization review:', error))
     }
@@ -748,7 +748,7 @@ export function TVShowsView({
             </div>
           )}
           {optimizingShow && (
-            <ShowTranscodeModal
+            <TranscodeModal
               show={optimizingShow}
               episode={optimizingEpisode ?? undefined}
               seasonNumber={optimizingSeason ?? undefined}
@@ -794,7 +794,7 @@ export function TVShowsView({
           </div>
         )}
         {optimizingShow && (
-          <ShowTranscodeModal
+          <TranscodeModal
             show={optimizingShow}
             episode={optimizingEpisode ?? undefined}
             seasonNumber={optimizingSeason ?? undefined}
@@ -1026,7 +1026,7 @@ export function TVShowsView({
           ))}
         </div>
         {optimizingShow && (
-          <ShowTranscodeModal
+          <TranscodeModal
             show={optimizingShow}
             episode={optimizingEpisode ?? undefined}
             seasonNumber={optimizingSeason ?? undefined}
@@ -1181,7 +1181,7 @@ export function TVShowsView({
           ))}
         </div>
         {optimizingShow && (
-          <ShowTranscodeModal
+          <TranscodeModal
             show={optimizingShow}
             episode={optimizingEpisode ?? undefined}
             seasonNumber={optimizingSeason ?? undefined}

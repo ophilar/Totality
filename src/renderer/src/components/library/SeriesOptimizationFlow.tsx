@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
 import {
   Zap,
   X,
@@ -7,10 +6,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Layers,
-  ShieldCheck,
   Sparkles,
   Volume2,
-  FileCheck,
   Gauge,
   Clock,
   Activity,
@@ -20,7 +17,6 @@ import {
   ArrowLeft
 } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
-import { useFocusTrap } from '@/hooks/useFocusTrap'
 import type { TVShowSummary, MediaItem } from './types'
 import type { GpuInfo, PlannedOptimizationOperation, ShowTranscodePreflight } from './transcoding/types'
 import { EncoderPolicySelector } from './transcoding/EncoderPolicySelector'
@@ -36,6 +32,12 @@ import { getHardwareEncoder } from '@main/services/TranscodingCapabilities'
 import { TaskType } from '@main/types/database'
 import { SETTING_KEYS } from '@shared/settingKeys'
 import { normalizeAudioCodec, normalizeVideoCodec } from '@main/services/MediaNormalizer'
+import { OptimizationDialogShell } from './transcoding/OptimizationDialogShell'
+import { buildSampleApprovalGroups } from './tv/sampleApprovalGroups'
+import { summarizeOptimizationBatch } from './tv/batchOutcomeSummary'
+import { getMissingOptimizationSettings } from './transcoding/readiness'
+import { OutputHandlingSelection } from './transcoding/OutputHandlingSelection'
+import { buildEffectiveOptimizationOptions } from './transcoding/buildEffectiveOptimizationOptions'
 
 function getSourceTierBadge(tier?: string) {
   switch (tier) {
@@ -162,7 +164,22 @@ function formatBytes(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initialPreflight, resumeRequestId }: { show: TVShowSummary; episode?: MediaItem; seasonNumber?: number; onClose: () => void; initialPreflight?: ShowTranscodePreflight | null; resumeRequestId?: string | null }) {
+export interface SeriesOptimizationFlowProps {
+  show: TVShowSummary
+  mediaId?: never
+  initialPreflightId?: never
+  onOptimizationCompleted?: never
+  initialOptimizationMode?: never
+  initialStreamPruning?: never
+  episode?: MediaItem
+  seasonNumber?: number
+  onClose: () => void
+  initialPreflight?: import('./transcoding').SavedShowPreflight | null
+  resumeRequestId?: string | null
+}
+
+export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, initialPreflight: initialReview, resumeRequestId }: SeriesOptimizationFlowProps) {
+  const initialPreflight = initialReview?.result
   const { addToast } = useToast()
   const { seriesIdentityKey, sourceId, libraryId } = getTVShowIdentity(show)
   const [mode, setMode] = useState<'config' | 'preview' | 'monitoring'>('config')
@@ -200,8 +217,11 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
   const [targetContainerSelection, setTargetContainerSelection] = useState<'automatic' | 'user-selected'>('automatic')
   const [targetAudioCodec, setTargetAudioCodec] = useState<'aac' | 'ac3' | 'eac3' | ''>('')
   const [targetHdrFormat, setTargetHdrFormat] = useState<'SDR' | 'HDR10' | ''>('')
-  const [reviewedEpisodes, setReviewedEpisodes] = useState<number[]>([])
+  const [reviewedSampleGroups, setReviewedSampleGroups] = useState<string[]>([])
   const [activeBatchId, setActiveBatchId] = useState<string>()
+  const [submittedMediaItemIds, setSubmittedMediaItemIds] = useState<number[]>([])
+  const [submittedTaskIds, setSubmittedTaskIds] = useState<string[]>([])
+  const [batchQueueControlState, setBatchQueueControlState] = useState<'pausing' | 'resuming' | null>(null)
   const [codec, setCodec] = useState<'hevc' | 'av1' | ''>('')
   const [audio, setAudio] = useState<'all' | 'original-and-protected'>('original-and-protected')
   const [language, setLanguage] = useState('')
@@ -209,7 +229,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
   const [newSubtitleInput, setNewSubtitleInput] = useState('')
   const [detectedLanguages, setDetectedLanguages] = useState<string[]>([])
   const [providerLanguage, setProviderLanguage] = useState<string>('')
-  const [outputMode, setOutputMode] = useState<'copy' | 'quarantine-replace' | 'replace'>('quarantine-replace')
+  const [outputMode, setOutputMode] = useState<'copy' | 'quarantine-replace' | 'replace' | ''>('')
   const [gpuId, setGpuId] = useState('')
   const [gpus, setGpus] = useState<GpuInfo[]>([])
   const [deviceEncoders, setDeviceEncoders] = useState<Record<string, string[]>>({})
@@ -217,11 +237,11 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
   const [isSuccess, setIsSuccess] = useState(false)
   const [busy, setBusy] = useState(false)
   const [preflightData, setPreflightData] = useState<ShowTranscodePreflight | null>(null)
+  const sampleApprovalGroups = useMemo(() => buildSampleApprovalGroups(preflightData), [preflightData])
   const [preflightTermination, setPreflightTermination] = useState<'cancelling' | 'finishing' | null>(null)
-  const [preflightProgress, setPreflightProgress] = useState<{ percentage: number; phase?: string; currentItem?: string } | null>(null)
+  const [preflightProgress, setPreflightProgress] = useState<{ percentage?: number; phase?: string; currentItem?: string } | null>(null)
   const [preflightOperationState, setPreflightOperationState] = useState<'queued' | 'running' | 'pausing' | 'paused' | 'finishing' | null>(null)
   const [quarantineFiles, setQuarantineFiles] = useState<Array<{ mediaItemId: number; label: string; path: string; size: number; modifiedAt: string; owned: boolean }>>([])
-  const modalRef = useRef<HTMLDivElement | null>(null)
   const activePreflightRequestId = useRef<string | null>(null)
   const activePreflightTaskId = useRef<string | null>(null)
   const rejectPreflightWait = useRef<((error: Error) => void) | null>(null)
@@ -236,14 +256,39 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
     completedTasks: []
   })
 
-  useFocusTrap(true, modalRef)
+  const restoreSavedReview = useCallback((saved: { request: import('@main/services/TranscodingService').ShowTranscodeRequest; result: ShowTranscodePreflight }) => {
+    const { request, result } = saved
+    const options = request.options
+    setOptimizationMode(options.optimizationMode ?? 'smart')
+    setRemoveUnnecessaryStreams(options.streamSelection?.audio !== 'all')
+    setAdjustToTarget(options.optimizationMode !== 'remux_only')
+    setTargetProfileId(options.targetProfileId ?? '')
+    setPlaybackPolicy(options.playbackPolicy ?? 'allow-transcoding')
+    setTargetProfileName(targetProfiles.find(profile => profile.id === options.targetProfileId)?.name ?? '')
+    setQualityProfile(options.qualityProfile ?? '')
+    setEncoderPolicy(options.encoderPolicy ?? '')
+    setTargetContainer(options.targetContainer ?? '')
+    setTargetContainerSelection(options.targetContainerSelection ?? 'automatic')
+    setTargetAudioCodec(options.targetAudioCodec ?? '')
+    setTargetHdrFormat(options.targetHdrFormat ?? '')
+    setCodec(options.targetCodec ?? '')
+    setAudio(options.streamSelection?.audio === 'all' ? 'all' : 'original-and-protected')
+    setLanguage(options.streamSelection?.audio === 'original-and-protected' ? options.streamSelection.originalLanguage : '')
+    setSubtitleWhitelist(options.streamSelection?.subtitleLanguageWhitelist?.join(', ') ?? '')
+    setOutputMode(options.outputMode ?? '')
+    setGpuId(options.gpuId ?? '')
+    setActiveBatchId(result.batchId)
+    setPreflightData(result)
+    setReviewedSampleGroups([])
+    setMode(result.queuedAt ? 'monitoring' : 'preview')
+  }, [targetProfiles])
 
   useEffect(() => {
-    if (!initialPreflight) return
-    setPreflightData(initialPreflight)
-    setReviewedEpisodes([])
-    setMode('preview')
-  }, [initialPreflight])
+    if (!initialReview || !initialPreflight) return
+    restoreSavedReview({ request: initialReview.request, result: initialPreflight })
+    setSubmittedMediaItemIds(initialPreflight.queuedMediaItemIds ?? [])
+    setSubmittedTaskIds(initialPreflight.queuedTaskIds ?? [])
+  }, [initialReview, initialPreflight, restoreSavedReview])
 
   useEffect(() => {
     if (initialPreflight || resumeRequestId || targetProfilesLoading) return
@@ -257,36 +302,15 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
       return window.electronAPI.findShowPreflight(seriesIdentityKey, sourceId, libraryId, show.series_title, episode?.id, seasonNumber)
     })().then(saved => {
       if (!mounted || startedPreflightHere.current || !saved) return
-      const request = saved.request as import('@main/services/TranscodingService').ShowTranscodeRequest
       const result = saved.result as ShowTranscodePreflight
-      const options = request.options
-      setOptimizationMode(options.optimizationMode ?? 'smart')
-      setRemoveUnnecessaryStreams(options.streamSelection?.audio !== 'all')
-      setAdjustToTarget(options.optimizationMode !== 'remux_only')
-      setTargetProfileId(options.targetProfileId ?? '')
-      setPlaybackPolicy(options.playbackPolicy ?? 'allow-transcoding')
-      setTargetProfileName(targetProfiles.find(profile => profile.id === options.targetProfileId)?.name ?? '')
-      setQualityProfile(options.qualityProfile ?? '')
-      setEncoderPolicy(options.encoderPolicy ?? '')
-      setTargetContainer(options.targetContainer ?? '')
-      setTargetContainerSelection(options.targetContainerSelection ?? 'automatic')
-      setTargetAudioCodec(options.targetAudioCodec ?? '')
-      setTargetHdrFormat(options.targetHdrFormat ?? '')
-      setCodec(options.targetCodec ?? '')
-      setAudio(options.streamSelection?.audio === 'all' ? 'all' : 'original-and-protected')
-      setLanguage(options.streamSelection?.audio === 'original-and-protected' ? options.streamSelection.originalLanguage : '')
-      setSubtitleWhitelist(options.streamSelection?.subtitleLanguageWhitelist?.join(', ') ?? '')
-      setOutputMode(options.outputMode ?? 'quarantine-replace')
-      setGpuId(options.gpuId ?? '')
-      setActiveBatchId(result.batchId)
-      setPreflightData(result)
-      setReviewedEpisodes([])
+      restoreSavedReview({ request: saved.request as import('@main/services/TranscodingService').ShowTranscodeRequest, result })
+      setSubmittedMediaItemIds(result.queuedMediaItemIds ?? [])
+      setSubmittedTaskIds(result.queuedTaskIds ?? [])
       setMessage('')
-      setMode('preview')
       logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.reused', { preflightId: result.preflightId, batchId: result.batchId, seriesIdentityKey, seasonNumber, mediaItemId: episode?.id })
     }).catch(error => setMessage(error instanceof Error ? error.message : String(error)))
     return () => { mounted = false }
-  }, [initialPreflight, resumeRequestId, targetProfilesLoading, seriesIdentityKey, sourceId, libraryId, show.series_title, episode?.id, seasonNumber, targetProfiles])
+  }, [initialPreflight, resumeRequestId, targetProfilesLoading, seriesIdentityKey, sourceId, libraryId, show.series_title, episode?.id, seasonNumber, restoreSavedReview])
 
   useEffect(() => {
     if (initialPreflight) return
@@ -315,7 +339,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
         setBusy(true)
         setPreflightOperationState(state.isPaused ? 'paused' : task.status === 'queued' ? 'queued' : 'running')
         setPreflightProgress({
-          percentage: task.progress?.percentage ?? 0,
+          percentage: task.progress?.percentage,
           phase: state.isPaused ? 'Preflight paused' : task.progress?.phase ?? (task.status === 'queued' ? 'Waiting in task queue' : seasonNumber === undefined ? 'Preflighting series' : `Preflighting season ${seasonNumber}`),
           currentItem: task.progress?.currentItem ?? task.label,
         })
@@ -330,7 +354,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
           if (!mounted) return
           if (!saved) throw new Error('The saved optimization review could not be found')
           setPreflightData(saved.result)
-          setReviewedEpisodes([])
+          setReviewedSampleGroups([])
           setMode('preview')
         } catch (error) {
           setMessage(error instanceof Error ? error.message : String(error))
@@ -360,19 +384,34 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
     void Promise.all([
       window.electronAPI.listPlaybackTargetProfiles(),
       window.electronAPI.getSetting('optimization_default_target_profile_id'),
-      window.electronAPI.getSetting(SETTING_KEYS.subtitle_preferred_languages)
-    ]).then(([profiles, configuredId, configuredSubtitleLanguages]) => {
+      window.electronAPI.getSetting(SETTING_KEYS.subtitle_preferred_languages),
+      window.electronAPI.getSetting(SETTING_KEYS.transcoding_default_output_mode)
+    ]).then(([profiles, configuredId, configuredSubtitleLanguages, configuredOutputMode]) => {
       const profile = profiles.find(candidate => candidate.id === configuredId)
       if (mounted) {
         setTargetProfiles(profiles)
         setSubtitleWhitelist(configuredSubtitleLanguages || '')
+        if (!initialReview && !initialPreflight) {
+          if (configuredOutputMode === 'copy' || configuredOutputMode === 'quarantine-replace' || configuredOutputMode === 'replace') setOutputMode(configuredOutputMode)
+          else if (configuredOutputMode) setMessage('Saved output handling is unsupported. Choose a valid option before preparing a review.')
+        }
         if (profile) { setTargetProfileId(profile.id); setTargetProfileName(profile.name) }
         else if (configuredId) setMessage(`Configured playback target ${configuredId} was not found. Choose another target or select no playback target.`)
       }
     }).catch(error => setMessage(error instanceof Error ? error.message : String(error)))
       .finally(() => { if (mounted) setTargetProfilesLoading(false) })
     return () => { mounted = false }
-  }, [addToast])
+  }, [addToast, initialReview, initialPreflight])
+
+  const selectOutputMode = async (next: 'copy' | 'quarantine-replace' | 'replace') => {
+    try {
+      await window.electronAPI.setSetting(SETTING_KEYS.transcoding_default_output_mode, next)
+      setOutputMode(next)
+      setMessage(message => message.startsWith('Could not save output handling:') || message.startsWith('Saved output handling is unsupported.') ? '' : message)
+    } catch (error) {
+      setMessage(`Could not save output handling: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
 
   useEffect(() => {
     if (initialPreflight?.episodes.some(item => item.options?.qualityProfile)) return
@@ -445,13 +484,6 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
     onClose()
   }, [preflightData, mode, onClose, seriesIdentityKey, episode?.id])
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') void handleClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [handleClose])
 
   const loadQuarantine = async () => {
     try {
@@ -503,7 +535,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
                       if (l) extracted.add(l)
                     }
                   } catch (error) {
-                    console.error('[ShowTranscodeModal] Failed to parse episode audio tracks for language detection', error)
+                    console.error('[SeriesOptimizationFlow] Failed to parse episode audio tracks for language detection', error)
                   }
                 }
                 if (ep.audio_language) {
@@ -589,7 +621,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
     const whitelist = shouldRemoveStreams && subtitleList.length > 0 ? subtitleList : undefined
     const effectiveAudio = shouldRemoveStreams ? audio : 'all' as const
     const effectiveOptimizationMode = shouldAdjustToTarget ? optimizationMode : 'remux_only' as const
-    return {
+    const options: import('@main/services/TranscodingService').TranscodeOptions = {
       targetCodec: codec || undefined,
       playbackPolicy,
       qualityProfile: qualityProfile || undefined,
@@ -599,7 +631,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
       targetAudioCodec: shouldAdjustToTarget ? targetAudioCodec || undefined : undefined,
       targetHdrFormat: shouldAdjustToTarget && effectiveTargetProfileId ? targetHdrFormat || undefined : undefined,
       transcodingEngine: 'ffmpeg' as const,
-      outputMode,
+      outputMode: outputMode || undefined,
       gpuId: useHardwareEncoder && effectiveOptimizationMode !== 'remux_only' ? gpuId : undefined,
       optimizationMode: effectiveOptimizationMode,
       targetProfileId: (overrides.targetProfileId ?? targetProfileId) || null,
@@ -607,49 +639,68 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
         ? { audio: 'all' as const, subtitle: 'all' as const, subtitleLanguageWhitelist: whitelist, defaultSubtitle: 'preserve' as const }
         : { audio: effectiveAudio, originalLanguage: language.trim().toLowerCase(), subtitle: 'all' as const, subtitleLanguageWhitelist: whitelist, defaultSubtitle: 'preserve' as const }
     }
+    return buildEffectiveOptimizationOptions(options, {
+      targetProfileId: effectiveTargetProfileId,
+      targetContainer: shouldAdjustToTarget ? targetContainer || undefined : undefined,
+      audioTranscodeEnabled: shouldAdjustToTarget && Boolean(targetAudioCodec),
+      subtitleLanguageWhitelist: whitelist ?? [],
+    })
+  }
+
+  const getMissingSettings = (overrides: { removeUnnecessaryStreams?: boolean; adjustToTarget?: boolean; targetProfileId?: string } = {}) => {
+    const shouldRemoveStreams = overrides.removeUnnecessaryStreams ?? removeUnnecessaryStreams
+    const shouldAdjustToTarget = overrides.adjustToTarget ?? adjustToTarget
+    const effectiveTargetProfileId = overrides.targetProfileId ?? targetProfileId
+    const videoTranscode = shouldAdjustToTarget && optimizationMode !== 'remux_only'
+    const dynamicHdrSource = ['DOLBY VISION', 'HDR10+'].includes(sourceHdrFormat ?? '')
+    return getMissingOptimizationSettings({
+      outputModeSelected: Boolean(outputMode),
+      videoTranscode,
+      videoCodecSelected: Boolean(codec),
+      qualityProfileSelected: Boolean(qualityProfile),
+      encoderPolicySelected: Boolean(encoderPolicy),
+      streamPruning: shouldRemoveStreams && audio === 'original-and-protected',
+      originalAudioLanguageSelected: Boolean(language.trim()),
+      playbackTargetRequired: playbackPolicy !== 'allow-transcoding',
+      playbackTargetSelected: Boolean(effectiveTargetProfileId),
+      additionalRequirements: [
+        { label: 'output container', ready: !videoTranscode || targetContainerSelection !== 'user-selected' || Boolean(targetContainer) },
+        { label: 'output color format for the selected playback target', ready: !videoTranscode || !effectiveTargetProfileId || Boolean(targetHdrFormat) || optimizationMode !== 'transcode' && (!episode || dynamicHdrSource) },
+      ],
+    })
   }
 
   const runPreflight = async (overrides: { removeUnnecessaryStreams?: boolean; adjustToTarget?: boolean; targetProfileId?: string; representativeMediaItemId?: number } = {}) => {
     const { representativeMediaItemId, ...optionOverrides } = overrides
+    const requestId = crypto.randomUUID()
+    const requestedAt = Date.now()
     const shouldRemoveStreams = overrides.removeUnnecessaryStreams ?? removeUnnecessaryStreams
     const shouldAdjustToTarget = overrides.adjustToTarget ?? adjustToTarget
     const effectiveTargetProfileId = overrides.targetProfileId ?? targetProfileId
-    const missingSettings: string[] = []
-    if (!outputMode) missingSettings.push('output mode')
-    if (shouldRemoveStreams && audio === 'original-and-protected' && !language.trim()) missingSettings.push('original language for stream pruning')
-    if (shouldAdjustToTarget && optimizationMode !== 'remux_only') {
-      if (!codec) missingSettings.push('video codec')
-      if (!qualityProfile) missingSettings.push('visual quality threshold')
-      if (!encoderPolicy) missingSettings.push('encoder policy')
-      if (!targetContainer && targetContainerSelection === 'user-selected') missingSettings.push('output container')
-      const dynamicHdrSource = ['DOLBY VISION', 'HDR10+'].includes(sourceHdrFormat ?? '')
-      if (effectiveTargetProfileId && !targetHdrFormat && (optimizationMode === 'transcode' || (episode && !dynamicHdrSource))) missingSettings.push('output color format for the selected playback target')
-    }
-    if (playbackPolicy !== 'allow-transcoding' && !effectiveTargetProfileId) missingSettings.push('playback target for the selected playback policy')
+    const missingSettings = getMissingSettings(overrides)
     const settings = {
-      seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, optimizationMode, outputMode,
+      requestId, scope: episode ? 'episode' : seasonNumber === undefined ? 'series' : 'season', seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, optimizationMode, outputMode,
       seasonNumber,
       codec: codec || null, qualityProfile: qualityProfile || null, encoderPolicy: encoderPolicy || null,
       targetContainer: targetContainer || null, targetHdrFormat: targetHdrFormat || null,
       gpuId: gpuId || null, removeUnnecessaryStreams: shouldRemoveStreams,
       adjustToTarget: shouldAdjustToTarget, targetProfileId: effectiveTargetProfileId || null, playbackPolicy
     }
-    logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.requested', settings)
+    logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.requested', { ...settings, stage: 'preparation.requested' })
     if (missingSettings.length > 0) {
       const error = `Complete these settings before measuring samples: ${missingSettings.join(', ')}.`
       logOptimizationDiagnostic('TVOptimizationUI', 'warn', 'preflight.validation.failed', { ...settings, missingSettings })
       throw new Error(error)
     }
-    setReviewedEpisodes([])
+    setReviewedSampleGroups([])
     if (preflightData) {
       await window.electronAPI.discardShow(preflightData.preflightId)
       setPreflightData(null)
     }
-    const requestId = crypto.randomUUID()
     backgroundPreflight.current = false
     activePreflightRequestId.current = requestId
     setPreflightTermination(null)
-    setPreflightProgress({ percentage: 0, phase: 'Starting preflight', currentItem: episode ? `Loading ${episode.title}` : seasonNumber === undefined ? 'Loading series episodes' : `Loading season ${seasonNumber} episodes` })
+    setPreflightProgress({ phase: 'Starting review preparation', currentItem: episode ? `Loading ${episode.title}` : seasonNumber === undefined ? 'Loading series episodes' : `Loading season ${seasonNumber} episodes` })
     setPreflightOperationState('running')
     startedPreflightHere.current = true
     let preflight: ShowTranscodePreflight | undefined
@@ -695,13 +746,14 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
           void inspect(task)
         }).catch(reject)
       })
-      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.returned', { preflightId: preflight.preflightId, batchId: preflight.batchId, episodeCount: preflight.episodeCount, compatible: preflight.episodes.filter(item => item.compatible).length, savingsBytes: preflight.estimatedSavingsBytes, savingsCoverage: preflight.savingsCoverage })
+      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.returned', { requestId, scope: episode ? 'episode' : seasonNumber === undefined ? 'series' : 'season', mediaItemId: episode?.id, stage: 'review.saved', durationMs: Date.now() - requestedAt, preflightId: preflight.preflightId, batchId: preflight.batchId, episodeCount: preflight.episodeCount, compatible: preflight.episodes.filter(item => item.compatible).length, savingsBytes: preflight.estimatedSavingsBytes, savingsCoverage: preflight.savingsCoverage })
       if (!backgroundPreflight.current) setPreflightData(preflight)
       return preflight
     } catch (error) {
       const cancelled = error instanceof DOMException && error.name === 'AbortError'
       logOptimizationDiagnostic('TVOptimizationUI', cancelled ? 'info' : 'error', cancelled ? 'preflight.cancelled' : 'preflight.failed', {
-        seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, requestId,
+        requestId, scope: episode ? 'episode' : seasonNumber === undefined ? 'series' : 'season', stage: cancelled ? 'preparation.cancelled' : 'preparation.failed', durationMs: Date.now() - requestedAt,
+        seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId,
         ...(cancelled ? {} : { error: describeDiagnosticError(error) }),
       })
       throw error
@@ -762,7 +814,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
       setMessage(errMsg)
       addToast({
         type: 'error',
-        title: 'Preflight Failed',
+        title: 'Review preparation failed',
         message: errMsg
       })
     } finally {
@@ -776,8 +828,8 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
     setMessage('')
     try {
       const requiresApproval = preflightData.episodes.some(episode => episode.compatible && episode.decisionStatus === 'sample_required')
-      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'queue.requested', { preflightId: preflightData.preflightId, batchId: preflightData.batchId, requiresSampleApproval: requiresApproval, reviewedEpisodeCount: reviewedEpisodes.length })
-      if (preflightData.episodes.some(episode => episode.compatible && episode.samplePaths?.length && !reviewedEpisodes.includes(episode.mediaItemId))) throw new Error('Play and approve the winning samples for every eligible episode.')
+      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'queue.requested', { preflightId: preflightData.preflightId, batchId: preflightData.batchId, requiresSampleApproval: requiresApproval, reviewedSampleGroupCount: reviewedSampleGroups.length })
+      if (sampleApprovalGroups.some(group => !reviewedSampleGroups.includes(group.id))) throw new Error('Play and approve the measured sample for every representative group.')
       if (requiresApproval) await window.electronAPI.approveShow(preflightData.preflightId)
       if (qualityProfile) {
         const raw = await window.electronAPI.getSetting(SETTING_KEYS.optimization_quality_preferences)
@@ -787,7 +839,9 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
       const queued = await window.electronAPI.queueShow(preflightData.preflightId)
       logOptimizationDiagnostic('TVOptimizationUI', 'info', 'queue.completed', { batchId: queued.batchId, queuedMediaItemIds: queued.queuedMediaItemIds })
       setActiveBatchId(queued.batchId)
-      setIsSuccess(true)
+      setSubmittedMediaItemIds(queued.queuedMediaItemIds)
+      setSubmittedTaskIds(queued.queuedTaskIds)
+      setIsSuccess(false)
       setMode('monitoring')
       const count = queued.queuedMediaItemIds.length
       setMessage(`Successfully queued ${count} episode${count === 1 ? '' : 's'} in background task queue.`)
@@ -807,6 +861,38 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
       })
     } finally {
       setBusy(false)
+    }
+  }
+
+  const retryFailedBatchTasks = async () => {
+    if (!preflightData || !batchSummary || batchSummary.activeCount > 0 || batchSummary.failedMediaItemIds.length + batchSummary.cancelledMediaItemIds.length === 0) return
+    setBusy(true)
+    try {
+      const queued = await window.electronAPI.queueShow(preflightData.preflightId)
+      setSubmittedMediaItemIds(ids => [...new Set([...ids, ...queued.queuedMediaItemIds])])
+      setSubmittedTaskIds(ids => [...new Set([...ids, ...queued.queuedTaskIds])])
+      setMessage(`Queued ${queued.queuedMediaItemIds.length} failed or cancelled episode${queued.queuedMediaItemIds.length === 1 ? '' : 's'} for retry.`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setMessage(message)
+      addToast({ type: 'error', title: 'Could not retry optimization', message })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const toggleBatchPause = async () => {
+    const resuming = queueState.isPaused
+    setBatchQueueControlState(resuming ? 'resuming' : 'pausing')
+    try {
+      if (resuming) await window.electronAPI.taskQueueResume()
+      else await window.electronAPI.taskQueuePause()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setMessage(message)
+      addToast({ type: 'error', title: `Could not ${resuming ? 'resume' : 'pause'} optimization`, message })
+    } finally {
+      setBatchQueueControlState(null)
     }
   }
 
@@ -858,15 +944,19 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
   const profileSupportedContainers = targetProfile
     ? getPlaybackTargetContainers(targetProfile, { codec: episode?.video_codec, profile: episode?.video_profile, hdrFormat: episode?.hdr_format })
     : ['matroska', 'mp4']
+  const missingSettings = getMissingSettings()
   const verifiedResults = queueState.completedTasks.filter(task => task.batchId === activeBatchId && task.status === 'completed' && typeof task.result?.physicallyReclaimedBytes === 'number').map(task => task.result!)
-  const batchQueue = queueState.queue.filter(task => task.batchId === activeBatchId)
-  const currentTask = queueState.currentTask?.batchId === activeBatchId ? queueState.currentTask : null
+  const isSubmittedTask = (task: QueuedTask) => task.batchId === activeBatchId && (submittedTaskIds.length > 0 ? submittedTaskIds.includes(task.id) : submittedMediaItemIds.includes(task.mediaItemId ?? -1))
+  const batchQueue = queueState.queue.filter(isSubmittedTask)
+  const batchSummary = activeBatchId ? summarizeOptimizationBatch(queueState, activeBatchId, submittedMediaItemIds, submittedTaskIds) : null
+  const currentTask = queueState.currentTask && isSubmittedTask(queueState.currentTask) ? queueState.currentTask : null
   const isCurrentTranscode = currentTask?.type === TaskType.Transcode
+  const currentTaskStatusLabel = currentTask?.status === 'cancelling' ? 'Cancelling' : 'Running'
 
   const currentPercent = currentTask?.progress?.percentage ?? 0
   const currentFps = currentTask?.progress?.fps ? `${currentTask.progress.fps} FPS` : 'Encoding'
-  const currentSpeed = currentTask?.progress?.speed || 'Measuring…'
-  const currentEta = currentTask?.progress?.eta || 'Calculating...'
+  const currentSpeed = currentTask?.progress?.speed || 'Unavailable'
+  const currentEta = currentTask?.progress?.eta || 'Unavailable'
 
   // SVG Circular Gauge calculation
   const radius = 56
@@ -877,7 +967,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
   const preflightProgressPanel = busy && preflightProgress ? (
     <div role="status" aria-live="polite" className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-2">
       <div className="flex items-center justify-between gap-3 text-xs">
-        <span className="font-semibold">{preflightOperationState === 'paused' ? 'Preflight paused' : preflightProgress.phase || (seasonNumber === undefined ? 'Preflighting series' : `Preflighting season ${seasonNumber}`)}</span>
+        <span className="font-semibold">{preflightOperationState === 'paused' ? 'Review preparation paused' : preflightProgress.phase || (seasonNumber === undefined ? 'Preparing series review' : `Preparing Season ${seasonNumber} review`)}</span>
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground tabular-nums">{preflightProgress.percentage}%</span>
           <button
@@ -923,65 +1013,113 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
           </button>
         </div>
       </div>
-      <div
+      {typeof preflightProgress.percentage === 'number' ? <div
         role="progressbar"
-        aria-label="Series preflight progress"
+        aria-label="Review preparation progress"
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={preflightProgress.percentage}
         className="h-1.5 overflow-hidden rounded-full bg-muted"
       >
         <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${preflightProgress.percentage}%` }} />
-      </div>
+      </div> : <Activity className="h-4 w-4 animate-pulse text-primary" aria-label="Preparation progress unavailable" />}
       <p className="text-xs text-muted-foreground break-words">{preflightProgress.currentItem || 'Preparing episode checks…'}</p>
       <p className="text-[11px] text-muted-foreground">Pause stops the active sample and keeps completed work. Close this window to leave the task in the queue.</p>
     </div>
   ) : null
 
-  return createPortal(
-    <div
-      ref={modalRef}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="show-transcode-modal-title"
-      tabIndex={-1}
-      className="fixed inset-0 z-250 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
-      onClick={() => void handleClose()}
-    >
-      <div
-        className="relative bg-card border border-border sm:rounded-2xl shadow-2xl max-w-2xl w-full h-dvh sm:h-auto sm:max-h-[92vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-border/20 flex justify-between items-center bg-muted/20">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-primary/10 rounded-xl text-primary">
-              {mode === 'monitoring' ? <Activity className="w-5 h-5 animate-pulse" /> : <Zap className="w-5 h-5 fill-current" />}
-            </div>
-            <div>
-              <h3 id="show-transcode-modal-title" className="text-lg font-bold leading-tight flex items-center gap-2">
-                {mode === 'monitoring' ? (seasonNumber === undefined ? 'Live Series Optimization' : `Live Season ${seasonNumber} Optimization`) : mode === 'preview' ? (seasonNumber === undefined ? 'Optimization Plan Preview' : `Season ${seasonNumber} Optimization Plan`) : seasonNumber === undefined ? 'Batch Optimize Series' : `Optimize Season ${seasonNumber}`}
-              </h3>
-              <p className="text-xs text-muted-foreground truncate max-w-[420px]">{show.series_title}{seasonNumber === undefined ? '' : ` · Season ${seasonNumber}`}</p>
-            </div>
-          </div>
-          <button
-            onClick={() => void handleClose()}
-            className={`rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer ${busy ? 'px-2.5 py-1.5 text-xs font-semibold' : 'p-1.5'}`}
-            title={busy ? 'Continue in background' : 'Close'}
-          >
-            {busy ? 'Continue in background' : <X className="w-5 h-5" />}
-          </button>
-        </div>
+  return <OptimizationDialogShell
+    title={episode ? mode === 'monitoring' ? 'Episode results' : mode === 'preview' ? 'Review episode changes' : 'Optimize episode' : mode === 'monitoring' ? (seasonNumber === undefined ? 'Series results' : `Season ${seasonNumber} results`) : mode === 'preview' ? (seasonNumber === undefined ? 'Review series changes' : `Review Season ${seasonNumber} changes`) : seasonNumber === undefined ? 'Optimize series' : `Optimize Season ${seasonNumber}`}
+    subtitle={`${show.series_title}${episode ? ` · S${String(episode.season_number ?? '?').padStart(2, '0')}E${String(episode.episode_number ?? '?').padStart(2, '0')} · 1 item` : `${seasonNumber === undefined ? '' : ` · Season ${seasonNumber}`}${preflightData ? ` · ${preflightData.episodeCount} items` : ''}`}`}
+    leading={mode === 'monitoring' ? <Activity className="h-5 w-5 animate-pulse" /> : <Zap className="h-5 w-5 fill-current" />}
+    onClose={() => void handleClose()}
+    closeText={busy ? 'Continue in background' : undefined}
+    wide
+    footer={<div className="p-4 sm:p-5 bg-muted/10 border-t border-border/10 flex items-center justify-between gap-3">
+          {mode === 'config' ? (
+            <>
+              <button
+                onClick={() => void handleClose()}
+                disabled={preflightTermination !== null}
+                title={preflightTermination === 'cancelling' ? 'Cancelling optimization review' : preflightTermination === 'finishing' ? 'Finishing optimization review' : undefined}
+                className="px-5 py-2 bg-muted hover:bg-muted/80 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                {preflightTermination === 'cancelling' ? 'Stopping…' : preflightTermination === 'finishing' ? 'Finishing…' : activePreflightRequestId.current ? 'Stop preparation' : 'Cancel'}
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  disabled={busy || targetProfilesLoading || missingSettings.length > 0}
+                  onClick={() => void handlePreviewPlan()}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground font-black rounded-xl text-xs transition-all disabled:opacity-50 shadow-lg shadow-primary/20 hover:opacity-90 cursor-pointer"
+                >
+                  {busy ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>{seasonNumber === undefined ? 'Preparing series review…' : `Preparing Season ${seasonNumber} review…`}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      <span>Prepare review</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </>
+          ) : mode === 'preview' ? (
+            <>
+              <button
+                onClick={() => setMode('config')}
+                className="flex items-center gap-1.5 px-4 py-2 bg-muted hover:bg-muted/80 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to Settings</span>
+              </button>
+
+              <button
+                disabled={busy || !preflightData?.compatible || sampleApprovalGroups.some(group => !reviewedSampleGroups.includes(group.id))}
+                onClick={() => void handleQueueFromPreview()}
+                className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground font-black rounded-xl text-xs transition-all disabled:opacity-50 shadow-lg shadow-primary/20 hover:opacity-90 cursor-pointer"
+              >
+                {busy ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Queueing optimization…</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    <span>Queue optimization</span>
+                  </>
+                )}
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={() => window.dispatchEvent(new Event('taskQueue:open'))} className="text-sm text-primary hover:underline">Open Task Queue</button>
+
+              <button
+                onClick={() => void handleClose()}
+                className="px-5 py-2 bg-primary text-primary-foreground hover:opacity-90 rounded-xl text-xs font-bold transition-all shadow-md shadow-primary/20 cursor-pointer"
+              >
+                Run in Background
+              </button>
+            </>
+          )}
+        </div>}
+  >
 
         {/* Content */}
         {mode === 'config' ? (
-          <div className="p-5 sm:p-6 space-y-5 max-h-[72vh] overflow-y-auto">
+          <div className="p-5 sm:p-6 space-y-5">
             {preflightProgressPanel}
             <div className="rounded-xl border border-border/40 bg-muted/20 p-3 flex items-center justify-between gap-3">
               <div className="min-w-0"><div className="text-xs font-bold">Quarantined originals</div><div className="text-[11px] text-muted-foreground">{quarantineFiles.length} retained file{quarantineFiles.length === 1 ? '' : 's'} · {formatBytes(quarantineFiles.reduce((total, file) => total + file.size, 0))}{quarantineFiles.some(file => !file.owned) && ' · Unowned backups require separate review'}</div></div>
               <div className="flex gap-2 shrink-0"><button type="button" onClick={loadQuarantine} className="px-2.5 py-1.5 text-xs rounded-lg border border-border hover:bg-muted">List</button><button type="button" onClick={purgeQuarantine} disabled={quarantineFiles.length === 0 || quarantineFiles.some(file => !file.owned)} className="px-2.5 py-1.5 text-xs rounded-lg border border-red-500/40 text-red-300 disabled:opacity-40">Purge</button></div>
             </div>
+            <OutputHandlingSelection value={outputMode || undefined} onChange={value => void selectOutputMode(value)} />
+            {missingSettings.length > 0 && <p role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">Choose {missingSettings.join(', ')} before preparing this review.</p>}
             <div className="space-y-2">
               <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Optimization plan</label>
               <label className="block space-y-1.5 text-xs font-semibold">Playback target
@@ -1314,59 +1452,6 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
             </details>
             <details className="space-y-3 rounded-xl border border-border/40 bg-card/20 p-3">
               <summary className="cursor-pointer list-none text-xs font-bold uppercase tracking-wider text-muted-foreground">Execution and output</summary>
-            {/* Output Mode */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                <FileCheck className="w-3.5 h-3.5 text-primary" /> Output & Verification Mode
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setOutputMode('replace')}
-                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                    outputMode === 'replace'
-                      ? 'border-primary bg-primary/10 shadow-sm ring-1 ring-primary'
-                      : 'border-border bg-card/60 hover:bg-card'
-                  }`}
-                >
-                  <div className="flex items-center gap-1 font-bold text-xs mb-1">
-                    <Zap className="w-3.5 h-3.5 text-primary" />
-                    <span>Direct Replace</span>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">In-place replacement with zero residual storage footprint.</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setOutputMode('quarantine-replace')}
-                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                    outputMode === 'quarantine-replace'
-                      ? 'border-primary bg-primary/10 shadow-sm ring-1 ring-primary'
-                      : 'border-border bg-card/60 hover:bg-card'
-                  }`}
-                >
-                  <div className="flex items-center gap-1 font-bold text-xs mb-1">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                    <span>Quarantine & Replace</span>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">Replaces original and retains timestamped backup.</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setOutputMode('copy')}
-                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                    outputMode === 'copy'
-                      ? 'border-primary bg-primary/10 shadow-sm ring-1 ring-primary'
-                      : 'border-border bg-card/60 hover:bg-card'
-                  }`}
-                >
-                  <span className="font-bold text-xs block mb-1">Create Sibling Copy</span>
-                  <p className="text-[11px] text-muted-foreground">Preserves original intact and outputs an optimized sister file.</p>
-                </button>
-              </div>
-            </div>
-
             {/* Status Message */}
             {message && (
               <div className={`p-3 rounded-xl text-xs flex items-center gap-2.5 ${
@@ -1382,14 +1467,14 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
           </div>
         ) : mode === 'preview' && preflightData ? (
           /* Preflight Preview Mode */
-          <div className="p-5 sm:p-6 space-y-4 max-h-[72vh] overflow-y-auto">
+          <div className="p-5 sm:p-6 space-y-4">
             {preflightProgressPanel}
             {message && <div role={isSuccess ? 'status' : 'alert'} className={`rounded-xl border p-3 text-xs ${isSuccess ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400' : 'border-destructive/20 bg-destructive/10 text-destructive'}`}>{message}</div>}
             {/* Summary card */}
             <div className="bg-muted/20 border border-border/30 rounded-2xl p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="text-sm font-bold text-foreground">Preflight Optimization Plan</h4>
+                  <h4 className="text-sm font-bold text-foreground">Optimization review</h4>
                   <p className="text-xs text-muted-foreground">{preflightData.episodes.length} episodes analyzed; only evidenced actions can be queued</p>
                   <p className="text-xs text-muted-foreground">{preflightData.episodes.filter(ep => ep.samplingRole === 'measured').length} episode samples measured · {preflightData.episodes.filter(ep => ep.samplingRole === 'projected').length} episodes use representative settings. Compatibility is inspected per episode.</p>
                   <p className="text-xs text-muted-foreground">Quality metrics use VMAF {preflightData.measurementModel ?? 'model unavailable'}.</p>
@@ -1456,7 +1541,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
               <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
                 Episode Advisory Breakdown ({preflightData.episodes.length})
               </div>
-              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              <div className="space-y-2">
                 {preflightData.episodes.map(ep => (
                   <div
                     key={ep.mediaItemId || ep.label}
@@ -1481,10 +1566,10 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
                     {ep.samplingRole === 'projected' && <p className="text-xs text-amber-300">Uses measured settings from {ep.sampleRepresentativeLabel}; this episode’s savings are projected.</p>}
                     {ep.decisionStatus === 'insufficient_evidence' && ep.reason?.startsWith('Not sampled:') && ep.sourceAnalysis?.video && <button className="text-xs underline" disabled={busy} onClick={() => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.representative.reselected', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId }); void runPreflight({ representativeMediaItemId: ep.mediaItemId }).catch(error => { const message = error instanceof Error ? error.message : String(error); setMessage(message); addToast({ type: 'error', title: 'Could not retry representative sample', message }) }) }}>Use this episode as the sample for its technical group</button>}
                     {ep.sourceAnalysis?.video ? <details className="text-[11px]"><summary className="cursor-pointer text-muted-foreground">Source technical evidence</summary><p>{ep.sourceAnalysis.video.codec} · {ep.sourceAnalysis.video.width}×{ep.sourceAnalysis.video.height} · {ep.sourceAnalysis.video.frameRate} fps · {ep.sourceAnalysis.video.bitDepth}-bit · {ep.sourceAnalysis.video.bitrateKbps ? `${Math.round(ep.sourceAnalysis.video.bitrateKbps)} kb/s` : 'bitrate unavailable'} · {ep.hdrFormat} · {ep.sourceCambiMean === undefined ? 'source banding metric unavailable' : `source CAMBI ${ep.sourceCambiMean.toFixed(2)}`} · {ep.sourceSelfVmaf === undefined ? 'source-self control unavailable' : `source-self VMAF ${ep.sourceSelfVmaf.toFixed(2)}`}</p></details> : null}
-                    {ep.qualityChoices?.length ? <div className="grid gap-1 rounded-md bg-muted/30 p-2 text-[11px]">{ep.qualityChoices.map(choice => <div key={choice.profile}><p><strong>{choice.profile === 'transparent' ? 'Higher fidelity' : 'Smaller file'}:</strong> {choice.status === 'available' ? `${formatBytes(choice.estimatedSavingsBytes ?? 0)} estimated savings · ${choice.candidate?.encoder}/${choice.candidate?.preset} q${choice.candidate?.quality} · ${choice.candidate?.sampledDurationSeconds.toFixed(0)}s sampled · VMAF ${choice.candidate?.vmafMean.toFixed(1)} mean, ${choice.candidate?.vmafP5.toFixed(1)} p5 · CAMBI ${choice.candidate?.cambiMean.toFixed(2)} output / ${choice.candidate?.sourceCambiMean?.toFixed(2) ?? 'source unavailable'} source · source-self VMAF ${choice.candidate?.sourceSelfVmaf?.toFixed(2) ?? 'unavailable'} · ${((choice.candidate?.encodingDurationMs ?? 0) / 1000).toFixed(1)}s sample encode` : choice.status === 'measurement_incomplete' ? 'More candidate measurements are pending' : choice.status === 'incompatible' ? 'Measured candidates do not meet playback requirements' : 'No measured candidate meets this quality requirement'}</p>{choice.alternatives && choice.alternatives.length > 1 ? <details className="mt-1"><summary className="cursor-pointer">Compare {choice.alternatives.length} non-dominated measured configurations</summary><ul className="ml-4 list-disc">{choice.alternatives.map(candidate => <li key={`${candidate.encoder}/${candidate.preset}/${candidate.quality}`}>{candidate.encoder}/{candidate.preset} q{candidate.quality} · {formatBytes(candidate.outputBytes)} / {candidate.sampledDurationSeconds.toFixed(0)}s sampled · VMAF {candidate.vmafMean.toFixed(1)} mean / {candidate.vmafP5.toFixed(1)} p5 · CAMBI {candidate.cambiMean.toFixed(2)} · {((candidate.encodingDurationMs ?? 0) / 1000).toFixed(1)}s</li>)}</ul></details> : null}</div>)}</div> : null}
+                    {ep.qualityChoices?.length ? <div className="grid gap-1 rounded-md bg-muted/30 p-2 text-[11px]">{ep.qualityChoices.map(choice => <div key={choice.profile}><p><strong>{choice.profile === 'transparent' ? 'Higher fidelity' : 'Smaller file'}:</strong> {choice.status === 'available' ? `${formatBytes(choice.estimatedSavingsBytes ?? 0)} estimated savings · ${choice.candidate?.encoder}/${choice.candidate?.preset} q${choice.candidate?.quality} · ${choice.candidate?.sampledDurationSeconds.toFixed(0)}s sampled · VMAF ${choice.candidate?.vmafMean.toFixed(1)} mean, ${choice.candidate?.vmafP5.toFixed(1)} p5 · CAMBI ${choice.candidate?.cambiMean.toFixed(2)} output / ${choice.candidate?.sourceCambiMean?.toFixed(2) ?? 'source unavailable'} source · source-self VMAF ${choice.candidate?.sourceSelfVmaf?.toFixed(2) ?? 'unavailable'} · ${((choice.candidate?.encodingDurationMs ?? 0) / 1000).toFixed(1)}s sample encode` : choice.status === 'measurement_incomplete' ? 'More candidate measurements are pending' : choice.status === 'incompatible' ? 'Measured candidates do not meet playback requirements' : 'No measured candidate meets this quality requirement'}</p>{choice.alternatives && choice.alternatives.length > 1 ? <details className="mt-1"><summary className="cursor-pointer">Compare {choice.alternatives.length} alternative measured settings</summary><ul className="ml-4 list-disc">{choice.alternatives.map(candidate => <li key={`${candidate.encoder}/${candidate.preset}/${candidate.quality}`}>{candidate.encoder}/{candidate.preset} q{candidate.quality} · {formatBytes(candidate.outputBytes)} / {candidate.sampledDurationSeconds.toFixed(0)}s sampled · VMAF {candidate.vmafMean.toFixed(1)} mean / {candidate.vmafP5.toFixed(1)} p5 · CAMBI {candidate.cambiMean.toFixed(2)} · {((candidate.encodingDurationMs ?? 0) / 1000).toFixed(1)}s</li>)}</ul></details> : null}</div>)}</div> : null}
                     {ep.changes?.map(change => <p key={change} className="text-xs">{change}</p>)}
                     {ep.targetCompatibility && <PlaybackCompatibilityFindings evaluation={ep.targetCompatibility} targetName={ep.targetProfile?.name} />}
-                    {ep.samplePaths?.length && <div className="text-xs space-y-2">{ep.samplePaths.map((sample, index) => <button key={sample} className="mr-2 underline" onClick={() => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'sample.playback.requested', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, sampleIndex: index }); void window.electronAPI.openShowSample(preflightData.preflightId, ep.mediaItemId, index).then(() => logOptimizationDiagnostic('TVOptimizationUI', 'info', 'sample.playback.opened', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, sampleIndex: index })).catch(error => { logOptimizationDiagnostic('TVOptimizationUI', 'error', 'sample.playback.failed', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, sampleIndex: index, error: describeDiagnosticError(error) }); const message = error instanceof Error ? error.message : String(error); setMessage(message); addToast({ type: 'error', title: 'Could not open measured sample', message }) }) }}>Play sample {index + 1}</button>)}<label className="block"><input type="checkbox" checked={reviewedEpisodes.includes(ep.mediaItemId)} onChange={event => { const reviewed = event.target.checked; logOptimizationDiagnostic('TVOptimizationUI', 'info', 'sample.review.acknowledged', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, reviewed }); setReviewedEpisodes(ids => reviewed ? [...ids, ep.mediaItemId] : ids.filter(id => id !== ep.mediaItemId)) }} /> I approve playback of these samples and the listed conversions</label></div>}
+                    {ep.samplePaths?.length && <p className="text-xs text-muted-foreground">Measured sample is shown in its representative group below.</p>}
                     <div className="flex items-center justify-between text-[10px] text-muted-foreground/80">
                       <span>{ep.evidenceStatus ? `Evidence: ${ep.evidenceStatus} (${ep.confidence || 'none'})` : 'Evidence: unavailable'}</span>
                       <span>Selected plan: <EstimatedSavingsDisplay bytes={ep.estimatedSavingsBytes} /> · {ep.savingsCoverage ?? 'insufficient'} evidence{ep.savingsBasis === 'video_sample_encode' ? ' · Sample-based projection' : ep.savingsBasis === 'representative_video_sample_projection' ? ' · Representative-sample projection' : ''}</span>
@@ -1493,6 +1578,14 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
                 ))}
               </div>
             </div>
+
+            {sampleApprovalGroups.map(group => <section key={group.id} className="space-y-2 rounded-xl border border-primary/30 bg-primary/5 p-3">
+              <h4 className="text-sm font-semibold">Measured sample group · {group.representativeLabel}</h4>
+              <p className="text-xs text-muted-foreground">These episodes use the representative’s measured settings. Their savings are projections.</p>
+              <ul className="space-y-1 text-xs">{group.episodes.map(item => <li key={item.mediaItemId} className="flex justify-between gap-3"><span>{item.label}{item.mediaItemId === group.representativeMediaItemId ? ' · measured representative' : ' · uses representative settings'}</span><span>{item.mediaItemId === group.representativeMediaItemId ? 'Measured savings: ' : 'Projected savings: '}<EstimatedSavingsDisplay bytes={item.estimatedSavingsBytes} /></span></li>)}</ul>
+              <div className="flex flex-wrap gap-2">{group.samplePaths.map((sample, index) => <button key={`${sample}-${index}`} type="button" className="underline text-xs" onClick={() => { const mediaItemId = group.representativeMediaItemId; void window.electronAPI.openShowSample(preflightData.preflightId, mediaItemId, index).catch(error => { const message = error instanceof Error ? error.message : String(error); setMessage(message); addToast({ type: 'error', title: 'Could not open measured sample', message }) }) }}>Play representative sample {index + 1}</button>)}</div>
+              <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={reviewedSampleGroups.includes(group.id)} onChange={event => setReviewedSampleGroups(ids => event.target.checked ? [...ids, group.id] : ids.filter(id => id !== group.id))} /><span>I reviewed and approve this measured sample group.</span></label>
+            </section>)}
 
             {preflightData.episodes.some(episode => !episode.compatible) && (
               <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-center gap-2">
@@ -1510,7 +1603,7 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
               <div className="space-y-5">
                 <div className="flex flex-col sm:flex-row items-center gap-6 bg-muted/20 border border-border/30 rounded-2xl p-5">
                   {/* Circular Speedometer Gauge */}
-                  <div className="relative w-28 h-28 shrink-0 flex items-center justify-center">
+                  {typeof currentTask.progress?.percentage === 'number' ? <div className="relative w-28 h-28 shrink-0 flex items-center justify-center">
                     <svg className="w-full h-full -rotate-90 transform" viewBox="0 0 128 128">
                       <circle
                         cx="64"
@@ -1536,24 +1629,24 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
                       <span className="text-xl font-black text-foreground">{Math.round(currentPercent)}%</span>
                       <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Progress</span>
                     </div>
-                  </div>
+                  </div> : <Activity className="h-8 w-8 shrink-0 animate-pulse text-primary" aria-label="Progress unavailable" />}
 
                   {/* Current Item Meta & Status */}
                   <div className="flex-1 min-w-0 space-y-2 text-center sm:text-left">
                     <div className="flex items-center justify-center sm:justify-start gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Encoding Episode</span>
+                      <span className={`w-2 h-2 rounded-full ${currentTask.status === 'cancelling' ? 'bg-amber-400' : 'bg-primary animate-pulse'}`} />
+                      <span className="text-xs font-bold uppercase tracking-wider text-primary">{currentTaskStatusLabel}</span>
                     </div>
                     <h4 className="text-sm font-bold text-foreground truncate">{currentTask.label}</h4>
                     <p className="text-xs text-muted-foreground capitalize">{currentTask.progress?.phase || 'Optimizing media streams...'}</p>
 
                     {/* Linear Progress Bar */}
-                    <div className="h-2 bg-muted/40 rounded-full overflow-hidden w-full">
+                    {typeof currentTask.progress?.percentage === 'number' && <div className="h-2 bg-muted/40 rounded-full overflow-hidden w-full">
                       <div
                         className="h-full bg-primary transition-all duration-300"
                         style={{ width: `${currentPercent}%` }}
                       />
-                    </div>
+                    </div>}
                   </div>
                 </div>
 
@@ -1582,98 +1675,22 @@ export function ShowTranscodeModal({ show, episode, seasonNumber, onClose, initi
                 </div>
               </div>
             ) : (
-              <div className="text-center py-8 space-y-3 bg-muted/10 rounded-2xl border border-border/20">
-                <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
-                <h4 className="text-base font-bold">Series Optimization Complete or Idle</h4>
-                <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                  {batchQueue.length ? 'This batch is waiting in the queue.' : 'No episodes from this batch remain in the queue. Review task history for failures.'}
-                </p>
+              <div role="status" aria-live="polite" className="text-center py-8 space-y-3 bg-muted/10 rounded-2xl border border-border/20">
+                {batchSummary?.outcome === 'completed' ? <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" /> : <Activity className="w-8 h-8 text-primary mx-auto" />}
+                <h4 className="text-base font-bold">{batchSummary?.outcome === 'completed' ? 'Completed' : batchSummary?.outcome === 'partly-completed' ? 'Partly completed' : batchSummary?.outcome === 'failed' ? 'Failed' : batchSummary?.outcome === 'cancelled' ? 'Cancelled' : batchSummary?.outcome === 'paused' ? 'Paused' : batchSummary?.outcome === 'cancelling' ? 'Cancelling' : batchSummary?.outcome === 'waiting' ? 'Waiting' : batchSummary?.outcome === 'running' ? 'Running' : 'Queued'}</h4>
+                <p className="text-xs text-muted-foreground">Completed {batchSummary?.successfulCount ?? 0} · Partial {batchSummary?.partialCount ?? 0} · Failed {batchSummary?.failedMediaItemIds.length ?? 0} · Cancelled {batchSummary?.cancelledMediaItemIds.length ?? 0}{batchQueue.length ? ` · Waiting ${batchQueue.length}` : ''}</p>
+                {batchSummary && batchSummary.activeCount > 0 && <button type="button" disabled={batchQueueControlState !== null} onClick={() => void toggleBatchPause()} className="text-xs text-primary underline disabled:opacity-50">{batchQueueControlState === 'pausing' ? 'Pausing…' : batchQueueControlState === 'resuming' ? 'Resuming…' : queueState.isPaused ? 'Resume queue' : 'Pause queue'}</button>}
+                {batchSummary && (batchSummary.failedMediaItemIds.length + batchSummary.cancelledMediaItemIds.length > 0) && batchSummary.activeCount === 0 && <button type="button" disabled={busy} onClick={() => void retryFailedBatchTasks()} className="text-xs text-primary underline disabled:opacity-50">Retry failed or cancelled</button>}
               </div>
             )}
 
             <div className="flex items-center justify-between rounded-xl border border-border/30 p-3 text-sm">
-              <span>{batchQueue.length} episodes queued{queueState.isPaused ? ' · queue paused' : ''}</span>
+              <span>{batchSummary?.successfulCount ?? 0} completed · {batchQueue.length} waiting{queueState.isPaused ? ' · queue paused' : ''}</span>
               <button type="button" onClick={() => window.dispatchEvent(new Event('taskQueue:open'))} className="text-primary hover:underline">Open Task Queue</button>
             </div>
           </div>
         )}
 
-        {/* Footer */}
-        <div className="p-4 sm:p-5 bg-muted/10 border-t border-border/10 flex items-center justify-between gap-3">
-          {mode === 'config' ? (
-            <>
-              <button
-                onClick={() => void handleClose()}
-                disabled={preflightTermination !== null}
-                title={preflightTermination === 'cancelling' ? 'Cancelling optimization review' : preflightTermination === 'finishing' ? 'Finishing optimization review' : undefined}
-                className="px-5 py-2 bg-muted hover:bg-muted/80 rounded-xl text-xs font-bold transition-all cursor-pointer"
-              >
-                {preflightTermination === 'cancelling' ? 'Stopping…' : preflightTermination === 'finishing' ? 'Finishing…' : activePreflightRequestId.current ? 'Stop preflight' : 'Cancel'}
-              </button>
 
-              <div className="flex items-center gap-2">
-                <button
-                  disabled={busy || targetProfilesLoading}
-                  onClick={() => void handlePreviewPlan()}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground font-black rounded-xl text-xs transition-all disabled:opacity-50 shadow-lg shadow-primary/20 hover:opacity-90 cursor-pointer"
-                >
-                  {busy ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>{seasonNumber === undefined ? 'Preflighting Series…' : `Preflighting Season ${seasonNumber}…`}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4" />
-                      <span>Measure & Review Series</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </>
-          ) : mode === 'preview' ? (
-            <>
-              <button
-                onClick={() => setMode('config')}
-                className="flex items-center gap-1.5 px-4 py-2 bg-muted hover:bg-muted/80 rounded-xl text-xs font-bold transition-all cursor-pointer"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Back to Settings</span>
-              </button>
-
-              <button
-                disabled={busy || !preflightData?.compatible || preflightData.episodes.some(ep => ep.compatible && ep.samplePaths?.length && !reviewedEpisodes.includes(ep.mediaItemId))}
-                onClick={() => void handleQueueFromPreview()}
-                className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground font-black rounded-xl text-xs transition-all disabled:opacity-50 shadow-lg shadow-primary/20 hover:opacity-90 cursor-pointer"
-              >
-                {busy ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Queueing Episodes…</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4" />
-                    <span>Queue Eligible Episodes</span>
-                  </>
-                )}
-              </button>
-            </>
-          ) : (
-            <>
-              <button type="button" onClick={() => window.dispatchEvent(new Event('taskQueue:open'))} className="text-sm text-primary hover:underline">Open Task Queue</button>
-
-              <button
-                onClick={() => void handleClose()}
-                className="px-5 py-2 bg-primary text-primary-foreground hover:opacity-90 rounded-xl text-xs font-bold transition-all shadow-md shadow-primary/20 cursor-pointer"
-              >
-                Run in Background
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>,
-    document.body
-  )
+  </OptimizationDialogShell>
 }
