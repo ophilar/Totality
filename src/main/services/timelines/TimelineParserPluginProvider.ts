@@ -302,20 +302,26 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
       if (config.excludedText.some(text => sourceText.toLowerCase().startsWith(text.toLowerCase()))) return []
 
       if (config.format === 'star-trek-guide') {
-        const movie = sourceText.match(/^MOV\s+(.+)$/i)
-        if (movie) return [this.listItem(elementIndex + 1, 'movie', movie[1].trim())]
-        const episode = sourceText.match(/^([A-Z0-9]{2,6})\s+Season\s+(\d+),\s*episodes?\s+(\d+)(?:\s*[-–]\s*(\d+))?\s+-\s+(.+)$/i)
-        if (!episode) throw new Error(`Parser '${plugin.id}' cannot parse source entry '${sourceText}'.`)
-        const seriesTitle = config.seriesCodes[episode[1].toUpperCase()]
-        if (!seriesTitle) throw new Error(`Parser '${plugin.id}' has no series mapping for '${episode[1]}'.`)
-        const firstEpisode = Number(episode[3])
-        const lastEpisode = Number(episode[4] ?? episode[3])
+        const codeElement = selectOne<AnyNode, Element>('.ck-code', element)
+        const titleElement = selectOne<AnyNode, Element>('.ck-t', element)
+        const code = codeElement ? this.readCellText(codeElement) : ''
+        const title = titleElement ? this.readCellText(titleElement) : ''
+        if (!code || !title) throw new Error(`Parser '${plugin.id}' cannot read checklist code and title from source entry '${sourceText}'.`)
+        if (code === 'Film') return [this.listItem(elementIndex + 1, 'movie', title)]
+        const seriesTitle = config.seriesCodes[code]
+        if (!seriesTitle) throw new Error(`Parser '${plugin.id}' has no series mapping for '${code}'.`)
+        const coordinatesElement = selectOne<AnyNode, Element>('.ck-se', element)
+        const coordinates = coordinatesElement ? this.readCellText(coordinatesElement) : ''
+        const episode = coordinates?.match(/^S(\d+)\s*·\s*E(\d+)(?:[–-](?:E)?(\d+))?$/)
+        if (!episode) throw new Error(`Parser '${plugin.id}' cannot parse episode coordinates '${coordinates ?? ''}' for '${title}'.`)
+        const firstEpisode = Number(episode[2])
+        const lastEpisode = Number(episode[3] ?? episode[2])
         if (lastEpisode < firstEpisode) throw new Error(`Parser '${plugin.id}' found a reversed episode range in '${sourceText}'.`)
         return Array.from({ length: lastEpisode - firstEpisode + 1 }, (_, index) => this.listItem(
           elementIndex + index + 1,
           'episode',
-          episode[5].trim(),
-          { seriesTitle, seasonNumber: Number(episode[2]), episodeNumber: firstEpisode + index }
+          title,
+          { seriesTitle, seasonNumber: Number(episode[1]), episodeNumber: firstEpisode + index }
         ))
       }
 
