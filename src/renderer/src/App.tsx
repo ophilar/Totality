@@ -440,12 +440,9 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
           </SectionErrorBoundary>
         ) : isMobile && showWishlistPanel ? (
           <main
-            className="fixed bottom-0 transition-[left,right,top] duration-300 ease-out"
+            className="fixed inset-0 bg-background"
             style={{
-              top: 'max(env(safe-area-inset-top, 0px), 8px)',
-              left: '8px',
-              right: '8px',
-              bottom: '0px',
+              paddingTop: 'max(env(safe-area-inset-top, 0px), 8px)',
             }}
           >
             <div className="absolute inset-0 flex flex-col overflow-hidden">
@@ -459,12 +456,13 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
           </main>
         ) : (
           <main
-            className="fixed bottom-0 transition-[left,right,top] duration-300 ease-out"
+            className={`fixed bottom-0 transition-[left,right,top] duration-300 ease-out ${isMobile ? 'bg-background' : ''}`}
             style={{
-              top: isMobile ? 'max(env(safe-area-inset-top, 0px), 8px)' : '76px',
-              left: isMobile ? '8px' : (sidebarCollapsed ? '96px' : '288px'),
-              right: isMobile ? '8px' : '16px',
+              top: isMobile ? '0px' : '76px',
+              left: isMobile ? '0px' : (sidebarCollapsed ? '96px' : '288px'),
+              right: isMobile ? '0px' : '16px',
               bottom: '0px',
+              paddingTop: isMobile ? 'max(env(safe-area-inset-top, 0px), 8px)' : undefined,
             }}
           >
             <SectionErrorBoundary section="Media Library">
