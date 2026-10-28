@@ -72,6 +72,18 @@ interface MBArtist {
   'release-groups'?: MBReleaseGroup[]
 }
 
+/** Build a MusicBrainz Lucene phrase query from an artist name. */
+export function buildArtistLiteralQuery(name: string): string {
+  const literal = `"${name.replace(/[\\"]/g, '\\$&')}"`
+  return `(artist:${literal} OR sortname:${literal})`
+}
+
+/** Match only an artist's canonical or sort name, ignoring letter case. */
+export function isExactArtistIdentityMatch(artist: MBArtist, name: string): boolean {
+  const identity = name.trim().toLowerCase()
+  return artist.name.trim().toLowerCase() === identity || artist['sort-name'].trim().toLowerCase() === identity
+}
+
 interface MBArtistSearchResult {
   artists: MBArtist[]
 }
@@ -250,7 +262,7 @@ export class MusicBrainzService extends CancellableOperation {
   async searchArtist(name: string): Promise<MBArtist[]> {
     return this.requestWithRetry(async () => {
       const data = await fetchJSON<MBArtistSearchResult>(
-        buildUrl(`${this.MB_BASE_URL}/artist`, { query: `artist:${name}`, fmt: 'json', limit: 10 }),
+        buildUrl(`${this.MB_BASE_URL}/artist`, { query: buildArtistLiteralQuery(name), fmt: 'json', limit: 10 }),
         { headers: this.mbHeaders, timeoutMs: 30_000 }
       )
       return data.artists || []
@@ -588,7 +600,7 @@ export class MusicBrainzService extends CancellableOperation {
     // If no MusicBrainz ID, try to find one
     if (!mbId) {
       const searchResults = await this.searchArtist(artistName)
-      const exactMatches = searchResults.filter(artist => artist.name.toLowerCase() === artistName.toLowerCase())
+      const exactMatches = searchResults.filter(artist => isExactArtistIdentityMatch(artist, artistName))
       if (exactMatches.length !== 1) {
         throw new Error(`MusicBrainz artist match for "${artistName}" returned ${exactMatches.length} exact matches; assign a MusicBrainz ID before analyzing completeness.`)
       }

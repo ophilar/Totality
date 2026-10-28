@@ -148,6 +148,22 @@ describe('SimpleDelayRateLimiter', () => {
 // Pre-configured Limiters
 // ============================================================================
 
+describe('availability cooldown across requests', () => {
+  it('retains consecutive failures between actual request slots', async () => {
+    const limiter = new SimpleDelayRateLimiter(0, 0, { failureThreshold: 3, durationMs: 100 })
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await limiter.waitForSlot()
+      limiter.recordError(503)
+    }
+    let resolved = false
+    const request = limiter.waitForSlot().then(() => { resolved = true })
+    await Promise.resolve()
+    expect(resolved).toBe(false)
+    await request
+    expect(resolved).toBe(true)
+  })
+})
+
 describe('RateLimiters factory', () => {
   it('should create TMDB limiter with correct config', () => {
     const limiter = RateLimiters.createTMDBLimiter()

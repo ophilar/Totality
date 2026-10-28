@@ -149,7 +149,7 @@ export class SimpleDelayRateLimiter implements RateLimiter {
 
   async waitForSlot(): Promise<void> {
     const now = Date.now()
-    if (this.cooldownUntil <= now) {
+    if (this.cooldownUntil > 0 && this.cooldownUntil <= now) {
       this.cooldownUntil = 0
       this.consecutiveAvailabilityFailures = 0
     }
