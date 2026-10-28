@@ -1,9 +1,12 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import type { QueueState } from '@main/types/taskQueue'
 import type { ShowTranscodePreflight } from './types'
 import { summarizeOptimizationBatch } from '../tv/batchOutcomeSummary'
 
 export type OptimizationWorkflowStage = 'options' | 'review' | 'results'
+export type ReviewPreparationProgress = { percentage?: number; phase?: string; currentItem?: string }
+export type ReviewPreparationState = 'queued' | 'running' | 'pausing' | 'paused' | 'finishing' | null
+export type ReviewPreparationTermination = 'cancelling' | 'finishing' | null
 
 export function useOptimizationWorkflow(queueState: QueueState) {
   const [stage, setStage] = useState<OptimizationWorkflowStage>('options')
@@ -14,6 +17,14 @@ export function useOptimizationWorkflow(queueState: QueueState) {
   const [submittedMediaItemIds, setSubmittedMediaItemIds] = useState<number[]>([])
   const [submittedTaskIds, setSubmittedTaskIds] = useState<string[]>([])
   const [queueControlState, setQueueControlState] = useState<'pausing' | 'resuming' | null>(null)
+  const [preparationTermination, setPreparationTermination] = useState<ReviewPreparationTermination>(null)
+  const [preparationProgress, setPreparationProgress] = useState<ReviewPreparationProgress | null>(null)
+  const [preparationState, setPreparationState] = useState<ReviewPreparationState>(null)
+  const activePreparationRequestId = useRef<string | null>(null)
+  const activePreparationTaskId = useRef<string | null>(null)
+  const rejectPreparation = useRef<((error: Error) => void) | null>(null)
+  const preparationMovedToBackground = useRef(false)
+  const preparationStartedHere = useRef(false)
 
   const batchSummary = useMemo(
     () => batchId ? summarizeOptimizationBatch(queueState, batchId, submittedMediaItemIds, submittedTaskIds) : null,
@@ -84,6 +95,17 @@ export function useOptimizationWorkflow(queueState: QueueState) {
     submittedMediaItemIds,
     submittedTaskIds,
     queueControlState,
+    preparationTermination,
+    setPreparationTermination,
+    preparationProgress,
+    setPreparationProgress,
+    preparationState,
+    setPreparationState,
+    activePreparationRequestId,
+    activePreparationTaskId,
+    rejectPreparation,
+    preparationMovedToBackground,
+    preparationStartedHere,
     batchSummary,
     reviewMatches,
     replaceReview,
@@ -92,5 +114,5 @@ export function useOptimizationWorkflow(queueState: QueueState) {
     appendSubmittedTasks,
     toggleQueuePause,
     retryFailedTasks,
-  }), [stage, setStage, review, setReview, reviewedOptions, reviewedSampleGroups, batchId, submittedMediaItemIds, submittedTaskIds, queueControlState, batchSummary, reviewMatches, replaceReview, clearReview, submitBatch, appendSubmittedTasks, toggleQueuePause, retryFailedTasks])
+  }), [stage, setStage, review, setReview, reviewedOptions, reviewedSampleGroups, batchId, submittedMediaItemIds, submittedTaskIds, queueControlState, preparationTermination, preparationProgress, preparationState, batchSummary, reviewMatches, replaceReview, clearReview, submitBatch, appendSubmittedTasks, toggleQueuePause, retryFailedTasks])
 }
