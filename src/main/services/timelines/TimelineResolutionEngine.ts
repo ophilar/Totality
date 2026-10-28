@@ -31,6 +31,8 @@ export interface ResolvedTimelineResult {
   items: ResolvedTimelineItem[]
 }
 
+export type TimelineResolutionOperationResult = ResolvedTimelineResult | { cancelled: true } | { error: string }
+
 /**
  * Universal media title cleaner applying standard media catalog normalization:
  * - NFKD unicode decomposition (accents/diacritics removed)

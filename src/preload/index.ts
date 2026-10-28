@@ -3,7 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 // Import shared types from main process (type-only, no runtime code)
 import type { ConnectionTestResult } from '@main/types/ipc'
 import type { TimelineRecipeSummary } from '@main/services/timelines/ITimelineRecipeProvider'
-import type { ResolvedTimelineResult } from '@main/services/timelines/TimelineResolutionEngine'
+import type { TimelineResolutionOperationResult } from '@main/services/timelines/TimelineResolutionEngine'
 import type { TimelineParserPlugin, TimelineParserPluginInput } from '@main/services/timelines/TimelineParserPlugin'
 import type { TimelineFetchOptions, TimelineDefinition } from '@main/services/timelines/ITimelineRecipeProvider'
 import type { PlexPlaylistSummary, PlexPlaylistSyncResult } from '@main/services/timelines/PlexPlaylistSyncService'
@@ -1992,7 +1992,7 @@ interface ExistingElectronAPI {
   timelinesSaveParserPlugin: (plugin: TimelineParserPluginInput) => Promise<TimelineParserPlugin[]>
   timelinesRemoveParserPlugin: (id: string) => Promise<TimelineParserPlugin[]>
   timelinesGetRecipe: (recipeId: string, options?: TimelineFetchOptions) => Promise<TimelineDefinition>
-  timelinesResolveTimeline: (recipeId: string, sourceId: string | undefined, options: TimelineFetchOptions | undefined, requestId: string, showInActivity: boolean) => Promise<ResolvedTimelineResult | { cancelled: true }>
+  timelinesResolveTimeline: (recipeId: string, sourceId: string | undefined, options: TimelineFetchOptions | undefined, requestId: string, showInActivity: boolean) => Promise<TimelineResolutionOperationResult>
   timelinesSyncPlexPlaylist: (payload: { sourceId: string; recipeId: string; playlistTitle: string; snapshotId: string; playlistRatingKey?: string; allowStale?: boolean }, requestId: string) => Promise<PlexPlaylistSyncResult | { cancelled: true }>
   timelinesGetPlexPlaylists: (sourceId: string) => Promise<PlexPlaylistSummary[]>
   timelinesCancel: (requestId: string) => Promise<void>

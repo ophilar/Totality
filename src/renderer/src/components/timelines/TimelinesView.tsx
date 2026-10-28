@@ -147,6 +147,7 @@ export function TimelinesView() {
         const options = snapshot?.recipeId === selectedRecipeId && snapshot.refreshToken === recipeRefreshToken ? { snapshotId: snapshot.snapshotId } : { refresh: true }
         const result = await window.electronAPI.timelinesResolveTimeline(selectedRecipeId, resolveSourceId, options, requestId, false)
         if ('cancelled' in result) return
+        if ('error' in result) throw new Error(result.error)
         if (!isMounted) return
         if (result.snapshotId) openedGuide.current = { recipeId: selectedRecipeId, refreshToken: recipeRefreshToken, snapshotId: result.snapshotId }
         setSelectedTimelineResult(result)
@@ -184,6 +185,7 @@ export function TimelinesView() {
     try {
       const result = await window.electronAPI.timelinesResolveTimeline(input, resolveSourceId, { refresh: true }, requestId, true)
       if ('cancelled' in result) return
+      if ('error' in result) throw new Error(result.error)
       if (timelineContextRef.current.recipeId !== submittedContext.recipeId || timelineContextRef.current.sourceId !== submittedContext.sourceId) return
       const timeline = result.timeline
       if (result.snapshotId) openedGuide.current = { recipeId: timeline.id, refreshToken: recipeRefreshToken, snapshotId: result.snapshotId }
@@ -338,6 +340,7 @@ export function TimelinesView() {
     try {
       const result = await window.electronAPI.timelinesResolveTimeline(selectedRecipeId, resolveSourceId, { refresh: true }, requestId, true)
       if ('cancelled' in result) return
+      if ('error' in result) throw new Error(result.error)
       if (timelineContextRef.current.recipeId !== submittedContext.recipeId || timelineContextRef.current.sourceId !== submittedContext.sourceId) return
       setSelectedTimelineResult(result)
       addToast({ type: result.timeline.refreshError ? 'error' : 'success', title: 'Timeline Refresh', message: result.timeline.refreshError || `Loaded ${result.totalCount} items.` })
