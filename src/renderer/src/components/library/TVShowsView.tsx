@@ -581,93 +581,166 @@ export function TVShowsView({
         </Button>
 
         {/* Show Header */}
-        <div className={`${isMobile ? 'flex flex-col items-center text-center gap-4' : 'flex gap-6'} mb-6`}>
-          {/* Poster */}
-          {selectedShowData.poster_url && (
-            <div className={`${isMobile ? 'w-36' : 'w-44'} shrink-0`}>
-              <img
-                src={selectedShowData.poster_url}
-                alt={selectedShowData.title}
-                loading="lazy"
-                className="w-full h-auto rounded-lg shadow-lg shadow-black/30"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none'
-                }}
-              />
-            </div>
-          )}
-
-          {/* Info */}
-          <div className="flex-1 min-w-0">
-            {/* Title */}
-            <div className={`flex items-center gap-1.5 ${isMobile ? 'justify-center' : ''}`}>
-              <h3 className={`${isMobile ? 'text-h2' : 'text-h1'} font-semibold`}>{selectedShowData.title}</h3>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  navigator.clipboard.writeText(selectedShowData.title)
-                  setCopiedTitle(true)
-                  setTimeout(() => setCopiedTitle(false), 1500)
-                }}
-                className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                title="Copy title"
-              >
-                {copiedTitle ? <Check className="w-4 h-4 text-foreground" /> : <Copy className="w-4 h-4" />}
-              </button>
-            </div>
-
-            {/* Metadata line */}
-            <div className={`flex items-center gap-2 mt-1 text-label text-muted-foreground ${isMobile ? 'justify-center' : ''}`}>
-              <span>{ownedSeasons.length} of {totalSeasons} seasons</span>
-              {completenessData?.status && (
-                <>
-                  <span>•</span>
-                  <span>{getStatusBadge(completenessData.status)?.text || completenessData.status}</span>
-                </>
-              )}
-            </div>
-
-            {/* Action buttons row */}
-            <div className={`flex items-center gap-3 mt-3 ${isMobile ? 'justify-center' : ''}`} ref={showDetailMenuRef}>
-              <Button
-                onClick={() => selectedShow && onAnalyzeSeries(selectedShow)}
-                size="sm"
-                icon={<RefreshCw className="w-3.5 h-3.5" />}
-                title="Analyze series"
-              >
-                Analyze series
-              </Button>
-              {onFixMatch && (
-                <Button
-                  variant="tertiary"
-                  size="icon-sm"
-                  onClick={() => selectedShow && onFixMatch(selectedShow, '', undefined)}
-                  icon={<Pencil className="w-4 h-4" />}
-                  title="Fix match"
-                />
-              )}
-            </div>
-
-            {/* Overview */}
-            {showOverview && (
-              <div className="mt-3 max-w-2xl">
-                <p className={`text-label text-muted-foreground leading-relaxed ${showOverviewExpanded ? '' : 'line-clamp-3'}`}>
-                  {showOverview}
-                </p>
+        {isMobile ? (
+          <div className="relative px-4 pt-16 pb-3 mb-4 -mx-2 rounded-2xl overflow-hidden text-center">
+            {selectedShowData.poster_url && (
+              <>
+                <img src={selectedShowData.poster_url} alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/40" />
+              </>
+            )}
+            <div className="relative z-[1]">
+              <div className="flex items-center gap-1.5 justify-center">
+                <h3 className="text-h2 font-semibold">{selectedShowData.title}</h3>
                 <button
-                  onClick={() => setShowOverviewExpanded(!showOverviewExpanded)}
-                  className="flex items-center gap-1 text-label text-muted-foreground hover:text-foreground mt-1 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    navigator.clipboard.writeText(selectedShowData.title)
+                    setCopiedTitle(true)
+                    setTimeout(() => setCopiedTitle(false), 1500)
+                  }}
+                  className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                  title="Copy title"
                 >
-                  {showOverviewExpanded ? (
-                    <><span>Less</span><ChevronUp className="w-4 h-4" /></>
-                  ) : (
-                    <><span>More</span><ChevronDown className="w-4 h-4" /></>
-                  )}
+                  {copiedTitle ? <Check className="w-4 h-4 text-foreground" /> : <Copy className="w-4 h-4" />}
                 </button>
               </div>
-            )}
+              <div className="flex items-center gap-2 mt-1 text-label text-muted-foreground justify-center">
+                <span>{ownedSeasons.length} of {totalSeasons} seasons</span>
+                {completenessData?.status && (
+                  <>
+                    <span>•</span>
+                    <span>{getStatusBadge(completenessData.status)?.text || completenessData.status}</span>
+                  </>
+                )}
+              </div>
+              <div className="flex items-center gap-3 mt-3 justify-center" ref={showDetailMenuRef}>
+                <Button
+                  onClick={() => selectedShow && onAnalyzeSeries(selectedShow)}
+                  size="sm"
+                  icon={<RefreshCw className="w-3.5 h-3.5" />}
+                  title="Analyze series"
+                >
+                  Analyze series
+                </Button>
+                {onFixMatch && (
+                  <Button
+                    variant="tertiary"
+                    size="icon-sm"
+                    onClick={() => selectedShow && onFixMatch(selectedShow, '', undefined)}
+                    icon={<Pencil className="w-4 h-4" />}
+                    title="Fix match"
+                  />
+                )}
+              </div>
+              {showOverview && (
+                <div className="mt-3">
+                  <p className={`text-label text-muted-foreground leading-relaxed ${showOverviewExpanded ? '' : 'line-clamp-2'}`}>
+                    {showOverview}
+                  </p>
+                  <button
+                    onClick={() => setShowOverviewExpanded(!showOverviewExpanded)}
+                    className="flex items-center gap-1 text-label text-muted-foreground hover:text-foreground mt-1 transition-colors mx-auto"
+                  >
+                    {showOverviewExpanded ? (
+                      <><span>Less</span><ChevronUp className="w-4 h-4" /></>
+                    ) : (
+                      <><span>More</span><ChevronDown className="w-4 h-4" /></>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex gap-6 mb-6">
+            {/* Poster */}
+            {selectedShowData.poster_url && (
+              <div className="w-44 shrink-0">
+                <img
+                  src={selectedShowData.poster_url}
+                  alt={selectedShowData.title}
+                  loading="lazy"
+                  className="w-full h-auto rounded-lg shadow-lg shadow-black/30"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none'
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Info */}
+            <div className="flex-1 min-w-0">
+              {/* Title */}
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-h1 font-semibold">{selectedShowData.title}</h3>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    navigator.clipboard.writeText(selectedShowData.title)
+                    setCopiedTitle(true)
+                    setTimeout(() => setCopiedTitle(false), 1500)
+                  }}
+                  className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                  title="Copy title"
+                >
+                  {copiedTitle ? <Check className="w-4 h-4 text-foreground" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+
+              {/* Metadata line */}
+              <div className="flex items-center gap-2 mt-1 text-label text-muted-foreground">
+                <span>{ownedSeasons.length} of {totalSeasons} seasons</span>
+                {completenessData?.status && (
+                  <>
+                    <span>•</span>
+                    <span>{getStatusBadge(completenessData.status)?.text || completenessData.status}</span>
+                  </>
+                )}
+              </div>
+
+              {/* Action buttons row */}
+              <div className="flex items-center gap-3 mt-3" ref={showDetailMenuRef}>
+                <Button
+                  onClick={() => selectedShow && onAnalyzeSeries(selectedShow)}
+                  size="sm"
+                  icon={<RefreshCw className="w-3.5 h-3.5" />}
+                  title="Analyze series"
+                >
+                  Analyze series
+                </Button>
+                {onFixMatch && (
+                  <Button
+                    variant="tertiary"
+                    size="icon-sm"
+                    onClick={() => selectedShow && onFixMatch(selectedShow, '', undefined)}
+                    icon={<Pencil className="w-4 h-4" />}
+                    title="Fix match"
+                  />
+                )}
+              </div>
+
+              {/* Overview */}
+              {showOverview && (
+                <div className="mt-3 max-w-2xl">
+                  <p className={`text-label text-muted-foreground leading-relaxed ${showOverviewExpanded ? '' : 'line-clamp-3'}`}>
+                    {showOverview}
+                  </p>
+                  <button
+                    onClick={() => setShowOverviewExpanded(!showOverviewExpanded)}
+                    className="flex items-center gap-1 text-label text-muted-foreground hover:text-foreground mt-1 transition-colors"
+                  >
+                    {showOverviewExpanded ? (
+                      <><span>Less</span><ChevronUp className="w-4 h-4" /></>
+                    ) : (
+                      <><span>More</span><ChevronDown className="w-4 h-4" /></>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         <div
           className={gridClassName}

@@ -431,86 +431,160 @@ export function MusicView({
         </Button>
 
         {/* Album Header */}
-        <div className={`${isMobile ? 'flex flex-col items-center text-center gap-4' : 'flex items-start gap-6'}`}>
-          <div className={`${isMobile ? 'w-36' : 'w-44'} aspect-square bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30`}>
-            {selectedAlbum.thumb_url ? (
-              <img
-                src={selectedAlbum.thumb_url}
-                alt={selectedAlbum.title}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <Disc3 className={`${isMobile ? 'w-12 h-12' : 'w-16 h-16'} text-muted-foreground`} />
+        {isMobile ? (
+          <div className="relative px-4 pt-16 pb-3 mb-4 -mx-2 rounded-2xl overflow-hidden text-center">
+            {selectedAlbum.thumb_url && (
+              <>
+                <img src={selectedAlbum.thumb_url} alt="" className="absolute inset-0 w-full h-full object-cover object-center" />
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/40" />
+              </>
+            )}
+            <div className="relative z-[1]">
+              <div className="flex items-center gap-1.5 justify-center">
+                <h2 className="text-h2 font-semibold">{selectedAlbum.title}</h2>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    navigator.clipboard.writeText(selectedAlbum.title)
+                    setCopiedTitle(true)
+                    setTimeout(() => setCopiedTitle(false), 1500)
+                  }}
+                  className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                  title="Copy title"
+                >
+                  {copiedTitle ? <Check className="w-4 h-4 text-foreground" /> : <Copy className="w-4 h-4" />}
+                </button>
               </div>
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className={`flex items-center gap-1.5 ${isMobile ? 'justify-center' : ''}`}>
-              <h2 className={`${isMobile ? 'text-h2' : 'text-h1'} font-semibold`}>{selectedAlbum.title}</h2>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  navigator.clipboard.writeText(selectedAlbum.title)
-                  setCopiedTitle(true)
-                  setTimeout(() => setCopiedTitle(false), 1500)
-                }}
-                className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                title="Copy title"
-              >
-                {copiedTitle ? <Check className="w-4 h-4 text-foreground" /> : <Copy className="w-4 h-4" />}
-              </button>
-            </div>
-            <p className="text-title text-muted-foreground">{selectedAlbum.artist_name}</p>
-            {selectedAlbum.year && (
-              <p className="text-label text-muted-foreground mt-1">{selectedAlbum.year}</p>
-            )}
-            {(() => {
-              const losslessCodecs = ['flac', 'alac', 'wav', 'aiff', 'dsd', 'ape', 'wavpack', 'pcm']
-              const codec = (selectedAlbum.best_audio_codec || '').toLowerCase()
-              const isLossless = losslessCodecs.some(c => codec.includes(c))
-              const isHiRes = isLossless && ((selectedAlbum.best_bit_depth || 0) > 16 || (selectedAlbum.best_sample_rate || 0) > 48000)
-              return (
-                <div className={`flex flex-wrap gap-2 mt-3 ${isMobile ? 'justify-center' : ''}`}>
-                  {isHiRes && (
-                    <span className="px-2 py-1 text-caption font-semibold bg-purple-600 text-white rounded">Hi-Res</span>
-                  )}
-                  {isLossless && !isHiRes && (
-                    <span className="px-2 py-1 text-caption font-semibold bg-green-600 text-white rounded">Lossless</span>
-                  )}
-                  {(selectedAlbum.best_bit_depth ?? 0) > 16 && (
-                    <span className="px-2 py-1 text-caption font-semibold bg-orange-600 text-white rounded">
-                      {selectedAlbum.best_bit_depth}-bit
-                    </span>
-                  )}
-                  {selectedAlbum.album_type && selectedAlbum.album_type !== 'album' && (
-                    <span className="px-2 py-1 text-caption font-semibold bg-gray-600 text-white rounded capitalize">
-                      {selectedAlbum.album_type}
-                    </span>
-                  )}
-                </div>
-              )
-            })()}
-            <p className="text-label text-muted-foreground mt-3">
-              {selectedAlbum.track_count}{albumCompleteness ? ` of ${albumCompleteness.total_tracks}` : ''} tracks
-              {selectedAlbum.duration_ms && (
-                <> • {Math.floor(selectedAlbum.duration_ms / 60000)} min</>
+              <p className="text-title text-muted-foreground">{selectedAlbum.artist_name}</p>
+              {selectedAlbum.year && (
+                <p className="text-label text-muted-foreground mt-1">{selectedAlbum.year}</p>
               )}
-            </p>
-            {/* Analyze button */}
-            <div className={`mt-3 ${isMobile ? 'flex justify-center' : ''}`}>
-              <Button
-                onClick={() => selectedAlbum.id && handleAnalyzeAlbum(selectedAlbum.id)}
-                disabled={isAnalyzingAlbum}
-                loading={isAnalyzingAlbum}
-                size="sm"
-                icon={!isAnalyzingAlbum ? <RefreshCw className="w-3.5 h-3.5" /> : undefined}
-              >
-                {isAnalyzingAlbum ? 'Analyzing...' : 'Analyze for missing tracks'}
-              </Button>
+              {(() => {
+                const losslessCodecs = ['flac', 'alac', 'wav', 'aiff', 'dsd', 'ape', 'wavpack', 'pcm']
+                const codec = (selectedAlbum.best_audio_codec || '').toLowerCase()
+                const isLossless = losslessCodecs.some(c => codec.includes(c))
+                const isHiRes = isLossless && ((selectedAlbum.best_bit_depth || 0) > 16 || (selectedAlbum.best_sample_rate || 0) > 48000)
+                return (
+                  <div className="flex flex-wrap gap-2 mt-3 justify-center">
+                    {isHiRes && (
+                      <span className="px-2 py-1 text-caption font-semibold bg-purple-600 text-white rounded">Hi-Res</span>
+                    )}
+                    {isLossless && !isHiRes && (
+                      <span className="px-2 py-1 text-caption font-semibold bg-green-600 text-white rounded">Lossless</span>
+                    )}
+                    {(selectedAlbum.best_bit_depth ?? 0) > 16 && (
+                      <span className="px-2 py-1 text-caption font-semibold bg-orange-600 text-white rounded">
+                        {selectedAlbum.best_bit_depth}-bit
+                      </span>
+                    )}
+                    {selectedAlbum.album_type && selectedAlbum.album_type !== 'album' && (
+                      <span className="px-2 py-1 text-caption font-semibold bg-gray-600 text-white rounded capitalize">
+                        {selectedAlbum.album_type}
+                      </span>
+                    )}
+                  </div>
+                )
+              })()}
+              <p className="text-label text-muted-foreground mt-3">
+                {selectedAlbum.track_count}{albumCompleteness ? ` of ${albumCompleteness.total_tracks}` : ''} tracks
+                {selectedAlbum.duration_ms && (
+                  <> • {Math.floor(selectedAlbum.duration_ms / 60000)} min</>
+                )}
+              </p>
+              <div className="mt-3 flex justify-center">
+                <Button
+                  onClick={() => selectedAlbum.id && handleAnalyzeAlbum(selectedAlbum.id)}
+                  disabled={isAnalyzingAlbum}
+                  loading={isAnalyzingAlbum}
+                  size="sm"
+                  icon={!isAnalyzingAlbum ? <RefreshCw className="w-3.5 h-3.5" /> : undefined}
+                >
+                  {isAnalyzingAlbum ? 'Analyzing...' : 'Analyze for missing tracks'}
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-start gap-6">
+            <div className="w-44 aspect-square bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30">
+              {selectedAlbum.thumb_url ? (
+                <img
+                  src={selectedAlbum.thumb_url}
+                  alt={selectedAlbum.title}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <Disc3 className="w-16 h-16 text-muted-foreground" />
+                </div>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <h2 className="text-h1 font-semibold">{selectedAlbum.title}</h2>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    navigator.clipboard.writeText(selectedAlbum.title)
+                    setCopiedTitle(true)
+                    setTimeout(() => setCopiedTitle(false), 1500)
+                  }}
+                  className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                  title="Copy title"
+                >
+                  {copiedTitle ? <Check className="w-4 h-4 text-foreground" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-title text-muted-foreground">{selectedAlbum.artist_name}</p>
+              {selectedAlbum.year && (
+                <p className="text-label text-muted-foreground mt-1">{selectedAlbum.year}</p>
+              )}
+              {(() => {
+                const losslessCodecs = ['flac', 'alac', 'wav', 'aiff', 'dsd', 'ape', 'wavpack', 'pcm']
+                const codec = (selectedAlbum.best_audio_codec || '').toLowerCase()
+                const isLossless = losslessCodecs.some(c => codec.includes(c))
+                const isHiRes = isLossless && ((selectedAlbum.best_bit_depth || 0) > 16 || (selectedAlbum.best_sample_rate || 0) > 48000)
+                return (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {isHiRes && (
+                      <span className="px-2 py-1 text-caption font-semibold bg-purple-600 text-white rounded">Hi-Res</span>
+                    )}
+                    {isLossless && !isHiRes && (
+                      <span className="px-2 py-1 text-caption font-semibold bg-green-600 text-white rounded">Lossless</span>
+                    )}
+                    {(selectedAlbum.best_bit_depth ?? 0) > 16 && (
+                      <span className="px-2 py-1 text-caption font-semibold bg-orange-600 text-white rounded">
+                        {selectedAlbum.best_bit_depth}-bit
+                      </span>
+                    )}
+                    {selectedAlbum.album_type && selectedAlbum.album_type !== 'album' && (
+                      <span className="px-2 py-1 text-caption font-semibold bg-gray-600 text-white rounded capitalize">
+                        {selectedAlbum.album_type}
+                      </span>
+                    )}
+                  </div>
+                )
+              })()}
+              <p className="text-label text-muted-foreground mt-3">
+                {selectedAlbum.track_count}{albumCompleteness ? ` of ${albumCompleteness.total_tracks}` : ''} tracks
+                {selectedAlbum.duration_ms && (
+                  <> • {Math.floor(selectedAlbum.duration_ms / 60000)} min</>
+                )}
+              </p>
+              <div className="mt-3">
+                <Button
+                  onClick={() => selectedAlbum.id && handleAnalyzeAlbum(selectedAlbum.id)}
+                  disabled={isAnalyzingAlbum}
+                  loading={isAnalyzingAlbum}
+                  size="sm"
+                  icon={!isAnalyzingAlbum ? <RefreshCw className="w-3.5 h-3.5" /> : undefined}
+                >
+                  {isAnalyzingAlbum ? 'Analyzing...' : 'Analyze for missing tracks'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Track List - Combined owned and missing tracks */}
         {(() => {
@@ -1018,110 +1092,189 @@ export function MusicView({
         </Button>
 
         {/* Artist Header */}
-        <div className={`${isMobile ? 'flex flex-col items-center text-center gap-4' : 'flex gap-6'} mb-6`}>
-          {/* Artist Image */}
-          <div className={`${isMobile ? 'w-36 h-36' : 'w-44 h-44'} bg-muted rounded-full overflow-hidden shrink-0 shadow-lg shadow-black/30`}>
-            {selectedArtist.thumb_url ? (
-              <img
-                src={selectedArtist.thumb_url}
-                alt={selectedArtist.name}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <User className={`${isMobile ? 'w-12 h-12' : 'w-20 h-20'} text-muted-foreground`} />
-              </div>
+        {isMobile ? (
+          <div className="relative px-4 pt-16 pb-3 mb-4 -mx-2 rounded-2xl overflow-hidden text-center">
+            {selectedArtist.thumb_url && (
+              <>
+                <img src={selectedArtist.thumb_url} alt="" className="absolute inset-0 w-full h-full object-cover object-center" />
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/40" />
+              </>
             )}
-          </div>
-
-          {/* Info */}
-          <div className="flex-1 min-w-0">
-            {/* Title */}
-            <div className={`flex items-center gap-1.5 ${isMobile ? 'justify-center' : ''}`}>
-              <h3 className={`${isMobile ? 'text-h2' : 'text-h1'} font-semibold`}>{selectedArtist.name}</h3>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  navigator.clipboard.writeText(selectedArtist.name)
-                  setCopiedTitle(true)
-                  setTimeout(() => setCopiedTitle(false), 1500)
-                }}
-                className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                title="Copy title"
-              >
-                {copiedTitle ? <Check className="w-4 h-4 text-foreground" /> : <Copy className="w-4 h-4" />}
-              </button>
-            </div>
-
-            {/* Metadata line */}
-            <div className={`flex items-center gap-2 mt-1 text-label text-muted-foreground ${isMobile ? 'justify-center flex-wrap' : ''}`}>
-              {selectedArtist.country && (
-                <>
-                  <span>{selectedArtist.country}</span>
-                  <span>•</span>
-                </>
-              )}
-              {selectedArtist.genres && (
-                <>
-                  <span>{(() => { try { const g = JSON.parse(selectedArtist.genres); return Array.isArray(g) ? g.join(', ') : selectedArtist.genres } catch { return selectedArtist.genres } })()}</span>
-                  <span>•</span>
-                </>
-              )}
-              <span>{selectedArtist.album_count} albums</span>
-              <span>•</span>
-              <span>{selectedArtist.track_count} tracks</span>
-            </div>
-
-            {/* Completeness */}
-            {artistCompleteness.has(selectedArtist.name) && (
-              <p className="text-label text-muted-foreground mt-1">
-                {artistCompleteness.get(selectedArtist.name)!.owned_albums} of {artistCompleteness.get(selectedArtist.name)!.total_albums} albums in discography
-              </p>
-            )}
-
-            {/* Action buttons row */}
-            <div className={`flex items-center gap-3 mt-3 ${isMobile ? 'justify-center' : ''}`} ref={artistMenuRef}>
-              <Button
-                onClick={() => { handleAnalyzeArtist(selectedArtist.id) }}
-                disabled={isAnalyzingArtist}
-                loading={isAnalyzingArtist}
-                size="sm"
-                icon={!isAnalyzingArtist ? <RefreshCw className="w-3.5 h-3.5" /> : undefined}
-                title="Analyze completeness"
-              >
-                {isAnalyzingArtist ? 'Analyzing...' : 'Analyze completeness'}
-              </Button>
-              {onFixArtistMatch && (
-                <Button
-                  variant="tertiary"
-                  size="icon-sm"
-                  onClick={() => onFixArtistMatch(selectedArtist.id, selectedArtist.name)}
-                  icon={<Pencil className="w-4 h-4" />}
-                  title="Fix match"
-                />
-              )}
-            </div>
-
-            {/* Biography */}
-            {selectedArtist.biography && (
-              <div className="mt-3 max-w-2xl">
-                <p className={`text-label text-muted-foreground leading-relaxed ${bioExpanded ? '' : 'line-clamp-3'}`}>
-                  {selectedArtist.biography}
-                </p>
+            <div className="relative z-[1]">
+              <div className="flex items-center gap-1.5 justify-center">
+                <h3 className="text-h2 font-semibold">{selectedArtist.name}</h3>
                 <button
-                  onClick={() => setBioExpanded(!bioExpanded)}
-                  className="flex items-center gap-1 text-label text-muted-foreground hover:text-foreground mt-1 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    navigator.clipboard.writeText(selectedArtist.name)
+                    setCopiedTitle(true)
+                    setTimeout(() => setCopiedTitle(false), 1500)
+                  }}
+                  className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                  title="Copy title"
                 >
-                  {bioExpanded ? (
-                    <><span>Less</span><ChevronUp className="w-4 h-4" /></>
-                  ) : (
-                    <><span>More</span><ChevronDown className="w-4 h-4" /></>
-                  )}
+                  {copiedTitle ? <Check className="w-4 h-4 text-foreground" /> : <Copy className="w-4 h-4" />}
                 </button>
               </div>
-            )}
+              <div className="flex items-center gap-2 mt-1 text-label text-muted-foreground justify-center flex-wrap">
+                {selectedArtist.country && (
+                  <>
+                    <span>{selectedArtist.country}</span>
+                    <span>•</span>
+                  </>
+                )}
+                {selectedArtist.genres && (
+                  <>
+                    <span>{(() => { try { const g = JSON.parse(selectedArtist.genres); return Array.isArray(g) ? g.join(', ') : selectedArtist.genres } catch { return selectedArtist.genres } })()}</span>
+                    <span>•</span>
+                  </>
+                )}
+                <span>{selectedArtist.album_count} albums</span>
+                <span>•</span>
+                <span>{selectedArtist.track_count} tracks</span>
+              </div>
+              {artistCompleteness.has(selectedArtist.name) && (
+                <p className="text-label text-muted-foreground mt-1">
+                  {artistCompleteness.get(selectedArtist.name)!.owned_albums} of {artistCompleteness.get(selectedArtist.name)!.total_albums} albums in discography
+                </p>
+              )}
+              <div className="flex items-center gap-3 mt-3 justify-center" ref={artistMenuRef}>
+                <Button
+                  onClick={() => { handleAnalyzeArtist(selectedArtist.id) }}
+                  disabled={isAnalyzingArtist}
+                  loading={isAnalyzingArtist}
+                  size="sm"
+                  icon={!isAnalyzingArtist ? <RefreshCw className="w-3.5 h-3.5" /> : undefined}
+                  title="Analyze completeness"
+                >
+                  {isAnalyzingArtist ? 'Analyzing...' : 'Analyze completeness'}
+                </Button>
+                {onFixArtistMatch && (
+                  <Button
+                    variant="tertiary"
+                    size="icon-sm"
+                    onClick={() => onFixArtistMatch(selectedArtist.id, selectedArtist.name)}
+                    icon={<Pencil className="w-4 h-4" />}
+                    title="Fix match"
+                  />
+                )}
+              </div>
+              {selectedArtist.biography && (
+                <div className="mt-3">
+                  <p className={`text-label text-muted-foreground leading-relaxed ${bioExpanded ? '' : 'line-clamp-2'}`}>
+                    {selectedArtist.biography}
+                  </p>
+                  <button
+                    onClick={() => setBioExpanded(!bioExpanded)}
+                    className="flex items-center gap-1 text-label text-muted-foreground hover:text-foreground mt-1 transition-colors mx-auto"
+                  >
+                    {bioExpanded ? (
+                      <><span>Less</span><ChevronUp className="w-4 h-4" /></>
+                    ) : (
+                      <><span>More</span><ChevronDown className="w-4 h-4" /></>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex gap-6 mb-6">
+            {/* Artist Image */}
+            <div className="w-44 h-44 bg-muted rounded-full overflow-hidden shrink-0 shadow-lg shadow-black/30">
+              {selectedArtist.thumb_url ? (
+                <img
+                  src={selectedArtist.thumb_url}
+                  alt={selectedArtist.name}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <User className="w-20 h-20 text-muted-foreground" />
+                </div>
+              )}
+            </div>
+
+            {/* Info */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-h1 font-semibold">{selectedArtist.name}</h3>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    navigator.clipboard.writeText(selectedArtist.name)
+                    setCopiedTitle(true)
+                    setTimeout(() => setCopiedTitle(false), 1500)
+                  }}
+                  className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                  title="Copy title"
+                >
+                  {copiedTitle ? <Check className="w-4 h-4 text-foreground" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+              <div className="flex items-center gap-2 mt-1 text-label text-muted-foreground">
+                {selectedArtist.country && (
+                  <>
+                    <span>{selectedArtist.country}</span>
+                    <span>•</span>
+                  </>
+                )}
+                {selectedArtist.genres && (
+                  <>
+                    <span>{(() => { try { const g = JSON.parse(selectedArtist.genres); return Array.isArray(g) ? g.join(', ') : selectedArtist.genres } catch { return selectedArtist.genres } })()}</span>
+                    <span>•</span>
+                  </>
+                )}
+                <span>{selectedArtist.album_count} albums</span>
+                <span>•</span>
+                <span>{selectedArtist.track_count} tracks</span>
+              </div>
+              {artistCompleteness.has(selectedArtist.name) && (
+                <p className="text-label text-muted-foreground mt-1">
+                  {artistCompleteness.get(selectedArtist.name)!.owned_albums} of {artistCompleteness.get(selectedArtist.name)!.total_albums} albums in discography
+                </p>
+              )}
+              <div className="flex items-center gap-3 mt-3" ref={artistMenuRef}>
+                <Button
+                  onClick={() => { handleAnalyzeArtist(selectedArtist.id) }}
+                  disabled={isAnalyzingArtist}
+                  loading={isAnalyzingArtist}
+                  size="sm"
+                  icon={!isAnalyzingArtist ? <RefreshCw className="w-3.5 h-3.5" /> : undefined}
+                  title="Analyze completeness"
+                >
+                  {isAnalyzingArtist ? 'Analyzing...' : 'Analyze completeness'}
+                </Button>
+                {onFixArtistMatch && (
+                  <Button
+                    variant="tertiary"
+                    size="icon-sm"
+                    onClick={() => onFixArtistMatch(selectedArtist.id, selectedArtist.name)}
+                    icon={<Pencil className="w-4 h-4" />}
+                    title="Fix match"
+                  />
+                )}
+              </div>
+              {selectedArtist.biography && (
+                <div className="mt-3 max-w-2xl">
+                  <p className={`text-label text-muted-foreground leading-relaxed ${bioExpanded ? '' : 'line-clamp-3'}`}>
+                    {selectedArtist.biography}
+                  </p>
+                  <button
+                    onClick={() => setBioExpanded(!bioExpanded)}
+                    className="flex items-center gap-1 text-label text-muted-foreground hover:text-foreground mt-1 transition-colors"
+                  >
+                    {bioExpanded ? (
+                      <><span>Less</span><ChevronUp className="w-4 h-4" /></>
+                    ) : (
+                      <><span>More</span><ChevronDown className="w-4 h-4" /></>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Albums Grid/List */}
         <div>
