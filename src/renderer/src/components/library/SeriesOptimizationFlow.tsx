@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react'
 import {
   Zap,
   X,
@@ -25,7 +25,7 @@ import { describeDiagnosticError, logOptimizationDiagnostic } from './optimizati
 import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
 import { PlaybackCompatibilityFindings } from './PlaybackCompatibilityPanel'
 import { getTVShowIdentity } from './tv/showIdentity'
-import type { QueueState, QueuedTask } from '@main/types/taskQueue'
+import type { QueuedTask } from '@main/types/taskQueue'
 import { getPlaybackTargetContainers, recommendPlaybackTargetContainer, type PlaybackTargetProfile } from '@main/types/playbackTarget'
 import type { OptimizationQualityProfile } from '@main/services/MeasuredOptimizationPolicy'
 import { getHardwareEncoder } from '@main/services/TranscodingCapabilities'
@@ -181,6 +181,11 @@ export interface SeriesOptimizationFlowProps {
 export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, initialPreflight: initialReview, resumeRequestId }: SeriesOptimizationFlowProps) {
   const initialPreflight = initialReview?.result
   const { addToast } = useToast()
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
   const { seriesIdentityKey, sourceId, libraryId } = getTVShowIdentity(show)
   const [optimizationMode, setOptimizationMode] = useState<'smart' | 'remux_only' | 'transcode'>('smart')
   const [removeUnnecessaryStreams, setRemoveUnnecessaryStreams] = useState(true)
@@ -232,19 +237,30 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
   const [busy, setBusy] = useState(false)
   const [quarantineFiles, setQuarantineFiles] = useState<Array<{ mediaItemId: number; label: string; path: string; size: number; modifiedAt: string; owned: boolean }>>([])
 
-  // Live Task Queue tracking state for monitoring mode
-  const [queueState, setQueueState] = useState<QueueState>({
-    currentTask: null,
-    queue: [],
-    isPaused: false,
-    completedTasks: []
-  })
-
-  const workflow = useOptimizationWorkflow(queueState)
-  const { stage, setStage, review: preflightData, reviewedSampleGroups, setReviewedSampleGroups, batchId: activeBatchId, submittedMediaItemIds, submittedTaskIds, queueControlState: batchQueueControlState, preparationTermination: preflightTermination, setPreparationTermination: setPreflightTermination, preparationProgress: preflightProgress, setPreparationProgress: setPreflightProgress, preparationState: preflightOperationState, setPreparationState: setPreflightOperationState, activePreparationRequestId: activePreflightRequestId, activePreparationTaskId: activePreflightTaskId, rejectPreparation: rejectPreflightWait, preparationMovedToBackground: backgroundPreflight, preparationStartedHere: startedPreflightHere, batchSummary, reviewMatches, replaceReview, clearReview, submitBatch, toggleQueuePause, retryFailedTasks } = workflow
+  const handleQueueError = useCallback((error: unknown) => addToast({ type: 'error', title: 'Show queue state', message: String(error) }), [addToast])
+  const workflow = useOptimizationWorkflow(handleQueueError)
+  const { queueState, stage, setStage, review: preflightData, reviewedSampleGroups, setReviewedSampleGroups, batchId: activeBatchId, submittedMediaItemIds, submittedTaskIds, queueControlState: batchQueueControlState, preparationTermination: preflightTermination, setPreparationTermination: setPreflightTermination, preparationProgress: preflightProgress, setPreparationProgress: setPreflightProgress, preparationState: preflightOperationState, setPreparationState: setPreflightOperationState, activePreparationRequestId: activePreflightRequestId, activePreparationTaskId: activePreflightTaskId, rejectPreparation: rejectPreflightWait, preparationMovedToBackground: backgroundPreflight, preparationStartedHere: startedPreflightHere, batchSummary, reviewMatches, replaceReview, clearReview, submitBatch, toggleQueuePause, retryFailedTasks, reconcilePreparationQueue } = workflow
   const mode = stage === 'options' ? 'config' : stage === 'review' ? 'preview' : 'monitoring'
   const setMode = useCallback((nextMode: 'config' | 'preview' | 'monitoring') => setStage(nextMode === 'config' ? 'options' : nextMode === 'preview' ? 'review' : 'results'), [setStage])
   const sampleApprovalGroups = useMemo(() => buildSampleApprovalGroups(preflightData), [preflightData])
+
+  const matchesPreparationScope = useCallback((task: QueuedTask) => {
+    const request = (task.options as { request?: { seriesIdentityKey?: string; sourceId?: string; libraryId?: string; mediaItemId?: number; seasonNumber?: number } } | undefined)?.request
+    return task.type === 'optimization-preflight' && request?.sourceId === sourceId && request.libraryId === libraryId &&
+      request.seriesIdentityKey === seriesIdentityKey && request.mediaItemId === episode?.id && request.seasonNumber === seasonNumber
+  }, [sourceId, libraryId, seriesIdentityKey, episode?.id, seasonNumber])
+  const preparationObserver = useMemo(() => ({
+    enabled: !initialPreflight,
+    requestId: resumeRequestId,
+    matchesScope: matchesPreparationScope,
+    fallbackPhase: seasonNumber === undefined ? 'Preflighting series' : `Preflighting season ${seasonNumber}`,
+    onReviewLoaded: (saved: SavedShowPreflight) => {
+      replaceReview(saved.result, saved.request.options)
+      setMode('preview')
+    },
+    onFailure: setMessage,
+    onActivity: setBusy,
+  }), [initialPreflight, resumeRequestId, matchesPreparationScope, seasonNumber, replaceReview, setMode])
 
   const restoreSavedReview = useCallback((saved: { request: import('@main/services/TranscodingService').ShowTranscodeRequest; result: ShowTranscodePreflight }) => {
     const { request, result } = saved
@@ -300,70 +316,8 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
   }, [initialPreflight, resumeRequestId, targetProfilesLoading, seriesIdentityKey, sourceId, libraryId, show.series_title, episode?.id, seasonNumber, restoreSavedReview, submitBatch, startedPreflightHere])
 
   useEffect(() => {
-    if (initialPreflight) return
-    let mounted = true
-    let finished = false
-    const requestOf = (task: QueuedTask) => (task.options as { request?: { seriesIdentityKey?: string; sourceId?: string; libraryId?: string; mediaItemId?: number; seasonNumber?: number } } | undefined)?.request
-    const matchesScope = (task: QueuedTask) => {
-      const request = requestOf(task)
-      return task.type === 'optimization-preflight' && request?.sourceId === sourceId && request.libraryId === libraryId &&
-        request.seriesIdentityKey === seriesIdentityKey && request.mediaItemId === episode?.id && request.seasonNumber === seasonNumber
-    }
-    const updateTask = async (state: QueueState) => {
-      if (!mounted || finished) return
-      const tasks = [state.currentTask, ...state.queue, ...state.completedTasks].filter((task): task is QueuedTask => task !== null)
-      const task = resumeRequestId
-        ? tasks.find(candidate => (candidate.options as { requestId?: string } | undefined)?.requestId === resumeRequestId)
-        : activePreflightTaskId.current
-          ? tasks.find(candidate => candidate.id === activePreflightTaskId.current)
-          : startedPreflightHere.current ? undefined : tasks.filter(candidate => matchesScope(candidate) && ['queued', 'running'].includes(candidate.status))
-            .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]
-      if (!task) return
-      activePreflightTaskId.current = task.id
-      activePreflightRequestId.current = (task.options as { requestId?: string } | undefined)?.requestId ?? null
-      backgroundPreflight.current = false
-      if (task.status === 'queued' || task.status === 'running') {
-        setBusy(true)
-        setPreflightOperationState(state.isPaused ? 'paused' : task.status === 'queued' ? 'queued' : 'running')
-        setPreflightProgress({
-          percentage: task.progress?.percentage,
-          phase: state.isPaused ? 'Preflight paused' : task.progress?.phase ?? (task.status === 'queued' ? 'Waiting in task queue' : seasonNumber === undefined ? 'Preflighting series' : `Preflighting season ${seasonNumber}`),
-          currentItem: task.progress?.currentItem ?? task.label,
-        })
-        return
-      }
-      finished = true
-      activePreflightRequestId.current = null
-      activePreflightTaskId.current = null
-      if (task.status === 'completed' && typeof task.result?.preflightId === 'string') {
-        try {
-          const saved = await window.electronAPI.getShowPreflight(task.result.preflightId) as SavedShowPreflight | undefined
-          if (!mounted) return
-          if (!saved) throw new Error('The saved optimization review could not be found')
-          replaceReview(saved.result, saved.request.options)
-          setMode('preview')
-        } catch (error) {
-          setMessage(error instanceof Error ? error.message : String(error))
-        }
-      } else if (task.status === 'failed') {
-        setMessage(task.error ?? 'Optimization preflight failed')
-      }
-      if (mounted) {
-        setBusy(false)
-        setPreflightProgress(null)
-        setPreflightOperationState(null)
-      }
-    }
-    const unsubscribe = window.electronAPI.onTaskQueueUpdated?.(state => {
-      if (resumeRequestId || activePreflightTaskId.current || !startedPreflightHere.current) setQueueState(state)
-      void updateTask(state)
-    })
-    void window.electronAPI.taskQueueGetState().then(state => { if (mounted) { setQueueState(state); void updateTask(state) } }).catch(error => setMessage(error instanceof Error ? error.message : String(error)))
-    return () => {
-      mounted = false
-      unsubscribe?.()
-    }
-  }, [initialPreflight, resumeRequestId, seriesIdentityKey, sourceId, libraryId, episode?.id, seasonNumber, replaceReview, setMode, activePreflightTaskId, activePreflightRequestId, backgroundPreflight, startedPreflightHere, setPreflightProgress, setPreflightOperationState])
+    reconcilePreparationQueue(queueState, preparationObserver, () => mountedRef.current)
+  }, [queueState, preparationObserver, reconcilePreparationQueue])
 
   useEffect(() => {
     let mounted = true
@@ -565,22 +519,6 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
       addToast({ type: 'error', title: 'Encoder capabilities', message: String(err) })
     })
     return () => { isMounted = false }
-  }, [addToast])
-
-  // Subscribe to TaskQueue state updates
-  useEffect(() => {
-    const unsubscribe = window.electronAPI.onTaskQueueUpdated?.((state) => {
-      setQueueState(state)
-    })
-    window.electronAPI.taskQueueGetState?.().then((state) => {
-      setQueueState(state)
-    }).catch((error) => {
-      addToast({ type: 'error', title: 'Show queue state', message: String(error) })
-    })
-
-    return () => {
-      unsubscribe?.()
-    }
   }, [addToast])
 
   const subtitleList = parseLanguageWhitelist(subtitleWhitelist)

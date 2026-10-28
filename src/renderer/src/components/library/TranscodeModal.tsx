@@ -14,7 +14,6 @@ import type { MediaItem } from '@main/types/database'
 import type { PlaybackTargetProfile } from '@main/types/playbackTarget'
 import { PlaybackCompatibilityFindings } from './PlaybackCompatibilityPanel'
 import type { OptimizationDecision } from '@main/services/OptimizationDecisionService'
-import type { QueueState } from '@main/types/taskQueue'
 
 import type { TranscodeOptions, TranscodingParams, Availability, TranscodeProgress, SavedShowPreflight } from './transcoding'
 import { QuickPresetsTab, AdvancedTab, LiveEncodingTab, EncoderPolicySelector, OutputHandlingSelection, OptimizationDialogShell, buildEffectiveOptimizationOptions } from './transcoding'
@@ -50,6 +49,7 @@ export function TranscodeModal(props: TranscodeModalProps) {
 }
 
 function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimizationCompleted, initialOptimizationMode = 'transcode', initialStreamPruning = false }: MediaOptimizationFlowProps) {
+  const { addToast } = useToast()
   const [media, setMedia] = useState<MediaItem | null>(null)
   const [optimizationDecision, setOptimizationDecision] = useState<OptimizationDecision | null>(null)
   const [optimizationDecisionError, setOptimizationDecisionError] = useState<string | null>(null)
@@ -69,10 +69,10 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
   const [analysisRequired, setAnalysisRequired] = useState(false)
   const [analyzingItem, setAnalyzingItem] = useState(false)
   const [outputModeSettingError, setOutputModeSettingError] = useState<string | null>(null)
-  const [queueState, setQueueState] = useState<QueueState>({ currentTask: null, queue: [], isPaused: false, completedTasks: [] })
   const completionReportedRef = useRef(false)
-  const workflow = useOptimizationWorkflow(queueState)
-  const { stage, setStage, review: preflight, reviewedSampleGroups, batchId: submittedBatchId, submittedTaskIds, submittedMediaItemIds, queueControlState, batchSummary, reviewMatches, replaceReview, clearReview, submitBatch, toggleQueuePause: toggleWorkflowQueuePause, retryFailedTasks: retryWorkflowFailedTasks, setReviewedSampleGroups } = workflow
+  const handleQueueError = useCallback((error: unknown) => addToast({ title: 'Could not read optimization queue', message: error instanceof Error ? error.message : String(error), type: 'error' }), [addToast])
+  const workflow = useOptimizationWorkflow(handleQueueError)
+  const { queueState, stage, setStage, review: preflight, reviewedSampleGroups, batchId: submittedBatchId, submittedTaskIds, submittedMediaItemIds, queueControlState, batchSummary, reviewMatches, replaceReview, clearReview, submitBatch, toggleQueuePause: toggleWorkflowQueuePause, retryFailedTasks: retryWorkflowFailedTasks, setReviewedSampleGroups } = workflow
   const activeTab = stage === 'review' ? 'review' : stage === 'results' ? 'monitor' : optionsTab
   const setActiveTab = useCallback((tab: 'presets' | 'advanced' | 'monitor' | 'review') => {
     if (tab === 'presets' || tab === 'advanced') {
@@ -101,7 +101,6 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
   const [status, setStatus] = useState<'idle' | 'generating' | 'queued' | 'encoding' | 'complete' | 'failed'>('idle')
   const [progress, setProgress] = useState<TranscodeProgress | null>(null)
 
-  const { addToast } = useToast()
   const failureReportedRef = useRef(false)
   const selectedGpu = capabilities?.gpus.find(gpu => gpu.id === options.gpuId)
   const hardwareEncoder = selectedGpu && options.targetCodec ? getHardwareEncoder(selectedGpu.vendor, options.targetCodec) : undefined
@@ -231,14 +230,6 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
   useEffect(() => {
     queueMicrotask(() => { void loadInitialData() })
   }, [loadInitialData])
-
-  useEffect(() => {
-    const unsubscribe = window.electronAPI.onTaskQueueUpdated?.(setQueueState)
-    void window.electronAPI.taskQueueGetState?.().then(setQueueState).catch(error => {
-      addToast({ title: 'Could not read optimization queue', message: error instanceof Error ? error.message : String(error), type: 'error' })
-    })
-    return () => unsubscribe?.()
-  }, [addToast])
 
   useEffect(() => {
     if (!initialPreflightId) return
