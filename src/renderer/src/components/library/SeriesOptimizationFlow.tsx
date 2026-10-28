@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
 import {
   Zap,
   X,
@@ -230,15 +230,7 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
   const [message, setMessage] = useState('')
   const [isSuccess, setIsSuccess] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [preflightTermination, setPreflightTermination] = useState<'cancelling' | 'finishing' | null>(null)
-  const [preflightProgress, setPreflightProgress] = useState<{ percentage?: number; phase?: string; currentItem?: string } | null>(null)
-  const [preflightOperationState, setPreflightOperationState] = useState<'queued' | 'running' | 'pausing' | 'paused' | 'finishing' | null>(null)
   const [quarantineFiles, setQuarantineFiles] = useState<Array<{ mediaItemId: number; label: string; path: string; size: number; modifiedAt: string; owned: boolean }>>([])
-  const activePreflightRequestId = useRef<string | null>(null)
-  const activePreflightTaskId = useRef<string | null>(null)
-  const rejectPreflightWait = useRef<((error: Error) => void) | null>(null)
-  const backgroundPreflight = useRef(false)
-  const startedPreflightHere = useRef(false)
 
   // Live Task Queue tracking state for monitoring mode
   const [queueState, setQueueState] = useState<QueueState>({
@@ -249,7 +241,7 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
   })
 
   const workflow = useOptimizationWorkflow(queueState)
-  const { stage, setStage, review: preflightData, reviewedSampleGroups, setReviewedSampleGroups, batchId: activeBatchId, submittedMediaItemIds, submittedTaskIds, queueControlState: batchQueueControlState, batchSummary, reviewMatches, replaceReview, clearReview, submitBatch, toggleQueuePause, retryFailedTasks } = workflow
+  const { stage, setStage, review: preflightData, reviewedSampleGroups, setReviewedSampleGroups, batchId: activeBatchId, submittedMediaItemIds, submittedTaskIds, queueControlState: batchQueueControlState, preparationTermination: preflightTermination, setPreparationTermination: setPreflightTermination, preparationProgress: preflightProgress, setPreparationProgress: setPreflightProgress, preparationState: preflightOperationState, setPreparationState: setPreflightOperationState, activePreparationRequestId: activePreflightRequestId, activePreparationTaskId: activePreflightTaskId, rejectPreparation: rejectPreflightWait, preparationMovedToBackground: backgroundPreflight, preparationStartedHere: startedPreflightHere, batchSummary, reviewMatches, replaceReview, clearReview, submitBatch, toggleQueuePause, retryFailedTasks } = workflow
   const mode = stage === 'options' ? 'config' : stage === 'review' ? 'preview' : 'monitoring'
   const setMode = useCallback((nextMode: 'config' | 'preview' | 'monitoring') => setStage(nextMode === 'config' ? 'options' : nextMode === 'preview' ? 'review' : 'results'), [setStage])
   const sampleApprovalGroups = useMemo(() => buildSampleApprovalGroups(preflightData), [preflightData])
@@ -305,7 +297,7 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
       logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.reused', { preflightId: result.preflightId, batchId: result.batchId, seriesIdentityKey, seasonNumber, mediaItemId: episode?.id })
     }).catch(error => setMessage(error instanceof Error ? error.message : String(error)))
     return () => { mounted = false }
-  }, [initialPreflight, resumeRequestId, targetProfilesLoading, seriesIdentityKey, sourceId, libraryId, show.series_title, episode?.id, seasonNumber, restoreSavedReview, submitBatch])
+  }, [initialPreflight, resumeRequestId, targetProfilesLoading, seriesIdentityKey, sourceId, libraryId, show.series_title, episode?.id, seasonNumber, restoreSavedReview, submitBatch, startedPreflightHere])
 
   useEffect(() => {
     if (initialPreflight) return
@@ -371,7 +363,7 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
       mounted = false
       unsubscribe?.()
     }
-  }, [initialPreflight, resumeRequestId, seriesIdentityKey, sourceId, libraryId, episode?.id, seasonNumber, replaceReview, setMode])
+  }, [initialPreflight, resumeRequestId, seriesIdentityKey, sourceId, libraryId, episode?.id, seasonNumber, replaceReview, setMode, activePreflightTaskId, activePreflightRequestId, backgroundPreflight, startedPreflightHere, setPreflightProgress, setPreflightOperationState])
 
   useEffect(() => {
     let mounted = true
@@ -476,7 +468,7 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
     }
     logOptimizationDiagnostic('TVOptimizationUI', 'info', preflightData && mode !== 'monitoring' ? 'review.closed.saved' : 'optimizer.close.completed', { preflightId: preflightData?.preflightId, seriesIdentityKey, mediaItemId: episode?.id, mode })
     onClose()
-  }, [preflightData, mode, onClose, seriesIdentityKey, episode?.id])
+  }, [preflightData, mode, onClose, seriesIdentityKey, episode?.id, activePreflightRequestId, backgroundPreflight])
 
 
   const loadQuarantine = async () => {
