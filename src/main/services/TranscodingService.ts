@@ -720,6 +720,7 @@ export class TranscodingService {
               } else {
                 publishPreflightProgress(episode, 'Measuring encode samples for this episode')
                 let partialSamples = cachedMeasurement?.partialSamples ?? []
+                let sourcePreparation = cachedMeasurement?.sourcePreparation ?? { samples: [] }
                 const sampleHashesByPath = new Map<string, Promise<string>>()
                 const getSampleHash = (samplePath: string): Promise<string> => {
                   const existing = sampleHashesByPath.get(samplePath)
@@ -741,6 +742,8 @@ export class TranscodingService {
                     complete,
                     candidates: candidates.map(({ playbackBlockers: _playbackBlockers, ...candidate }) => candidate),
                     sampleHashes: await Promise.all(candidates.map(candidate => Promise.all((candidate.samplePaths ?? []).map(getSampleHash)))),
+                    sourcePreparation,
+                    sourcePreparationHashes: await Promise.all(sourcePreparation.samples.map(async sample => Promise.all([sample.sourcePath, ...(sample.referencePath ? [sample.referencePath] : [])].map(getSampleHash)))),
                     partialSamples: pendingSamples,
                     partialSampleHashes: await Promise.all(pendingSamples.map(sample => getSampleHash(sample.samplePath))),
                   }
@@ -766,6 +769,11 @@ export class TranscodingService {
                   partialSamples,
                   async sample => {
                     partialSamples = [...partialSamples.filter(existing => existing.encoder !== sample.encoder || existing.preset !== sample.preset || existing.quality !== sample.quality || existing.sampleIndex !== sample.sampleIndex), sample]
+                    await persistMeasurement(cachedMeasurement?.candidates ?? [], false, partialSamples)
+                  },
+                  sourcePreparation,
+                  async preparation => {
+                    sourcePreparation = preparation
                     await persistMeasurement(cachedMeasurement?.candidates ?? [], false, partialSamples)
                   },
                 )
@@ -2080,6 +2088,8 @@ export class TranscodingService {
     measurementComplete = false,
     previouslyMeasuredSamples: MeasuredCandidateSample[] = [],
     onMeasuredSample?: (sample: MeasuredCandidateSample) => Promise<void>,
+    sourcePreparation: MeasurementSourcePreparation = { samples: [] },
+    onSourcePrepared?: (preparation: MeasurementSourcePreparation) => Promise<void>,
   ): Promise<Pick<TranscodingParams, 'encoder' | 'crf' | 'preset' | 'measuredCandidate'>> {
     if (!options.targetCodec) throw new Error('Measurement requires a target codec')
     if (!options.qualityProfile) throw new Error('Measurement requires a quality profile')
@@ -2122,7 +2132,6 @@ export class TranscodingService {
       return { ...candidate, outputBytes: 0, sampledDurationSeconds: 0, encodingDurationMs: 0, vmafMean: 0, vmafP5: 0, cambiMean: 0, ffmpegArgs: TranscodeCommandFactory.getBuilder(hardwareVendor, candidateOptions).buildFFmpegArgs('<input>', '<output>', candidateOptions, analysis) }
     })
     const outputDirectory = sampleDirectory ?? path.join(app.getPath('userData'), 'transcoding-samples', randomUUID())
-    const sourcePreparation: MeasurementSourcePreparation = { samples: [] }
     try {
       const stat = await fs.stat(filePath)
       await fs.mkdir(outputDirectory, { recursive: true })
@@ -2180,6 +2189,7 @@ export class TranscodingService {
             referenceFilter: options.targetConversion?.videoFilter,
             referenceInputArgs: options.targetConversion?.inputArgs,
             sourcePreparation,
+            onSourcePrepared: async preparation => onSourcePrepared?.(preparation),
             qualityProfile: options.qualityProfile,
             candidates,
             signal,
@@ -2212,7 +2222,7 @@ export class TranscodingService {
       if (!onMeasuredCandidates) await fs.rm(outputDirectory, { recursive: true, force: true })
       throw error
     } finally {
-      await Promise.all([...new Set(sourcePreparation.samples.flatMap(sample => [sample.sourcePath, ...(sample.referencePath ? [sample.referencePath] : [])]))].map(filePath => fs.rm(filePath, { force: true })))
+      if (!onMeasuredCandidates) await Promise.all([...new Set(sourcePreparation.samples.flatMap(sample => [sample.sourcePath, ...(sample.referencePath ? [sample.referencePath] : [])]))].map(filePath => fs.rm(filePath, { force: true })))
     }
   }
 
@@ -2259,8 +2269,28 @@ export class TranscodingService {
     try {
       const cached = JSON.parse(raw) as CachedMeasurement
       const hasFiniteValues = (values: number[]) => values.length > 0 && values.every(Number.isFinite)
+      const hasValidTimingEvidence = (evidence: MeasurementSourcePreparation['samples'][number]['source']) =>
+        Number.isInteger(evidence.frames) && evidence.frames > 0 && Array.isArray(evidence.timestamps) && evidence.timestamps.length === evidence.frames &&
+        evidence.timestamps.every((timestamp, index) => Number.isFinite(timestamp) && (index === 0 || timestamp > evidence.timestamps[index - 1])) && Number.isFinite(evidence.timestampPrecisionSeconds) && evidence.timestampPrecisionSeconds > 0 &&
+        Number.isFinite(evidence.durationSeconds) && evidence.durationSeconds > 0 &&
+        ['width', 'height'].every(key => evidence[key as 'width' | 'height'] === undefined || Number.isFinite(evidence[key as 'width' | 'height'])) &&
+        ['pixelFormat', 'colorRange', 'colorSpace', 'colorTransfer', 'colorPrimaries'].every(key => evidence[key as 'pixelFormat' | 'colorRange' | 'colorSpace' | 'colorTransfer' | 'colorPrimaries'] === undefined || typeof evidence[key as 'pixelFormat' | 'colorRange' | 'colorSpace' | 'colorTransfer' | 'colorPrimaries'] === 'string')
+      const isWithinSampleDirectory = (samplePath: string) => {
+        const relative = path.relative(path.resolve(sampleDirectory), path.resolve(samplePath))
+        return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+      }
+      const validSourcePreparation = cached.sourcePreparation === undefined ||
+        Array.isArray(cached.sourcePreparation.samples) && cached.sourcePreparation.samples.length === APP_CONFIG.transcoding.samplePositions.length && cached.sourcePreparation.samples.every(sample =>
+          typeof sample.sourcePath === 'string' && isWithinSampleDirectory(sample.sourcePath) && hasValidTimingEvidence(sample.source) &&
+          (sample.referencePath === undefined || typeof sample.referencePath === 'string' && isWithinSampleDirectory(sample.referencePath)) &&
+          hasValidTimingEvidence(sample.reference) && Number.isFinite(sample.sourceSelfVmaf) && Number.isFinite(sample.sourceCambiMean))
+      const validSourcePreparationHashes = cached.sourcePreparation === undefined
+        ? cached.sourcePreparationHashes === undefined
+        : Array.isArray(cached.sourcePreparationHashes) && cached.sourcePreparationHashes.length === cached.sourcePreparation.samples.length &&
+          cached.sourcePreparation.samples.every((sample, index) => cached.sourcePreparationHashes![index]?.length === 1 + (sample.referencePath ? 1 : 0))
       const valid = cached.version === MEASUREMENT_VERSION && cached.cacheKey === cacheKey && cached.sourceSha256 === sourceSha256 && typeof cached.complete === 'boolean' &&
         Array.isArray(cached.candidates) && Array.isArray(cached.sampleHashes) && Array.isArray(cached.partialSamples) && Array.isArray(cached.partialSampleHashes) &&
+        validSourcePreparation && validSourcePreparationHashes &&
         cached.candidates.every(candidate => Number.isFinite(candidate.outputBytes) && candidate.outputBytes > 0 &&
           Number.isFinite(candidate.sampledDurationSeconds) && candidate.sampledDurationSeconds > 0 &&
           Number.isFinite(candidate.vmafMean) && Number.isFinite(candidate.vmafP5) && Number.isFinite(candidate.cambiMean) &&
@@ -2269,25 +2299,26 @@ export class TranscodingService {
           (candidate.sourceCambiMean === undefined || Number.isFinite(candidate.sourceCambiMean)) &&
           Array.isArray(candidate.samplePaths) && candidate.samplePaths.length > 0) &&
         cached.partialSamples.every(sample => typeof sample.encoder === 'string' && typeof sample.preset === 'string' && Number.isFinite(sample.quality) && Number.isInteger(sample.sampleIndex) && sample.sampleIndex >= 0 &&
+          (sample.screeningOnly === undefined || typeof sample.screeningOnly === 'boolean') &&
           Number.isFinite(sample.outputBytes) && sample.outputBytes > 0 && Number.isFinite(sample.sampledDurationSeconds) && sample.sampledDurationSeconds > 0 &&
           Number.isFinite(sample.encodingDurationMs) && sample.encodingDurationMs >= 0 && hasFiniteValues(sample.vmafScores) && hasFiniteValues(sample.cambiScores) &&
           Number.isFinite(sample.sourceSelfVmaf) && Number.isFinite(sample.sourceCambiMean) && typeof sample.samplePath === 'string') &&
-        (cached.candidates.length > 0 || cached.partialSamples.length > 0) && cached.candidates.every((candidate, candidateIndex) => {
+        (cached.candidates.length > 0 || cached.partialSamples.length > 0 || (cached.sourcePreparation?.samples.length ?? 0) > 0) && cached.candidates.every((candidate, candidateIndex) => {
           const paths = candidate.samplePaths ?? []
-          return paths.length > 0 && cached.sampleHashes[candidateIndex]?.length === paths.length && paths.every(samplePath => {
-          const relative = path.relative(path.resolve(sampleDirectory), path.resolve(samplePath))
-          return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
-          })
+          return paths.length > 0 && cached.sampleHashes[candidateIndex]?.length === paths.length && paths.every(isWithinSampleDirectory)
         }) && cached.sampleHashes.length === cached.candidates.length &&
         cached.partialSamples.length === cached.partialSampleHashes.length && cached.partialSamples.every(sample => {
-          const relative = path.relative(path.resolve(sampleDirectory), path.resolve(sample.samplePath))
-          return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+          return isWithinSampleDirectory(sample.samplePath)
         })
       if (!valid) throw new Error('Cached measurement record does not match its source or cache directory')
       const actualHashes = await Promise.all(cached.candidates.map(candidate => Promise.all((candidate.samplePaths ?? []).map(sha256File))))
       if (actualHashes.some((hashes, candidateIndex) => hashes.some((hash, index) => hash !== cached.sampleHashes[candidateIndex][index]))) throw new Error('Cached sample content changed')
       const actualPartialHashes = await Promise.all(cached.partialSamples.map(sample => sha256File(sample.samplePath)))
       if (actualPartialHashes.some((hash, index) => hash !== cached.partialSampleHashes[index])) throw new Error('Cached partial sample content changed')
+      if (cached.sourcePreparation) {
+        const actualSourcePreparationHashes = await Promise.all(cached.sourcePreparation.samples.map(sample => Promise.all([sample.sourcePath, ...(sample.referencePath ? [sample.referencePath] : [])].map(sha256File))))
+        if (actualSourcePreparationHashes.some((hashes, index) => hashes.some((hash, pathIndex) => hash !== cached.sourcePreparationHashes![index][pathIndex]))) throw new Error('Cached source preparation content changed')
+      }
       getLoggingService().info('[TVOptimization]', `Measured candidate cache hit: cacheKey=${cacheKey}, candidates=${cached.candidates.length}`)
       return cached
     } catch (error) {

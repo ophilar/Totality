@@ -6,7 +6,7 @@ import * as path from 'node:path'
 import { getMediaFileAnalyzer } from './MediaFileAnalyzer'
 import { PathUtils } from './utils/PathUtils'
 import { APP_CONFIG } from '@main/config'
-import { getImpossibleQualityReason, type MeasuredCandidate, type MeasuredCandidateSample, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
+import { getImpossibleQualityReason, VMAF_LOW_PERCENTILE, type MeasuredCandidate, type MeasuredCandidateSample, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
 import { getErrorMessage } from './utils/errorUtils'
 import { requireFfmpegFilters } from './transcoding/FfmpegFilterCapabilities'
 import { getLoggingService } from './LoggingService'
@@ -37,6 +37,7 @@ export interface MeasuredSampleRequest {
   referenceFilter?: string
   referenceInputArgs?: string[]
   sourcePreparation?: MeasurementSourcePreparation
+  onSourcePrepared?: (preparation: MeasurementSourcePreparation) => Promise<void>
   qualityProfile?: OptimizationQualityProfile
   signal?: AbortSignal
   onProgress?: (phase: string) => Promise<void> | void
@@ -178,9 +179,11 @@ export class MeasuredOptimizationService {
     logPath: string,
     expectedFrames: number,
     signal?: AbortSignal,
+    frameLimit?: number,
   ): Promise<{ vmafScores: number[]; cambiScores: number[] }> {
     const escapedPath = logPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "'\\\\''")
-    const graph = `[0:v]settb=AVTB,setpts=N[d];[1:v]settb=AVTB,setpts=N[r];[d][r]libvmaf=model=version=${VMAF_MODEL_VERSION}:shortest=1:repeatlast=0:feature=name=cambi:log_fmt=json:log_path='${escapedPath}'`
+    const trim = frameLimit === undefined ? '' : `trim=end_frame=${frameLimit},`
+    const graph = `[0:v]${trim}settb=AVTB,setpts=N[d];[1:v]${trim}settb=AVTB,setpts=N[r];[d][r]libvmaf=model=version=${VMAF_MODEL_VERSION}:shortest=1:repeatlast=0:feature=name=cambi:log_fmt=json:log_path='${escapedPath}'`
     await this.processRunner.run(binary, ['-v', 'error', '-i', distortedPath, '-i', referencePath, '-filter_complex', graph, '-fps_mode', 'passthrough', '-an', '-sn', '-f', 'null', '-'], signal)
     const log = JSON.parse(await fs.readFile(logPath, 'utf8')) as { pooled_metrics: { vmaf: { mean: number }; cambi: { mean: number } }; frames: Array<{ metrics: { vmaf: number; cambi: number } }> }
     if (!Number.isFinite(log.pooled_metrics.vmaf.mean) || !Number.isFinite(log.pooled_metrics.cambi.mean)) throw new Error('VMAF/CAMBI measurements are incomplete')
@@ -257,6 +260,7 @@ export class MeasuredOptimizationService {
       }
       if (request.sourcePreparation) {
         request.sourcePreparation.samples = sourceSamples.map((source, index) => ({ sourcePath: sourceSamplePaths[index], source, referencePath: referencePaths[index], reference: referenceSamples[index], sourceSelfVmaf: sourceSelfVmafs[index], sourceCambiMean: sourceCambiMeans[index] }))
+        if (!reusedSources) await request.onSourcePrepared?.(request.sourcePreparation)
         for (const sourcePath of [...sourceSamplePaths, ...referencePaths]) retainedPaths.add(sourcePath)
       }
       getLoggingService().info('[MeasuredOptimization]', `stage=source-preparation directory=${request.outputDirectory} reused=${reusedSources} samples=${sourceSamples.length} durationMs=${Math.round(performance.now() - preparationStartedAt)}`)
@@ -285,9 +289,27 @@ export class MeasuredOptimizationService {
             const referencePath = referencePaths[index] ?? sourceSamplePaths[index]
             const logPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}.json`)
             ownedPaths.add(logPath)
-            await request.onProgress?.(`Scoring sample ${index + 1} of ${starts.length} with VMAF and CAMBI`)
+            const totalFrames = referenceSamples.reduce((sum, sample) => sum + sample.frames, 0)
+            const screeningFrames = Math.min(referenceSamples[index].frames, Math.floor(totalFrames * VMAF_LOW_PERCENTILE) + 1)
+            let screeningOnly = false
+            let metrics: { vmafScores: number[]; cambiScores: number[] } | undefined
+            if (request.qualityProfile && screeningFrames < referenceSamples[index].frames) {
+              await request.onProgress?.(`Screening sample ${index + 1} of ${starts.length} for impossible quality`)
+              const screeningLogPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}.screening.json`)
+              ownedPaths.add(screeningLogPath)
+              const screeningStartedAt = performance.now()
+              const screening = await this.measureFrameMetrics(binary, outputPath, referencePath, screeningLogPath, screeningFrames, request.signal, screeningFrames)
+              const reason = getImpossibleQualityReason(request.qualityProfile, [...candidateSamples.flatMap(sample => sample.vmafScores), ...screening.vmafScores], [...candidateSamples.flatMap(sample => sample.cambiScores), ...screening.cambiScores], totalFrames)
+              getLoggingService().info('[MeasuredOptimization]', `stage=preliminary-scoring encoder=${candidate.encoder} quality=${candidate.quality} sample=${index} frames=${screeningFrames} durationMs=${Math.round(performance.now() - screeningStartedAt)} rejected=${Boolean(reason)}`)
+              await fs.unlink(screeningLogPath)
+              if (reason) {
+                metrics = screening
+                screeningOnly = true
+              }
+            }
+            if (!screeningOnly) await request.onProgress?.(`Scoring sample ${index + 1} of ${starts.length} with VMAF and CAMBI`)
             const scoringStartedAt = performance.now()
-            const { vmafScores, cambiScores } = await this.measureFrameMetrics(binary, outputPath, referencePath, logPath, referenceSamples[index].frames, request.signal)
+            const { vmafScores, cambiScores } = metrics ?? await this.measureFrameMetrics(binary, outputPath, referencePath, logPath, referenceSamples[index].frames, request.signal)
             getLoggingService().info('[MeasuredOptimization]', `stage=scoring encoder=${candidate.encoder} preset=${candidate.preset} quality=${candidate.quality} sample=${index} durationMs=${Math.round(performance.now() - scoringStartedAt)}`)
             sample = {
               encoder: candidate.encoder,
@@ -302,11 +324,12 @@ export class MeasuredOptimizationService {
               sourceSelfVmaf: sourceSelfVmafs[index],
               sourceCambiMean: sourceCambiMeans[index],
               samplePath: outputPath,
+              screeningOnly,
             }
             measuredSamples.push(sample)
             await request.onSampleMeasured?.(structuredClone(sample))
             if (request.onSampleMeasured) retainedPaths.add(outputPath)
-            await fs.unlink(logPath)
+            if (!screeningOnly) await fs.unlink(logPath)
           }
           candidateSamples.push(sample)
           qualityRejectedReason = request.qualityProfile ? getImpossibleQualityReason(request.qualityProfile, candidateSamples.flatMap(sample => sample.vmafScores), candidateSamples.flatMap(sample => sample.cambiScores), referenceSamples.reduce((sum, sample) => sum + sample.frames, 0)) : undefined
@@ -324,7 +347,7 @@ export class MeasuredOptimizationService {
         const banding = candidateSamples.flatMap(sample => sample.cambiScores)
         if (!scores.length || scores.some(score => !Number.isFinite(score)) || banding.some(score => !Number.isFinite(score))) throw new Error('Measured frame scores are incomplete')
         scores.sort((a, b) => a - b)
-        measured.push({ incompleteMeasurement: candidateSamples.length < starts.length, qualityRejectedReason, encoder: candidate.encoder, quality: candidate.quality, preset: candidate.preset, outputBytes: candidateSamples.reduce((sum, sample) => sum + sample.outputBytes, 0), sampledDurationSeconds: candidateSamples.reduce((sum, sample) => sum + sample.sampledDurationSeconds, 0), encodingDurationMs: candidateSamples.reduce((sum, sample) => sum + sample.encodingDurationMs, 0), vmafMean: scores.reduce((a, b) => a + b, 0) / scores.length, vmafP5: scores[Math.floor(scores.length * 0.05)], cambiMean: banding.reduce((a, b) => a + b, 0) / banding.length, sourceSelfVmaf: candidateSamples.reduce((sum, sample) => sum + sample.sourceSelfVmaf, 0) / candidateSamples.length, sourceCambiMean: candidateSamples.reduce((sum, sample) => sum + sample.sourceCambiMean, 0) / candidateSamples.length, samplePaths: candidateSamples.map(sample => sample.samplePath), playbackBlockers: [...playbackBlockers] })
+        measured.push({ incompleteMeasurement: candidateSamples.reduce((sum, sample) => sum + sample.vmafScores.length, 0) < referenceSamples.reduce((sum, sample) => sum + sample.frames, 0), qualityRejectedReason, encoder: candidate.encoder, quality: candidate.quality, preset: candidate.preset, outputBytes: candidateSamples.reduce((sum, sample) => sum + sample.outputBytes, 0), sampledDurationSeconds: candidateSamples.reduce((sum, sample) => sum + sample.sampledDurationSeconds, 0), encodingDurationMs: candidateSamples.reduce((sum, sample) => sum + sample.encodingDurationMs, 0), vmafMean: scores.reduce((a, b) => a + b, 0) / scores.length, vmafP5: scores[Math.floor(scores.length * VMAF_LOW_PERCENTILE)], cambiMean: banding.reduce((a, b) => a + b, 0) / banding.length, sourceSelfVmaf: candidateSamples.reduce((sum, sample) => sum + sample.sourceSelfVmaf, 0) / candidateSamples.length, sourceCambiMean: candidateSamples.reduce((sum, sample) => sum + sample.sourceCambiMean, 0) / candidateSamples.length, samplePaths: candidateSamples.map(sample => sample.samplePath), playbackBlockers: [...playbackBlockers] })
         await request.onCandidateMeasured?.(structuredClone(measured), measured.length === request.candidates.length)
         if (request.onCandidateMeasured) for (const sample of candidateSamples) retainedPaths.add(sample.samplePath)
       }
