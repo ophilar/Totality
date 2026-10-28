@@ -16,9 +16,11 @@ vi.mock('@main/services/LoggingService', () => ({
 }))
 
 const mockAddTasks = vi.fn()
+const mockGetQueueState = vi.fn()
 vi.mock('../../../../src/main/services/TaskQueueService', () => ({
   getTaskQueueService: () => ({
     getTasks: vi.fn().mockResolvedValue([]),
+    getQueueState: mockGetQueueState,
     addTasks: mockAddTasks,
   })
 }))
@@ -28,6 +30,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
+    mockGetQueueState.mockReturnValue({ currentTask: null, queue: [], completedTasks: [], isPaused: false })
     mockDb = {
       config: {
         getSetting: vi.fn(),
@@ -133,7 +136,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
       requestId: 'request-no-target',
       mediaItemId: 101,
       sourceId: 'src1',
-      options: { targetProfileId: null },
+      options: { targetProfileId: null, outputMode: 'copy' },
     }
 
     expect(PreflightShowTranscodeSchema.safeParse([request]).success).toBe(true)
@@ -150,7 +153,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
       seasonNumber: 1,
       representativeMediaItemId: 123,
       sourceId: 'src1',
-      options: {},
+      options: { outputMode: 'copy' },
     }]).success).toBe(true)
   })
 
@@ -211,5 +214,53 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     expect(queuedTasks[1].label).toBe('Show S01E02 Title')
 
     expect(mockDb.config.setSetting).toHaveBeenCalledWith(`transcoding.preflight.${preflightId}`, expect.stringContaining('queuedAt'))
+  })
+
+  it('requeues only failed or cancelled episodes from an already queued plan', async () => {
+    const transcodingService = getTranscodingService()
+    const preflightId = 'retry_preflight_1'
+    const sourcePath = path.resolve('src/main/services/TranscodingService.ts')
+    const sourceStat = await fs.stat(sourcePath)
+    mockDb.media.getItemById.mockImplementation(async (id: number) => ({ id, title: `Episode ${id}`, source_id: 'src1', file_path: sourcePath }))
+    mockDb.sources.getSourceById.mockResolvedValue({ connection_config: JSON.stringify({ folderPath: path.dirname(sourcePath) }) })
+    mockAddTasks.mockReturnValue(['retry-task-102'])
+    mockGetQueueState.mockReturnValue({
+      currentTask: null,
+      queue: [],
+      isPaused: false,
+      completedTasks: [
+        { id: 'task-101', type: 'transcode', label: 'Episode 101', mediaItemId: 101, batchId: 'batch_retry', status: 'completed', createdAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'task-102', type: 'transcode', label: 'Episode 102', mediaItemId: 102, batchId: 'batch_retry', status: 'failed', createdAt: '2026-01-01T00:00:01.000Z' },
+      ],
+    })
+    const episode = (mediaItemId: number) => ({
+      mediaItemId,
+      label: `Episode ${mediaItemId}`,
+      compatible: true,
+      decisionStatus: 'actionable',
+      sourceSize: sourceStat.size,
+      sourceMtimeMs: sourceStat.mtimeMs,
+      sourceSha256: 'a'.repeat(64),
+      options: { crf: 20 },
+    })
+    mockDb.config.getSetting.mockResolvedValue(JSON.stringify({
+      request: { sourceId: 'src1', libraryId: 'lib1' },
+      result: {
+        preflightId,
+        batchId: 'batch_retry',
+        queuedAt: '2026-01-01T00:00:00.000Z',
+        queuedMediaItemIds: [101, 102],
+        userApproved: false,
+        episodes: [episode(101), episode(102)],
+      },
+    }))
+
+    const result = await transcodingService.queueShowTranscode(preflightId)
+
+    expect(result).toEqual({ batchId: 'batch_retry', queuedMediaItemIds: [102], queuedTaskIds: ['retry-task-102'] })
+    expect(mockAddTasks).toHaveBeenCalledTimes(1)
+    expect(mockAddTasks.mock.calls[0][0]).toHaveLength(1)
+    expect(mockAddTasks.mock.calls[0][0][0].mediaItemId).toBe(102)
+    expect(mockDb.config.setSetting).toHaveBeenCalledWith(`transcoding.preflight.${preflightId}`, expect.stringContaining('queuedMediaItemIds'))
   })
 })

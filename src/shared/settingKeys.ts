@@ -57,6 +57,7 @@ export const SETTING_KEYS = {
   quality_music_hires_bitdepth: 'quality_music_hires_bitdepth',
   subtitle_preferred_languages: 'subtitle_preferred_languages',
   optimization_default_target_profile_id: 'optimization_default_target_profile_id',
+  transcoding_default_output_mode: 'transcoding_default_output_mode',
 
   // FFprobe settings
   ffprobe_enabled: 'ffprobe_enabled',
