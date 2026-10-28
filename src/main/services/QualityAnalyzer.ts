@@ -59,6 +59,11 @@ export interface VersionQualityResult {
   audio_tier_score: number | null
 }
 
+type QualitySavings = Pick<QualityScore,
+  'media_item_id' | 'video_savings_bytes' | 'estimated_savings_bytes' | 'savings_coverage' |
+  'evidence_status' | 'confidence' | 'savings_basis'
+>
+
 const DEFAULT_MUSIC_THRESHOLDS = APP_CONFIG.quality.musicThresholds
 const DEFAULT_CODEC_EFFICIENCY = APP_CONFIG.quality.codecEfficiency
 const DEFAULT_VIDEO_THRESHOLDS = APP_CONFIG.quality.videoBitrateThresholds
@@ -340,16 +345,37 @@ export class QualityAnalyzer {
     }
   }
 
-  async analyzeMediaItem(mediaItem: MediaItem, analysis?: FileAnalysisResult): Promise<QualityScore> {
-    const scoringItem = analysis ? mergeAnalysisIntoMediaItem(mediaItem, analysis) : mediaItem
-    const { qualityTier, tierQuality, tierScore, bitrateTierScore, audioTierScore, bestAudio } =
-      this.scoreQuality(scoringItem)
+  private async analyzeQualityScore(mediaItem: MediaItem): Promise<QualityScore> {
+    const { qualityTier, tierQuality, tierScore, bitrateTierScore, audioTierScore } = this.scoreQuality(mediaItem)
+    return {
+      media_item_id: mediaItem.id!,
+      quality_tier: qualityTier === 'Unknown' ? 'UNKNOWN' : qualityTier,
+      tier_quality: tierQuality,
+      tier_score: tierScore,
+      bitrate_tier_score: bitrateTierScore,
+      audio_tier_score: audioTierScore,
+      overall_score: null,
+      resolution_score: null,
+      bitrate_score: null,
+      audio_score: null,
+      savings_coverage: 'insufficient',
+      is_low_quality: false,
+      needs_upgrade: false,
+      issues: '[]',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
 
-    const savedAnalysis = analysis ?? (mediaItem.deep_analysis ? JSON.parse(mediaItem.deep_analysis) as FileAnalysisResult : undefined)
+  private async analyzeSavings(mediaItem: MediaItem, analysis?: FileAnalysisResult, measurementAnalysis?: FileAnalysisResult): Promise<{
+    savings: Omit<QualitySavings, 'media_item_id'>
+    optimizationDecision: ReturnType<typeof buildOptimizationDecision>
+  }> {
+    const scoringItem = analysis ? mergeAnalysisIntoMediaItem(mediaItem, analysis) : mediaItem
     let measuredPlanSavingsBytes: number | undefined
     let measuredPlanBasis: SavingsBasis | undefined
     let hasApplicableMeasurements = false
-    const measurement = savedAnalysis?.optimizationMeasurement
+    const measurement = measurementAnalysis?.optimizationMeasurement
     if (measurement && mediaItem.file_path) {
       const raw = await getDatabase().config.getSetting(`${MEASUREMENT_SETTING_PREFIX}${measurement.cacheKey}`)
       if (raw) {
@@ -360,7 +386,7 @@ export class QualityAnalyzer {
             hasApplicableMeasurements = true
             try {
               const candidate = selectMeasuredCandidate(measurement.qualityProfile, cached.candidates)
-              measuredPlanSavingsBytes = projectMeasuredSavingsBytes(source.size, (savedAnalysis?.durationMs ?? mediaItem.duration_ms!) / 1000, candidate.outputBytes, candidate.sampledDurationSeconds)
+              measuredPlanSavingsBytes = projectMeasuredSavingsBytes(source.size, (measurementAnalysis?.durationMs ?? mediaItem.duration_ms!) / 1000, candidate.outputBytes, candidate.sampledDurationSeconds)
               measuredPlanBasis = measurement.samplingRole === 'projected' ? 'representative_video_sample_projection' : 'video_sample_encode'
             } catch (error) {
               if (!(error instanceof MeasuredQualityError)) throw error
@@ -370,22 +396,60 @@ export class QualityAnalyzer {
         }
       }
     }
-    const { breakdown: savingsBreakdown, audioPruningEvidence } = this.calculateOptimizationSavings(scoringItem, analysis, { measuredPlanSavingsBytes, hasApplicableMeasurements })
-    const videoSavingsBytes = savingsBreakdown.videoSavingsBytes
-    const estimatedSavingsBytes = savingsBreakdown.totalEstimatedSavingsBytes
+    const { breakdown, audioPruningEvidence, optimizationDecision } = this.calculateOptimizationSavings(scoringItem, analysis, { measuredPlanSavingsBytes, hasApplicableMeasurements })
     const savingSources = [
-      savingsBreakdown.videoSavingsBytes === null ? null : { status: 'estimated' as const, basis: 'video_bitrate_estimate' as const },
+      breakdown.videoSavingsBytes === null ? null : { status: 'estimated' as const, basis: 'video_bitrate_estimate' as const },
       audioPruningEvidence.estimatedSavingsBytes === null ? null : { status: audioPruningEvidence.status, basis: audioPruningEvidence.status === 'measured' ? 'audio_stream_removal' as const : 'audio_bitrate_estimate' as const },
-      savingsBreakdown.subtitlePruningBytes === null ? null : { status: 'measured' as const, basis: 'subtitle_stream_removal' as const },
+      breakdown.subtitlePruningBytes === null ? null : { status: 'measured' as const, basis: 'subtitle_stream_removal' as const },
     ].filter((value): value is NonNullable<typeof value> => value !== null)
-    const savingsBasis = measuredPlanBasis ?? (savingSources.length === 0
-      ? 'insufficient_data'
-      : savingSources.length > 1
-        ? savingSources.some(source => source.status === 'estimated') ? 'mixed_measured_and_estimated' : 'mixed_measured'
-          : savingSources[0].basis)
-    const evidenceStatus = measuredPlanSavingsBytes !== undefined || savingSources.some(source => source.status === 'estimated') ? 'estimated' : savingSources.length > 0 ? 'measured' : 'insufficient'
+    const evidenceStatus = measuredPlanSavingsBytes !== undefined || savingSources.some(source => source.status === 'estimated')
+      ? 'estimated' : savingSources.length > 0 ? 'measured' : 'insufficient'
+    return {
+      savings: {
+        video_savings_bytes: breakdown.videoSavingsBytes,
+        estimated_savings_bytes: breakdown.totalEstimatedSavingsBytes,
+        savings_coverage: measuredPlanBasis === 'representative_video_sample_projection' ? 'partial' : breakdown.coverage,
+        evidence_status: evidenceStatus,
+        confidence: measuredPlanSavingsBytes !== undefined ? 'medium' : evidenceStatus === 'measured' ? 'high' : evidenceStatus === 'estimated' ? 'low' : 'none',
+        savings_basis: measuredPlanBasis ?? (savingSources.length === 0
+          ? 'insufficient_data'
+          : savingSources.length > 1
+            ? savingSources.some(source => source.status === 'estimated') ? 'mixed_measured_and_estimated' : 'mixed_measured'
+            : savingSources[0].basis),
+      },
+      optimizationDecision,
+    }
+  }
+
+  async analyzeMediaItemSavings(mediaItem: MediaItem, analysis: FileAnalysisResult): Promise<QualitySavings> {
+    const { savings } = await this.analyzeSavings(mediaItem, analysis)
+    return { media_item_id: mediaItem.id!, ...savings }
+  }
+
+  async analyzeMediaItem(mediaItem: MediaItem, analysis?: FileAnalysisResult): Promise<QualityScore> {
+    const savedAnalysis = analysis ?? (mediaItem.deep_analysis ? JSON.parse(mediaItem.deep_analysis) as FileAnalysisResult : undefined)
+    if (!analysis && savedAnalysis?.success && savedAnalysis.fileAnalysisFingerprint && mediaItem.file_path) {
+      const source = await stat(mediaItem.file_path)
+      if (savedAnalysis.fileAnalysisFingerprint.size === source.size && savedAnalysis.fileAnalysisFingerprint.mtimeMs === source.mtimeMs && PathUtils.arePathsEqual(savedAnalysis.filePath, mediaItem.file_path)) {
+        analysis = savedAnalysis
+      }
+    }
+    const scoringItem = analysis ? mergeAnalysisIntoMediaItem(mediaItem, analysis) : mediaItem
+    const { qualityTier, tierQuality, tierScore, bitrateTierScore, audioTierScore, bestAudio } =
+      this.scoreQuality(scoringItem)
+
+    const { savings, optimizationDecision } = await this.analyzeSavings(mediaItem, analysis, savedAnalysis)
 
     const issues: string[] = []
+    const languageDecision = optimizationDecision.trackRemoval
+    if (languageDecision.status === 'review-required') {
+      const trackIndexes = languageDecision.reviewRequiredTrackIndexes
+      issues.push(`${languageDecision.reason} (audio track indexes: ${trackIndexes.join(', ') || 'none'})`)
+      getLoggingService().debug(
+        '[QualityAnalyzer]',
+        `Audio language review required: mediaItem=${mediaItem.id ?? 'unknown'}, title=${mediaItem.title}, filePath=${mediaItem.file_path ?? 'unknown'}, reason=${languageDecision.reason}, trackIndexes=${trackIndexes.join(', ')}`
+      )
+    }
 
     if (qualityTier === 'Unknown') {
       issues.push('Resolution unknown')
@@ -427,12 +491,7 @@ export class QualityAnalyzer {
       bitrate_score: null,
       audio_score: null,
       efficiency_score: null,
-      video_savings_bytes: videoSavingsBytes,
-      estimated_savings_bytes: estimatedSavingsBytes,
-      savings_coverage: measuredPlanBasis === 'representative_video_sample_projection' ? 'partial' : savingsBreakdown.coverage,
-      evidence_status: evidenceStatus,
-      confidence: measuredPlanSavingsBytes !== undefined ? 'medium' : evidenceStatus === 'measured' ? 'high' : evidenceStatus === 'estimated' ? 'low' : 'none',
-      savings_basis: savingsBasis,
+      ...savings,
       is_low_quality: false,
       needs_upgrade: false,
       issues: JSON.stringify(issues),
@@ -445,7 +504,7 @@ export class QualityAnalyzer {
     mediaItem: MediaItem,
     signal?: AbortSignal,
     options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string } = {},
-  ): Promise<{ analysis: FileAnalysisResult; qualityScore: QualityScore }> {
+  ): Promise<{ analysis: FileAnalysisResult }> {
     if (!mediaItem.file_path) throw new Error(`Media item ${mediaItem.id ?? mediaItem.title} has no local file path`)
     await this.loadThresholdsFromDatabase()
     const db = getDatabase()
@@ -480,6 +539,8 @@ export class QualityAnalyzer {
         : requestedAnalysisOptions.scanBitrate && requestedAnalysisOptions.detectVolume),
     )
 
+    getLoggingService().debug('[QualityAnalyzer]', `File evidence cache ${analysisIsReusable ? 'hit' : 'miss'}: mediaItem=${mediaItem.id}, filePath=${filePath}`)
+
     let analysis: PersistedFileAnalysis
     if (analysisIsReusable) {
       analysis = cachedAnalysis!
@@ -504,8 +565,7 @@ export class QualityAnalyzer {
     }
 
     if (!analysis.success) throw new Error(analysis.error || `File analysis failed for ${mediaItem.title}`)
-    const analyzedItem = mergeAnalysisIntoMediaItem(mediaItem, analysis)
-    return { analysis, qualityScore: await this.analyzeMediaItem(analyzedItem, analysis) }
+    return { analysis }
   }
 
   getOptimizationSavingsBreakdown(item: MediaItem, analysis?: FileAnalysisResult, targetCodec?: 'hevc' | 'av1'): OptimizationSavingsBreakdown {
@@ -563,7 +623,7 @@ export class QualityAnalyzer {
         ...(subtitleWhitelist.length > 0 ? ['subtitle_pruning' as const] : []),
       ],
     })
-    return { breakdown, audioPruningEvidence }
+    return { breakdown, audioPruningEvidence, optimizationDecision }
   }
 
   private getSubtitleLanguageWhitelist(): string[] {
@@ -616,22 +676,35 @@ export class QualityAnalyzer {
     libraryId?: string,
     signal?: AbortSignal,
     series?: { title: string; seriesIdentityKey: string },
-    onItemFailure?: (mediaItemId: number | undefined, error: unknown) => void
-  ): Promise<number> {
+    onItemFailure?: (mediaItemId: number | undefined, error: unknown) => void,
+    fileAnalysis?: {
+      completedMediaItemIds: number[]
+      onItemComplete: (mediaItemId: number) => void
+      onItemStarted: (title: string, current: number, total: number) => void
+      shouldYield?: () => boolean
+    },
+  ): Promise<number | { itemsScanned: number; yielded: true }> {
     const db = getDatabase()
     const logging = getLoggingService()
     const analysisStartedAt = Date.now()
     const filters = sourceId || libraryId ? { sourceId, libraryId } : undefined
     let analyzed = 0
+    const completedMediaItemIds = new Set(fileAnalysis?.completedMediaItemIds)
     const tierCounts: Record<string, number> = {}
     const qualityCounts: Record<string, number> = {}
     const qualityScoresBatch: QualityScore[] = []
+    const savingsBatch: QualitySavings[] = []
     let qualityScoreBatchWriteFailed = false
     const flushQualityScores = async (): Promise<void> => {
-      if (qualityScoresBatch.length === 0) return
+      if (qualityScoresBatch.length === 0 && savingsBatch.length === 0) return
       try {
-        await db.media.upsertQualityScores(qualityScoresBatch)
+        if (fileAnalysis) {
+          for (const savings of savingsBatch) await db.media.updateQualitySavings(savings)
+        } else {
+          await db.media.upsertQualityRatings(qualityScoresBatch)
+        }
         qualityScoresBatch.length = 0
+        savingsBatch.length = 0
       } catch (error) {
         qualityScoreBatchWriteFailed = true
         throw error
@@ -670,21 +743,33 @@ export class QualityAnalyzer {
         for (const [index, item] of mediaItems.entries()) {
           if (isCancelled?.() || signal?.aborted) {
             await flushQualityScores()
+            signal?.throwIfAborted()
             logging.info('[QualityAnalyzer]', `Analysis cancelled after ${analyzed}/${totalItems} items`)
             return analyzed
+          }
+          if (completedMediaItemIds.has(item.id!)) {
+            analyzed++
+            onProgress?.(offset + index + 1, totalItems)
+            continue
           }
           currentItemId = item.id
           currentItemIndex = offset + index + 1
           currentItemStartedAt = Date.now()
-          currentStage = 'media file analysis'
+          currentStage = fileAnalysis ? 'media file analysis' : 'calculating quality score'
+          fileAnalysis?.onItemStarted(item.title, currentItemIndex - 1, totalItems)
           logging.debug(
             '[QualityAnalyzer]',
             `Analyzing item ${currentItemIndex}/${totalItems}: id=${currentItemId}, type=${item.type}`
           )
-          currentStage = 'persisting deep analysis'
-          let qualityScore: QualityScore
+          let qualityScore: QualityScore | undefined
           try {
-            qualityScore = (await this.analyzeMediaItemFileEvidence(item, signal)).qualityScore
+            if (fileAnalysis) {
+              const { analysis } = await this.analyzeMediaItemFileEvidence(item, signal, { requestId: String(item.id) })
+              savingsBatch.push(await this.analyzeMediaItemSavings(item, analysis))
+            } else {
+              qualityScore = await this.analyzeQualityScore(item)
+              qualityScoresBatch.push(qualityScore)
+            }
           } catch (error) {
             if (signal?.aborted || isCancelled?.()) throw error
             onItemFailure?.(item.id, error)
@@ -693,20 +778,21 @@ export class QualityAnalyzer {
             continue
           }
           currentStage = 'calculating quality score'
-          qualityScoresBatch.push(qualityScore)
+          if (qualityScore) {
+            const tier = qualityScore.quality_tier
+            const quality = qualityScore.tier_quality
+            tierCounts[tier] = (tierCounts[tier] ?? 0) + 1
+            qualityCounts[quality] = (qualityCounts[quality] ?? 0) + 1
+          }
 
-          const tier = qualityScore.quality_tier
-          const quality = qualityScore.tier_quality
-          tierCounts[tier] = (tierCounts[tier] ?? 0) + 1
-          qualityCounts[quality] = (qualityCounts[quality] ?? 0) + 1
-
-          if (item.id && item.version_count && item.version_count > 1) {
+          if (!fileAnalysis && item.id && item.version_count && item.version_count > 1) {
             currentStage = 'persisting quality scores before version analysis'
             await flushQualityScores()
             currentStage = 'analyzing alternate versions'
             const versions = versionsByMediaId.get(item.id) ?? []
             for (const version of versions) {
               if (isCancelled?.() || signal?.aborted) {
+                signal?.throwIfAborted()
                 logging.info('[QualityAnalyzer]', `Analysis cancelled after ${analyzed}/${totalItems} items`)
                 return analyzed
               }
@@ -719,17 +805,22 @@ export class QualityAnalyzer {
             db.media.updateBestVersion(item.id)
           }
 
-          if (qualityScoresBatch.length >= QUALITY_ANALYSIS_BATCH_SIZE) {
+          if (fileAnalysis || qualityScoresBatch.length >= QUALITY_ANALYSIS_BATCH_SIZE) {
             currentStage = 'persisting quality scores'
             await flushQualityScores()
           }
+
+          fileAnalysis?.onItemComplete(item.id!)
 
           analyzed++
           logging.debug(
             '[QualityAnalyzer]',
             `Analyzed item ${currentItemIndex}/${totalItems}: id=${currentItemId}, elapsedMs=${Date.now() - currentItemStartedAt}`
           )
-          if (onProgress) onProgress(analyzed, totalItems)
+          if (onProgress) onProgress(currentItemIndex, totalItems)
+          if (fileAnalysis?.shouldYield?.()) {
+            return { itemsScanned: analyzed, yielded: true }
+          }
         }
       }
 
@@ -738,7 +829,7 @@ export class QualityAnalyzer {
     } catch (error) {
       let failure: unknown = error
       let failureStage = currentStage
-      if (qualityScoresBatch.length > 0 && !qualityScoreBatchWriteFailed) {
+      if ((qualityScoresBatch.length > 0 || savingsBatch.length > 0) && !qualityScoreBatchWriteFailed) {
         try {
           await flushQualityScores()
         } catch (flushError) {
@@ -748,7 +839,7 @@ export class QualityAnalyzer {
           failureStage = 'persisting pending quality scores'
         }
       }
-      if (signal?.aborted && failure instanceof Error && failure.name === 'AbortError') return analyzed
+      signal?.throwIfAborted()
       const failureMessage = failure instanceof Error ? failure.message : String(failure)
       const contextualFailure = new QualityAnalysisError(
         `Quality analysis failed after ${analyzed}/${totalItems} items during ${failureStage}${currentItemId === undefined ? '' : ` at item ${currentItemIndex} (id=${currentItemId})`}: ${failureMessage}`,

@@ -831,6 +831,8 @@ export function TVShowsView({
     }
 
     const ownedSeasons = Array.from(selectedShowData.seasons.values()).sort((a, b) => a.seasonNumber - b.seasonNumber)
+    const regularOwnedSeasons = ownedSeasons.filter(season => season.seasonNumber > 0)
+    const specialsEpisodes = selectedShowData.seasons.get(0)?.episodes
     const completenessData = seriesCompleteness.get(selectedShow)
 
     const missingSeasonNumbers = completenessData?.missing_seasons || []
@@ -844,7 +846,6 @@ export function TVShowsView({
         .map(num => ({ type: 'missing' as const, seasonNumber: num }))
     ].sort((a, b) => a.seasonNumber - b.seasonNumber)
 
-    const totalSeasons = completenessData?.total_seasons || ownedSeasons.length
 
     return (
       <div className="space-y-6">
@@ -896,8 +897,11 @@ export function TVShowsView({
             </div>
 
             {/* Metadata line */}
-            <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-              <span>{ownedSeasons.length} of {totalSeasons} Seasons</span>
+            <div className="flex flex-wrap items-center gap-2 mt-1 text-sm text-muted-foreground">
+              <span>{completenessData && completenessData.total_seasons > 0 ? `${completenessData.owned_seasons} of ${completenessData.total_seasons} Seasons` : `${regularOwnedSeasons.length} Seasons`}</span>
+              {specialsEpisodes && specialsEpisodes.length > 0 && <><span>•</span><span>{specialsEpisodes.length} {specialsEpisodes.length === 1 ? 'Special' : 'Specials'}</span></>}
+              {!completenessData && <><span>•</span><span>Completion not analyzed</span></>}
+              {completenessData && completenessData.total_episodes === 0 && <><span>•</span><span>Completion unknown</span></>}
               {completenessData?.status && (
                 <>
                   <span>•</span>

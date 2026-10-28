@@ -828,6 +828,7 @@ export enum TaskType {
   MusicCompleteness = 'music-completeness',
   MusicScan = 'music-scan',
   QualityAnalysis = 'quality-analysis',
+  MediaAnalysis = 'media-analysis',
   Analysis = 'analysis',
   Transcode = 'transcode',
   OptimizationPreflight = 'optimization-preflight'

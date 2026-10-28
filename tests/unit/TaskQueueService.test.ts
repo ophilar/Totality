@@ -1,9 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-
-// Mock electron
-vi.mock('electron', () => ({
-  BrowserWindow: vi.fn(),
-}))
+import { createTestDatabase, type TestDatabase } from '../helpers/testDatabase'
+import { getDatabase } from '../../src/main/database/getDatabase'
 
 // Mock dependencies
 vi.mock('../../src/main/ipc/utils/safeSend', () => ({
@@ -38,12 +35,6 @@ vi.mock('../../src/main/services/MusicBrainzService', () => ({
   }),
 }))
 
-vi.mock('../../src/main/database/getDatabase', () => ({
-  getDatabase: vi.fn().mockReturnValue({
-    getSources: vi.fn().mockReturnValue([]),
-    getMediaItems: vi.fn().mockReturnValue([]),
-  }),
-}))
 
 vi.mock('../../src/main/services/LiveMonitoringService', () => ({
   getLiveMonitoringService: vi.fn().mockReturnValue({
@@ -60,13 +51,18 @@ import { TaskQueueService, TaskDefinition } from '../../src/main/services/TaskQu
 
 describe('TaskQueueService', () => {
   let service: TaskQueueService
+  let database: TestDatabase
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    database = await createTestDatabase()
+    ;(getDatabase() as unknown as { db: TestDatabase }).db = database
+    ;(getDatabase() as unknown as { runMigrations(): void }).runMigrations()
     service = new TaskQueueService()
     service.pauseQueue()
   })
 
   afterEach(() => {
+    database.close()
     vi.clearAllMocks()
   })
 
@@ -249,6 +245,48 @@ describe('TaskQueueService', () => {
         label: 'Analyze Music',
       })
       expect(id).toBeDefined()
+    })
+  })
+
+  describe('background media analysis', () => {
+    it('refreshes stored quality without reading a file or queuing measurement', async () => {
+      database.exec(`INSERT INTO media_items (plex_id, title, type, file_path, file_size_bytes, duration_ms,
+        resolution, width, height, video_codec, video_bitrate_kbps, audio_codec, audio_channels, audio_bitrate_kbps)
+        VALUES ('remote', 'Remote movie', 'movie', '/unavailable/movie.mkv', 1000000, 1000,
+        '1080p', 1920, 1080, 'h264', 8000, 'aac', 2, 192)`)
+      const mediaItemId = (database.prepare("SELECT id FROM media_items WHERE plex_id = 'remote'").get() as { id: number }).id
+      database.prepare(`INSERT INTO quality_scores (media_item_id, quality_tier, tier_quality, tier_score,
+        video_savings_bytes, estimated_savings_bytes, savings_coverage, issues)
+        VALUES (?, 'SD', 'LOW', 30, 120, 300, 'complete', '["Keep this review"]')`).run(mediaItemId)
+      const taskId = service.addTask({ type: 'quality-analysis', label: 'Refresh quality' })
+      const completed = service.waitForTask(taskId)
+      service.resumeQueue()
+      const task = await completed
+      service.pauseQueue()
+      expect(task.status).toBe('completed')
+      expect(task.result?.itemsScanned).toBe(1)
+      expect(database.prepare('SELECT quality_tier, video_savings_bytes, estimated_savings_bytes, issues FROM quality_scores').get()).toEqual({
+        quality_tier: '1080p', video_savings_bytes: 120, estimated_savings_bytes: 300, issues: '["Keep this review"]',
+      })
+      expect(service.getQueueState().queue).toEqual([])
+    })
+
+    it('restores saved file checkpoints and skips completed files', async () => {
+      database.exec(`INSERT INTO media_items (id, plex_id, title, type, file_path, file_size_bytes, duration_ms,
+        resolution, width, height, video_codec, video_bitrate_kbps, audio_codec, audio_channels, audio_bitrate_kbps)
+        VALUES (1, 'complete', 'Measured movie', 'movie', '/unavailable/measured.mkv', 1000000, 1000,
+        '1080p', 1920, 1080, 'h264', 8000, 'aac', 2, 192)`)
+      const taskId = service.addTask({ type: 'media-analysis', label: 'Measure media files', options: { completedMediaItemIds: [1] } })
+      const restored = new TaskQueueService()
+      restored.restorePendingQueue()
+      expect(restored.getQueueState().isPaused).toBe(true)
+      expect(restored.getQueueState().queue[0].options).toEqual({ completedMediaItemIds: [1] })
+      const completed = restored.waitForTask(taskId)
+      restored.resumeQueue()
+      const task = await completed
+      expect(task.status).toBe('completed')
+      expect(task.result?.itemsScanned).toBe(1)
+      expect(getDatabase().getPendingTasks()).toEqual([])
     })
   })
 })

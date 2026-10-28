@@ -20,6 +20,7 @@ export interface QuickPresetsTabProps {
 
 interface PresetProfile {
   id: string
+  qualityProfile: NonNullable<TranscodeOptions['qualityProfile']>
   name: string
   badge: string
   description: string
@@ -30,6 +31,7 @@ interface PresetProfile {
 const PRESET_PROFILES: PresetProfile[] = [
   {
     id: 'lossless',
+    qualityProfile: 'transparent',
     name: 'Lossless Archival',
     badge: 'Highest Quality',
     description: 'Highest quality gate. Parameters are selected from measured samples for this source.',
@@ -37,6 +39,7 @@ const PRESET_PROFILES: PresetProfile[] = [
   },
   {
     id: 'balanced',
+    qualityProfile: 'balanced',
     name: 'Balanced Smooth HQ',
     badge: 'Recommended',
     description: 'Balanced quality and savings gate. No savings claim is shown until a sample is measured.',
@@ -45,6 +48,7 @@ const PRESET_PROFILES: PresetProfile[] = [
   },
   {
     id: 'efficiency',
+    qualityProfile: 'maximum_savings',
     name: 'High Efficiency Space Saver',
     badge: 'Max Savings',
     description: 'Maximum savings gate subject to measured VMAF and banding limits.',
@@ -64,7 +68,7 @@ export function QuickPresetsTab({
     setSelectedProfileId(profile.id)
     setOptions(prev => ({
       ...prev,
-      qualityProfile: profile.id as TranscodeOptions['qualityProfile'],
+      qualityProfile: profile.qualityProfile,
       crf: undefined,
       preset: '',
       encoder: ''

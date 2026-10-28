@@ -37,6 +37,7 @@ import { analyzeAlbumQuality } from './MusicQualityAnalyzer'
 import { getArtistAlbumsCombined } from './utils/musicUtils'
 import type {
   ActivityLogEntry,
+  MediaAnalysisOptions,
   QueueState,
   QueuedTask,
   TaskDefinition,
@@ -79,7 +80,8 @@ export class TaskQueueService {
   private progressUpdatePending = false
   private processingIdleWaiters: Array<() => void> = []
   private currentTaskAbortController?: AbortController
-  private preflightPauseRequested = false
+  private taskPauseRequested = false
+  private taskYieldRequested = false
   private readonly taskCompletionWaiters = new Map<string, Set<(task: QueuedTask) => void>>()
 
   private static readonly MAX_COMPLETED_TASKS = 50
@@ -231,13 +233,13 @@ export class TaskQueueService {
   }
 
   /**
-   * Pause the queue (current task continues, but no new tasks start)
+   * Pause the queue and checkpoint resumable analysis work.
    */
   pauseQueue(): void {
     this.isPaused = true
-    if (this.currentTask?.type === 'optimization-preflight' && !this.preflightPauseRequested) {
-      this.preflightPauseRequested = true
-      this.currentTaskAbortController?.abort(new DOMException('Preflight paused', 'AbortError'))
+    if ((this.currentTask?.type === 'optimization-preflight' || this.currentTask?.type === 'media-analysis') && !this.taskPauseRequested) {
+      this.taskPauseRequested = true
+      this.currentTaskAbortController?.abort(new DOMException('Task paused', 'AbortError'))
     }
     console.log(`[TaskQueue] Queue paused`)
     this.emitQueueUpdate()
@@ -274,7 +276,7 @@ export class TaskQueueService {
 
     console.log(`[TaskQueue] Cancelling current task: ${this.currentTask.label}`)
     this.cancelRequested = true
-    this.preflightPauseRequested = false
+    this.taskPauseRequested = false
     this.currentTaskAbortController?.abort(new Error('Task cancelled'))
     this.currentTask.status = 'cancelling'
     this.emitQueueUpdate()
@@ -441,8 +443,17 @@ export class TaskQueueService {
       console.error('[TaskQueue] Failed to load persisted history:', getErrorMessage(err))
     }
 
+    const db = getDatabase()
+    db.setSeriesCompletenessInvalidationHandler((sourceId, libraryId) => {
+      this.queueSeriesCompletenessRecovery(sourceId, libraryId)
+    })
+
     // Re-enqueue tasks that were pending when the app last quit
     this.restorePendingQueue()
+
+    for (const scope of db.consumeInvalidatedSeriesCompletenessScopes()) {
+      this.queueSeriesCompletenessRecovery(scope.sourceId, scope.libraryId)
+    }
   }
 
   /**
@@ -460,14 +471,7 @@ export class TaskQueueService {
     const now = new Date().toISOString()
     try {
       const db = getDatabase()
-      db.config.setSetting(SETTING_KEYS.task_queue_paused_on_shutdown, String(this.isPaused))
-
-      // Build the list of tasks to restore on next startup:
-      // interrupted running task first, then remaining queued tasks (in order)
-      const toRestore: QueuedTask[] = []
-
       if (this.currentTask) {
-        toRestore.push(this.currentTask)
         db.saveTaskHistory({
           taskId: this.currentTask.id, type: this.currentTask.type, label: this.currentTask.label,
           sourceId: this.currentTask.sourceId, libraryId: this.currentTask.libraryId,
@@ -482,7 +486,6 @@ export class TaskQueueService {
       }
 
       for (const task of this.queue) {
-        toRestore.push(task)
         db.saveTaskHistory({
           taskId: task.id, type: task.type, label: task.label,
           sourceId: task.sourceId, libraryId: task.libraryId,
@@ -495,16 +498,7 @@ export class TaskQueueService {
         })
       }
 
-      // Persist the pending queue for restoration on next launch
-      if (toRestore.length > 0) {
-        db.savePendingTasks(toRestore.map(t => ({
-          taskId: t.id, type: t.type, label: t.label,
-          sourceId: t.sourceId, libraryId: t.libraryId, artistId: t.artistId, createdAt: t.createdAt, payload: t,
-        })))
-        console.log(`[TaskQueue] Saved ${toRestore.length} task(s) to restore on next launch`)
-      } else {
-        db.clearPendingTasks()
-      }
+      this.persistPendingQueue()
     } catch (err) {
       console.error('[TaskQueue] Failed to persist interrupted tasks:', getErrorMessage(err))
     }
@@ -634,7 +628,8 @@ export class TaskQueueService {
     const task = this.queue.shift()!
     this.currentTask = task
     this.cancelRequested = false
-    this.preflightPauseRequested = false
+    this.taskPauseRequested = false
+    this.taskYieldRequested = false
     this.currentTaskAbortController = new AbortController()
 
     task.status = 'running'
@@ -646,7 +641,19 @@ export class TaskQueueService {
     try {
       await this.executeTask(task)
 
-      if (this.cancelRequested) {
+      if (this.taskYieldRequested) {
+        task.status = 'queued'
+        task.progress = undefined
+        this.queue.push(task)
+        this.taskYieldRequested = false
+        this.currentTask = null
+        this.isProcessing = false
+        this.currentTaskAbortController = undefined
+        this.emitQueueUpdate()
+        for (const resolve of this.processingIdleWaiters.splice(0)) resolve()
+        setImmediate(() => this.processNext())
+        return
+      } else if (this.cancelRequested) {
         task.status = this.shuttingDown ? 'interrupted' : 'cancelled'
         this.addTaskHistoryEntry(task, this.shuttingDown ? 'task-interrupted' : 'task-cancelled', `${this.shuttingDown ? 'Interrupted (app quit)' : 'Cancelled'}: ${task.label}`)
       } else if ((task.result?.failedCount ?? 0) > 0) {
@@ -660,16 +667,17 @@ export class TaskQueueService {
       const errorMsg = getErrorMessage(error) || 'Unknown error'
       const isCancellation = this.cancelRequested || errorMsg === 'Task cancelled'
 
-      if (this.preflightPauseRequested && task.type === 'optimization-preflight') {
+      if (this.taskPauseRequested) {
         task.status = 'queued'
         task.progress = undefined
         this.queue.unshift(task)
-        this.preflightPauseRequested = false
+        this.taskPauseRequested = false
         this.currentTask = null
         this.isProcessing = false
         this.currentTaskAbortController = undefined
         this.emitQueueUpdate()
         for (const resolve of this.processingIdleWaiters.splice(0)) resolve()
+        setImmediate(() => this.processNext())
         return
       } else if (isCancellation) {
         if (task.type === 'optimization-preflight') {
@@ -731,7 +739,7 @@ export class TaskQueueService {
     this.currentTask = null
     this.isProcessing = false
     this.cancelRequested = false
-    this.preflightPauseRequested = false
+    this.taskPauseRequested = false
     this.currentTaskAbortController = undefined
     for (const resolve of this.processingIdleWaiters.splice(0)) resolve()
 
@@ -820,23 +828,63 @@ export class TaskQueueService {
         break
 
       case 'quality-analysis':
-        await getQualityAnalyzer().loadThresholdsFromDatabase()
         {
-          const errors: string[] = []
-          const itemsScanned = await getQualityAnalyzer().analyzeAllMediaItems(
-            (current, total) => progressCallback({ current, total, phase: 'quality analysis' }),
-            () => this.cancelRequested,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            (mediaItemId, error) => errors.push(`Media item ${mediaItemId ?? 'unknown'}: ${getErrorMessage(error)}`),
-          )
-          task.result = { itemsScanned, failedCount: errors.length, errors }
-          if (errors.length === 0 && !this.cancelRequested) await getDatabase().deleteSetting('optimization.savings_reanalysis_pending')
+        await getQualityAnalyzer().loadThresholdsFromDatabase()
+        const errors: string[] = []
+        const analysisResult = await getQualityAnalyzer().analyzeAllMediaItems(
+          (current, total) => {
+            progressCallback({ current, total, phase: 'Refreshing media quality' })
+            this.sendToRenderer(IPC_CHANNELS.qualityAnalysisProgress, { current, total })
+          },
+          () => this.cancelRequested,
+          task.sourceId,
+          task.libraryId,
+          this.currentTaskAbortController!.signal,
+          undefined,
+          (mediaItemId, error) => errors.push(`Media item ${mediaItemId ?? 'unknown'}: ${getErrorMessage(error)}`),
+        )
+        const itemsScanned = typeof analysisResult === 'number' ? analysisResult : analysisResult.itemsScanned
+        task.result = { itemsScanned, failedCount: errors.length, errors }
+        if (errors.length === 0 && !this.cancelRequested) {
+          await getDatabase().deleteSetting('optimization.quality_reanalysis_pending')
+        }
         }
         this.sendLibraryUpdated()
         break
+      case 'media-analysis': {
+        const options = task.options as MediaAnalysisOptions
+        const errors = new Set(task.result?.errors ?? [])
+        let currentItem: string | undefined
+        const analysisResult = await getQualityAnalyzer().analyzeAllMediaItems(
+          (current, total) => progressCallback({ current, total, phase: 'Measuring media files', currentItem }),
+          () => this.cancelRequested,
+          task.sourceId,
+          task.libraryId,
+          this.currentTaskAbortController!.signal,
+          undefined,
+          (mediaItemId, error) => errors.add(`Media item ${mediaItemId}: ${getErrorMessage(error)}`),
+          {
+            completedMediaItemIds: options.completedMediaItemIds,
+            onItemStarted: (title, current, total) => {
+              currentItem = title
+              progressCallback({ current, total, phase: 'Measuring media files', currentItem })
+            },
+            onItemComplete: mediaItemId => {
+              options.completedMediaItemIds.push(mediaItemId)
+              this.persistPendingQueue()
+            },
+            shouldYield: () => this.queue.some(queuedTask => queuedTask.type !== 'media-analysis'),
+          },
+        )
+        const itemsScanned = typeof analysisResult === 'number' ? analysisResult : analysisResult.itemsScanned
+        if (typeof analysisResult !== 'number') this.taskYieldRequested = true
+        task.result = { itemsScanned, failedCount: errors.size, errors: [...errors] }
+        if (typeof analysisResult === 'number' && errors.size === 0 && !this.cancelRequested) {
+          await getDatabase().deleteSetting('optimization.savings_reanalysis_pending')
+        }
+        this.sendLibraryUpdated()
+        break
+      }
 
       case 'transcode':
         await this.executeTranscode(task, progressCallback)
@@ -1023,6 +1071,15 @@ export class TaskQueueService {
     if (!result.completed && !this.cancelRequested) {
       throw new Error('Series analysis did not complete')
     }
+  }
+
+  private queueSeriesCompletenessRecovery(sourceId: string, libraryId: string): void {
+    this.addTask({
+      type: 'series-completeness',
+      label: 'Recover invalidated series completeness',
+      sourceId,
+      libraryId,
+    })
   }
 
   private async executeCollectionCompleteness(task: QueuedTask, onProgress: (p: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void): Promise<void> {
@@ -1234,7 +1291,19 @@ export class TaskQueueService {
   // ============================================================================
 
   private emitQueueUpdate(): void {
+    this.persistPendingQueue()
     this.sendToRenderer('taskQueue:updated', this.getQueueState())
+  }
+
+  private persistPendingQueue(): void {
+    const db = getDatabase()
+    db.config.setSetting(SETTING_KEYS.task_queue_paused_on_shutdown, String(this.isPaused))
+    const tasks = [...(this.currentTask ? [this.currentTask] : []), ...this.queue]
+    db.savePendingTasks(tasks.map(task => ({
+      taskId: task.id, type: task.type, label: task.label,
+      sourceId: task.sourceId, libraryId: task.libraryId, artistId: task.artistId,
+      createdAt: task.createdAt, payload: task,
+    })))
   }
 
   /**

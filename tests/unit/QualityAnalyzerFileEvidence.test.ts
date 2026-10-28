@@ -118,7 +118,7 @@ describe('QualityAnalyzer - File Evidence Analysis Caching', () => {
 
     expect(mockAnalyzeCompleteFile).not.toHaveBeenCalled()
     expect(result.analysis.video?.codec).toBe('hevc')
-    expect(result.qualityScore.quality_tier).toBe('4K')
+    expect((await analyzer.analyzeMediaItem(item, result.analysis)).quality_tier).toBe('4K')
   })
 
   it('runs deep analysis and persists fingerprint when no cache matches', async () => {
@@ -171,6 +171,6 @@ describe('QualityAnalyzer - File Evidence Analysis Caching', () => {
       signal: undefined,
     })
     expect(mockUpdateDeepAnalysisByPath).toHaveBeenCalled()
-    expect(result.qualityScore.quality_tier).toBe('1080p')
+    expect((await analyzer.analyzeMediaItem(item, result.analysis)).quality_tier).toBe('1080p')
   })
 })

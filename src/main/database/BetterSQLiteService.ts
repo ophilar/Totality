@@ -54,6 +54,7 @@ import { PlaybackTargetProfileRepository } from './repositories/PlaybackTargetPr
 import { MediaRemuxJobRepository } from './repositories/MediaRemuxJobRepository'
 import { backfillSeriesIdentityKeys } from './SeriesIdentityMigration'
 import { deriveSeriesIdentityKey } from '../services/SeriesIdentityService'
+import { QUALITY_MODEL_VERSION } from '../constants/qualityModelVersion'
 
 // Singleton instance
 let serviceInstance: BetterSQLiteService | null = null
@@ -71,6 +72,8 @@ export class BetterSQLiteService {
   private db: Database.Database | null = null
   private dbPath: string
   private _isInitialized = false
+  private invalidatedSeriesCompletenessScopes = new Set<string>()
+  private seriesCompletenessInvalidationHandler?: (sourceId: string, libraryId: string) => void
 
   // Retention limits for unbounded tables — unread notifications are never pruned
   private static readonly MAX_READ_NOTIFICATIONS = 500
@@ -204,6 +207,8 @@ export class BetterSQLiteService {
       getQualityScoreByMediaId: (id: number) => this.getQualityScore(id),
       upsertQualityScore: (score: any) => this.upsertQualityScore(score),
       upsertQualityScores: (scores: any[]) => this.upsertQualityScores(scores),
+      upsertQualityRatings: (scores: any[]) => this.upsertQualityRatings(scores),
+      updateQualitySavings: (score: Pick<QualityScore, 'media_item_id' | 'video_savings_bytes' | 'estimated_savings_bytes' | 'savings_coverage' | 'evidence_status' | 'confidence' | 'savings_basis'>) => this.updateQualitySavings(score),
       getQualityScores: () => this.getQualityScores(),
       getItems: (filters?: MediaItemFilters) => this.getMediaItems(filters),
       updateDeepAnalysisByPath: (filePath: string, analysis: any, timestamp?: string) => this.updateDeepAnalysisByPath(filePath, analysis, timestamp),
@@ -551,19 +556,8 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
           savings_coverage = NULL,
           evidence_status = NULL,
           confidence = NULL,
-          savings_basis = NULL,
-          tier_quality = 'UNKNOWN',
-          tier_score = NULL,
-          bitrate_tier_score = NULL,
-          audio_tier_score = NULL,
-          overall_score = NULL,
-          resolution_score = NULL,
-          bitrate_score = NULL,
-          audio_score = NULL,
-          is_low_quality = 0,
-          needs_upgrade = 0
+          savings_basis = NULL
         `).run()
-        db.prepare(`UPDATE media_item_versions SET tier_quality = 'UNKNOWN', tier_score = NULL, bitrate_tier_score = NULL, audio_tier_score = NULL`).run()
 
         db.prepare(`
           INSERT INTO settings (key, value) VALUES ('optimization.savings_semantics_version', '5')
@@ -574,7 +568,43 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
           ON CONFLICT(key) DO UPDATE SET value = excluded.value
         `).run()
       })()
-      console.info('[BetterSQLite] Cleared proxy-derived quality and savings values for recalculation under the current evidence model')
+      console.info('[BetterSQLite] Invalidated savings estimates for recalculation under the current evidence model')
+    }
+
+    const qualityRecoveryVersion = db.prepare(
+      "SELECT value FROM settings WHERE key = 'optimization.quality_recovery_version'"
+    ).get() as { value: string } | undefined
+    if (qualityRecoveryVersion?.value !== '1') {
+      const clearedQualityScores = db.prepare(`SELECT 1 FROM quality_scores
+        WHERE tier_quality = 'UNKNOWN' AND tier_score IS NULL
+          AND bitrate_tier_score IS NULL AND audio_tier_score IS NULL
+          AND overall_score IS NULL AND resolution_score IS NULL
+          AND bitrate_score IS NULL AND audio_score IS NULL
+          AND is_low_quality = 0 AND needs_upgrade = 0
+        UNION ALL
+        SELECT 1 FROM media_items m LEFT JOIN quality_scores q ON q.media_item_id = m.id
+          WHERE q.media_item_id IS NULL LIMIT 1`).get()
+      db.transaction(() => {
+        if (clearedQualityScores) {
+          db.prepare(`INSERT INTO settings (key, value) VALUES ('optimization.quality_reanalysis_pending', 'true')
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run()
+        }
+        db.prepare(`INSERT INTO settings (key, value) VALUES ('optimization.quality_recovery_version', '1')
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run()
+      })()
+    }
+
+    const qualityModelVersion = db.prepare(
+      "SELECT value FROM settings WHERE key = 'optimization.quality_model_version'"
+    ).get() as { value: string } | undefined
+    if (qualityModelVersion && qualityModelVersion.value !== String(QUALITY_MODEL_VERSION)) {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('optimization.quality_reanalysis_pending', 'true')
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run()
+      console.info(`[BetterSQLite] Quality model changed from ${qualityModelVersion.value} to ${QUALITY_MODEL_VERSION}; scheduled score refresh`)
+    }
+    if (qualityModelVersion?.value !== String(QUALITY_MODEL_VERSION)) {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('optimization.quality_model_version', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(String(QUALITY_MODEL_VERSION))
     }
 
     if (savingsSemantics?.value !== '7') {
@@ -852,6 +882,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       throw err
     }
 
+    this.invalidateStaleSeriesCompleteness()
     console.log('[BetterSQLite] Migrations completed')
   }
 
@@ -1007,14 +1038,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
 
     if (!row) return null
 
-    // Decrypt sensitive settings
-    const sensitiveKeys = ['plex_token', 'tmdb_api_key', 'musicbrainz_api_token', 'gemini_api_key']
-    if (sensitiveKeys.includes(key)) {
-      const encryption = getCredentialEncryptionService()
-      return encryption.decryptSetting(key, row.value)
-    }
-
-    return row.value
+    return getCredentialEncryptionService().decryptSetting(key, row.value)
   }
 
   /**
@@ -1023,13 +1047,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   setSetting(key: string, value: string): void {
     if (!this.db) throw new Error('Database not initialized')
 
-    // Encrypt sensitive settings
-    const sensitiveKeys = ['plex_token', 'tmdb_api_key', 'musicbrainz_api_token', 'gemini_api_key']
-    let storedValue = value
-    if (sensitiveKeys.includes(key)) {
-      const encryption = getCredentialEncryptionService()
-      storedValue = encryption.encryptSetting(key, value)
-    }
+    const storedValue = getCredentialEncryptionService().encryptSetting(key, value)
 
     const stmt = this.db.prepare(`
       INSERT INTO settings (key, value, updated_at)
@@ -2069,6 +2087,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     if (!this.db) throw new Error('Database not initialized')
 
     const db = this.db
+    const invalidatedSeriesScopes = new Map<string, { sourceId: string; libraryId: string }>()
     const txn = db.transaction(() => {
     // Before deleting, update affected collections and series completeness
     try {
@@ -2103,71 +2122,29 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
               tmdbId: item.series_tmdb_id != null ? String(item.series_tmdb_id) : (item.tmdb_id ? String(item.tmdb_id) : undefined),
             })
 
-          // Delete the episode first so the recount is accurate
+          // Delete the episode and its derived analysis.
           db.prepare('DELETE FROM media_item_versions WHERE media_item_id = ?').run(id)
           db.prepare('DELETE FROM quality_scores WHERE media_item_id = ?').run(id)
           db.prepare('DELETE FROM media_item_collections WHERE media_item_id = ?').run(id)
           db.prepare('DELETE FROM media_items WHERE id = ?').run(id)
 
-          // Recount owned episodes/seasons and mark as needing re-analysis
-          // Use old updated_at so auto-completeness won't skip this series
-          db.prepare(`
-            UPDATE series_completeness SET
-              owned_episodes = (SELECT COUNT(*) FROM media_items WHERE series_identity_key = ? AND source_id = ? AND library_id = ? AND type = 'episode'),
-              owned_seasons = (SELECT COUNT(DISTINCT season_number) FROM media_items WHERE series_identity_key = ? AND source_id = ? AND library_id = ? AND type = 'episode'),
-              completeness_percentage = CASE WHEN total_episodes > 0
-                THEN ROUND(CAST((SELECT COUNT(*) FROM media_items WHERE series_identity_key = ? AND source_id = ? AND library_id = ? AND type = 'episode') AS REAL) * 100.0 / total_episodes)
-                ELSE 0 END,
-              updated_at = datetime('now', '-30 days')
-            WHERE series_identity_key = ? AND source_id = ? AND library_id = ?
-          `).run(
-            seriesIdentityKey, item.source_id, libraryId,
-            seriesIdentityKey, item.source_id, libraryId,
-            seriesIdentityKey, item.source_id, libraryId,
-            seriesIdentityKey, item.source_id, libraryId
-          )
-
+          // Completion is derived from the aired episode catalogue; invalidate it rather than guessing from inventory.
+          const cacheScopes = db.prepare(
+            `SELECT source_id, library_id FROM series_completeness
+             WHERE series_identity_key = ?
+               AND source_id IN (?, '') AND library_id IN (?, '')`
+          ).all(seriesIdentityKey, item.source_id, libraryId) as Array<{ source_id: string; library_id: string }>
           db.prepare(
-            'DELETE FROM series_completeness WHERE series_identity_key = ? AND source_id = ? AND library_id = ? AND owned_episodes <= 0'
+            `DELETE FROM series_completeness
+             WHERE series_identity_key = ?
+               AND source_id IN (?, '') AND library_id IN (?, '')`
           ).run(seriesIdentityKey, item.source_id, libraryId)
-
-          // Update missing_episodes/missing_seasons JSON to include the deleted episode
-          if (item.season_number != null && item.episode_number != null) {
-            const scRow = db.prepare(
-              'SELECT id, missing_episodes, missing_seasons FROM series_completeness WHERE series_identity_key = ? AND source_id = ? AND library_id = ?'
-            ).get(seriesIdentityKey, item.source_id, libraryId) as { id: number; missing_episodes: string; missing_seasons: string } | undefined
-
-            if (scRow) {
-              // Add deleted episode to missing list
-              const missingEps: Array<{ season_number: number; episode_number: number; title?: string; air_date?: string }> =
-                JSON.parse(scRow.missing_episodes || '[]')
-              const alreadyMissing = missingEps.some(
-                e => e.season_number === item.season_number && e.episode_number === item.episode_number
-              )
-              if (!alreadyMissing) {
-                missingEps.push({
-                  season_number: item.season_number!,
-                  episode_number: item.episode_number!,
-                  title: item.title || undefined,
-                  air_date: undefined,
-                })
-                missingEps.sort((a, b) => (a.season_number - b.season_number) || (a.episode_number - b.episode_number))
-              }
-
-              // Check if the deleted episode's season is now fully missing
-              const missingSeasonsArr: number[] = JSON.parse(scRow.missing_seasons || '[]')
-              const remainingInSeason = db.prepare(
-                "SELECT COUNT(*) as cnt FROM media_items WHERE series_identity_key = ? AND source_id = ? AND library_id = ? AND season_number = ? AND type = 'episode'"
-              ).get(seriesIdentityKey, item.source_id, libraryId, item.season_number) as { cnt: number }
-              if (remainingInSeason.cnt === 0 && !missingSeasonsArr.includes(item.season_number!)) {
-                missingSeasonsArr.push(item.season_number!)
-                missingSeasonsArr.sort((a, b) => a - b)
-              }
-
-              db.prepare(
-                'UPDATE series_completeness SET missing_episodes = ?, missing_seasons = ? WHERE id = ?'
-              ).run(JSON.stringify(missingEps), JSON.stringify(missingSeasonsArr), scRow.id)
-            }
+          invalidatedSeriesScopes.set(`${item.source_id}\0${libraryId}`, { sourceId: item.source_id, libraryId })
+          for (const scope of cacheScopes) {
+            invalidatedSeriesScopes.set(`${scope.source_id}\0${scope.library_id}`, {
+              sourceId: scope.source_id,
+              libraryId: scope.library_id,
+            })
           }
 
           // Already deleted above, skip the deletion below
@@ -2184,6 +2161,13 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     })
 
     txn()
+    for (const scope of invalidatedSeriesScopes.values()) {
+      if (this.seriesCompletenessInvalidationHandler) {
+        this.seriesCompletenessInvalidationHandler(scope.sourceId, scope.libraryId)
+      } else {
+        this.invalidatedSeriesCompletenessScopes.add(`${scope.sourceId}\0${scope.libraryId}`)
+      }
+    }
   }
 
   /**
@@ -2249,28 +2233,10 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         }
       } catch (e) { console.warn('[BetterSQLite] Cleanup warning:', e) }
 
-      // Validate series completeness — update owned_episodes from actual media_items count
+      // Remove truly orphaned series — no matching episodes in source and library
       try {
-        db.prepare(`
-          UPDATE series_completeness SET
-            owned_episodes = (
-              SELECT COUNT(*) FROM media_items mi
-              WHERE mi.series_identity_key = series_completeness.series_identity_key
-                AND mi.source_id = series_completeness.source_id
-                AND mi.library_id = series_completeness.library_id
-                AND mi.type = 'episode'
-            ),
-            completeness_percentage = CASE WHEN total_episodes > 0
-              THEN ROUND(CAST((
-                SELECT COUNT(*) FROM media_items mi
-                WHERE mi.series_identity_key = series_completeness.series_identity_key
-                  AND mi.source_id = series_completeness.source_id
-                  AND mi.library_id = series_completeness.library_id
-                  AND mi.type = 'episode'
-              ) AS REAL) * 100.0 / total_episodes)
-              ELSE 0 END
-        `).run()
-        // Remove truly orphaned series — no matching episodes in source and library
+        cleaned += this.invalidateStaleSeriesCompleteness()
+
         cleaned += db.prepare(`
           DELETE FROM series_completeness WHERE id IN (
             SELECT sc.id FROM series_completeness sc
@@ -2310,7 +2276,9 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       return cleaned
     })
 
-    return txn()
+    const total = txn()
+    this.flushInvalidatedSeriesCompletenessScopes()
+    return total
   }
 
   /**
@@ -2385,35 +2353,71 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   }
 
   /**
-   * Invalidate stale series_completeness records where the owned episode count
-   * in the database doesn't match what series_completeness claims.
-   * Stale records are deleted so the user gets accurate data on next completeness analysis.
+   * Invalidate cached completion records whose counts violate the catalogue/missing invariant.
    */
   invalidateStaleSeriesCompleteness(sourceId?: string): number {
     if (!this.db) throw new Error('Database not initialized')
 
+    const staleScopes = this.db.prepare(`
+      SELECT DISTINCT source_id, library_id FROM series_completeness
+      WHERE ${sourceId ? 'source_id = ? AND' : ''}
+        ((total_episodes = 0 AND completeness_percentage != 0)
+         OR (total_episodes > 0 AND CASE
+              WHEN json_valid(missing_episodes) THEN CASE
+                WHEN json_type(missing_episodes) = 'array'
+                  THEN owned_episodes != total_episodes - json_array_length(missing_episodes)
+                    OR completeness_percentage != ROUND(owned_episodes * 100.0 / total_episodes)
+                ELSE 1
+              END
+              ELSE 1
+            END))
+    `).all(...(sourceId ? [sourceId] : [])) as Array<{ source_id: string; library_id: string }>
+    for (const scope of staleScopes) this.invalidatedSeriesCompletenessScopes.add(`${scope.source_id}\0${scope.library_id}`)
+
     const sql = `
-      DELETE FROM series_completeness WHERE id IN (
-        SELECT sc.id FROM series_completeness sc
-        WHERE ${sourceId ? 'sc.source_id = ? AND' : ''}
-        sc.owned_episodes != (
-          SELECT COUNT(*) FROM media_items mi
-          WHERE mi.series_identity_key = sc.series_identity_key
-            AND mi.source_id = sc.source_id
-            AND mi.library_id = sc.library_id
-            AND mi.type = 'episode'
-        )
-      )
+      DELETE FROM series_completeness
+      WHERE ${sourceId ? 'source_id = ? AND' : ''}
+        ((total_episodes = 0 AND completeness_percentage != 0)
+         OR (total_episodes > 0 AND CASE
+              WHEN json_valid(missing_episodes) THEN CASE
+                WHEN json_type(missing_episodes) = 'array'
+                  THEN owned_episodes != total_episodes - json_array_length(missing_episodes)
+                    OR completeness_percentage != ROUND(owned_episodes * 100.0 / total_episodes)
+                ELSE 1
+              END
+              ELSE 1
+            END))
     `
     const result = sourceId
       ? this.db.prepare(sql).run(sourceId)
       : this.db.prepare(sql).run()
+    if (!this.db.inTransaction) this.flushInvalidatedSeriesCompletenessScopes()
 
     if (result.changes > 0) {
       console.log(`[BetterSQLite] Invalidated ${result.changes} stale series_completeness records`)
     }
 
     return result.changes
+  }
+
+  setSeriesCompletenessInvalidationHandler(handler: (sourceId: string, libraryId: string) => void): void {
+    this.seriesCompletenessInvalidationHandler = handler
+  }
+
+  consumeInvalidatedSeriesCompletenessScopes(): Array<{ sourceId: string; libraryId: string }> {
+    const scopes = Array.from(this.invalidatedSeriesCompletenessScopes, key => {
+      const [sourceId, libraryId] = key.split('\0')
+      return { sourceId, libraryId }
+    })
+    this.invalidatedSeriesCompletenessScopes.clear()
+    return scopes
+  }
+
+  private flushInvalidatedSeriesCompletenessScopes(): void {
+    if (!this.seriesCompletenessInvalidationHandler || this.invalidatedSeriesCompletenessScopes.size === 0) return
+    for (const scope of this.consumeInvalidatedSeriesCompletenessScopes()) {
+      this.seriesCompletenessInvalidationHandler(scope.sourceId, scope.libraryId)
+    }
   }
 
   /**
@@ -2858,6 +2862,44 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     run(scores)
   }
 
+  upsertQualityRatings(scores: QualityScore[]): void {
+    if (!this.db) throw new Error('Database not initialized')
+    const upsert = this.db.prepare(`INSERT INTO quality_scores (
+      media_item_id, quality_tier, tier_quality, tier_score, bitrate_tier_score, audio_tier_score
+    ) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(media_item_id) DO UPDATE SET
+      quality_tier = excluded.quality_tier,
+      tier_quality = excluded.tier_quality,
+      tier_score = excluded.tier_score,
+      bitrate_tier_score = excluded.bitrate_tier_score,
+      audio_tier_score = excluded.audio_tier_score,
+      updated_at = datetime('now')`)
+    const run = this.db.transaction((items: QualityScore[]) => {
+      for (const score of items) {
+        upsert.run(score.media_item_id, score.quality_tier, score.tier_quality, score.tier_score,
+          score.bitrate_tier_score, score.audio_tier_score)
+      }
+    })
+    run(scores)
+  }
+
+  updateQualitySavings(score: Pick<QualityScore, 'media_item_id' | 'video_savings_bytes' | 'estimated_savings_bytes' | 'savings_coverage' | 'evidence_status' | 'confidence' | 'savings_basis'>): void {
+    if (!this.db) throw new Error('Database not initialized')
+    const result = this.db.prepare(`UPDATE quality_scores SET
+      video_savings_bytes = ?, estimated_savings_bytes = ?, savings_coverage = ?,
+      evidence_status = ?, confidence = ?, savings_basis = ?, updated_at = datetime('now')
+      WHERE media_item_id = ?`).run(
+      score.video_savings_bytes ?? null,
+      score.estimated_savings_bytes ?? null,
+      score.savings_coverage,
+      score.evidence_status ?? null,
+      score.confidence ?? null,
+      score.savings_basis ?? null,
+      score.media_item_id,
+    )
+    if (result.changes === 0) throw new Error(`Quality score missing for media item ${score.media_item_id}`)
+  }
+
   async withBatch<T>(fn: () => Promise<T> | T): Promise<T> {
     this.startBatch()
     try {
@@ -2918,19 +2960,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
 
     const stmt = this.db.prepare(sql)
     const sources = (params.length ? stmt.all(...params) : stmt.all()) as MediaSource[]
-    const encryption = getCredentialEncryptionService()
-
-    return sources.map(source => {
-      let decryptedConfig = source.connection_config
-      try {
-        const config = JSON.parse(source.connection_config)
-        const decrypted = encryption.decryptConnectionConfig(config)
-        decryptedConfig = JSON.stringify(decrypted)
-      } catch {
-        // Keep original if decryption fails
-      }
-      return { ...source, connection_config: decryptedConfig }
-    })
+    return sources.map(source => ({ ...source, connection_config: this.decryptMediaSourceConfig(source.connection_config) }))
   }
 
   /**
@@ -2941,19 +2971,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
 
     const stmt = this.db.prepare('SELECT * FROM media_sources WHERE is_enabled = 1 ORDER BY display_name')
     const sources = stmt.all() as MediaSource[]
-    const encryption = getCredentialEncryptionService()
-
-    return sources.map(source => {
-      let decryptedConfig = source.connection_config
-      try {
-        const config = JSON.parse(source.connection_config)
-        const decrypted = encryption.decryptConnectionConfig(config)
-        decryptedConfig = JSON.stringify(decrypted)
-      } catch {
-        // Keep original if decryption fails
-      }
-      return { ...source, connection_config: decryptedConfig }
-    })
+    return sources.map(source => ({ ...source, connection_config: this.decryptMediaSourceConfig(source.connection_config) }))
   }
 
   /**
@@ -2966,18 +2984,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     const source = stmt.get(sourceId) as MediaSource | undefined
     if (!source) return null
 
-    // Decrypt connection config
-    const encryption = getCredentialEncryptionService()
-    let decryptedConfig = source.connection_config
-    try {
-      const config = JSON.parse(source.connection_config)
-      const decrypted = encryption.decryptConnectionConfig(config)
-      decryptedConfig = JSON.stringify(decrypted)
-    } catch {
-      // Keep original if decryption fails
-    }
-
-    return { ...source, connection_config: decryptedConfig }
+    return { ...source, connection_config: this.decryptMediaSourceConfig(source.connection_config) }
   }
 
   /**
@@ -2995,14 +3002,8 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
 
     // Encrypt connection config
     const encryption = getCredentialEncryptionService()
-    let encryptedConfig = source.connection_config
-    try {
-      const config = JSON.parse(source.connection_config)
-      const encrypted = encryption.encryptConnectionConfig(config)
-      encryptedConfig = JSON.stringify(encrypted)
-    } catch {
-      // Keep original if encryption fails
-    }
+    const config = JSON.parse(source.connection_config) as Record<string, unknown>
+    const encryptedConfig = JSON.stringify(encryption.encryptConnectionConfig(config))
 
     const stmt = this.db.prepare(`
       INSERT INTO media_sources (
@@ -3028,6 +3029,11 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       source.last_connected_at || null,
       source.last_scan_at || null
     )
+  }
+
+  private decryptMediaSourceConfig(connectionConfig: string): string {
+    const config = JSON.parse(connectionConfig) as Record<string, unknown>
+    return JSON.stringify(getCredentialEncryptionService().decryptConnectionConfig(config))
   }
 
   /**

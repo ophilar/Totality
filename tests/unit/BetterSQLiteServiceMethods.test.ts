@@ -322,7 +322,7 @@ describe('BetterSQLiteService — Media Items', () => {
     expect(service.getMediaItem(mediaItemId)?.file_path).toBe('/movies/primary.mkv')
   })
 
-  it('clears only stale savings totals once when savings semantics change', () => {
+  it('preserves quality ratings when savings semantics change', () => {
     const id = service.upsertMediaItem(makeMediaItem())
     service.upsertQualityScore({ ...makeQualityScore(id, 300), video_savings_bytes: 125 })
     const versionId = service.upsertMediaItemVersion({
@@ -349,9 +349,9 @@ describe('BetterSQLiteService — Media Items', () => {
     migratedService.initialize()
     expect(migratedService.getQualityScore(id)?.estimated_savings_bytes).toBeNull()
     expect(migratedService.getQualityScore(id)?.video_savings_bytes).toBeNull()
-    expect(migratedService.getQualityScore(id)?.tier_quality).toBe('UNKNOWN')
-    expect(migratedService.getQualityScore(id)?.tier_score).toBeNull()
-    expect(migratedService.getQualityScore(id)?.overall_score).toBeNull()
+    expect(migratedService.getQualityScore(id)?.tier_quality).toBe('LOW')
+    expect(migratedService.getQualityScore(id)?.tier_score).toBe(0)
+    expect(migratedService.getQualityScore(id)?.overall_score).toBe(0)
     expect(migratedService.getQualityScore(id)?.quality_tier).toBe('1080p')
     expect(migratedService.getMediaItemVersions(id).find(version => version.id === versionId)?.tier_score).toBeNull()
     expect(migratedService.getSetting('optimization.savings_reanalysis_pending')).toBe('true')
@@ -374,6 +374,44 @@ describe('BetterSQLiteService — Media Items', () => {
     expect(migratedService.getQualityScore(id)?.tier_quality).toBe('HIGH')
     expect(migratedService.getQualityScore(id)?.tier_score).toBe(87)
     expect(migratedService.getSetting('optimization.savings_reanalysis_pending')).toBe('true')
+  })
+
+  it('updates savings without changing saved quality ratings', () => {
+    const id = service.upsertMediaItem(makeMediaItem())
+    service.upsertQualityScore({ ...makeQualityScore(id, 300), tier_quality: 'HIGH', tier_score: 87, video_savings_bytes: 125 })
+
+    service.media.updateQualitySavings({
+      media_item_id: id,
+      video_savings_bytes: 250,
+      estimated_savings_bytes: 450,
+      savings_coverage: 'complete',
+      evidence_status: 'estimated',
+      confidence: 'medium',
+      savings_basis: 'video_bitrate_estimate',
+    })
+
+    expect(service.getQualityScore(id)).toMatchObject({
+      tier_quality: 'HIGH',
+      tier_score: 87,
+      needs_upgrade: 1,
+      video_savings_bytes: 250,
+      estimated_savings_bytes: 450,
+    })
+  })
+
+  it('queues quality recovery for scores cleared by the previous 0.5 migration', () => {
+    const id = service.upsertMediaItem(makeMediaItem())
+    service.upsertQualityScore(makeQualityScore(id, null))
+    testDb.prepare(`UPDATE quality_scores SET tier_quality = 'UNKNOWN', tier_score = NULL,
+      bitrate_tier_score = NULL, audio_tier_score = NULL, overall_score = NULL,
+      resolution_score = NULL, bitrate_score = NULL, audio_score = NULL,
+      is_low_quality = 0, needs_upgrade = 0 WHERE media_item_id = ?`).run(id)
+    testDb.prepare("DELETE FROM settings WHERE key = 'optimization.quality_recovery_version'").run()
+
+    const migratedService = new BetterSQLiteService()
+    migratedService.initialize()
+
+    expect(migratedService.getSetting('optimization.quality_reanalysis_pending')).toBe('true')
   })
 
   it('preserves media quality values when migrating legacy column names', () => {
@@ -760,7 +798,7 @@ describe('BetterSQLiteService — deleteMediaItem episode cascade', () => {
     insertSource(service)
   })
 
-  it('updates series completeness when episode deleted', () => {
+  it('invalidates series completeness when episode deleted', () => {
     // Insert two episodes of the same series
     service.upsertMediaItem(makeMediaItem({
       plex_id: 'ep1', type: 'episode', series_title: 'Show A',
@@ -784,16 +822,11 @@ describe('BetterSQLiteService — deleteMediaItem episode cascade', () => {
     const ep1 = service.getMediaItemByProviderId('ep1', 'src-1')
     service.deleteMediaItem(ep1!.id!)
 
-    // Verify: owned_episodes decremented
+    // Completion is derived from the aired catalogue and remains unknown until reanalysis.
     const sc = (service as any).db.prepare(
-      'SELECT owned_episodes, missing_episodes FROM series_completeness WHERE series_identity_key = ? AND source_id = ? AND library_id = ?'
+      'SELECT * FROM series_completeness WHERE series_identity_key = ? AND source_id = ? AND library_id = ?'
     ).get('unresolved:src-1:lib-1:show-a', 'src-1', 'lib-1') as any
-    expect(sc).toBeDefined()
-    expect(sc.owned_episodes).toBe(1)
-
-    // Verify: deleted episode added to missing_episodes
-    const missing = JSON.parse(sc.missing_episodes)
-    expect(missing.some((e: any) => e.episode_number === 1)).toBe(true)
+    expect(sc).toBeUndefined()
   })
 
   it('removes series completeness when last episode deleted', () => {
@@ -854,12 +887,11 @@ describe('BetterSQLiteService — deleteMediaItem episode cascade', () => {
     const ukEp1 = service.getMediaItemByProviderId('uk-ep1', 'src-1')
     service.deleteMediaItem(ukEp1!.id!)
 
-    // UK show completeness should be decremented to 1 owned episode
+    // UK cache must be removed so it cannot display a stale completion value.
     const scUk = (service as any).db.prepare(
-      'SELECT owned_episodes FROM series_completeness WHERE series_identity_key = ? AND source_id = ? AND library_id = ?'
-    ).get('tmdb:2996', 'src-1', 'lib-uk') as any
-    expect(scUk).toBeDefined()
-    expect(scUk.owned_episodes).toBe(1)
+      'SELECT * FROM series_completeness WHERE series_identity_key = ? AND source_id = ? AND library_id = ?'
+    ).get('tmdb:2996', 'src-1', 'lib-uk')
+    expect(scUk).toBeUndefined()
 
     // US show completeness must remain completely untouched (still 1 owned episode)
     const scUs = (service as any).db.prepare(
@@ -867,6 +899,102 @@ describe('BetterSQLiteService — deleteMediaItem episode cascade', () => {
     ).get('tmdb:2353', 'src-1', 'lib-us') as any
     expect(scUs).toBeDefined()
     expect(scUs.owned_episodes).toBe(1)
+  })
+
+  it('invalidates only the deleted series cache within its source and library scope', () => {
+    service.upsertMediaItem(makeMediaItem({
+      plex_id: 'scoped-ep', type: 'episode', series_title: 'Scoped Show', series_tmdb_id: 700,
+      season_number: 1, episode_number: 1, library_id: 'lib-1',
+    }))
+
+    const insertCompleteness = (sourceId: string, libraryId: string) => (service as any).db.prepare(`
+      INSERT INTO series_completeness (
+        series_identity_key, series_title, source_id, library_id, tmdb_id,
+        total_seasons, total_episodes, owned_seasons, owned_episodes,
+        missing_seasons, missing_episodes, completeness_percentage
+      ) VALUES ('tmdb:700', 'Scoped Show', ?, ?, '700', 1, 2, 1, 1, '[]', '[]', 50)
+    `).run(sourceId, libraryId)
+    insertCompleteness('src-1', 'lib-1')
+    insertCompleteness('src-1', 'lib-2')
+    insertCompleteness('src-1', '')
+    insertCompleteness('', 'lib-1')
+    insertCompleteness('', '')
+    insertCompleteness('src-2', 'lib-1')
+
+    const recoveryScopes: Array<[string, string]> = []
+    service.setSeriesCompletenessInvalidationHandler((sourceId, libraryId) => {
+      recoveryScopes.push([sourceId, libraryId])
+    })
+    const episode = service.getMediaItemByProviderId('scoped-ep', 'src-1')
+    service.deleteMediaItem(episode!.id!)
+
+    expect(recoveryScopes.sort()).toEqual([
+      ['', ''],
+      ['', 'lib-1'],
+      ['src-1', ''],
+      ['src-1', 'lib-1'],
+    ])
+
+    const remaining = (service as any).db.prepare(
+      'SELECT source_id, library_id FROM series_completeness WHERE series_identity_key = ? ORDER BY source_id, library_id'
+    ).all('tmdb:700') as Array<{ source_id: string; library_id: string }>
+    expect(remaining).toEqual([
+      { source_id: 'src-1', library_id: 'lib-2' },
+      { source_id: 'src-2', library_id: 'lib-1' },
+    ])
+  })
+
+  it('cleanup removes only completion caches that violate the catalogue and missing-count invariant', () => {
+    service.upsertMediaItem(makeMediaItem({
+      plex_id: 'valid-cache-ep', type: 'episode', series_title: 'Valid Cache', series_tmdb_id: 701,
+      season_number: 1, episode_number: 1, library_id: 'lib-1',
+    }))
+    service.upsertMediaItem(makeMediaItem({
+      plex_id: 'stale-cache-ep', type: 'episode', series_title: 'Stale Cache', series_tmdb_id: 702,
+      season_number: 1, episode_number: 1, library_id: 'lib-1',
+    }))
+    service.upsertMediaItem(makeMediaItem({
+      plex_id: 'malformed-cache-ep', type: 'episode', series_title: 'Malformed Cache', series_tmdb_id: 703,
+      season_number: 1, episode_number: 1, library_id: 'lib-1',
+    }))
+    const insertCompleteness = (identity: string, title: string, tmdbId: string, total: number, owned: number, missing: string) =>
+      (service as any).db.prepare(`
+        INSERT INTO series_completeness (
+          series_identity_key, series_title, source_id, library_id, tmdb_id,
+          total_seasons, total_episodes, owned_seasons, owned_episodes,
+          missing_seasons, missing_episodes, completeness_percentage
+        ) VALUES (?, ?, 'src-1', 'lib-1', ?, 1, ?, 1, ?, '[]', ?, 50)
+      `).run(identity, title, tmdbId, total, owned, missing)
+    insertCompleteness('tmdb:701', 'Valid Cache', '701', 2, 1, '[{"season_number":1,"episode_number":2}]')
+    insertCompleteness('tmdb:702', 'Stale Cache', '702', 3, 2, '[]')
+    insertCompleteness('tmdb:703', 'Malformed Cache', '703', 3, 2, 'invalid-json')
+
+    service.cleanupOrphanedMediaData()
+
+    const remaining = (service as any).db.prepare(
+      'SELECT series_identity_key FROM series_completeness ORDER BY series_identity_key'
+    ).all() as Array<{ series_identity_key: string }>
+    expect(remaining).toEqual([{ series_identity_key: 'tmdb:701' }])
+  })
+
+  it('queues stale cache recovery after cleanup commits', () => {
+    service.upsertMediaItem(makeMediaItem({
+      plex_id: 'runtime-stale-ep', type: 'episode', series_title: 'Runtime Stale', series_tmdb_id: 704,
+      season_number: 1, episode_number: 1, library_id: 'lib-1',
+    }))
+    ;(service as any).db.prepare(`
+      INSERT INTO series_completeness (
+        series_identity_key, series_title, source_id, library_id, tmdb_id,
+        total_seasons, total_episodes, owned_seasons, owned_episodes,
+        missing_seasons, missing_episodes, completeness_percentage
+      ) VALUES ('tmdb:704', 'Runtime Stale', 'src-1', 'lib-1', '704', 1, 3, 1, 2, '[]', '[]', 50)
+    `).run()
+    const invalidation = vi.fn(() => expect((service as any).db.inTransaction).toBe(false))
+    service.setSeriesCompletenessInvalidationHandler(invalidation)
+
+    service.cleanupOrphanedMediaData()
+
+    expect(invalidation).toHaveBeenCalledExactlyOnceWith('src-1', 'lib-1')
   })
 })
 

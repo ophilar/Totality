@@ -1,10 +1,9 @@
 import { IPC_CHANNELS } from '../../shared/ipcChannels'
-import { BrowserWindow } from 'electron'
 import { getQualityAnalyzer } from '../services/QualityAnalyzer'
+import { getTaskQueueService } from '../services/TaskQueueService'
 import { getDatabase } from '../database/getDatabase'
 import { PositiveIntSchema } from '../validation/schemas'
-import { safeSend } from './utils/safeSend'
-import { createIpcHandler, createIpcHandlerWithEvent, createValidatedIpcHandler } from './utils/createHandler'
+import { createIpcHandler, createValidatedIpcHandler } from './utils/createHandler'
 
 /**
  * Register all quality analysis IPC handlers
@@ -16,30 +15,12 @@ export function registerQualityHandlers() {
   // QUALITY ANALYSIS
   // ============================================================================
 
-  createIpcHandlerWithEvent(IPC_CHANNELS.qualityAnalyzeAll, async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-
-    await analyzer.loadThresholdsFromDatabase()
-
-    let lastUpdateTime = 0
-    const UPDATE_INTERVAL = 2000 // Send library:updated every 2 seconds during analysis
-
-    const count = await analyzer.analyzeAllMediaItems((current, total) => {
-      // Send progress updates to renderer
-      safeSend(win, IPC_CHANNELS.qualityAnalysisProgress, { current, total })
-
-      // Send periodic library:updated events for live refresh
-      const now = Date.now()
-      if (now - lastUpdateTime >= UPDATE_INTERVAL) {
-        safeSend(win, IPC_CHANNELS.libraryUpdated, { type: 'media' })
-        lastUpdateTime = now
-      }
-    })
-
-    // Send final update when analysis completes
-    safeSend(win, IPC_CHANNELS.libraryUpdated, { type: 'media' })
-
-    return count
+  createIpcHandler(IPC_CHANNELS.qualityAnalyzeAll, async () => {
+    const queue = getTaskQueueService()
+    const taskId = queue.addTask({ type: 'quality-analysis', label: 'Refresh media quality' })
+    const task = await queue.waitForTask(taskId)
+    if (task.status !== 'completed') throw new Error(task.error ?? `Quality refresh ${task.status}`)
+    return task.result!.itemsScanned!
   })
 
   createIpcHandler(IPC_CHANNELS.qualityGetDistribution, async () => {

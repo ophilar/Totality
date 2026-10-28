@@ -1,5 +1,6 @@
 
 import { getErrorMessage } from './utils/errorUtils'
+import { getLoggingService } from './LoggingService'
 /**
  * MediaFileAnalyzer Service
  *
@@ -826,7 +827,7 @@ export class MediaFileAnalyzer {
   /**
    * Analyze a media file and return detailed metadata
    */
-  async analyzeFile(filePath: string): Promise<FileAnalysisResult> {
+  async analyzeFile(filePath: string, signal?: AbortSignal): Promise<FileAnalysisResult> {
     // Check if FFprobe is available
     if (!await this.isAvailable()) {
       return {
@@ -850,7 +851,7 @@ export class MediaFileAnalyzer {
     }
 
     try {
-      const ffprobeOutput = await this.runFFprobe(filePath)
+      const ffprobeOutput = await this.runFFprobe(filePath, signal)
       const result = this.parseFFprobeOutput(filePath, ffprobeOutput)
 
       // Note: Packet analysis for accurate bitrates was removed for performance.
@@ -934,9 +935,17 @@ export class MediaFileAnalyzer {
     filePath: string,
     options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string; signal?: AbortSignal } = {}
   ): Promise<FileAnalysisResult> {
-    const fileAnalysis = await this.analyzeFile(filePath)
-    if (!fileAnalysis.success) return fileAnalysis
+    const metadataStartedAt = Date.now()
+    const fileAnalysis = await this.analyzeFile(filePath, options.signal)
+    options.signal?.throwIfAborted()
+    const requestContext = `filePath=${filePath}${options.requestId ? `, requestId=${options.requestId}` : ''}`
+    getLoggingService().debug('[MediaFileAnalyzer]', `Metadata probe completed: ${requestContext}, elapsedMs=${Date.now() - metadataStartedAt}, success=${fileAnalysis.success}`)
+    if (!fileAnalysis.success) {
+      getLoggingService().error('[MediaFileAnalyzer]', `Metadata probe failed: ${requestContext}`, fileAnalysis.error)
+      return fileAnalysis
+    }
 
+    const packetStartedAt = Date.now()
     try {
       const packetMetrics = await this.measurePacketMetrics(
         filePath,
@@ -944,6 +953,7 @@ export class MediaFileAnalyzer {
         options.signal,
         options.requestId
       )
+      getLoggingService().debug('[MediaFileAnalyzer]', `Packet metrics completed: ${requestContext}, elapsedMs=${Date.now() - packetStartedAt}, success=true`)
 
       return {
         ...fileAnalysis,
@@ -951,6 +961,8 @@ export class MediaFileAnalyzer {
         deepAnalysis: packetMetrics.bitrate ? { ...packetMetrics.bitrate } : undefined,
       }
     } catch (error) {
+      options.signal?.throwIfAborted()
+      getLoggingService().error('[MediaFileAnalyzer]', `Packet metrics failed: ${requestContext}, elapsedMs=${Date.now() - packetStartedAt}`, error)
       return {
         ...fileAnalysis,
         success: false,
@@ -1153,7 +1165,7 @@ export class MediaFileAnalyzer {
     })
   }
 
-  private async runFFprobe(filePath: string): Promise<FFprobeOutput> {
+  private async runFFprobe(filePath: string, signal?: AbortSignal): Promise<FFprobeOutput> {
     return new Promise((resolve, reject) => {
       const args = [
         '-v', 'quiet',
@@ -1166,6 +1178,7 @@ export class MediaFileAnalyzer {
       const proc = spawn(this.ffprobePath!, args, {
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: 60000, // 60 second timeout for large files
+        signal,
       })
 
       let stdout = ''
