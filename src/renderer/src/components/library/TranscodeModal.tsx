@@ -37,7 +37,7 @@ interface MediaOptimizationFlowProps {
   initialPreflightId?: string
   onClose: () => void
   onOptimizationCompleted?: () => void
-  initialOptimizationMode?: 'remux_only' | 'transcode'
+  initialOptimizationMode?: 'smart' | 'remux_only' | 'transcode'
   initialStreamPruning?: boolean
 }
 
@@ -48,7 +48,7 @@ export function TranscodeModal(props: TranscodeModalProps) {
   return <MediaOptimizationFlow {...props} />
 }
 
-function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimizationCompleted, initialOptimizationMode = 'transcode', initialStreamPruning = false }: MediaOptimizationFlowProps) {
+function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimizationCompleted, initialOptimizationMode = 'smart', initialStreamPruning = false }: MediaOptimizationFlowProps) {
   const { addToast } = useToast()
   const [media, setMedia] = useState<MediaItem | null>(null)
   const [optimizationDecision, setOptimizationDecision] = useState<OptimizationDecision | null>(null)
@@ -569,15 +569,17 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
           {/* Active Tab Content */}
           {(activeTab === 'presets' || activeTab === 'advanced') && <div className="space-y-2">
             <label className="flex items-start gap-3 rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
-              <input
-                type="checkbox"
-                checked={options.optimizationMode === 'transcode'}
-                onChange={event => setOptions(prev => ({ ...prev, optimizationMode: event.target.checked ? 'transcode' : 'remux_only' }))}
-                className="mt-0.5"
-              />
+              <select aria-label="Video optimization mode" value={options.optimizationMode} onChange={event => {
+                const mode = event.target.value
+                if (mode === 'smart' || mode === 'remux_only' || mode === 'transcode') setOptions(prev => ({ ...prev, optimizationMode: mode }))
+              }} className="rounded border border-border bg-background p-2">
+                <option value="smart">Smart optimization</option>
+                <option value="remux_only">Preserve video</option>
+                <option value="transcode">Force video conversion</option>
+              </select>
               <span>
-                <span className="block font-medium">Transcode video</span>
-                <span className="block text-xs text-muted-foreground">Apply the selected codec and quality settings to the video stream.</span>
+                <span className="block font-medium">Video optimization</span>
+                <span className="block text-xs text-muted-foreground">Smart optimization preserves compatible H.265 video when H.265 is selected. Force conversion explicitly evaluates recompression.</span>
               </span>
             </label>
             <label className="block rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
