@@ -40,13 +40,10 @@ export function MobileTabBar({ activeTab, onTabChange, onSearchOpen }: MobileTab
           )
         })}
 
-        {/* Divider */}
-        <div className="w-px h-8 bg-white/20 mx-0.5" />
-
         {/* Search */}
         <button
           onClick={onSearchOpen}
-          className="min-h-[52px] min-w-[44px] flex flex-col items-center justify-center gap-0.5 rounded-2xl text-white transition-colors"
+          className="flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[52px] rounded-2xl text-white transition-colors"
           aria-label="Search"
         >
           <Search className="w-5 h-5" />
