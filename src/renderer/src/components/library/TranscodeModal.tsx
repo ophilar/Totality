@@ -1,7 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  X,
   Zap,
   Sliders,
   Activity,
@@ -15,19 +14,27 @@ import type { MediaItem } from '@main/types/database'
 import type { PlaybackTargetProfile } from '@main/types/playbackTarget'
 import { PlaybackCompatibilityFindings } from './PlaybackCompatibilityPanel'
 import type { OptimizationDecision } from '@main/services/OptimizationDecisionService'
+import type { QueueState } from '@main/types/taskQueue'
 
-import type { TranscodeOptions, TranscodingParams, Availability, TranscodeProgress, ShowTranscodePreflight } from './transcoding'
-import { QuickPresetsTab, AdvancedTab, LiveEncodingTab, EncoderPolicySelector } from './transcoding'
-import { useFocusTrap } from '@/hooks/useFocusTrap'
+import type { TranscodeOptions, TranscodingParams, Availability, TranscodeProgress, ShowTranscodePreflight, SavedShowPreflight } from './transcoding'
+import { QuickPresetsTab, AdvancedTab, LiveEncodingTab, EncoderPolicySelector, OutputHandlingSelection, OptimizationDialogShell, buildEffectiveOptimizationOptions } from './transcoding'
 import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
 import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
 import { getHardwareEncoder } from '@main/services/TranscodingCapabilities'
 import { formatLanguage, getOptimizationContainer, isSameLanguage, LANGUAGE_OPTIONS, parseLanguageWhitelist, toIso639_2 } from './mediaUtils'
 import { SETTING_KEYS } from '@shared/settingKeys'
 import { normalizeAudioCodec, normalizeVideoCodec } from '@main/services/MediaNormalizer'
+import { getMissingOptimizationSettings } from './transcoding/readiness'
+import { SeriesOptimizationFlow, type SeriesOptimizationFlowProps } from './SeriesOptimizationFlow'
+import { summarizeOptimizationBatch } from './tv/batchOutcomeSummary'
 
-interface TranscodeModalProps {
+interface MediaOptimizationFlowProps {
   mediaId: number
+  show?: never
+  episode?: never
+  seasonNumber?: never
+  initialPreflight?: never
+  resumeRequestId?: never
   initialPreflightId?: string
   onClose: () => void
   onOptimizationCompleted?: () => void
@@ -35,7 +42,14 @@ interface TranscodeModalProps {
   initialStreamPruning?: boolean
 }
 
-export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimizationCompleted, initialOptimizationMode = 'transcode', initialStreamPruning = false }: TranscodeModalProps) {
+export type TranscodeModalProps = MediaOptimizationFlowProps | SeriesOptimizationFlowProps
+
+export function TranscodeModal(props: TranscodeModalProps) {
+  if (props.show !== undefined) return <SeriesOptimizationFlow {...props} />
+  return <MediaOptimizationFlow {...props} />
+}
+
+function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimizationCompleted, initialOptimizationMode = 'transcode', initialStreamPruning = false }: MediaOptimizationFlowProps) {
   const [media, setMedia] = useState<MediaItem | null>(null)
   const [optimizationDecision, setOptimizationDecision] = useState<OptimizationDecision | null>(null)
   const [optimizationDecisionError, setOptimizationDecisionError] = useState<string | null>(null)
@@ -51,15 +65,22 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
   const [params, setParams] = useState<TranscodingParams | null>(null)
   const [activeTab, setActiveTab] = useState<'presets' | 'advanced' | 'monitor' | 'review'>('presets')
   const [preflight, setPreflight] = useState<ShowTranscodePreflight | null>(null)
+  const [preflightOptionsFingerprint, setPreflightOptionsFingerprint] = useState<string | null>(null)
   const [samplesReviewed, setSamplesReviewed] = useState(false)
   const [audioTranscodeEnabled, setAudioTranscodeEnabled] = useState(false)
   const [subtitleWhitelist, setSubtitleWhitelist] = useState('')
   const [analysisRequired, setAnalysisRequired] = useState(false)
   const [analyzingItem, setAnalyzingItem] = useState(false)
+  const [outputModeSettingError, setOutputModeSettingError] = useState<string | null>(null)
+  const [queueState, setQueueState] = useState<QueueState>({ currentTask: null, queue: [], isPaused: false, completedTasks: [] })
+  const [submittedBatchId, setSubmittedBatchId] = useState<string>()
+  const [submittedTaskIds, setSubmittedTaskIds] = useState<string[]>([])
+  const [submittedMediaItemIds, setSubmittedMediaItemIds] = useState<number[]>([])
+  const [queueControlState, setQueueControlState] = useState<'pausing' | 'resuming' | null>(null)
+  const completionReportedRef = useRef(false)
 
   const [options, setOptions] = useState<TranscodeOptions>(() => ({
-    targetCodec: '' as TranscodeOptions['targetCodec'],
-    outputMode: 'quarantine-replace',
+    targetCodec: undefined,
     useGpu: false,
     gpuId: '',
     encoder: '',
@@ -73,12 +94,10 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
     optimizationMode: initialOptimizationMode
   }))
 
-  const [status, setStatus] = useState<'idle' | 'generating' | 'encoding' | 'complete' | 'failed'>('idle')
+  const [status, setStatus] = useState<'idle' | 'generating' | 'queued' | 'encoding' | 'complete' | 'failed'>('idle')
   const [progress, setProgress] = useState<TranscodeProgress | null>(null)
 
   const { addToast } = useToast()
-  const modalRef = useRef<HTMLDivElement | null>(null)
-  useFocusTrap(!!media, modalRef)
   const failureReportedRef = useRef(false)
   const selectedGpu = capabilities?.gpus.find(gpu => gpu.id === options.gpuId)
   const hardwareEncoder = selectedGpu && options.targetCodec ? getHardwareEncoder(selectedGpu.vendor, options.targetCodec) : undefined
@@ -86,6 +105,17 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
   const softwareEncoder = options.targetCodec === 'av1' ? 'svt_av1' : options.targetCodec === 'hevc' ? 'x265' : undefined
   const softwareAvailable = Boolean(softwareEncoder && capabilities?.deviceEncoders.software.includes(softwareEncoder))
   const targetProfile = targetProfiles.find(profile => profile.id === targetProfileId)
+  const supportedTargetCodecs = (['hevc', 'av1'] as const).filter(codec => {
+    const profileSupports = !targetProfile || targetProfile.definition.video.codecs.some(value => normalizeVideoCodec(value) === normalizeVideoCodec(codec))
+    const codecCapabilities = capabilities?.encodingMatrix.codecs.find(value => value.codec === codec)?.capabilities ?? []
+    const deviceIndex = selectedGpu ? capabilities?.encodingMatrix.devices.findIndex(device => device.id === selectedGpu.id) : undefined
+    const encoderSupports = options.encoderPolicy === 'software'
+      ? Boolean(codecCapabilities[0])
+      : options.encoderPolicy === 'hardware'
+        ? deviceIndex !== undefined && deviceIndex >= 0 && Boolean(codecCapabilities[deviceIndex])
+        : codecCapabilities.some(Boolean)
+    return profileSupports && encoderSupports
+  })
   const recommendedAudioCodec = targetProfile && media?.audio_codec
     && media.audio_channels <= targetProfile.definition.audio.maxChannels
     && (!media.has_object_audio || targetProfile.definition.audio.objectAudio)
@@ -108,13 +138,18 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
   const loadInitialData = useCallback(async () => {
     try {
       setLoading(true)
-      const [item, capabilities, targetProfiles, configuredTargetProfileId, configuredSubtitleLanguages] = await Promise.all([
+      const [item, capabilities, targetProfiles, configuredTargetProfileId, configuredSubtitleLanguages, configuredOutputMode] = await Promise.all([
         window.electronAPI.getMediaItem(mediaId),
         window.electronAPI.getCapabilities(),
         window.electronAPI.listPlaybackTargetProfiles(),
         window.electronAPI.getSetting('optimization_default_target_profile_id'),
-        window.electronAPI.getSetting(SETTING_KEYS.subtitle_preferred_languages)
+        window.electronAPI.getSetting(SETTING_KEYS.subtitle_preferred_languages),
+        window.electronAPI.getSetting(SETTING_KEYS.transcoding_default_output_mode),
       ])
+      const outputMode = ['copy', 'quarantine-replace', 'replace'].includes(configuredOutputMode ?? '')
+        ? configuredOutputMode as NonNullable<TranscodeOptions['outputMode']>
+        : undefined
+      if (configuredOutputMode && !outputMode) setOutputModeSettingError('Saved output handling is unsupported. Choose a valid option before preparing a review.')
 
       setTargetProfiles(targetProfiles)
       setSubtitleWhitelist(configuredSubtitleLanguages || '')
@@ -129,13 +164,8 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
         const loadedOriginalAudioLanguage = toIso639_2(loadedMedia.original_language) || loadedMedia.original_language || ''
         setOriginalAudioLanguage(loadedOriginalAudioLanguage)
         const sourceContainer = getOptimizationContainer(loadedMedia.container)
-        const sourceVideoCodec = loadedMedia.video_codec?.toLowerCase()
-        const sourceTargetCodec = normalizeVideoCodec(sourceVideoCodec) === 'HEVC' ? 'hevc' : normalizeVideoCodec(sourceVideoCodec) === 'AV1' ? 'av1' : undefined
         const configuredProfile = targetProfiles.find(profile => profile.id === configuredTargetProfileId)
         setTargetContainer(sourceContainer && (!configuredProfile || configuredProfile.definition.containers.includes(sourceContainer === 'mkv' ? 'matroska' : 'mp4')) ? sourceContainer : '')
-        if (sourceTargetCodec && (!configuredProfile || configuredProfile.definition.video.codecs.some(codec => normalizeVideoCodec(codec) === normalizeVideoCodec(sourceTargetCodec)))) {
-          setOptions(prev => ({ ...prev, targetCodec: sourceTargetCodec }))
-        }
         if (initialStreamPruning && loadedMedia.original_language) {
           setOptions(prev => ({
             ...prev,
@@ -181,6 +211,7 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
 
       setOptions(prev => ({
         ...prev,
+        outputMode,
         transcodingEngine: defaultEngine,
         gpuId: selectedGpuId || '',
         useGpu: false
@@ -198,14 +229,33 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
   }, [loadInitialData])
 
   useEffect(() => {
+    const unsubscribe = window.electronAPI.onTaskQueueUpdated?.(setQueueState)
+    void window.electronAPI.taskQueueGetState?.().then(setQueueState).catch(error => {
+      addToast({ title: 'Could not read optimization queue', message: error instanceof Error ? error.message : String(error), type: 'error' })
+    })
+    return () => unsubscribe?.()
+  }, [addToast])
+
+  useEffect(() => {
     if (!initialPreflightId) return
     let cancelled = false
     void window.electronAPI.getShowPreflight(initialPreflightId)
-      .then((saved: { result: ShowTranscodePreflight } | undefined) => {
+      .then((saved: SavedShowPreflight | undefined) => {
         if (cancelled) return
         if (!saved) throw new Error(`Saved optimization review ${initialPreflightId} was not found`)
         setPreflight(saved.result)
-        setActiveTab('review')
+        setOptions(previous => ({ ...previous, ...saved.request.options }))
+        setTargetProfileId(saved.request.options.targetProfileId ?? '')
+        setTargetContainer(saved.request.options.targetContainer ?? '')
+        setAudioTranscodeEnabled(Boolean(saved.request.options.targetAudioCodec))
+        setSubtitleWhitelist(saved.request.options.streamSelection?.subtitleLanguageWhitelist?.join(', ') ?? '')
+        if (saved.request.options.streamSelection?.audio === 'original-and-protected') setOriginalAudioLanguage(saved.request.options.streamSelection.originalLanguage)
+        setPreflightOptionsFingerprint(JSON.stringify(saved.request.options))
+        setSubmittedBatchId(saved.result.batchId)
+        setSubmittedMediaItemIds(saved.result.queuedMediaItemIds ?? [])
+        setSubmittedTaskIds(saved.result.queuedTaskIds ?? [])
+        setStatus(saved.result.queuedAt ? 'queued' : 'idle')
+        setActiveTab(saved.result.queuedAt ? 'monitor' : 'review')
       })
       .catch(error => {
         if (!cancelled) addToast({ title: 'Could not reopen optimization review', message: error instanceof Error ? error.message : String(error), type: 'error' })
@@ -214,22 +264,23 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
   }, [initialPreflightId, addToast])
 
   useEffect(() => {
-    const unsub = window.electronAPI.onProgress((p: any) => {
-      if (p.mediaItemId === mediaId) {
+    const unsub = window.electronAPI.onProgress(p => {
+      const activeTask = queueState.currentTask
+      const belongsToSubmittedTask = Boolean(
+        submittedBatchId && activeTask?.batchId === submittedBatchId && p.mediaItemId === mediaId &&
+        (submittedTaskIds.length > 0 ? submittedTaskIds.includes(activeTask.id) : submittedMediaItemIds.includes(mediaId))
+      )
+      if (belongsToSubmittedTask) {
         setProgress(p)
-        if (p.status === 'encoding' || p.percent > 0) {
+        if (['encoding', 'muxing', 'verifying'].includes(p.status)) {
           setStatus('encoding')
           setActiveTab('monitor')
         }
         if (p.status === 'complete') {
-          setStatus('complete')
           setActiveTab('monitor')
-          onOptimizationCompleted?.()
         }
         if (p.status === 'cancelled') {
-          setStatus('idle')
           setProgress(null)
-          addToast({ title: 'Optimization cancelled', type: 'info' })
         }
         if (p.status === 'failed') {
           setStatus('failed')
@@ -244,7 +295,52 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
     return () => {
       if (typeof unsub === 'function') unsub()
     }
-  }, [mediaId, addToast, onOptimizationCompleted])
+  }, [mediaId, addToast, queueState.currentTask, submittedBatchId, submittedTaskIds, submittedMediaItemIds])
+
+  const getEffectivePreflightOptions = () => {
+    return buildEffectiveOptimizationOptions(options, {
+      targetProfileId,
+      targetContainer: targetContainer || undefined,
+      audioTranscodeEnabled,
+      subtitleLanguageWhitelist: parseLanguageWhitelist(subtitleWhitelist),
+    })
+  }
+  const preflightMatchesCurrentSettings = Boolean(preflight && preflightOptionsFingerprint === JSON.stringify(getEffectivePreflightOptions()))
+  const batchSummary = useMemo(
+    () => submittedBatchId ? summarizeOptimizationBatch(queueState, submittedBatchId, submittedMediaItemIds, submittedTaskIds) : null,
+    [queueState, submittedBatchId, submittedMediaItemIds, submittedTaskIds],
+  )
+
+  useEffect(() => {
+    if (!batchSummary) return
+    if (batchSummary.outcome === 'completed') {
+      setStatus('complete')
+      setActiveTab('monitor')
+      if (!completionReportedRef.current) {
+        completionReportedRef.current = true
+        onOptimizationCompleted?.()
+      }
+    } else if (['partly-completed', 'failed', 'cancelled'].includes(batchSummary.outcome)) {
+      setStatus('failed')
+      setActiveTab('monitor')
+    }
+  }, [batchSummary, onOptimizationCompleted])
+  const missingSettings = getMissingOptimizationSettings({
+    outputModeSelected: Boolean(options.outputMode),
+    videoTranscode: options.optimizationMode !== 'remux_only',
+    videoCodecSelected: Boolean(options.targetCodec),
+    videoCodecSupported: options.targetCodec ? supportedTargetCodecs.includes(options.targetCodec) : undefined,
+    qualityProfileSelected: Boolean(options.qualityProfile),
+    encoderPolicySelected: Boolean(options.encoderPolicy),
+    audioTranscode: audioTranscodeEnabled,
+    audioCodecSelected: Boolean(options.targetAudioCodec),
+    streamPruning: options.streamSelection?.audio === 'original-and-protected',
+    originalAudioLanguageSelected: Boolean(originalAudioLanguage.trim()),
+  })
+
+  useEffect(() => {
+    if (preflight && !preflightMatchesCurrentSettings && samplesReviewed) setSamplesReviewed(false)
+  }, [preflight, preflightMatchesCurrentSettings, samplesReviewed])
 
   const generateParams = async () => {
     if (!media || !media.file_path) return
@@ -271,27 +367,25 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
     }
   }
 
+  const selectOutputMode = async (outputMode: NonNullable<TranscodeOptions['outputMode']>) => {
+    try {
+      await window.electronAPI.setSetting(SETTING_KEYS.transcoding_default_output_mode, outputMode)
+      setOptions(prev => ({ ...prev, outputMode }))
+      setOutputModeSettingError(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setOutputModeSettingError(`Could not save output handling: ${message}`)
+    }
+  }
+
   const startTranscode = async () => {
     if (!media?.source_id || media.id === undefined) return
     failureReportedRef.current = false
     setStatus('generating')
     try {
-      if (audioTranscodeEnabled && !options.targetAudioCodec) throw new Error('Choose an output audio codec before reviewing this optimization.')
-      if (!preflight) {
-        const subtitleLanguageWhitelist = parseLanguageWhitelist(subtitleWhitelist)
-        const preflightOptions = {
-          ...options,
-          targetProfileId: targetProfileId || null,
-          targetContainer: targetProfileId ? targetContainer || undefined : undefined,
-          targetAudioCodec: audioTranscodeEnabled ? options.targetAudioCodec : undefined,
-          streamSelection: {
-            ...(options.streamSelection?.audio === 'original-and-protected'
-              ? options.streamSelection
-              : { audio: 'all' as const }),
-            subtitle: 'all' as const,
-            subtitleLanguageWhitelist: subtitleLanguageWhitelist.length > 0 ? subtitleLanguageWhitelist : undefined,
-          },
-        }
+      if (missingSettings.length) throw new Error(`Choose ${missingSettings.join(', ')} before preparing this optimization.`)
+      if (!preflight || !preflightMatchesCurrentSettings) {
+        const preflightOptions = getEffectivePreflightOptions()
         const result = await window.electronAPI.preflightShow({
           requestId: crypto.randomUUID(),
           mediaItemId: media.id,
@@ -302,6 +396,8 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
         }) as typeof preflight
         if (!result) throw new Error('Optimization review could not be created')
         setPreflight(result)
+        setPreflightOptionsFingerprint(JSON.stringify(preflightOptions))
+        setSamplesReviewed(false)
         setStatus('idle')
         setActiveTab('review')
         return
@@ -310,9 +406,13 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
       if (!item?.compatible) throw new Error(item?.reason || 'This file has no safe optimization plan')
       if (item.decisionStatus === 'sample_required' && !samplesReviewed) throw new Error('Review the measured samples before queuing this transcode')
       if (item.decisionStatus === 'sample_required') await window.electronAPI.approveShow(preflight.preflightId)
-      await window.electronAPI.queueShow(preflight.preflightId)
+      const queued = await window.electronAPI.queueShow(preflight.preflightId)
+      setSubmittedBatchId(queued.batchId)
+      setSubmittedMediaItemIds(queued.queuedMediaItemIds)
+      setSubmittedTaskIds(queued.queuedTaskIds)
+      completionReportedRef.current = false
       setProgress(null)
-      setStatus('encoding')
+      setStatus('queued')
       setActiveTab('monitor')
       addToast({ title: 'Optimization queued', type: 'success' })
     } catch (err: unknown) {
@@ -327,7 +427,8 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
     if (!media?.file_path) return
     try {
       setAnalyzingItem(true)
-      await window.electronAPI.ffprobeAnalyzeFile(media.file_path)
+      const analysis = await window.electronAPI.ffprobeAnalyzeFile(media.file_path)
+      if (!analysis.success) throw new Error(analysis.error || 'File analysis failed')
       setAnalysisRequired(false)
       addToast({ title: 'Analysis complete. Refreshing optimization review…', type: 'success' })
       void startTranscode()
@@ -346,6 +447,33 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
     }
   }
 
+  const retryFailedTasks = async () => {
+    if (!preflight || !batchSummary || batchSummary.activeCount > 0 || batchSummary.failedMediaItemIds.length + batchSummary.cancelledMediaItemIds.length === 0) return
+    try {
+      const queued = await window.electronAPI.queueShow(preflight.preflightId)
+      setSubmittedMediaItemIds(ids => [...new Set([...ids, ...queued.queuedMediaItemIds])])
+      setSubmittedTaskIds(ids => [...new Set([...ids, ...queued.queuedTaskIds])])
+      completionReportedRef.current = false
+      setStatus('queued')
+      setProgress(null)
+    } catch (error) {
+      addToast({ title: 'Could not retry optimization', message: error instanceof Error ? error.message : String(error), type: 'error' })
+    }
+  }
+
+  const toggleQueuePause = async () => {
+    const resuming = queueState.isPaused
+    setQueueControlState(resuming ? 'resuming' : 'pausing')
+    try {
+      if (resuming) await window.electronAPI.taskQueueResume()
+      else await window.electronAPI.taskQueuePause()
+    } catch (error) {
+      addToast({ title: `Could not ${resuming ? 'resume' : 'pause'} optimization`, message: error instanceof Error ? error.message : String(error), type: 'error' })
+    } finally {
+      setQueueControlState(null)
+    }
+  }
+
   if (loading) {
     return createPortal(
       <div className="fixed inset-0 z-250 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -357,43 +485,29 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
 
   if (!media) return null
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-250 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
-      onClick={status === 'encoding' ? undefined : onClose}
-    >
-      <div
-        ref={modalRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="transcode-modal-title"
-        tabIndex={-1}
-        className="relative bg-card border border-border sm:rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 h-dvh sm:h-auto sm:max-h-[92vh]"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Modal Header */}
-        <div className="p-4 sm:p-6 pb-3 sm:pb-4 border-b border-border/10 flex justify-between items-center bg-muted/10">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-primary/10 rounded-xl text-primary">
-              <Zap className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 id="transcode-modal-title" className="text-lg font-bold leading-tight flex items-center gap-2">
-                AI Transcoder & Optimizer
-              </h3>
-              <p className="text-xs text-muted-foreground truncate max-w-[450px]">{media.title}</p>
+  return <OptimizationDialogShell
+    title={media.type === 'movie' ? 'Optimize movie' : 'Optimize episode'}
+    subtitle={media.type === 'episode' ? `${media.series_title ?? media.title} · Season ${media.season_number ?? '?'} · Episode ${media.episode_number ?? '?'} · 1 item` : `${media.title} · 1 item`}
+    leading={<Zap className="h-5 w-5" />}
+    onClose={onClose}
+    wide
+    footer={status !== 'encoding' && status !== 'queued' && status !== 'complete' ? (
+          <div className="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center">
+            <button onClick={onClose} className="rounded-xl bg-muted px-6 py-2.5 text-xs font-bold transition-all hover:bg-muted/80">Cancel</button>
+            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:gap-3">
+              {analysisRequired && <button onClick={() => void analyzeRequiredEvidence()} disabled={analyzingItem} className="rounded-xl border border-border px-5 py-2.5 text-xs font-bold disabled:opacity-50">{analyzingItem ? 'Analyzing…' : 'Analyze item'}</button>}
+              <button onClick={generateParams} disabled={generating || !availability?.ffmpeg || (options.optimizationMode !== 'remux_only' && (!options.targetCodec || !options.qualityProfile || !options.encoderPolicy))} className="flex items-center gap-2 rounded-xl bg-muted/60 px-5 py-2.5 text-xs font-bold transition-all hover:bg-muted disabled:opacity-50">
+                {generating ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-primary" />}
+                Generate encoding settings
+              </button>
+              <button onClick={startTranscode} disabled={!availability?.ffmpeg || status === 'generating' || missingSettings.length > 0 || (activeTab === 'review' && preflight?.episodes.some(item => !item.compatible))} className="flex items-center gap-2 rounded-xl bg-primary px-7 py-2.5 text-xs font-black text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:opacity-90 disabled:opacity-50">
+                <Play className="h-4 w-4 fill-current" />
+                {status === 'generating' ? 'Preparing…' : preflightMatchesCurrentSettings ? 'Queue optimization' : 'Prepare review'}
+              </button>
             </div>
           </div>
-          {status !== 'encoding' && (
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-muted rounded-full text-muted-foreground hover:text-foreground transition-all"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          )}
-        </div>
-
+    ) : undefined}
+  >
         {/* 3-Tab Wizard Header */}
         <div className="flex border-b border-border/20 bg-muted/30 px-3 sm:px-6 pt-2 sm:pt-3 gap-1 sm:gap-2 overflow-x-auto">
           <button
@@ -466,11 +580,19 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
               ))}
             </section>
           )}
+          {normalizeVideoCodec(media.video_codec) === 'H.264' && (
+            <p className="rounded-xl border border-sky-500/30 bg-sky-500/10 p-3 text-sm text-sky-100">
+              This H.264 file can be evaluated for HEVC or AV1 compression. Savings depend on measured quality and playback compatibility.
+            </p>
+          )}
           {optimizationDecisionError && (
             <p role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
               Estimated savings could not be calculated: {optimizationDecisionError}
             </p>
           )}
+          {outputModeSettingError && <p role="alert" className="text-sm text-destructive">{outputModeSettingError}</p>}
+          {missingSettings.length > 0 && <p role="status" className="text-sm text-amber-200">Before preparing a review, choose {missingSettings.join(', ')}.</p>}
+          {activeTab === 'presets' && <OutputHandlingSelection value={options.outputMode} onChange={mode => { void selectOutputMode(mode) }} />}
 
           {/* Active Tab Content */}
           {(activeTab === 'presets' || activeTab === 'advanced') && <div className="space-y-2">
@@ -599,6 +721,7 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
               options={options}
               setOptions={setOptions}
               params={params}
+              supportedTargetCodecs={supportedTargetCodecs}
             />
           )}
 
@@ -617,9 +740,7 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
                       const profile = targetProfiles.find(candidate => candidate.id === event.target.value)
                       const sourceContainer = getOptimizationContainer(media?.container)
                       setTargetContainer(sourceContainer && profile?.definition.containers.includes(sourceContainer === 'mkv' ? 'matroska' : 'mp4') ? sourceContainer : '')
-                      const sourceVideoCodec = normalizeVideoCodec(media?.video_codec)
-                      const sourceTargetCodec = sourceVideoCodec === 'HEVC' ? 'hevc' : sourceVideoCodec === 'AV1' ? 'av1' : undefined
-                      setOptions(prev => ({ ...prev, targetCodec: sourceTargetCodec && (!profile || profile.definition.video.codecs.some(codec => normalizeVideoCodec(codec) === sourceVideoCodec)) ? sourceTargetCodec : '' as TranscodeOptions['targetCodec'] }))
+                      setOptions(prev => ({ ...prev, targetCodec: prev.targetCodec && (!profile || profile.definition.video.codecs.some(codec => normalizeVideoCodec(codec) === normalizeVideoCodec(prev.targetCodec))) ? prev.targetCodec : undefined }))
                       setTargetProfileError(null)
                     }}
                     className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal text-foreground"
@@ -654,7 +775,18 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
             </>
           )}
 
-          {activeTab === 'monitor' && (
+          {activeTab === 'monitor' && batchSummary && (
+            <section role="status" aria-live="polite" className={`space-y-3 rounded-xl border p-4 text-sm ${batchSummary.outcome === 'completed' ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-primary/30 bg-primary/10'}`}>
+              <h3 className="font-semibold">{batchSummary.outcome === 'completed' ? 'Completed' : batchSummary.outcome === 'partly-completed' ? 'Partly completed' : batchSummary.outcome === 'failed' ? 'Failed' : batchSummary.outcome === 'cancelled' ? 'Cancelled' : batchSummary.outcome === 'paused' ? 'Paused' : batchSummary.outcome === 'cancelling' ? 'Cancelling' : batchSummary.outcome === 'waiting' ? 'Waiting' : batchSummary.outcome === 'running' ? 'Running' : 'Queued'}</h3>
+              <p className="text-xs text-muted-foreground">Completed {batchSummary.successfulCount} · Partial {batchSummary.partialCount} · Failed {batchSummary.failedMediaItemIds.length} · Cancelled {batchSummary.cancelledMediaItemIds.length}</p>
+              <div className="flex flex-wrap gap-3 text-xs">
+                {batchSummary.activeCount > 0 && <button type="button" disabled={queueControlState !== null} onClick={() => void toggleQueuePause()} className="text-primary underline disabled:opacity-50">{queueControlState === 'pausing' ? 'Pausing…' : queueControlState === 'resuming' ? 'Resuming…' : queueState.isPaused ? 'Resume queue' : 'Pause queue'}</button>}
+                {batchSummary.failedMediaItemIds.length + batchSummary.cancelledMediaItemIds.length > 0 && batchSummary.activeCount === 0 && <button type="button" onClick={() => void retryFailedTasks()} className="text-primary underline">Retry failed or cancelled</button>}
+                <button type="button" onClick={() => window.dispatchEvent(new Event('taskQueue:open'))} className="text-primary underline">Open Task Queue</button>
+              </div>
+            </section>
+          )}
+          {activeTab === 'monitor' && status !== 'queued' && (progress || status === 'complete' || status === 'failed') && (
             <LiveEncodingTab
               status={status}
               progress={progress}
@@ -691,40 +823,5 @@ export function TranscodeModal({ mediaId, initialPreflightId, onClose, onOptimiz
           </div>}
         </div>
 
-        {/* Modal Footer Controls */}
-        {status !== 'encoding' && status !== 'complete' && (
-          <div className="p-4 sm:p-6 bg-muted/10 border-t border-border/10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-            <button
-              onClick={onClose}
-              className="px-6 py-2.5 bg-muted hover:bg-muted/80 rounded-xl text-xs font-bold transition-all"
-            >
-              Cancel
-            </button>
-
-            <div className="flex flex-col sm:flex-row items-stretch gap-2 sm:gap-3">
-              {analysisRequired && <button onClick={() => void analyzeRequiredEvidence()} disabled={analyzingItem} className="px-5 py-2.5 rounded-xl border border-border text-xs font-bold disabled:opacity-50">{analyzingItem ? 'Analyzing…' : 'Analyze item'}</button>}
-              <button
-                onClick={generateParams}
-                disabled={generating || !availability?.ffmpeg || (options.optimizationMode !== 'remux_only' && (!options.targetCodec || !options.qualityProfile || !options.encoderPolicy))}
-                className="flex items-center gap-2 px-5 py-2.5 bg-muted/60 hover:bg-muted rounded-xl text-xs font-bold transition-all disabled:opacity-50"
-              >
-                {generating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-primary" />}
-                Re-Generate AI Tuned Strategy
-              </button>
-
-              <button
-                onClick={startTranscode}
-                disabled={!availability?.ffmpeg || status === 'generating' || (audioTranscodeEnabled && !options.targetAudioCodec) || (activeTab === 'review' && preflight?.episodes.some(item => !item.compatible))}
-                className="flex items-center gap-2 px-7 py-2.5 bg-primary text-primary-foreground font-black rounded-xl text-xs transition-all disabled:opacity-50 shadow-lg shadow-primary/20 hover:opacity-90"
-              >
-                <Play className="w-4 h-4 fill-current" />
-                {status === 'generating' ? 'Preparing…' : preflight ? 'Queue Optimization' : 'Review Optimization'}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>,
-    document.body
-  )
+  </OptimizationDialogShell>
 }

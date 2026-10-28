@@ -11,6 +11,8 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
 import type { TranscodeOptions, TranscodingParams, Availability, PresetTemplate } from './types'
+import { TranscodeOptionsSchema } from '@main/validation/schemas'
+import { migrateTemplateOptions, readTemplates } from './templateMigration'
 
 export interface AdvancedTabProps {
   options: TranscodeOptions
@@ -25,29 +27,35 @@ export function AdvancedTab({
   options,
   setOptions,
   params,
-  availability
+  availability,
 }: AdvancedTabProps) {
   const { addToast } = useToast()
   const [templates, setTemplates] = useState<PresetTemplate[]>([])
   const [selectedTemplateName, setSelectedTemplateName] = useState<string>('')
   const [newTemplateName, setNewTemplateName] = useState<string>('')
   const [showSaveInput, setShowSaveInput] = useState(false)
+  const [templateError, setTemplateError] = useState<string | null>(null)
 
   // Load saved templates from localStorage
   useEffect(() => {
     try {
       const stored = localStorage.getItem(TEMPLATES_STORAGE_KEY)
       if (stored) {
-        queueMicrotask(() => { setTemplates(JSON.parse(stored)) })
+        const parsed = readTemplates(JSON.parse(stored))
+        setTemplates(parsed.templates)
+        if (parsed.migrated) {
+          localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(parsed.templates.map(({ name, options }) => ({ name, options }))))
+        }
       }
     } catch (e) {
       console.error('Failed to load templates:', e)
+      setTemplateError(e instanceof Error ? e.message : String(e))
     }
   }, [])
 
   const saveTemplatesToStorage = (updated: PresetTemplate[]) => {
     setTemplates(updated)
-    localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(updated))
+    localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(updated.map(({ name, options }) => ({ name, options }))))
   }
 
   const handleSaveTemplate = () => {
@@ -78,7 +86,18 @@ export function AdvancedTab({
     setSelectedTemplateName(name)
     const found = templates.find(t => t.name === name)
     if (found) {
-      setOptions({ ...found.options })
+      const migrated = migrateTemplateOptions(found.options)
+      const parsed = TranscodeOptionsSchema.unwrap().safeParse(migrated.options)
+      if (!parsed.success) {
+        setTemplateError(found.error ?? `Template "${name}" has unsupported settings. Reselect them before using this template.`)
+        return
+      }
+      setTemplateError(null)
+      if (migrated.changed) {
+        const updated = templates.map(template => template.name === name ? { name, options: parsed.data } : template)
+        saveTemplatesToStorage(updated)
+      }
+      setOptions(parsed.data as TranscodeOptions)
       addToast({ title: `Loaded template "${name}"`, type: 'info' })
     }
   }
@@ -153,6 +172,7 @@ export function AdvancedTab({
           </div>
         )}
 
+        {templateError && <p role="alert" className="text-xs text-destructive">{templateError}</p>}
         {templates.length > 0 ? (
           <div className="flex items-center gap-2">
             <select
@@ -162,7 +182,7 @@ export function AdvancedTab({
             >
               <option value="">Select a saved template…</option>
               {templates.map(t => (
-                <option key={t.name} value={t.name}>{t.name}</option>
+                <option key={t.name} value={t.name}>{t.name}{t.error ? ' · correction required' : ''}</option>
               ))}
             </select>
             {selectedTemplateName && (
@@ -205,10 +225,11 @@ export function AdvancedTab({
             Target Codec
           </label>
           <select
-            value={options.targetCodec}
-            onChange={(e) => setOptions(prev => ({ ...prev, targetCodec: e.target.value as TranscodeOptions['targetCodec'] }))}
+            value={options.targetCodec ?? ''}
+            onChange={(e) => setOptions(prev => ({ ...prev, targetCodec: e.target.value ? e.target.value as NonNullable<TranscodeOptions['targetCodec']> : undefined }))}
             className="w-full bg-muted border border-border/50 rounded-xl p-2.5 text-sm font-medium outline-hidden focus:border-primary transition-all"
           >
+            <option value="">Choose output codec</option>
             <option value="av1">AV1</option>
             <option value="hevc">HEVC (H.265)</option>
           </select>
@@ -270,53 +291,6 @@ export function AdvancedTab({
             <option value="veryfast">Very Fast</option>
           </optgroup>
         </select>
-      </div>
-
-      {/* Output Mode Selection */}
-      <div className="space-y-2">
-        <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">
-          Output Mode
-        </label>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <button
-            type="button"
-            onClick={() => setOptions(prev => ({ ...prev, outputMode: 'replace' }))}
-            className={`p-3 rounded-xl border text-left transition-all ${
-              options.outputMode === 'replace'
-                ? 'bg-primary/10 border-primary shadow-sm ring-1 ring-primary'
-                : 'bg-muted/30 border-border/40 text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <span className="text-xs font-bold text-foreground block mb-0.5">Direct Replace</span>
-            <p className="text-[11px] text-muted-foreground leading-snug">In-place replacement with zero residual storage footprint.</p>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setOptions(prev => ({ ...prev, outputMode: 'quarantine-replace' }))}
-            className={`p-3 rounded-xl border text-left transition-all ${
-              options.outputMode === 'quarantine-replace'
-                ? 'bg-primary/10 border-primary shadow-sm ring-1 ring-primary'
-                : 'bg-muted/30 border-border/40 text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <span className="text-xs font-bold text-foreground block mb-0.5">Quarantine & Replace</span>
-            <p className="text-[11px] text-muted-foreground leading-snug">Replaces original and retains timestamped backup.</p>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setOptions(prev => ({ ...prev, outputMode: 'copy' }))}
-            className={`p-3 rounded-xl border text-left transition-all ${
-              options.outputMode === 'copy'
-                ? 'bg-primary/10 border-primary shadow-sm ring-1 ring-primary'
-                : 'bg-muted/30 border-border/40 text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <span className="text-xs font-bold text-foreground block mb-0.5">Create Sibling Copy</span>
-            <p className="text-[11px] text-muted-foreground leading-snug">Outputs alongside original file as a duplicate.</p>
-          </button>
-        </div>
       </div>
 
       {/* Custom FFmpeg Arguments */}

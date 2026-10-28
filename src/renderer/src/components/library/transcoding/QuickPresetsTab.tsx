@@ -1,7 +1,5 @@
-import { useState } from 'react'
 import {
   Zap,
-  Check,
   Sparkles,
   Copy,
   AlertTriangle,
@@ -16,10 +14,10 @@ export interface QuickPresetsTabProps {
   options: TranscodeOptions
   setOptions: React.Dispatch<React.SetStateAction<TranscodeOptions>>
   params: TranscodingParams | null
+  supportedTargetCodecs: Array<NonNullable<TranscodeOptions['targetCodec']>>
 }
 
 interface PresetProfile {
-  id: string
   qualityProfile: NonNullable<TranscodeOptions['qualityProfile']>
   name: string
   badge: string
@@ -30,26 +28,23 @@ interface PresetProfile {
 
 const PRESET_PROFILES: PresetProfile[] = [
   {
-    id: 'lossless',
     qualityProfile: 'transparent',
-    name: 'Lossless Archival',
+    name: 'Higher fidelity',
     badge: 'Highest Quality',
     description: 'Highest quality gate. Parameters are selected from measured samples for this source.',
     icon: ShieldCheck
   },
   {
-    id: 'balanced',
     qualityProfile: 'balanced',
-    name: 'Balanced Smooth HQ',
+    name: 'Balanced',
     badge: 'Recommended',
     description: 'Balanced quality and savings gate. No savings claim is shown until a sample is measured.',
     icon: Zap,
     highlight: true
   },
   {
-    id: 'efficiency',
     qualityProfile: 'maximum_savings',
-    name: 'High Efficiency Space Saver',
+    name: 'Smaller file',
     badge: 'Max Savings',
     description: 'Maximum savings gate subject to measured VMAF and banding limits.',
     icon: TrendingDown
@@ -59,13 +54,12 @@ const PRESET_PROFILES: PresetProfile[] = [
 export function QuickPresetsTab({
   options,
   setOptions,
-  params
+  params,
+  supportedTargetCodecs,
 }: QuickPresetsTabProps) {
   const { addToast } = useToast()
-  const [selectedProfileId, setSelectedProfileId] = useState<string>('')
 
   const applyProfile = (profile: PresetProfile) => {
-    setSelectedProfileId(profile.id)
     setOptions(prev => ({
       ...prev,
       qualityProfile: profile.qualityProfile,
@@ -96,21 +90,28 @@ export function QuickPresetsTab({
           <span className="text-[11px] text-muted-foreground">Select a baseline optimization profile</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5" role="radiogroup" aria-label="Quality preference">
           {PRESET_PROFILES.map((profile) => {
             const Icon = profile.icon
-            const isSelected = selectedProfileId === profile.id
+            const isSelected = options.qualityProfile === profile.qualityProfile
 
             return (
-              <div
-                key={profile.id}
-                onClick={() => applyProfile(profile)}
-                className={`relative flex flex-col justify-between p-4 rounded-2xl border transition-all cursor-pointer select-none ${
+              <label
+                key={profile.qualityProfile}
+                className={`relative flex flex-col justify-between p-4 rounded-2xl border transition-all cursor-pointer select-none focus-within:ring-2 focus-within:ring-primary ${
                   isSelected
                     ? 'bg-primary/10 border-primary shadow-lg shadow-primary/10 ring-1 ring-primary'
                     : 'bg-muted/30 border-border/40 hover:bg-muted/50 hover:border-border'
                 }`}
               >
+                <input
+                  type="radio"
+                  name="optimization-quality-profile"
+                  value={profile.qualityProfile}
+                  checked={isSelected}
+                  onChange={() => applyProfile(profile)}
+                  className="sr-only"
+                />
                 {/* Header Badge */}
                 <div className="flex items-center justify-between mb-3">
                   <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
@@ -120,11 +121,7 @@ export function QuickPresetsTab({
                   }`}>
                     {profile.badge}
                   </span>
-                  {isSelected && (
-                    <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
-                      <Check className="w-3 h-3 stroke-[3]" />
-                    </div>
-                  )}
+                  <span aria-hidden="true" className={`h-4 w-4 rounded-full border-2 ${isSelected ? 'border-primary bg-primary ring-2 ring-primary/30' : 'border-muted-foreground/60'}`} />
                 </div>
 
                 {/* Profile Info */}
@@ -146,7 +143,7 @@ export function QuickPresetsTab({
                 <div className="mt-4 pt-3 border-t border-border/20 text-[11px] text-muted-foreground/70">
                   Measured per source and selected encoder
                 </div>
-              </div>
+              </label>
             )
           })}
         </div>
@@ -168,6 +165,7 @@ export function QuickPresetsTab({
             <div className="flex gap-2">
               <button
                 type="button"
+                disabled={!supportedTargetCodecs.includes('av1')}
                 onClick={() => setOptions(prev => ({ ...prev, targetCodec: 'av1' }))}
                 className={`flex-1 py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
                   options.targetCodec === 'av1'
@@ -175,10 +173,11 @@ export function QuickPresetsTab({
                     : 'bg-muted/40 border-border/40 text-muted-foreground hover:text-foreground'
                 }`}
               >
-                AV1 (Next-Gen)
+                AV1{!supportedTargetCodecs.includes('av1') ? ' (unavailable)' : ''}
               </button>
               <button
                 type="button"
+                disabled={!supportedTargetCodecs.includes('hevc')}
                 onClick={() => setOptions(prev => ({ ...prev, targetCodec: 'hevc' }))}
                 className={`flex-1 py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
                   options.targetCodec === 'hevc'
@@ -186,9 +185,11 @@ export function QuickPresetsTab({
                     : 'bg-muted/40 border-border/40 text-muted-foreground hover:text-foreground'
                 }`}
               >
-                HEVC (H.265)
+                HEVC{!supportedTargetCodecs.includes('hevc') ? ' (unavailable)' : ''}
               </button>
             </div>
+            {supportedTargetCodecs.length === 0 && <p role="status" className="text-xs text-amber-300">No compatible HEVC or AV1 encoder is available for the selected playback target.</p>}
+            {!options.targetCodec && supportedTargetCodecs.length > 0 && <p role="status" className="text-xs text-amber-300">Choose an output codec to continue.</p>}
           </div>
 
         </div>

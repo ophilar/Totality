@@ -2,12 +2,18 @@ import type {
   TranscodeOptions as MainTranscodeOptions,
   TranscodeProgress as MainTranscodeProgress,
 } from '@main/services/TranscodingService'
+import type { ShowTranscodePreflight, ShowTranscodeRequest } from '@main/services/TranscodingService'
 
 export type TranscodeOptions = MainTranscodeOptions & Required<Pick<MainTranscodeOptions,
-  'targetCodec' | 'outputMode' | 'useGpu' | 'gpuId' | 'encoder' | 'preset' | 'customArgs' | 'transcodingEngine' | 'targetSize'
+  'useGpu' | 'gpuId' | 'encoder' | 'preset' | 'customArgs' | 'transcodingEngine' | 'targetSize'
 >>
 
-export type { PlannedOptimizationOperation, ShowTranscodePreflight } from '@main/services/TranscodingService'
+export type { PlannedOptimizationOperation, ShowTranscodePreflight, ShowTranscodeRequest } from '@main/services/TranscodingService'
+
+export interface SavedShowPreflight {
+  request: ShowTranscodeRequest
+  result: ShowTranscodePreflight
+}
 
 export interface TranscodingParams {
   summary: string
@@ -29,7 +35,8 @@ export interface GpuInfo {
 
 export interface PresetTemplate {
   name: string
-  options: TranscodeOptions
+  options: unknown
+  error?: string
 }
 
 export type TranscodeProgress = Pick<MainTranscodeProgress,
