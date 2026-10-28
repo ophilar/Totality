@@ -107,6 +107,6 @@ export function ConversionRecommendation({ item, compact = false, onOptimization
     {analysisError && <p role="alert" className="mt-2 text-destructive">{analysisError}</p>}
     {analysisRequired && <button type="button" onClick={() => void analyzeItem()} disabled={analysisPending} className="mt-3 rounded border border-border px-3 py-1.5 font-semibold disabled:opacity-50">{analysisPending ? 'Analyzing item…' : 'Analyze item'}</button>}
     {hasSupportedOperation && <button type="button" onClick={() => setShowTranscodeModal(true)} className="mt-3 rounded bg-primary px-3 py-1.5 font-semibold text-primary-foreground">Review optimization</button>}
-    {showTranscodeModal && <TranscodeModal mediaId={mediaId} initialOptimizationMode={transcodeVideo ? 'transcode' : 'remux_only'} initialStreamPruning={pruneStreams} onOptimizationCompleted={onOptimizationCompleted} onClose={() => setShowTranscodeModal(false)} />}
+    {showTranscodeModal && <TranscodeModal mediaId={mediaId} initialOptimizationMode={transcodeVideo ? 'smart' : 'remux_only'} initialStreamPruning={pruneStreams} onOptimizationCompleted={onOptimizationCompleted} onClose={() => setShowTranscodeModal(false)} />}
   </div>
 }
