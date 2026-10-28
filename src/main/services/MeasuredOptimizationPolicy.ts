@@ -1,9 +1,11 @@
 
 import { APP_CONFIG } from '@main/config'
+import type { MeasurementSourcePreparation } from './MeasuredOptimizationService'
 
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
 
-export const MEASUREMENT_VERSION = 11
+export const MEASUREMENT_VERSION = 12
+export const VMAF_LOW_PERCENTILE = 0.05
 export const SHOW_PREFLIGHT_SETTING_PREFIX = 'transcoding.preflight.'
 export const MEASUREMENT_SETTING_PREFIX = 'transcoding.measurement.'
 
@@ -14,11 +16,14 @@ export interface CachedMeasurement {
   complete: boolean
   candidates: MeasuredCandidate[]
   sampleHashes: string[][]
+  sourcePreparation?: MeasurementSourcePreparation
+  sourcePreparationHashes?: string[][]
   partialSamples: MeasuredCandidateSample[]
   partialSampleHashes: string[]
 }
 
 export interface MeasuredCandidateSample {
+  screeningOnly?: boolean
   encoder: string
   preset: string
   quality: number
@@ -162,7 +167,7 @@ export function getImpossibleQualityReason(
   const optimisticMean = (vmafScores.reduce((sum, score) => sum + score, 0) + remaining * 100) / totalFrames
   if (optimisticMean < gates.vmafMean) return `VMAF mean cannot reach ${gates.vmafMean} even if all remaining frames score 100`
   const failedTailFrames = vmafScores.filter(score => score < gates.vmafP5).length
-  if (failedTailFrames > Math.floor(totalFrames * 0.05)) return `VMAF p5 cannot reach ${gates.vmafP5} with ${failedTailFrames} below-threshold frames`
+  if (failedTailFrames > Math.floor(totalFrames * VMAF_LOW_PERCENTILE)) return `VMAF p5 cannot reach ${gates.vmafP5} with ${failedTailFrames} below-threshold frames`
   const optimisticCambi = cambiScores.reduce((sum, score) => sum + score, 0) / totalFrames
   if (optimisticCambi > gates.cambiMean) return `CAMBI cannot reach ${gates.cambiMean} even if all remaining frames score 0`
   return undefined
