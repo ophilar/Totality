@@ -78,8 +78,16 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-muted/50"><TvPlaceholder className="w-8 h-8 text-muted-foreground" /></div>
         )}
+        {/* Completeness badge — over poster */}
+        {completenessData && (
+          <div className="absolute bottom-1 right-1 z-10">
+            <div className="bg-foreground text-background text-caption font-semibold px-1 py-0.5 rounded shadow-md">
+              {completenessData.owned_episodes}/{completenessData.total_episodes}
+            </div>
+          </div>
+        )}
         {/* Source badge */}
-        {showSourceBadge && sourceType && (
+        {showSourceBadge && sourceType && !completenessData && (
           <div
             className={`absolute bottom-0 right-0 ${providerColors[sourceType] || 'bg-gray-500'} text-white text-caption font-semibold px-1 py-0.5 rounded`}
           >
@@ -92,16 +100,9 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
       <div className="flex-1 min-w-0">
         <h4 className="font-semibold text-label truncate">{show.series_title}</h4>
         <p className="text-caption text-muted-foreground mt-0.5">
-          {seasonCount} {seasonCount === 1 ? 'Season' : 'Seasons'} • {totalEpisodes} Episodes
-          {completenessData?.status && ` • ${getStatusBadge(completenessData.status)?.text || completenessData.status}`}
+          {seasonCount} {seasonCount === 1 ? 'season' : 'seasons'} · {totalEpisodes} episodes
+          {completenessData?.status && ` · ${getStatusBadge(completenessData.status)?.text || completenessData.status}`}
         </p>
-        {completenessData && (
-          <div className="mt-2">
-            <span className="px-2 py-0.5 text-caption font-medium bg-foreground text-background rounded">
-              {completenessData.owned_episodes}/{completenessData.total_episodes}
-            </span>
-          </div>
-        )}
       </div>
 
       {/* 3-dot menu */}
@@ -1168,6 +1169,14 @@ const SeasonCard = memo(({ season, showTitle, onClick, missingCount = 0 }: { sea
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-muted/50"><Folder className="w-16 h-16 text-white/30" strokeWidth={1.5} /></div>
+        )}
+        {/* Completeness badge — over poster */}
+        {total > 0 && missingCount > 0 && (
+          <div className="absolute bottom-2 right-2 z-10">
+            <div className="bg-foreground text-background text-caption font-semibold px-1.5 py-0.5 rounded shadow-md">
+              {owned}/{total}
+            </div>
+          </div>
         )}
       </div>
 
