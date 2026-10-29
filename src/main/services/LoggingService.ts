@@ -50,6 +50,7 @@ class LoggingService {
   private infoLogs: LogEntry[] = [] // Circular buffer for info/debug/verbose
   private importantLogs: LogEntry[] = [] // Protected buffer for warn/error
   private mainWindow: BrowserWindow | null = null
+  private rendererConsoleListener: ((event: Electron.Event<Electron.WebContentsConsoleMessageEventParams>) => void) | null = null
   private sessionId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
   private startedAt = new Date()
   private verboseEnabled = false
@@ -65,7 +66,6 @@ class LoggingService {
 
   // File logging
   private fileLoggingEnabled = false // Starts false until initializeFileLogging()
-  private fileLoggingMinLevel: LogLevel = 'info'
   private logRetentionDays = 7
   private logDir = ''
   private writeBuffer: string[] = []
@@ -73,9 +73,6 @@ class LoggingService {
   private isWriting = false
   private currentLogDate = ''
 
-  private static readonly LEVEL_PRIORITY: Record<LogLevel, number> = {
-    verbose: 0, debug: 1, info: 2, warn: 3, error: 4,
-  }
   private static readonly FLUSH_INTERVAL_MS = 5000
   private static readonly FLUSH_BUFFER_SIZE = 50
 
@@ -127,7 +124,20 @@ class LoggingService {
   }
 
   setMainWindow(window: BrowserWindow | null): void {
+    if (this.mainWindow && this.rendererConsoleListener) {
+      this.mainWindow.webContents.removeListener('console-message', this.rendererConsoleListener)
+    }
     this.mainWindow = window
+    this.rendererConsoleListener = null
+
+    if (window) {
+      this.rendererConsoleListener = event => {
+        const level: LogLevel = event.level === 'warning' ? 'warn' : event.level === 'debug' ? 'debug' : event.level
+        const details = `at ${event.sourceId}:${event.lineNumber}`
+        this.addEntry(level, '[Renderer]', event.message, details)
+      }
+      window.webContents.on('console-message', this.rendererConsoleListener)
+    }
   }
 
   private interceptConsole(): void {
@@ -348,13 +358,9 @@ class LoggingService {
     if (!this.dbGetter) throw new Error('Database getter must be configured before file logging')
     const db = this.dbGetter()
     const enabled = db.getSetting('file_logging_enabled')
-    const minLevel = db.getSetting('file_logging_min_level')
     const retention = db.getSetting('log_retention_days')
 
     if (enabled !== null) this.fileLoggingEnabled = enabled !== 'false'
-    if (minLevel && minLevel in LoggingService.LEVEL_PRIORITY) {
-      this.fileLoggingMinLevel = minLevel as LogLevel
-    }
     if (retention) this.logRetentionDays = parseInt(retention, 10) || 7
 
     // Restore verbose setting
@@ -364,10 +370,6 @@ class LoggingService {
 
   private appendToFileBuffer(entry: LogEntry): void {
     if (!this.fileLoggingEnabled || !this.logDir) return
-
-    if (LoggingService.LEVEL_PRIORITY[entry.level] < LoggingService.LEVEL_PRIORITY[this.fileLoggingMinLevel]) {
-      return
-    }
 
     const level = entry.level.toUpperCase().padEnd(7)
     let line = `${entry.timestamp} [${level}] ${entry.source} ${entry.message}`
@@ -441,11 +443,9 @@ class LoggingService {
    */
   updateFileLoggingSettings(settings: {
     enabled?: boolean
-    minLevel?: LogLevel
     retentionDays?: number
   }): void {
     if (settings.enabled !== undefined) this.fileLoggingEnabled = settings.enabled
-    if (settings.minLevel !== undefined) this.fileLoggingMinLevel = settings.minLevel
     if (settings.retentionDays !== undefined) this.logRetentionDays = settings.retentionDays
   }
 

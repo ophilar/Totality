@@ -63,9 +63,8 @@ export function TroubleshootTab() {
   const [fileLoggingExpanded, setFileLoggingExpanded] = useState(false)
   const [fileLoggingSettings, setFileLoggingSettings] = useState<{
     enabled: boolean
-    minLevel: string
     retentionDays: number
-  }>({ enabled: true, minLevel: 'info', retentionDays: 7 })
+  }>({ enabled: true, retentionDays: 7 })
   const lastClickedIndex = useRef<number | null>(null)
   const listRef = useListRef(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -233,7 +232,7 @@ export function TroubleshootTab() {
     await window.electronAPI.setVerboseLogging(newValue)
   }
 
-  const handleFileLoggingSetting = async (update: { enabled?: boolean; minLevel?: string; retentionDays?: number }) => {
+  const handleFileLoggingSetting = async (update: { enabled?: boolean; retentionDays?: number }) => {
     const newSettings = { ...fileLoggingSettings, ...update }
     setFileLoggingSettings(newSettings)
     await window.electronAPI.setFileLoggingSettings(update)
@@ -571,9 +570,9 @@ export function TroubleshootTab() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="font-medium text-label">File Logging</span>
-                <span className="text-caption text-muted-foreground">
-                  {fileLoggingSettings.enabled ? `${fileLoggingSettings.minLevel} level · ${fileLoggingSettings.retentionDays} day retention` : 'Disabled'}
+                <span className="font-medium text-sm">File Logging</span>
+                <span className="text-xs text-muted-foreground">
+                  {fileLoggingSettings.enabled ? `All levels · ${fileLoggingSettings.retentionDays} day retention` : 'Disabled'}
                 </span>
               </div>
               <p className="text-caption text-muted-foreground truncate">Save logs to disk with automatic daily rotation</p>
@@ -589,26 +588,10 @@ export function TroubleshootTab() {
 
         {fileLoggingExpanded && (
           <div className="px-4 pb-4 pt-2 border-t border-border/30 bg-muted/10 space-y-3">
-            <div className="divide-y divide-border/30">
-              <div className="flex items-center justify-between py-3">
-                <span className="text-label text-foreground">Minimum level</span>
-                <Select
-                  inputSize="sm"
-                  value={fileLoggingSettings.minLevel}
-                  onChange={(e) => handleFileLoggingSetting({ minLevel: e.target.value })}
-                  disabled={!fileLoggingSettings.enabled}
-                >
-                  <option value="verbose">Verbose</option>
-                  <option value="debug">Debug</option>
-                  <option value="info">Info</option>
-                  <option value="warn">Warn</option>
-                  <option value="error">Error</option>
-                </Select>
-              </div>
-              <div className="flex items-center justify-between py-3">
-                <span className="text-label text-foreground">Retention period</span>
-                <Select
-                  inputSize="sm"
+            <div className="bg-background/50 rounded-lg divide-y divide-border/30">
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-sm text-foreground">Retention period</span>
+                <select
                   value={fileLoggingSettings.retentionDays}
                   onChange={(e) => handleFileLoggingSetting({ retentionDays: parseInt(e.target.value, 10) })}
                   disabled={!fileLoggingSettings.enabled}
