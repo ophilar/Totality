@@ -370,7 +370,7 @@ describe('QualityAnalyzer', () => {
   // ============================================================================
 
   describe('needs upgrade detection', () => {
-    it('does not infer a video upgrade from bitrate or audio properties', async () => {
+    it('flags LOW tier video as needing upgrade regardless of bitrate or audio properties', async () => {
       const item = createMediaItem({
         resolution: '720p',
         video_bitrate_kbps: 1500,
@@ -378,7 +378,8 @@ describe('QualityAnalyzer', () => {
         audio_bitrate_kbps: 64,
       })
       const score = await analyzer.analyzeMediaItem(item)
-      expect(score.needs_upgrade).toBe(false)
+      expect(score.tier_quality).toBe('LOW')
+      expect(score.needs_upgrade).toBe(true)
     })
 
     it('should not flag HIGH quality items as needing upgrade', async () => {
@@ -390,7 +391,22 @@ describe('QualityAnalyzer', () => {
         has_object_audio: true,
       })
       const score = await analyzer.analyzeMediaItem(item)
+      expect(score.tier_quality).toBe('HIGH')
       expect(score.needs_upgrade).toBe(false)
+    })
+
+    it('does not flag MEDIUM or UNKNOWN tier video as needing upgrade', async () => {
+      const mediumScore = await analyzer.analyzeMediaItem(createMediaItem({
+        resolution: '1080p', video_bitrate_kbps: 5000,
+      }))
+      const unknownScore = await analyzer.analyzeMediaItem(createMediaItem({
+        resolution: 'unknown', video_bitrate_kbps: 2000,
+      }))
+
+      expect(mediumScore.tier_quality).toBe('MEDIUM')
+      expect(mediumScore.needs_upgrade).toBe(false)
+      expect(unknownScore.tier_quality).toBe('UNKNOWN')
+      expect(unknownScore.needs_upgrade).toBe(false)
     })
   })
 

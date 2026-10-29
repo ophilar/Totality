@@ -5,12 +5,14 @@ import type { MeasurementSourcePreparation } from './MeasuredOptimizationService
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
 
 export const MEASUREMENT_VERSION = 12
+export const OPTIMIZATION_SEARCH_VERSION = 2
 export const VMAF_LOW_PERCENTILE = 0.05
 export const SHOW_PREFLIGHT_SETTING_PREFIX = 'transcoding.preflight.'
 export const MEASUREMENT_SETTING_PREFIX = 'transcoding.measurement.'
 
 export interface CachedMeasurement {
   version: number
+  searchVersion?: number
   cacheKey: string
   sourceSha256: string
   complete: boolean
@@ -63,21 +65,17 @@ export interface CandidateEncodingParameters {
   quality: number
 }
 
-/** Returns the next measurement batch for adaptive, preset-ordered search. */
+/** Returns the next measurement batch for adaptive search across the configured encoder and preset domain. */
 export function nextCandidateSearch(
   domainCatalogue: CandidateEncodingParameters[],
   measuredCandidates: MeasuredCandidate[],
   profile: OptimizationQualityProfile,
-  maximumOutputBytesPerSecond?: number,
 ): CandidateEncodingParameters[] {
   const presets = [...new Map(domainCatalogue.map(candidate => [`${candidate.encoder}/${candidate.preset}`, candidate])).values()]
   const evaluation = (candidate: MeasuredCandidate) => evaluateMeasuredCandidates(profile, [candidate])[0]
-  const eligible = (candidate: MeasuredCandidate) => evaluation(candidate).passed &&
-    (maximumOutputBytesPerSecond === undefined || candidate.outputBytes / candidate.sampledDurationSeconds < maximumOutputBytesPerSecond)
   const qualityPasses = (candidate: MeasuredCandidate) => evaluation(candidate).qualityPassed
   const encoders = [...new Set(presets.map(candidate => candidate.encoder))]
   for (const encoder of encoders) {
-    let encoderHasAcceptableResult = false
     for (const presetCandidate of presets.filter(candidate => candidate.encoder === encoder)) {
       const domain = domainCatalogue.filter(candidate => candidate.encoder === encoder && candidate.preset === presetCandidate.preset)
       const measured = measuredCandidates.filter(candidate => candidate.encoder === encoder && candidate.preset === presetCandidate.preset)
@@ -109,8 +107,6 @@ export function nextCandidateSearch(
         }
       }
       if (next.size) return untested([...next].sort((a, b) => a - b))
-      encoderHasAcceptableResult ||= measured.some(eligible)
-      if (encoderHasAcceptableResult) break
     }
   }
   return []
@@ -174,34 +170,49 @@ export function getImpossibleQualityReason(
 }
 
 export class MeasuredQualityError extends Error {
-  constructor(message: string, public readonly decisionStatus: 'quality_threshold_unmet' | 'incompatible') {
+  constructor(message: string, public readonly decisionStatus: 'quality_threshold_unmet' | 'incompatible' | 'no_positive_savings') {
     super(message)
     this.name = 'MeasuredQualityError'
   }
 }
 
-export function selectMeasuredCandidate(profile: OptimizationQualityProfile, candidates: MeasuredCandidate[]): MeasuredCandidate {
+export function selectMeasuredCandidate(
+  profile: OptimizationQualityProfile,
+  candidates: MeasuredCandidate[],
+  maximumOutputBytesPerSecond?: number,
+): MeasuredCandidate {
   const gates = QUALITY_GATES[profile]
   const evaluations = evaluateMeasuredCandidates(profile, candidates)
+  const gatePassing = evaluations.filter(evaluation => evaluation.passed)
   const eligible = evaluations
     .filter(evaluation => evaluation.passed)
     .map(evaluation => evaluation.candidate)
-    .sort((left, right) => left.outputBytes - right.outputBytes)
+    .filter(candidate => maximumOutputBytesPerSecond === undefined || candidate.outputBytes / candidate.sampledDurationSeconds < maximumOutputBytesPerSecond)
+    .sort((left, right) => left.outputBytes - right.outputBytes || (left.encodingDurationMs ?? Number.POSITIVE_INFINITY) - (right.encodingDurationMs ?? Number.POSITIVE_INFINITY))
   const selected = eligible[0]
   if (!selected) {
     const reports = evaluations.map(({ candidate, failedGates }) =>
-      `${candidate.encoder}/${candidate.preset} q${candidate.quality}: VMAF mean ${candidate.vmafMean.toFixed(2)} (min ${gates.vmafMean}), VMAF p5 ${candidate.vmafP5.toFixed(2)} (min ${gates.vmafP5}), CAMBI ${candidate.cambiMean.toFixed(2)} (max ${gates.cambiMean}); failed=${failedGates.join(',')}`
+      `${candidate.encoder}/${candidate.preset} q${candidate.quality}: output ${candidate.outputBytes} bytes across ${candidate.sampledDurationSeconds}s, ${candidate.outputBytes / candidate.sampledDurationSeconds} bytes/s; VMAF mean ${candidate.vmafMean.toFixed(2)} (min ${gates.vmafMean}), VMAF p5 ${candidate.vmafP5.toFixed(2)} (min ${gates.vmafP5}), CAMBI ${candidate.cambiMean.toFixed(2)} (max ${gates.cambiMean}); failed=${failedGates.join(',')}`
     )
     const qualityPassed = evaluations.some(evaluation => evaluation.qualityPassed)
-    throw new MeasuredQualityError(`No measured candidate satisfies the ${profile} quality and playback requirements. Candidate results: ${reports.join(' | ')}`, qualityPassed ? 'incompatible' : 'quality_threshold_unmet')
+    const decisionStatus = gatePassing.length > 0 ? 'no_positive_savings' : qualityPassed ? 'incompatible' : 'quality_threshold_unmet'
+    const reason = decisionStatus === 'no_positive_savings'
+      ? `No measured candidate produces positive savings below ${maximumOutputBytesPerSecond} output bytes per second.`
+      : `No measured candidate satisfies the ${profile} quality and playback requirements.`
+    throw new MeasuredQualityError(`${reason} Candidate results: ${reports.join(' | ')}`, decisionStatus)
   }
   return selected
 }
 
-export function getNonDominatedMeasuredCandidates(profile: OptimizationQualityProfile, candidates: MeasuredCandidate[]): MeasuredCandidate[] {
+export function getNonDominatedMeasuredCandidates(
+  profile: OptimizationQualityProfile,
+  candidates: MeasuredCandidate[],
+  maximumOutputBytesPerSecond?: number,
+): MeasuredCandidate[] {
   const eligible = evaluateMeasuredCandidates(profile, candidates)
     .filter(evaluation => evaluation.passed)
     .map(evaluation => evaluation.candidate)
+    .filter(candidate => maximumOutputBytesPerSecond === undefined || candidate.outputBytes / candidate.sampledDurationSeconds < maximumOutputBytesPerSecond)
   return eligible.filter(candidate => !eligible.some(other => other !== candidate &&
     other.outputBytes <= candidate.outputBytes &&
     other.vmafMean >= candidate.vmafMean &&

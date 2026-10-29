@@ -107,7 +107,7 @@ export function useOptimizationWorkflow(onQueueError: (error: unknown) => void) 
   const replaceReview = useCallback((nextReview: ShowTranscodePreflight, effectiveOptions: unknown) => {
     setReview(nextReview)
     setReviewedOptions(JSON.stringify(effectiveOptions))
-    setReviewedSampleGroups([])
+    setReviewedSampleGroups(nextReview.approvedSampleGroupIds ?? [])
   }, [])
 
   const clearReview = useCallback(() => {

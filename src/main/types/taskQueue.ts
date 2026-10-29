@@ -13,7 +13,7 @@ export type TaskStatus = `${DatabaseTaskStatus}` | 'interrupted'
 export interface TaskProgress {
   current: number
   total: number
-  percentage: number
+  percentage?: number
   phase: string
   currentItem?: string
   fps?: number
@@ -39,8 +39,10 @@ export interface TaskResult {
   outcome?: AnalysisOutcome
   isFirstScan?: boolean
   encodedReductionBytes?: number
+  outputBytes?: number
   retainedOriginalBytes?: number
   physicallyReclaimedBytes?: number
+  qualityVerification?: { vmafMean: number; vmafP5: number; cambiMean: number; sampleCount: number; frameCount: number }
   [key: string]: unknown
 }
 

@@ -9,7 +9,7 @@ import type { TimelineFetchOptions, TimelineDefinition } from '@main/services/ti
 import type { PlexPlaylistSummary, PlexPlaylistSyncResult } from '@main/services/timelines/PlexPlaylistSyncService'
 import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
 import type { TranscodeOptions, TranscodeProgress, TranscodingParams } from '@main/services/TranscodingService'
-import type { ShowTranscodeRequest, ShowTranscodePreflight } from '@main/services/TranscodingService'
+import type { ShowTranscodeRequest, ShowTranscodePreflight, ShowOptimizationDiscovery } from '@main/services/TranscodingService'
 import type { MediaDuplicate, MediaSource as DatabaseMediaSource, WishlistFilters, WishlistItem } from '@main/types/database'
 import type { ActivityLogEntry, QueueState, QueuedTask, TaskDefinition, TaskQueueHistory } from '@main/types/taskQueue'
 import type { DuplicateResolutionOutcome } from '@shared/duplicateResolution'
@@ -813,7 +813,7 @@ const electronAPI = {
   setVerboseLogging: (enabled: boolean) => ipcRenderer.invoke(IPC_CHANNELS.logsSetVerbose, enabled),
   isVerboseLogging: () => ipcRenderer.invoke(IPC_CHANNELS.logsIsVerbose),
   getFileLoggingSettings: () => ipcRenderer.invoke(IPC_CHANNELS.logsGetFileLoggingSettings),
-  setFileLoggingSettings: (settings: { enabled?: boolean; minLevel?: string; retentionDays?: number }) =>
+  setFileLoggingSettings: (settings: { enabled?: boolean; retentionDays?: number }) =>
     ipcRenderer.invoke(IPC_CHANNELS.logsSetFileLoggingSettings, settings),
   openLogFolder: () => ipcRenderer.invoke(IPC_CHANNELS.logsOpenLogFolder),
   onNewLog: (callback: (entry: { id: string; timestamp: string; level: 'verbose' | 'debug' | 'info' | 'warn' | 'error'; source: string; message: string; details?: string }) => void) => {
@@ -880,9 +880,11 @@ const electronAPI = {
   seriesGetAudioLanguagesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke(IPC_CHANNELS.seriesGetAudioLanguagesByIdentity, seriesTitle, sourceId, seriesIdentityKey, libraryId),
   seriesAnalyzeByIdentity: (seriesIdentityKey: string, sourceId?: string, libraryId?: string) => ipcRenderer.invoke(IPC_CHANNELS.seriesAnalyzeByIdentity, seriesIdentityKey, sourceId, libraryId),
   preflightShow: (request: ShowTranscodeRequest & { requestId: string }) => ipcRenderer.invoke(IPC_CHANNELS.transcodingPreflightShow, request),
+  discoverShowOptimization: (request: ShowTranscodeRequest & { requestId: string }) => ipcRenderer.invoke(IPC_CHANNELS.transcodingDiscoverShow, request),
   startPreflightShow: (request: ShowTranscodeRequest & { requestId: string }) => ipcRenderer.invoke(IPC_CHANNELS.transcodingStartPreflightShow, request),
   getShowPreflight: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingGetShowPreflight, preflightId),
   findShowPreflight: (seriesIdentityKey: string, sourceId: string, libraryId: string, seriesTitle: string, mediaItemId?: number, seasonNumber?: number) => ipcRenderer.invoke(IPC_CHANNELS.transcodingFindShowPreflight, seriesIdentityKey, sourceId, libraryId, seriesTitle, mediaItemId, seasonNumber),
+  setShowSampleApproval: (preflightId: string, groupId: string, approved: boolean) => ipcRenderer.invoke(IPC_CHANNELS.transcodingSetShowSampleApproval, preflightId, groupId, approved),
   queueShow: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingQueueShow, preflightId),
   approveShow: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingApproveShow, preflightId),
   discardShow: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingDiscardShow, preflightId),
@@ -1972,8 +1974,8 @@ interface ExistingElectronAPI {
   }>
   setVerboseLogging: (enabled: boolean) => Promise<{ success: boolean }>
   isVerboseLogging: () => Promise<boolean>
-  getFileLoggingSettings: () => Promise<{ enabled: boolean; minLevel: string; retentionDays: number }>
-  setFileLoggingSettings: (settings: { enabled?: boolean; minLevel?: string; retentionDays?: number }) => Promise<{ success: boolean }>
+  getFileLoggingSettings: () => Promise<{ enabled: boolean; retentionDays: number }>
+  setFileLoggingSettings: (settings: { enabled?: boolean; retentionDays?: number }) => Promise<{ success: boolean }>
   openLogFolder: () => Promise<{ success: boolean }>
   onNewLog?: (callback: (entry: { id: string; timestamp: string; level: 'verbose' | 'debug' | 'info' | 'warn' | 'error'; source: string; message: string; details?: string }) => void) => () => void
   // Web Access
@@ -2024,9 +2026,11 @@ interface ExistingElectronAPI {
   seriesGetAudioLanguagesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<string[]>
   seriesAnalyzeByIdentity: (seriesIdentityKey: string, sourceId?: string, libraryId?: string) => Promise<any>
   preflightShow: (request: ShowTranscodeRequest & { requestId: string }) => Promise<ShowTranscodePreflight>
+  discoverShowOptimization: (request: ShowTranscodeRequest & { requestId: string }) => Promise<ShowOptimizationDiscovery>
   startPreflightShow: (request: ShowTranscodeRequest & { requestId: string }) => Promise<{ requestId: string; taskId: string }>
   getShowPreflight: (preflightId: string) => Promise<{ request: ShowTranscodeRequest; result: ShowTranscodePreflight } | undefined>
   findShowPreflight: (seriesIdentityKey: string, sourceId: string, libraryId: string, seriesTitle: string, mediaItemId?: number, seasonNumber?: number) => Promise<{ request: ShowTranscodeRequest; result: ShowTranscodePreflight } | undefined>
+  setShowSampleApproval: (preflightId: string, groupId: string, approved: boolean) => Promise<string[]>
   queueShow: (preflightId: string) => Promise<{ batchId: string; queuedMediaItemIds: number[]; queuedTaskIds: string[] }>
   approveShow: (preflightId: string) => Promise<ShowTranscodePreflight>
   discardShow: (preflightId: string) => Promise<any>

@@ -2865,19 +2865,24 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   upsertQualityRatings(scores: QualityScore[]): void {
     if (!this.db) throw new Error('Database not initialized')
     const upsert = this.db.prepare(`INSERT INTO quality_scores (
-      media_item_id, quality_tier, tier_quality, tier_score, bitrate_tier_score, audio_tier_score
-    ) VALUES (?, ?, ?, ?, ?, ?)
+      media_item_id, quality_tier, tier_quality, tier_score, bitrate_tier_score, audio_tier_score,
+      overall_score, is_low_quality, needs_upgrade
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(media_item_id) DO UPDATE SET
       quality_tier = excluded.quality_tier,
       tier_quality = excluded.tier_quality,
       tier_score = excluded.tier_score,
       bitrate_tier_score = excluded.bitrate_tier_score,
       audio_tier_score = excluded.audio_tier_score,
+      overall_score = excluded.overall_score,
+      is_low_quality = excluded.is_low_quality,
+      needs_upgrade = excluded.needs_upgrade,
       updated_at = datetime('now')`)
     const run = this.db.transaction((items: QualityScore[]) => {
       for (const score of items) {
         upsert.run(score.media_item_id, score.quality_tier, score.tier_quality, score.tier_score,
-          score.bitrate_tier_score, score.audio_tier_score)
+          score.bitrate_tier_score, score.audio_tier_score, score.overall_score,
+          score.is_low_quality ? 1 : 0, score.needs_upgrade ? 1 : 0)
       }
     })
     run(scores)

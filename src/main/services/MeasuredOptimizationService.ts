@@ -49,6 +49,26 @@ export interface MeasuredSampleRequest {
 }
 export interface MeasuredSampleResult { candidates: MeasuredCandidate[]; vmafAvailable: boolean; cambiAvailable: boolean }
 
+export interface OutputQualityVerificationRequest {
+  sourcePath: string
+  outputPath: string
+  outputDirectory: string
+  durationMs: number
+  qualityProfile: OptimizationQualityProfile
+  referenceFilter?: string
+  referenceInputArgs?: string[]
+  signal?: AbortSignal
+  onProgress?: (phase: string) => Promise<void> | void
+}
+
+export interface OutputQualityVerificationResult {
+  vmafMean: number
+  vmafP5: number
+  cambiMean: number
+  sampleCount: number
+  frameCount: number
+}
+
 export const VMAF_MODEL_VERSION = 'vmaf_v0.6.1'
 
 export interface SampleTimingEvidence {
@@ -192,6 +212,69 @@ export class MeasuredOptimizationService {
     const cambiScores = log.frames.map(frame => frame.metrics.cambi)
     if ([...vmafScores, ...cambiScores].some(score => !Number.isFinite(score))) throw new Error('Measured frame scores are incomplete')
     return { vmafScores, cambiScores }
+  }
+
+  async verifyOutputQuality(request: OutputQualityVerificationRequest): Promise<OutputQualityVerificationResult> {
+    const analyzer = getMediaFileAnalyzer()
+    if (!await analyzer.isFFmpegAvailable()) throw new Error('FFmpeg is unavailable for output quality verification')
+    const binary = analyzer.getFFmpegPath()!
+    const durationSeconds = request.durationMs / 1000
+    const length = Math.min(APP_CONFIG.transcoding.sampleDurationSeconds, durationSeconds / APP_CONFIG.transcoding.samplePositions.length)
+    const starts = APP_CONFIG.transcoding.samplePositions.map(position => Math.max(0, Math.min(durationSeconds - length, durationSeconds * position - length / 2)))
+    const ownedPaths: string[] = []
+    let failure: unknown
+    let result: OutputQualityVerificationResult | undefined
+    try {
+      await fs.mkdir(request.outputDirectory, { recursive: true })
+      const vmafScores: number[] = []
+      const cambiScores: number[] = []
+      for (const [index, start] of starts.entries()) {
+        request.signal?.throwIfAborted()
+        await request.onProgress?.(`Preparing output verification sample ${index + 1} of ${starts.length}`)
+        const sourceSamplePath = path.join(request.outputDirectory, `verify-source-${index}.mkv`)
+        const outputSamplePath = path.join(request.outputDirectory, `verify-output-${index}.mkv`)
+        ownedPaths.push(sourceSamplePath, outputSamplePath)
+        await this.processRunner.run(binary, ['-y', '-v', 'error', '-ss', String(start), '-i', PathUtils.sanitizeAbsolutePath(request.sourcePath), '-t', String(length), '-map', '0:v:0', '-an', '-sn', '-fps_mode', 'passthrough', '-c:v', 'ffv1', sourceSamplePath], request.signal)
+        await this.processRunner.run(binary, ['-y', '-v', 'error', '-ss', String(start), '-i', PathUtils.sanitizeAbsolutePath(request.outputPath), '-t', String(length), '-map', '0:v:0', '-an', '-sn', '-fps_mode', 'passthrough', '-c:v', 'ffv1', outputSamplePath], request.signal)
+        const sourceSample = await this.inspectSample(sourceSamplePath, request.signal)
+        const referencePath = sourceSamplePath
+        if (request.referenceFilter) {
+          const transformedPath = path.join(request.outputDirectory, `verify-reference-${index}.mkv`)
+          ownedPaths.push(transformedPath)
+          await this.processRunner.run(binary, ['-y', '-v', 'error', ...(request.referenceInputArgs ?? []), '-i', sourceSamplePath, '-vf', request.referenceFilter, '-fps_mode', 'passthrough', '-an', '-sn', '-c:v', 'ffv1', transformedPath], request.signal)
+          Object.assign(sourceSample, await this.inspectSample(transformedPath, request.signal))
+        }
+        const referenceFile = request.referenceFilter ? path.join(request.outputDirectory, `verify-reference-${index}.mkv`) : referencePath
+        const outputSample = await this.inspectSample(outputSamplePath, request.signal)
+        verifySampleFrameAlignment(sourceSample, outputSample)
+        await request.onProgress?.(`Scoring output verification sample ${index + 1} of ${starts.length}`)
+        const logPath = path.join(request.outputDirectory, `verify-output-${index}.json`)
+        ownedPaths.push(logPath)
+        const metrics = await this.measureFrameMetrics(binary, outputSamplePath, referenceFile, logPath, sourceSample.frames, request.signal)
+        vmafScores.push(...metrics.vmafScores)
+        cambiScores.push(...metrics.cambiScores)
+      }
+      const failure = getImpossibleQualityReason(request.qualityProfile, vmafScores, cambiScores, vmafScores.length)
+      if (failure) throw new Error(`Converted output failed ${request.qualityProfile} quality verification: ${failure}`)
+      const sortedVmafScores = [...vmafScores].sort((left, right) => left - right)
+      result = {
+        vmafMean: vmafScores.reduce((sum, score) => sum + score, 0) / vmafScores.length,
+        vmafP5: sortedVmafScores[Math.floor(sortedVmafScores.length * VMAF_LOW_PERCENTILE)],
+        cambiMean: cambiScores.reduce((sum, score) => sum + score, 0) / cambiScores.length,
+        sampleCount: starts.length,
+        frameCount: vmafScores.length,
+      }
+    } catch (error) {
+      failure = error
+    }
+    const cleanup = await Promise.allSettled(ownedPaths.map(filePath => fs.rm(filePath, { force: true })))
+    const cleanupFailures = cleanup.filter((item): item is PromiseRejectedResult => item.status === 'rejected').map(item => getErrorMessage(item.reason))
+    const cleanupFailure = cleanupFailures.length ? new Error(`Output quality verification artifact cleanup failed: ${cleanupFailures.join('; ')}`) : undefined
+    if (failure !== undefined && cleanupFailure) throw new Error(`${getErrorMessage(failure)}; ${cleanupFailure.message}`)
+    if (failure !== undefined) throw failure
+    if (cleanupFailure) throw cleanupFailure
+    if (!result) throw new Error('Output quality verification completed without a result')
+    return result
   }
 
   async measure(request: MeasuredSampleRequest): Promise<MeasuredSampleResult> {

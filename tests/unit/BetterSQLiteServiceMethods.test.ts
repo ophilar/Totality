@@ -470,6 +470,18 @@ describe('BetterSQLiteService — Media Items', () => {
     expect(typeof listedItem.has_object_audio).toBe('boolean')
   })
 
+  it('persists overall quality and flags through bulk quality ratings', () => {
+    const id = service.upsertMediaItem(makeMediaItem())
+    const score = makeQualityScore(id, null)
+
+    service.upsertQualityRatings([score as QualityScore])
+
+    const persisted = service.getQualityScore(id)
+    expect(persisted?.overall_score).toBe(0)
+    expect(Boolean(persisted?.is_low_quality)).toBe(true)
+    expect(Boolean(persisted?.needs_upgrade)).toBe(true)
+  })
+
   it('getMediaItem returns null for non-existent', () => {
     expect(service.getMediaItem(99999)).toBeNull()
   })

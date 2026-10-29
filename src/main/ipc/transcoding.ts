@@ -130,6 +130,11 @@ export function registerTranscodingHandlers(): void {
     return getTranscodingService().cancelTranscode(mediaItemId)
   })
 
+  createValidatedIpcHandler(IPC_CHANNELS.transcodingDiscoverShow, PreflightShowTranscodeSchema, async (request) => {
+    const { requestId: _requestId, ...discoveryRequest } = request
+    return getTranscodingService().discoverShowOptimization(discoveryRequest)
+  })
+
   createValidatedIpcHandler(IPC_CHANNELS.transcodingPreflightShow, PreflightShowTranscodeSchema, async (request) => {
     const { requestId, ...preflightRequest } = request
     const taskId = queuePreflight(requestId, preflightRequest)
@@ -148,6 +153,7 @@ export function registerTranscodingHandlers(): void {
   createValidatedIpcHandler(IPC_CHANNELS.transcodingPreflightRemux, z.number().int().positive(), async (mediaItemId) => getTranscodingService().preflightRemux(mediaItemId))
   createValidatedIpcHandler(IPC_CHANNELS.transcodingGetShowPreflight, NonEmptyStringSchema, async (preflightId) => getTranscodingService().getShowPreflight(preflightId))
   createValidatedIpcHandler(IPC_CHANNELS.transcodingFindShowPreflight, FindShowPreflightSchema, async (seriesIdentityKey, sourceId, libraryId, seriesTitle, mediaItemId, seasonNumber) => getTranscodingService().findLatestShowPreflight({ seriesIdentityKey, sourceId, libraryId, seriesTitle, mediaItemId, seasonNumber }))
+  createValidatedIpcHandler(IPC_CHANNELS.transcodingSetShowSampleApproval, z.tuple([NonEmptyStringSchema, NonEmptyStringSchema, z.boolean()]), async (preflightId, groupId, approved) => getTranscodingService().setShowSampleApproval(preflightId, groupId, approved))
 
   createValidatedIpcHandler(IPC_CHANNELS.transcodingDiscardShow, QueueShowTranscodeSchema, async (preflightId) => getTranscodingService().discardShowPreflight(preflightId))
   createValidatedIpcHandler(IPC_CHANNELS.transcodingOpenShowSample, z.tuple([NonEmptyStringSchema, z.number().int().positive(), z.number().int().nonnegative()]), async (preflightId, mediaItemId, index) => {
