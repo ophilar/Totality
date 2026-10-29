@@ -62,9 +62,8 @@ export function TroubleshootTab() {
   const [fileLoggingExpanded, setFileLoggingExpanded] = useState(false)
   const [fileLoggingSettings, setFileLoggingSettings] = useState<{
     enabled: boolean
-    minLevel: string
     retentionDays: number
-  }>({ enabled: true, minLevel: 'info', retentionDays: 7 })
+  }>({ enabled: true, retentionDays: 7 })
   const lastClickedIndex = useRef<number | null>(null)
   const listRef = useListRef(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -232,7 +231,7 @@ export function TroubleshootTab() {
     await window.electronAPI.setVerboseLogging(newValue)
   }
 
-  const handleFileLoggingSetting = async (update: { enabled?: boolean; minLevel?: string; retentionDays?: number }) => {
+  const handleFileLoggingSetting = async (update: { enabled?: boolean; retentionDays?: number }) => {
     const newSettings = { ...fileLoggingSettings, ...update }
     setFileLoggingSettings(newSettings)
     await window.electronAPI.setFileLoggingSettings(update)
@@ -570,7 +569,7 @@ export function TroubleshootTab() {
               <div className="flex items-center gap-2">
                 <span className="font-medium text-sm">File Logging</span>
                 <span className="text-xs text-muted-foreground">
-                  {fileLoggingSettings.enabled ? `${fileLoggingSettings.minLevel} level · ${fileLoggingSettings.retentionDays} day retention` : 'Disabled'}
+                  {fileLoggingSettings.enabled ? `All levels · ${fileLoggingSettings.retentionDays} day retention` : 'Disabled'}
                 </span>
               </div>
               <p className="text-xs text-muted-foreground truncate">Save logs to disk with automatic daily rotation</p>
@@ -587,21 +586,6 @@ export function TroubleshootTab() {
         {fileLoggingExpanded && (
           <div className="px-4 pb-4 pt-2 border-t border-border/30 bg-muted/10 space-y-3">
             <div className="bg-background/50 rounded-lg divide-y divide-border/30">
-              <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm text-foreground">Minimum level</span>
-                <select
-                  value={fileLoggingSettings.minLevel}
-                  onChange={(e) => handleFileLoggingSetting({ minLevel: e.target.value })}
-                  disabled={!fileLoggingSettings.enabled}
-                  className="bg-background text-foreground text-sm rounded-md px-3 py-2 border border-border/30 focus:outline-hidden focus:ring-2 focus:ring-primary disabled:opacity-50"
-                >
-                  <option value="verbose">Verbose</option>
-                  <option value="debug">Debug</option>
-                  <option value="info">Info</option>
-                  <option value="warn">Warn</option>
-                  <option value="error">Error</option>
-                </select>
-              </div>
               <div className="flex items-center justify-between px-4 py-3">
                 <span className="text-sm text-foreground">Retention period</span>
                 <select

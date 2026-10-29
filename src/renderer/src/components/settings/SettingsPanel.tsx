@@ -157,7 +157,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
     >
       <div
         ref={modalRef}
-        className="bg-card border border-border/30 rounded-2xl w-full max-w-4xl h-[min(680px,calc(100vh-2rem))] min-h-0 flex flex-col shadow-xl overflow-hidden"
+        className="bg-card border border-border/30 rounded-2xl w-[min(64rem,calc(100vw-2rem))] min-w-[min(45rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] h-[min(680px,calc(100vh-2rem))] min-h-[min(28rem,calc(100vh-2rem))] max-h-[calc(100vh-2rem)] resize flex flex-col shadow-xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

@@ -171,13 +171,12 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
             {queueState.currentTask.type === 'optimization-preflight' && (queueState.currentTask.options as { mediaType?: string } | undefined)?.mediaType !== 'movie' && <button onClick={() => { if (queueState.currentTask) handleOpenPreflight(queueState.currentTask) }} className="mb-2 text-xs text-primary hover:underline">Open preflight</button>}
             {queueState.currentTask.progress && (
               <>
-                <div className="h-2 bg-muted rounded-full overflow-hidden mb-1.5">
-                  <div className="h-full bg-primary transition-all duration-300"
-                    style={{ width: `${queueState.currentTask.progress.percentage}%` }} />
-                </div>
+                {typeof queueState.currentTask.progress.percentage === 'number' ? <div className="h-2 bg-muted rounded-full overflow-hidden mb-1.5">
+                  <div className="h-full bg-primary transition-all duration-300" style={{ width: `${queueState.currentTask.progress.percentage}%` }} />
+                </div> : <div className="h-2 mb-1.5 rounded-full bg-primary/30 animate-pulse" aria-label="Task progress is indeterminate" />}
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>{queueState.currentTask.progress.currentItem || queueState.currentTask.progress.phase}</span>
-                  <span>{Math.round(queueState.currentTask.progress.percentage)}%</span>
+                  {typeof queueState.currentTask.progress.percentage === 'number' && <span>{Math.round(queueState.currentTask.progress.percentage)}%</span>}
                 </div>
               </>
             )}

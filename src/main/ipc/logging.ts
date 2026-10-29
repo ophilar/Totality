@@ -14,13 +14,11 @@ import { getLiveMonitoringService } from '../services/LiveMonitoringService'
 import { getDatabase } from '../database/getDatabase'
 import { getErrorMessage } from './utils'
 import { validateInput, BooleanSchema } from '../validation/schemas'
-import type { LogLevel } from '../services/LoggingService'
 import { z } from 'zod'
 import { createIpcHandler } from './utils/createHandler'
 
 const FileLoggingSettingsSchema = z.object({
   enabled: z.boolean().optional(),
-  minLevel: z.enum(['verbose', 'debug', 'info', 'warn', 'error']).optional(),
   retentionDays: z.number().int().min(1).max(365).optional(),
 })
 const RendererLogEventSchema = z.object({
@@ -125,7 +123,6 @@ export function registerLoggingHandlers(): void {
     const db = getDatabase()
     return {
       enabled: db.getSetting('file_logging_enabled') !== 'false',
-      minLevel: (db.getSetting('file_logging_min_level') || 'info') as LogLevel,
       retentionDays: parseInt(db.getSetting('log_retention_days') || '7', 10),
     }
   })
@@ -134,7 +131,6 @@ export function registerLoggingHandlers(): void {
     const valid = validateInput(FileLoggingSettingsSchema, settings, 'logs:setFileLoggingSettings')
     const db = getDatabase()
     if (valid.enabled !== undefined) db.setSetting('file_logging_enabled', String(valid.enabled))
-    if (valid.minLevel !== undefined) db.setSetting('file_logging_min_level', valid.minLevel)
     if (valid.retentionDays !== undefined) db.setSetting('log_retention_days', String(valid.retentionDays))
     getLoggingService().updateFileLoggingSettings(valid)
     return { success: true }
