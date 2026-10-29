@@ -1,6 +1,5 @@
 
-import type { ITimelineRecipeProvider, TimelineDefinition, TimelineRecipeSummary } from './ITimelineRecipeProvider'
-import type { TimelineFetchOptions } from './ITimelineRecipeProvider'
+import { getTimelineGranularity, type ITimelineRecipeProvider, type TimelineDefinition, type TimelineRecipeSummary, type TimelineFetchOptions } from './ITimelineRecipeProvider'
 import { createHash } from 'node:crypto'
 import { getTimelineCacheService } from './TimelineCacheService'
 import { TimelineParserPluginProvider } from './TimelineParserPluginProvider'
@@ -45,7 +44,7 @@ export class TimelineRecipeProviderFactory implements ITimelineRecipeProvider {
           retrievedAt: options.refresh || !timeline.retrievedAt ? new Date().toISOString() : timeline.retrievedAt,
           contentFingerprint: createHash('sha256').update(JSON.stringify(timeline.items)).digest('hex'),
           refreshError: undefined,
-          granularity: timeline.granularity ?? (timeline.items.some(item => item.type === 'show') ? 'series-blocks' : 'episode-interleaved'),
+          granularity: getTimelineGranularity(timeline),
         }
         options.signal?.throwIfAborted()
         await cache.setRecipe(input, result)
