@@ -426,6 +426,10 @@ export function TimelinesView() {
               const sourceBadge =
                 recipe.id.startsWith('babylon-project:')
                   ? 'The Babylon Project'
+                  : recipe.id.startsWith('tmdb-collection-')
+                  ? 'TMDB Movie Collection'
+                  : recipe.sourceType === 'remote'
+                  ? 'Remote Registry'
                   : recipe.sourceType === 'web'
                   ? 'Web Guide'
                   : recipe.sourceType === 'trakt'
@@ -449,7 +453,9 @@ export function TimelinesView() {
                       <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
                         {recipe.franchise}
                       </span>
-                      <span className="text-[10px] font-medium text-muted-foreground">{sourceBadge}</span>
+                      <span className="text-[10px] font-medium text-muted-foreground">
+                        {sourceBadge}{recipe.granularity === 'episode-interleaved' ? ' · Episode Timeline' : recipe.granularity === 'series-blocks' ? ' · Series Timeline' : ' · Film Timeline'}
+                      </span>
                     </div>
                     <h3 className="text-xs font-semibold text-foreground line-clamp-1">{recipe.name}</h3>
                     {recipe.description && (

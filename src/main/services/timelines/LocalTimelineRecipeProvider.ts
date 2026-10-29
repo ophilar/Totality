@@ -1,7 +1,7 @@
 
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import type { ITimelineRecipeProvider, TimelineDefinition, TimelineRecipeSummary } from './ITimelineRecipeProvider'
+import { getTimelineGranularity, type ITimelineRecipeProvider, type TimelineDefinition, type TimelineRecipeSummary } from './ITimelineRecipeProvider'
 import { validateTimelineDefinition } from './TimelineValidation'
 
 export class LocalTimelineRecipeProvider implements ITimelineRecipeProvider {
@@ -16,6 +16,7 @@ export class LocalTimelineRecipeProvider implements ITimelineRecipeProvider {
       description: recipe.description,
       totalItems: recipe.items.length,
       sourceType: 'preset' as const,
+      granularity: getTimelineGranularity(recipe),
       ...(recipe.sourceUrl ? { sourceUrl: recipe.sourceUrl } : {}),
     }))
   }
