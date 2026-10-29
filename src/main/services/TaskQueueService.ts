@@ -775,12 +775,12 @@ export class TaskQueueService {
       const current = progress.current ?? 0
       const total = progress.total ?? 0
       // Calculate percentage if not provided
-      const percentage = progress.percentage ?? (total > 0 ? Math.round((current / total) * 100) : 0)
+      const percentage = progress.percentage ?? (task.type === 'optimization-preflight' ? undefined : total > 0 ? Math.round((current / total) * 100) : 0)
 
       task.progress = {
         current,
         total,
-        percentage,
+        ...(percentage === undefined ? {} : { percentage }),
         phase: progress.phase ?? 'processing',
         currentItem: progress.currentItem,
       }
@@ -911,8 +911,8 @@ export class TaskQueueService {
       beginCommit: () => undefined,
       waitUntilRunning: async () => { signal.throwIfAborted() },
       update: update => onProgress({
-        current: update.progress?.percentage,
-        total: 100,
+        current: update.progress?.current,
+        total: update.progress?.total,
         percentage: update.progress?.percentage,
         phase: update.phase,
         currentItem: update.progress?.currentItem,
@@ -958,7 +958,7 @@ export class TaskQueueService {
           current: Math.round(p.percent),
           total: 100,
           percentage: p.percent,
-          phase: p.status,
+          phase: p.phase ?? p.status,
           currentItem: task.label,
         })
       }
@@ -967,11 +967,13 @@ export class TaskQueueService {
       const db = getDatabase()
       const job = await db.mediaRemuxJobs.getLatest(task.mediaItemId)
       if (job?.outputAnalysis) {
-        const output = JSON.parse(job.outputAnalysis) as { encodedReductionBytes?: number; retainedOriginalBytes?: number; physicallyReclaimedBytes?: number }
+        const output = JSON.parse(job.outputAnalysis) as { encodedReductionBytes?: number; retainedOriginalBytes?: number; physicallyReclaimedBytes?: number; qualityVerification?: NonNullable<QueuedTask['result']>['qualityVerification'] }
         task.result = {
           encodedReductionBytes: output.encodedReductionBytes,
+          outputBytes: job.actualOutputBytes ?? undefined,
           retainedOriginalBytes: output.retainedOriginalBytes,
           physicallyReclaimedBytes: output.physicallyReclaimedBytes,
+          qualityVerification: output.qualityVerification,
         }
       }
     } else if (!this.cancelRequested) {

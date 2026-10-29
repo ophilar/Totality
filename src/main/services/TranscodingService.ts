@@ -26,7 +26,7 @@ import { getStatsCacheService } from './StatsCacheService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import type { MediaSourceTier } from './transcoding/TrashSourceClassifier'
 import { StreamRemuxCommandBuilder } from './transcoding/StreamRemuxCommandBuilder'
-import { buildCandidateLadder, nextCandidateSearch, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MEASUREMENT_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
+import { buildCandidateLadder, nextCandidateSearch, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
 import { buildTargetTranscodePlan, validateTargetTranscodeBitrate, type TargetTranscodePlan } from './transcoding/TargetTranscodePlan'
 import type { MeasuredCandidate, MeasuredCandidateSample } from './MeasuredOptimizationPolicy'
 import { ChildProcessMeasurementRunner, MeasuredOptimizationService, VMAF_MODEL_VERSION, type MeasurementSourcePreparation } from './MeasuredOptimizationService'
@@ -91,11 +91,13 @@ export interface QueuedTranscodePayload {
   sourceAnalysis?: FileAnalysisResult
   targetProfile?: PlaybackTargetProfile
   samplePaths?: string[]
+  sampleRepresentativeMediaItemId?: number
   capabilityFingerprint?: string
 }
 
 export interface TranscodeProgress {
   percent: number
+  phase?: string
   fps?: number
   eta?: string
   speed?: string
@@ -124,11 +126,29 @@ export interface ShowTranscodeRequest {
   mediaItemId?: number
   seasonNumber?: number
   representativeMediaItemId?: number
+  representativeMediaItemIds?: Record<string, number>
+  selectedMediaItemIds?: number[]
   seriesTitle?: string
   seriesIdentityKey?: string
   sourceId: string
   libraryId?: string
   options: TranscodeOptions
+}
+
+export interface OptimizationDiscoveryGroup {
+  id: string
+  seasonNumber?: number
+  mediaItemIds: number[]
+  mediaItemLabels: Record<number, string>
+  representativeMediaItemId: number
+  representativeLabel: string
+  technicalProfile: string
+}
+
+export interface ShowOptimizationDiscovery {
+  candidateCount: number
+  groups: OptimizationDiscoveryGroup[]
+  otherOperationMediaItemIds: number[]
 }
 
 function getPreflightSamplingProfileKey(episode: MediaItem, options: TranscodeOptions, analysis?: FileAnalysisResult): string | undefined {
@@ -225,7 +245,7 @@ export type PlannedOptimizationOperation = 'video_transcode' | 'audio_transcode'
 
 export interface OptimizationQualityChoice {
   profile: Extract<OptimizationQualityProfile, 'transparent' | 'maximum_savings'>
-  status: 'available' | 'quality_threshold_unmet' | 'incompatible' | 'measurement_incomplete'
+  status: 'available' | 'quality_threshold_unmet' | 'no_positive_savings' | 'incompatible' | 'measurement_incomplete'
   estimatedSavingsBytes?: number
   candidate?: Pick<MeasuredCandidate, 'encoder' | 'preset' | 'quality' | 'outputBytes' | 'sampledDurationSeconds' | 'vmafMean' | 'vmafP5' | 'cambiMean' | 'encodingDurationMs' | 'sourceSelfVmaf' | 'sourceCambiMean'>
   alternatives?: Array<Pick<MeasuredCandidate, 'encoder' | 'preset' | 'quality' | 'outputBytes' | 'sampledDurationSeconds' | 'vmafMean' | 'vmafP5' | 'cambiMean' | 'encodingDurationMs' | 'sourceSelfVmaf' | 'sourceCambiMean'>>
@@ -241,8 +261,9 @@ function getOptimizationQualityChoices(
   return (['transparent', 'maximum_savings'] as const).map(profile => {
     if (!cachedMeasurement.complete || profile !== searchedProfile) return { profile, status: 'measurement_incomplete' }
     try {
-      const candidate = selectMeasuredCandidate(profile, cachedMeasurement.candidates)
-      const alternatives = getNonDominatedMeasuredCandidates(profile, cachedMeasurement.candidates)
+      const maximumOutputBytesPerSecond = sourceSize / sourceDurationSeconds
+      const candidate = selectMeasuredCandidate(profile, cachedMeasurement.candidates, maximumOutputBytesPerSecond)
+      const alternatives = getNonDominatedMeasuredCandidates(profile, cachedMeasurement.candidates, maximumOutputBytesPerSecond)
       return {
         profile,
         status: 'available',
@@ -283,6 +304,7 @@ function getOptimizationQualityChoices(
 
 export interface ShowTranscodePreflight {
   measurementVersion?: number
+  searchVersion?: number
   measurementModel?: string
   preflightId: string
   batchId: string
@@ -294,6 +316,8 @@ export interface ShowTranscodePreflight {
   userApproved?: boolean
   approvedAt?: string
   approvalFingerprint?: string
+  sampleGroupApprovalFingerprints?: Record<string, string>
+  approvedSampleGroupIds?: string[]
   episodes: Array<{
     mediaItemId: number
     label: string
@@ -303,7 +327,7 @@ export interface ShowTranscodePreflight {
     sourceSize: number
     sourceMtimeMs: number
     operations: PlannedOptimizationOperation[]
-    decisionStatus?: 'actionable' | 'already_optimized' | 'sample_required' | 'insufficient_evidence' | 'incompatible' | 'quality_threshold_unmet' | 'no_savings' | 'measurement_failed'
+    decisionStatus?: 'actionable' | 'already_optimized' | 'sample_required' | 'insufficient_evidence' | 'incompatible' | 'quality_threshold_unmet' | 'no_positive_savings' | 'no_savings' | 'measurement_failed'
     evidenceStatus?: 'measured' | 'estimated' | 'insufficient'
     savingsCoverage?: OptimizationSavingsCoverage
     confidence?: 'high' | 'medium' | 'low' | 'none'
@@ -322,6 +346,7 @@ export interface ShowTranscodePreflight {
     sourceSelfVmaf?: number
     targetProfile?: PlaybackTargetProfile
     samplingRole?: 'measured' | 'projected'
+    samplingGroupKey?: string
     sampleRepresentativeMediaItemId?: number
     sampleRepresentativeLabel?: string
     samplePaths?: string[]
@@ -402,11 +427,65 @@ export class TranscodingService {
     this.activeJobs.clear()
   }
 
+  async discoverShowOptimization(request: ShowTranscodeRequest): Promise<ShowOptimizationDiscovery> {
+    if (!request.sourceId.trim()) throw new Error('Source ID is required')
+    if (request.mediaItemId === undefined && (!request.seriesTitle?.trim() || !request.seriesIdentityKey?.trim() || !request.libraryId?.trim())) throw new Error('TV series identity and library are required')
+    const discoveryStartedAt = performance.now()
+    const items = request.mediaItemId === undefined
+      ? await getDatabase().tvShows.getEpisodes(request.seriesTitle!, request.sourceId, request.seriesIdentityKey!, request.libraryId!, request.seasonNumber)
+      : [await getDatabase().media.getItemById(request.mediaItemId)].filter((item): item is MediaItem => item !== null)
+    const candidates = items.filter((item): item is MediaItem & { id: number } => item.id !== undefined && normalizeVideoCodec(item.video_codec) === 'H.264')
+    const otherOperationMediaItemIds = items.flatMap(item => item.id !== undefined && normalizeVideoCodec(item.video_codec) !== 'H.264' ? [item.id] : [])
+    const groups = new Map<string, Array<MediaItem & { id: number }>>()
+    for (const item of candidates) {
+      const hasBitrate = Number.isFinite(item.video_bitrate_kbps) && item.video_bitrate_kbps! > 0
+      const technicalProfile = item.type === 'movie' || !hasBitrate ? undefined : getPreflightSamplingProfileKey(item, request.options)
+      const id = technicalProfile ?? `media-item:${item.id}`
+      groups.set(id, [...(groups.get(id) ?? []), item])
+    }
+    const discoveryGroups = [...groups].map(([id, members]) => {
+      const ordered = [...members].sort((left, right) => (left.video_bitrate_kbps ?? Number.POSITIVE_INFINITY) - (right.video_bitrate_kbps ?? Number.POSITIVE_INFINITY) || left.id - right.id)
+      const bitrates = ordered.map(item => item.video_bitrate_kbps).filter((bitrate): bitrate is number => Number.isFinite(bitrate) && bitrate > 0).sort((left, right) => left - right)
+      const medianBitrate = bitrates.length ? bitrates[Math.floor((bitrates.length - 1) / 2)] : undefined
+      const representative = medianBitrate === undefined
+        ? ordered[0]
+        : [...ordered].sort((left, right) => Math.abs((left.video_bitrate_kbps ?? Number.POSITIVE_INFINITY) - medianBitrate) - Math.abs((right.video_bitrate_kbps ?? Number.POSITIVE_INFINITY) - medianBitrate) || left.id - right.id)[0]
+      const first = members[0]
+      return {
+        id,
+        seasonNumber: first.type === 'movie' ? undefined : first.season_number ?? undefined,
+        mediaItemIds: members.map(item => item.id),
+        mediaItemLabels: Object.fromEntries(members.map(item => [item.id, item.title])),
+        representativeMediaItemId: representative.id,
+        representativeLabel: representative.title,
+        technicalProfile: first.type === 'movie' ? 'Film — individual analysis' : !(Number.isFinite(first.video_bitrate_kbps) && first.video_bitrate_kbps! > 0)
+          ? 'Saved bitrate unavailable — individual analysis'
+          : id.startsWith('media-item:') ? 'Technical profile incomplete — individual analysis'
+            : first.width && first.height
+          ? `${first.width}×${first.height} · ${first.video_codec ?? 'H.264'} · ${first.color_bit_depth ?? 'unknown'}-bit`
+          : 'Technical profile incomplete — individual analysis',
+      }
+    })
+    getLoggingService().info('[TVOptimization]', 'Metadata-only optimization discovery completed', {
+      sourceId: request.sourceId,
+      libraryId: request.libraryId,
+      seriesIdentityKey: request.seriesIdentityKey,
+      seasonNumber: request.seasonNumber,
+      scopedItemCount: items.length,
+      candidateCount: candidates.length,
+      groupCount: discoveryGroups.length,
+      durationMs: Math.round(performance.now() - discoveryStartedAt),
+      groups: discoveryGroups.map(group => ({ id: group.id, memberIds: group.mediaItemIds, representativeMediaItemId: group.representativeMediaItemId })),
+      otherOperationMediaItemIds,
+    })
+    return { candidateCount: candidates.length, groups: discoveryGroups, otherOperationMediaItemIds }
+  }
+
   async preflightShowTranscode(request: ShowTranscodeRequest, operation?: {
     signal: AbortSignal
     beginCommit: () => void
     waitUntilRunning: () => Promise<void>
-    update: (update: { phase?: string; progress?: { percentage: number; currentItem?: string } }) => void
+    update: (update: { phase?: string; progress?: { percentage?: number; current?: number; total?: number; currentItem?: string } }) => void
     preflightId?: string
     batchId?: string
     loadEpisodeCheckpoint?: (mediaItemId: number) => Promise<ShowTranscodeEpisodeCheckpoint | undefined>
@@ -421,9 +500,12 @@ export class TranscodingService {
     const targetProfile = profileId == null ? undefined : (await getDatabase().playbackTargetProfiles.get(profileId) ?? undefined)
     if (profileId != null && !targetProfile) throw new Error(`Playback target profile ${profileId} was not found`)
     if (!targetProfile && request.options.targetHdrFormat && request.options.optimizationMode !== 'remux_only') throw new Error('HDR format conversion requires a selected playback target.')
-    const episodes = request.mediaItemId === undefined
+    const scopedItems = request.mediaItemId === undefined
       ? await getDatabase().tvShows.getEpisodes(request.seriesTitle!, request.sourceId, request.seriesIdentityKey!, request.libraryId!, request.seasonNumber)
       : [await getDatabase().media.getItemById(request.mediaItemId)].filter((item): item is MediaItem => item !== null)
+    const selectedMediaItemIds = request.selectedMediaItemIds === undefined ? undefined : new Set(request.selectedMediaItemIds)
+    const episodes = selectedMediaItemIds ? scopedItems.filter(item => item.id !== undefined && selectedMediaItemIds.has(item.id)) : scopedItems
+    if (selectedMediaItemIds && episodes.length !== selectedMediaItemIds.size) throw new Error('One or more selected optimization candidates no longer belong to this scope. Discover candidates again.')
     if (episodes.length === 0) throw new Error(request.seasonNumber === undefined ? 'No local episodes were found for the selected show' : `No local episodes were found for season ${request.seasonNumber}`)
     if (request.mediaItemId !== undefined && (
       episodes[0].source_id !== request.sourceId ||
@@ -436,20 +518,29 @@ export class TranscodingService {
     const batchId = operation?.batchId ?? `batch_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
     const preflightId = operation?.preflightId ?? `${batchId}_preflight`
     const needsHardwareSnapshot = request.options.optimizationMode !== 'remux_only' && request.options.encoderPolicy !== 'software'
-    const optionsFingerprint = createHash('sha256').update(JSON.stringify({ measurementVersion: MEASUREMENT_VERSION, options: request.options, representativeMediaItemId: request.representativeMediaItemId })).digest('hex')
+    const optionsFingerprint = createHash('sha256').update(JSON.stringify({ measurementVersion: MEASUREMENT_VERSION, searchVersion: OPTIMIZATION_SEARCH_VERSION, options: request.options, representativeMediaItemId: request.representativeMediaItemId, representativeMediaItemIds: request.representativeMediaItemIds, selectedMediaItemIds: request.selectedMediaItemIds })).digest('hex')
     const queuedMediaIds = new Set((await getTaskQueueService().getTasks()).filter(task => task.type === TaskType.Transcode && ['queued', 'running'].includes(task.status)).map(task => task.mediaItemId).filter((id): id is number => id !== undefined))
     let completedEpisodes = 0
+    let completedInspections = 0
     const activeEpisodeSteps = new Map<number, string>()
-    const publishPreflightProgress = (episode: typeof episodes[number], phase: string) => {
-      activeEpisodeSteps.set(episode.id ?? 0, `${episode.title}: ${phase}`)
+    const getActiveEpisodeSummary = () => {
       const active = [...activeEpisodeSteps.values()]
       const currentItem = active.slice(0, 3).join(' · ')
       const additionalCount = active.length - 3
+      return additionalCount > 0 ? `${currentItem} · +${additionalCount} more` : currentItem
+    }
+    const publishInspectionProgress = () => operation?.update({
+      phase: `Inspecting ${completedInspections} of ${episodes.length} episodes`,
+      progress: { current: completedInspections, total: episodes.length, currentItem: getActiveEpisodeSummary() },
+    })
+    const publishPreflightProgress = (episode: typeof episodes[number], phase: string) => {
+      activeEpisodeSteps.set(episode.id ?? 0, `${episode.title}: ${phase}`)
       operation?.update({
         phase: `Episode ${Math.min(completedEpisodes + 1, episodes.length)} of ${episodes.length}`,
         progress: {
-          percentage: 40 + Math.round((completedEpisodes / episodes.length) * 60),
-          currentItem: additionalCount > 0 ? `${currentItem} · +${additionalCount} more` : currentItem,
+        current: completedEpisodes,
+        total: episodes.length,
+          currentItem: getActiveEpisodeSummary(),
         },
       })
     }
@@ -459,10 +550,13 @@ export class TranscodingService {
       | { episode: typeof episodes[number]; status: 'failed'; error: unknown }
     type SamplingGroupState = {
       sampleAttemptedEpisodeLabel?: string
+      sampleAttemptedPlan?: ShowTranscodePreflight['episodes'][number]
       representative?: { plan: ShowTranscodePreflight['episodes'][number]; profileKey?: string }
     }
 
     const inspectEpisode = async (episode: typeof episodes[number]): Promise<PreparedEpisode> => {
+      activeEpisodeSteps.set(episode.id ?? 0, `${episode.title}: Inspecting source and playback compatibility`)
+      publishInspectionProgress()
       try {
         await operation?.waitUntilRunning()
         operation?.signal.throwIfAborted()
@@ -481,6 +575,10 @@ export class TranscodingService {
       } catch (error) {
         if (operation?.signal?.aborted) throw error
         return { episode, status: 'failed', error }
+      } finally {
+        activeEpisodeSteps.delete(episode.id ?? 0)
+        completedInspections++
+        publishInspectionProgress()
       }
     }
 
@@ -492,10 +590,6 @@ export class TranscodingService {
       const rejected = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
       if (rejected) throw rejected.reason
       for (const result of results) preparedEpisodes.push((result as PromiseFulfilledResult<PreparedEpisode>).value)
-      operation?.update({
-        phase: `Inspected ${preparedEpisodes.length} of ${episodes.length} episodes`,
-        progress: { percentage: Math.round(preparedEpisodes.length / episodes.length * 40), currentItem: 'Inspecting source and playback compatibility' },
-      })
       operation?.signal?.throwIfAborted()
     }
     const capabilityFingerprint = needsHardwareSnapshot && preparedEpisodes.some(prepared => prepared.status === 'ready')
@@ -510,7 +604,17 @@ export class TranscodingService {
       const key = profileKey ?? `unclassified:${prepared.episode.id ?? prepared.episode.file_path}`
       samplingGroups.set(key, [...(samplingGroups.get(key) ?? []), prepared])
     }
-    getLoggingService().info('[TVOptimization]', `Sampling groups selected: episodes=${episodes.length}, samplingGroups=${samplingGroups.size}, unclassifiedProfiles=${unclassifiedSamplingProfiles}, policy=one-per-season-and-technical-profile, selectedRepresentative=${request.representativeMediaItemId ?? 'median-bitrate'}`)
+    getLoggingService().info('[TVOptimization]', 'Sampling groups selected', {
+      preflightId,
+      candidateCount: episodes.length,
+      samplingGroups: [...samplingGroups].map(([profileKey, group]) => ({
+        profileKey,
+        mediaItemIds: group.map(prepared => prepared.episode.id),
+        selectedRepresentativeMediaItemId: request.representativeMediaItemIds?.[profileKey] ?? (group.some(prepared => prepared.episode.id === request.representativeMediaItemId) ? request.representativeMediaItemId : undefined),
+        policy: 'one-per-season-and-technical-profile',
+      })),
+      unclassifiedProfiles: unclassifiedSamplingProfiles,
+    })
 
     const processEpisode = async (prepared: PreparedEpisode, samplingState: SamplingGroupState): Promise<ShowTranscodePreflight['episodes'][number]> => {
       const episode = prepared.episode
@@ -519,16 +623,21 @@ export class TranscodingService {
         : `${request.seriesTitle ?? episode.series_title ?? 'TV episode'}${episode.season_number == null ? '' : ` S${String(episode.season_number).padStart(2, '0')}E${String(episode.episode_number ?? 0).padStart(2, '0')}`} · ${episode.title}`
       const fallbackMediaItemId = episode.id || 0
       const mediaItemId = episode.id ?? fallbackMediaItemId
+      const samplingGroupKey = prepared.status === 'ready'
+        ? getPreflightSamplingProfileKey(episode, request.options, prepared.analysis) ?? `unclassified:${mediaItemId}`
+        : `unclassified:${mediaItemId}`
       let cachedMeasurement: CachedMeasurement | undefined
       const toInsufficientPlan = (error: unknown): ShowTranscodePreflight['episodes'][number] => {
         if (operation?.signal?.aborted) throw error
         const errorMsg = getErrorMessage(error)
         const decisionStatus = error instanceof MeasuredQualityError ? error.decisionStatus : 'measurement_failed'
+        const measuredOutcome = error instanceof MeasuredQualityError
         getLoggingService().warn('[TVOptimization]', `Episode preflight outcome: preflight=${preflightId}, mediaItem=${mediaItemId}, label="${label}", outcome=${decisionStatus}, reason=${errorMsg}`)
         return {
           mediaItemId: fallbackMediaItemId,
           label,
-          compatible: false,
+          samplingGroupKey,
+          compatible: measuredOutcome && decisionStatus !== 'incompatible',
           reason: errorMsg,
           hdrFormat: 'Unknown',
           sourceSize: prepared.status === 'ready' ? prepared.stat.size : 0,
@@ -537,9 +646,10 @@ export class TranscodingService {
           operations: [],
           decisionStatus,
           qualityChoices: prepared.status === 'ready' ? getOptimizationQualityChoices(prepared.stat.size, prepared.analysis.durationMs! / 1000, cachedMeasurement, request.options.qualityProfile) : undefined,
-          evidenceStatus: 'insufficient',
-          confidence: 'none',
-          savingsBasis: 'insufficient_data',
+          evidenceStatus: measuredOutcome ? 'measured' : 'insufficient',
+          confidence: measuredOutcome ? 'high' : 'none',
+          savingsCoverage: measuredOutcome ? 'complete' : 'insufficient',
+          savingsBasis: measuredOutcome ? 'video_sample_encode' : 'insufficient_data',
         }
       }
       if (prepared.status === 'failed') return toInsufficientPlan(prepared.error)
@@ -612,7 +722,10 @@ export class TranscodingService {
           if (targetProfile && request.options.playbackPolicy !== 'allow-transcoding') options.targetConversion = buildTargetTranscodePlan(analysis, targetProfile, options)
         }
         if (shouldEncode && samplingState.sampleAttemptedEpisodeLabel && !reusableRepresentativePlan) {
-          const reason = `Not sampled: the season/profile sample attempt was made from "${samplingState.sampleAttemptedEpisodeLabel}"; see that episode's review entry for details.`
+          const representativePlan = samplingState.sampleAttemptedPlan
+          const outcome = representativePlan?.decisionStatus ? ` Its recorded outcome was ${representativePlan.decisionStatus}.` : ''
+          const detail = representativePlan?.reason ? ` Representative reason: ${representativePlan.reason}.` : ''
+          const reason = `Not sampled: the season/profile sample attempt was made from "${samplingState.sampleAttemptedEpisodeLabel}".${outcome}${detail} The representative result does not establish the outcome for this episode.`
           return {
             mediaItemId,
             label,
@@ -737,6 +850,7 @@ export class TranscodingService {
                   const pendingSamples = samples.filter(sample => !completedCandidateKeys.has(`${sample.encoder}/${sample.preset}/${sample.quality}`))
                   const cacheRecord: CachedMeasurement = {
                     version: MEASUREMENT_VERSION,
+                    searchVersion: OPTIMIZATION_SEARCH_VERSION,
                     cacheKey: measurementCacheKey!,
                     sourceSha256,
                     complete,
@@ -776,6 +890,7 @@ export class TranscodingService {
                     sourcePreparation = preparation
                     await persistMeasurement(cachedMeasurement?.candidates ?? [], false, partialSamples)
                   },
+                  { preflightId, batchId, mediaItemId, groupKey: actualSamplingProfileKey },
                 )
                 Object.assign(options, measuredParameters)
               }
@@ -812,9 +927,10 @@ export class TranscodingService {
         const measuredPlanSavingsBytes = shouldEncode
           ? projectMeasuredSavingsBytes(stat.size, analysis.durationMs! / 1000, params.measuredCandidate!.outputBytes, params.measuredCandidate!.sampledDurationSeconds)
           : undefined
-        if (shouldEncode && measuredPlanSavingsBytes === 0) {
+        if (shouldEncode && measuredPlanSavingsBytes !== undefined && measuredPlanSavingsBytes <= 0) {
           return {
             mediaItemId, label, compatible: playbackCompatible, hdrFormat: analysis.video.hdrFormat || 'SDR',
+            samplingGroupKey,
             sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256, sourceAnalysis: analysis, sourceCambiMean: reusableRepresentativePlan ? undefined : params.measuredCandidate?.sourceCambiMean, sourceSelfVmaf: reusableRepresentativePlan ? undefined : params.measuredCandidate?.sourceSelfVmaf, targetProfile,
             qualityChoices: reusableRepresentativePlan?.qualityChoices ?? getOptimizationQualityChoices(stat.size, analysis.durationMs! / 1000, cachedMeasurement, request.options.qualityProfile),
             options, params, operations: [], decisionStatus: 'no_savings', estimatedSavingsBytes: 0,
@@ -861,6 +977,7 @@ export class TranscodingService {
             ...(audioConversions.length > 0 ? ['audio_transcode' as const] : []),
           ],
           decisionStatus: shouldEncode ? 'sample_required' : 'actionable', evidenceStatus, savingsCoverage: reusableRepresentativePlan ? 'partial' : savingsBreakdown.coverage, confidence: evidenceStatus === 'measured' ? 'high' : evidenceStatus === 'estimated' ? 'medium' : 'none',
+          samplingGroupKey,
           estimatedSavingsBytes: savingsBreakdown.totalEstimatedSavingsBytes,
           qualityChoices: reusableRepresentativePlan?.qualityChoices ?? getOptimizationQualityChoices(stat.size, analysis.durationMs! / 1000, cachedMeasurement, request.options.qualityProfile),
           savingsBasis, sourceTier: advice.sourceTier, adviceReason: preserveDynamicHdr && !shouldEncode
@@ -897,12 +1014,15 @@ export class TranscodingService {
         Math.abs(left.analysis.video.bitrateKbps! - medianBitrate) - Math.abs(right.analysis.video.bitrateKbps! - medianBitrate) ||
         (left.episode.episode_number ?? left.episode.id ?? 0) - (right.episode.episode_number ?? right.episode.id ?? 0)
       )
-      const selectedRepresentative = ordered.find(prepared => prepared.episode.id === request.representativeMediaItemId)
+      const profileKey = getPreflightSamplingProfileKey(ordered[0].episode, request.options, ordered[0].analysis)
+      const requestedRepresentativeId = profileKey ? request.representativeMediaItemIds?.[profileKey] : undefined
+      const selectedRepresentative = ordered.find(prepared => prepared.episode.id === (requestedRepresentativeId ?? request.representativeMediaItemId))
       const representative = selectedRepresentative ?? orderedByMedian[0]
       return [[representative, ...ordered.filter(prepared => prepared !== representative)], ...withoutBitrate.map(prepared => [prepared])]
     })
-    if (request.representativeMediaItemId !== undefined && !preparedEpisodes.some(prepared => prepared.status === 'ready' && prepared.episode.id === request.representativeMediaItemId)) {
-      throw new Error(`Selected representative episode ${request.representativeMediaItemId} is not available for sampling in this scope`)
+    const requestedRepresentatives = new Set([request.representativeMediaItemId, ...Object.values(request.representativeMediaItemIds ?? {})].filter((id): id is number => id !== undefined))
+    for (const representativeMediaItemId of requestedRepresentatives) if (!preparedEpisodes.some(prepared => prepared.status === 'ready' && prepared.episode.id === representativeMediaItemId)) {
+      throw new Error(`Selected representative episode ${representativeMediaItemId} is not available for sampling in this scope`)
     }
     const processSamplingGroup = async (group: PreparedEpisode[]) => {
       const samplingState: SamplingGroupState = {}
@@ -932,6 +1052,7 @@ export class TranscodingService {
         }
         plan ??= await processEpisode(prepared, samplingState)
         if (plan.samplingRole === 'measured' && plan.decisionStatus === 'sample_required') samplingState.sampleAttemptedEpisodeLabel = plan.label
+        if (samplingState.sampleAttemptedEpisodeLabel === plan.label) samplingState.sampleAttemptedPlan = plan
         episodeResults.set(episode.id ?? 0, plan)
         if (!samplingState.representative && samplingState.sampleAttemptedEpisodeLabel === plan.label && plan.compatible &&
           plan.decisionStatus === 'sample_required' && plan.params?.measuredCandidate && plan.measuredParameters) {
@@ -947,7 +1068,7 @@ export class TranscodingService {
         activeEpisodeSteps.delete(episode.id ?? 0)
         operation?.update({
           phase: `Reviewed ${completedEpisodes} of ${episodes.length} episodes`,
-          progress: { percentage: 40 + Math.round((completedEpisodes / episodes.length) * 60), currentItem: 'Episode checks complete for this sample group' },
+          progress: { current: completedEpisodes, total: episodes.length, currentItem: 'Episode checks complete for this sample group' },
         })
       operation?.signal.throwIfAborted()
       }
@@ -958,7 +1079,7 @@ export class TranscodingService {
       const lastEpisode = completedEpisodes + groups.reduce((count, group) => count + group.length, 0)
       operation?.update({
         phase: `Starting sample groups for episodes ${firstEpisode}–${lastEpisode} of ${episodes.length}`,
-        progress: { percentage: 40 + Math.round((completedEpisodes / episodes.length) * 60), currentItem: 'Preparing episode plans and measured samples' },
+        progress: { current: completedEpisodes, total: episodes.length, currentItem: 'Preparing episode plans and measured samples' },
       })
       const results = await Promise.allSettled(groups.map(processSamplingGroup))
       const rejected = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
@@ -972,7 +1093,7 @@ export class TranscodingService {
     })
 
     const planMetrics = aggregateShowOptimizationMetrics(results
-      .filter(episode => episode.compatible && (episode.operations.length > 0 || episode.decisionStatus === 'no_savings'))
+      .filter(episode => episode.compatible && (episode.operations.length > 0 || episode.decisionStatus === 'no_savings' || episode.decisionStatus === 'no_positive_savings'))
       .map(episode => ({
         sizeBytes: episode.sourceSize,
         estimatedSavingsBytes: episode.estimatedSavingsBytes,
@@ -984,6 +1105,7 @@ export class TranscodingService {
     })
     const result: ShowTranscodePreflight = {
       measurementVersion: MEASUREMENT_VERSION,
+      searchVersion: OPTIMIZATION_SEARCH_VERSION,
       measurementModel: VMAF_MODEL_VERSION,
       preflightId,
       batchId,
@@ -1005,6 +1127,11 @@ export class TranscodingService {
             ? 'sample_based_projection'
             : 'mixed_sample_projection'
           : 'planned_operations',
+    }
+    const priorReview = await this.findLatestShowPreflight({ sourceId: request.sourceId, libraryId: request.libraryId, seriesIdentityKey: request.seriesIdentityKey, seriesTitle: request.seriesTitle, mediaItemId: request.mediaItemId, seasonNumber: request.seasonNumber })
+    if (priorReview) {
+      const priorApprovals = priorReview.result.sampleGroupApprovalFingerprints ?? {}
+      result.sampleGroupApprovalFingerprints = Object.fromEntries([...this.getSampleGroupFingerprints(result)].filter(([groupId, fingerprint]) => priorApprovals[groupId] === fingerprint))
     }
     getLoggingService().info('[TVOptimization]', `Preflight completed: preflight=${preflightId}, batch=${batchId}, series=${request.seriesIdentityKey ?? 'episode'}, episodes=${episodes.length}, samplingGroupsSelected=${samplingGroups.size}, unclassifiedProfiles=${unclassifiedSamplingProfiles}, measuredSampleRepresentatives=${results.filter(episode => episode.samplingRole === 'measured').length}, projectedEpisodes=${results.filter(episode => episode.samplingRole === 'projected').length}, insufficientEvidence=${results.filter(episode => episode.decisionStatus === 'insufficient_evidence').length}, compatible=${results.filter(episode => episode.compatible).length}, actionable=${results.filter(episode => episode.compatible && episode.operations.length > 0).length}, savingsBytes=${planMetrics.totalEstimatedSavingsBytes ?? 'unknown'}, coverage=${planMetrics.coverage}`)
     await operation?.waitUntilRunning()
@@ -1071,7 +1198,7 @@ export class TranscodingService {
       }
     }
     if (!preflight) throw new Error('Show transcode preflight was not found')
-    if (preflight.result.measurementVersion !== MEASUREMENT_VERSION && preflight.result.episodes.some(episode => episode.params?.measuredCandidate)) throw new Error('Measurement method changed; run preflight again before queuing this plan')
+    if ((preflight.result.measurementVersion !== MEASUREMENT_VERSION || preflight.result.searchVersion !== OPTIMIZATION_SEARCH_VERSION) && preflight.result.episodes.some(episode => episode.params?.measuredCandidate)) throw new Error('Measurement or search policy changed; run preflight again before queuing this plan')
     const retryableMediaItemIds = preflight.result.queuedAt
       ? (() => {
           const state = getTaskQueueService().getQueueState()
@@ -1090,6 +1217,11 @@ export class TranscodingService {
     if (preflight.result.capabilityFingerprint) {
       const currentFingerprint = this.getCapabilitySnapshotFingerprint(await this.getCapabilities())
       if (currentFingerprint !== preflight.result.capabilityFingerprint) throw new Error('Hardware capabilities changed after review; run preflight again')
+    }
+    const currentSampleApprovals = this.withCurrentSampleApprovals(preflight.result)
+    const requiredSampleGroupIds = [...this.getSampleGroupFingerprints(preflight.result).keys()]
+    if (requiredSampleGroupIds.some(groupId => !currentSampleApprovals.approvedSampleGroupIds?.includes(groupId))) {
+      throw new Error('Review and approve every measured sample group before queueing this plan')
     }
     const queueableEpisodes = preflight.result.episodes.filter(episode =>
       episode.compatible && (episode.decisionStatus === 'actionable' || (episode.decisionStatus === 'sample_required' && preflight?.result.userApproved === true)) &&
@@ -1116,7 +1248,7 @@ export class TranscodingService {
       batchId: preflight.result.batchId,
       sourceId: preflight.request.sourceId,
       libraryId: preflight.request.libraryId,
-      options: { ...episode.options, queuePayload: { batchId: preflight.result.batchId, preflightId, sourceSize: episode.sourceSize, sourceMtimeMs: episode.sourceMtimeMs, sourceSha256: episode.sourceSha256, params: episode.params, sourceAnalysis: episode.sourceAnalysis, targetProfile: episode.targetProfile, samplePaths: episode.samplePaths, capabilityFingerprint: preflight.result.capabilityFingerprint } }
+      options: { ...episode.options, queuePayload: { batchId: preflight.result.batchId, preflightId, sourceSize: episode.sourceSize, sourceMtimeMs: episode.sourceMtimeMs, sourceSha256: episode.sourceSha256, params: episode.params, sourceAnalysis: episode.sourceAnalysis, targetProfile: episode.targetProfile, samplePaths: episode.samplePaths, sampleRepresentativeMediaItemId: episode.sampleRepresentativeMediaItemId ?? episode.mediaItemId, capabilityFingerprint: preflight.result.capabilityFingerprint } }
     }))
     getLoggingService().info('[TVOptimization]', `Queue requested: preflight=${preflightId}, batch=${preflight.result.batchId}, eligibleEpisodes=${queueableEpisodes.length}, userApproved=${preflight.result.userApproved}`)
     const taskIds = await getTaskQueueService().addTasks(tasks)
@@ -1137,7 +1269,79 @@ export class TranscodingService {
     const raw = await getDatabase().config.getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
     if (!raw) return undefined
     const preflight = JSON.parse(raw) as { request: ShowTranscodeRequest; result: ShowTranscodePreflight }
-    return preflight
+    return { ...preflight, result: this.withCurrentSampleApprovals(preflight.result) }
+  }
+
+  private getSampleGroupFingerprints(result: ShowTranscodePreflight): Map<string, string> {
+    const groups = new Map<string, ShowTranscodePreflight['episodes']>()
+    for (const episode of result.episodes) {
+      if (episode.decisionStatus !== 'sample_required' || !episode.params?.measuredCandidate || !episode.samplePaths?.length) continue
+      const representativeId = episode.sampleRepresentativeMediaItemId ?? episode.mediaItemId
+      const groupId = JSON.stringify([representativeId, episode.sampleHashes ?? []])
+      groups.set(groupId, [...(groups.get(groupId) ?? []), episode])
+    }
+    return new Map([...groups].map(([groupId, episodes]) => {
+      const fingerprintContent = [...episodes].sort((left, right) => left.mediaItemId - right.mediaItemId).map(episode => ({
+        mediaItemId: episode.mediaItemId,
+        sourceSha256: episode.sourceSha256,
+        params: episode.params && {
+          encoder: episode.params.encoder,
+          crf: episode.params.crf,
+          preset: episode.params.preset,
+          measuredCandidate: episode.params.measuredCandidate && {
+            encoder: episode.params.measuredCandidate.encoder,
+            preset: episode.params.measuredCandidate.preset,
+            quality: episode.params.measuredCandidate.quality,
+            outputBytes: episode.params.measuredCandidate.outputBytes,
+            sampledDurationSeconds: episode.params.measuredCandidate.sampledDurationSeconds,
+            vmafMean: episode.params.measuredCandidate.vmafMean,
+            vmafP5: episode.params.measuredCandidate.vmafP5,
+            cambiMean: episode.params.measuredCandidate.cambiMean,
+          },
+        },
+        options: episode.options,
+        targetProfile: episode.targetProfile,
+        operations: episode.operations,
+        changes: episode.changes,
+      }))
+      return [groupId, createHash('sha256').update(JSON.stringify(fingerprintContent)).digest('hex')]
+    }))
+  }
+
+  private withCurrentSampleApprovals(result: ShowTranscodePreflight): ShowTranscodePreflight {
+    const current = this.getSampleGroupFingerprints(result)
+    const approvedSampleGroupIds = [...current].filter(([groupId, fingerprint]) => result.sampleGroupApprovalFingerprints?.[groupId] === fingerprint).map(([groupId]) => groupId)
+    return { ...result, approvedSampleGroupIds }
+  }
+
+  async setShowSampleApproval(preflightId: string, groupId: string, approved: boolean): Promise<string[]> {
+    let preflight = this.showPreflights.get(preflightId)
+    if (!preflight) {
+      const saved = await getDatabase().config.getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
+      if (saved) preflight = JSON.parse(saved) as { request: ShowTranscodeRequest; result: ShowTranscodePreflight }
+    }
+    if (!preflight) throw new Error('Show transcode preflight was not found')
+    const fingerprint = this.getSampleGroupFingerprints(preflight.result).get(groupId)
+    if (!fingerprint) throw new Error('The sample group is no longer part of this review')
+    const sampleGroupApprovalFingerprints = { ...preflight.result.sampleGroupApprovalFingerprints }
+    if (approved) sampleGroupApprovalFingerprints[groupId] = fingerprint
+    else delete sampleGroupApprovalFingerprints[groupId]
+    const result = { ...preflight.result, sampleGroupApprovalFingerprints }
+    if (!approved && result.userApproved) {
+      result.userApproved = false
+      delete result.approvedAt
+      delete result.approvalFingerprint
+    }
+    this.showPreflights.set(preflightId, { ...preflight, result })
+    await getDatabase().config.setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ ...preflight, result }))
+    getLoggingService().info('[TVOptimization]', 'Sample group approval updated', {
+      event: approved ? 'sample-group.approved' : 'sample-group.approval-revoked',
+      preflightId,
+      batchId: result.batchId,
+      groupId,
+      memberMediaItemIds: result.episodes.filter(episode => JSON.stringify([episode.sampleRepresentativeMediaItemId ?? episode.mediaItemId, episode.sampleHashes ?? []]) === groupId).map(episode => episode.mediaItemId),
+    })
+    return this.withCurrentSampleApprovals(result).approvedSampleGroupIds ?? []
   }
 
   async findLatestShowPreflight(identity: Pick<ShowTranscodeRequest, 'sourceId' | 'libraryId' | 'seriesIdentityKey' | 'seriesTitle' | 'mediaItemId' | 'seasonNumber'>): Promise<{ request: ShowTranscodeRequest; result: ShowTranscodePreflight } | undefined> {
@@ -1162,8 +1366,15 @@ export class TranscodingService {
       : [await getDatabase().media.getItemById(identity.mediaItemId)].filter((item): item is MediaItem => item !== null)
     let capabilityFingerprint: string | undefined
     for (const preflight of matches.sort((left, right) => (right.result.createdAt ?? '').localeCompare(left.result.createdAt ?? ''))) {
-      if (preflight.result.measurementVersion !== MEASUREMENT_VERSION && preflight.request.options.optimizationMode !== 'remux_only') continue
-      if (preflight.result.episodeCount !== episodes.length || preflight.result.episodes.length !== episodes.length) {
+      if ((preflight.result.measurementVersion !== MEASUREMENT_VERSION || preflight.result.searchVersion !== OPTIMIZATION_SEARCH_VERSION) && preflight.request.options.optimizationMode !== 'remux_only') continue
+      const expectedEpisodes = preflight.request.selectedMediaItemIds
+        ? episodes.filter(episode => episode.id !== undefined && preflight.request.selectedMediaItemIds!.includes(episode.id))
+        : episodes
+      const savedMediaItemIds = preflight.result.episodes.map(plan => plan.mediaItemId).sort((left, right) => left - right)
+      const expectedMediaItemIds = expectedEpisodes.map(episode => episode.id!).sort((left, right) => left - right)
+      if (preflight.request.selectedMediaItemIds && expectedEpisodes.length !== preflight.request.selectedMediaItemIds.length ||
+        preflight.result.episodeCount !== expectedEpisodes.length || preflight.result.episodes.length !== expectedEpisodes.length ||
+        savedMediaItemIds.some((mediaItemId, index) => mediaItemId !== expectedMediaItemIds[index])) {
         getLoggingService().info('[TVOptimization]', `Saved preflight does not match current episode membership: preflight=${preflight.result.preflightId}`)
         continue
       }
@@ -1181,8 +1392,8 @@ export class TranscodingService {
         }
       }
       const plans = new Map(preflight.result.episodes.map(plan => [plan.mediaItemId, plan]))
-      let sameData = plans.size === episodes.length
-      for (const episode of episodes) {
+      let sameData = plans.size === expectedEpisodes.length
+      for (const episode of expectedEpisodes) {
         if (!sameData || !episode.id) break
         const plan = plans.get(episode.id)
         if (!plan || plan.sourceSize <= 0) {
@@ -1193,7 +1404,7 @@ export class TranscodingService {
         const stat = await fs.stat(item.file_path!)
         sameData = stat.size === plan.sourceSize && Math.abs(stat.mtimeMs - plan.sourceMtimeMs) <= 1000
       }
-      if (sameData) return preflight
+      if (sameData) return { ...preflight, result: this.withCurrentSampleApprovals(preflight.result) }
       getLoggingService().info('[TVOptimization]', `Saved preflight does not match current episode data: preflight=${preflight.result.preflightId}`)
     }
     return undefined
@@ -1284,7 +1495,7 @@ export class TranscodingService {
         if (job && job.sourcePath === journal.inputPath && job.quarantinePath === journal.quarantinePath) {
           const encodedReductionBytes = job.sourceSize - analysis.fileSizeBytes!
           const retainedOriginalBytes = journal.mode === 'replace' ? 0 : job.sourceSize
-          await db.mediaRemuxJobs.update(job.id, { status: 'promoted', actualOutputBytes: analysis.fileSizeBytes, bytesSaved: encodedReductionBytes, outputDurationMs: analysis.durationMs, outputAnalysis: JSON.stringify({ ...analysis, filePath: journal.targetPath, encodedReductionBytes, retainedOriginalBytes, physicallyReclaimedBytes: journal.mode === 'replace' ? encodedReductionBytes : -analysis.fileSizeBytes! }) })
+          await db.mediaRemuxJobs.update(job.id, { status: 'promoted', actualOutputBytes: analysis.fileSizeBytes, bytesSaved: encodedReductionBytes, outputDurationMs: analysis.durationMs, outputAnalysis: JSON.stringify({ ...analysis, filePath: journal.targetPath, encodedReductionBytes, retainedOriginalBytes, physicallyReclaimedBytes: journal.mode === 'replace' ? encodedReductionBytes : 0 }) })
         }
         await db.config.deleteSetting(key)
         getLoggingService().info('[TranscodingService]', `Committed forward activation recovery for media item ${journal.mediaItemId}`)
@@ -1828,7 +2039,16 @@ export class TranscodingService {
       const sourceStat = await fs.stat(inputPath)
       const sourceSha256 = await sha256File(inputPath)
       const queuePayload = (options as TranscodeOptions & { queuePayload?: QueuedTranscodePayload }).queuePayload
-      if (queuePayload) getLoggingService().info('[TVOptimization]', `Episode execution started: batch=${queuePayload.batchId}, preflight=${queuePayload.preflightId}, mediaItem=${mediaItemId}, sourceBytes=${sourceStat.size}, encoder=${queuePayload.params?.encoder ?? options.encoder ?? 'planned'}`)
+      if (queuePayload) getLoggingService().info('[TVOptimization]', 'Episode execution started', {
+        event: 'conversion.started',
+        batchId: queuePayload.batchId,
+        preflightId: queuePayload.preflightId,
+        mediaItemId,
+        sampleRepresentativeMediaItemId: queuePayload.sampleRepresentativeMediaItemId,
+        sourcePath: inputPath,
+        sourceBytes: sourceStat.size,
+        encoder: queuePayload.params?.encoder ?? options.encoder ?? 'planned',
+      })
       if (queuePayload && (sourceStat.size !== queuePayload.sourceSize || Math.abs(sourceStat.mtimeMs - queuePayload.sourceMtimeMs) > 1000)) {
         throw new Error('Source file changed after show preflight')
       }
@@ -1968,6 +2188,57 @@ export class TranscodingService {
       controller.signal.throwIfAborted()
       if (await sha256File(inputPath) !== sourceSha256) throw new Error('Source file changed during transcoding')
 
+      let outputQualityVerification: Awaited<ReturnType<MeasuredOptimizationService['verifyOutputQuality']>> | undefined
+      if (queuePayload?.params?.measuredCandidate) {
+        if (!options.qualityProfile) throw new Error('Approved measured optimization has no quality profile')
+        if (!queuePayload.preflightId) throw new Error('Approved measured optimization has no saved review identity')
+        if (stats.size >= sourceStat.size) throw new Error(`Verified output has no positive size saving (${stats.size} >= ${sourceStat.size} bytes)`)
+        const verificationDirectory = path.join(app.getPath('userData'), 'transcoding-samples', queuePayload.preflightId!, 'output-verification', String(mediaItemId))
+        getLoggingService().info('[TVOptimization]', 'Actual output quality verification started', {
+          event: 'output-verification.started',
+          batchId: queuePayload.batchId,
+          preflightId: queuePayload.preflightId,
+          mediaItemId,
+          sampleRepresentativeMediaItemId: queuePayload.sampleRepresentativeMediaItemId,
+          sourceBytes: sourceStat.size,
+          outputBytes: stats.size,
+          qualityProfile: options.qualityProfile,
+        })
+        const outputVerificationStartedAt = performance.now()
+        outputQualityVerification = await this.measuredOptimizationService.verifyOutputQuality({
+          sourcePath: inputPath,
+          outputPath: tempPath,
+          outputDirectory: verificationDirectory,
+          durationMs: sourceVideo.durationMs,
+          qualityProfile: options.qualityProfile,
+          referenceFilter: options.targetConversion?.videoFilter,
+          referenceInputArgs: options.targetConversion?.inputArgs,
+          signal: controller.signal,
+          onProgress: phase => {
+            getLoggingService().info('[TVOptimization]', 'Actual output verification progress', {
+              event: 'output-verification.progress',
+              batchId: queuePayload.batchId,
+              preflightId: queuePayload.preflightId,
+              mediaItemId,
+              sampleRepresentativeMediaItemId: queuePayload.sampleRepresentativeMediaItemId,
+              phase,
+            })
+            onProgress?.({ percent: 100, status: 'verifying', phase })
+          },
+        })
+        getLoggingService().info('[TVOptimization]', 'Actual output quality verification completed', {
+          event: 'output-verification.completed',
+          batchId: queuePayload.batchId,
+          preflightId: queuePayload.preflightId,
+          mediaItemId,
+          sampleRepresentativeMediaItemId: queuePayload.sampleRepresentativeMediaItemId,
+          durationMs: Math.round(performance.now() - outputVerificationStartedAt),
+          outputBytes: stats.size,
+          verifiedSavingsBytes: sourceStat.size - stats.size,
+          ...outputQualityVerification,
+        })
+      }
+
       // Guard against size inflation for replacement modes: if transcoded result is larger than source, abort replacement
       if ((effectiveOutputMode === 'quarantine-replace' || effectiveOutputMode === 'replace') && stats.size > sourceStat.size) {
         throw new Error(`Transcoded output (${Math.round(stats.size / (1024 * 1024))} MB) is larger than original source (${Math.round(sourceStat.size / (1024 * 1024))} MB). Aborting replacement to protect storage.`)
@@ -2013,12 +2284,21 @@ export class TranscodingService {
           actualOutputBytes: stats.size,
           bytesSaved: sourceStat.size - stats.size,
           outputDurationMs: outputAnalysis.durationMs,
-          outputAnalysis: JSON.stringify({ ...outputAnalysis, filePath: effectiveOutputMode === 'copy' ? path.join(path.dirname(inputPath), `${origBase} - Transcoded${outputExt}`) : targetSamePath, encodedReductionBytes: sourceStat.size - stats.size, retainedOriginalBytes, physicallyReclaimedBytes: effectiveOutputMode === 'replace' ? sourceStat.size - stats.size : -stats.size }),
+          outputAnalysis: JSON.stringify({ ...outputAnalysis, filePath: effectiveOutputMode === 'copy' ? path.join(path.dirname(inputPath), `${origBase} - Transcoded${outputExt}`) : targetSamePath, encodedReductionBytes: sourceStat.size - stats.size, retainedOriginalBytes, physicallyReclaimedBytes: effectiveOutputMode === 'replace' ? sourceStat.size - stats.size : 0, qualityVerification: outputQualityVerification }),
         })
       }
 
       onProgress?.({ percent: 100, status: 'complete' })
-      if (queuePayload) getLoggingService().info('[TVOptimization]', `Episode execution completed: batch=${queuePayload.batchId}, mediaItem=${mediaItemId}, sourceBytes=${sourceStat.size}, outputBytes=${stats.size}, savedBytes=${sourceStat.size - stats.size}`)
+      if (queuePayload) getLoggingService().info('[TVOptimization]', 'Episode execution completed', {
+        event: 'conversion.completed',
+        batchId: queuePayload.batchId,
+        preflightId: queuePayload.preflightId,
+        mediaItemId,
+        sampleRepresentativeMediaItemId: queuePayload.sampleRepresentativeMediaItemId,
+        sourceBytes: sourceStat.size,
+        outputBytes: stats.size,
+        encodedReductionBytes: sourceStat.size - stats.size,
+      })
       return true
 
     } catch (error) {
@@ -2038,7 +2318,14 @@ export class TranscodingService {
         : error instanceof Error ? error.message : String(error)
       getLoggingService().error('[TranscodingService]', `Transcode failed for item ${mediaItemId}:`, msg)
       const failedQueuePayload = (options as TranscodeOptions & { queuePayload?: QueuedTranscodePayload }).queuePayload
-      if (failedQueuePayload) getLoggingService().error('[TVOptimization]', `Episode execution failed: batch=${failedQueuePayload.batchId}, preflight=${failedQueuePayload.preflightId}, mediaItem=${mediaItemId}:`, msg)
+      if (failedQueuePayload) getLoggingService().error('[TVOptimization]', 'Episode execution failed', {
+        event: 'conversion.failed',
+        batchId: failedQueuePayload.batchId,
+        preflightId: failedQueuePayload.preflightId,
+        mediaItemId,
+        sampleRepresentativeMediaItemId: failedQueuePayload.sampleRepresentativeMediaItemId,
+        reason: msg,
+      })
       if (optimizationJobId !== null) await db.mediaRemuxJobs.update(optimizationJobId, { status: 'failed', error: msg })
 
       onProgress?.({ percent: 0, status: 'failed', error: msg })
@@ -2090,6 +2377,7 @@ export class TranscodingService {
     onMeasuredSample?: (sample: MeasuredCandidateSample) => Promise<void>,
     sourcePreparation: MeasurementSourcePreparation = { samples: [] },
     onSourcePrepared?: (preparation: MeasurementSourcePreparation) => Promise<void>,
+    searchContext?: { preflightId: string; batchId: string; mediaItemId: number; groupKey?: string },
   ): Promise<Pick<TranscodingParams, 'encoder' | 'crf' | 'preset' | 'measuredCandidate'>> {
     if (!options.targetCodec) throw new Error('Measurement requires a target codec')
     if (!options.qualityProfile) throw new Error('Measurement requires a quality profile')
@@ -2117,6 +2405,23 @@ export class TranscodingService {
     const ladder = buildCandidateLadder(options.targetCodec, options.encoderPolicy, hardwareEncoder)
     const measuredCandidates = [...previouslyMeasured]
     let measuredSamples = [...previouslyMeasuredSamples]
+    let candidateSearchRounds = 0
+    const candidateDomain = [...new Set(ladder.map(candidate => candidate.encoder))].map(encoder => ({
+      encoder,
+      presets: [...new Set(ladder.filter(candidate => candidate.encoder === encoder).map(candidate => candidate.preset))],
+      qualities: [...new Set(ladder.filter(candidate => candidate.encoder === encoder).map(candidate => candidate.quality))].sort((left, right) => left - right),
+      candidateCount: ladder.filter(candidate => candidate.encoder === encoder).length,
+    }))
+    getLoggingService().info('[TVOptimization]', 'Measured candidate search started', {
+      event: 'candidate-search.started',
+      qualityProfile: options.qualityProfile,
+      encoderPolicy: options.encoderPolicy,
+      targetCodec: options.targetCodec,
+      sourcePath: filePath,
+      ...searchContext,
+      candidateDomain,
+      previouslyMeasuredCount: measuredCandidates.length,
+    })
     const isMeasured = (candidate: CandidateEncodingParameters) => measuredCandidates.some(measured => measured.encoder === candidate.encoder && measured.preset === candidate.preset && measured.quality === candidate.quality)
     const buildCandidates = (parameters: CandidateEncodingParameters[]) => parameters.filter(candidate => !isMeasured(candidate)).map(candidate => {
       const useGpu = candidate.encoder !== 'x265' && candidate.encoder !== 'svt_av1'
@@ -2136,7 +2441,7 @@ export class TranscodingService {
       const stat = await fs.stat(filePath)
       await fs.mkdir(outputDirectory, { recursive: true })
       const sampleSeconds = Math.min(analysis.durationMs / 1000, APP_CONFIG.transcoding.sampleDurationSeconds * APP_CONFIG.transcoding.samplePositions.length)
-      const maximumOutputBytesPerSecond = (options.maxOutputBytes ?? stat.size) / (analysis.durationMs / 1000)
+      const maximumOutputBytesPerSecond = Math.min(options.maxOutputBytes ?? stat.size, stat.size) / (analysis.durationMs / 1000)
       const plannedBitrate = options.targetConversion ? options.targetConversion.maximumVideoBitrate + options.targetConversion.audio.reduce((sum, track) => sum + (track.bitrateKbps ?? analysis.audioTracks.find(audio => audio.index === track.sourceIndex)?.bitrateKbps ?? 0) * 1000, 0) : undefined
       const sourceSampleBytes = stat.size * sampleSeconds / (analysis.durationMs / 1000)
       const referenceBytes = options.targetConversion?.videoFilter ? options.targetConversion.width * options.targetConversion.height * (options.targetConversion.bitDepth > 8 ? 3 : 1.5) * analysis.video.frameRate * sampleSeconds : 0
@@ -2170,8 +2475,11 @@ export class TranscodingService {
         candidate.playbackBlockers = [...blockers]
       }
       while (!measurementComplete) {
-        const candidates = buildCandidates(nextCandidateSearch(ladder, measuredCandidates, options.qualityProfile, maximumOutputBytesPerSecond))
+        const candidates = buildCandidates(nextCandidateSearch(ladder, measuredCandidates, options.qualityProfile))
         if (candidates.length) {
+          candidateSearchRounds += 1
+          const roundStartedAt = performance.now()
+          const roundCandidates = candidates.map(({ encoder, preset, quality }) => ({ encoder, preset, quality }))
           const estimatedCandidateSampleBytes = Math.ceil((plannedBitrate
             ? plannedBitrate / 8 * sampleSeconds
             : (options.maxOutputBytes ?? stat.size) * sampleSeconds / (analysis.durationMs / 1000)) * candidates.length)
@@ -2204,21 +2512,74 @@ export class TranscodingService {
           })
           measuredCandidates.push(...measured.candidates)
           signal?.throwIfAborted()
+          for (const candidate of measured.candidates) getLoggingService().info('[TVOptimization]', 'Measured candidate gate evidence', {
+            event: 'candidate-search.candidate-measured',
+            preflightId: searchContext?.preflightId,
+            batchId: searchContext?.batchId,
+            mediaItemId: searchContext?.mediaItemId,
+            groupKey: searchContext?.groupKey,
+            sourcePath: filePath,
+            qualityProfile: options.qualityProfile,
+            encoder: candidate.encoder,
+            preset: candidate.preset,
+            quality: candidate.quality,
+            outputBytes: candidate.outputBytes,
+            sampledDurationSeconds: candidate.sampledDurationSeconds,
+            encodingDurationMs: candidate.encodingDurationMs,
+            vmafMean: candidate.vmafMean,
+            vmafP5: candidate.vmafP5,
+            cambiMean: candidate.cambiMean,
+            qualityRejectedReason: candidate.qualityRejectedReason,
+            playbackBlockers: candidate.playbackBlockers,
+            incompleteMeasurement: candidate.incompleteMeasurement,
+          })
+          getLoggingService().info('[TVOptimization]', 'Measured candidate search round completed', {
+            event: 'candidate-search.round-completed',
+            round: candidateSearchRounds,
+            selectedCandidates: roundCandidates,
+            outcome: 'measured',
+            durationMs: Math.round(performance.now() - roundStartedAt),
+            sourcePath: filePath,
+            ...searchContext,
+            measuredCandidateCount: measuredCandidates.length,
+          })
         }
         if (measurementComplete) break
-        if (!nextCandidateSearch(ladder, measuredCandidates, options.qualityProfile, maximumOutputBytesPerSecond).length) {
+        if (!nextCandidateSearch(ladder, measuredCandidates, options.qualityProfile).length) {
           measurementComplete = true
           await onMeasuredCandidates?.(measuredCandidates, true)
           break
         }
-        await onMeasuredCandidates?.(measuredCandidates, false)
       }
       signal?.throwIfAborted()
       if (measurementComplete && previouslyMeasured.length === measuredCandidates.length) await onMeasuredCandidates?.(measuredCandidates, true)
-      const selected = selectMeasuredCandidate(options.qualityProfile, measuredCandidates)
+      const selected = selectMeasuredCandidate(options.qualityProfile, measuredCandidates, maximumOutputBytesPerSecond)
+      getLoggingService().info('[TVOptimization]', 'Measured candidate search completed', {
+        event: 'candidate-search.completed',
+        qualityProfile: options.qualityProfile,
+        encoderPolicy: options.encoderPolicy,
+        targetCodec: options.targetCodec,
+        sourcePath: filePath,
+        ...searchContext,
+        rounds: candidateSearchRounds,
+        measuredCandidateCount: measuredCandidates.length,
+        selectedCandidate: { encoder: selected.encoder, preset: selected.preset, quality: selected.quality },
+      })
       if (!onMeasuredCandidates) for (const candidate of measuredCandidates) if (candidate !== selected) for (const sample of candidate.samplePaths!) await fs.unlink(sample)
       return { encoder: selected.encoder, crf: selected.quality, preset: selected.preset, measuredCandidate: selected }
     } catch (error) {
+      getLoggingService().warn('[TVOptimization]', 'Measured candidate search failed', {
+        event: 'candidate-search.failed',
+        qualityProfile: options.qualityProfile,
+        encoderPolicy: options.encoderPolicy,
+        targetCodec: options.targetCodec,
+        rounds: candidateSearchRounds,
+        measuredCandidateCount: measuredCandidates.length,
+        outcome: signal?.aborted || error instanceof Error && error.name === 'AbortError'
+          ? 'cancelled'
+          : error instanceof MeasuredQualityError ? error.decisionStatus : 'measurement_failed',
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      })
       if (!onMeasuredCandidates) await fs.rm(outputDirectory, { recursive: true, force: true })
       throw error
     } finally {
@@ -2319,8 +2680,17 @@ export class TranscodingService {
         const actualSourcePreparationHashes = await Promise.all(cached.sourcePreparation.samples.map(sample => Promise.all([sample.sourcePath, ...(sample.referencePath ? [sample.referencePath] : [])].map(sha256File))))
         if (actualSourcePreparationHashes.some((hashes, index) => hashes.some((hash, pathIndex) => hash !== cached.sourcePreparationHashes![index][pathIndex]))) throw new Error('Cached source preparation content changed')
       }
-      getLoggingService().info('[TVOptimization]', `Measured candidate cache hit: cacheKey=${cacheKey}, candidates=${cached.candidates.length}`)
-      return cached
+      const searchComplete = cached.searchVersion === OPTIMIZATION_SEARCH_VERSION && cached.complete
+      getLoggingService().info('[TVOptimization]', 'Measured candidate cache reused', {
+        event: 'measurement-cache.reused',
+        cacheKey,
+        candidates: cached.candidates.length,
+        sourceSamples: cached.sourcePreparation?.samples.length ?? 0,
+        previousSearchVersion: cached.searchVersion ?? 'legacy',
+        searchComplete,
+        invalidationReason: searchComplete ? undefined : 'search domain semantics changed; continue from compatible measurements',
+      })
+      return { ...cached, complete: searchComplete, searchVersion: OPTIMIZATION_SEARCH_VERSION }
     } catch (error) {
       getLoggingService().warn('[TVOptimization]', `Discarding invalid measured encode cache: cacheKey=${cacheKey}, reason=${getErrorMessage(error)}`)
       await getDatabase().config.deleteSetting(settingKey)
@@ -2340,7 +2710,11 @@ export class TranscodingService {
       if (saved) preflight = JSON.parse(saved) as { request: ShowTranscodeRequest; result: ShowTranscodePreflight }
     }
     if (!preflight) throw new Error('Show transcode preflight was not found')
-    if (preflight.result.measurementVersion !== MEASUREMENT_VERSION && preflight.result.episodes.some(episode => episode.params?.measuredCandidate)) throw new Error('Measurement method changed; run preflight again before approving this plan')
+    if ((preflight.result.measurementVersion !== MEASUREMENT_VERSION || preflight.result.searchVersion !== OPTIMIZATION_SEARCH_VERSION) && preflight.result.episodes.some(episode => episode.params?.measuredCandidate)) throw new Error('Measurement or search policy changed; run preflight again before approving this plan')
+    preflight = { ...preflight, result: this.withCurrentSampleApprovals(preflight.result) }
+    const requiredSampleGroupIds = [...this.getSampleGroupFingerprints(preflight.result).keys()]
+    const approvedSampleGroupIds = new Set(this.withCurrentSampleApprovals(preflight.result).approvedSampleGroupIds)
+    if (requiredSampleGroupIds.some(groupId => !approvedSampleGroupIds.has(groupId))) throw new Error('Review and approve every measured sample group before approving this plan')
     const approved = { ...preflight.result, userApproved: true, approvedAt: new Date().toISOString(), approvalFingerprint: this.preflightFingerprint(preflight.result) }
     getLoggingService().info('[TVOptimization]', `Preflight approved: preflight=${preflightId}, batch=${approved.batchId}, sampleRequiredEpisodes=${approved.episodes.filter(episode => episode.compatible && episode.decisionStatus === 'sample_required').length}`)
     this.showPreflights.set(preflightId, { ...preflight, result: approved })

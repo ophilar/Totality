@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { getTranscodingService } from '../../../../src/main/services/TranscodingService'
 import { PreflightShowTranscodeSchema } from '../../../../src/main/validation/schemas'
-import { MEASUREMENT_VERSION } from '../../../../src/main/services/MeasuredOptimizationPolicy'
+import { MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION } from '../../../../src/main/services/MeasuredOptimizationPolicy'
 
 vi.mock('@main/database/getDatabase')
 vi.mock('@main/services/LoggingService', () => ({
@@ -99,9 +99,70 @@ describe('ShowOptimizationQueueAndPersistence', () => {
         episodes: [{ mediaItemId: 101, decisionStatus: 'sample_required', compatible: true, params: { measuredCandidate: { encoder: 'qsv_h265', quality: 14, preset: 'medium', outputBytes: 100, sampledDurationSeconds: 30, vmafMean: 96, vmafP5: 93, cambiMean: 1 } } }],
       },
     }))
-    await expect(service.approveShowTranscode('old-measurement')).rejects.toThrow('Measurement method changed')
-    await expect(service.queueShowTranscode('old-measurement')).rejects.toThrow('Measurement method changed')
+    await expect(service.approveShowTranscode('old-measurement')).rejects.toThrow('Measurement or search policy changed')
+    await expect(service.queueShowTranscode('old-measurement')).rejects.toThrow('Measurement or search policy changed')
     expect(mockAddTasks).not.toHaveBeenCalled()
+  })
+
+  it('requires a new search before approving or queuing plans from an older search policy', async () => {
+    const service = getTranscodingService()
+    mockDb.config.getSetting.mockResolvedValue(JSON.stringify({
+      request: { sourceId: 'src1', libraryId: 'lib1', options: { optimizationMode: 'transcode' } },
+      result: {
+        preflightId: 'old-search', batchId: 'batch-old', measurementVersion: MEASUREMENT_VERSION,
+        searchVersion: OPTIMIZATION_SEARCH_VERSION - 1,
+        episodes: [{ mediaItemId: 101, decisionStatus: 'sample_required', compatible: true, params: { measuredCandidate: { encoder: 'qsv_h265', quality: 14, preset: 'medium', outputBytes: 100, sampledDurationSeconds: 30, vmafMean: 96, vmafP5: 93, cambiMean: 1 } } }],
+      },
+    }))
+    await expect(service.approveShowTranscode('old-search')).rejects.toThrow('Measurement or search policy changed')
+    await expect(service.queueShowTranscode('old-search')).rejects.toThrow('Measurement or search policy changed')
+    expect(mockAddTasks).not.toHaveBeenCalled()
+  })
+
+  it('persists sample group approval and restores it when the saved review is reopened', async () => {
+    const service = getTranscodingService()
+    const groupId = JSON.stringify([101, ['sample-hash']])
+    const preflight = {
+      request: { sourceId: 'src1', libraryId: 'lib1', options: { optimizationMode: 'transcode' } },
+      result: {
+        preflightId: 'sample-review', batchId: 'batch-sample', measurementVersion: MEASUREMENT_VERSION,
+        searchVersion: OPTIMIZATION_SEARCH_VERSION,
+        episodes: [{
+          mediaItemId: 101, label: 'Film', decisionStatus: 'sample_required', compatible: true,
+          sourceSha256: 'source-hash', sampleRepresentativeMediaItemId: 101, samplePaths: ['sample.mkv'], sampleHashes: ['sample-hash'],
+          params: { encoder: 'qsv_h265', crf: 14, preset: 'medium', measuredCandidate: { encoder: 'qsv_h265', quality: 14, preset: 'medium', outputBytes: 100, sampledDurationSeconds: 30, vmafMean: 96, vmafP5: 93, cambiMean: 1 } },
+          options: { optimizationMode: 'transcode' }, operations: [], changes: [],
+        }],
+      },
+    }
+    mockDb.config.getSetting.mockResolvedValue(JSON.stringify(preflight))
+
+    await expect(service.setShowSampleApproval('sample-review', groupId, true)).resolves.toEqual([groupId])
+    const persisted = JSON.parse(mockDb.config.setSetting.mock.calls.at(-1)![1])
+    expect(persisted.result.sampleGroupApprovalFingerprints[groupId]).toMatch(/^[a-f0-9]{64}$/)
+    mockDb.config.getSetting.mockResolvedValue(JSON.stringify(persisted))
+    await expect(service.getShowPreflight('sample-review')).resolves.toMatchObject({ result: { approvedSampleGroupIds: [groupId] } })
+  })
+
+  it('rejects plan approval until every measured sample group has persisted approval', async () => {
+    const service = getTranscodingService()
+    const groupId = JSON.stringify([101, ['sample-hash']])
+    const preflight = {
+      request: { sourceId: 'src1', libraryId: 'lib1', options: { optimizationMode: 'transcode' } },
+      result: {
+        preflightId: 'sample-review', batchId: 'batch-sample', measurementVersion: MEASUREMENT_VERSION,
+        searchVersion: OPTIMIZATION_SEARCH_VERSION,
+        episodes: [{ mediaItemId: 101, decisionStatus: 'sample_required', compatible: true, sampleRepresentativeMediaItemId: 101, samplePaths: ['sample.mkv'], sampleHashes: ['sample-hash'], sourceSha256: 'source-hash', params: { measuredCandidate: { encoder: 'qsv_h265', quality: 14, preset: 'medium', outputBytes: 100, sampledDurationSeconds: 30, vmafMean: 96, vmafP5: 93, cambiMean: 1 } } }],
+      },
+    }
+    mockDb.config.getSetting.mockResolvedValue(JSON.stringify(preflight))
+    await service.setShowSampleApproval('sample-review', groupId, false)
+    mockDb.config.setSetting.mockClear()
+    await expect(service.approveShowTranscode('sample-review')).rejects.toThrow('Review and approve every measured sample group')
+    mockDb.config.getSetting.mockResolvedValue(JSON.stringify(preflight))
+    await service.setShowSampleApproval('sample-review', groupId, true)
+    mockDb.config.getSetting.mockResolvedValue(JSON.stringify(JSON.parse(mockDb.config.setSetting.mock.calls.at(-1)![1])))
+    await expect(service.approveShowTranscode('sample-review')).resolves.toMatchObject({ userApproved: true, approvedSampleGroupIds: [groupId] })
   })
 
   it('preflights a single movie without requiring a series identity', async () => {

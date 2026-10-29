@@ -8,7 +8,7 @@ export type TranscodeOptions = MainTranscodeOptions & Required<Pick<MainTranscod
   'useGpu' | 'gpuId' | 'encoder' | 'preset' | 'customArgs' | 'transcodingEngine' | 'targetSize'
 >>
 
-export type { PlannedOptimizationOperation, ShowTranscodePreflight, ShowTranscodeRequest } from '@main/services/TranscodingService'
+export type { PlannedOptimizationOperation, ShowTranscodePreflight, ShowTranscodeRequest, ShowOptimizationDiscovery } from '@main/services/TranscodingService'
 
 export interface SavedShowPreflight {
   request: ShowTranscodeRequest

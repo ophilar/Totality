@@ -51,6 +51,21 @@ describe('selectMeasuredCandidate', () => {
     expect(selectMeasuredCandidate('balanced', [candidate({ outputBytes: 80, playbackBlockers: ['Target cannot play this output'] }), compatible])).toBe(compatible)
   })
 
+  it('accepts every positive saving and excludes equal or larger outputs from recommendations', () => {
+    const positiveSaving = candidate({ outputBytes: 89, sampledDurationSeconds: 30 })
+    const equalSize = candidate({ outputBytes: 90, sampledDurationSeconds: 30 })
+    const larger = candidate({ outputBytes: 120, sampledDurationSeconds: 30 })
+
+    expect(selectMeasuredCandidate('balanced', [equalSize, larger, positiveSaving], 3)).toBe(positiveSaving)
+    expect(getNonDominatedMeasuredCandidates('balanced', [equalSize, larger, positiveSaving], 3)).toEqual([positiveSaving])
+  })
+
+  it('classifies an exhausted search without positive savings separately from quality rejection', () => {
+    const candidates = [candidate({ outputBytes: 90, sampledDurationSeconds: 30 })]
+
+    expect(() => selectMeasuredCandidate('balanced', candidates, 3)).toThrowError(expect.objectContaining({ decisionStatus: 'no_positive_savings' }))
+  })
+
   it('retains non-dominated measured choices across size, quality, and encode time', () => {
     const smaller = candidate({ outputBytes: 80, encodingDurationMs: 1200 })
     const higherFidelity = candidate({ outputBytes: 100, vmafMean: 98, vmafP5: 96, encodingDurationMs: 1800 })
@@ -77,14 +92,14 @@ describe('selectMeasuredCandidate', () => {
     expect(nextCandidateSearch(domain, contradictory, 'balanced')).toEqual([domain[1], domain[2], domain[3], domain[5], domain[6], domain[7]])
   })
 
-  it('moves to the next preset only when the earlier preset has no acceptable result', () => {
+  it('moves to the next preset after adaptively completing the earlier preset domain', () => {
     const domain: CandidateEncodingParameters[] = ['medium', 'slow'].flatMap(preset => [18, 22, 26].map(quality => ({ encoder: 'x265', preset, quality })))
     const medium = [18, 22, 26].map(quality => candidate({ preset: 'medium', quality, vmafMean: 90, vmafP5: 85 }))
     expect(nextCandidateSearch(domain, medium, 'balanced')).toEqual([domain[4]])
     expect(nextCandidateSearch(domain, [candidate({ preset: 'medium', quality: 22 })], 'balanced')).toEqual([domain[2]])
   })
 
-  it('schedules each encoder through presets until an acceptable preset is bracketed', () => {
+  it('searches all configured encoders and presets after finding acceptable results', () => {
     const domain: CandidateEncodingParameters[] = ['hardware', 'x265'].flatMap(encoder => ['medium', 'slow'].flatMap(preset => [18, 22, 26].map(quality => ({ encoder, preset, quality }))))
     const measured: MeasuredCandidate[] = []
     const accept = (encoder: string, preset: string, quality: number) => candidate({ encoder, preset, quality, vmafMean: 96, vmafP5: 94 })
@@ -105,7 +120,14 @@ describe('selectMeasuredCandidate', () => {
     measured.push(reject('x265', 'medium', 20))
     expect(nextCandidateSearch(domain, measured, 'balanced')).toEqual([{ encoder: 'x265', preset: 'medium', quality: 19 }])
     measured.push(accept('x265', 'medium', 19))
-    expect(nextCandidateSearch(domain, measured, 'balanced')).toEqual([])
+    expect(nextCandidateSearch(domain, measured, 'balanced')).toEqual([{ encoder: 'x265', preset: 'slow', quality: 22 }])
+  })
+
+  it('does not stop exploring presets when an earlier preset has an eligible result', () => {
+    const domain: CandidateEncodingParameters[] = ['medium', 'slow'].flatMap(preset => [18, 22, 26].map(quality => ({ encoder: 'x265', preset, quality })))
+    const medium = [18, 22, 26].map(quality => candidate({ preset: 'medium', quality, outputBytes: 70 }))
+
+    expect(nextCandidateSearch(domain, medium, 'balanced')).toEqual([domain[4]])
   })
 
   it('rejects partial candidates only when the full-sample quality gate is mathematically impossible', () => {
@@ -125,9 +147,4 @@ describe('selectMeasuredCandidate', () => {
       .toThrow('No measured candidate satisfies')
   })
 
-  it('continues to later presets when a quality-passing result exceeds the size-rate ceiling', () => {
-    const domain: CandidateEncodingParameters[] = ['medium', 'slow'].flatMap(preset => [18, 22, 26].map(quality => ({ encoder: 'x265', preset, quality })))
-    const tooLarge = [18, 22, 26].map(quality => candidate({ preset: 'medium', quality, outputBytes: 120, sampledDurationSeconds: 30 }))
-    expect(nextCandidateSearch(domain, tooLarge, 'balanced', 3)).toEqual([domain[4]])
-  })
 })

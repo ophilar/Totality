@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
 import type { TVShowSummary, MediaItem } from './types'
-import type { GpuInfo, PlannedOptimizationOperation, SavedShowPreflight, ShowTranscodePreflight } from './transcoding/types'
+import type { GpuInfo, PlannedOptimizationOperation, SavedShowPreflight, ShowTranscodePreflight, ShowOptimizationDiscovery } from './transcoding/types'
 import { EncoderPolicySelector } from './transcoding/EncoderPolicySelector'
 import { formatLanguage, getOptimizationContainer, isSameLanguage, LANGUAGE_OPTIONS, parseLanguageWhitelist } from './mediaUtils'
 import { describeDiagnosticError, logOptimizationDiagnostic } from './optimizationDiagnostics'
@@ -89,8 +89,9 @@ function getSourceTierBadge(tier?: string) {
 function getAdvisoryBadges(operations: PlannedOptimizationOperation[], compatible: boolean = true, decisionStatus?: string) {
   const badges: ReactNode[] = []
   const outcome = decisionStatus === 'quality_threshold_unmet' ? 'Quality threshold unmet'
+    : decisionStatus === 'no_positive_savings' ? 'No positive measured savings'
     : decisionStatus === 'measurement_failed' ? 'Measurement failed'
-      : decisionStatus === 'no_savings' ? 'No savings in tested encodes' : undefined
+    : decisionStatus === 'no_savings' ? 'No savings in tested encodes' : undefined
   if (outcome) {
     badges.push(<span key={decisionStatus} className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{outcome}</span>)
   } else if (decisionStatus === 'insufficient_evidence') {
@@ -235,14 +236,31 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
   const [message, setMessage] = useState('')
   const [isSuccess, setIsSuccess] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [optimizationDiscovery, setOptimizationDiscovery] = useState<ShowOptimizationDiscovery | null>(null)
+  const [selectedDiscoveryGroups, setSelectedDiscoveryGroups] = useState<string[]>([])
+  const [representativeMediaItemIds, setRepresentativeMediaItemIds] = useState<Record<string, number>>({})
+  const [includeOtherOperationItems, setIncludeOtherOperationItems] = useState(false)
+  const [preparationStartedAt, setPreparationStartedAt] = useState<number>()
+  const [preparationElapsedSeconds, setPreparationElapsedSeconds] = useState(0)
   const [quarantineFiles, setQuarantineFiles] = useState<Array<{ mediaItemId: number; label: string; path: string; size: number; modifiedAt: string; owned: boolean }>>([])
 
   const handleQueueError = useCallback((error: unknown) => addToast({ type: 'error', title: 'Show queue state', message: String(error) }), [addToast])
   const workflow = useOptimizationWorkflow(handleQueueError)
   const { queueState, stage, setStage, review: preflightData, reviewedSampleGroups, setReviewedSampleGroups, batchId: activeBatchId, submittedMediaItemIds, submittedTaskIds, queueControlState: batchQueueControlState, preparationTermination: preflightTermination, setPreparationTermination: setPreflightTermination, preparationProgress: preflightProgress, setPreparationProgress: setPreflightProgress, preparationState: preflightOperationState, setPreparationState: setPreflightOperationState, activePreparationRequestId: activePreflightRequestId, activePreparationTaskId: activePreflightTaskId, rejectPreparation: rejectPreflightWait, preparationMovedToBackground: backgroundPreflight, preparationStartedHere: startedPreflightHere, batchSummary, reviewMatches, replaceReview, clearReview, submitBatch, toggleQueuePause, retryFailedTasks, reconcilePreparationQueue } = workflow
-  const mode = stage === 'options' ? 'config' : stage === 'review' ? 'preview' : 'monitoring'
-  const setMode = useCallback((nextMode: 'config' | 'preview' | 'monitoring') => setStage(nextMode === 'config' ? 'options' : nextMode === 'preview' ? 'review' : 'results'), [setStage])
+  const mode = stage === 'options' ? optimizationDiscovery ? 'candidates' : 'config' : stage === 'review' ? 'preview' : 'monitoring'
+  const setMode = useCallback((nextMode: 'config' | 'preview' | 'monitoring') => {
+    if (nextMode === 'config') setOptimizationDiscovery(null)
+    setStage(nextMode === 'config' ? 'options' : nextMode === 'preview' ? 'review' : 'results')
+  }, [setStage])
   const sampleApprovalGroups = useMemo(() => buildSampleApprovalGroups(preflightData), [preflightData])
+
+  useEffect(() => {
+    if (!busy || preparationStartedAt === undefined) return
+    const updateElapsed = () => setPreparationElapsedSeconds(Math.floor((Date.now() - preparationStartedAt) / 1000))
+    updateElapsed()
+    const interval = window.setInterval(updateElapsed, 1000)
+    return () => window.clearInterval(interval)
+  }, [busy, preparationStartedAt])
 
   const matchesPreparationScope = useCallback((task: QueuedTask) => {
     const request = (task.options as { request?: { seriesIdentityKey?: string; sourceId?: string; libraryId?: string; mediaItemId?: number; seasonNumber?: number } } | undefined)?.request
@@ -603,10 +621,11 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
     })
   }
 
-  const runPreflight = async (overrides: { removeUnnecessaryStreams?: boolean; adjustToTarget?: boolean; targetProfileId?: string; representativeMediaItemId?: number } = {}) => {
-    const { representativeMediaItemId, ...optionOverrides } = overrides
+  const runPreflight = async (overrides: { removeUnnecessaryStreams?: boolean; adjustToTarget?: boolean; targetProfileId?: string; representativeMediaItemId?: number; representativeMediaItemIds?: Record<string, number>; selectedMediaItemIds?: number[] } = {}) => {
+    const { representativeMediaItemId, representativeMediaItemIds, selectedMediaItemIds, ...optionOverrides } = overrides
     const requestId = crypto.randomUUID()
     const requestedAt = Date.now()
+    setPreparationStartedAt(requestedAt)
     const shouldRemoveStreams = overrides.removeUnnecessaryStreams ?? removeUnnecessaryStreams
     const shouldAdjustToTarget = overrides.adjustToTarget ?? adjustToTarget
     const effectiveTargetProfileId = overrides.targetProfileId ?? targetProfileId
@@ -614,6 +633,9 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
     const settings = {
       requestId, scope: episode ? 'episode' : seasonNumber === undefined ? 'series' : 'season', seriesIdentityKey, mediaItemId: episode?.id, sourceId, libraryId, optimizationMode, outputMode,
       seasonNumber,
+      selectedMediaItemIds: selectedMediaItemIds ?? null,
+      representativeMediaItemId: representativeMediaItemId ?? null,
+      representativeMediaItemIds: representativeMediaItemIds ?? null,
       codec: codec || null, qualityProfile: qualityProfile || null, encoderPolicy: encoderPolicy || null,
       targetContainer: targetContainer || null, targetHdrFormat: targetHdrFormat || null,
       gpuId: gpuId || null, removeUnnecessaryStreams: shouldRemoveStreams,
@@ -647,6 +669,8 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
         sourceId,
         libraryId,
         representativeMediaItemId,
+        representativeMediaItemIds,
+        selectedMediaItemIds,
         options: getCleanOptions(optionOverrides)
       })
       if (started.requestId !== requestId) throw new Error('The background preflight returned a different request identity')
@@ -724,12 +748,56 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
     }
   }
 
-  const handlePreviewPlan = async () => {
+  const handleDiscoverCandidates = async () => {
+    const missing = getMissingSettings({})
+    if (missing.length) {
+      setMessage(`Choose ${missing.join(', ')} before discovering candidates.`)
+      return
+    }
+    setBusy(true)
+    setMessage('')
+    setPreflightProgress(null)
+    setPreflightOperationState(null)
+    try {
+      const result = await window.electronAPI.discoverShowOptimization({
+        requestId: crypto.randomUUID(),
+        mediaItemId: episode?.id,
+        seasonNumber,
+        seriesTitle: show.series_title,
+        seriesIdentityKey,
+        sourceId,
+        libraryId,
+        options: getCleanOptions({}),
+      })
+      setOptimizationDiscovery(result)
+      setSelectedDiscoveryGroups(result.groups.map(group => group.id))
+      setIncludeOtherOperationItems(false)
+      setRepresentativeMediaItemIds(Object.fromEntries(result.groups.map(group => [group.id, group.representativeMediaItemId])))
+      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'discovery.completed', {
+        scope: episode ? 'media-item' : seasonNumber === undefined ? 'series' : 'season',
+        seriesIdentityKey,
+        mediaItemId: episode?.id,
+        candidateCount: result.candidateCount,
+        groups: result.groups.map(group => ({ id: group.id, mediaItemIds: group.mediaItemIds, representativeMediaItemId: group.representativeMediaItemId })),
+        otherOperationMediaItemIds: result.otherOperationMediaItemIds,
+      })
+      setStage('options')
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error)
+      logOptimizationDiagnostic('TVOptimizationUI', 'error', 'discovery.failed', { seriesIdentityKey, mediaItemId: episode?.id, error: describeDiagnosticError(error) })
+      setMessage(errMsg)
+      addToast({ type: 'error', title: 'Candidate discovery failed', message: errMsg })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handlePreviewPlan = async (selection?: { selectedMediaItemIds: number[]; representativeMediaItemIds: Record<string, number> }) => {
     setBusy(true)
     setMessage('')
     setIsSuccess(false)
     try {
-      const preflight = await runPreflight()
+      const preflight = await runPreflight(selection)
       if (backgroundPreflight.current) return
       setMode('preview')
       logOptimizationDiagnostic('TVOptimizationUI', 'info', 'review.opened', { preflightId: preflight.preflightId, batchId: preflight.batchId, episodeCount: preflight.episodes.length, sampleReviewCount: preflight.episodes.filter(item => item.compatible && item.samplePaths?.length).length })
@@ -752,6 +820,18 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
     } finally {
       if (!backgroundPreflight.current) setBusy(false)
     }
+  }
+
+  const prepareAlternateRepresentative = async (item: ShowTranscodePreflight['episodes'][number]) => {
+    if (!preflightData || !item.samplingGroupKey) throw new Error('The saved sample group identity is unavailable. Discover candidates and analyze the group again.')
+    const saved = await window.electronAPI.getShowPreflight(preflightData.preflightId) as SavedShowPreflight | undefined
+    if (!saved) throw new Error('The saved optimization review could not be found')
+    const selectedMediaItemIds = saved.request.selectedMediaItemIds ?? saved.result.episodes.map(episode => episode.mediaItemId)
+    const representativeMediaItemIds = {
+      ...saved.request.representativeMediaItemIds,
+      [item.samplingGroupKey]: item.mediaItemId,
+    }
+    await runPreflight({ selectedMediaItemIds, representativeMediaItemIds, representativeMediaItemId: saved.request.representativeMediaItemId })
   }
 
   const handleQueueFromPreview = async () => {
@@ -864,12 +944,34 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
     ? getPlaybackTargetContainers(targetProfile, { codec: episode?.video_codec, profile: episode?.video_profile, hdrFormat: episode?.hdr_format })
     : ['matroska', 'mp4']
   const missingSettings = getMissingSettings()
+  const queueableEpisodeCount = preflightData?.episodes.filter(episode =>
+    episode.compatible && (episode.decisionStatus === 'actionable' || episode.decisionStatus === 'sample_required'),
+  ).length ?? 0
+  const unreviewedSampleGroup = sampleApprovalGroups.some(group => !reviewedSampleGroups.includes(group.id))
+  const queueDisabledReason = !preflightData?.compatible
+    ? 'No episodes are compatible with the selected optimization plan.'
+    : queueableEpisodeCount === 0
+      ? 'No episodes have an actionable optimization plan. Change settings and prepare a new review.'
+      : unreviewedSampleGroup
+        ? 'Review and approve each measured sample group before queueing.'
+        : undefined
   const verifiedResults = queueState.completedTasks.filter(task => task.batchId === activeBatchId && task.status === 'completed' && typeof task.result?.physicallyReclaimedBytes === 'number').map(task => task.result!)
   const isSubmittedTask = (task: QueuedTask) => task.batchId === activeBatchId && (submittedTaskIds.length > 0 ? submittedTaskIds.includes(task.id) : submittedMediaItemIds.includes(task.mediaItemId ?? -1))
   const batchQueue = queueState.queue.filter(isSubmittedTask)
+  const batchCompletedTasks = queueState.completedTasks.filter(isSubmittedTask)
   const currentTask = queueState.currentTask && isSubmittedTask(queueState.currentTask) ? queueState.currentTask : null
   const isCurrentTranscode = currentTask?.type === TaskType.Transcode
-  const currentTaskStatusLabel = currentTask?.status === 'cancelling' ? 'Cancelling' : 'Running'
+  const currentTaskStatusLabel = currentTask?.status === 'cancelling' ? 'Cancelling' : queueState.isPaused ? 'Paused' : 'Running'
+  const currentTaskStartedAt = currentTask?.startedAt ? Date.parse(currentTask.startedAt) : undefined
+  const [currentTaskElapsedSeconds, setCurrentTaskElapsedSeconds] = useState(0)
+
+  useEffect(() => {
+    if (currentTaskStartedAt === undefined) return
+    const updateElapsed = () => setCurrentTaskElapsedSeconds(Math.floor((Date.now() - currentTaskStartedAt) / 1000))
+    updateElapsed()
+    const interval = window.setInterval(updateElapsed, 1000)
+    return () => window.clearInterval(interval)
+  }, [currentTaskStartedAt])
 
   const currentPercent = currentTask?.progress?.percentage ?? 0
   const currentFps = currentTask?.progress?.fps ? `${currentTask.progress.fps} FPS` : 'Encoding'
@@ -887,7 +989,8 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
       <div className="flex items-center justify-between gap-3 text-xs">
         <span className="font-semibold">{preflightOperationState === 'paused' ? 'Review preparation paused' : preflightProgress.phase || (seasonNumber === undefined ? 'Preparing series review' : `Preparing Season ${seasonNumber} review`)}</span>
         <div className="flex items-center gap-2">
-          <span className="text-muted-foreground tabular-nums">{preflightProgress.percentage}%</span>
+          <span className="text-muted-foreground tabular-nums">Elapsed {preparationElapsedSeconds}s</span>
+          {typeof preflightProgress.percentage === 'number' && <span className="text-muted-foreground tabular-nums">{preflightProgress.percentage}%</span>}
           <button
             type="button"
             disabled={!activePreflightRequestId.current || preflightTermination !== null || preflightOperationState === 'pausing' || preflightOperationState === 'finishing'}
@@ -947,7 +1050,7 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
   ) : null
 
   return <OptimizationDialogShell
-    title={episode ? mode === 'monitoring' ? 'Episode results' : mode === 'preview' ? 'Review episode changes' : 'Optimize episode' : mode === 'monitoring' ? (seasonNumber === undefined ? 'Series results' : `Season ${seasonNumber} results`) : mode === 'preview' ? (seasonNumber === undefined ? 'Review series changes' : `Review Season ${seasonNumber} changes`) : seasonNumber === undefined ? 'Optimize series' : `Optimize Season ${seasonNumber}`}
+    title={episode ? mode === 'monitoring' ? 'Episode results' : mode === 'preview' ? 'Review episode changes' : mode === 'candidates' ? 'H.264 candidates' : 'Optimize episode' : mode === 'monitoring' ? (seasonNumber === undefined ? 'Series results' : `Season ${seasonNumber} results`) : mode === 'preview' ? (seasonNumber === undefined ? 'Review series changes' : `Review Season ${seasonNumber} changes`) : mode === 'candidates' ? 'H.264 candidates' : seasonNumber === undefined ? 'Optimize series' : `Optimize Season ${seasonNumber}`}
     subtitle={`${show.series_title}${episode ? ` · S${String(episode.season_number ?? '?').padStart(2, '0')}E${String(episode.episode_number ?? '?').padStart(2, '0')} · 1 item` : `${seasonNumber === undefined ? '' : ` · Season ${seasonNumber}`}${preflightData ? ` · ${preflightData.episodeCount} items` : ''}`}`}
     leading={mode === 'monitoring' ? <Activity className="h-5 w-5 animate-pulse" /> : <Zap className="h-5 w-5 fill-current" />}
     onClose={() => void handleClose()}
@@ -968,22 +1071,39 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
               <div className="flex items-center gap-2">
                 <button
                   disabled={busy || targetProfilesLoading || missingSettings.length > 0}
-                  onClick={() => void handlePreviewPlan()}
+                  onClick={() => void handleDiscoverCandidates()}
                   className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground font-black rounded-xl text-xs transition-all disabled:opacity-50 shadow-lg shadow-primary/20 hover:opacity-90 cursor-pointer"
                 >
                   {busy ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>{seasonNumber === undefined ? 'Preparing series review…' : `Preparing Season ${seasonNumber} review…`}</span>
+                      <span>Discovering candidates…</span>
                     </>
                   ) : (
                     <>
                       <Sparkles className="w-4 h-4" />
-                      <span>Prepare review</span>
+                      <span>Find H.264 candidates</span>
                     </>
                   )}
                 </button>
               </div>
+            </>
+          ) : mode === 'candidates' ? (
+            <>
+              <button type="button" onClick={() => setMode('config')} className="flex items-center gap-1.5 px-4 py-2 bg-muted hover:bg-muted/80 rounded-xl text-xs font-bold transition-all cursor-pointer">
+                <ArrowLeft className="w-3.5 h-3.5" /><span>Change settings</span>
+              </button>
+              <button
+                disabled={busy || selectedDiscoveryGroups.length === 0 && !includeOtherOperationItems}
+                onClick={() => {
+                  const groups = optimizationDiscovery?.groups.filter(group => selectedDiscoveryGroups.includes(group.id)) ?? []
+                  const selectedRepresentatives = Object.fromEntries(groups.map(group => [group.id, representativeMediaItemIds[group.id]]))
+                  const selectedIds = [...groups.flatMap(group => group.mediaItemIds), ...(includeOtherOperationItems ? optimizationDiscovery?.otherOperationMediaItemIds ?? [] : [])]
+                  void handlePreviewPlan({ selectedMediaItemIds: selectedIds, representativeMediaItemIds: selectedRepresentatives })
+                }}
+                title={selectedDiscoveryGroups.length === 0 && !includeOtherOperationItems ? 'Select at least one H.264 group or include other optimization operations' : undefined}
+                className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground font-black rounded-xl text-xs transition-all disabled:opacity-50 shadow-lg shadow-primary/20 hover:opacity-90 cursor-pointer"
+              >{busy ? <><RefreshCw className="w-4 h-4 animate-spin" /><span>Analyzing selected groups…</span></> : <><Sparkles className="w-4 h-4" /><span>Analyze selected groups</span></>}</button>
             </>
           ) : mode === 'preview' ? (
             <>
@@ -992,11 +1112,12 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
                 className="flex items-center gap-1.5 px-4 py-2 bg-muted hover:bg-muted/80 rounded-xl text-xs font-bold transition-all cursor-pointer"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Back to Settings</span>
+                <span>Change settings</span>
               </button>
+              {queueDisabledReason && <span role="status" className="max-w-md text-xs text-muted-foreground">{queueDisabledReason}</span>}
 
               <button
-                disabled={busy || !preflightData?.compatible || sampleApprovalGroups.some(group => !reviewedSampleGroups.includes(group.id))}
+                disabled={busy || Boolean(queueDisabledReason)}
                 onClick={() => void handleQueueFromPreview()}
                 className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground font-black rounded-xl text-xs transition-all disabled:opacity-50 shadow-lg shadow-primary/20 hover:opacity-90 cursor-pointer"
               >
@@ -1028,10 +1149,11 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
         </div>}
   >
 
+        {preflightProgressPanel}
+
         {/* Content */}
         {mode === 'config' ? (
           <div className="p-5 sm:p-6 space-y-5">
-            {preflightProgressPanel}
             <div className="rounded-xl border border-border/40 bg-muted/20 p-3 flex items-center justify-between gap-3">
               <div className="min-w-0"><div className="text-xs font-bold">Quarantined originals</div><div className="text-[11px] text-muted-foreground">{quarantineFiles.length} retained file{quarantineFiles.length === 1 ? '' : 's'} · {formatBytes(quarantineFiles.reduce((total, file) => total + file.size, 0))}{quarantineFiles.some(file => !file.owned) && ' · Unowned backups require separate review'}</div></div>
               <div className="flex gap-2 shrink-0"><button type="button" onClick={loadQuarantine} className="px-2.5 py-1.5 text-xs rounded-lg border border-border hover:bg-muted">List</button><button type="button" onClick={purgeQuarantine} disabled={quarantineFiles.length === 0 || quarantineFiles.some(file => !file.owned)} className="px-2.5 py-1.5 text-xs rounded-lg border border-red-500/40 text-red-300 disabled:opacity-40">Purge</button></div>
@@ -1383,10 +1505,34 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
             )}
             </details>
           </div>
+        ) : mode === 'candidates' && optimizationDiscovery ? (
+          <div className="p-5 sm:p-6 space-y-4">
+            {message && <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">{message}</div>}
+            <div className="rounded-xl border border-border/40 bg-muted/20 p-4 space-y-2">
+              <h3 className="text-sm font-bold">Metadata discovery complete</h3>
+              <p className="text-xs text-muted-foreground">{optimizationDiscovery.candidateCount} H.264 files are conversion candidates. Discovery used saved library metadata only; no samples or encodes have run. Each unchecked candidate still needs analysis before its savings or quality can be known.</p>
+              <p className="text-xs text-muted-foreground">Groups use season and saved technical profile. The representative is the episode nearest the group’s median bitrate; you can choose another representative before Analyze.</p>
+            </div>
+            {optimizationDiscovery.groups.length === 0 ? <p className="rounded-lg border border-border/40 p-3 text-xs text-muted-foreground">No H.264 files were found in this scope. Non-H.264 media can still be analyzed for existing stream, container, and playback operations below.</p> : null}
+            <div className="space-y-2">
+              {optimizationDiscovery.groups.map(group => {
+                const selected = selectedDiscoveryGroups.includes(group.id)
+                return <div key={group.id} className="rounded-xl border border-border/40 bg-card/20 p-3 flex flex-wrap items-center gap-3">
+                  <input aria-label={`Analyze group ${group.technicalProfile}`} type="checkbox" checked={selected} onChange={event => setSelectedDiscoveryGroups(current => event.target.checked ? [...current, group.id] : current.filter(id => id !== group.id))} />
+                  <div className="min-w-[180px] flex-1"><p className="text-xs font-semibold">{group.seasonNumber === undefined ? 'Film' : `Season ${group.seasonNumber}`} · {group.mediaItemIds.length} file{group.mediaItemIds.length === 1 ? '' : 's'}</p><p className="text-[11px] text-muted-foreground">{group.technicalProfile} · Analysis needed</p></div>
+                  <label className="text-[11px] text-muted-foreground">Representative
+                    <select aria-label={`Representative for ${group.technicalProfile}`} value={representativeMediaItemIds[group.id] ?? group.representativeMediaItemId} onChange={event => setRepresentativeMediaItemIds(current => ({ ...current, [group.id]: Number(event.target.value) }))} className="ml-2 max-w-64 rounded-md border border-border bg-background px-2 py-1 text-foreground">
+                  {group.mediaItemIds.map(id => <option key={id} value={id}>{group.mediaItemLabels[id]}{id === group.representativeMediaItemId ? ' (median bitrate)' : ''}</option>)}
+                    </select>
+                  </label>
+                </div>
+              })}
+            </div>
+            {optimizationDiscovery.otherOperationMediaItemIds.length > 0 && <label className="flex items-start gap-2 rounded-lg border border-border/40 p-3 text-xs"><input type="checkbox" checked={includeOtherOperationItems} onChange={event => setIncludeOtherOperationItems(event.target.checked)} /><span>Also analyze {optimizationDiscovery.otherOperationMediaItemIds.length} non-H.264 file{optimizationDiscovery.otherOperationMediaItemIds.length === 1 ? '' : 's'} for existing stream, container, and playback operations. These are not labeled as video conversion candidates.</span></label>}
+          </div>
         ) : mode === 'preview' && preflightData ? (
           /* Preflight Preview Mode */
           <div className="p-5 sm:p-6 space-y-4">
-            {preflightProgressPanel}
             {message && <div role={isSuccess ? 'status' : 'alert'} className={`rounded-xl border p-3 text-xs ${isSuccess ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400' : 'border-destructive/20 bg-destructive/10 text-destructive'}`}>{message}</div>}
             {/* Summary card */}
             <div className="bg-muted/20 border border-border/30 rounded-2xl p-4 space-y-3">
@@ -1396,6 +1542,7 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
                   <p className="text-xs text-muted-foreground">{preflightData.episodes.length} episodes analyzed; only evidenced actions can be queued</p>
                   <p className="text-xs text-muted-foreground">{preflightData.episodes.filter(ep => ep.samplingRole === 'measured').length} episode samples measured · {preflightData.episodes.filter(ep => ep.samplingRole === 'projected').length} episodes use representative settings. Compatibility is inspected per episode.</p>
                   <p className="text-xs text-muted-foreground">Quality metrics use VMAF {preflightData.measurementModel ?? 'model unavailable'}.</p>
+                  {preflightData.episodes.some(ep => ep.samplingRole === 'measured') && <p className="text-xs text-muted-foreground">Recommendations are the best measured results within the searched configurations; they are not a claim of a global optimum.</p>}
                   <p className="text-sm font-semibold">Selected series plan total: <EstimatedSavingsDisplay bytes={preflightData.estimatedSavingsBytes} /> · {preflightData.savingsCoverage ?? 'insufficient'} evidence{preflightData.savingsBasis === 'sample_based_projection' ? ' · Sample-based projection' : preflightData.savingsBasis === 'mixed_sample_projection' ? ' · Includes sample-based projections' : preflightData.savingsBasis === 'representative_sample_projection' || preflightData.savingsBasis === 'mixed_representative_sample_projection' ? ' · Includes representative-sample projections' : ''}</p>
                 </div>
                 <label className="flex items-center gap-2 text-xs text-muted-foreground">Playback target
@@ -1482,9 +1629,9 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
                     </div>
                     {ep.samplingRole === 'measured' && <p className="text-xs text-primary">Encode samples measured from this episode.</p>}
                     {ep.samplingRole === 'projected' && <p className="text-xs text-amber-300">Uses measured settings from {ep.sampleRepresentativeLabel}; this episode’s savings are projected.</p>}
-                    {ep.decisionStatus === 'insufficient_evidence' && ep.reason?.startsWith('Not sampled:') && ep.sourceAnalysis?.video && <button className="text-xs underline" disabled={busy} onClick={() => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.representative.reselected', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId }); void runPreflight({ representativeMediaItemId: ep.mediaItemId }).catch(error => { const message = error instanceof Error ? error.message : String(error); setMessage(message); addToast({ type: 'error', title: 'Could not retry representative sample', message }) }) }}>Use this episode as the sample for its technical group</button>}
+                    {ep.decisionStatus === 'insufficient_evidence' && ep.reason?.startsWith('Not sampled:') && ep.sourceAnalysis?.video && <button className="text-xs underline" disabled={busy} onClick={() => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.representative.reselected', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, samplingGroupKey: ep.samplingGroupKey }); void prepareAlternateRepresentative(ep).catch(error => { const message = error instanceof Error ? error.message : String(error); setMessage(message); addToast({ type: 'error', title: 'Could not retry representative sample', message }) }) }}>Use this episode as the sample for its technical group</button>}
                     {ep.sourceAnalysis?.video ? <details className="text-[11px]"><summary className="cursor-pointer text-muted-foreground">Source technical evidence</summary><p>{ep.sourceAnalysis.video.codec} · {ep.sourceAnalysis.video.width}×{ep.sourceAnalysis.video.height} · {ep.sourceAnalysis.video.frameRate} fps · {ep.sourceAnalysis.video.bitDepth}-bit · {ep.sourceAnalysis.video.bitrateKbps ? `${Math.round(ep.sourceAnalysis.video.bitrateKbps)} kb/s` : 'bitrate unavailable'} · {ep.hdrFormat} · {ep.sourceCambiMean === undefined ? 'source banding metric unavailable' : `source CAMBI ${ep.sourceCambiMean.toFixed(2)}`} · {ep.sourceSelfVmaf === undefined ? 'source-self control unavailable' : `source-self VMAF ${ep.sourceSelfVmaf.toFixed(2)}`}</p></details> : null}
-                    {ep.qualityChoices?.length ? <div className="grid gap-1 rounded-md bg-muted/30 p-2 text-[11px]">{ep.qualityChoices.map(choice => <div key={choice.profile}><p><strong>{choice.profile === 'transparent' ? 'Higher fidelity' : 'Smaller file'}:</strong> {choice.status === 'available' ? `${formatBytes(choice.estimatedSavingsBytes ?? 0)} estimated savings · ${choice.candidate?.encoder}/${choice.candidate?.preset} q${choice.candidate?.quality} · ${choice.candidate?.sampledDurationSeconds.toFixed(0)}s sampled · VMAF ${choice.candidate?.vmafMean.toFixed(1)} mean, ${choice.candidate?.vmafP5.toFixed(1)} p5 · CAMBI ${choice.candidate?.cambiMean.toFixed(2)} output / ${choice.candidate?.sourceCambiMean?.toFixed(2) ?? 'source unavailable'} source · source-self VMAF ${choice.candidate?.sourceSelfVmaf?.toFixed(2) ?? 'unavailable'} · ${((choice.candidate?.encodingDurationMs ?? 0) / 1000).toFixed(1)}s sample encode` : choice.status === 'measurement_incomplete' ? 'More candidate measurements are pending' : choice.status === 'incompatible' ? 'Measured candidates do not meet playback requirements' : 'No measured candidate meets this quality requirement'}</p>{choice.alternatives && choice.alternatives.length > 1 ? <details className="mt-1"><summary className="cursor-pointer">Compare {choice.alternatives.length} alternative measured settings</summary><ul className="ml-4 list-disc">{choice.alternatives.map(candidate => <li key={`${candidate.encoder}/${candidate.preset}/${candidate.quality}`}>{candidate.encoder}/{candidate.preset} q{candidate.quality} · {formatBytes(candidate.outputBytes)} / {candidate.sampledDurationSeconds.toFixed(0)}s sampled · VMAF {candidate.vmafMean.toFixed(1)} mean / {candidate.vmafP5.toFixed(1)} p5 · CAMBI {candidate.cambiMean.toFixed(2)} · {((candidate.encodingDurationMs ?? 0) / 1000).toFixed(1)}s</li>)}</ul></details> : null}</div>)}</div> : null}
+                    {ep.qualityChoices?.length ? <div className="grid gap-1 rounded-md bg-muted/30 p-2 text-[11px]">{ep.qualityChoices.map(choice => <div key={choice.profile}><p><strong>{choice.profile === 'transparent' ? 'Higher fidelity' : 'Smaller file'}:</strong> {choice.status === 'available' ? `${formatBytes(choice.estimatedSavingsBytes ?? 0)} estimated savings · ${choice.candidate?.encoder}/${choice.candidate?.preset} q${choice.candidate?.quality} · ${choice.candidate?.sampledDurationSeconds.toFixed(0)}s sampled · VMAF ${choice.candidate?.vmafMean.toFixed(1)} mean, ${choice.candidate?.vmafP5.toFixed(1)} p5 · CAMBI ${choice.candidate?.cambiMean.toFixed(2)} output / ${choice.candidate?.sourceCambiMean?.toFixed(2) ?? 'source unavailable'} source · source-self VMAF ${choice.candidate?.sourceSelfVmaf?.toFixed(2) ?? 'unavailable'} · ${((choice.candidate?.encodingDurationMs ?? 0) / 1000).toFixed(1)}s sample encode` : choice.status === 'measurement_incomplete' ? 'More candidate measurements are pending' : choice.status === 'incompatible' ? 'Measured candidates do not meet playback requirements' : choice.status === 'no_positive_savings' ? 'Measured candidates meet quality and playback requirements but do not save space' : 'No measured candidate meets this quality requirement'}</p>{choice.alternatives && choice.alternatives.length > 1 ? <details className="mt-1"><summary className="cursor-pointer">Compare {choice.alternatives.length} alternative measured settings</summary><ul className="ml-4 list-disc">{choice.alternatives.map(candidate => <li key={`${candidate.encoder}/${candidate.preset}/${candidate.quality}`}>{candidate.encoder}/{candidate.preset} q{candidate.quality} · {formatBytes(candidate.outputBytes)} / {candidate.sampledDurationSeconds.toFixed(0)}s sampled · VMAF {candidate.vmafMean.toFixed(1)} mean / {candidate.vmafP5.toFixed(1)} p5 · CAMBI {candidate.cambiMean.toFixed(2)} · {((candidate.encodingDurationMs ?? 0) / 1000).toFixed(1)}s</li>)}</ul></details> : null}</div>)}</div> : null}
                     {ep.changes?.map(change => <p key={change} className="text-xs">{change}</p>)}
                     {ep.targetCompatibility && <PlaybackCompatibilityFindings evaluation={ep.targetCompatibility} targetName={ep.targetProfile?.name} />}
                     {ep.samplePaths?.length && <p className="text-xs text-muted-foreground">Measured sample is shown in its representative group below.</p>}
@@ -1502,7 +1649,12 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
               <p className="text-xs text-muted-foreground">These episodes use the representative’s measured settings. Their savings are projections.</p>
               <ul className="space-y-1 text-xs">{group.episodes.map(item => <li key={item.mediaItemId} className="flex justify-between gap-3"><span>{item.label}{item.mediaItemId === group.representativeMediaItemId ? ' · measured representative' : ' · uses representative settings'}</span><span>{item.mediaItemId === group.representativeMediaItemId ? 'Measured savings: ' : 'Projected savings: '}<EstimatedSavingsDisplay bytes={item.estimatedSavingsBytes} /></span></li>)}</ul>
               <div className="flex flex-wrap gap-2">{group.samplePaths.map((sample, index) => <button key={`${sample}-${index}`} type="button" className="underline text-xs" onClick={() => { const mediaItemId = group.representativeMediaItemId; void window.electronAPI.openShowSample(preflightData.preflightId, mediaItemId, index).catch(error => { const message = error instanceof Error ? error.message : String(error); setMessage(message); addToast({ type: 'error', title: 'Could not open measured sample', message }) }) }}>Play representative sample {index + 1}</button>)}</div>
-              <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={reviewedSampleGroups.includes(group.id)} onChange={event => setReviewedSampleGroups(ids => event.target.checked ? [...ids, group.id] : ids.filter(id => id !== group.id))} /><span>I reviewed and approve this measured sample group.</span></label>
+              <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={reviewedSampleGroups.includes(group.id)} disabled={busy} onChange={event => {
+                const approved = event.target.checked
+                void window.electronAPI.setShowSampleApproval(preflightData.preflightId, group.id, approved)
+                  .then(setReviewedSampleGroups)
+                  .catch(error => setMessage(error instanceof Error ? error.message : String(error)))
+              }} /><span>I reviewed and approve this measured sample group.</span></label>
             </section>)}
 
             {preflightData.episodes.some(episode => !episode.compatible) && (
@@ -1515,7 +1667,7 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
         ) : (
           /* Live Monitoring Mode */
           <div className="p-5 sm:p-6 space-y-6">
-              {verifiedResults.length > 0 && <div className="rounded-xl border border-border/40 p-3 text-xs">Encoded reduction: {formatBytes(verifiedResults.reduce((sum: number, result: any) => sum + Number(result.encodedReductionBytes || 0), 0))} · Retained originals: {formatBytes(verifiedResults.reduce((sum: number, result: any) => sum + Number(result.retainedOriginalBytes || 0), 0))} · Disk space change: {(verifiedResults.reduce((sum: number, result: any) => sum + Number(result.physicallyReclaimedBytes || 0), 0) / (1024 * 1024)).toFixed(1)} MB reclaimed</div>}
+              {verifiedResults.length > 0 && <div className="rounded-xl border border-border/40 p-3 text-xs">Encoded reduction: {formatBytes(verifiedResults.reduce((sum: number, result: any) => sum + Number(result.encodedReductionBytes || 0), 0))} · Retained originals: {formatBytes(verifiedResults.reduce((sum: number, result: any) => sum + Number(result.retainedOriginalBytes || 0), 0))} · Disk space reclaimed: {(verifiedResults.reduce((sum: number, result: any) => sum + Number(result.physicallyReclaimedBytes || 0), 0) / (1024 * 1024)).toFixed(1)} MB</div>}
             {/* Active Episode Gauge & Status */}
             {currentTask && isCurrentTranscode ? (
               <div className="space-y-5">
@@ -1557,6 +1709,7 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
                     </div>
                     <h4 className="text-sm font-bold text-foreground truncate">{currentTask.label}</h4>
                     <p className="text-xs text-muted-foreground capitalize">{currentTask.progress?.phase || 'Optimizing media streams...'}</p>
+                    <p className="text-[11px] text-muted-foreground">Elapsed {Math.floor(currentTaskElapsedSeconds / 60)}m {currentTaskElapsedSeconds % 60}s</p>
 
                     {/* Linear Progress Bar */}
                     {typeof currentTask.progress?.percentage === 'number' && <div className="h-2 bg-muted/40 rounded-full overflow-hidden w-full">
@@ -1606,6 +1759,17 @@ export function SeriesOptimizationFlow({ show, episode, seasonNumber, onClose, i
               <span>{batchSummary?.successfulCount ?? 0} completed · {batchQueue.length} waiting{queueState.isPaused ? ' · queue paused' : ''}</span>
               <button type="button" onClick={() => window.dispatchEvent(new Event('taskQueue:open'))} className="text-primary hover:underline">Open Task Queue</button>
             </div>
+            {batchCompletedTasks.length > 0 && <section className="rounded-xl border border-border/30 p-3 space-y-2">
+              <h4 className="text-xs font-bold">File results</h4>
+              <ul className="space-y-2 text-xs">{batchCompletedTasks.map(task => <li key={task.id} className="border-t border-border/20 pt-2 first:border-0 first:pt-0">
+                <div className="font-semibold">{task.label}</div>
+                {task.status === 'completed' ? <div className="text-muted-foreground">
+                  Output {typeof task.result?.outputBytes === 'number' ? formatBytes(task.result.outputBytes) : 'size unavailable'} · Verified saving {typeof task.result?.encodedReductionBytes === 'number' ? formatBytes(task.result.encodedReductionBytes) : 'unavailable'}
+                  {task.result?.qualityVerification && ` · VMAF ${task.result.qualityVerification.vmafMean.toFixed(2)} · CAMBI ${task.result.qualityVerification.cambiMean.toFixed(2)}`}
+                  {Number(task.result?.retainedOriginalBytes ?? 0) > 0 && ` · Original retained (${formatBytes(Number(task.result?.retainedOriginalBytes))})`}
+                </div> : <div role="status" className="text-destructive">{task.status === 'cancelled' ? 'Cancelled' : task.status === 'partial' ? 'Partial' : 'Failed'} · {task.error ?? 'Original handling was not completed'}</div>}
+              </li>)}</ul>
+            </section>}
           </div>
         )}
 
