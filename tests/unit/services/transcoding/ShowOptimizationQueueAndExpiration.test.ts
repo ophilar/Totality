@@ -36,6 +36,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
         getSetting: vi.fn(),
         setSetting: vi.fn(),
         deleteSetting: vi.fn(),
+        getSettingsByPrefix: vi.fn().mockReturnValue({}),
       },
       playbackTargetProfiles: {
         get: vi.fn().mockResolvedValue({ id: 'prof-1', name: 'Profile 1' }),
