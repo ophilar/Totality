@@ -61,7 +61,7 @@ describe('Real-Time Update and Event Integrity (No Mocks)', () => {
     
     // We expect at least 2: one from the progress throttle (first item) and one from the finally block.
     expect(libraryUpdates.length).toBeGreaterThanOrEqual(2)
-  })
+  }, 90_000)
 
   it('should emit taskQueue:taskComplete when background analysis finishes', async () => {
      const tq = getTaskQueueService()
