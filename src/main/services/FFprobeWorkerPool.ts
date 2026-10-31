@@ -8,7 +8,7 @@
 
 import { Worker } from 'worker_threads'
 import * as os from 'os'
-import * as path from 'path'
+import * as path from 'node:path'
 import type { FileAnalysisResult } from './MediaFileAnalyzer'
 
 interface WorkerTask {

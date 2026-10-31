@@ -18,7 +18,7 @@ vi.mock('fs', () => ({
   createWriteStream: vi.fn(),
   mkdirSync: vi.fn(),
 }))
-vi.mock('path', () => ({
+vi.mock('node:path', () => ({
   default: { join: (...args: string[]) => args.join('/'), dirname: (p: string) => p },
   join: (...args: string[]) => args.join('/'),
   dirname: (p: string) => p,
@@ -141,6 +141,21 @@ describe('MediaFileAnalyzer', () => {
   })
 
   describe('analyzeCompleteFile', () => {
+    it('skips packet analysis when only metadata is requested', async () => {
+      vi.spyOn(analyzer, 'analyzeFile').mockResolvedValue({
+        success: true,
+        filePath: 'test.mkv',
+        audioTracks: [],
+        subtitleTracks: [],
+      })
+      const measurePacketMetrics = vi.spyOn(analyzer, 'measurePacketMetrics')
+
+      const result = await analyzer.analyzeCompleteFile('test.mkv', { includePacketMetrics: false })
+
+      expect(result.success).toBe(true)
+      expect(measurePacketMetrics).not.toHaveBeenCalled()
+    })
+
     it('returns packet-analysis failures instead of a successful partial analysis', async () => {
       vi.spyOn(analyzer, 'analyzeFile').mockResolvedValue({
         success: true,

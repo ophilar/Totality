@@ -195,6 +195,7 @@ describe('QualityAnalyzer - File Evidence Analysis Caching', () => {
     expect(mockAnalyzeCompleteFile).toHaveBeenCalledWith('/media/movies/NewMovie.mkv', {
       scanBitrate: true,
       detectVolume: true,
+      includePacketMetrics: true,
       signal: undefined,
     })
     expect(mockUpdateDeepAnalysisByPath).toHaveBeenCalled()

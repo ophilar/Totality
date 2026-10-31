@@ -1,6 +1,6 @@
 import { IPC_CHANNELS } from '../../shared/ipcChannels'
 import { BrowserWindow, dialog, shell } from 'electron'
-import * as path from 'path'
+import * as path from 'node:path'
 import { z } from 'zod'
 import { getDatabase } from '../database/getDatabase'
 import { getQualityAnalyzer } from '../services/QualityAnalyzer'

@@ -17,7 +17,7 @@ import { getErrorMessage } from '../../services/utils/errorUtils'
 
 import type { Database } from 'sql.js'
 import * as fs from 'fs'
-import * as path from 'path'
+import * as path from 'node:path'
 import { getDatabase } from '../../database/getDatabase'
 import { getQualityAnalyzer } from '../../services/QualityAnalyzer'
 import { getKodiLocalDiscoveryService } from '../../services/KodiLocalDiscoveryService'

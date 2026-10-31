@@ -37,8 +37,8 @@ vi.mock('fs', () => ({
   unlinkSync: vi.fn(),
 }))
 
-vi.mock('path', async (importOriginal) => {
-  const actual = await importOriginal() as typeof import('path')
+vi.mock('node:path', async (importOriginal) => {
+  const actual = await importOriginal() as typeof import('node:path')
   return { ...actual }
 })
 

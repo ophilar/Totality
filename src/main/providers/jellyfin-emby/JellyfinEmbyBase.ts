@@ -8,7 +8,7 @@ import { retryWithBackoff } from '../../services/utils/retryWithBackoff'
  * Both servers share a very similar API since Jellyfin forked from Emby.
  */
 
-import * as path from 'path'
+import * as path from 'node:path'
 import { fetchJSON, fetchWithTimeout, buildUrl } from '../../services/utils/httpClient'
 import { getDatabase } from '../../database/getDatabase'
 import { getQualityAnalyzer } from '../../services/QualityAnalyzer'
