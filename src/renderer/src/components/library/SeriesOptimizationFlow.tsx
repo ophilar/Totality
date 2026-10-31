@@ -362,10 +362,14 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
       : targetProfile
       ? recommendPlaybackTargetContainer(targetProfile, sourceVideo, episode?.container)
       : sourceContainer || 'mkv'
-    updateConfiguration({ targetContainer: preferredContainer, targetContainerSelection: 'automatic' })
+    if (targetContainerSelection !== 'user-selected') {
+      if (targetContainer !== preferredContainer || targetContainerSelection !== 'automatic') {
+        updateConfiguration({ targetContainer: preferredContainer, targetContainerSelection: 'automatic' })
+      }
+    }
     const targetSupports = (candidate: 'hevc' | 'av1') => !targetProfile || targetProfile.definition.video.codecs.some(codec => normalizeVideoCodec(codec) === normalizeVideoCodec(candidate))
-    const selectedCodec = (['hevc', 'av1'] as const).find(targetSupports) ?? ''
-    setCodec(selectedCodec)
+    const selectedCodec = codec && targetSupports(codec) ? codec : (['hevc', 'av1'] as const).find(targetSupports) ?? ''
+    if (selectedCodec !== codec) setCodec(selectedCodec)
 
     const targetHdrFormats = targetProfile?.definition.hdr.formats.map(format => format.toUpperCase()) ?? []
     const sourceIsSdr = !sourceHdrFormat || ['SDR', 'NONE'].includes(sourceHdrFormat)
@@ -378,7 +382,11 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
       : sourceHdrSupported
         ? sourceHdrFormat as 'SDR' | 'HDR10'
         : targetHdrFormats.includes('HDR10') ? 'HDR10' : 'SDR'
-    setTargetHdrFormat(targetProfile && episode ? recommendedHdr : '')
+    const supportedHdr = !targetProfile || !targetHdrFormat || targetHdrFormat === 'SDR' || targetHdrFormats.includes(targetHdrFormat)
+    if (!supportedHdr || !targetHdrFormat) {
+      const nextHdrFormat = targetProfile && episode ? recommendedHdr : ''
+      if (nextHdrFormat !== targetHdrFormat) setTargetHdrFormat(nextHdrFormat)
+    }
     logOptimizationDiagnostic('TVOptimizationUI', 'info', 'output.settings.recommended', {
       seriesIdentityKey,
       mediaItemId: episode?.id,
@@ -393,7 +401,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
       containerSelection: 'automatic',
       allowedContainers: supportedContainers
     })
-  }, [preflightData, episode, seriesIdentityKey, sourceTargetCodec, sourceHdrFormat, sourceContainer, targetProfile, updateConfiguration, setCodec, setTargetHdrFormat])
+  }, [preflightData, episode, seriesIdentityKey, sourceTargetCodec, sourceHdrFormat, sourceContainer, targetProfile, targetContainer, targetContainerSelection, codec, targetHdrFormat, updateConfiguration, setCodec, setTargetHdrFormat])
 
 
   const handleClose = useCallback(() => {
