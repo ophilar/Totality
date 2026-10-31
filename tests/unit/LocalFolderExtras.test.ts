@@ -5,6 +5,7 @@ vi.mock('fs', () => ({
   default: { existsSync: vi.fn(), statSync: vi.fn() },
   existsSync: vi.fn(),
   statSync: vi.fn(),
+  promises: { readdir: vi.fn(), stat: vi.fn() },
 }))
 vi.mock('fs/promises', () => ({
   default: { readdir: vi.fn(), stat: vi.fn() },
@@ -167,6 +168,27 @@ describe('targeted music inventory safety', () => {
     expect(result.itemsRemoved).toBe(0)
     expect(result.errors).toEqual([expect.stringContaining('Stored music retained')])
     expect(getMusicTrackByPath).toHaveBeenCalledWith('/music/missing.flac')
+    expect(deleteMusicTrack).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when a full music inventory cannot read a directory', async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.promises.readdir).mockRejectedValue(new Error('volume unavailable'))
+    const deleteMusicTrack = vi.fn()
+    vi.mocked(getDatabase).mockReturnValue({
+      getSetting: vi.fn().mockReturnValue('false'),
+      deleteMusicTrack,
+      getMusicTracks: vi.fn().mockReturnValue([{ id: 42, file_path: '/music/kept.flac' }]),
+    } as never)
+    vi.mocked(getMediaFileAnalyzer).mockReturnValue({ isAvailable: vi.fn().mockResolvedValue(false) } as never)
+    vi.mocked(getFileNameParser).mockReturnValue({ isAudioFile: vi.fn().mockReturnValue(true) } as never)
+    const provider = new LocalFolderProvider({
+      sourceId: 'local-library',
+      connectionConfig: { folderPath: '/music', mediaType: 'music' },
+    } as never)
+    const result = await provider.scanLibrary('music')
+    expect(result.success).toBe(false)
+    expect(result.errors.join(' ')).toContain('volume unavailable')
     expect(deleteMusicTrack).not.toHaveBeenCalled()
   })
 })
