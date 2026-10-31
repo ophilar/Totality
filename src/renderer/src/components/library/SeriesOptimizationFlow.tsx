@@ -26,7 +26,7 @@ import { getHardwareEncoder } from '@main/services/TranscodingCapabilities'
 import { TaskType } from '@main/types/database'
 import { SETTING_KEYS } from '@shared/settingKeys'
 import { normalizeVideoCodec } from '@main/services/MediaNormalizer'
-import { OPTIMIZATION_VIDEO_CODECS, getOptimizationVideoCodec, chooseOptimizationVideoCodec, playbackProfileSupportsOptimizationCodec } from '@main/services/transcoding/OptimizationCodecPolicy'
+import { OPTIMIZATION_VIDEO_CODECS, getOptimizationVideoCodec, chooseOptimizationVideoCodec, playbackProfileSupportsOptimizationCodec , type OptimizationVideoCodec } from '@main/services/transcoding/OptimizationCodecPolicy'
 import { availableOptimizationEncoders, supportedOptimizationCodecs } from '@main/services/transcoding/OptimizationEncoderPolicy'
 import { OptimizationDialogShell } from './transcoding/OptimizationDialogShell'
 import { optimizationAudioCodecOptions, optimizationContainerOptions } from './transcoding/optimizationOptions'
@@ -176,7 +176,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
   const { optimizationMode, targetProfileId, targetContainer, targetContainerSelection, outputMode, audioTrackPolicy, originalAudioLanguage: language, subtitleLanguages: subtitleWhitelist, audioTranscodeEnabled, removeUnnecessaryStreams, playbackPolicy } = configuration
   const qualityProfile = configuration.qualityProfile as OptimizationQualityProfile | ''
   const encoderPolicy = configuration.encoderPolicy as 'automatic' | 'hardware' | 'software' | 'compare' | ''
-  const codec = configuration.targetCodec as 'hevc' | 'av1' | ''
+  const codec = configuration.targetCodec as OptimizationVideoCodec | ''
   const targetAudioCodec = configuration.targetAudioCodec as 'aac' | 'ac3' | 'eac3' | ''
   const targetHdrFormat = configuration.targetHdrFormat as 'SDR' | 'HDR10' | ''
   const setQualityProfile = useCallback((value: OptimizationQualityProfile | '') => updateConfiguration({ qualityProfile: value }), [updateConfiguration])
@@ -529,7 +529,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
 
   const subtitleList = parseLanguageWhitelist(subtitleWhitelist)
 
-  const getCleanOptions = (overrides: { removeUnnecessaryStreams?: boolean; targetProfileId?: string; targetCodec?: 'hevc' | 'av1' } = {}) => {
+  const getCleanOptions = (overrides: { removeUnnecessaryStreams?: boolean; targetProfileId?: string; targetCodec?: OptimizationVideoCodec } = {}) => {
     const shouldRemoveStreams = overrides.removeUnnecessaryStreams ?? removeUnnecessaryStreams
     const shouldAdjustToTarget = adjustToTarget
     const effectiveTargetProfileId = overrides.targetProfileId ?? targetProfileId
@@ -592,7 +592,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
     })
   }
 
-  const runPreflight = async (overrides: { removeUnnecessaryStreams?: boolean; targetProfileId?: string; targetCodec?: 'hevc' | 'av1'; representativeMediaItemId?: number; representativeMediaItemIds?: Record<string, number>; selectedMediaItemIds?: number[] } = {}) => {
+  const runPreflight = async (overrides: { removeUnnecessaryStreams?: boolean; targetProfileId?: string; targetCodec?: OptimizationVideoCodec; representativeMediaItemId?: number; representativeMediaItemIds?: Record<string, number>; selectedMediaItemIds?: number[] } = {}) => {
     const { representativeMediaItemId, representativeMediaItemIds, selectedMediaItemIds, ...optionOverrides } = overrides
     const requestId = crypto.randomUUID()
     const requestedAt = Date.now()
@@ -744,7 +744,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
     void handleDiscoverCandidatesRef.current()
   }, [targetProfilesLoading, initialPreflight, resumeRequestId, optimizationDiscovery])
 
-  const handlePreviewPlan = async (selection?: { selectedMediaItemIds: number[]; representativeMediaItemIds: Record<string, number>; targetCodec?: 'hevc' | 'av1' }) => {
+  const handlePreviewPlan = async (selection?: { selectedMediaItemIds: number[]; representativeMediaItemIds: Record<string, number>; targetCodec?: OptimizationVideoCodec }) => {
     setBusy(true)
     setMessage('')
     setIsSuccess(false)
@@ -885,7 +885,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
       if (encoderPolicy === 'software') return [candidate, `Software encoding for ${label} is unavailable.`]
       if (encoderPolicy === 'hardware') return [candidate, gpus.find(gpu => gpu.id === gpuId) ? `${gpus.find(gpu => gpu.id === gpuId)?.name} cannot encode ${label}.` : `Choose a GPU that supports ${label}.`]
       return [candidate, `No compatible ${label} encoder is available.`]
-    })) as Partial<Record<'hevc' | 'av1', string>>
+    })) as Partial<Record<OptimizationVideoCodec, string>>
   const missingSettings = getMissingSettings()
   const queueableEpisodeCount = preflightData?.episodes.filter(episode =>
     episode.compatible && (episode.decisionStatus === 'actionable' || episode.decisionStatus === 'sample_required'),
