@@ -44,7 +44,7 @@ vi.mock('../../src/main/services/MediaNormalizer', () => ({
   normalizeAudioCodec: vi.fn((c: string) => c),
 }))
 
-import { isExtrasContent } from '@main/providers/local/LocalFolderProvider'
+import { isExtrasContent, readFfprobeBatchSize } from '@main/providers/local/LocalFolderProvider'
 
 describe('isExtrasContent', () => {
   it('detects sample files', () => {
@@ -126,4 +126,19 @@ describe('isExtrasContent', () => {
     expect(isExtrasContent('FEATURETTE.MKV')).toBe(true)
     expect(isExtrasContent('BEHIND THE SCENES.MKV')).toBe(true)
   })
+})
+
+describe('ffprobe batch-size validation', () => {
+  it('uses the documented default only for absent settings', () => {
+    expect(readFfprobeBatchSize(null, 25)).toBe(25)
+    expect(readFfprobeBatchSize('', 50)).toBe(50)
+    expect(readFfprobeBatchSize('8', 25)).toBe(8)
+    expect(readFfprobeBatchSize('128', 25)).toBe(128)
+  })
+
+  it.each(['0', '-1', 'NaN', '1.5', '3junk', '129', 'Infinity'])(
+    'rejects a non-advancing or invalid setting %s', value => {
+      expect(() => readFfprobeBatchSize(value, 25)).toThrow('ffprobe_batch_size')
+    },
+  )
 })
