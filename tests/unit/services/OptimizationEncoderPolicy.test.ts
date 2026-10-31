@@ -15,6 +15,8 @@ describe('measured optimization encoder eligibility', () => {
     expect(supportsMeasuredOptimizationEncoder('vt_h265')).toBe(false)
     expect(supportsMeasuredOptimizationEncoder('nvenc_h265')).toBe(true)
     expect(() => buildCandidateLadder('hevc', 'hardware', 'vt_h265')).toThrow('validated')
+    expect(() => buildCandidateLadder('av1', 'hardware', 'nvenc_h265')).toThrow('no validated measured-optimization quality domain')
+    expect(() => buildCandidateLadder('hevc', 'hardware', 'qsv_av1')).toThrow('no validated measured-optimization quality domain')
     expect(supportedOptimizationCodecs({
       gpus: [gpus[0]], deviceEncoders, selectedGpuId: 'apple', encoderPolicy: 'hardware',
     })).toEqual([])
