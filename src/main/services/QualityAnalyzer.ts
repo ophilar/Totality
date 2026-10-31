@@ -378,13 +378,14 @@ export class QualityAnalyzer {
     let measuredPlanBasis: SavingsBasis | undefined
     let hasApplicableMeasurements = false
     const measurement = measurementAnalysis?.optimizationMeasurement
-    if (measurement && mediaItem.file_path) {
+    if (measurement && mediaItem.file_path && measurementAnalysis?.fileAnalysisFingerprint) {
       const raw = await getDatabase().config.getSetting(`${MEASUREMENT_SETTING_PREFIX}${measurement.cacheKey}`)
       if (raw) {
         const cached = JSON.parse(raw) as CachedMeasurement
         if (cached.version === MEASUREMENT_VERSION && cached.complete && cached.cacheKey === measurement.cacheKey) {
           const source = await stat(mediaItem.file_path)
-          if (measurement.sourceSize === source.size && measurement.sourceMtimeMs === source.mtimeMs) {
+          if (measurement.sourceSize === source.size && measurement.sourceMtimeMs === source.mtimeMs &&
+              matchesFileIdentity(measurementAnalysis.fileAnalysisFingerprint, source)) {
             hasApplicableMeasurements = true
             try {
               const candidate = selectMeasuredCandidate(measurement.qualityProfile, cached.candidates)
@@ -429,11 +430,19 @@ export class QualityAnalyzer {
   }
 
   async analyzeMediaItem(mediaItem: MediaItem, analysis?: FileAnalysisResult): Promise<QualityScore> {
-    const savedAnalysis = analysis ?? (mediaItem.deep_analysis ? JSON.parse(mediaItem.deep_analysis) as FileAnalysisResult : undefined)
-    if (!analysis && savedAnalysis?.success && savedAnalysis.fileAnalysisFingerprint && mediaItem.file_path) {
-      const source = await stat(mediaItem.file_path)
-      if (matchesFileIdentity(savedAnalysis.fileAnalysisFingerprint, source) && PathUtils.arePathsEqual(savedAnalysis.filePath, mediaItem.file_path)) {
-        analysis = savedAnalysis
+    // Never forward stale persisted evidence to savings calculations.
+    let savedAnalysis = analysis ?? (mediaItem.deep_analysis ? JSON.parse(mediaItem.deep_analysis) as FileAnalysisResult : undefined)
+    if (!analysis) {
+      if (savedAnalysis?.success && savedAnalysis.fileAnalysisFingerprint && mediaItem.file_path) {
+        const source = await stat(mediaItem.file_path)
+        if (matchesFileIdentity(savedAnalysis.fileAnalysisFingerprint, source) &&
+            PathUtils.arePathsEqual(savedAnalysis.filePath, mediaItem.file_path)) {
+          analysis = savedAnalysis
+        } else {
+          savedAnalysis = undefined
+        }
+      } else {
+        savedAnalysis = undefined
       }
     }
     const scoringItem = analysis ? mergeAnalysisIntoMediaItem(mediaItem, analysis) : mediaItem

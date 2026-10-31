@@ -43,7 +43,13 @@ describe('QualityAnalyzer', () => {
     const filePath = fileURLToPath(import.meta.url)
     const source = await stat(filePath)
     const measurement = { cacheKey: 'measured-plan', qualityProfile: 'balanced', samplingRole: 'measured', sourceSize: source.size, sourceMtimeMs: source.mtimeMs }
-    const item = createMediaItem({ file_path: filePath, file_size_bytes: source.size, duration_ms: 60_000, deep_analysis: JSON.stringify({ optimizationMeasurement: measurement }) })
+    const trustedAnalysis = () => JSON.stringify({
+      success: true, filePath, durationMs: 60_000,
+      fileAnalysisFingerprint: { size: source.size, mtimeMs: source.mtimeMs, ctimeMs: source.ctimeMs, ino: source.ino },
+      audioTracks: [], subtitleTracks: [],
+      optimizationMeasurement: measurement,
+    })
+    const item = createMediaItem({ file_path: filePath, file_size_bytes: source.size, duration_ms: 60_000, deep_analysis: trustedAnalysis() })
     const candidate = { encoder: 'qsv_h265', quality: 18, preset: 'medium', outputBytes: source.size - 100, sampledDurationSeconds: 60, vmafMean: 95, vmafP5: 92, cambiMean: 0 }
     const cached = { version: MEASUREMENT_VERSION, cacheKey: measurement.cacheKey, complete: true, candidates: [candidate] }
     configuredSettings.set('transcoding.measurement.measured-plan', JSON.stringify(cached))
@@ -53,21 +59,21 @@ describe('QualityAnalyzer', () => {
     expect(score.evidence_status).toBe('estimated')
 
     measurement.qualityProfile = 'transparent'
-    item.deep_analysis = JSON.stringify({ optimizationMeasurement: measurement })
+    item.deep_analysis = trustedAnalysis()
     expect((await analyzer.analyzeMediaItem(item)).estimated_savings_bytes).toBeNull()
     measurement.qualityProfile = 'balanced'
-    item.deep_analysis = JSON.stringify({ optimizationMeasurement: measurement })
+    item.deep_analysis = trustedAnalysis()
 
     candidate.outputBytes = source.size
     configuredSettings.set('transcoding.measurement.measured-plan', JSON.stringify(cached))
     expect((await analyzer.analyzeMediaItem(item)).estimated_savings_bytes).toBe(0)
 
     measurement.sourceMtimeMs++
-    item.deep_analysis = JSON.stringify({ optimizationMeasurement: measurement })
+    item.deep_analysis = trustedAnalysis()
     expect((await analyzer.analyzeMediaItem(item)).savings_basis).toBe('video_bitrate_estimate')
 
     measurement.sourceMtimeMs = source.mtimeMs
-    item.deep_analysis = JSON.stringify({ optimizationMeasurement: measurement })
+    item.deep_analysis = trustedAnalysis()
     cached.version--
     configuredSettings.set('transcoding.measurement.measured-plan', JSON.stringify(cached))
     expect((await analyzer.analyzeMediaItem(item)).savings_basis).toBe('video_bitrate_estimate')

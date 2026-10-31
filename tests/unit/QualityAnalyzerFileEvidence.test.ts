@@ -27,6 +27,8 @@ vi.mock('node:fs/promises', () => ({
   stat: vi.fn(async () => ({
     size: 1048576,
     mtimeMs: 1700000000000,
+    ctimeMs: 1700000000300,
+    ino: 15,
   })),
 }))
 
@@ -59,13 +61,15 @@ describe('QualityAnalyzer - File Evidence Analysis Caching', () => {
     await expect(analyzer.analyzeMediaItemFileEvidence(item)).rejects.toThrow('has no local file path')
   })
 
-  it('reuses cached deep analysis when file size and mtime fingerprint match', async () => {
+  it('reuses cached deep analysis only with complete source identity', async () => {
     const cachedAnalysis = {
       success: true,
       filePath: '/media/movies/Test.mkv',
       fileAnalysisFingerprint: {
         size: 1048576,
         mtimeMs: 1700000000000,
+        ctimeMs: 1700000000300,
+        ino: 15,
       },
       analysisOptions: {
         scanBitrate: true,
@@ -121,6 +125,29 @@ describe('QualityAnalyzer - File Evidence Analysis Caching', () => {
     expect((await analyzer.analyzeMediaItem(item, result.analysis)).quality_tier).toBe('4K')
   })
 
+  it('refreshes legacy size/mtime-only evidence rather than assuming it matches a replaced file', async () => {
+    const filePath = '/media/movies/Legacy.mkv'
+    const item = {
+      plex_id: 'legacy', title: 'Legacy', type: 'movie', file_path: filePath,
+      file_size_bytes: 1048576, duration_ms: 60_000,
+      deep_analysis: JSON.stringify({
+        success: true, filePath,
+        fileAnalysisFingerprint: { size: 1048576, mtimeMs: 1700000000000 },
+        analysisOptions: { scanBitrate: true, detectVolume: true },
+      }),
+    } as MediaItem
+    mockGetMediaItemByPath.mockReturnValue(item)
+    mockAnalyzeCompleteFile.mockResolvedValue({
+      success: true, filePath, durationMs: 60_000,
+      audioTracks: [], subtitleTracks: [],
+    })
+    const { analysis } = await analyzer.analyzeMediaItemFileEvidence(item)
+    expect(mockAnalyzeCompleteFile).toHaveBeenCalledTimes(1)
+    expect(analysis.fileAnalysisFingerprint).toEqual({
+      size: 1048576, mtimeMs: 1700000000000, ctimeMs: 1700000000300, ino: 15,
+    })
+  })
+
   it('runs deep analysis and persists fingerprint when no cache matches', async () => {
     const item: MediaItem = {
       plex_id: '20',
@@ -171,6 +198,10 @@ describe('QualityAnalyzer - File Evidence Analysis Caching', () => {
       signal: undefined,
     })
     expect(mockUpdateDeepAnalysisByPath).toHaveBeenCalled()
+    const saved = mockUpdateDeepAnalysisByPath.mock.calls[0][1]
+    expect(saved.fileAnalysisFingerprint).toEqual({
+      size: 1048576, mtimeMs: 1700000000000, ctimeMs: 1700000000300, ino: 15,
+    })
     expect((await analyzer.analyzeMediaItem(item, result.analysis)).quality_tier).toBe('1080p')
   })
 })

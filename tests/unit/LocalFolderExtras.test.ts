@@ -5,6 +5,7 @@ vi.mock('fs', () => ({
   default: { existsSync: vi.fn(), statSync: vi.fn() },
   existsSync: vi.fn(),
   statSync: vi.fn(),
+  promises: { readdir: vi.fn(), stat: vi.fn() },
 }))
 vi.mock('fs/promises', () => ({
   default: { readdir: vi.fn(), stat: vi.fn() },
@@ -44,7 +45,11 @@ vi.mock('../../src/main/services/MediaNormalizer', () => ({
   normalizeAudioCodec: vi.fn((c: string) => c),
 }))
 
-import { isExtrasContent } from '@main/providers/local/LocalFolderProvider'
+import * as fs from 'fs'
+import { getDatabase } from '@main/database/getDatabase'
+import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
+import { getFileNameParser } from '@main/services/FileNameParser'
+import { LocalFolderProvider, isExtrasContent, readFfprobeBatchSize } from '@main/providers/local/LocalFolderProvider'
 
 describe('isExtrasContent', () => {
   it('detects sample files', () => {
@@ -125,5 +130,65 @@ describe('isExtrasContent', () => {
   it('is case insensitive', () => {
     expect(isExtrasContent('FEATURETTE.MKV')).toBe(true)
     expect(isExtrasContent('BEHIND THE SCENES.MKV')).toBe(true)
+  })
+})
+
+describe('ffprobe batch-size validation', () => {
+  it('uses the documented default only for absent settings', () => {
+    expect(readFfprobeBatchSize(null, 25)).toBe(25)
+    expect(readFfprobeBatchSize('', 50)).toBe(50)
+    expect(readFfprobeBatchSize('8', 25)).toBe(8)
+    expect(readFfprobeBatchSize('128', 25)).toBe(128)
+  })
+
+  it.each(['0', '-1', 'NaN', '1.5', '3junk', '129', 'Infinity'])(
+    'rejects a non-advancing or invalid setting %s', value => {
+      expect(() => readFfprobeBatchSize(value, 25)).toThrow('ffprobe_batch_size')
+    },
+  )
+})
+
+describe('targeted music inventory safety', () => {
+  it('retains the stored record when a watcher reports a missing track', async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+    const deleteMusicTrack = vi.fn()
+    const getMusicTrackByPath = vi.fn().mockReturnValue({ id: 42 })
+    vi.mocked(getDatabase).mockReturnValue({
+      getSetting: vi.fn().mockImplementation((key: string) => key === 'ffprobe_batch_size' ? null : 'false'),
+      getMusicTrackByPath, deleteMusicTrack,
+    } as never)
+    vi.mocked(getMediaFileAnalyzer).mockReturnValue({ isAvailable: vi.fn().mockResolvedValue(false) } as never)
+    vi.mocked(getFileNameParser).mockReturnValue({ isAudioFile: vi.fn().mockReturnValue(true) } as never)
+    const provider = new LocalFolderProvider({
+      sourceId: 'local-library',
+      connectionConfig: { folderPath: '/music', mediaType: 'music' },
+    } as never)
+    const result = await provider.scanLibrary('music', { targetFiles: ['/music/missing.flac'] })
+    expect(result.success).toBe(false)
+    expect(result.itemsRemoved).toBe(0)
+    expect(result.errors).toEqual([expect.stringContaining('Stored music retained')])
+    expect(getMusicTrackByPath).toHaveBeenCalledWith('/music/missing.flac')
+    expect(deleteMusicTrack).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when a full music inventory cannot read a directory', async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.promises.readdir).mockRejectedValue(new Error('volume unavailable'))
+    const deleteMusicTrack = vi.fn()
+    vi.mocked(getDatabase).mockReturnValue({
+      getSetting: vi.fn().mockImplementation((key: string) => key === 'ffprobe_batch_size' ? null : 'false'),
+      deleteMusicTrack,
+      getMusicTracks: vi.fn().mockReturnValue([{ id: 42, file_path: '/music/kept.flac' }]),
+    } as never)
+    vi.mocked(getMediaFileAnalyzer).mockReturnValue({ isAvailable: vi.fn().mockResolvedValue(false) } as never)
+    vi.mocked(getFileNameParser).mockReturnValue({ isAudioFile: vi.fn().mockReturnValue(true) } as never)
+    const provider = new LocalFolderProvider({
+      sourceId: 'local-library',
+      connectionConfig: { folderPath: '/music', mediaType: 'music' },
+    } as never)
+    const result = await provider.scanLibrary('music')
+    expect(result.success).toBe(false)
+    expect(result.errors.join(' ')).toContain('volume unavailable')
+    expect(deleteMusicTrack).not.toHaveBeenCalled()
   })
 })
