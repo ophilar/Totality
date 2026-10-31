@@ -14,7 +14,6 @@ import type { OptimizationDecision } from '@main/services/OptimizationDecisionSe
 import type { TranscodeOptions, TranscodingParams, Availability, TranscodeProgress, SavedShowPreflight } from './transcoding'
 import { AdvancedTab, LiveEncodingTab, EncoderPolicySelector, OptimizationDialogShell, buildEffectiveOptimizationOptions } from './transcoding'
 import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
-import { getHardwareEncoder } from '@main/services/TranscodingCapabilities'
 import type { ShowOptimizationDiscovery } from './transcoding/types'
 import { formatLanguage, getOptimizationContainer, isSameLanguage, LANGUAGE_OPTIONS, parseLanguageWhitelist, toIso639_2 } from './mediaUtils'
 import { SETTING_KEYS } from '@shared/settingKeys'
