@@ -695,7 +695,12 @@ export class LocalFolderProvider implements MediaProvider {
             mediaItem.plex_id = existingParent?.plex_id ?? group[0].metadata.itemId
             mediaItem.version_count = existingParent?.version_count ?? versions.length
             const id = await db.upsertMediaItem(mediaItem)
-            if (existingMovieIndex) existingMovieIndex.set(getMediaGroupingKey(group[0].metadata), { ...mediaItem, id } as MediaItem)
+            if (existingMovieIndex) {
+              const key = getMediaGroupingKey(group[0].metadata)
+              if (!existingMovieIndex.has(key) || existingMovieIndex.get(key) !== null) {
+                existingMovieIndex.set(key, { ...mediaItem, id } as MediaItem)
+              }
+            }
 
             // Incremental groups are partial; never delete existing sibling versions.
             const scoredVersions = versions.map(version => {
@@ -927,7 +932,12 @@ export class LocalFolderProvider implements MediaProvider {
                 if (parent) mediaItem.plex_id = parent.plex_id
               }
               const id = await db.upsertMediaItem(mediaItem)
-              if (existingMovieIndex) existingMovieIndex.set(getMediaGroupingKey(metadata), { ...mediaItem, id } as MediaItem)
+              if (existingMovieIndex) {
+                const key = getMediaGroupingKey(metadata)
+                if (!existingMovieIndex.has(key) || existingMovieIndex.get(key) !== null) {
+                  existingMovieIndex.set(key, { ...mediaItem, id } as MediaItem)
+                }
+              }
 
               // Targeted events never represent a complete set of sibling versions.
               const version = this.convertMetadataToVersion(metadata, parsed as ParsedMovieInfo | ParsedEpisodeInfo, fileMtime)
@@ -1891,6 +1901,9 @@ export class LocalFolderProvider implements MediaProvider {
       return byPath
     }
     const key = getMediaGroupingKey(metadata)
+    if (index.has(key) && index.get(key) === null) {
+      throw new Error('Multiple existing movie parents share this identity; manual reconciliation required')
+    }
     return index.get(key) ?? undefined
   }
 
