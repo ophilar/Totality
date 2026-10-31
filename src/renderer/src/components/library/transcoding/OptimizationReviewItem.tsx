@@ -9,7 +9,7 @@ export interface OptimizationReviewItemModel {
   compatible: boolean
   decisionStatus?: string
   reason?: string | null
-  params?: { summary?: string }
+  params?: { summary?: string; measuredCandidate?: { searchSummary?: { measuredCount: number; maximumCandidates: number; budgetReached: boolean } } }
   changes?: string[]
   targetCompatibility?: PlaybackTargetEvaluation
   targetProfile?: { name?: string }
@@ -34,11 +34,12 @@ export function OptimizationReviewItem<T extends OptimizationReviewItemModel>({ 
     {!item.compatible && item.reason && <details className="text-xs"><summary className="cursor-pointer text-muted-foreground">Why it is blocked</summary><p className="pt-1 text-muted-foreground">{item.reason}</p></details>}
     {!targetSelected && !item.targetCompatibility && <p className="text-xs text-muted-foreground">Playback compatibility not checked</p>}
     {item.params?.summary && <p className="text-xs text-muted-foreground">{item.params.summary}</p>}
+    {item.params?.measuredCandidate?.searchSummary && <p className="text-xs text-muted-foreground" role="note">{item.params.measuredCandidate.searchSummary.measuredCount} candidate settings evaluated (limit {item.params.measuredCandidate.searchSummary.maximumCandidates}). {item.params.measuredCandidate.searchSummary.budgetReached ? 'Search budget reached; best tested setting, not a guaranteed global optimum.' : 'Search completed within the configured quality grid.'}</p>}
     {item.changes?.map(change => <p key={change} className="text-xs text-muted-foreground">{change}</p>)}
     {item.targetCompatibility && <PlaybackCompatibilityFindings evaluation={item.targetCompatibility} targetName={item.targetProfile?.name} />}
     {item.samplePaths?.map((sample, index) => onOpenSample && <button key={sample} type="button" className="mr-3 text-xs underline" onClick={() => onOpenSample(index)}>Open sample {index + 1}</button>)}
     <div className="flex justify-end border-t border-border/30 pt-2 text-xs text-muted-foreground">
-      <span>{item.samplingRole === 'projected' ? 'Projected savings' : item.samplingRole === 'measured' || item.savingsBasis === 'video_sample_encode' ? 'Measured savings' : 'Estimated savings'}: <EstimatedSavingsDisplay bytes={item.estimatedSavingsBytes} /></span>
+      <span>{item.samplingRole === 'projected' ? 'Representative-based projection' : item.samplingRole === 'measured' || item.savingsBasis === 'video_sample_encode' ? 'Sample-based projection' : 'Estimated savings'}: <EstimatedSavingsDisplay bytes={item.estimatedSavingsBytes} /></span>
     </div>
     {children}
   </section>
