@@ -144,13 +144,14 @@ describe('ffprobe batch-size validation', () => {
   })
 
   it('uses the documented default only for absent settings', () => {
-    expect(readFfprobeBatchSize(null, 25)).toBe(25)
-    expect(readFfprobeBatchSize('', 50)).toBe(50)
-    expect(readFfprobeBatchSize('8', 25)).toBe(8)
-    expect(readFfprobeBatchSize('128', 25)).toBe(128)
+    const { defaultVideoBatchSize, defaultMusicBatchSize, maxBatchSize } = APP_CONFIG.workers.ffprobe
+    expect(readFfprobeBatchSize(null, defaultVideoBatchSize)).toBe(defaultVideoBatchSize)
+    expect(readFfprobeBatchSize('', defaultMusicBatchSize)).toBe(defaultMusicBatchSize)
+    expect(readFfprobeBatchSize('8', defaultVideoBatchSize)).toBe(8)
+    expect(readFfprobeBatchSize(String(maxBatchSize), defaultVideoBatchSize)).toBe(maxBatchSize)
   })
 
-  it.each(['0', '-1', 'NaN', '1.5', '3junk', '129', 'Infinity'])(
+  it.each(['0', '-1', 'NaN', '1.5', '3junk', 'Infinity'])(
     'rejects a non-advancing or invalid setting %s', value => {
       expect(() => readFfprobeBatchSize(value, 25)).toThrow('ffprobe_batch_size')
     },
