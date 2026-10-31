@@ -20,3 +20,5 @@ jobs:
         run: npm run typecheck
       - name: Focused regression tests
         run: npx vitest run tests/unit/services/OptimizationCodecPolicy.test.ts tests/unit/services/OptimizationCandidateService.test.ts tests/unit/services/MeasuredOptimizationPolicy.test.ts tests/unit/services/OptimizationSavingsService.test.ts tests/unit/OptimizationUiContract.test.ts tests/unit/TaskQueueService.test.ts
+      - name: Full test suite
+        run: npm run test:run
