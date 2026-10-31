@@ -39,6 +39,16 @@ import { extractVersionNames } from '../utils/VersionNaming'
 import { groupByMediaIdentity, scoreVersion } from '../utils/ProviderUtils'
 import { AudioCodecRanker } from '../../services/AudioCodecRanker'
 
+/** Reject invalid batch settings rather than enter a non-advancing scan loop. */
+export function readFfprobeBatchSize(setting: string | null | undefined, defaultSize: number): number {
+  if (setting == null || setting.trim() === '') return defaultSize
+  const size = Number(setting)
+  if (!Number.isSafeInteger(size) || size < 1 || size > 128) {
+    throw new Error('Invalid ffprobe_batch_size: expected an integer from 1 to 128')
+  }
+  return size
+}
+
 type MovieMetadataCache = Map<string, { tmdbId: number; title: string; originalLanguage: string; year?: number; posterPath?: string; backdropPath?: string } | null>
 type SeriesMetadataCache = Map<string, { tmdbId: number; name: string; originalLanguage: string; posterPath?: string; seasonPosters: Map<number, string | null> } | null>
 
@@ -465,7 +475,7 @@ export class LocalFolderProvider implements MediaProvider {
 
       // Parallel FFprobe settings
       const ffprobeParallelEnabled = db.getSetting('ffprobe_parallel_enabled') !== 'false'
-      const ffprobeBatchSize = parseInt(db.getSetting('ffprobe_batch_size') || '25', 10)
+      const ffprobeBatchSize = readFfprobeBatchSize(db.getSetting('ffprobe_batch_size'), 25)
 
       const scannedFilePaths = new Set<string>()
       const scanType = libraryType === 'movies' ? 'movie' : 'episode'
@@ -486,8 +496,9 @@ export class LocalFolderProvider implements MediaProvider {
       console.log(`[LocalFolderProvider ${this.sourceId}] Found ${totalFiles} ${scanType} files`)
 
       if (totalFiles === 0) {
-        // Preserve the library if a missing mount appears as an empty folder.
-        const existing = db.getMediaItems({ type: scanType, sourceId: this.sourceId, libraryId })
+        // An incremental inventory only contains changed files; no matches is a successful no-op.
+        // A full scan returning zero files still requires a mount/inventory safety check.
+        const existing = !isIncremental ? db.getMediaItems({ type: scanType, sourceId: this.sourceId, libraryId }) : []
         if (existing.length > 0) result.errors.push(`Empty folder inventory but ${existing.length} stored media items exist; deletion skipped`)
         else result.success = true
         result.durationMs = Date.now() - startTime
@@ -555,7 +566,7 @@ export class LocalFolderProvider implements MediaProvider {
               const fileMtime = stat.mtime.getTime()
               const existingItem = db.getMediaItemByPath(filePath)
 
-              if (existingItem?.file_mtime === fileMtime && (!ffprobeAvailable || existingItem.dolby_vision_profile != null)) {
+              if (existingItem?.file_mtime === fileMtime && existingItem.file_size_bytes === stat.size && (!ffprobeAvailable || Boolean(existingItem.video_codec))) {
                 // File unchanged, mark as present and skip processing
                 scannedFilePaths.add(filePath)
                 result.itemsScanned++
@@ -991,18 +1002,12 @@ export class LocalFolderProvider implements MediaProvider {
         return parser.isAudioFile(path.basename(filePath))
       })
 
-      // Handle deleted files
+      // Watcher events cannot distinguish deletion from a temporarily inaccessible mount.
+      // Preserve stored tracks until an independently verified complete inventory exists.
       const deletedFiles = filePaths.filter(filePath => !fs.existsSync(filePath))
-      console.log(`[LocalFolderProvider ${this.sourceId}] Checking ${deletedFiles.length} deleted files`)
       for (const filePath of deletedFiles) {
-        console.log(`[LocalFolderProvider ${this.sourceId}] Looking up deleted track: ${path.basename(filePath)}`)
-        const existingTrack = db.getMusicTrackByPath(filePath)
-        if (existingTrack?.id) {
-          await db.deleteMusicTrack(existingTrack.id)
-          result.itemsRemoved++
-          console.log(`[LocalFolderProvider ${this.sourceId}] Removed deleted track: ${path.basename(filePath)}`)
-        } else {
-          console.log(`[LocalFolderProvider ${this.sourceId}] Track not found in database for: ${path.basename(filePath)}`)
+        if (db.getMusicTrackByPath(filePath)) {
+          result.errors.push(`Cannot verify deletion of ${path.basename(filePath)} from a targeted event. Stored music retained; run a full library scan to verify.`)
         }
       }
 
@@ -1197,7 +1202,7 @@ export class LocalFolderProvider implements MediaProvider {
         await db.updateMusicArtistCounts(artistId, albums.length, tracks.length)
       }
 
-      result.success = true
+      result.success = result.errors.length === 0
       result.durationMs = Date.now() - startTime
 
       console.log(`[LocalFolderProvider ${this.sourceId}] Targeted music scan complete: ${result.itemsAdded} added, ${result.itemsUpdated} updated, ${result.itemsRemoved} removed`)
@@ -2038,7 +2043,7 @@ export class LocalFolderProvider implements MediaProvider {
 
       // Parallel FFprobe settings
       const ffprobeParallelEnabled = db.getSetting('ffprobe_parallel_enabled') !== 'false'
-      const ffprobeBatchSize = parseInt(db.getSetting('ffprobe_batch_size') || '50', 10)
+      const ffprobeBatchSize = readFfprobeBatchSize(db.getSetting('ffprobe_batch_size'), 50)
 
       if (mbNameCorrectionEnabled) {
         console.log(`[LocalFolderProvider ${this.sourceId}] MusicBrainz name correction enabled`)
@@ -2352,10 +2357,10 @@ export class LocalFolderProvider implements MediaProvider {
       // Update artist stats (album count, track count)
       await this.updateArtistStats(db, artistMap)
 
-      // Update scan time
-      await db.updateSourceScanTime(this.sourceId)
+      // A partial music scan must not be recorded as a successful completed scan.
+      if (result.errors.length === 0) await db.updateSourceScanTime(this.sourceId)
 
-      result.success = true
+      result.success = result.errors.length === 0
       result.durationMs = Date.now() - startTime
 
       console.log(`[LocalFolderProvider ${this.sourceId}] Music scan complete: ${result.itemsScanned} tracks, ${artistMap.size} artists, ${albumMap.size} albums`)
