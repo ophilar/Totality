@@ -454,7 +454,6 @@ export class LocalFolderProvider implements MediaProvider {
       const db = getDatabase()
       const analyzer = getQualityAnalyzer()
       const fileAnalyzer = getMediaFileAnalyzer()
-      const parser = getFileNameParser()
       const tmdb = getTMDBService()
 
       await analyzer.loadThresholdsFromDatabase()
@@ -499,10 +498,10 @@ export class LocalFolderProvider implements MediaProvider {
       db.startBatch()
 
       // Cache for series TMDB lookups - avoids searching for same series 50+ times
-      const seriesTmdbCache = new SeriesMetadataCache()
+      const seriesTmdbCache: SeriesMetadataCache = new Map()
 
       // Cache for movie TMDB lookups - avoids redundant searches for same movie
-      const movieTmdbCache = new MovieMetadataCache()
+      const movieTmdbCache: MovieMetadataCache = new Map()
 
       // Structure to hold pre-processed file info for batch FFprobe
       interface FileToProcess {
@@ -840,10 +839,10 @@ export class LocalFolderProvider implements MediaProvider {
       db.startBatch()
 
       // Cache for series TMDB lookups - avoids searching for same series multiple times
-      const seriesTmdbCache = new SeriesMetadataCache()
+      const seriesTmdbCache: SeriesMetadataCache = new Map()
 
       // Cache for movie TMDB lookups - avoids redundant searches for same movie
-      const movieTmdbCache = new MovieMetadataCache()
+      const movieTmdbCache: MovieMetadataCache = new Map()
 
       try {
         for (let i = 0; i < validFiles.length; i++) {
