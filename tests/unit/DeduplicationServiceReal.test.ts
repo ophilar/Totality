@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as fs from 'fs/promises'
 import * as os from 'os'
-import * as path from 'path'
+import * as path from 'node:path'
 import { DeduplicationService } from '@main/services/DeduplicationService'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
