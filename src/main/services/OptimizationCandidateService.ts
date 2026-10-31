@@ -49,8 +49,11 @@ export class OptimizationCandidateService {
   discover(item: MediaItem, policy: OptimizationCandidatePolicy): OptimizationCandidateEvidence {
     const reasons: OptimizationCandidateReason[] = []
     const codec = normalizeVideoCodec(item.video_codec)
+    // A selected output codec is authoritative. Hardware availability only determines
+    // whether the requested conversion can run; it never changes HEVC into AV1.
+    const selectedVideoCodec = policy.targetCodec ?? 'hevc'
     if (codec === 'H.264') reasons.push('h264_video_transcode')
-    if (codec === 'HEVC' && policy.av1HardwareEncodingAvailable) reasons.push('hevc_to_av1')
+    if (codec === 'HEVC' && selectedVideoCodec === 'av1' && policy.av1HardwareEncodingAvailable) reasons.push('hevc_to_av1')
 
     const analyzer = getQualityAnalyzer()
     const requestedOriginalLanguage = policy.originalAudioLanguage?.trim()
@@ -77,7 +80,7 @@ export class OptimizationCandidateService {
     const targetCodec = reasons.includes('hevc_to_av1')
       ? 'av1'
       : reasons.includes('h264_video_transcode')
-        ? policy.targetCodec ?? (policy.av1HardwareEncodingAvailable ? 'av1' : 'hevc')
+        ? selectedVideoCodec
         : undefined
     const components = analyzer.getOptimizationSavingsBreakdown(item, undefined, targetCodec, {
       originalLanguage: originalAudioLanguage,
