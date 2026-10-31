@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createTestDatabase, type TestDatabase } from '../helpers/testDatabase'
 import { getDatabase } from '../../src/main/database/getDatabase'
+import { getSourceManager } from '../../src/main/services/SourceManager'
 
 // Mock dependencies
 vi.mock('../../src/main/ipc/utils/safeSend', () => ({
@@ -144,6 +145,29 @@ describe('TaskQueueService', () => {
       expect(duplicate).toBe(first)
       expect(otherSeason).not.toBe(first)
     })
+  })
+
+  it('fails a library scan when the provider returns an unsuccessful result without errors', async () => {
+    const sourceManager = getSourceManager() as unknown as { scanLibrary: ReturnType<typeof vi.fn> }
+    sourceManager.scanLibrary = vi.fn().mockResolvedValue({
+      success: false,
+      itemsScanned: 2,
+      itemsAdded: 0,
+      itemsUpdated: 0,
+      itemsRemoved: 0,
+      errors: [],
+      durationMs: 10,
+    })
+
+    const taskId = service.addTask({ type: 'library-scan', label: 'Scan bad library', sourceId: 'src', libraryId: 'movies' })
+    const completion = service.waitForTask(taskId)
+    service.resumeQueue()
+    const task = await completion
+
+    expect(task.status).toBe('failed')
+    expect(task.error).toContain('did not complete successfully')
+    expect(task.result?.itemsScanned).toBe(2)
+    expect(task.result?.failedCount).toBe(0)
   })
 
   describe('queue state', () => {
