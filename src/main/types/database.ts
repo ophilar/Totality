@@ -184,6 +184,7 @@ export interface MediaItem {
   color_space?: string            // "bt709", "bt2020nc"
   video_profile?: string          // "high", "main 10"
   video_level?: number            // 41, 50, 51
+  dolby_vision_profile?: number | null // 0 means probed and absent; null means unavailable or not probed
 
   // Enhanced audio quality metadata
   audio_profile?: string          // "lc", "he", "truehd"

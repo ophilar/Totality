@@ -8,7 +8,6 @@ import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import type { WishlistMediaType } from '../../contexts/WishlistContext'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
-import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
 import { ConversionRecommendation } from './ConversionRecommendation'
 import type { AudioTrack, SubtitleTrack } from '@main/types/database'
 
@@ -797,12 +796,6 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
               </div>
             )}
           </div>
-
-          {media.estimated_savings_bytes != null && (
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-muted/20 px-3 py-2 text-xs">
-              <span className="flex items-center gap-1.5"><span className="text-muted-foreground">Estimated savings</span><EstimatedSavingsDisplay bytes={media.estimated_savings_bytes} /> · {media.savings_coverage ?? 'insufficient'} evidence</span>
-            </div>
-          )}
 
           <ConversionRecommendation item={media} onOptimizationCompleted={loadMediaDetails} />
 

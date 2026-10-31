@@ -8,7 +8,7 @@ import { CollectionModal } from './CollectionModal'
 import { MatchFixModal } from './MatchFixModal'
 import { WishlistPanel } from '../wishlist/WishlistPanel'
 import { MoviesView } from './MoviesView'
-import { TranscodeModal } from './TranscodeModal'
+import { SharedOptimizationDialog } from './TranscodeModal'
 import { TVShowsView } from './TVShowsView'
 import { MusicView } from './MusicView'
 import { DuplicatesView } from './DuplicatesView'
@@ -2246,12 +2246,13 @@ export function MediaBrowser({
       )}
 
       {optimizingMovieId !== null && (
-        <TranscodeModal
-          mediaId={optimizingMovieId}
-          initialPreflightId={initialMoviePreflightId ?? undefined}
-          onClose={() => { setOptimizingMovieId(null); setInitialMoviePreflightId(null) }}
-          onOptimizationCompleted={handleMovieOptimizationCompleted}
-        />
+        <SharedOptimizationDialog request={{
+          controller: 'media',
+          scope: { kind: 'movie', mediaId: optimizingMovieId },
+          initialPreflightId: initialMoviePreflightId ?? undefined,
+          onClose: () => { setOptimizingMovieId(null); setInitialMoviePreflightId(null) },
+          onOptimizationCompleted: handleMovieOptimizationCompleted,
+        }} />
       )}
 
       {/* Completeness Panel */}

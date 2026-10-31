@@ -1,39 +1,45 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, type SetStateAction } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Zap,
-  Sliders,
-  Activity,
   Play,
   RefreshCw,
   AlertTriangle,
-  Sparkles
 } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
-import type { MediaItem } from '@main/types/database'
+import { TaskType, type MediaItem } from '@main/types/database'
 import type { PlaybackTargetProfile } from '@main/types/playbackTarget'
-import { PlaybackCompatibilityFindings } from './PlaybackCompatibilityPanel'
 import type { OptimizationDecision } from '@main/services/OptimizationDecisionService'
 
 import type { TranscodeOptions, TranscodingParams, Availability, TranscodeProgress, SavedShowPreflight } from './transcoding'
-import { QuickPresetsTab, AdvancedTab, LiveEncodingTab, EncoderPolicySelector, OutputHandlingSelection, OptimizationDialogShell, buildEffectiveOptimizationOptions } from './transcoding'
-import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
+import { AdvancedTab, LiveEncodingTab, EncoderPolicySelector, OptimizationDialogShell, buildEffectiveOptimizationOptions } from './transcoding'
 import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
+import type { ShowOptimizationDiscovery } from './transcoding/types'
 import { getHardwareEncoder } from '@main/services/TranscodingCapabilities'
 import { formatLanguage, getOptimizationContainer, isSameLanguage, LANGUAGE_OPTIONS, parseLanguageWhitelist, toIso639_2 } from './mediaUtils'
 import { SETTING_KEYS } from '@shared/settingKeys'
-import { normalizeAudioCodec, normalizeVideoCodec } from '@main/services/MediaNormalizer'
-import { getMissingOptimizationSettings } from './transcoding/readiness'
+import { normalizeVideoCodec } from '@main/services/MediaNormalizer'
+import { describeMissingOptimizationSettings, getMissingOptimizationSettings } from './transcoding/readiness'
 import { SeriesOptimizationFlow, type SeriesOptimizationFlowProps } from './SeriesOptimizationFlow'
+import { OptimizationReviewSummary } from './transcoding/OptimizationReviewSummary'
+import { OptimizationResultsStage } from './transcoding/OptimizationResultsStage'
+import { describeOptimizationScope, optimizationScopeForSeries } from './transcoding/OptimizationScope'
 import { useOptimizationWorkflow } from './transcoding/useOptimizationWorkflow'
+import { createInitialOptimizationConfiguration, optimizationAudioLanguageIsKnown, optimizationConfigurationToOptions, optimizationStreamSelection, optimizationTrackSummary, useOptimizationConfiguration } from './transcoding/optimizationConfiguration'
+import { OptimizationSettingsLayout } from './transcoding/OptimizationSettingsLayout'
+import { OptimizationReviewItem } from './transcoding/OptimizationReviewItem'
+import { SubtitleLanguageSelection } from './transcoding/SubtitleLanguageSelection'
+import { AudioTrackPolicySelection, type AudioLanguageOption, type AudioTrackPolicy } from './transcoding/AudioTrackPolicySelection'
+import { OptimizationDialogFooter } from './transcoding/OptimizationDialogFooter'
+import { loadOptimizationPreferences } from './transcoding/optimizationPreferences'
+import { OptimizationContainerSelection } from './transcoding/OptimizationContainerSelection'
+import { availableOptimizationDialogStages, optimizationDialogStage } from './transcoding/OptimizationStages'
+import { optimizationAudioCodecOptions, optimizationContainerOptions } from './transcoding/optimizationOptions'
+import { optimizationCandidateReasonLabel } from './transcoding/optimizationCandidateLabels'
+import { formatOptimizationBytes } from './transcoding/optimizationResults'
 
 interface MediaOptimizationFlowProps {
-  mediaId: number
-  show?: never
-  episode?: never
-  seasonNumber?: never
-  initialPreflight?: never
-  resumeRequestId?: never
+  scope: Extract<import('./transcoding/OptimizationScope').OptimizationScope, { kind: 'movie' | 'episode' }>
   initialPreflightId?: string
   onClose: () => void
   onOptimizationCompleted?: () => void
@@ -41,50 +47,82 @@ interface MediaOptimizationFlowProps {
   initialStreamPruning?: boolean
 }
 
-export type TranscodeModalProps = MediaOptimizationFlowProps | SeriesOptimizationFlowProps
-
-export function TranscodeModal(props: TranscodeModalProps) {
-  if (props.show !== undefined) return <SeriesOptimizationFlow {...props} />
-  return <MediaOptimizationFlow {...props} />
+type SingleItemOptimizationRequest = {
+  controller: 'media'
+  scope: Extract<import('./transcoding/OptimizationScope').OptimizationScope, { kind: 'movie' | 'episode' }>
+  onClose: () => void
+  initialPreflightId?: string
+  onOptimizationCompleted?: () => void
+  initialOptimizationMode?: 'smart' | 'remux_only' | 'transcode'
+  initialStreamPruning?: boolean
+  series?: never
 }
 
-function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimizationCompleted, initialOptimizationMode = 'smart', initialStreamPruning = false }: MediaOptimizationFlowProps) {
+type SeriesOptimizationRequest = {
+  controller: 'series'
+  onClose: () => void
+  series: Omit<SeriesOptimizationFlowProps, 'onClose' | 'scope'>
+  initialPreflightId?: never
+  onOptimizationCompleted?: never
+  initialOptimizationMode?: never
+  initialStreamPruning?: never
+}
+
+export type OptimizationDialogRequest = SingleItemOptimizationRequest | SeriesOptimizationRequest
+
+export type SharedOptimizationDialogProps = { request: OptimizationDialogRequest }
+
+export function SharedOptimizationDialog({ request }: SharedOptimizationDialogProps) {
+  if (request.controller === 'series') return <SeriesOptimizationFlow {...request.series} scope={optimizationScopeForSeries(request.series.show, request.series.episode, request.series.seasonNumber)} onClose={request.onClose} />
+  return <MediaOptimizationFlow scope={request.scope} onClose={request.onClose} initialPreflightId={request.initialPreflightId} onOptimizationCompleted={request.onOptimizationCompleted} initialOptimizationMode={request.initialOptimizationMode} initialStreamPruning={request.initialStreamPruning} />
+}
+
+function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizationCompleted, initialOptimizationMode = 'smart', initialStreamPruning }: MediaOptimizationFlowProps) {
+  const mediaId = scope.mediaId
+  const scopeKey = describeOptimizationScope(scope)
   const { addToast } = useToast()
   const [media, setMedia] = useState<MediaItem | null>(null)
   const [optimizationDecision, setOptimizationDecision] = useState<OptimizationDecision | null>(null)
   const [optimizationDecisionError, setOptimizationDecisionError] = useState<string | null>(null)
+  const [candidateDiscovery, setCandidateDiscovery] = useState<ShowOptimizationDiscovery | null>(null)
+  const [candidateDiscoveryBusy, setCandidateDiscoveryBusy] = useState(false)
+  const [candidateDiscoveryError, setCandidateDiscoveryError] = useState<string | null>(null)
   const [targetProfiles, setTargetProfiles] = useState<PlaybackTargetProfile[]>([])
-  const [targetProfileId, setTargetProfileId] = useState('')
+  const { configuration, updateConfiguration, restoreConfiguration } = useOptimizationConfiguration(createInitialOptimizationConfiguration(initialOptimizationMode, {
+    audioTrackPolicy: initialStreamPruning === false ? 'all' : 'original-and-protected',
+    removeUnnecessaryStreams: initialStreamPruning !== false,
+  }))
+  const { targetProfileId, optimizationMode, outputMode, targetContainer, targetCodec, targetAudioCodec, originalAudioLanguage, audioTrackPolicy, subtitleLanguages, audioTranscodeEnabled, playbackPolicy } = configuration
   const [targetProfileError, setTargetProfileError] = useState<string | null>(null)
-  const [targetContainer, setTargetContainer] = useState<'mkv' | 'mp4' | ''>('')
-  const [originalAudioLanguage, setOriginalAudioLanguage] = useState('')
   const [availability, setAvailability] = useState<Availability | null>(null)
   const [capabilities, setCapabilities] = useState<TranscodingCapabilities | null>(null)
   const [loading, setLoading] = useState(true)
-  const [generating, setGenerating] = useState(false)
   const [params, setParams] = useState<TranscodingParams | null>(null)
-  const [optionsTab, setOptionsTab] = useState<'presets' | 'advanced'>('presets')
-  const [audioTranscodeEnabled, setAudioTranscodeEnabled] = useState(false)
-  const [subtitleWhitelist, setSubtitleWhitelist] = useState('')
+  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false)
+  const [trackSettingsOpen, setTrackSettingsOpen] = useState(false)
   const [analysisRequired, setAnalysisRequired] = useState(false)
   const [analyzingItem, setAnalyzingItem] = useState(false)
   const [outputModeSettingError, setOutputModeSettingError] = useState<string | null>(null)
   const completionReportedRef = useRef(false)
+  const candidateDiscoveryStartedFor = useRef<number | null>(null)
   const handleQueueError = useCallback((error: unknown) => addToast({ title: 'Could not read optimization queue', message: error instanceof Error ? error.message : String(error), type: 'error' }), [addToast])
   const workflow = useOptimizationWorkflow(handleQueueError)
   const { queueState, stage, setStage, review: preflight, reviewedSampleGroups, batchId: submittedBatchId, submittedTaskIds, submittedMediaItemIds, queueControlState, batchSummary, reviewMatches, replaceReview, clearReview, submitBatch, toggleQueuePause: toggleWorkflowQueuePause, retryFailedTasks: retryWorkflowFailedTasks, setReviewedSampleGroups } = workflow
-  const activeTab = stage === 'review' ? 'review' : stage === 'results' ? 'monitor' : optionsTab
+  const completedOptimizationTasks = queueState.completedTasks.filter(task => task.type === TaskType.Transcode && (task.batchId === submittedBatchId && Boolean(submittedBatchId) || submittedTaskIds.includes(task.id)))
+  const activeTab = stage === 'review' ? 'review' : stage === 'results' ? 'monitor' : 'presets'
   const setActiveTab = useCallback((tab: 'presets' | 'advanced' | 'monitor' | 'review') => {
-    if (tab === 'presets' || tab === 'advanced') {
-      setOptionsTab(tab)
+    if (tab === 'advanced') {
+      setAdvancedSettingsOpen(true)
+      setStage('options')
+    } else if (tab === 'presets') {
+      setAdvancedSettingsOpen(false)
       setStage('options')
     } else setStage(tab === 'review' ? 'review' : 'results')
-  }, [setOptionsTab, setStage])
+  }, [setStage])
   const samplesReviewed = reviewedSampleGroups.includes('item-sample')
   const setSamplesReviewed = useCallback((reviewed: boolean) => setReviewedSampleGroups(reviewed ? ['item-sample'] : []), [setReviewedSampleGroups])
 
   const [options, setOptions] = useState<TranscodeOptions>(() => ({
-    targetCodec: undefined,
     useGpu: false,
     gpuId: '',
     encoder: '',
@@ -93,92 +131,129 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
     customArgs: '',
     transcodingEngine: 'ffmpeg',
     targetSize: '',
-    qualityProfile: undefined,
-    encoderPolicy: undefined,
-    optimizationMode: initialOptimizationMode
   }))
 
+  const optionsForControls = useMemo(() => ({ ...options, ...optimizationConfigurationToOptions(configuration) }), [options, configuration])
+  const updateTranscodeOptions = useCallback((update: SetStateAction<TranscodeOptions>) => {
+    const next = typeof update === 'function' ? update(optionsForControls) : update
+    const {
+      optimizationMode: nextMode,
+      targetProfileId: nextTargetProfileId,
+      targetContainer: nextTargetContainer,
+      targetContainerSelection: nextContainerSelection,
+      outputMode: nextOutputMode,
+      qualityProfile: nextQualityProfile,
+      encoderPolicy: nextEncoderPolicy,
+      targetCodec: nextTargetCodec,
+      targetAudioCodec: nextTargetAudioCodec,
+      targetHdrFormat: nextTargetHdrFormat,
+      ...otherOptions
+    } = next
+    setOptions(otherOptions as TranscodeOptions)
+    updateConfiguration({
+      optimizationMode: nextMode ?? configuration.optimizationMode,
+      targetProfileId: nextTargetProfileId ?? configuration.targetProfileId,
+      targetContainer: nextTargetContainer ?? '',
+      targetContainerSelection: nextContainerSelection ?? '',
+      outputMode: nextOutputMode ?? '',
+      qualityProfile: nextQualityProfile ?? '',
+      encoderPolicy: nextEncoderPolicy ?? '',
+      targetCodec: nextTargetCodec ?? '',
+      targetAudioCodec: nextTargetAudioCodec ?? '',
+      targetHdrFormat: nextTargetHdrFormat ?? '',
+      audioTranscodeEnabled: nextTargetAudioCodec !== undefined ? Boolean(nextTargetAudioCodec) : configuration.audioTranscodeEnabled,
+    })
+  }, [optionsForControls, configuration, updateConfiguration])
+
   const [status, setStatus] = useState<'idle' | 'generating' | 'queued' | 'encoding' | 'complete' | 'failed'>('idle')
+  const settingsDisabled = status === 'generating' || status === 'encoding' || status === 'queued'
   const [progress, setProgress] = useState<TranscodeProgress | null>(null)
 
   const failureReportedRef = useRef(false)
   const selectedGpu = capabilities?.gpus.find(gpu => gpu.id === options.gpuId)
-  const hardwareEncoder = selectedGpu && options.targetCodec ? getHardwareEncoder(selectedGpu.vendor, options.targetCodec) : undefined
+  const hardwareEncoder = selectedGpu && targetCodec ? getHardwareEncoder(selectedGpu.vendor, targetCodec) : undefined
   const hardwareAvailable = Boolean(hardwareEncoder && selectedGpu && capabilities?.deviceEncoders[selectedGpu.id]?.includes(hardwareEncoder))
-  const softwareEncoder = options.targetCodec === 'av1' ? 'svt_av1' : options.targetCodec === 'hevc' ? 'x265' : undefined
+  const softwareEncoder = targetCodec === 'av1' ? 'svt_av1' : targetCodec === 'hevc' ? 'x265' : undefined
   const softwareAvailable = Boolean(softwareEncoder && capabilities?.deviceEncoders.software.includes(softwareEncoder))
   const targetProfile = targetProfiles.find(profile => profile.id === targetProfileId)
   const supportedTargetCodecs = (['hevc', 'av1'] as const).filter(codec => {
-    const profileSupports = !targetProfile || targetProfile.definition.video.codecs.some(value => normalizeVideoCodec(value) === normalizeVideoCodec(codec))
+    const profileSupports = playbackPolicy === 'allow-transcoding' || !targetProfile || targetProfile.definition.video.codecs.some(value => normalizeVideoCodec(value) === normalizeVideoCodec(codec))
     const codecCapabilities = capabilities?.encodingMatrix.codecs.find(value => value.codec === codec)?.capabilities ?? []
     const deviceIndex = selectedGpu ? capabilities?.encodingMatrix.devices.findIndex(device => device.id === selectedGpu.id) : undefined
-    const encoderSupports = options.encoderPolicy === 'software'
+    const encoderSupports = configuration.encoderPolicy === 'software'
       ? Boolean(codecCapabilities[0])
-      : options.encoderPolicy === 'hardware'
+      : configuration.encoderPolicy === 'hardware'
         ? deviceIndex !== undefined && deviceIndex >= 0 && Boolean(codecCapabilities[deviceIndex])
         : codecCapabilities.some(Boolean)
     return profileSupports && encoderSupports
   })
-  const recommendedAudioCodec = targetProfile && media?.audio_codec
-    && media.audio_channels <= targetProfile.definition.audio.maxChannels
-    && (!media.has_object_audio || targetProfile.definition.audio.objectAudio)
-    && !targetProfile.definition.audio.codecs.some(codec => normalizeAudioCodec(codec) === normalizeAudioCodec(media.audio_codec))
-    ? (['eac3', 'ac3', 'aac'] as const).find(codec =>
-      (media.audio_channels >= 6 ? codec !== 'aac' : codec === 'aac')
-      && targetProfile.definition.audio.codecs.some(supportedCodec => normalizeAudioCodec(supportedCodec) === normalizeAudioCodec(codec))
-    )
-    : undefined
+  const unsupportedTargetCodecReasons = Object.fromEntries((['hevc', 'av1'] as const)
+    .filter(codec => !supportedTargetCodecs.includes(codec))
+    .map(codec => {
+      const label = codec === 'hevc' ? 'H.265' : 'AV1'
+      if (targetProfile && !targetProfile.definition.video.codecs.some(value => normalizeVideoCodec(value) === normalizeVideoCodec(codec))) {
+        return [codec, `Not supported by ${targetProfile.name}.`]
+      }
+      if (!capabilities) return [codec, 'Checking encoder support.']
+      if (configuration.encoderPolicy === 'software') return [codec, `Software encoding for ${label} is unavailable.`]
+      if (configuration.encoderPolicy === 'hardware') return [codec, selectedGpu ? `${selectedGpu.name} cannot encode ${label}.` : `Choose a GPU that supports ${label}.`]
+      return [codec, `No compatible ${label} encoder is available.`]
+    })) as Partial<Record<'hevc' | 'av1', string>>
+  const originalAudioLanguageOptions = useMemo<AudioLanguageOption[]>(() => {
+    const detected = (optimizationDecision?.trackRemoval.tracks ?? [])
+      .map(track => track.language)
+      .filter((language): language is string => Boolean(language))
+      .map(language => ({ language, value: toIso639_2(language) || language }))
+      .filter((item, index, items) => items.findIndex(candidate => candidate.value === item.value) === index)
+    const selectedFromMetadata = originalAudioLanguage && !detected.some(item => item.value === originalAudioLanguage)
+      ? [{ value: originalAudioLanguage, label: `${formatLanguage(originalAudioLanguage)} (${originalAudioLanguage}) · metadata`, group: 'Metadata' }]
+      : []
+    const inFile = detected.map(({ language, value }) => ({ value, label: `${formatLanguage(language)} (${value})`, group: 'In file' }))
+    const otherLanguages = LANGUAGE_OPTIONS
+      .filter(option => !detected.some(item => isSameLanguage(item.language, option.code)))
+      .map(option => ({ value: option.code3, label: option.label.replace(`(${option.code})`, `(${option.code3})`), group: 'Other languages' }))
+    return [...inFile, ...selectedFromMetadata, ...otherLanguages]
+  }, [optimizationDecision, originalAudioLanguage])
 
   const selectEncoderPolicy = (encoderPolicy: TranscodeOptions['encoderPolicy']) => {
+    updateConfiguration({ encoderPolicy: encoderPolicy ?? '' })
+    const supportsSelectedCodec = (gpu: NonNullable<typeof capabilities>['gpus'][number]) => {
+      const encoder = targetCodec ? getHardwareEncoder(gpu.vendor, targetCodec) : undefined
+      return Boolean(encoder && capabilities?.deviceEncoders[gpu.id]?.includes(encoder))
+    }
+    const selectedHardware = capabilities?.gpus.find(gpu => gpu.vendor === 'Intel' && supportsSelectedCodec(gpu))
+      ?? capabilities?.gpus.find(supportsSelectedCodec)
     setOptions(prev => ({
       ...prev,
-      encoderPolicy,
-      useGpu: encoderPolicy === 'hardware' || encoderPolicy === 'compare',
-      gpuId: encoderPolicy === 'hardware' || encoderPolicy === 'compare' ? capabilities?.selectedGpuId ?? '' : ''
+      useGpu: encoderPolicy !== 'software',
+      gpuId: encoderPolicy === 'software' ? '' : selectedHardware?.id ?? capabilities?.selectedGpuId ?? ''
     }))
   }
 
   const loadInitialData = useCallback(async () => {
     try {
       setLoading(true)
-      const [item, capabilities, targetProfiles, configuredTargetProfileId, configuredSubtitleLanguages, configuredOutputMode] = await Promise.all([
+      const [item, capabilities, preferences] = await Promise.all([
         window.electronAPI.getMediaItem(mediaId),
         window.electronAPI.getCapabilities(),
-        window.electronAPI.listPlaybackTargetProfiles(),
-        window.electronAPI.getSetting('optimization_default_target_profile_id'),
-        window.electronAPI.getSetting(SETTING_KEYS.subtitle_preferred_languages),
-        window.electronAPI.getSetting(SETTING_KEYS.transcoding_default_output_mode),
+        loadOptimizationPreferences(),
       ])
-      const outputMode = ['copy', 'quarantine-replace', 'replace'].includes(configuredOutputMode ?? '')
-        ? configuredOutputMode as NonNullable<TranscodeOptions['outputMode']>
-        : undefined
-      if (configuredOutputMode && !outputMode) setOutputModeSettingError('Saved output handling is unsupported. Choose a valid option before preparing a review.')
+      const { targetProfiles, targetProfileId: configuredTargetProfileId } = preferences
+      if (!initialPreflightId && preferences.outputModeError) setOutputModeSettingError(preferences.outputModeError)
 
       setTargetProfiles(targetProfiles)
-      setSubtitleWhitelist(configuredSubtitleLanguages || '')
-      setTargetProfileId(configuredTargetProfileId || '')
-      setTargetProfileError(configuredTargetProfileId && !targetProfiles.some(profile => profile.id === configuredTargetProfileId)
-        ? `Configured playback target ${configuredTargetProfileId} was not found. Choose another target or select no playback target.`
-        : null)
+      if (!initialPreflightId) updateConfiguration({ subtitleLanguages: preferences.subtitleWhitelist })
+      if (!initialPreflightId) updateConfiguration({ targetProfileId: configuredTargetProfileId, ...(preferences.outputMode ? { outputMode: preferences.outputMode } : {}) })
+      setTargetProfileError(!initialPreflightId ? preferences.targetProfileError : null)
 
       if (item) {
         const loadedMedia = item as MediaItem
         setMedia(loadedMedia)
         const loadedOriginalAudioLanguage = toIso639_2(loadedMedia.original_language) || loadedMedia.original_language || ''
-        setOriginalAudioLanguage(loadedOriginalAudioLanguage)
+        if (!initialPreflightId) updateConfiguration({ originalAudioLanguage: loadedOriginalAudioLanguage })
         const sourceContainer = getOptimizationContainer(loadedMedia.container)
         const configuredProfile = targetProfiles.find(profile => profile.id === configuredTargetProfileId)
-        setTargetContainer(sourceContainer && (!configuredProfile || configuredProfile.definition.containers.includes(sourceContainer === 'mkv' ? 'matroska' : 'mp4')) ? sourceContainer : '')
-        if (initialStreamPruning && loadedMedia.original_language) {
-          setOptions(prev => ({
-            ...prev,
-            streamSelection: {
-              audio: 'original-and-protected',
-              originalLanguage: loadedOriginalAudioLanguage,
-              subtitle: 'all'
-            }
-          }))
-        }
+        if (!initialPreflightId) updateConfiguration({ targetContainer: sourceContainer && (!configuredProfile || configuredProfile.definition.containers.includes(sourceContainer === 'mkv' ? 'matroska' : 'mp4')) ? sourceContainer : '' })
       }
       const avail = capabilities || { ffmpeg: false }
       setAvailability(avail)
@@ -187,18 +262,8 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
         const decision = await window.electronAPI.optimizationGetDecision(mediaId) as OptimizationDecision
         const originalLanguage = decision.trackRemoval.originalLanguage
         if (originalLanguage) {
-          setOriginalAudioLanguage(toIso639_2(originalLanguage) || originalLanguage)
+          updateConfiguration({ originalAudioLanguage: toIso639_2(originalLanguage) || originalLanguage })
           setMedia(current => current ? { ...current, original_language: originalLanguage } : current)
-          if (initialStreamPruning) {
-            setOptions(current => ({
-              ...current,
-              streamSelection: {
-                audio: 'original-and-protected',
-                originalLanguage,
-                subtitle: 'all'
-              }
-            }))
-          }
         }
         setOptimizationDecision(decision)
       } catch (error) {
@@ -208,16 +273,28 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
       }
 
       const defaultEngine = capabilities?.engines?.[0] || 'ffmpeg'
-      const selectedGpuId = capabilities?.gpus?.some(gpu => gpu.id === capabilities.selectedGpuId)
-        ? capabilities.selectedGpuId
-        : ''
+      const hardwareSupports = (gpu: NonNullable<typeof capabilities>['gpus'][number], codec: 'hevc' | 'av1') => {
+        const encoder = getHardwareEncoder(gpu.vendor, codec)
+        return Boolean(encoder && capabilities?.deviceEncoders[gpu.id]?.includes(encoder))
+      }
+      const codecIsSupported = (codec: NonNullable<typeof targetCodec>) => {
+        const profile = targetProfiles.find(candidate => candidate.id === configuredTargetProfileId)
+        const profileSupports = !profile || profile.definition.video.codecs.some(value => normalizeVideoCodec(value) === normalizeVideoCodec(codec))
+        const matrix = capabilities?.encodingMatrix.codecs.find(value => value.codec === codec)?.capabilities ?? []
+        return profileSupports && matrix.some(Boolean)
+      }
+      const preferredCodec = (['hevc', 'av1'] as const).find(codecIsSupported) ?? 'hevc'
+      const selectedGpu = capabilities?.gpus?.find(gpu => gpu.vendor === 'Intel' && hardwareSupports(gpu, preferredCodec))
+        ?? capabilities?.gpus?.find(gpu => gpu.id === capabilities.selectedGpuId && hardwareSupports(gpu, preferredCodec))
+        ?? capabilities?.gpus?.find(gpu => hardwareSupports(gpu, preferredCodec))
+      const selectedGpuId = selectedGpu?.id ?? ''
+      if (!initialPreflightId) updateConfiguration({ targetCodec: preferredCodec })
 
       setOptions(prev => ({
         ...prev,
-        outputMode,
         transcodingEngine: defaultEngine,
-        gpuId: selectedGpuId || '',
-        useGpu: false
+        gpuId: selectedGpuId,
+        useGpu: Boolean(selectedGpuId)
       }))
     } catch (err) {
       console.error('Failed to load transcode data:', err)
@@ -225,7 +302,7 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
     } finally {
       setLoading(false)
     }
-  }, [mediaId, addToast, initialStreamPruning])
+  }, [mediaId, addToast, initialPreflightId, updateConfiguration])
 
   useEffect(() => {
     queueMicrotask(() => { void loadInitialData() })
@@ -239,12 +316,25 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
         if (cancelled) return
         if (!saved) throw new Error(`Saved optimization review ${initialPreflightId} was not found`)
         replaceReview(saved.result, saved.request.options)
-        setOptions(previous => ({ ...previous, ...saved.request.options }))
-        setTargetProfileId(saved.request.options.targetProfileId ?? '')
-        setTargetContainer(saved.request.options.targetContainer ?? '')
-        setAudioTranscodeEnabled(Boolean(saved.request.options.targetAudioCodec))
-        setSubtitleWhitelist(saved.request.options.streamSelection?.subtitleLanguageWhitelist?.join(', ') ?? '')
-        if (saved.request.options.streamSelection?.audio === 'original-and-protected') setOriginalAudioLanguage(saved.request.options.streamSelection.originalLanguage)
+        restoreConfiguration(saved.request.options)
+        const savedOptions = { ...saved.request.options }
+        delete savedOptions.streamSelection
+        delete savedOptions.optimizationMode
+        delete savedOptions.outputMode
+        delete savedOptions.targetProfileId
+        delete savedOptions.targetContainer
+        delete savedOptions.targetContainerSelection
+        delete savedOptions.qualityProfile
+        delete savedOptions.encoderPolicy
+        delete savedOptions.targetCodec
+        delete savedOptions.targetAudioCodec
+        delete savedOptions.targetHdrFormat
+        setOptions(previous => ({ ...previous, ...savedOptions }))
+        updateConfiguration({
+          audioTrackPolicy: saved.request.options.streamSelection?.audio === 'original-and-protected' ? 'original-and-protected' : 'all',
+          originalAudioLanguage: saved.request.options.streamSelection?.audio === 'original-and-protected' ? saved.request.options.streamSelection.originalLanguage : '',
+          subtitleLanguages: saved.request.options.streamSelection?.subtitleLanguageWhitelist?.join(', ') ?? '',
+        })
         submitBatch(saved.result.batchId, saved.result.queuedMediaItemIds ?? [], saved.result.queuedTaskIds ?? [])
         setStatus(saved.result.queuedAt ? 'queued' : 'idle')
         setActiveTab(saved.result.queuedAt ? 'monitor' : 'review')
@@ -253,7 +343,7 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
         if (!cancelled) addToast({ title: 'Could not reopen optimization review', message: error instanceof Error ? error.message : String(error), type: 'error' })
       })
     return () => { cancelled = true }
-  }, [initialPreflightId, addToast, replaceReview, submitBatch, setActiveTab])
+  }, [initialPreflightId, addToast, replaceReview, submitBatch, setActiveTab, restoreConfiguration, updateConfiguration])
 
   useEffect(() => {
     const unsub = window.electronAPI.onProgress(p => {
@@ -289,14 +379,45 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
     }
   }, [mediaId, addToast, queueState.currentTask, submittedBatchId, submittedTaskIds, submittedMediaItemIds, setActiveTab])
 
-  const getEffectivePreflightOptions = () => {
-    return buildEffectiveOptimizationOptions(options, {
+  const getEffectivePreflightOptions = useCallback(() => {
+    return buildEffectiveOptimizationOptions({
+      ...options,
+      ...optimizationConfigurationToOptions(configuration),
+      streamSelection: optimizationStreamSelection(configuration, configuration.removeUnnecessaryStreams),
+    }, {
       targetProfileId,
       targetContainer: targetContainer || undefined,
       audioTranscodeEnabled,
-      subtitleLanguageWhitelist: parseLanguageWhitelist(subtitleWhitelist),
+      subtitleLanguageWhitelist: parseLanguageWhitelist(subtitleLanguages),
     })
-  }
+  }, [options, configuration, targetProfileId, targetContainer, audioTranscodeEnabled, subtitleLanguages])
+  const discoverCandidates = useCallback(async () => {
+    if (!media?.source_id) {
+      setCandidateDiscoveryError('This item has no source identity for candidate discovery.')
+      return
+    }
+    setCandidateDiscoveryBusy(true)
+    setCandidateDiscoveryError(null)
+    try {
+      const result = await window.electronAPI.discoverShowOptimization({
+        requestId: crypto.randomUUID(),
+        mediaItemId: media.id,
+        sourceId: media.source_id,
+        libraryId: media.library_id,
+        options: getEffectivePreflightOptions(),
+      })
+      setCandidateDiscovery(result)
+    } catch (error) {
+      setCandidateDiscoveryError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setCandidateDiscoveryBusy(false)
+    }
+  }, [media, getEffectivePreflightOptions])
+  useEffect(() => {
+    if (loading || initialPreflightId || !media?.id || candidateDiscoveryStartedFor.current === media.id) return
+    candidateDiscoveryStartedFor.current = media.id
+    void discoverCandidates()
+  }, [loading, initialPreflightId, media?.id, discoverCandidates])
   const preflightMatchesCurrentSettings = reviewMatches(getEffectivePreflightOptions())
 
   useEffect(() => {
@@ -314,55 +435,44 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
     }
   }, [batchSummary, onOptimizationCompleted, setActiveTab])
   const missingSettings = getMissingOptimizationSettings({
-    outputModeSelected: Boolean(options.outputMode),
-    videoTranscode: options.optimizationMode !== 'remux_only',
-    videoCodecSelected: Boolean(options.targetCodec),
-    videoCodecSupported: options.targetCodec ? supportedTargetCodecs.includes(options.targetCodec) : undefined,
-    qualityProfileSelected: Boolean(options.qualityProfile),
-    encoderPolicySelected: Boolean(options.encoderPolicy),
+    outputModeSelected: Boolean(outputMode),
+    videoTranscode: optimizationMode !== 'remux_only',
+    videoCodecSelected: Boolean(targetCodec),
+    videoCodecSupported: targetCodec ? supportedTargetCodecs.includes(targetCodec) : undefined,
+    qualityProfileSelected: Boolean(configuration.qualityProfile),
+    encoderPolicySelected: Boolean(configuration.encoderPolicy),
     audioTranscode: audioTranscodeEnabled,
-    audioCodecSelected: Boolean(options.targetAudioCodec),
-    streamPruning: options.streamSelection?.audio === 'original-and-protected',
-    originalAudioLanguageSelected: Boolean(originalAudioLanguage.trim()),
+    audioCodecSelected: Boolean(targetAudioCodec),
+    streamPruning: audioTrackPolicy === 'original-and-protected',
+    originalAudioLanguageSelected: optimizationAudioLanguageIsKnown(originalAudioLanguage),
   })
 
   useEffect(() => {
     if (preflight && !preflightMatchesCurrentSettings && samplesReviewed) setSamplesReviewed(false)
   }, [preflight, preflightMatchesCurrentSettings, samplesReviewed, setSamplesReviewed])
 
-  const generateParams = async () => {
-    if (!media || !media.file_path) return
-    setGenerating(true)
-    setStatus('generating')
-    try {
-        const p = await window.electronAPI.getParameters(media.id!, options)
-      setParams(p)
-
-      setOptions(prev => ({
-        ...prev,
-        encoder: p.encoder || prev.encoder,
-        crf: p.crf !== undefined ? p.crf : prev.crf,
-        preset: p.preset || prev.preset
-      }))
-
-      setStatus('idle')
-      addToast({ title: 'AI Transcoding parameters updated', type: 'info' })
-    } catch (err: unknown) {
-      addToast({ title: `AI parameter generation failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' })
-      setStatus('idle')
-    } finally {
-      setGenerating(false)
-    }
-  }
-
   const selectOutputMode = async (outputMode: NonNullable<TranscodeOptions['outputMode']>) => {
     try {
       await window.electronAPI.setSetting(SETTING_KEYS.transcoding_default_output_mode, outputMode)
-      setOptions(prev => ({ ...prev, outputMode }))
+      updateConfiguration({ outputMode })
       setOutputModeSettingError(null)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      setOutputModeSettingError(`Could not save output handling: ${message}`)
+      setOutputModeSettingError(`Could not save output choice: ${message}`)
+    }
+  }
+
+  const loadEncodingSettings = async () => {
+    if (!media?.file_path) return
+    setStatus('generating')
+    try {
+      const nextParams = await window.electronAPI.getParameters(media.id!, { ...options, ...optimizationConfigurationToOptions(configuration) })
+      setParams(nextParams)
+      setOptions(previous => ({ ...previous, encoder: nextParams.encoder || previous.encoder, crf: nextParams.crf ?? previous.crf, preset: nextParams.preset || previous.preset }))
+      setStatus('idle')
+    } catch (error) {
+      setStatus('idle')
+      addToast({ title: 'Could not prepare encoding settings', message: error instanceof Error ? error.message : String(error), type: 'error' })
     }
   }
 
@@ -371,7 +481,7 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
     failureReportedRef.current = false
     setStatus('generating')
     try {
-      if (missingSettings.length) throw new Error(`Choose ${missingSettings.join(', ')} before preparing this optimization.`)
+      if (missingSettings.length) throw new Error(`Select ${missingSettings.join(', ')} to continue.`)
       if (!preflight || !preflightMatchesCurrentSettings) {
         const preflightOptions = getEffectivePreflightOptions()
         const result = await window.electronAPI.preflightShow({
@@ -458,70 +568,33 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
   if (!media) return null
 
   return <OptimizationDialogShell
+    key={scopeKey}
+    scope={scope}
+    stage={optimizationDialogStage(activeTab === 'review', activeTab === 'monitor')}
+    availableStages={availableOptimizationDialogStages(Boolean(preflight && preflightMatchesCurrentSettings), Boolean(batchSummary || progress || status !== 'idle'))}
+    onStageChange={next => {
+      if (next === 'Settings') setActiveTab('presets')
+      else if (next === 'Review' && preflight && preflightMatchesCurrentSettings) setActiveTab('review')
+      else if (next === 'Results' && (batchSummary || progress || status !== 'idle')) setActiveTab('monitor')
+    }}
     title={media.type === 'movie' ? 'Optimize movie' : 'Optimize episode'}
-    subtitle={media.type === 'episode' ? `${media.series_title ?? media.title} · Season ${media.season_number ?? '?'} · Episode ${media.episode_number ?? '?'} · 1 item` : `${media.title} · 1 item`}
+    subtitle={media.type === 'episode' ? `${media.series_title ?? media.title} · S${String(media.season_number ?? '?').padStart(2, '0')}E${String(media.episode_number ?? '?').padStart(2, '0')}` : media.title}
     leading={<Zap className="h-5 w-5" />}
     onClose={onClose}
     wide
-    footer={status !== 'encoding' && status !== 'queued' && status !== 'complete' ? (
-          <div className="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center">
-            <button onClick={onClose} className="rounded-xl bg-muted px-6 py-2.5 text-xs font-bold transition-all hover:bg-muted/80">Cancel</button>
-            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:gap-3">
-              {analysisRequired && <button onClick={() => void analyzeRequiredEvidence()} disabled={analyzingItem} className="rounded-xl border border-border px-5 py-2.5 text-xs font-bold disabled:opacity-50">{analyzingItem ? 'Analyzing…' : 'Analyze item'}</button>}
-              <button onClick={generateParams} disabled={generating || !availability?.ffmpeg || (options.optimizationMode !== 'remux_only' && (!options.targetCodec || !options.qualityProfile || !options.encoderPolicy))} className="flex items-center gap-2 rounded-xl bg-muted/60 px-5 py-2.5 text-xs font-bold transition-all hover:bg-muted disabled:opacity-50">
-                {generating ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-primary" />}
-                Generate encoding settings
-              </button>
-              <button onClick={startTranscode} disabled={!availability?.ffmpeg || status === 'generating' || missingSettings.length > 0 || (activeTab === 'review' && preflight?.episodes.some(item => !item.compatible))} className="flex items-center gap-2 rounded-xl bg-primary px-7 py-2.5 text-xs font-black text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:opacity-90 disabled:opacity-50">
-                <Play className="h-4 w-4 fill-current" />
-                {status === 'generating' ? 'Preparing…' : preflightMatchesCurrentSettings ? 'Queue optimization' : 'Prepare review'}
-              </button>
-            </div>
-          </div>
-    ) : undefined}
+    footer={status !== 'encoding' && status !== 'queued' && status !== 'complete' ? <OptimizationDialogFooter
+      leadingAction={{ label: 'Cancel', onClick: onClose }}
+      secondaryAction={missingSettings.includes('original audio language')
+        ? { label: 'Edit audio', onClick: () => setTrackSettingsOpen(true), variant: 'outline' }
+        : analysisRequired ? { label: analyzingItem ? 'Analyzing…' : 'Analyze item', onClick: () => void analyzeRequiredEvidence(), disabled: analyzingItem, variant: 'outline' } : undefined}
+      status={missingSettings.length > 0 ? describeMissingOptimizationSettings(missingSettings) : activeTab === 'review' && preflight?.episodes.some(item => !item.compatible) ? 'Review is blocked because one or more items have no compatible plan.' : undefined}
+      primaryAction={{
+        label: <><Play className="h-4 w-4 fill-current" />{status === 'generating' ? 'Preparing…' : preflightMatchesCurrentSettings ? 'Start optimization' : 'Prepare review'}</>,
+        onClick: startTranscode,
+        disabled: !availability?.ffmpeg || status === 'generating' || missingSettings.length > 0 || (activeTab === 'review' && preflight?.episodes.some(item => !item.compatible)),
+      }}
+    /> : undefined}
   >
-        {/* 3-Tab Wizard Header */}
-        <div className="flex border-b border-border/20 bg-muted/30 px-3 sm:px-6 pt-2 sm:pt-3 gap-1 sm:gap-2 overflow-x-auto">
-          <button
-            onClick={() => setActiveTab('presets')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all border-b-2 ${
-              activeTab === 'presets'
-                ? 'bg-card text-primary border-primary shadow-xs'
-                : 'text-muted-foreground hover:text-foreground border-transparent'
-            }`}
-          >
-            <Zap className="w-4 h-4" />
-            Quick Presets
-          </button>
-
-          <button
-            onClick={() => setActiveTab('advanced')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all border-b-2 ${
-              activeTab === 'advanced'
-                ? 'bg-card text-primary border-primary shadow-xs'
-                : 'text-muted-foreground hover:text-foreground border-transparent'
-            }`}
-          >
-            <Sliders className="w-4 h-4" />
-            Advanced Settings
-          </button>
-
-          <button
-            onClick={() => setActiveTab('monitor')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all border-b-2 relative ${
-              activeTab === 'monitor'
-                ? 'bg-card text-primary border-primary shadow-xs'
-                : 'text-muted-foreground hover:text-foreground border-transparent'
-            }`}
-          >
-            <Activity className="w-4 h-4" />
-            Encoding Monitor
-            {status === 'encoding' && (
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping absolute top-2 right-2" />
-            )}
-          </button>
-        </div>
-
         {/* Modal Body with Scroll */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 custom-scrollbar">
           {/* Availability Warnings */}
@@ -529,271 +602,75 @@ function MediaOptimizationFlow({ mediaId, initialPreflightId, onClose, onOptimiz
             <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex gap-4">
               <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
               <div className="space-y-1">
-                <p className="text-sm font-bold text-red-400">No Transcoding Engines Available</p>
-                <p className="text-xs text-muted-foreground">
-                  FFmpeg was not detected on your system. Please install or configure it in Settings.
-                </p>
+                <p className="text-sm font-bold text-red-400">FFmpeg is unavailable</p>
+                <p className="text-xs text-muted-foreground">Configure FFmpeg in Settings to optimize this file.</p>
               </div>
             </div>
           )}
 
-          {optimizationDecision && (
-            <section className="space-y-2 rounded-xl border border-border/40 bg-muted/20 p-4" aria-label="Estimated optimization savings">
-              <h4 className="text-sm font-semibold">Estimated before sampling</h4>
-              {([
-                ['Remove audio tracks', optimizationDecision.trackRemoval],
-                ['Transcode video', optimizationDecision.videoTranscode]
-              ] as const).map(([label, mechanism]) => (
-                <div key={label} className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 border-t border-border/30 pt-2 text-sm first:border-t-0 first:pt-0">
-                  <span className="text-muted-foreground">{label}{label === 'Transcode video' && optimizationDecision.videoTranscode.assumedTargetCodec ? ` to ${optimizationDecision.videoTranscode.assumedTargetCodec.toUpperCase()}` : ''}</span>
-                  <EstimatedSavingsDisplay bytes={mechanism.estimatedSavingsBytes} />
-                  {(mechanism.estimatedSavingsBytes == null || label === 'Transcode video') && <span className="col-span-2 text-xs text-muted-foreground">{mechanism.reason}{mechanism.confidence === 'low' ? ' · Low confidence; measured samples determine whether the estimate is achievable.' : ''}</span>}
-                </div>
-              ))}
-            </section>
-          )}
-          {normalizeVideoCodec(media.video_codec) === 'H.264' && (
-            <p className="rounded-xl border border-sky-500/30 bg-sky-500/10 p-3 text-sm text-sky-100">
-              This H.264 file can be evaluated for HEVC or AV1 compression. Savings depend on measured quality and playback compatibility.
-            </p>
-          )}
           {optimizationDecisionError && (
-            <p role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
-              Estimated savings could not be calculated: {optimizationDecisionError}
-            </p>
+            <div role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+              <p>Could not estimate savings.</p>
+              <details className="mt-1 text-xs"><summary className="cursor-pointer">Technical details</summary><p className="pt-1">{optimizationDecisionError}</p></details>
+            </div>
           )}
+          {activeTab === 'presets' && <section className="rounded-xl border border-border/50 p-3 space-y-2" aria-live="polite">
+            <div className="flex items-center justify-between gap-3"><div><h3 className="text-sm font-semibold">Optimization candidates</h3><p className="text-xs text-muted-foreground">Metadata-only discovery uses the current track pruning policy. Savings are estimates.</p></div><button type="button" onClick={() => void discoverCandidates()} disabled={candidateDiscoveryBusy || settingsDisabled || !media?.id} className="rounded-lg border border-border px-3 py-1.5 text-xs disabled:opacity-50">{candidateDiscoveryBusy ? 'Scanning…' : candidateDiscovery ? 'Refresh' : 'Discover'}</button></div>
+            {candidateDiscoveryError && <p role="alert" className="text-xs text-destructive">{candidateDiscoveryError}</p>}
+            {candidateDiscovery && (candidateDiscovery.candidateCount === 0
+              ? <p className="text-xs text-muted-foreground">No candidates found for this file and the current pruning policy.</p>
+              : <ul className="list-disc space-y-1 pl-5 text-xs">{candidateDiscovery.groups.flatMap(group => group.mediaItemIds.map(id => <li key={`video:${id}`}>{group.mediaItemLabels[id]} · {(group.candidateReasonsByMediaItemId[id] ?? []).map(optimizationCandidateReasonLabel).join(' · ')} · {group.estimatedSavingsByMediaItemId[id] == null ? 'Not measured' : `${formatOptimizationBytes(group.estimatedSavingsByMediaItemId[id]!)} estimated savings`}</li>))}{candidateDiscovery.otherOperationCandidates.map(candidate => <li key={`other:${candidate.mediaItemId}`}>{candidate.label} · {candidate.candidateReasons.map(optimizationCandidateReasonLabel).join(' · ')} · {candidate.estimatedSavingsBytes == null ? 'Not measured' : `${formatOptimizationBytes(candidate.estimatedSavingsBytes)} estimated savings`}</li>)}</ul>)}
+          </section>}
           {outputModeSettingError && <p role="alert" className="text-sm text-destructive">{outputModeSettingError}</p>}
-          {missingSettings.length > 0 && <p role="status" className="text-sm text-amber-200">Before preparing a review, choose {missingSettings.join(', ')}.</p>}
-          {activeTab === 'presets' && <OutputHandlingSelection value={options.outputMode} onChange={mode => { void selectOutputMode(mode) }} />}
-
-          {/* Active Tab Content */}
-          {(activeTab === 'presets' || activeTab === 'advanced') && <div className="space-y-2">
-            <label className="flex items-start gap-3 rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
-              <select aria-label="Video optimization mode" value={options.optimizationMode} onChange={event => {
-                const mode = event.target.value
-                if (mode === 'smart' || mode === 'remux_only' || mode === 'transcode') setOptions(prev => ({ ...prev, optimizationMode: mode }))
-              }} className="rounded border border-border bg-background p-2">
-                <option value="smart">Smart optimization</option>
-                <option value="remux_only">Preserve video</option>
-                <option value="transcode">Force video conversion</option>
-              </select>
-              <span>
-                <span className="block font-medium">Video optimization</span>
-                <span className="block text-xs text-muted-foreground">Smart optimization preserves compatible H.265 video when H.265 is selected. Force conversion explicitly evaluates recompression.</span>
-              </span>
-            </label>
-            <label className="block rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
-              <span className="block font-medium">Keep subtitle languages</span>
-              <span className="mb-2 block text-xs text-muted-foreground">Blank keeps all subtitles. Other subtitle languages are removed.</span>
-              <input
-                type="text"
-                aria-label="Subtitle language whitelist"
-                value={subtitleWhitelist}
-                onChange={event => setSubtitleWhitelist(event.target.value)}
-                placeholder="eng, heb, spa"
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+          {activeTab !== 'review' && activeTab !== 'monitor' && <OptimizationSettingsLayout profiles={targetProfiles} targetProfileId={targetProfileId} targetError={targetProfileError} qualityProfile={configuration.qualityProfile} targetCodec={targetCodec} supportedTargetCodecs={supportedTargetCodecs} unsupportedTargetCodecReasons={unsupportedTargetCodecReasons} videoRequired={optimizationMode !== 'remux_only'} playbackPolicy={playbackPolicy} onPlaybackPolicyChange={value => updateConfiguration({ playbackPolicy: value })} trackSummary={optimizationTrackSummary(configuration)} trackSettingsOpen={trackSettingsOpen} onTrackSettingsOpenChange={setTrackSettingsOpen} encodingSummary={`${configuration.encoderPolicy === 'software' ? 'Software' : selectedGpu?.name ?? 'Automatic encoder'} · ${targetCodec === 'hevc' ? 'H.265' : targetCodec.toUpperCase()} · ${targetContainer?.toUpperCase() || 'Automatic container'}`} advancedSettingsOpen={advancedSettingsOpen} onAdvancedSettingsOpenChange={setAdvancedSettingsOpen} disabled={settingsDisabled} onQualityProfileChange={qualityProfile => updateConfiguration({ qualityProfile })} onTargetCodecChange={targetCodec => updateConfiguration({ targetCodec })} audioConversion={{ enabled: audioTranscodeEnabled, codec: targetAudioCodec, sourceCodec: media.audio_codec, options: optimizationAudioCodecOptions(targetProfile?.definition.audio.codecs), onEnabledChange: enabled => updateConfiguration({ audioTranscodeEnabled: enabled, ...(!enabled ? { targetAudioCodec: '' } : {}) }), onCodecChange: codec => updateConfiguration({ targetAudioCodec: codec }) }} onTargetProfileChange={profileId => {
+                updateConfiguration({ targetProfileId: profileId })
+                const profile = targetProfiles.find(candidate => candidate.id === profileId)
+                const sourceContainer = getOptimizationContainer(media?.container)
+                updateConfiguration({ targetContainer: sourceContainer && profile?.definition.containers.includes(sourceContainer === 'mkv' ? 'matroska' : 'mp4') ? sourceContainer : '' })
+                updateConfiguration({ targetCodec: targetCodec && (playbackPolicy === 'allow-transcoding' || !profile || profile.definition.video.codecs.some(codec => normalizeVideoCodec(codec) === normalizeVideoCodec(targetCodec))) ? targetCodec : '' })
+                setTargetProfileError(null)
+              }} optimizationMode={optimizationMode} onOptimizationModeChange={nextMode => updateConfiguration({ optimizationMode: nextMode })} outputMode={outputMode || undefined} onOutputModeChange={mode => { void selectOutputMode(mode) }}
+            playbackOptions={activeTab === 'presets' ? <div className="space-y-2">
+              <SubtitleLanguageSelection value={subtitleLanguages} onChange={value => updateConfiguration({ subtitleLanguages: value })} disabled={settingsDisabled} />
+              <AudioTrackPolicySelection
+                policy={audioTrackPolicy === 'original-and-protected' ? 'preferred' : 'all'}
+                language={originalAudioLanguage}
+                languages={originalAudioLanguageOptions}
+                disabled={settingsDisabled}
+                onPolicyChange={(policy: AudioTrackPolicy) => updateConfiguration({ audioTrackPolicy: policy === 'preferred' ? 'original-and-protected' : 'all' })}
+                onLanguageChange={language => updateConfiguration({ originalAudioLanguage: language })}
               />
-            </label>
-            <label className="flex items-start gap-3 rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
-              <input
-                type="checkbox"
-                checked={options.streamSelection?.audio === 'original-and-protected'}
-                disabled={!originalAudioLanguage}
-                onChange={event => setOptions(prev => ({
-                  ...prev,
-                  streamSelection: event.target.checked && originalAudioLanguage
-                    ? { audio: 'original-and-protected', originalLanguage: originalAudioLanguage, subtitle: 'all' }
-                    : undefined
-                }))}
-                className="mt-0.5"
-              />
-              <span>
-                <span className="block font-medium">Prune non-original audio tracks</span>
-                <span className="block text-xs text-muted-foreground">
-                  {originalAudioLanguage
-                    ? `Keep ${formatLanguage(originalAudioLanguage)} (${originalAudioLanguage}) audio and protected tracks; remove other audio in the same operation.`
-                    : 'Unavailable because the original audio language is unknown.'}
-                </span>
-              </span>
-            </label>
-            <label className="block rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
-              <span className="mb-2 block font-medium">Original audio language</span>
-              <select
-                aria-label="Original audio language"
-                value={originalAudioLanguage}
-                onChange={event => {
-                  const language = event.target.value
-                  setOriginalAudioLanguage(language)
-                  if (options.streamSelection?.audio === 'original-and-protected') {
-                    setOptions(prev => ({
-                      ...prev,
-                      streamSelection: prev.streamSelection?.audio === 'original-and-protected'
-                        ? { ...prev.streamSelection, originalLanguage: language }
-                        : prev.streamSelection
-                    }))
-                  }
-                }}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-              >
-                {!originalAudioLanguage && <option value="">Select the original language</option>}
-                {optimizationDecision?.trackRemoval.tracks
-                  .map(track => track.language)
-                  .filter((language): language is string => Boolean(language))
-                  .map(language => ({ language, code: toIso639_2(language) || language }))
-                  .filter(({ code }, index, languages) => languages.findIndex(candidate => candidate.code === code) === index)
-                  .map(({ language, code }) => <option key={code} value={code}>{formatLanguage(language)} ({code}) · in file</option>)}
-                {originalAudioLanguage && !optimizationDecision?.trackRemoval.tracks.some(track => track.language && (toIso639_2(track.language) || track.language) === originalAudioLanguage) && (
-                  <option value={originalAudioLanguage}>{formatLanguage(originalAudioLanguage)} ({originalAudioLanguage}) · metadata</option>
-                )}
-                <optgroup label="Other languages">
-                  {LANGUAGE_OPTIONS.filter(option => !optimizationDecision?.trackRemoval.tracks.some(track => track.language && isSameLanguage(track.language, option.code)))
-                    .map(option => <option key={option.code} value={option.code3}>{option.label.replace(`(${option.code})`, `(${option.code3})`)}</option>)}
-                </optgroup>
-              </select>
-              <span className="mt-2 block text-xs text-muted-foreground">
-                {optimizationDecision?.trackRemoval.evidenceSources.length
-                  ? `Detected from media metadata and ${optimizationDecision.trackRemoval.evidenceSources.filter(source => source.startsWith('embedded-audio-tag:')).length} embedded audio tags. Change this for this optimization only.`
-                  : 'No original-language evidence is available. Choose the source language before pruning other audio tracks.'}
-              </span>
-            </label>
-            <label className="flex items-start gap-3 rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
-              <input
-                type="checkbox"
-                checked={audioTranscodeEnabled}
-                onChange={event => {
-                  setAudioTranscodeEnabled(event.target.checked)
-                  if (!event.target.checked) setOptions(prev => ({ ...prev, targetAudioCodec: undefined }))
-                }}
-                className="mt-0.5"
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block font-medium">Transcode audio</span>
-                <span className="block text-xs text-muted-foreground">
-                  {media.audio_codec ? `Source: ${media.audio_codec}. ` : ''}{media.audio_codec && /dts.?hd|truehd|flac|pcm/i.test(media.audio_codec) ? 'Lossless audio is preserved unless conversion is needed for playback compatibility; conversion to AAC, AC-3, or E-AC-3 is lossy. ' : ''}Convert eligible retained tracks; protected tracks keep their original codec.
-                </span>
-                {audioTranscodeEnabled && optimizationDecision && <span className="block text-xs text-muted-foreground">Estimated audio conversion savings: <EstimatedSavingsDisplay bytes={optimizationDecision.audioTranscode.estimatedSavingsBytes} /></span>}
-              </span>
-              <select
-                aria-label="Target audio codec"
-                value={options.targetAudioCodec || ''}
-                disabled={!audioTranscodeEnabled}
-                onChange={event => setOptions(prev => ({ ...prev, targetAudioCodec: event.target.value ? event.target.value as NonNullable<TranscodeOptions['targetAudioCodec']> : undefined }))}
-                className="rounded-lg border border-border bg-background px-2 py-1 text-xs text-foreground disabled:opacity-50"
-              >
-                <option value="">Preserve source{media.audio_codec ? ` (${media.audio_codec})` : ''}</option>
-                {(['aac', 'ac3', 'eac3'] as const).filter(codec => !targetProfile || targetProfile.definition.audio.codecs.some(supportedCodec => normalizeAudioCodec(supportedCodec) === normalizeAudioCodec(codec))).map(codec => <option key={codec} value={codec}>{codec.toUpperCase()}{codec === recommendedAudioCodec ? ' (recommended for target compatibility)' : ''}</option>)}
-              </select>
-            </label>
-          </div>}
+            </div> : undefined}
+            outputOptions={activeTab === 'presets' && targetProfileId ? <OptimizationContainerSelection
+              value={targetContainer}
+              placeholder={targetContainer ? undefined : 'Select a supported container'}
+              options={optimizationContainerOptions(targetProfiles.find(profile => profile.id === targetProfileId)?.definition.containers)}
+              disabled={settingsDisabled}
+              onChange={value => updateConfiguration({ targetContainer: value as typeof targetContainer })}
+            /> : undefined}
+            advancedOptions={activeTab === 'presets' ? <div className="space-y-3">
+              <EncoderPolicySelector value={configuration.encoderPolicy} hardwareAvailable={hardwareAvailable} softwareAvailable={softwareAvailable} onChange={selectEncoderPolicy} disabled={settingsDisabled} />
+              <button type="button" onClick={() => void loadEncodingSettings()} disabled={status === 'generating'} className="rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-50">{status === 'generating' ? 'Preparing…' : 'Prepare encoding settings'}</button>
+              <AdvancedTab options={optionsForControls} setOptions={updateTranscodeOptions} params={params} availability={availability} />
+            </div> : undefined}
+          />}
 
-          {(activeTab === 'presets' || activeTab === 'advanced') && (
-            <EncoderPolicySelector value={options.encoderPolicy ?? ''} hardwareAvailable={hardwareAvailable} softwareAvailable={softwareAvailable} onChange={selectEncoderPolicy} />
-          )}
-
-          {activeTab === 'presets' && (
-            <QuickPresetsTab
-              options={options}
-              setOptions={setOptions}
-              params={params}
-              supportedTargetCodecs={supportedTargetCodecs}
-            />
-          )}
-
-          {activeTab === 'advanced' && (
-            <>
-              <section className="mb-6 space-y-3 rounded-xl border border-border/40 bg-muted/20 p-4">
-                <h4 className="text-sm font-semibold">Playback target</h4>
-                {targetProfileError && <p role="alert" className="text-xs text-destructive">{targetProfileError}</p>}
-                <label className="block space-y-1.5 text-xs font-semibold text-muted-foreground">
-                  Target device
-                  <select
-                    aria-label="Playback target"
-                    value={targetProfileId}
-                    onChange={event => {
-                      setTargetProfileId(event.target.value)
-                      const profile = targetProfiles.find(candidate => candidate.id === event.target.value)
-                      const sourceContainer = getOptimizationContainer(media?.container)
-                      setTargetContainer(sourceContainer && profile?.definition.containers.includes(sourceContainer === 'mkv' ? 'matroska' : 'mp4') ? sourceContainer : '')
-                      setOptions(prev => ({ ...prev, targetCodec: prev.targetCodec && (!profile || profile.definition.video.codecs.some(codec => normalizeVideoCodec(codec) === normalizeVideoCodec(prev.targetCodec))) ? prev.targetCodec : undefined }))
-                      setTargetProfileError(null)
-                    }}
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal text-foreground"
-                  >
-                    <option value="">No playback target</option>
-                    {targetProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
-                  </select>
-                </label>
-                {targetProfileId ? (
-                  <label className="block space-y-1.5 text-xs font-semibold text-muted-foreground">
-                    Output container
-                    <select
-                      aria-label="Output container"
-                      value={targetContainer}
-                      onChange={event => setTargetContainer(event.target.value as typeof targetContainer)}
-                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal text-foreground"
-                    >
-                      {!targetContainer && <option value="">Select a supported container</option>}
-                      {targetProfiles.find(profile => profile.id === targetProfileId)?.definition.containers
-                        .filter(container => container === 'matroska' || container === 'mp4')
-                        .map(container => <option key={container} value={container === 'matroska' ? 'mkv' : 'mp4'}>{container === 'matroska' ? 'MKV (Matroska)' : 'MP4'}</option>)}
-                    </select>
-                  </label>
-                ) : <p className="text-xs text-muted-foreground">Playback compatibility will not be evaluated. Measured quality and output-size checks still apply.</p>}
-              </section>
-              <AdvancedTab
-                options={options}
-                setOptions={setOptions}
-                params={params}
-                availability={availability}
-              />
-            </>
-          )}
-
-          {activeTab === 'monitor' && batchSummary && (
-            <section role="status" aria-live="polite" className={`space-y-3 rounded-xl border p-4 text-sm ${batchSummary.outcome === 'completed' ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-primary/30 bg-primary/10'}`}>
-              <h3 className="font-semibold">{batchSummary.outcome === 'completed' ? 'Completed' : batchSummary.outcome === 'partly-completed' ? 'Partly completed' : batchSummary.outcome === 'failed' ? 'Failed' : batchSummary.outcome === 'cancelled' ? 'Cancelled' : batchSummary.outcome === 'paused' ? 'Paused' : batchSummary.outcome === 'cancelling' ? 'Cancelling' : batchSummary.outcome === 'waiting' ? 'Waiting' : batchSummary.outcome === 'running' ? 'Running' : 'Queued'}</h3>
-              <p className="text-xs text-muted-foreground">Completed {batchSummary.successfulCount} · Partial {batchSummary.partialCount} · Failed {batchSummary.failedMediaItemIds.length} · Cancelled {batchSummary.cancelledMediaItemIds.length}</p>
-              <div className="flex flex-wrap gap-3 text-xs">
-                {batchSummary.activeCount > 0 && <button type="button" disabled={queueControlState !== null} onClick={() => void toggleQueuePause()} className="text-primary underline disabled:opacity-50">{queueControlState === 'pausing' ? 'Pausing…' : queueControlState === 'resuming' ? 'Resuming…' : queueState.isPaused ? 'Resume queue' : 'Pause queue'}</button>}
-                {batchSummary.failedMediaItemIds.length + batchSummary.cancelledMediaItemIds.length > 0 && batchSummary.activeCount === 0 && <button type="button" onClick={() => void retryFailedTasks()} className="text-primary underline">Retry failed or cancelled</button>}
-                <button type="button" onClick={() => window.dispatchEvent(new Event('taskQueue:open'))} className="text-primary underline">Open Task Queue</button>
-              </div>
-            </section>
-          )}
-          {activeTab === 'monitor' && status !== 'queued' && (progress || status === 'complete' || status === 'failed') && (
-            <LiveEncodingTab
-              status={status}
-              progress={progress}
-              params={params}
-              mediaTitle={media.title}
-              onCancel={cancelTranscode}
-              onStart={startTranscode}
-              onClose={onClose}
-            />
-          )}
+          {activeTab === 'monitor' && <OptimizationResultsStage summary={batchSummary} queuePaused={queueState.isPaused} waitingCount={queueState.queue.filter(task => task.batchId === submittedBatchId).length} queueControlState={queueControlState} tasks={completedOptimizationTasks} onTogglePause={() => void toggleQueuePause()} onRetry={() => void retryFailedTasks()} onOpenQueue={() => window.dispatchEvent(new Event('taskQueue:open'))}>
+            {status !== 'queued' && (progress || status === 'complete' || status === 'failed') && !((status === 'complete' || status === 'failed') && completedOptimizationTasks.length > 0) && <LiveEncodingTab status={status} progress={progress} params={params} mediaTitle={media.title} onCancel={cancelTranscode} onStart={startTranscode} onClose={onClose} />}
+          </OptimizationResultsStage>}
 
           {activeTab === 'review' && preflight && (
-            <section className="space-y-4 rounded-xl border border-border p-4">
-              <h4 className="font-bold">Review optimization plan</h4>
-              <p className="text-sm">Selected plan total: <EstimatedSavingsDisplay bytes={preflight.estimatedSavingsBytes} /> · {preflight.savingsCoverage ?? 'insufficient'} evidence{preflight.savingsBasis === 'sample_based_projection' ? ' · Sample-based projection' : ''}</p>
-              <button className="text-sm underline" onClick={() => { clearReview(); setActiveTab('advanced') }}>Change optimization settings</button>
-              {preflight.episodes.map(item => <div key={item.mediaItemId} className="space-y-2 text-sm">
-                <p className="font-semibold">{item.label}: {item.compatible ? item.decisionStatus?.replace(/_/g, ' ') : item.reason}</p>
-                {!targetProfileId && !item.targetCompatibility && <p className="text-muted-foreground">Playback compatibility was not evaluated because no target profile is selected.</p>}
-                {item.params?.summary && <p className="text-muted-foreground">{item.params.summary}</p>}
-                {item.changes?.map(change => <p key={change} className="text-muted-foreground">{change}</p>)}
-                {item.targetCompatibility && <PlaybackCompatibilityFindings evaluation={item.targetCompatibility} targetName={item.targetProfile?.name} />}
-                {item.samplePaths?.map((sample, index) => <button key={sample} className="mr-3 underline" onClick={() => void window.electronAPI.openShowSample(preflight.preflightId, item.mediaItemId, index).catch(error => addToast({ title: 'Could not open measured sample', message: error instanceof Error ? error.message : String(error), type: 'error' }))}>Open measured sample {index + 1}</button>)}
-              </div>)}
-              {options.streamSelection?.audio === 'original-and-protected' && <p className="text-muted-foreground">This plan keeps original-language and protected audio tracks, removing other audio tracks.</p>}
-              {audioTranscodeEnabled && options.targetAudioCodec && <p className="text-muted-foreground">Eligible retained audio tracks will be converted to {options.targetAudioCodec.toUpperCase()}.</p>}
+            <OptimizationReviewSummary estimatedSavingsBytes={preflight.estimatedSavingsBytes} coverage={preflight.savingsCoverage ?? 'insufficient'}>
+              {preflight.episodes.map(item => <OptimizationReviewItem key={item.mediaItemId} item={item} targetSelected={Boolean(targetProfileId)} onOpenSample={index => { void window.electronAPI.openShowSample(preflight.preflightId, item.mediaItemId, index).catch(error => addToast({ title: 'Could not open measured sample', message: error instanceof Error ? error.message : String(error), type: 'error' })) }} />)}
+              {optimizationDecision?.trackRemoval.tracks.length ? <details className="text-xs"><summary className="cursor-pointer font-medium">Audio track decisions</summary><ul className="space-y-1 pt-2">{optimizationDecision.trackRemoval.tracks.map(track => <li key={track.index} className="flex justify-between gap-3"><span>{track.language || 'Unknown'}{track.title ? ` · ${track.title}` : ''} · {track.codec} · {track.channelLayout || `${track.channels}ch`}</span><span>{optimizationDecision.trackRemoval.retainedTrackIndexes.includes(track.index) ? 'Keep' : optimizationDecision.trackRemoval.removableTrackIndexes.includes(track.index) ? 'Remove' : 'Review'}</span></li>)}</ul></details> : null}
+              {audioTrackPolicy === 'original-and-protected' && <p className="text-muted-foreground">This plan keeps original-language and protected audio tracks, removing other audio tracks.</p>}
+              {audioTranscodeEnabled && targetAudioCodec && <p className="text-muted-foreground">Eligible retained audio tracks will be converted to {targetAudioCodec.toUpperCase()}.</p>}
               {preflight.episodes.some(item => item.decisionStatus === 'sample_required') && <label className="flex gap-2 text-sm"><input type="checkbox" checked={samplesReviewed} onChange={event => setSamplesReviewed(event.target.checked)} /> I reviewed and approve the measured sample</label>}
-            </section>
+            </OptimizationReviewSummary>
           )}
           {analysisRequired && <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-2 text-sm">
-            <p className="font-semibold text-amber-200">Current persisted file analysis is required before optimization.</p>
-            <p className="text-muted-foreground">Run file analysis for this item, then refresh this review. Analysis does not approve or queue optimization.</p>
-            {analyzingItem ? <p>Analyzing media file…</p> : <button className="underline" onClick={() => { clearReview(); setAnalysisRequired(false); void startTranscode() }}>Refresh optimization review</button>}
+            <p className="font-semibold text-amber-200">Analyze this file before optimizing.</p>
+            {analyzingItem ? <p>Analyzing…</p> : <button className="underline" onClick={() => { clearReview(); setAnalysisRequired(false); void startTranscode() }}>Analyze and refresh review</button>}
           </div>}
         </div>
 

@@ -13,6 +13,7 @@ import { useToast } from '@/contexts/ToastContext'
 import type { TranscodeOptions, TranscodingParams, Availability, PresetTemplate } from './types'
 import { TranscodeOptionsSchema } from '@main/validation/schemas'
 import { migrateTemplateOptions, readTemplates } from './templateMigration'
+import { OPTIMIZATION_VIDEO_FORMATS } from './optimizationOptions'
 
 export interface AdvancedTabProps {
   options: TranscodeOptions
@@ -222,16 +223,15 @@ export function AdvancedTab({
         <div className="space-y-2">
           <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70 flex items-center gap-1.5">
             <Layers className="w-3.5 h-3.5 text-primary" />
-            Target Codec
+            Video format
           </label>
           <select
             value={options.targetCodec ?? ''}
             onChange={(e) => setOptions(prev => ({ ...prev, targetCodec: e.target.value ? e.target.value as NonNullable<TranscodeOptions['targetCodec']> : undefined }))}
             className="w-full bg-muted border border-border/50 rounded-xl p-2.5 text-sm font-medium outline-hidden focus:border-primary transition-all"
           >
-            <option value="">Choose output codec</option>
-            <option value="av1">AV1</option>
-            <option value="hevc">HEVC (H.265)</option>
+            <option value="">Choose format</option>
+            {OPTIMIZATION_VIDEO_FORMATS.map(format => <option key={format.value} value={format.value}>{format.label}</option>)}
           </select>
         </div>
       </div>
@@ -241,22 +241,24 @@ export function AdvancedTab({
         <div className="flex items-center justify-between">
           <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
             <Sliders className="w-3.5 h-3.5 text-primary" />
-            Constant Quality Target (CQ / CRF: {options.crf})
+            Constant Quality Target (CQ / CRF{options.crf === undefined ? '' : `: ${options.crf}`})
           </label>
           <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${qualityInfo.badgeBg} ${qualityInfo.color}`}>
             {qualityInfo.text}
           </span>
         </div>
 
-        <input
-          type="range"
-          min={10}
-          max={35}
-          step={1}
-          value={options.crf}
-          onChange={(e) => setOptions(prev => ({ ...prev, crf: parseInt(e.target.value) }))}
-          className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-        />
+        {options.crf === undefined
+          ? <p role="status" className="text-xs text-muted-foreground">No CQ/CRF value is available yet. Prepare encoding settings to load measured encoder settings.</p>
+          : <input
+            type="range"
+            min={10}
+            max={35}
+            step={1}
+            value={options.crf}
+            onChange={(e) => setOptions(prev => ({ ...prev, crf: parseInt(e.target.value) }))}
+            className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+          />}
 
         <div className="flex justify-between text-[10px] text-muted-foreground/70 font-mono">
           <span>CQ 10 (Archival / Large)</span>
@@ -277,7 +279,7 @@ export function AdvancedTab({
         >
           <optgroup label="NVIDIA NVENC Presets">
             <option value="p7">P7 (Slowest / Highest Quality)</option>
-            <option value="p6">P6 (Recommended HQ)</option>
+            <option value="p6">P6 (High quality)</option>
             <option value="p5">P5 (Medium / Balanced)</option>
             <option value="p4">P4 (Fast)</option>
             <option value="p3">P3 (Faster)</option>

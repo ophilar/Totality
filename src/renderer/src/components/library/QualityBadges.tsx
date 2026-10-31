@@ -67,9 +67,9 @@ export function QualityBadges({ item, whiteBg = false, showSavings = true }: Qua
   return (
     <div className={`flex flex-wrap gap-1 ${whiteBg ? '' : 'mt-1'}`}>
       {showSavings && item.estimated_savings_bytes != null && (
-        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${whiteBg ? 'bg-foreground text-background border border-border' : 'bg-orange-600/90 text-white'}`} title={`Estimated combined storage savings · ${item.savings_coverage ?? 'insufficient'} evidence`}>
+        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${whiteBg ? 'bg-foreground text-background border border-border' : 'bg-orange-600/90 text-white'}`} title="Estimated storage savings">
           <HardDrive className="w-3 h-3" />
-          Estimated savings <EstimatedSavingsDisplay bytes={item.estimated_savings_bytes} className={whiteBg ? 'text-background' : 'text-white'} /> · {item.savings_coverage ?? 'insufficient'}
+          Estimated savings <EstimatedSavingsDisplay bytes={item.estimated_savings_bytes} className={whiteBg ? 'text-background' : 'text-white'} />
         </span>
       )}
       {badges.map((badge, idx) => (

@@ -176,6 +176,7 @@ export interface MediaMetadata {
   colorSpace?: string
   videoProfile?: string
   videoLevel?: string
+  dolbyVisionProfile?: number
 
   // Audio quality (primary track)
   audioCodec?: string

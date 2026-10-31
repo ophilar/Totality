@@ -411,6 +411,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       'ALTER TABLE media_items ADD COLUMN color_space TEXT',
       'ALTER TABLE media_items ADD COLUMN video_profile TEXT',
       'ALTER TABLE media_items ADD COLUMN video_level INTEGER',
+      'ALTER TABLE media_items ADD COLUMN dolby_vision_profile INTEGER',
       'ALTER TABLE media_items ADD COLUMN audio_profile TEXT',
       'ALTER TABLE media_items ADD COLUMN audio_sample_rate INTEGER',
       'ALTER TABLE media_items ADD COLUMN has_object_audio INTEGER DEFAULT 0',
@@ -1962,7 +1963,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         series_title, series_identity_key, season_number, episode_number, file_path, file_size_bytes,
         duration_ms, resolution, width, height, video_codec, video_bitrate_kbps,
         audio_codec, audio_channels, audio_bitrate_kbps, video_frame_rate,
-        color_bit_depth, hdr_format, color_space, video_profile, video_level,
+        color_bit_depth, hdr_format, color_space, video_profile, video_level, dolby_vision_profile,
         audio_profile, audio_sample_rate, has_object_audio, audio_tracks,
         subtitle_tracks,
         container, file_mtime, imdb_id, tmdb_id, series_tmdb_id, original_language, poster_url,
@@ -1970,7 +1971,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         play_count, last_watched_at,
         created_at, updated_at
       ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now')
       )
       ON CONFLICT(source_id, plex_id) DO UPDATE SET
@@ -2000,6 +2001,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         color_space = excluded.color_space,
         video_profile = excluded.video_profile,
         video_level = excluded.video_level,
+        dolby_vision_profile = excluded.dolby_vision_profile,
         audio_profile = excluded.audio_profile,
         audio_sample_rate = excluded.audio_sample_rate,
         has_object_audio = excluded.has_object_audio,
@@ -2053,6 +2055,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       item.color_space || null,
       item.video_profile || null,
       item.video_level || null,
+      item.dolby_vision_profile ?? null,
       item.audio_profile || null,
       item.audio_sample_rate || null,
       item.has_object_audio ? 1 : 0,

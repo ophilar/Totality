@@ -1,4 +1,5 @@
 import { getErrorMessage } from '../../services/utils/errorUtils'
+import { parseDolbyVisionProfile } from '../../services/utils/dolbyVision'
 /**
  * PlexProvider
  *
@@ -1222,6 +1223,9 @@ export class PlexProvider implements MediaProvider {
 
     // Pick the best version for parent MediaItem (highest resolution tier, then HDR, then bitrate)
     const best = versions.reduce((a, b) => scoreVersion(b) > scoreVersion(a) ? b : a)
+    const bestPart = allMedia.flatMap(media => media.Part ?? []).find(part => part.file === best.file_path)
+    const bestVideoStream = bestPart?.Stream?.find(stream => stream.streamType === 1)
+    const dolbyVisionProfile = parseDolbyVisionProfile(bestVideoStream?.profile, bestVideoStream?.displayTitle, bestVideoStream?.extendedDisplayTitle, bestVideoStream?.title)
 
     // Extract external IDs
     let imdbId: string | undefined
@@ -1287,6 +1291,7 @@ export class PlexProvider implements MediaProvider {
         color_space: best.color_space,
         video_profile: best.video_profile,
         video_level: best.video_level,
+        dolby_vision_profile: dolbyVisionProfile,
         audio_profile: best.audio_profile,
         audio_sample_rate: best.audio_sample_rate,
         has_object_audio: best.has_object_audio,

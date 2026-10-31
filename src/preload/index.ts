@@ -10,6 +10,7 @@ import type { PlexPlaylistSummary, PlexPlaylistSyncResult } from '@main/services
 import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
 import type { TranscodeOptions, TranscodeProgress, TranscodingParams } from '@main/services/TranscodingService'
 import type { ShowTranscodeRequest, ShowTranscodePreflight, ShowOptimizationDiscovery } from '@main/services/TranscodingService'
+import type { OptimizationCandidateScanSummary } from '@main/services/TranscodingService'
 import type { MediaDuplicate, MediaSource as DatabaseMediaSource, WishlistFilters, WishlistItem } from '@main/types/database'
 import type { ActivityLogEntry, QueueState, QueuedTask, TaskDefinition, TaskQueueHistory } from '@main/types/taskQueue'
 import type { DuplicateResolutionOutcome } from '@shared/duplicateResolution'
@@ -649,6 +650,8 @@ const electronAPI = {
     itemsUpdated: number
     itemsScanned: number
     isFirstScan: boolean
+    optimizationCandidates?: OptimizationCandidateScanSummary
+    optimizationCandidateError?: string
   }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: {
       sourceId?: string
@@ -658,6 +661,8 @@ const electronAPI = {
       itemsUpdated: number
       itemsScanned: number
       isFirstScan: boolean
+      optimizationCandidates?: OptimizationCandidateScanSummary
+      optimizationCandidateError?: string
     }) => callback(data)
     ipcRenderer.on(IPC_CHANNELS.scanCompleted, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.scanCompleted, handler)
@@ -1877,6 +1882,8 @@ interface ExistingElectronAPI {
     itemsUpdated: number
     itemsScanned: number
     isFirstScan: boolean
+    optimizationCandidates?: OptimizationCandidateScanSummary
+    optimizationCandidateError?: string
   }) => void) => () => void
   onTaskQueueHistoryUpdated: (callback: (history: TaskQueueHistory) => void) => () => void
   onWishlistAutoCompleted: (callback: (items: Array<{ id: number; title: string; reason: string; media_type: string }>) => void) => () => void

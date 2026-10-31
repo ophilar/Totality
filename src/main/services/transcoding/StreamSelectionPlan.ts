@@ -87,6 +87,16 @@ function selectIndexes(
   return selected
 }
 
+export function selectSubtitleStreamIndexes(
+  subtitleTracks: ReadonlyArray<{ index: number; language?: string; isForced?: boolean }>,
+  languageWhitelist: readonly string[],
+): number[] {
+  const normalizedWhitelist = new Set(languageWhitelist.map(normalizeLanguage).filter((language): language is string => Boolean(language)))
+  return subtitleTracks
+    .filter(track => track.isForced || (track.language && normalizedWhitelist.has(normalizeLanguage(track.language) ?? '')))
+    .map(track => track.index)
+}
+
 export function buildStreamSelectionPlan(analysis: FileAnalysisResult, options: TranscodeOptions): StreamSelectionPlan {
   const policy = options.streamSelection as StreamSelectionPolicy | undefined
   const policyAudio = policy ? resolvePolicyIndexes(analysis, policy) : undefined
@@ -97,18 +107,7 @@ export function buildStreamSelectionPlan(analysis: FileAnalysisResult, options: 
     policy?.subtitleLanguageWhitelist &&
     policy.subtitleLanguageWhitelist.length > 0
   ) {
-    const normalizedWhitelist = new Set(
-      policy.subtitleLanguageWhitelist
-        .map(lang => normalizeLanguage(lang))
-        .filter((l): l is string => Boolean(l))
-    )
-    subtitleCandidates = analysis.subtitleTracks
-      .filter(track => {
-        const trackLang = normalizeLanguage(track.language)
-        const matchesWhitelist = Boolean(trackLang && normalizedWhitelist.has(trackLang))
-        return matchesWhitelist || track.isForced === true
-      })
-      .map(track => track.index)
+    subtitleCandidates = selectSubtitleStreamIndexes(analysis.subtitleTracks, policy.subtitleLanguageWhitelist)
   }
 
   const subtitleStreamIndexes = selectIndexes(analysis.subtitleTracks, subtitleCandidates, 'Subtitle')

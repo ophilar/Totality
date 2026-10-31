@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { SETTING_KEYS } from '../../../../../shared/settingKeys'
 import type { AnalysisProgress } from '../types'
+import { formatOptimizationBytes } from '../transcoding/optimizationResults'
 
 interface UseLibraryEventListenersOptions {
   activeSourceId: string | null
@@ -230,11 +231,32 @@ export function useLibraryEventListeners({
         itemsChanged > 0
           ? `Added ${data.itemsAdded}, updated ${data.itemsUpdated}`
           : `${data.itemsScanned} items scanned, no changes`
+      const optimizationCandidates = data.optimizationCandidates
+      const reasonLabels: Record<string, string> = {
+        h264_video_transcode: 'H.264',
+        hevc_to_av1: 'H.265 to AV1',
+        audio_stream_pruning: 'audio pruning',
+        subtitle_stream_pruning: 'subtitle pruning',
+        dolby_vision_profile_5_mp4_remux: 'Dolby Vision remux',
+      }
+      const reasonSummary = optimizationCandidates
+        ? Object.entries(optimizationCandidates.reasonCounts)
+            .filter((entry): entry is [string, number] => entry[1] !== undefined && entry[1] > 0)
+            .map(([reason, count]) => `${reasonLabels[reason] ?? reason}: ${count}`)
+            .join(', ')
+        : ''
+      const optimizationMessage = optimizationCandidates
+        ? optimizationCandidates.candidateCount === 0
+          ? 'No optimization candidates found'
+          : `${optimizationCandidates.candidateCount} optimization candidates found${reasonSummary ? ` (${reasonSummary})` : ''}${optimizationCandidates.estimatedSavingsBytes === null ? '' : ` · about ${formatOptimizationBytes(optimizationCandidates.estimatedSavingsBytes)} estimated savings`}${optimizationCandidates.candidatesWithoutEstimate ? ` · ${optimizationCandidates.candidatesWithoutEstimate} without an estimate` : ''}`
+        : data.optimizationCandidateError
+          ? `Optimization candidates could not be calculated: ${data.optimizationCandidateError}`
+          : undefined
 
       addToast({
         type: 'success',
         title: `${data.libraryName} complete`,
-        message,
+        message: optimizationMessage ? `${message} · ${optimizationMessage}` : message,
         action: data.sourceId
           ? {
               label: 'View Library',

@@ -74,6 +74,8 @@ CREATE TABLE IF NOT EXISTS media_items (
   color_space TEXT,
   video_profile TEXT,
   video_level INTEGER,
+  -- 0 means Dolby Vision was probed and absent; NULL means not probed.
+  dolby_vision_profile INTEGER,
 
   -- Enhanced audio quality metadata
   audio_profile TEXT,

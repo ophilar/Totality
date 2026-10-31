@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { QueueState, QueuedTask } from '@main/types/taskQueue'
 import type { SavedShowPreflight, ShowTranscodePreflight } from './types'
 import { summarizeOptimizationBatch } from '../tv/batchOutcomeSummary'
+import { optimizationReviewMatches } from './optimizationConfiguration'
 
 export type OptimizationWorkflowStage = 'options' | 'review' | 'results'
 export type ReviewPreparationProgress = { percentage?: number; phase?: string; currentItem?: string }
@@ -102,7 +103,7 @@ export function useOptimizationWorkflow(onQueueError: (error: unknown) => void) 
     [queueState, batchId, submittedMediaItemIds, submittedTaskIds],
   )
 
-  const reviewMatches = useCallback((effectiveOptions: unknown) => Boolean(review && reviewedOptions === JSON.stringify(effectiveOptions)), [review, reviewedOptions])
+  const reviewMatches = useCallback((effectiveOptions: unknown) => Boolean(review && optimizationReviewMatches(reviewedOptions, effectiveOptions)), [review, reviewedOptions])
 
   const replaceReview = useCallback((nextReview: ShowTranscodePreflight, effectiveOptions: unknown) => {
     setReview(nextReview)

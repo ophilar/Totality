@@ -187,13 +187,13 @@ export function GeneralTab() {
       <div className="space-y-2">
         <div className="flex items-center gap-2 mb-1">
           <Languages className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-sm font-medium text-foreground">Subtitle Stream Preferences</h3>
+          <h3 className="text-sm font-medium text-foreground">Subtitle languages</h3>
         </div>
         <div className="bg-muted/30 rounded-lg border border-border/40 p-4 space-y-3">
           <label className="block text-sm font-medium text-foreground" htmlFor="subtitle-preferred-languages">
-            Languages to retain during optimization
+            Keep subtitles in these languages
           </label>
-          <p className="text-xs text-muted-foreground">Enter ISO-639 codes separated by commas or spaces. Leave blank to retain every subtitle track.</p>
+          <p className="text-xs text-muted-foreground">Enter language codes separated by commas or spaces. Leave blank to keep all subtitles.</p>
           <div className="flex gap-2">
             <input
               id="subtitle-preferred-languages"

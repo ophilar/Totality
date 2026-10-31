@@ -24,6 +24,7 @@ import { TaskType, MediaItem } from '@main/types/database'
 import type { QueuedTask } from '@main/types/taskQueue'
 import { getStatsCacheService } from './StatsCacheService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
+import { OptimizationCandidateService, type OptimizationCandidateReason } from './OptimizationCandidateService'
 import type { MediaSourceTier } from './transcoding/TrashSourceClassifier'
 import { StreamRemuxCommandBuilder } from './transcoding/StreamRemuxCommandBuilder'
 import { buildCandidateLadder, nextCandidateSearch, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
@@ -143,12 +144,32 @@ export interface OptimizationDiscoveryGroup {
   representativeMediaItemId: number
   representativeLabel: string
   technicalProfile: string
+  targetCodec?: 'hevc' | 'av1'
+  candidateReasons: string[]
+  candidateReasonsByMediaItemId: Record<number, string[]>
+  estimatedSavingsByMediaItemId: Record<number, number | null>
+  estimatedSavingsBytes: number | null
+}
+
+export interface OtherOperationCandidate {
+  mediaItemId: number
+  label: string
+  candidateReasons: string[]
+  estimatedSavingsBytes: number | null
+}
+
+export interface OptimizationCandidateScanSummary {
+  candidateCount: number
+  estimatedSavingsBytes: number | null
+  candidatesWithoutEstimate: number
+  reasonCounts: Partial<Record<OptimizationCandidateReason, number>>
 }
 
 export interface ShowOptimizationDiscovery {
   candidateCount: number
   groups: OptimizationDiscoveryGroup[]
   otherOperationMediaItemIds: number[]
+  otherOperationCandidates: OtherOperationCandidate[]
 }
 
 function getPreflightSamplingProfileKey(episode: MediaItem, options: TranscodeOptions, analysis?: FileAnalysisResult): string | undefined {
@@ -387,6 +408,7 @@ export class TranscodingService {
   private analysisCache = new Map<string, Awaited<ReturnType<ReturnType<typeof getMediaFileAnalyzer>['analyzeFile']>>>()
   private showPreflights = new Map<string, { request: ShowTranscodeRequest; result: ShowTranscodePreflight }>()
   private measuredOptimizationService = new MeasuredOptimizationService()
+  private optimizationCandidateService = new OptimizationCandidateService()
 
   constructor() {
     // Initialization is deferred until first use to allow DB to be ready
@@ -434,13 +456,45 @@ export class TranscodingService {
     const items = request.mediaItemId === undefined
       ? await getDatabase().tvShows.getEpisodes(request.seriesTitle!, request.sourceId, request.seriesIdentityKey!, request.libraryId!, request.seasonNumber)
       : [await getDatabase().media.getItemById(request.mediaItemId)].filter((item): item is MediaItem => item !== null)
-    const candidates = items.filter((item): item is MediaItem & { id: number } => item.id !== undefined && normalizeVideoCodec(item.video_codec) === 'H.264')
-    const otherOperationMediaItemIds = items.flatMap(item => item.id !== undefined && normalizeVideoCodec(item.video_codec) !== 'H.264' ? [item.id] : [])
+    const capabilities = await this.getCapabilities()
+    await getQualityAnalyzer().loadThresholdsFromDatabase()
+    const av1CodecCapabilities = capabilities.encodingMatrix.codecs.find(codec => codec.codec === 'av1')
+    const av1HardwareEncodingAvailable = capabilities.encodingMatrix.devices.some((device, index) =>
+      device.kind === 'hardware' && av1CodecCapabilities?.capabilities[index] === true)
+    const streamSelection = request.options.streamSelection as {
+      audio?: 'all' | 'original-and-protected' | string
+      originalLanguage?: string
+      subtitleLanguageWhitelist?: string[]
+    } | undefined
+    const evidence = items.flatMap(item => {
+      if (item.id === undefined) return []
+      const candidate = this.optimizationCandidateService.discover(item, {
+        av1HardwareEncodingAvailable,
+        targetCodec: request.options.targetCodec,
+        audioPruningEnabled: streamSelection?.audio === 'original-and-protected',
+        originalAudioLanguage: streamSelection?.originalLanguage,
+        subtitleLanguageWhitelist: streamSelection?.subtitleLanguageWhitelist ?? [],
+      })
+      return candidate.reasons.length ? [{ item: item as MediaItem & { id: number }, ...candidate }] : []
+    })
+    const candidateById = new Map(evidence.map(candidate => [candidate.item.id, candidate]))
+    const videoCandidates = evidence.filter(candidate => candidate.reasons.includes('h264_video_transcode') || candidate.reasons.includes('hevc_to_av1'))
+    const otherOperationCandidates: OtherOperationCandidate[] = evidence
+      .filter(candidate => candidate.reasons.some(reason => reason === 'audio_stream_pruning' || reason === 'subtitle_stream_pruning' || reason === 'dolby_vision_profile_5_mp4_remux'))
+      .map(candidate => ({
+        mediaItemId: candidate.item.id,
+        label: candidate.item.title,
+        candidateReasons: candidate.reasons.filter(reason => reason !== 'h264_video_transcode' && reason !== 'hevc_to_av1'),
+        estimatedSavingsBytes: candidate.estimatedSavingsBytes,
+      }))
+    const otherOperationMediaItemIds = otherOperationCandidates.map(candidate => candidate.mediaItemId)
     const groups = new Map<string, Array<MediaItem & { id: number }>>()
-    for (const item of candidates) {
+    for (const candidate of videoCandidates) {
+      const item = candidate.item
       const hasBitrate = Number.isFinite(item.video_bitrate_kbps) && item.video_bitrate_kbps! > 0
-      const technicalProfile = item.type === 'movie' || !hasBitrate ? undefined : getPreflightSamplingProfileKey(item, request.options)
-      const id = technicalProfile ?? `media-item:${item.id}`
+      const targetCodec = candidate.targetCodec ?? request.options.targetCodec ?? 'hevc'
+      const technicalProfile = item.type === 'movie' || !hasBitrate ? undefined : getPreflightSamplingProfileKey(item, { ...request.options, targetCodec })
+      const id = `${targetCodec}:${technicalProfile ?? `media-item:${item.id}`}`
       groups.set(id, [...(groups.get(id) ?? []), item])
     }
     const discoveryGroups = [...groups].map(([id, members]) => {
@@ -451,6 +505,17 @@ export class TranscodingService {
         ? ordered[0]
         : [...ordered].sort((left, right) => Math.abs((left.video_bitrate_kbps ?? Number.POSITIVE_INFINITY) - medianBitrate) - Math.abs((right.video_bitrate_kbps ?? Number.POSITIVE_INFINITY) - medianBitrate) || left.id - right.id)[0]
       const first = members[0]
+      const findings = members.map(member => candidateById.get(member.id)!)
+      const reasonCodes = findings[0].reasons.filter(reason => findings.every(finding => finding.reasons.includes(reason)))
+      const targetCodec = findings[0].targetCodec
+      const hasBitrate = Number.isFinite(first.video_bitrate_kbps) && first.video_bitrate_kbps! > 0
+      const technicalProfileKey = first.type === 'movie' || !hasBitrate
+        ? undefined
+        : getPreflightSamplingProfileKey(first, { ...request.options, targetCodec: targetCodec ?? request.options.targetCodec ?? 'hevc' })
+      const savings = findings.map(finding => finding.estimatedSavingsBytes)
+      const estimatedSavingsBytes = savings.every(value => value !== null)
+        ? savings.reduce<number>((sum, value) => sum + value!, 0)
+        : null
       return {
         id,
         seasonNumber: first.type === 'movie' ? undefined : first.season_number ?? undefined,
@@ -458,9 +523,14 @@ export class TranscodingService {
         mediaItemLabels: Object.fromEntries(members.map(item => [item.id, item.title])),
         representativeMediaItemId: representative.id,
         representativeLabel: representative.title,
+        targetCodec,
+        candidateReasons: reasonCodes,
+        candidateReasonsByMediaItemId: Object.fromEntries(findings.map(finding => [finding.item.id, finding.reasons])),
+        estimatedSavingsByMediaItemId: Object.fromEntries(findings.map(finding => [finding.item.id, finding.estimatedSavingsBytes])),
+        estimatedSavingsBytes,
         technicalProfile: first.type === 'movie' ? 'Film — individual analysis' : !(Number.isFinite(first.video_bitrate_kbps) && first.video_bitrate_kbps! > 0)
           ? 'Saved bitrate unavailable — individual analysis'
-          : id.startsWith('media-item:') ? 'Technical profile incomplete — individual analysis'
+          : technicalProfileKey === undefined ? 'Technical profile incomplete — individual analysis'
             : first.width && first.height
           ? `${first.width}×${first.height} · ${first.video_codec ?? 'H.264'} · ${first.color_bit_depth ?? 'unknown'}-bit`
           : 'Technical profile incomplete — individual analysis',
@@ -472,13 +542,56 @@ export class TranscodingService {
       seriesIdentityKey: request.seriesIdentityKey,
       seasonNumber: request.seasonNumber,
       scopedItemCount: items.length,
-      candidateCount: candidates.length,
+      candidateCount: evidence.length,
       groupCount: discoveryGroups.length,
       durationMs: Math.round(performance.now() - discoveryStartedAt),
       groups: discoveryGroups.map(group => ({ id: group.id, memberIds: group.mediaItemIds, representativeMediaItemId: group.representativeMediaItemId })),
       otherOperationMediaItemIds,
     })
-    return { candidateCount: candidates.length, groups: discoveryGroups, otherOperationMediaItemIds }
+    return { candidateCount: evidence.length, groups: discoveryGroups, otherOperationMediaItemIds, otherOperationCandidates }
+  }
+
+  async discoverLibraryOptimizationCandidates(sourceId: string, libraryId: string): Promise<OptimizationCandidateScanSummary> {
+    if (!sourceId.trim() || !libraryId.trim()) throw new Error('Source and library are required for optimization candidate discovery')
+    const database = getDatabase()
+    return this.summarizeOptimizationCandidates(database.media.getItems({ sourceId, libraryId }))
+  }
+
+  async discoverSourceOptimizationCandidates(sourceId: string): Promise<OptimizationCandidateScanSummary> {
+    if (!sourceId.trim()) throw new Error('Source is required for optimization candidate discovery')
+    return this.summarizeOptimizationCandidates(getDatabase().media.getItems({ sourceId }))
+  }
+
+  private async summarizeOptimizationCandidates(items: MediaItem[]): Promise<OptimizationCandidateScanSummary> {
+    const capabilities = await this.getCapabilities()
+    await getQualityAnalyzer().loadThresholdsFromDatabase()
+    const av1CodecCapabilities = capabilities.encodingMatrix.codecs.find(codec => codec.codec === 'av1')
+    const av1HardwareEncodingAvailable = capabilities.encodingMatrix.devices.some((device, index) =>
+      device.kind === 'hardware' && av1CodecCapabilities?.capabilities[index] === true)
+    const qualityAnalyzer = getQualityAnalyzer()
+    const subtitleLanguageWhitelist = qualityAnalyzer.getSubtitleLanguageWhitelist()
+    const reasonCounts: OptimizationCandidateScanSummary['reasonCounts'] = {}
+    const candidates = items.flatMap(item => {
+      const candidate = this.optimizationCandidateService.discover(item, {
+        av1HardwareEncodingAvailable,
+        targetCodec: 'hevc',
+        audioPruningEnabled: true,
+        originalAudioLanguage: item.original_language ?? undefined,
+        subtitleLanguageWhitelist,
+      })
+      if (candidate.reasons.length === 0) return []
+      for (const reason of candidate.reasons) reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1
+      return [candidate]
+    })
+    const measuredSavings = candidates.map(candidate => candidate.estimatedSavingsBytes).filter((value): value is number => value !== null)
+    return {
+      candidateCount: candidates.length,
+      estimatedSavingsBytes: measuredSavings.length === candidates.length
+        ? measuredSavings.reduce((total, value) => total + value, 0)
+        : null,
+      candidatesWithoutEstimate: candidates.length - measuredSavings.length,
+      reasonCounts,
+    }
   }
 
   async preflightShowTranscode(request: ShowTranscodeRequest, operation?: {
@@ -684,15 +797,19 @@ export class TranscodingService {
           return conversion ? { ...track, codec: conversion.codec, bitrate: conversion.bitrateKbps } : track
         })
         const allowedTargetContainers = targetProfile ? getPlaybackTargetContainers(targetProfile, analysis.video) : undefined
+        const sourceContainerNames = analysis.container?.split(',').map(container => container.trim().toLowerCase()) ?? []
+        const requiresDolbyVisionMp4Remux = analysis.video.dolbyVisionProfile === 5 && !sourceContainerNames.some(container => ['mp4', 'm4v'].includes(container))
         const recommendedTargetContainer = targetProfile && request.options.playbackPolicy !== 'allow-transcoding'
           ? recommendPlaybackTargetContainer(targetProfile, analysis.video, analysis.container)
           : undefined
         let plannedContainer: string | undefined
-        if (request.options.targetContainerSelection === 'automatic' && targetProfile && request.options.playbackPolicy !== 'allow-transcoding') {
+        if (requiresDolbyVisionMp4Remux) {
+          plannedContainer = 'mp4'
+        } else if (request.options.targetContainerSelection === 'automatic' && targetProfile && request.options.playbackPolicy !== 'allow-transcoding') {
           if (!recommendedTargetContainer) throw new Error(`Playback target ${targetProfile.name} has no supported MKV or MP4 container for this episode's video format`)
           plannedContainer = recommendedTargetContainer === 'mp4' ? 'mp4' : 'matroska'
         } else if (request.options.targetContainerSelection === 'automatic') {
-          const sourceContainer = analysis.container?.split(',')[0].trim().toLowerCase()
+          const sourceContainer = sourceContainerNames[0]
           plannedContainer = sourceContainer === 'mkv' || sourceContainer === 'matroska' ? 'matroska'
             : sourceContainer === 'mp4' || sourceContainer === 'm4v' ? 'mp4'
               : request.options.targetContainer === 'mp4' ? 'mp4' : 'matroska'
