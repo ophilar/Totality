@@ -838,8 +838,8 @@ export class LocalFolderProvider implements MediaProvider {
         }
       }
 
-      if (validFiles.length === 0 && deletedFiles.length === 0) {
-        result.success = true
+      if (validFiles.length === 0) {
+        result.success = result.errors.length === 0
         result.durationMs = Date.now() - startTime
         return result
       }
@@ -1011,8 +1011,8 @@ export class LocalFolderProvider implements MediaProvider {
         }
       }
 
-      if (validFiles.length === 0 && deletedFiles.length === 0) {
-        result.success = true
+      if (validFiles.length === 0) {
+        result.success = result.errors.length === 0
         result.durationMs = Date.now() - startTime
         return result
       }
