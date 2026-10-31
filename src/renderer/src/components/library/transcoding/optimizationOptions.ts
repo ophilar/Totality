@@ -1,12 +1,9 @@
-import type { TranscodeOptions } from './types'
 import { normalizeAudioCodec } from '@main/services/MediaNormalizer'
 
-export type OptimizationVideoCodec = NonNullable<TranscodeOptions['targetCodec']>
+import { OPTIMIZATION_VIDEO_CODECS } from '@main/services/transcoding/OptimizationCodecPolicy'
+export type { OptimizationVideoCodec } from '@main/services/transcoding/OptimizationCodecPolicy'
 
-export const OPTIMIZATION_VIDEO_FORMATS: ReadonlyArray<{ value: OptimizationVideoCodec; label: string }> = [
-  { value: 'hevc', label: 'HEVC (H.265)' },
-  { value: 'av1', label: 'AV1' },
-]
+export const OPTIMIZATION_VIDEO_FORMATS = OPTIMIZATION_VIDEO_CODECS.map(({ value, label }) => ({ value, label }))
 
 type OptimizationAudioCodecOption = 'aac' | 'ac3' | 'eac3'
 
