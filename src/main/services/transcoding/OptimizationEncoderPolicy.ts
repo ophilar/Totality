@@ -1,3 +1,4 @@
+import type { APP_CONFIG } from '@main/config'
 import type { GpuInfo } from '../utils/GpuDetector'
 import { getHardwareEncoder } from '../TranscodingCapabilities'
 import { OPTIMIZATION_VIDEO_CODECS, getOptimizationVideoCodec, playbackProfileSupportsOptimizationCodec, type OptimizationVideoCodec } from './OptimizationCodecPolicy'
@@ -20,7 +21,7 @@ const MEASURED_HARDWARE = {
     av1: { qualityDomain: 'amf_av1', presets: ['speed', 'balanced', 'quality'] },
   },
 } as const satisfies Partial<Record<GpuInfo['vendor'], Partial<Record<OptimizationVideoCodec, {
-  qualityDomain: string
+  qualityDomain: keyof typeof APP_CONFIG.transcoding.sampleQualityDomains
   presets: readonly string[]
 }>>>>
 
@@ -30,7 +31,7 @@ const MEASURED_SOFTWARE_PRESETS = {
 } as const satisfies Record<OptimizationVideoCodec, readonly string[]>
 
 export function measuredOptimizationEncoderSpec(encoder: string, codec: OptimizationVideoCodec): {
-  qualityDomain: string
+  qualityDomain: keyof typeof APP_CONFIG.transcoding.sampleQualityDomains
   presets: readonly string[]
 } {
   const software = getOptimizationVideoCodec(codec).softwareEncoder
