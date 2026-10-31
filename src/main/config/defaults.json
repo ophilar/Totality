@@ -1,8 +1,39 @@
 {
   "audioCodecs": {
-    "lossless": ["truehd", "dts-hd ma", "dtshd_ma", "dtsma", "dts-hd.ma", "flac", "alac", "pcm", "lpcm", "wav", "aiff"],
-    "nearLossless": ["dts-hd hra", "dtshd_hra", "dts-hd.hra", "dtshra"],
-    "highLossy": ["dts", "eac3", "ec-3", "dd+", "ddp", "dolby digital plus", "e-ac-3", "atsc a/52b"]
+    "lossless": [
+      "truehd",
+      "dts-hd ma",
+      "dtshd_ma",
+      "dtsma",
+      "dts-hd.ma",
+      "flac",
+      "alac",
+      "pcm",
+      "lpcm",
+      "wav",
+      "aiff",
+      "ape",
+      "dsd",
+      "dsf",
+      "dff",
+      "wavpack"
+    ],
+    "nearLossless": [
+      "dts-hd hra",
+      "dtshd_hra",
+      "dts-hd.hra",
+      "dtshra"
+    ],
+    "highLossy": [
+      "dts",
+      "eac3",
+      "ec-3",
+      "dd+",
+      "ddp",
+      "dolby digital plus",
+      "e-ac-3",
+      "atsc a/52b"
+    ]
   },
   "tmdb": {
     "baseUrl": "https://api.themoviedb.org/3",
@@ -56,20 +87,48 @@
   },
   "quality": {
     "videoBitrateThresholds": {
-      "SD": { "medium": 1500, "high": 3500 },
-      "720p": { "medium": 3000, "high": 8000 },
-      "1080p": { "medium": 6000, "high": 15000 },
-      "4K": { "medium": 15000, "high": 40000 }
+      "SD": {
+        "medium": 1500,
+        "high": 3500
+      },
+      "720p": {
+        "medium": 3000,
+        "high": 8000
+      },
+      "1080p": {
+        "medium": 6000,
+        "high": 15000
+      },
+      "4K": {
+        "medium": 15000,
+        "high": 40000
+      }
     },
     "audioBitrateThresholds": {
-      "SD": { "medium": 128, "high": 192 },
-      "720p": { "medium": 192, "high": 320 },
-      "1080p": { "medium": 256, "high": 640 },
-      "4K": { "medium": 320, "high": 1000 }
+      "SD": {
+        "medium": 128,
+        "high": 192
+      },
+      "720p": {
+        "medium": 192,
+        "high": 320
+      },
+      "1080p": {
+        "medium": 256,
+        "high": 640
+      },
+      "4K": {
+        "medium": 320,
+        "high": 1000
+      }
     },
     "codecEfficiency": {
-      "h264": 1.0, "avc": 1.0, "x264": 1.0,
-      "h265": 2.0, "hevc": 2.0, "x265": 2.0,
+      "h264": 1,
+      "avc": 1,
+      "x264": 1,
+      "h265": 2,
+      "hevc": 2,
+      "x265": 2,
       "av1": 2.5,
       "vp9": 1.8
     },
@@ -92,7 +151,7 @@
       "4K": 30000
     },
     "minEfficiencyScore": 60,
-    "hdrOverheadMultiplier": 1.10,
+    "hdrOverheadMultiplier": 1.1,
     "videoWeight": 0.7
   },
   "transcoding": {
@@ -119,15 +178,53 @@
       "pruneIntervalMs": 86400000
     },
     "sampleQualityDomains": {
-      "x265": [18, 22, 26],
-      "svt_av1": [24, 32, 40],
-      "nvenc_hevc": [18, 24, 30],
-      "nvenc_av1": [24, 36, 48],
-      "qsv_hevc": [14, 18, 22, 26],
-      "qsv_av1": [14, 18, 22, 26],
-      "amf_hevc": [18, 24, 30],
-      "amf_av1": [24, 36, 48]
+      "x265": [
+        18,
+        22,
+        26
+      ],
+      "svt_av1": [
+        24,
+        32,
+        40
+      ],
+      "nvenc_hevc": [
+        18,
+        24,
+        30
+      ],
+      "nvenc_av1": [
+        24,
+        36,
+        48
+      ],
+      "qsv_hevc": [
+        14,
+        18,
+        22,
+        26
+      ],
+      "qsv_av1": [
+        14,
+        18,
+        22,
+        26
+      ],
+      "amf_hevc": [
+        18,
+        24,
+        30
+      ],
+      "amf_av1": [
+        24,
+        36,
+        48
+      ]
     },
-    "samplePositions": [0.1, 0.5, 0.9]
+    "samplePositions": [
+      0.1,
+      0.5,
+      0.9
+    ]
   }
 }
