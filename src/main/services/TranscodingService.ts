@@ -39,6 +39,7 @@ import { normalizeAudioCodec, normalizeVideoCodec } from './MediaNormalizer'
 import { DEFAULT_OPTIMIZATION_VIDEO_CODEC, getOptimizationVideoCodec, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
 import { isMeasuredSoftwareEncoder, supportsMeasuredOptimizationEncoder } from './transcoding/OptimizationEncoderPolicy'
 import { ValidatedFileAnalysisCache } from './transcoding/ValidatedFileAnalysisCache'
+import { pruneMeasuredSampleCache } from './transcoding/MeasuredSampleCacheRetention'
 import { aggregateShowOptimizationMetrics } from './ShowOptimizationMetricsService'
 import { SETTING_KEYS } from '@shared/settingKeys'
 
@@ -414,6 +415,9 @@ export class TranscodingService {
   private showPreflights = new Map<string, { request: ShowTranscodeRequest; result: ShowTranscodePreflight }>()
   private measuredOptimizationService = new MeasuredOptimizationService()
   private optimizationCandidateService = new OptimizationCandidateService()
+  private sampleCacheLastPrunedAt = 0
+  private sampleCachePrunePromise: Promise<void> | null = null
+  private readonly sampleCacheUsers = new Map<string, number>()
 
   constructor() {
     // Initialization is deferred until first use to allow DB to be ready
@@ -601,6 +605,57 @@ export class TranscodingService {
     }
   }
 
+  /** At most once per day, prune old completed or orphaned sample artifacts.
+   * Cached files referenced by reviews or active work must remain available.
+   */
+  private async pruneMeasuredSamples(): Promise<void> {
+    if (Date.now() - this.sampleCacheLastPrunedAt < 24 * 60 * 60 * 1000) return
+    if (this.sampleCachePrunePromise) return this.sampleCachePrunePromise
+    this.sampleCachePrunePromise = (async () => {
+      const db = getDatabase()
+      const root = path.join(app.getPath('userData'), 'transcoding-samples', 'cache')
+      const [records, reviews] = await Promise.all([
+        db.config.getSettingsByPrefix(MEASUREMENT_SETTING_PREFIX),
+        db.config.getSettingsByPrefix(SHOW_PREFLIGHT_SETTING_PREFIX),
+      ])
+      const protectedKeys = new Set<string>()
+      const retainPath = (samplePath: string) => {
+        const relative = path.relative(root, path.resolve(samplePath))
+        if (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)) {
+          const key = relative.split(path.sep)[0]
+          if (/^[a-f0-9]{64}$/.test(key)) protectedKeys.add(key)
+        }
+      }
+      for (const raw of Object.values(reviews)) {
+        // Corrupt reviews are not proof samples are unused. Fail closed.
+        const review = JSON.parse(raw) as { result?: { episodes?: Array<{ samplePaths?: string[]; sourceAnalysis?: { optimizationMeasurement?: { cacheKey?: string } } }> } }
+        if (!Array.isArray(review.result?.episodes)) throw new Error('Unrecognized stored review; sample-cache eviction deferred')
+        for (const episode of review.result.episodes) {
+          const key = episode.sourceAnalysis?.optimizationMeasurement?.cacheKey
+          if (key) protectedKeys.add(key)
+          for (const sample of episode.samplePaths ?? []) retainPath(sample)
+        }
+      }
+      for (const task of getTaskQueueService().getTasks()) {
+        const samples = (task.options as TranscodeOptions & { queuePayload?: QueuedTranscodePayload } | undefined)?.queuePayload?.samplePaths
+        for (const sample of samples ?? []) retainPath(sample)
+      }
+      const removed = await pruneMeasuredSampleCache({
+        root, records, protectedKeys,
+        settingPrefix: MEASUREMENT_SETTING_PREFIX,
+        deleteRecord: key => db.config.deleteSetting(key),
+        isActive: key => (this.sampleCacheUsers.get(key) ?? 0) > 0,
+      })
+      this.sampleCacheLastPrunedAt = Date.now()
+      if (removed.removed) getLoggingService().info('[TVOptimization]', `Pruned ${removed.removed} unused sample-cache entries (${removed.reclaimedBytes} bytes)`)
+    })().catch(error => {
+      getLoggingService().warn('[TVOptimization]', `Sample-cache retention deferred: ${getErrorMessage(error)}`)
+    }).finally(() => {
+      this.sampleCachePrunePromise = null
+    })
+    return this.sampleCachePrunePromise
+  }
+
   async preflightShowTranscode(request: ShowTranscodeRequest, operation?: {
     signal: AbortSignal
     beginCommit: () => void
@@ -612,6 +667,7 @@ export class TranscodingService {
     saveEpisodeCheckpoint?: (mediaItemId: number, checkpoint: ShowTranscodeEpisodeCheckpoint) => Promise<void>
   }): Promise<ShowTranscodePreflight> {
     operation?.signal.throwIfAborted()
+    await this.pruneMeasuredSamples()
     if (!request.sourceId.trim()) throw new Error('Source ID is required')
     if (request.mediaItemId === undefined && (!request.seriesTitle?.trim() || !request.seriesIdentityKey?.trim() || !request.libraryId?.trim())) throw new Error('TV series identity and library are required')
     const profileId = request.options.targetProfileId === undefined
@@ -929,6 +985,7 @@ export class TranscodingService {
         let targetCompatibility = sourceCompatibility
         let measurementCacheHit = false
         let measurementCacheStored = false
+        if (measurementCacheKey) this.sampleCacheUsers.set(measurementCacheKey, (this.sampleCacheUsers.get(measurementCacheKey) ?? 0) + 1)
         try {
           if (shouldEncode) {
             if (reusableRepresentativePlan) {
@@ -1047,6 +1104,12 @@ export class TranscodingService {
         } catch (error) {
           if (!measurementCacheHit && !measurementCacheStored) await fs.rm(sampleDirectory, { recursive: true, force: true })
           throw error
+        } finally {
+          if (measurementCacheKey) {
+            const users = this.sampleCacheUsers.get(measurementCacheKey) ?? 1
+            if (users <= 1) this.sampleCacheUsers.delete(measurementCacheKey)
+            else this.sampleCacheUsers.set(measurementCacheKey, users - 1)
+          }
         }
         const measuredPlanSavingsBytes = shouldEncode
           ? projectMeasuredSavingsBytes(stat.size, analysis.durationMs! / 1000, params.measuredCandidate!.outputBytes, params.measuredCandidate!.sampledDurationSeconds)
@@ -2828,6 +2891,8 @@ export class TranscodingService {
         if (actualSourcePreparationHashes.some((hashes, index) => hashes.some((hash, pathIndex) => hash !== cached.sourcePreparationHashes![index][pathIndex]))) throw new Error('Cached source preparation content changed')
       }
       const searchComplete = cached.searchVersion === OPTIMIZATION_SEARCH_VERSION && cached.complete
+      // Record actual reuse time so eligible unreferenced entries age out last.
+      await fs.utimes(sampleDirectory, new Date(), new Date())
       getLoggingService().info('[TVOptimization]', 'Measured candidate cache reused', {
         event: 'measurement-cache.reused',
         cacheKey,
