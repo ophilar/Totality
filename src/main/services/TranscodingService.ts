@@ -36,7 +36,7 @@ import { evaluatePlaybackTarget, getPlaybackTargetContainers, recommendPlaybackT
 import { getTaskQueueService } from './TaskQueueService'
 import { buildOptimizationSavingsBreakdown, calculateBitrateSavingsBytes, projectMeasuredSavingsBytes, sumMeasuredStreamBytes, type OptimizationSavingsCoverage, type OptimizationSavingsOperation } from './OptimizationSavingsService'
 import { normalizeAudioCodec, normalizeVideoCodec } from './MediaNormalizer'
-import { DEFAULT_OPTIMIZATION_VIDEO_CODEC } from './transcoding/OptimizationCodecPolicy'
+import { DEFAULT_OPTIMIZATION_VIDEO_CODEC, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
 import { aggregateShowOptimizationMetrics } from './ShowOptimizationMetricsService'
 import { SETTING_KEYS } from '@shared/settingKeys'
 
@@ -49,7 +49,7 @@ export class TranscodeError extends Error {
 
 export interface TranscodeOptions {
   playbackPolicy?: 'allow-transcoding' | 'avoid-video-transcoding' | 'direct-play'
-  targetCodec?: 'av1' | 'hevc'
+  targetCodec?: OptimizationVideoCodec
   streamSelection?: StreamSelectionPolicy
   outputMode?: 'copy' | 'quarantine-replace' | 'replace'
   tempDirectory?: string
@@ -145,7 +145,7 @@ export interface OptimizationDiscoveryGroup {
   representativeMediaItemId: number
   representativeLabel: string
   technicalProfile: string
-  targetCodec?: 'hevc' | 'av1'
+  targetCodec?: OptimizationVideoCodec
   candidateReasons: string[]
   candidateReasonsByMediaItemId: Record<number, string[]>
   estimatedSavingsByMediaItemId: Record<number, number | null>
