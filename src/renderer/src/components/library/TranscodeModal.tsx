@@ -105,7 +105,8 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
   const [analyzingItem, setAnalyzingItem] = useState(false)
   const [outputModeSettingError, setOutputModeSettingError] = useState<string | null>(null)
   const completionReportedRef = useRef(false)
-  const candidateDiscoveryStartedFor = useRef<number | null>(null)
+  const candidateDiscoveryStartedFor = useRef<string | null>(null)
+  const candidateDiscoveryRequest = useRef(0)
   const handleQueueError = useCallback((error: unknown) => addToast({ title: 'Could not read optimization queue', message: error instanceof Error ? error.message : String(error), type: 'error' }), [addToast])
   const workflow = useOptimizationWorkflow(handleQueueError)
   const { queueState, stage, setStage, review: preflight, reviewedSampleGroups, batchId: submittedBatchId, submittedTaskIds, submittedMediaItemIds, queueControlState, batchSummary, reviewMatches, replaceReview, clearReview, submitBatch, toggleQueuePause: toggleWorkflowQueuePause, retryFailedTasks: retryWorkflowFailedTasks, setReviewedSampleGroups } = workflow
@@ -397,6 +398,8 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
       setCandidateDiscoveryError('This item has no source identity for candidate discovery.')
       return
     }
+    const requestNumber = ++candidateDiscoveryRequest.current
+    setCandidateDiscovery(null)
     setCandidateDiscoveryBusy(true)
     setCandidateDiscoveryError(null)
     try {
@@ -407,18 +410,19 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
         libraryId: media.library_id,
         options: getEffectivePreflightOptions(),
       })
-      setCandidateDiscovery(result)
+      if (requestNumber === candidateDiscoveryRequest.current) setCandidateDiscovery(result)
     } catch (error) {
-      setCandidateDiscoveryError(error instanceof Error ? error.message : String(error))
+      if (requestNumber === candidateDiscoveryRequest.current) setCandidateDiscoveryError(error instanceof Error ? error.message : String(error))
     } finally {
-      setCandidateDiscoveryBusy(false)
+      if (requestNumber === candidateDiscoveryRequest.current) setCandidateDiscoveryBusy(false)
     }
   }, [media, getEffectivePreflightOptions])
+  const discoveryFingerprint = media?.id ? `${media.id}:${JSON.stringify(getEffectivePreflightOptions())}` : ''
   useEffect(() => {
-    if (loading || initialPreflightId || !media?.id || candidateDiscoveryStartedFor.current === media.id) return
-    candidateDiscoveryStartedFor.current = media.id
+    if (loading || initialPreflightId || !media?.id || candidateDiscoveryStartedFor.current === discoveryFingerprint) return
+    candidateDiscoveryStartedFor.current = discoveryFingerprint
     void discoverCandidates()
-  }, [loading, initialPreflightId, media?.id, discoverCandidates])
+  }, [loading, initialPreflightId, media?.id, discoveryFingerprint, discoverCandidates])
   const preflightMatchesCurrentSettings = reviewMatches(getEffectivePreflightOptions())
 
   useEffect(() => {
