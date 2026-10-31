@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { availableOptimizationEncoders, supportedOptimizationCodecs, supportsMeasuredOptimizationEncoder } from '@main/services/transcoding/OptimizationEncoderPolicy'
+import { availableOptimizationEncoders, supportedOptimizationCodecs, supportsMeasuredOptimizationEncoder, unsupportedOptimizationCodecReason } from '@main/services/transcoding/OptimizationEncoderPolicy'
 import { chooseOptimizationVideoCodec } from '@main/services/transcoding/OptimizationCodecPolicy'
 import { buildCandidateLadder } from '@main/services/MeasuredOptimizationPolicy'
 
@@ -30,6 +30,18 @@ describe('measured optimization encoder eligibility', () => {
     expect(availableOptimizationEncoders('hevc', {
       gpus, deviceEncoders, selectedGpuId: 'apple',
     })).toEqual({ software: true, hardware: true, selectedHardware: false })
+  })
+
+  it('explains unsupported targets using the same playback and encoder rules', () => {
+    expect(unsupportedOptimizationCodecReason('av1', {
+      gpus, deviceEncoders, playbackCodecs: ['h.265'], playbackPolicy: 'direct-play', capabilitiesLoaded: true, playbackTargetName: 'Living room',
+    })).toContain('Living room')
+    expect(unsupportedOptimizationCodecReason('av1', {
+      gpus: [gpus[0]], deviceEncoders, selectedGpuId: 'apple', selectedGpuName: 'Apple GPU', encoderPolicy: 'hardware', playbackPolicy: 'allow-transcoding', capabilitiesLoaded: true,
+    })).toContain('Apple GPU')
+    expect(unsupportedOptimizationCodecReason('hevc', {
+      gpus, deviceEncoders, capabilitiesLoaded: true,
+    })).toBeUndefined()
   })
 
   it('never replaces explicit HEVC selection merely because AV1 is available', () => {
