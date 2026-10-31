@@ -2362,15 +2362,24 @@ export class LocalFolderProvider implements MediaProvider {
         result.durationMs = Date.now() - startTime
         return result
       }
-      for (const track of db.getMusicTracks({ sourceId: this.sourceId })) {
-        if (!track.id || !track.file_path) continue
+      const missingTracks = db.getMusicTracks({ sourceId: this.sourceId }).filter(track => {
+        if (!track.id || !track.file_path) return false
         const relative = path.relative(musicPath, track.file_path)
         const isInMusicRoot = relative !== '' && relative !== '..' &&
           !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
-        if (isInMusicRoot && !scannedFilePaths.has(track.file_path)) {
-          db.deleteMusicTrack(track.id)
-          result.itemsRemoved++
-        }
+        // A track excluded by current parsing rules is not evidence of deletion.
+        return isInMusicRoot && !scannedFilePaths.has(track.file_path) && !fs.existsSync(track.file_path)
+      })
+      // A sudden mass disappearance can also indicate a partially detached NAS mount.
+      // Fail closed rather than silently clearing many previously indexed tracks.
+      if (missingTracks.length > 10 && missingTracks.length > totalFiles / 4) {
+        result.errors.push(`Music inventory would remove ${missingTracks.length} tracks; mass deletion requires verification of the mounted folders`)
+        result.durationMs = Date.now() - startTime
+        return result
+      }
+      for (const track of missingTracks) {
+        db.deleteMusicTrack(track.id!)
+        result.itemsRemoved++
       }
 
       // Update album stats (track count, duration, etc.)
