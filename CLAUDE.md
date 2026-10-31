@@ -4,14 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Totality is an Electron desktop application that analyzes media library quality from multiple sources (Plex, Jellyfin, Emby, Kodi, MediaMonkey) and recommends higher-quality versions. Includes tag sync (mood/genre) across sources with bidirectional write support. Built with Electron 41, React 18, TypeScript, Vite 6, and Tailwind CSS 4.
+Totality is an Electron desktop application that analyzes media library quality from multiple sources (Plex, Jellyfin, Emby, Kodi, MediaMonkey) and recommends higher-quality versions. Includes tag sync (mood/genre) across sources with bidirectional write support. Built with Electron 44, React 18, TypeScript, Vite, and Tailwind CSS. Confirm current versions in `package.json` before changing dependencies.
 
 ## Development Commands
 
 ```bash
 npm run electron:dev     # Start Vite + Electron together (recommended for development)
-npm run build            # Run tests + TypeScript compile + Vite build + Electron Builder
-npm run lint             # Run ESLint with --max-warnings 0 (warnings are errors)
+npm run build            # Generate icon, run tests/typecheck, build renderer, package via scripts/package-electron.cjs
+npm run lint             # Run oxlint with React plugin; deny warnings
+npm run typecheck        # Run TypeScript compiler in no-emit mode
 npm run preview          # Preview Vite production build
 npm run test             # Run Vitest in watch mode
 npm run test:run         # Run all tests once
@@ -21,7 +22,7 @@ npm run generate-icons   # Generate app icons from source
 npm run electron:build   # Same as `npm run build` (alias)
 ```
 
-**Note:** `postinstall` runs `electron-rebuild` automatically after `npm install` to compile native modules (better-sqlite3) for Electron's Node ABI.
+**Note:** `postinstall` runs `electron-rebuild` after dependency installation to compile native modules for Electron's Node ABI.
 
 **Single test:** `npx vitest run tests/unit/FileNameParser.test.ts` or use `-t` to filter by test name: `npx vitest run -t "parses year"`
 
@@ -29,7 +30,7 @@ DevTools open automatically in development mode (docked to bottom).
 
 **Note:** `npm run dev` and `npm run electron:dev` are equivalent—both run Vite, which automatically starts Electron via `vite-plugin-electron`.
 
-**Build Output:** `dist/` (renderer), `dist-electron/` (main + preload), `release/` (packaged apps)
+**Build Output:** `dist/` (renderer), `dist-electron/` (main + preload), and packaging artifacts managed by `scripts/package-electron.cjs`.
 
 ## Versioning & Releases
 
@@ -239,6 +240,14 @@ Two additional client-side completeness filters applied in `loadCompletenessData
 - **`exclude_empty_seasons`** (setting): strips seasons with no owned episodes from series missing lists before displaying
 - **`collection_theatrical_lag_days`** (setting): removes missing collection movies whose `release_date` is within N days of today (avoids flagging theatrical-only releases as missing)
 
+### Optimization policy and cache ownership
+
+- Canonical defaults and bounds: `src/main/config/defaults.json` exposed through `APP_CONFIG`; FFprobe scan batching and measured-sample retention are owned there. The persisted `ffprobe_batch_size` setting may override the default only within the validated range.
+- Codec and encoder policy: `src/main/services/transcoding/OptimizationCodecPolicy.ts`, `OptimizationEncoderPolicy.ts`, and `TranscodingCapabilities.ts`. Do not hard-code codec/encoder identities in call sites.
+- File evidence: `ValidatedFileAnalysisCache.ts` is bounded transient reuse; `QualityAnalyzer.ts` owns persisted evidence. Both validate the same `FileIdentity.ts` semantics.
+- Measured samples: `TranscodingService.ts` verifies reuse by content hashes; `MeasuredSampleCacheRetention.ts` evicts only eligible unreferenced cache entries. AIRA requires SSOT, no duplicate caches, and behavioral/performance evidence rather than speculative memoization.
+- Current product acceptance remains open for real local-library/NAS disconnects and representative hardware transcodes. Passing unit tests does not establish runtime acceptance.
+
 ### Quality Analysis System
 
 **Video Quality Scoring** (`src/main/services/QualityAnalyzer.ts`):
@@ -390,9 +399,9 @@ All setting keys are defined in `src/shared/settingKeys.ts` as `SETTING_KEYS` �
 ## Code Style
 
 - No semicolons, single quotes, 2-space indent, trailing commas (es5), 100-char line width, `arrowParens: "always"`
-- TypeScript strict mode with `noUnusedLocals` and `noUnusedParameters` — prefix unused parameters with `_` (ESLint `argsIgnorePattern: '^_'`)
-- `@typescript-eslint/no-explicit-any` is `warn` — avoid `any` but it won't block builds
-- ESLint 9 flat config (`eslint.config.js`), `typescript-eslint` v8 (unified package), `@typescript-eslint/no-require-imports` and `@typescript-eslint/no-unused-expressions` are off, `caughtErrors: 'none'` on no-unused-vars
+- TypeScript strict mode with `noUnusedLocals` and `noUnusedParameters` — prefix intentionally unused parameters with `_` where supported
+- Avoid `any`; the authoritative lint rules are in `.oxlintrc.json` and the `lint` script.
+- Current lint runner is oxlint (`.oxlintrc.json`). Do not rely on historical ESLint-specific rules or commands.
 - IPC handlers validate inputs with **Zod v4** schemas (`src/main/validation/schemas.ts`) using `validateInput(schema, input, 'context')` — note Zod v4 has different APIs from v3 (e.g., `z.object()` methods differ)
 - **Zod v4 `z.record(enum, value)` gotcha**: Unlike v3, Zod v4 treats enum-keyed records as requiring ALL enum keys. For partial records (e.g., `pollingIntervals` where only some providers are configured), use `z.record(enum, value.optional())` so missing keys pass validation as `undefined`
 
@@ -616,7 +625,7 @@ The application follows Electron security best practices:
 ### Database Issues
 - Schema errors: Check `runMigrations()` in `BetterSQLiteService.ts`
 - Data not persisting: better-sqlite3 writes are durable by default (WAL mode). Check if `endBatch()` was called after `startBatch()`
-- Corruption: Delete database file and restart
+- Corruption: stop writes, back up database and logs, diagnose and restore from a verified backup; never delete the database as a routine troubleshooting step
 - **NOT NULL constraint failed**: Check if upsert code uses `|| null` for columns defined as `NOT NULL DEFAULT ''` — use `|| ''` instead
 
 ### Source Deletion
@@ -635,9 +644,9 @@ When a source is deleted via `SourceManager.removeSource()` → `db.deleteMediaS
 
 ## Testing
 
-Tests are in `tests/unit/`, configured via `vitest.config.ts`. Coverage targets `src/main/**/*.ts` excluding entry point and IPC handlers.
+Tests are in `tests/`, configured via `vitest.config.mts`. Coverage targets `src/main/**/*.ts` excluding entry point and IPC handlers.
 
 - **Globals enabled**: `describe`, `it`, `expect`, `vi` are available without importing
 - **Setup file** (`tests/setup.ts`): Mocks `electron` (app, ipcMain, safeStorage) globally
-- **Database tests**: Use sql.js via `tests/helpers/testDatabase.ts` adapter that mimics better-sqlite3 API. better-sqlite3 native module can't run in Vitest (compiled for Electron's Node ABI).
+- **Database tests**: Inspect `tests/helpers/testDatabase.ts` and current test setup for the applicable isolated database contract; do not assume a legacy sql.js adapter or treat mocks as integration coverage.
 - **Timeout**: 10 seconds per test
