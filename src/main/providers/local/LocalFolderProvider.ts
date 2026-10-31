@@ -2410,16 +2410,11 @@ export class LocalFolderProvider implements MediaProvider {
         // A track excluded by current parsing rules is not evidence of deletion.
         return isInMusicRoot && !scannedFilePaths.has(track.file_path) && !fs.existsSync(track.file_path)
       })
-      // A sudden mass disappearance can also indicate a partially detached NAS mount.
-      // Fail closed rather than silently clearing many previously indexed tracks.
-      if (missingTracks.length > 10 && missingTracks.length > totalFiles / 4) {
-        result.errors.push(`Music inventory would remove ${missingTracks.length} tracks; mass deletion requires verification of the mounted folders`)
-        result.durationMs = Date.now() - startTime
-        return result
-      }
-      for (const track of missingTracks) {
-        db.deleteMusicTrack(track.id!)
-        result.itemsRemoved++
+      // An apparently complete scan cannot distinguish a real removal from an
+      // inaccessible NAS child or mount. Preserve records until explicit cleanup.
+      if (missingTracks.length > 0) {
+        getLoggingService().warn('[LocalFolderProvider]',
+          `Retained ${missingTracks.length} unobserved music tracks; unverified deletion is deferred`)
       }
 
       // Update album stats (track count, duration, etc.)
