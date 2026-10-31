@@ -1257,12 +1257,9 @@ export class LocalFolderProvider implements MediaProvider {
       const batch = directories.splice(0, DISCOVERY_CONCURRENCY)
       const discoveries = await Promise.all(batch.map(async ({ dir, depth }) => {
         if (depth > 15) throw new Error(`Directory scan exceeded the supported depth at ${dir}`)
-        let entries: Awaited<ReturnType<typeof fs.promises.readdir>>
-        try {
-          entries = await fs.promises.readdir(dir, { withFileTypes: true })
-        } catch (error) {
+        const entries = await fs.promises.readdir(dir, { withFileTypes: true }).catch(error => {
           throw new Error(`Cannot complete directory scan for ${dir}: ${getErrorMessage(error)}`)
-        }
+        })
         const next: Array<{ dir: string; depth: number }> = []
         const videos: string[] = []
         for (const entry of entries) {
