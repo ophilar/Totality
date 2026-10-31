@@ -14,7 +14,7 @@ import { SourceProvider, useSources } from './contexts/SourceContext'
 import { WishlistProvider } from './contexts/WishlistContext'
 import { NavigationProvider, useNavigation } from './contexts/NavigationContext'
 import { ToastProvider } from './contexts/ToastContext'
-import { ThemeProvider } from './contexts/ThemeContext'
+import { ThemeProvider, useTheme } from './contexts/ThemeContext'
 import { AddSourceModal } from './components/sources/AddSourceModal'
 import { AboutModal } from './components/ui/AboutModal'
 import { SettingsPanel } from './components/settings'
@@ -34,6 +34,7 @@ type AppView = 'dashboard' | 'library'
 
 function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean; isTablet?: boolean }) {
   const { isLoading, sources, activeSourceId, hasMovies, hasTV, hasMusic } = useSources()
+  const { effectiveIsDark } = useTheme()
   const [showAddSourceModal, setShowAddSourceModal] = useState(false)
   const [showAboutModal, setShowAboutModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
@@ -54,6 +55,13 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
   const [showMoodSyncPanel, setShowMoodSyncPanel] = useState(false)
   const [showTaskQueuePanel, setShowTaskQueuePanel] = useState(false)
   const [showMobileSearch, setShowMobileSearch] = useState(false)
+  // Desktop backdrop state (passed up from MediaBrowser)
+  const [backdropUrl, setBackdropUrl] = useState<string | null>(null)
+  const [backdropVisible, setBackdropVisible] = useState<string | null>(null) // persists URL during fade-out
+  useEffect(() => {
+    if (backdropUrl) setBackdropVisible(backdropUrl)
+  }, [backdropUrl])
+
   // Auto-refresh state (passed up from MediaBrowser)
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false)
 
@@ -354,6 +362,20 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
     <>
       {/* Render main app - it loads behind the splash screen */}
       <div className="relative h-full overflow-hidden bg-main-gradient text-foreground">
+        {/* Plex-style blurred backdrop — behind everything, shows through translucent sidebar/topbar */}
+        {!isMobile && (
+          <div
+            className="fixed inset-0 pointer-events-none"
+            style={{
+              transition: 'opacity 2s cubic-bezier(0.25, 0, 0.15, 1)',
+              opacity: backdropUrl ? (effectiveIsDark ? 1 : 0.35) : 0,
+              backgroundImage: backdropVisible ? `url(${backdropVisible})` : undefined,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              filter: effectiveIsDark ? 'blur(80px) brightness(0.3)' : 'blur(80px) saturate(0.6)',
+            }}
+          />
+        )}
         {!isMobile && (
           <Sidebar
             onOpenAbout={() => setShowAboutModal(true)}
@@ -444,6 +466,7 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
                 libraryTab={libraryTab}
                 onLibraryTabChange={setLibraryTab}
                 onAutoRefreshChange={setIsAutoRefreshing}
+                onBackdropChange={setBackdropUrl}
                 isMobile={isMobile}
                 isTablet={isTablet}
               />

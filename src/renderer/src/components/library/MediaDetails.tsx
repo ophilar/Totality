@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { RefreshCw, Pencil, EyeOff, X, Copy, Check, ChevronDown, Star } from 'lucide-react'
 import { SETTING_KEYS } from '../../../../shared/settingKeys'
 import { getQualityLevelColors } from '../../utils/qualityColors'
+import { useTheme } from '../../contexts/ThemeContext'
 import { formatBitrate } from './mediaUtils'
 // DropdownMenu no longer used — desktop actions now use round icon buttons like mobile
 import { Button } from '../ui/Button'
@@ -144,6 +145,7 @@ const DEFAULT_THRESHOLDS: Record<string, QualityThresholds> = {
 }
 
 export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismissUpgrade, isMobile = false }: MediaDetailsProps) {
+  const { effectiveIsDark } = useTheme()
   const [media, setMedia] = useState<MediaWithQuality | null>(null)
   const [versions, setVersions] = useState<MediaVersion[]>([])
   const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null)
@@ -565,153 +567,47 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
         }`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        {isMobile ? null : (
-          // ── Desktop: backdrop bleed in top-right, title + metadata left ──
-          <div className="shrink-0 rounded-t-xl overflow-hidden">
-            <div className="relative px-5 pt-24 pb-3">
-              {/* Full-width backdrop behind header */}
-              {(() => {
-                const heroSrc = media.type === 'episode'
-                  ? (media.episode_thumb_url || backdropUrl || media.poster_url)
-                  : (backdropUrl || media.poster_url)
-                return heroSrc ? (
-                  <>
-                    <img
-                      data-desktop-hero
-                      src={heroSrc}
-                      alt=""
-                      className="absolute top-0 right-0 w-3/4 h-full object-cover object-top will-change-transform"
-                      style={{ height: '120%' }}
-                      onError={(e) => { e.currentTarget.style.display = 'none' }}
-                    />
-                    <div className="absolute top-0 right-0 w-3/4 h-full bg-gradient-to-r from-card to-transparent" />
-                    <div className="absolute top-0 right-0 w-3/4 h-full bg-gradient-to-t from-card via-card/60 to-transparent" />
-                  </>
-                ) : null
-              })()}
+        {/* Desktop: full-modal blur wash backdrop */}
+        {!isMobile && (() => {
+          const heroSrc = media.type === 'episode'
+            ? (media.episode_thumb_url || backdropUrl || media.poster_url)
+            : (backdropUrl || media.poster_url)
+          return heroSrc ? (
+            <div
+              data-desktop-wash
+              className="absolute pointer-events-none animate-[fade-in_1s_ease-out_forwards]"
+              style={{
+                inset: '-100px',
+                backgroundImage: `url(${heroSrc})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                filter: effectiveIsDark ? 'blur(80px) brightness(0.3)' : 'blur(80px) saturate(0.6)',
+                opacity: effectiveIsDark ? 0.5 : 0.35,
+              }}
+            />
+          ) : null
+        })()}
 
-              {/* Close button — top right, above backdrop, glass pill */}
-              <button
-                onClick={onClose}
-                className="absolute top-3 right-3 z-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm text-white/80 hover:bg-black/60 hover:text-white transition-colors"
-                aria-label="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              {/* Title */}
-              <div className="relative z-[1]">
-                <h2 className="text-h3 font-semibold leading-tight tracking-tight pr-12">{displayTitle}</h2>
-                {media.type === 'episode' && (
-                  <p className="text-label text-muted-foreground mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
-                )}
-                {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
-                  <p className="text-label text-muted-foreground font-medium">{sv?.edition || versions[0]?.edition}</p>
-                )}
-              </div>
-
-              {/* Stats row */}
-              <div className="relative z-[1] flex flex-wrap items-center gap-2 text-label text-muted-foreground mt-2">
-                {media.year && <span>{media.year}</span>}
-                {(sv?.duration ?? media.duration) > 0 && <><span className="mx-0.5">·</span><span>{formatDuration(sv?.duration ?? media.duration)}</span></>}
-                {(sv?.file_size ?? media.file_size) > 0 && <><span className="mx-0.5">·</span><span>{formatFileSize(sv?.file_size ?? media.file_size)}</span></>}
-                {(sv?.container ?? media.container) && <><span className="mx-0.5">·</span><span>{(sv?.container ?? media.container)?.toUpperCase()}</span></>}
-                {media.tmdb_rating != null && media.tmdb_rating > 0 && (
-                  <><span className="mx-0.5">·</span><span title="TMDB Rating">★ {media.tmdb_rating.toFixed(1)}</span></>
-                )}
-                {(media.play_count ?? 0) > 0 && (
-                  <><span className="mx-0.5">·</span><span>{media.play_count === 1 ? 'Watched once' : `Watched ${media.play_count}×`}</span></>
-                )}
-                {media.last_watched_at && (
-                  <><span className="mx-0.5">·</span><span title={new Date(media.last_watched_at).toLocaleString()}>Last watched {new Date(media.last_watched_at).toLocaleDateString()}</span></>
-                )}
-              </div>
-
-              {/* Action buttons — white icons, circle bg on hover */}
-              <div className="relative z-[1] flex items-center gap-2 mt-3">
-                {media.tier_quality && media.tier_quality !== 'HIGH' && (
-                  <AddToWishlistButton
-                    mediaType={media.type as WishlistMediaType}
-                    title={media.title}
-                    year={media.year}
-                    tmdbId={media.tmdb_id}
-                    imdbId={media.imdb_id}
-                    seriesTitle={media.series_title}
-                    seasonNumber={media.season_number}
-                    episodeNumber={media.episode_number}
-                    posterUrl={media.poster_url}
-                    reason="upgrade"
-                    mediaItemId={media.id}
-                    currentQualityTier={media.quality_tier}
-                    currentQualityLevel={media.tier_quality}
-                    currentResolution={media.resolution}
-                    currentVideoCodec={media.video_codec}
-                    currentAudioCodec={media.audio_codec}
-                  />
-                )}
-
-                {onRescan && media.file_path && (
-                  <button
-                    onClick={handleRescan}
-                    disabled={isRescanning}
-                    className="p-1 rounded-lg text-white hover:bg-white/15 transition-colors"
-                    title="Rescan file"
-                  >
-                    <RefreshCw className={`w-5 h-5 ${isRescanning ? 'animate-spin' : ''}`} />
-                  </button>
-                )}
-
-                {onFixMatch && media.type === 'movie' && (
-                  <button
-                    onClick={handleFixMatch}
-                    className="p-1 rounded-lg text-white hover:bg-white/15 transition-colors"
-                    title="Fix match"
-                  >
-                    <Pencil className="w-5 h-5" />
-                  </button>
-                )}
-
-                {onDismissUpgrade && media.tier_quality !== 'HIGH' && (
-                  <button
-                    onClick={() => {
-                      if (window.confirm(`Remove "${displayTitle}" from upgrade recommendations?`)) {
-                        handleDismissUpgrade()
-                      }
-                    }}
-                    className="p-1 rounded-lg text-white hover:bg-white/15 transition-colors"
-                    title="Dismiss upgrade"
-                  >
-                    <EyeOff className="w-5 h-5" />
-                  </button>
-                )}
-
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    navigator.clipboard.writeText(displayTitle)
-                    setCopied(true)
-                    setTimeout(() => setCopied(false), 1500)
-                  }}
-                  className="p-1 rounded-lg text-white hover:bg-white/15 transition-colors"
-                  title="Copy title"
-                >
-                  {copied ? <Check className="w-5 h-5 text-foreground" /> : <Copy className="w-5 h-5" />}
-                </button>
-              </div>
-            </div>
-          </div>
+        {/* Desktop: close button — fixed on modal */}
+        {!isMobile && (
+          <button
+            onClick={onClose}
+            className="absolute top-3 right-3 z-20 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm text-white/80 hover:bg-black/60 hover:text-white transition-colors"
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
         )}
 
-        {/* Scrollable Content — flat layout, no tabs */}
+        {/* Scrollable Content — unified layout, no header/body split */}
         <div
-          className={`flex-1 overflow-y-auto ${isMobile ? '' : 'px-5 py-4'} space-y-6`}
+          className={`flex-1 overflow-y-auto relative ${isMobile ? '' : 'px-5 pt-5 pb-4'} space-y-6`}
           style={isMobile ? { overscrollBehavior: 'none', WebkitOverflowScrolling: 'auto' } : undefined}
           onScroll={(e) => {
             if (!isMobile) {
-              // Desktop: subtle parallax on header backdrop
-              const heroImg = e.currentTarget.parentElement?.querySelector('[data-desktop-hero]') as HTMLElement
-              if (heroImg) heroImg.style.transform = `translateY(${e.currentTarget.scrollTop * 0.15}px)`
+              // Desktop: subtle parallax on blur wash
+              const wash = e.currentTarget.parentElement?.querySelector('[data-desktop-wash]') as HTMLElement
+              if (wash) wash.style.transform = `translateY(${e.currentTarget.scrollTop * 0.1}px)`
               return
             }
             const scrollTop = e.currentTarget.scrollTop
@@ -757,6 +653,87 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
             }
           }}
         >
+          {/* Desktop header — artwork + title + stats inside scroll */}
+          {!isMobile && (
+            <div className="flex gap-5 pr-12 relative z-[1]">
+              {/* Poster / Episode thumb */}
+              {(() => {
+                const thumbSrc = media.type === 'episode'
+                  ? (media.episode_thumb_url || backdropUrl || media.poster_url)
+                  : media.poster_url
+                return thumbSrc ? (
+                  <div className={`shrink-0 rounded-lg overflow-hidden shadow-lg shadow-black/30 ${media.type === 'episode' ? 'w-48 aspect-video' : 'w-36 aspect-[2/3]'}`}>
+                    <img src={thumbSrc} alt={displayTitle} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none' }} />
+                  </div>
+                ) : null
+              })()}
+              <div className="flex-1 min-w-0">
+                <h2 className="text-h3 font-semibold leading-tight tracking-tight">{displayTitle}</h2>
+                {media.type === 'episode' && (
+                  <p className="text-label text-muted-foreground mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
+                )}
+                {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
+                  <p className="text-label text-muted-foreground font-medium">{sv?.edition || versions[0]?.edition}</p>
+                )}
+                <div className="flex flex-wrap items-center gap-2 text-label text-muted-foreground mt-2">
+                  {media.year && <span>{media.year}</span>}
+                  {(sv?.duration ?? media.duration) > 0 && <><span className="mx-0.5">·</span><span>{formatDuration(sv?.duration ?? media.duration)}</span></>}
+                  {(sv?.file_size ?? media.file_size) > 0 && <><span className="mx-0.5">·</span><span>{formatFileSize(sv?.file_size ?? media.file_size)}</span></>}
+                  {(sv?.container ?? media.container) && <><span className="mx-0.5">·</span><span>{(sv?.container ?? media.container)?.toUpperCase()}</span></>}
+                  {media.tmdb_rating != null && media.tmdb_rating > 0 && (
+                    <><span className="mx-0.5">·</span><span title="TMDB Rating">★ {media.tmdb_rating.toFixed(1)}</span></>
+                  )}
+                  {(media.play_count ?? 0) > 0 && (
+                    <><span className="mx-0.5">·</span><span>{media.play_count === 1 ? 'Watched once' : `Watched ${media.play_count}×`}</span></>
+                  )}
+                  {media.last_watched_at && (
+                    <><span className="mx-0.5">·</span><span title={new Date(media.last_watched_at).toLocaleString()}>Last watched {new Date(media.last_watched_at).toLocaleDateString()}</span></>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mt-3">
+                  {media.tier_quality && media.tier_quality !== 'HIGH' && (
+                    <AddToWishlistButton
+                      mediaType={media.type as WishlistMediaType}
+                      title={media.title}
+                      year={media.year}
+                      tmdbId={media.tmdb_id}
+                      imdbId={media.imdb_id}
+                      seriesTitle={media.series_title}
+                      seasonNumber={media.season_number}
+                      episodeNumber={media.episode_number}
+                      posterUrl={media.poster_url}
+                      reason="upgrade"
+                      mediaItemId={media.id}
+                      currentQualityTier={media.quality_tier}
+                      currentQualityLevel={media.tier_quality}
+                      currentResolution={media.resolution}
+                      currentVideoCodec={media.video_codec}
+                      currentAudioCodec={media.audio_codec}
+                    />
+                  )}
+                  {onRescan && media.file_path && (
+                    <button onClick={handleRescan} disabled={isRescanning} className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="Rescan file">
+                      <RefreshCw className={`w-5 h-5 ${isRescanning ? 'animate-spin' : ''}`} />
+                    </button>
+                  )}
+                  {onFixMatch && media.type === 'movie' && (
+                    <button onClick={handleFixMatch} className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="Fix match">
+                      <Pencil className="w-5 h-5" />
+                    </button>
+                  )}
+                  {onDismissUpgrade && media.tier_quality !== 'HIGH' && (
+                    <button onClick={() => { if (window.confirm(`Remove "${displayTitle}" from upgrade recommendations?`)) handleDismissUpgrade() }} className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="Dismiss upgrade">
+                      <EyeOff className="w-5 h-5" />
+                    </button>
+                  )}
+                  <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(displayTitle); setCopied(true); setTimeout(() => setCopied(false), 1500) }} className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="Copy title">
+                    {copied ? <Check className="w-5 h-5 text-foreground" /> : <Copy className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Mobile header — restructured for sticky collapsing behavior */}
           {isMobile && (
             <>

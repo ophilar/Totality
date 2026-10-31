@@ -674,22 +674,8 @@ export function TVShowsView({
             </div>
           </div>
         ) : (
-          <div className="relative mb-6 -mx-4 px-4 overflow-hidden" style={{ minHeight: '200px' }}>
-            {/* Backdrop image */}
-            {(selectedShowData.art_url || selectedShowData.poster_url) && (
-              <div className="absolute top-0 right-0 w-3/4 h-full overflow-hidden">
-                <img
-                  src={(selectedShowData.art_url || selectedShowData.poster_url)!}
-                  alt=""
-                  className="w-full h-full object-cover object-top"
-                  onError={(e) => { e.currentTarget.style.display = 'none' }}
-                />
-                <div className="absolute inset-0 bg-gradient-to-r from-background to-transparent" />
-                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
-              </div>
-            )}
-
-            <div className="relative z-[1]">
+          <div className="mb-6">
+            <div>
               <Button
                 variant="tertiary"
                 size="sm"
@@ -699,7 +685,7 @@ export function TVShowsView({
                 Back to TV shows
               </Button>
             </div>
-            <div className="relative z-[1] flex gap-6 mt-3">
+            <div className="flex gap-6 mt-3">
               {/* Poster */}
               {selectedShowData.poster_url && (
                 <div className="w-44 shrink-0">
@@ -889,21 +875,11 @@ export function TVShowsView({
             </div>
           </div>
         ) : (
-          <div className="relative mb-4 -mx-4 px-4 overflow-hidden" style={{ minHeight: '180px' }}>
-            {/* Backdrop image */}
-            {(() => { const url = selectedShowData.art_url || season?.posterUrl || completenessData?.poster_url || selectedShowData.poster_url; return url ? (
-              <div className="absolute top-0 right-0 w-3/4 h-full overflow-hidden">
-                <img src={url} alt="" className="w-full h-full object-cover object-top" onError={(e) => { e.currentTarget.style.display = 'none' }} />
-                <div className="absolute inset-0 bg-gradient-to-r from-background to-transparent" />
-                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
-              </div>
-            ) : null })()}
-            <div className="relative z-[1]">
-              <Button variant="tertiary" size="sm" onClick={handleBack} icon={<ChevronLeft className="w-4 h-4" />}>
-                Back to {selectedShowData.title}
-              </Button>
-            </div>
-            <div className="relative z-[1] flex gap-5 mt-3">
+          <div className="mb-4">
+            <Button variant="tertiary" size="sm" onClick={handleBack} icon={<ChevronLeft className="w-4 h-4" />}>
+              Back to {selectedShowData.title}
+            </Button>
+            <div className="flex gap-5 mt-3">
               {(season?.posterUrl || selectedShowData.poster_url) && (
                 <div className="w-24 h-36 shrink-0 rounded-lg overflow-hidden shadow-lg shadow-black/30">
                   <img src={season?.posterUrl || selectedShowData.poster_url!} alt={formatSeasonLabel(selectedSeason!)} className="w-full h-full object-cover" />

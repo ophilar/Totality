@@ -76,6 +76,7 @@ export function MediaBrowser({
   libraryTab,
   onLibraryTabChange,
   onAutoRefreshChange,
+  onBackdropChange,
   isMobile = false,
   isTablet = false,
 }: MediaBrowserProps) {
@@ -125,6 +126,7 @@ export function MediaBrowser({
   const [albumSortColumn, setAlbumSortColumn] = useState<'title' | 'artist'>('title')
   const [albumSortDirection, setAlbumSortDirection] = useState<'asc' | 'desc'>('asc')
   const [searchInput, setSearchInput] = useState('')
+
   // Filters (extracted to useLibraryFilters hook)
   const {
     tierFilter, setTierFilter,
@@ -139,6 +141,11 @@ export function MediaBrowser({
     setTierFilter('all')
     setQualityFilter('all')
     setAlphabetFilter(null)
+    setSelectedShow(null)
+    setSelectedSeason(null)
+    setSelectedArtist(null)
+    setSelectedAlbum(null)
+    setAlbumTracks([])
   }, [setTierFilter, setQualityFilter, setAlphabetFilter])
 
   // Compute search dropdown position from the search container ref
@@ -893,6 +900,17 @@ export function MediaBrowser({
       seasons
     }
   }, [selectedShow, selectedShowEpisodes, paginatedShows])
+
+  // Desktop backdrop: notify parent of active backdrop URL
+  useEffect(() => {
+    if (isMobile || !onBackdropChange) return
+    const url = selectedShow
+      ? (selectedShowData?.art_url || selectedShowData?.poster_url || null)
+      : selectedArtist
+        ? (selectedArtist.art_url || selectedArtist.thumb_url || null)
+        : null
+    onBackdropChange(url)
+  }, [isMobile, selectedShow, selectedShowData, selectedArtist, onBackdropChange])
 
   const filterItem = useCallback((item: MediaItem): boolean => {
     // Search filter

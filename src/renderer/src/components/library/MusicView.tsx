@@ -8,6 +8,7 @@ import { Button } from '../ui/Button'
 import { AnimatedNumber } from '../ui/AnimatedNumber'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors, formatDuration } from './mediaUtils'
+import { useTheme } from '../../contexts/ThemeContext'
 import type {
   MusicArtist,
   MusicAlbum,
@@ -116,6 +117,7 @@ export function MusicView({
   isMobile?: boolean
   isTablet?: boolean
 }) {
+  const { effectiveIsDark } = useTheme()
   const [isAnalyzingAlbum, setIsAnalyzingAlbum] = useState(false)
   const [isAnalyzingArtist, setIsAnalyzingArtist] = useState(false)
   const [showArtistMenu, setShowArtistMenu] = useState(false)
@@ -499,21 +501,11 @@ export function MusicView({
             </div>
           </div>
         ) : (
-          <div className="relative mb-6 -mx-4 px-4 overflow-hidden" style={{ minHeight: '200px' }}>
-            {/* Backdrop image */}
-            {(selectedAlbum.art_url || selectedAlbum.thumb_url) && (
-              <div className="absolute top-0 right-0 w-3/4 h-full overflow-hidden">
-                <img src={(selectedAlbum.art_url || selectedAlbum.thumb_url)!} alt="" className="w-full h-full object-cover object-center" onError={(e) => { e.currentTarget.style.display = 'none' }} />
-                <div className="absolute inset-0 bg-gradient-to-r from-background to-transparent" />
-                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
-              </div>
-            )}
-            <div className="relative z-[1]">
-              <Button variant="tertiary" size="sm" onClick={onBack} icon={<ChevronLeft className="w-4 h-4" />}>
-                Back to {selectedArtist ? selectedArtist.name : 'albums'}
-              </Button>
-            </div>
-            <div className="relative z-[1] flex items-start gap-6 mt-3">
+          <div className="mb-6">
+            <Button variant="tertiary" size="sm" onClick={onBack} icon={<ChevronLeft className="w-4 h-4" />}>
+              Back to {selectedArtist ? selectedArtist.name : 'albums'}
+            </Button>
+            <div className="flex items-start gap-6 mt-3">
               <div className="w-44 aspect-square bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30">
               {selectedAlbum.thumb_url ? (
                 <img
@@ -918,56 +910,72 @@ export function MusicView({
               onClick={() => setSelectedTrackForQuality(null)}
             >
               <div
-                className={`bg-card overflow-hidden shadow-2xl flex flex-col ${
+                className={`bg-card overflow-hidden shadow-2xl flex flex-col relative ${
                   isMobile
                     ? 'w-full h-[85vh] rounded-t-[2rem] border border-border border-b-0 animate-slide-up'
                     : 'rounded-2xl w-full max-w-lg max-h-[90vh] border border-border'
                 }`}
                 onClick={(e) => e.stopPropagation()}
               >
-                {/* Header — matching album detail view pattern */}
-                <div className="shrink-0 rounded-t-[2rem] overflow-hidden">
-                  <div className="relative px-4 pb-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
-                    {/* Background art — hidden until loaded to prevent flash */}
-                    {(selectedAlbum?.art_url || selectedAlbum?.thumb_url) && (
-                      <>
-                        <img
-                          data-hero-img
-                          src={selectedAlbum.art_url || selectedAlbum.thumb_url!}
-                          alt=""
-                          className="absolute top-0 right-0 w-3/4 h-full object-cover object-center will-change-transform opacity-0 transition-opacity duration-300"
-                          onLoad={(e) => { e.currentTarget.style.opacity = '1' }}
-                          onError={(e) => { e.currentTarget.style.display = 'none' }}
-                        />
-                        <div className="absolute top-0 right-0 w-3/4 h-full bg-gradient-to-r from-card to-transparent" />
-                        <div className="absolute top-0 right-0 w-3/4 h-full bg-gradient-to-t from-card via-card/60 to-transparent" />
-                      </>
+                {/* Full-modal blur wash backdrop (desktop) */}
+                {!isMobile && (selectedAlbum?.art_url || selectedAlbum?.thumb_url) && (
+                  <div
+                    className="absolute pointer-events-none animate-[fade-in_1s_ease-out_forwards]"
+                    style={{
+                      inset: '-100px',
+                      backgroundImage: `url(${selectedAlbum.art_url || selectedAlbum.thumb_url})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                      filter: effectiveIsDark ? 'blur(80px) brightness(0.3)' : 'blur(80px) saturate(0.6)',
+                      opacity: effectiveIsDark ? 0.5 : 0.35,
+                    }}
+                  />
+                )}
+
+                {/* Close button — fixed on modal */}
+                <button
+                  onClick={() => setSelectedTrackForQuality(null)}
+                  className="absolute top-3 right-3 z-20 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm text-white/80 hover:bg-black/60 hover:text-white transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+
+                {/* Unified scrollable content */}
+                <div
+                  className={`flex-1 overflow-y-auto relative ${isMobile ? 'px-4' : 'px-5 pt-5 pb-4'} space-y-6`}
+                  style={isMobile ? { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' } : undefined}
+                >
+                  {/* Mobile: backdrop art in header */}
+                  {isMobile && (selectedAlbum?.art_url || selectedAlbum?.thumb_url) && (
+                    <>
+                      <img
+                        data-hero-img
+                        src={selectedAlbum.art_url || selectedAlbum.thumb_url!}
+                        alt=""
+                        className="absolute top-0 right-0 w-3/4 h-full object-cover object-center will-change-transform opacity-0 transition-opacity duration-300"
+                        onLoad={(e) => { e.currentTarget.style.opacity = '1' }}
+                        onError={(e) => { e.currentTarget.style.display = 'none' }}
+                      />
+                      <div className="absolute top-0 right-0 w-3/4 h-full bg-gradient-to-r from-card to-transparent" />
+                      <div className="absolute top-0 right-0 w-3/4 h-full bg-gradient-to-t from-card via-card/60 to-transparent" />
+                    </>
+                  )}
+
+                  {/* Header: album art + track title + stats */}
+                  <div className="flex gap-4 pr-12 relative z-[1]">
+                    {selectedAlbum?.thumb_url && (
+                      <div className="w-28 h-28 shrink-0 rounded-lg overflow-hidden shadow-lg shadow-black/30">
+                        <img src={selectedAlbum.thumb_url} alt={selectedAlbum?.title} className="w-full h-full object-cover" />
+                      </div>
                     )}
-
-                    {/* Close button */}
-                    <button
-                      onClick={() => setSelectedTrackForQuality(null)}
-                      className="absolute top-3 right-3 z-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm text-white/80 hover:bg-black/60 hover:text-white transition-colors"
-                      aria-label="Close"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-
-                    <div className="relative z-[1]">
-                      {/* Album cover art above title */}
-                      {selectedAlbum?.thumb_url && (
-                        <div className="w-28 h-28 rounded-lg overflow-hidden shadow-lg shadow-black/30 mb-3">
-                          <img src={selectedAlbum.thumb_url} alt={selectedAlbum?.title} className="w-full h-full object-cover" />
-                        </div>
-                      )}
+                    <div className="flex-1 min-w-0">
                       <h2 className="text-h3 font-semibold leading-tight tracking-tight">{selectedTrackForQuality.title}</h2>
                       {(selectedTrackForQuality.artist_name || selectedTrackForQuality.album_title) && (
                         <p className="text-label text-muted-foreground mt-1">
                           {[selectedTrackForQuality.artist_name, selectedTrackForQuality.album_title].filter(Boolean).join(' · ')}
                         </p>
                       )}
-
-                      {/* Action buttons */}
                       {(tier === 'low' || tier === 'medium') && (
                         <div className="flex items-center gap-2 mt-3">
                           <AddToWishlistButton
@@ -982,16 +990,6 @@ export function MusicView({
                       )}
                     </div>
                   </div>
-                </div>
-
-                {/* Scrollable Content */}
-                <div
-                  className="flex-1 overflow-y-auto px-5 py-4 space-y-6"
-                  onScroll={isMobile ? (e) => {
-                    const heroImg = e.currentTarget.parentElement?.querySelector('[data-hero-img]') as HTMLElement
-                    if (heroImg) heroImg.style.transform = `translateY(${e.currentTarget.scrollTop * 0.4}px)`
-                  } : undefined}
-                >
 
                   {/* Quality Score */}
                   <div>
@@ -1158,16 +1156,8 @@ export function MusicView({
             </div>
           </div>
         ) : (
-          <div className="relative mb-6 -mx-4 px-4 overflow-hidden" style={{ minHeight: '200px' }}>
-            {/* Backdrop image */}
-            {(selectedArtist.art_url || selectedArtist.thumb_url) && (
-              <div className="absolute top-0 right-0 w-3/4 h-full overflow-hidden">
-                <img src={(selectedArtist.art_url || selectedArtist.thumb_url)!} alt="" className="w-full h-full object-cover object-center" onError={(e) => { e.currentTarget.style.display = 'none' }} />
-                <div className="absolute inset-0 bg-gradient-to-r from-background to-transparent" />
-                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
-              </div>
-            )}
-            <div className="relative z-[1]">
+          <div className="mb-6">
+            <div>
               <Button
                 variant="tertiary"
                 size="sm"
@@ -1177,7 +1167,7 @@ export function MusicView({
                 Back to artists
               </Button>
             </div>
-            <div className="relative z-[1] flex gap-6 mt-3">
+            <div className="flex gap-6 mt-3">
               {/* Artist Image */}
               <div className="w-44 h-44 bg-muted rounded-full overflow-hidden shrink-0 shadow-lg shadow-black/30">
               {selectedArtist.thumb_url ? (

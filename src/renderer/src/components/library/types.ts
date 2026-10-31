@@ -50,6 +50,7 @@ export interface MusicAlbum {
   track_count?: number
   duration_ms?: number
   thumb_url?: string
+  art_url?: string
   is_lossless?: boolean
   is_hi_res?: boolean
   best_audio_codec?: string
@@ -107,6 +108,7 @@ export interface MediaItem {
   video_bitrate: number
   audio_channels: number
   poster_url?: string
+  art_url?: string
   episode_thumb_url?: string
   season_poster_url?: string
   overall_score?: number
@@ -142,6 +144,7 @@ export interface MediaItem {
 export interface TVShow {
   title: string
   poster_url?: string
+  art_url?: string
   seasons: Map<number, TVSeason>
 }
 
@@ -162,6 +165,7 @@ export interface TVShowSummary {
   episode_count: number
   season_count: number
   poster_url?: string
+  art_url?: string
   source_id?: string
   source_type?: string
 }
@@ -343,6 +347,7 @@ export interface MediaBrowserProps {
   onLibraryTabChange?: (tab: MediaViewType) => void
   // Notify parent of auto-refresh state
   onAutoRefreshChange?: (isRefreshing: boolean) => void
+  onBackdropChange?: (url: string | null) => void
   // Responsive layout
   isMobile?: boolean
   isTablet?: boolean
