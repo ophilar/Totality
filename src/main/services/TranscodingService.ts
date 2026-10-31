@@ -266,7 +266,7 @@ function estimateAudioConversionSavings(analysis: FileAnalysisResult, conversion
 export type PlannedOptimizationOperation = 'video_transcode' | 'audio_transcode' | 'stream_pruning' | 'subtitle_pruning' | 'container_change'
 
 export interface OptimizationQualityChoice {
-  profile: Extract<OptimizationQualityProfile, 'transparent' | 'maximum_savings'>
+  profile: OptimizationQualityProfile
   status: 'available' | 'quality_threshold_unmet' | 'no_positive_savings' | 'incompatible' | 'measurement_incomplete'
   estimatedSavingsBytes?: number
   candidate?: Pick<MeasuredCandidate, 'encoder' | 'preset' | 'quality' | 'outputBytes' | 'sampledDurationSeconds' | 'vmafMean' | 'vmafP5' | 'cambiMean' | 'encodingDurationMs' | 'sourceSelfVmaf' | 'sourceCambiMean' | 'searchSummary'>
@@ -280,7 +280,7 @@ function getOptimizationQualityChoices(
   searchedProfile?: OptimizationQualityProfile,
 ): OptimizationQualityChoice[] {
   if (!cachedMeasurement) return []
-  return (['transparent', 'maximum_savings'] as const).map(profile => {
+  return (['transparent', 'balanced', 'maximum_savings'] as const).map(profile => {
     if (!cachedMeasurement.complete || profile !== searchedProfile) return { profile, status: 'measurement_incomplete' }
     try {
       const maximumOutputBytesPerSecond = sourceSize / sourceDurationSeconds
@@ -2668,6 +2668,11 @@ export class TranscodingService {
         if (measurementComplete) break
         if (!nextCandidateSearch(ladder, measuredCandidates, options.qualityProfile).length) {
           measurementComplete = true
+          const budgetReached = [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.preset}`))].some(key =>
+            measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.preset}` === key).length >= MAX_MEASURED_CANDIDATES_PER_PRESET)
+          for (const candidate of measuredCandidates) {
+            candidate.searchSummary = { measuredCount: measuredCandidates.length, maximumCandidates, budgetReached }
+          }
           await onMeasuredCandidates?.(measuredCandidates, true)
           break
         }
