@@ -42,6 +42,10 @@ export function measuredOptimizationEncoderSpec(encoder: string, codec: Optimiza
   throw new Error(`Encoder ${encoder} has no validated measured-optimization quality domain for ${codec}`)
 }
 
+export function isMeasuredSoftwareEncoder(encoder: string): boolean {
+  return OPTIMIZATION_VIDEO_CODECS.some(codec => codec.softwareEncoder === encoder)
+}
+
 export function supportsMeasuredOptimizationEncoder(encoder: string): boolean {
   return OPTIMIZATION_VIDEO_CODECS.some(codec => {
     try {
