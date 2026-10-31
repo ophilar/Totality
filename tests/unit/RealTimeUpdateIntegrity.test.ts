@@ -4,7 +4,7 @@ import { SourceManager } from '@main/services/SourceManager'
 import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
 import { getTaskQueueService } from '@main/services/TaskQueueService'
 import * as fs from 'fs'
-import * as path from 'path'
+import * as path from 'node:path'
 
 describe('Real-Time Update and Event Integrity (No Mocks)', () => {
   let db: Awaited<ReturnType<typeof setupTestDb>>
