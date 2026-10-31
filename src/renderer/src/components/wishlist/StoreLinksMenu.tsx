@@ -6,6 +6,7 @@ interface StoreLinksMenuProps {
   storeLinks: StoreLink[]
   onOpenLink: (url: string) => void
   isLoading?: boolean
+  compact?: boolean
 }
 
 // Store icons mapping
@@ -21,7 +22,7 @@ const storeIcons: Record<string, string> = {
   hdtracks: 'HD'
 }
 
-export function StoreLinksMenu({ storeLinks, onOpenLink, isLoading }: StoreLinksMenuProps) {
+export function StoreLinksMenu({ storeLinks, onOpenLink, isLoading, compact = false }: StoreLinksMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -59,11 +60,20 @@ export function StoreLinksMenu({ storeLinks, onOpenLink, isLoading }: StoreLinks
       <button
         onClick={() => setIsOpen(!isOpen)}
         disabled={isLoading}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 text-caption font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
+        className={compact
+          ? 'p-1 rounded-lg transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50'
+          : 'flex items-center gap-1.5 px-2.5 py-1.5 text-caption font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50'}
+        title="Shop links"
       >
-        <Star className="w-3.5 h-3.5" />
-        <span>Shop</span>
-        <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        {compact ? (
+          <ExternalLink className="w-3.5 h-3.5" />
+        ) : (
+          <>
+            <Star className="w-3.5 h-3.5" />
+            <span>Shop</span>
+            <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          </>
+        )}
       </button>
 
       {isOpen && (

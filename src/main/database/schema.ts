@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS media_items (
   tmdb_id TEXT,
   series_tmdb_id TEXT,
   poster_url TEXT,
+  art_url TEXT,
   episode_thumb_url TEXT,
   season_poster_url TEXT,
   summary TEXT,
@@ -712,6 +713,7 @@ CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at D
 -- Create indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_library_scans_source ON library_scans(source_id);
 CREATE INDEX IF NOT EXISTS idx_library_scans_lookup ON library_scans(source_id, library_id);
+CREATE INDEX IF NOT EXISTS idx_library_scans_enabled ON library_scans(is_enabled);
 CREATE INDEX IF NOT EXISTS idx_media_sources_type ON media_sources(source_type);
 CREATE INDEX IF NOT EXISTS idx_media_sources_enabled ON media_sources(is_enabled);
 CREATE INDEX IF NOT EXISTS idx_media_items_type ON media_items(type);

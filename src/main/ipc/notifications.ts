@@ -4,12 +4,14 @@
 
 import { ipcMain } from 'electron'
 import { getDatabase } from '../database/getDatabase'
+import { validateInput, NotificationIdsSchema, NotificationOptionsSchema } from '../validation/schemas'
 
 export function registerNotificationHandlers(): void {
   ipcMain.handle('notifications:getAll', async (_event, options?: { limit?: number, offset?: number, type?: string, unreadOnly?: boolean }) => {
     try {
       const db = getDatabase()
-      return db.getNotifications(options || {})
+      const validated = validateInput(NotificationOptionsSchema, options, 'notifications:getAll')
+      return db.getNotifications(validated || {})
     } catch (error) {
       console.error('[IPC notifications:getAll] Error:', error)
       throw error
@@ -28,8 +30,9 @@ export function registerNotificationHandlers(): void {
 
   ipcMain.handle('notifications:markRead', async (_event, ids: number[]) => {
     try {
+      const validIds = validateInput(NotificationIdsSchema, ids, 'notifications:markRead')
       const db = getDatabase()
-      db.markNotificationsRead(ids)
+      db.markNotificationsRead(validIds)
     } catch (error) {
       console.error('[IPC notifications:markRead] Error:', error)
       throw error
@@ -48,8 +51,9 @@ export function registerNotificationHandlers(): void {
 
   ipcMain.handle('notifications:delete', async (_event, ids: number[]) => {
     try {
+      const validIds = validateInput(NotificationIdsSchema, ids, 'notifications:delete')
       const db = getDatabase()
-      db.deleteNotifications(ids)
+      db.deleteNotifications(validIds)
     } catch (error) {
       console.error('[IPC notifications:delete] Error:', error)
       throw error

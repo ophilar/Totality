@@ -8,6 +8,8 @@ interface UseTVShowPaginationOptions {
   activeSourceId: string | null
   activeLibraryId: string | null
   searchQuery: string
+  alphabetFilter: string | null
+  isMobile?: boolean
 }
 
 interface UseTVShowPaginationReturn {
@@ -33,6 +35,8 @@ export function useTVShowPagination({
   activeSourceId,
   activeLibraryId,
   searchQuery,
+  alphabetFilter,
+  isMobile = false,
 }: UseTVShowPaginationOptions): UseTVShowPaginationReturn {
   const [totalEpisodeCount, setTotalEpisodeCount] = useState(0)
   const [tvSortBy, setTvSortByState] = useState<TVShowSortBy>('title')
@@ -45,7 +49,7 @@ export function useTVShowPagination({
   const [selectedShowEpisodesLoading, setSelectedShowEpisodesLoading] = useState(false)
 
   const { items, setItems, totalCount, loading, load, loadMore } = usePagination<TVShowSummary>({
-    pageSize: 10000,
+    pageSize: isMobile ? 50 : 200,
     fetchItems: async (filters) => {
       const [shows, , episodeCount] = await Promise.all([
         window.electronAPI.getTVShows(filters),
@@ -64,9 +68,10 @@ export function useTVShowPagination({
       if (activeSourceId) filters.sourceId = activeSourceId
       if (activeLibraryId) filters.libraryId = activeLibraryId
       if (searchQuery.trim()) filters.searchQuery = searchQuery.trim()
+      if (alphabetFilter) filters.alphabetFilter = alphabetFilter
       return filters
     },
-    deps: [activeSourceId, activeLibraryId, searchQuery],
+    deps: [activeSourceId, activeLibraryId, searchQuery, alphabetFilter],
   })
 
   const loadSelectedShowEpisodes = useCallback(async (showTitle: string) => {

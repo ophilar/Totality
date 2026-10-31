@@ -322,8 +322,10 @@ When items are deleted from a source and a rescan runs, cleanup is centralized i
 
 - **`deleteMediaItem()`**: Wrapped in SQLite transaction. For episodes: recounts `owned_episodes`/`owned_seasons`, updates `missing_episodes`/`missing_seasons` JSON (adds deleted episode to missing list), backdates `updated_at` to force re-analysis. For movies: updates `movie_collections` (removes TMDB ID from `owned_movie_ids`, adds to `missing_movies` JSON). Deletes associated versions, quality_scores, collections.
 - **`deleteMusicTrack()`**: Wrapped in transaction. Removes orphaned albums (0 tracks) and artists (0 tracks). Updates album `track_count` and artist `track_count`/`album_count`. When tracks are deleted: updates `album_completeness.missing_tracks` JSON. When albums become empty: adds album to `artist_completeness.missing_albums` JSON, updates owned counts.
-- **`cleanupOrphanedMediaData()`**: Belt-and-suspenders sweep after every scan. Validates collection ownership against actual media_items, updates series_completeness counts, removes orphaned music data.
-- **Safety guard**: `removeStaleItems()` refuses bulk deletion when Plex returns 0 IDs but DB has items (prevents API failure from wiping library).
+- **`cleanupOrphanedMediaData()`**: Belt-and-suspenders sweep after every scan. Validates collection ownership against actual media_items, updates series_completeness counts, removes orphaned music data. Uses LEFT JOIN pattern (not NOT IN) for performance.
+- **Safety guard**: `removeStaleItems()` refuses bulk deletion when Plex returns 0 IDs but DB has items (prevents API failure from wiping library). All 6 providers have this guard.
+- **Pre-migration backup**: Database file is copied before schema migrations run; backup deleted after success. Protects against mid-migration failures.
+- **Integrity check**: `PRAGMA integrity_check` runs on startup for existing databases.
 
 ### Auto-Completeness After Scans
 
@@ -337,7 +339,7 @@ After any scan (manual rescan or live monitoring) that adds, updates, or removes
 
 ### Dashboard & Library Live Refresh
 
-- **Dashboard** reloads via `loadDashboardData()` which makes ~29 parallel `Promise.allSettled` IPC calls (settings, upgrades, completeness, exclusions, bento card stats, quality distribution, wishlist counts). Debounced (300ms). Triggers: `scan:completed`, `library:updated` (all types), `exclusions-changed`, `settings:changed`, `activeSourceId` change. Bento cards (Library, Quality, Storage) rendered above the upgrade/completeness lists.
+- **Dashboard** reloads via `loadDashboardData()` which makes ~30 parallel `Promise.allSettled` IPC calls in 3 tiers (settings → upgrades/completeness → analytics). Debounced (300ms). Triggers: `scan:completed`, `library:updated` (all types), `exclusions-changed`, `settings:changed`, `activeSourceId` change. Rejected promises are logged via `console.warn` (not silently swallowed). Loads `collection_theatrical_lag_days` setting for collection filtering. Debounce timer cleaned up on unmount.
 - **Library view** (`useLibraryEventListeners`) reloads on `library:updated` events: `type: 'media'` → `loadMedia()` + `loadCompletenessData()`; `type: 'music'` → `loadMusicData()` + `loadMusicCompletenessData()`. Also reloads on `scan:completed` when items changed. Debounced (500ms).
 - **`loadMusicData()`** reloads stats, paginated artists, paginated albums, and refreshes `selectedArtist` to update track/album counts in subtitle.
 - **`sendLibraryUpdated(type)`** in TaskQueueService accepts `'media'` or `'music'` type to route refresh correctly. Music completeness tasks emit `'music'` type.
@@ -594,6 +596,12 @@ Components in `src/renderer/src/components/` organized by domain: `dashboard/`, 
 
 **Collections Display**: `MoviesView.tsx` uses append-aware `displayItems` logic to prevent scroll mixing during infinite scroll pagination. When `collectionsOnly` is true, all collections render at once (no pagination). When false, new pages are appended without re-sorting existing items.
 
+**Mobile Parallax Backdrop**: TV show, season, artist, and album detail views on mobile use a parallax scroll effect. The backdrop image (3/4 width, right-justified) translates at 0.4× scroll rate via CSS custom property `--parallax-y` set by `onScroll` handler in MediaBrowser's scroll container. Backdrop height is 130% to prevent gaps during movement. No `overflow-hidden` on backdrop containers — content sections use `relative z-[1]` to paint above the backdrop.
+
+**Mobile MediaDetails Sheet**: On mobile, the detail bottom sheet uses a unified scroll container — hero image, title, stats, actions, summary, and detail content all scroll together. Hero image parallaxes at 0.3× scroll rate (`data-hero-img` + `will-change-transform`). Stats/actions/summary fade out over 150px scroll (`data-fade-content` + opacity). Title stays visible (overlaid at bottom of hero). Desktop keeps the fixed-header layout.
+
+**iOS Status Bar**: `index.html` uses `viewport-fit=cover` + `apple-mobile-web-app-status-bar-style: black-translucent`. The `html`/`body` use `height: 100%` (not `100dvh` or `100vh`) with `overflow: hidden`. The app shell uses `position: fixed` on `<main>`, which prevents DOM content from rendering behind the iOS status bar — this is a platform constraint. Background color extends behind the status bar via the `<html>` element's inline `background-color`.
+
 ## External APIs & Rate Limits
 
 - **TMDB**: 40 req/s, 24-hour in-memory cache, `append_to_response` for batch season fetches
@@ -626,6 +634,22 @@ Sensitive credentials are encrypted at rest using Electron's `safeStorage` API, 
 4. If encryption is unavailable (rare edge cases), credentials fall back to plain text with a warning
 
 **Important:** Encrypted credentials are tied to the OS user account. Moving the database to another machine will require re-entering credentials.
+
+### Image Proxy Whitelist
+
+The web server's image proxy (`WebServerService.ts`) only allows requests to whitelisted domains (SSRF prevention):
+- Private IPs (192.168.*, 10.*, 172.16-31.*)
+- localhost/127.0.0.1
+- `*.plex.direct`
+- `image.tmdb.org`
+- `coverartarchive.org`
+- URLs with `X-Plex-Token` parameter
+
+On the renderer side (`webTransport.ts`), `needsProxy()` exempts `*.tmdb.org` and `coverartarchive.org` from proxy rewriting — these load directly from the browser. All other image URLs are rewritten to `/api/proxy-image?url=...`.
+
+### Custom TLS Certificates
+
+Users can provide their own TLS cert/key by placing `custom-cert.pem` and `custom-key.pem` in `%APPDATA%\totality\tls\`. These take priority over self-signed generation. Self-signed certs auto-regenerate when network IPs change (SANs mismatch detection via `crypto.X509Certificate`).
 
 ### Electron Security Settings
 

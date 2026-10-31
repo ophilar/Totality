@@ -10,6 +10,8 @@ interface UseMoviePaginationOptions {
   tierFilter: string
   qualityFilter: string
   searchQuery: string
+  alphabetFilter: string | null
+  isMobile?: boolean
 }
 
 interface UseMoviePaginationReturn {
@@ -32,6 +34,8 @@ export function useMoviePagination({
   tierFilter,
   qualityFilter,
   searchQuery,
+  alphabetFilter,
+  isMobile = false,
 }: UseMoviePaginationOptions): UseMoviePaginationReturn {
   const [movieSortBy, setMovieSortByState] = useState<MovieSortBy>('title')
   const movieSortByRef = useRef<MovieSortBy>('title')
@@ -42,8 +46,8 @@ export function useMoviePagination({
   }, [])
 
   const { items, setItems, totalCount, loading, load, loadMore } = usePagination<MediaItem>({
-    pageSize: 10000,
-    fetchItems: (filters) => window.electronAPI.getMediaItems(filters) as Promise<MediaItem[]>,
+    pageSize: isMobile ? 50 : 200,
+    fetchItems: (filters) => window.electronAPI.getMediaItemsSlim(filters) as Promise<MediaItem[]>,
     fetchCount: (filters) => window.electronAPI.countMediaItems(filters) as Promise<number>,
     buildFilters: () => {
       const sortBy = movieSortByRef.current
@@ -58,9 +62,10 @@ export function useMoviePagination({
       if (tierFilter !== 'all') filters.qualityTier = tierFilter
       if (qualityFilter !== 'all') filters.tierQuality = qualityFilter.toUpperCase()
       if (searchQuery.trim()) filters.searchQuery = searchQuery.trim()
+      if (alphabetFilter) filters.alphabetFilter = alphabetFilter
       return filters
     },
-    deps: [activeSourceId, activeLibraryId, tierFilter, qualityFilter, searchQuery],
+    deps: [activeSourceId, activeLibraryId, tierFilter, qualityFilter, searchQuery, alphabetFilter],
   })
 
   return {

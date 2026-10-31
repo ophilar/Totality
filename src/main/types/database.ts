@@ -175,6 +175,7 @@ export interface MediaItem {
   tmdb_id?: string
   series_tmdb_id?: string // Show-level TMDB ID for episodes (from Plex show metadata)
   poster_url?: string
+  art_url?: string
   episode_thumb_url?: string
   season_poster_url?: string
   summary?: string
@@ -400,6 +401,7 @@ export interface TVShowSummary {
   episode_count: number
   season_count: number
   poster_url?: string
+  art_url?: string
   source_id?: string
   source_type?: string
   total_play_count?: number

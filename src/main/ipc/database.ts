@@ -42,6 +42,16 @@ export function registerDatabaseHandlers() {
     }
   })
 
+  ipcMain.handle('db:getMediaItemsSlim', async (_event, filters?: unknown) => {
+    try {
+      const validFilters = filters !== undefined ? validateInput(MediaItemFiltersSchema, filters, 'db:getMediaItemsSlim') : undefined
+      return db.getMediaItemsSlim(validFilters)
+    } catch (error) {
+      console.error('Error getting slim media items:', error)
+      throw error
+    }
+  })
+
   ipcMain.handle('db:countMediaItems', async (_event, filters?: unknown) => {
     try {
       const validFilters = filters !== undefined ? validateInput(MediaItemFiltersSchema, filters, 'db:countMediaItems') : undefined

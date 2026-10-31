@@ -97,6 +97,24 @@
       transform: translateY(0);
     }
   }
+
+  @keyframes slide-up-sheet {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slide-down-sheet {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      transform: translateY(100%);
+    }
+  }
   @keyframes slide-in-from-left {
     from {
       transform: translateX(calc(-1 * var(--slide-offset, 1rem)));
@@ -905,6 +923,13 @@
 /* SKILL.md Typography Scale (§2) — Plus Jakarta Sans */
 /* Each class bakes in size + line-height + letter-spacing */
 @layer utilities {
+  .animate-slide-up {
+    animation: slide-up-sheet 350ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .animate-slide-down {
+    animation: slide-down-sheet 350ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
   .text-display { font-size: 48px; line-height: 52px; letter-spacing: -0.020em; }
   .text-h1 { font-size: 32px; line-height: 38px; letter-spacing: -0.014em; }
   .text-h2 { font-size: 24px; line-height: 30px; letter-spacing: -0.012em; }

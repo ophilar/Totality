@@ -6,15 +6,16 @@ interface StarRatingProps {
   onChange?: (rating: 1 | 2 | 3 | 4 | 5) => void
   size?: 'sm' | 'md' | 'lg'
   readonly?: boolean
+  isMobile?: boolean
 }
 
 const sizeClasses = {
-  sm: 'w-3 h-3',
+  sm: 'w-3.5 h-3.5',
   md: 'w-4 h-4',
   lg: 'w-5 h-5'
 }
 
-export function StarRating({ rating, onChange, size = 'md', readonly = false }: StarRatingProps) {
+export function StarRating({ rating, onChange, size = 'md', readonly = false, isMobile = false }: StarRatingProps) {
   const [hoverRating, setHoverRating] = useState<number | null>(null)
 
   const handleClick = useCallback((value: 1 | 2 | 3 | 4 | 5) => {
@@ -34,10 +35,11 @@ export function StarRating({ rating, onChange, size = 'md', readonly = false }: 
   }, [])
 
   const displayRating = hoverRating ?? rating
+  const iconSize = isMobile ? 'w-[18px] h-[18px]' : sizeClasses[size]
 
   return (
     <div
-      className={`flex gap-0.5 ${readonly ? '' : 'cursor-pointer'}`}
+      className={`flex ${isMobile ? 'gap-0' : 'gap-0.5'} ${readonly ? '' : 'cursor-pointer'}`}
       onMouseLeave={handleMouseLeave}
     >
       {[1, 2, 3, 4, 5].map((value) => (
@@ -47,11 +49,11 @@ export function StarRating({ rating, onChange, size = 'md', readonly = false }: 
           disabled={readonly}
           onClick={() => handleClick(value as 1 | 2 | 3 | 4 | 5)}
           onMouseEnter={() => handleMouseEnter(value)}
-          className={`${readonly ? 'cursor-default' : 'cursor-pointer hover:scale-110'} transition-transform disabled:opacity-100 p-0 border-0 bg-transparent`}
+          className={`${readonly ? 'cursor-default' : 'cursor-pointer hover:scale-110'} transition-transform disabled:opacity-100 ${isMobile ? 'p-1 min-w-[36px] min-h-[36px] flex items-center justify-center' : 'p-0'} border-0 bg-transparent`}
           aria-label={`Set priority to ${value} star${value > 1 ? 's' : ''}`}
         >
           <Star
-            className={`${sizeClasses[size]} transition-colors ${
+            className={`${iconSize} transition-colors ${
               value <= displayRating
                 ? 'fill-amber-400 text-amber-400'
                 : 'fill-transparent text-muted-foreground/40'

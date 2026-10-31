@@ -16,6 +16,7 @@ import { getMediaMonkeyDiscoveryService } from '../services/MediaMonkeyDiscovery
 import { getKodiLocalDiscoveryService } from '../services/KodiLocalDiscoveryService'
 import { getErrorMessage } from '../services/utils/errorUtils'
 import { safeSend } from './utils/safeSend'
+import { validateInput, MoodSourceIdSchema, MoodFieldSchema, MoodComparisonArgsSchema } from '../validation/schemas'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -43,8 +44,9 @@ export function registerMoodHandlers() {
    */
   ipcMain.handle('mood:checkMediaMonkeyWrite', async (_event, sourceId: string) => {
     try {
+      const validSourceId = validateInput(MoodSourceIdSchema, sourceId, 'mood:checkMediaMonkeyWrite')
       const manager = getSourceManager()
-      const provider = manager.getProvider(sourceId)
+      const provider = manager.getProvider(validSourceId)
       if (!provider) return { canWrite: false, reason: 'Source not found' }
 
       if (provider.providerType === 'mediamonkey') {
@@ -85,7 +87,8 @@ export function registerMoodHandlers() {
    */
   ipcMain.handle('mood:getSources', async (_event, field?: 'mood' | 'genre') => {
     try {
-      return getMoodSyncService().getSources(field || 'mood')
+      const validField = validateInput(MoodFieldSchema, field, 'mood:getSources')
+      return getMoodSyncService().getSources(validField || 'mood')
     } catch (error) {
       console.error('[mood:getSources] Error:', getErrorMessage(error))
       return []
@@ -97,6 +100,7 @@ export function registerMoodHandlers() {
    */
   ipcMain.handle('mood:getComparison', async (_event, args: string | { sourceOfTruthId: string; field?: 'mood' | 'genre' }) => {
     try {
+      validateInput(MoodComparisonArgsSchema, args, 'mood:getComparison')
       // Support both old (string) and new (object) call signatures
       const sourceOfTruthId = typeof args === 'string' ? args : args.sourceOfTruthId
       const field = typeof args === 'string' ? 'mood' : (args.field || 'mood')

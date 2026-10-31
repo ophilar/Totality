@@ -74,11 +74,19 @@ export class WishlistCompletionService {
     const completed: CompletionResult[] = []
 
     if (missingItems.length > 0) {
-      completed.push(...this.checkMissingItems(missingItems))
+      try {
+        completed.push(...this.checkMissingItems(missingItems))
+      } catch (err) {
+        console.error('[WishlistCompletion] Error checking missing items:', err)
+      }
     }
 
     if (upgradeItems.length > 0) {
-      completed.push(...this.checkUpgradeItems(upgradeItems))
+      try {
+        completed.push(...this.checkUpgradeItems(upgradeItems))
+      } catch (err) {
+        console.error('[WishlistCompletion] Error checking upgrade items:', err)
+      }
     }
 
     if (completed.length > 0) {

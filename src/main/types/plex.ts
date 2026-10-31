@@ -65,6 +65,7 @@ export interface PlexMediaItem {
   grandparentKey?: string
   parentKey?: string
   grandparentThumb?: string
+  grandparentArt?: string
   parentThumb?: string
   index?: number
   parentIndex?: number

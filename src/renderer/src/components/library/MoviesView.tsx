@@ -54,7 +54,7 @@ export function MoviesView({
   isMobile?: boolean
   isTablet?: boolean
 }) {
-  // On mobile: fixed 3 columns. On tablet: fixed 4 columns. Desktop: auto-fill with scale.
+  // Keep a stable ref for the grid skeleton fallback
   const posterMinWidth = useMemo(() => {
     const widthMap: Record<number, number> = {
       1: 120, 2: 140, 3: 160, 4: 180, 5: 200, 6: 240, 7: 300
@@ -62,32 +62,9 @@ export function MoviesView({
     return widthMap[gridScale] || widthMap[5]
   }, [gridScale])
 
-  const gridClassName = isMobile
-    ? 'grid grid-cols-3 gap-3 mt-4'
-    : isTablet
-      ? 'grid grid-cols-4 gap-4 mt-4'
-      : `grid gap-8 mt-4`
-
   const gridStyle = (!isMobile && !isTablet)
     ? { gridTemplateColumns: `repeat(auto-fill, ${posterMinWidth}px)` }
     : undefined
-
-  const movieSentinelRef = useRef<HTMLDivElement>(null)
-
-  // IntersectionObserver for movie grid infinite scroll (skip when collectionsOnly — all loaded)
-  useEffect(() => {
-    if (!movieSentinelRef.current || collectionsOnly) return
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          onLoadMoreMovies()
-        }
-      },
-      { rootMargin: '400px' }
-    )
-    observer.observe(movieSentinelRef.current)
-    return () => observer.disconnect()
-  }, [onLoadMoreMovies, collectionsOnly])
 
   // Track previous movies length to detect append vs reset
   const prevMoviesLenRef = useRef(0)
@@ -209,11 +186,41 @@ export function MoviesView({
     return result
   }, [movies, movieCollections, getCollectionForMovie, collectionsOnly, buildDisplayItems, movieSortBy])
 
+  const gridClassName = isMobile
+    ? 'grid grid-cols-3 gap-3 mt-4'
+    : isTablet
+      ? 'grid grid-cols-4 gap-4 mt-4'
+      : 'grid gap-6 mt-4'
+
+  // All hooks must be before any early returns (React rules of hooks)
+  const gridSentinelRef = useRef<HTMLDivElement>(null)
+  const listSentinelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!gridSentinelRef.current || collectionsOnly) return
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) onLoadMoreMovies() },
+      { rootMargin: '400px' }
+    )
+    observer.observe(gridSentinelRef.current)
+    return () => observer.disconnect()
+  }, [onLoadMoreMovies, collectionsOnly])
+
+  useEffect(() => {
+    if (!listSentinelRef.current || collectionsOnly) return
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) onLoadMoreMovies() },
+      { rootMargin: '400px' }
+    )
+    observer.observe(listSentinelRef.current)
+    return () => observer.disconnect()
+  }, [onLoadMoreMovies, collectionsOnly])
+
   if (displayItems.length === 0) {
     if (moviesLoading) {
       return (
         <div
-          className={`grid mt-4 ${isMobile ? 'gap-3' : 'gap-8'}`}
+          className={`grid mt-4 ${isMobile ? 'gap-3' : 'gap-6'}`}
           style={gridStyle}
         >
           {Array.from({ length: 18 }).map((_, i) => (
@@ -298,7 +305,7 @@ export function MoviesView({
             )
           })}
         </div>
-        <div ref={movieSentinelRef} className="h-1" />
+        <div ref={listSentinelRef} className="h-1" />
         <div className="px-4 py-1.5 text-caption text-muted-foreground flex items-center gap-2">
           {moviesLoading && <RefreshCw className="w-3 h-3 animate-spin" />}
           <span>
@@ -311,14 +318,11 @@ export function MoviesView({
     )
   }
 
-  // Grid view using standard grid (VirtualizedGrid doesn't support mixed item types well)
+  // Grid view — native CSS Grid, browser handles all sizing
   return (
     <div>
       {statsBar}
-      <div
-        className={gridClassName}
-        style={gridStyle}
-      >
+      <div className={gridClassName} style={gridStyle}>
         {displayItems.map((item) => {
           if (item.type === 'collection') {
             return (
@@ -326,7 +330,7 @@ export function MoviesView({
                 <CollectionCard
                   collection={item.collection}
                   onClick={() => onSelectCollection(item.collection)}
-                                 />
+                />
               </div>
             )
           }
@@ -340,13 +344,13 @@ export function MoviesView({
                 onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id, item.movie.title, item.movie.year, item.movie.file_path) : undefined}
                 onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
                 onDismissUpgrade={onDismissUpgrade}
-                             />
+              />
             </div>
           )
         })}
       </div>
-      <div ref={movieSentinelRef} className="h-1" />
-      <div className="px-4 py-1.5 text-caption text-muted-foreground flex items-center gap-2">
+      <div ref={gridSentinelRef} className="h-1" />
+      <div className="py-1.5 text-caption text-muted-foreground flex items-center gap-2">
         {moviesLoading && <RefreshCw className="w-3 h-3 animate-spin" />}
         <span>
           {movies.length === totalMovieCount

@@ -8,6 +8,7 @@ import { ipcMain, dialog, shell } from 'electron'
 import fs from 'fs/promises'
 import path from 'path'
 import { getSourceManager } from '../services/SourceManager'
+import { getWishlistCompletionService } from '../services/WishlistCompletionService'
 import { getDatabase } from '../database/getDatabase'
 import { getPlexService } from '../services/PlexService'
 import { getKodiLocalDiscoveryService } from '../services/KodiLocalDiscoveryService'
@@ -440,6 +441,7 @@ export function registerSourceHandlers(): void {
       })
 
       console.log(`[IPC sources:scanLibrary] Scan complete, sent ${progressCount} progress events`)
+      getWishlistCompletionService().checkAndComplete().catch(err => console.error('[sources:scanLibrary] Wishlist check failed:', err))
       return result
     } catch (error: unknown) {
       console.error('Error scanning library:', error)
@@ -512,6 +514,7 @@ export function registerSourceHandlers(): void {
       })
 
       console.log(`[IPC sources:scanItem] Scan complete: ${result.itemsScanned} items`)
+      getWishlistCompletionService().checkAndComplete().catch(err => console.error('[sources:scanItem] Wishlist check failed:', err))
       return result
     } catch (error: unknown) {
       console.error('Error scanning single item:', error)
@@ -537,6 +540,7 @@ export function registerSourceHandlers(): void {
       })
 
       console.log(`[IPC sources:scanLibraryIncremental] Scan complete: ${result.itemsScanned} items`)
+      getWishlistCompletionService().checkAndComplete().catch(err => console.error('[sources:scanLibraryIncremental] Wishlist check failed:', err))
       return result
     } catch (error: unknown) {
       console.error('Error in incremental library scan:', error)
@@ -560,6 +564,7 @@ export function registerSourceHandlers(): void {
       })
 
       console.log('[IPC sources:scanAllIncremental] Incremental scan complete')
+      getWishlistCompletionService().checkAndComplete().catch(err => console.error('[sources:scanAllIncremental] Wishlist check failed:', err))
 
       // Convert Map to array for IPC
       return Array.from(results.entries()).map(([key, value]) => ({
