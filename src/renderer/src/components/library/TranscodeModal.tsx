@@ -19,6 +19,7 @@ import { getHardwareEncoder } from '@main/services/TranscodingCapabilities'
 import { formatLanguage, getOptimizationContainer, isSameLanguage, LANGUAGE_OPTIONS, parseLanguageWhitelist, toIso639_2 } from './mediaUtils'
 import { SETTING_KEYS } from '@shared/settingKeys'
 import { normalizeVideoCodec } from '@main/services/MediaNormalizer'
+import { OPTIMIZATION_VIDEO_CODECS, getOptimizationVideoCodec, playbackProfileSupportsOptimizationCodec } from '@main/services/transcoding/OptimizationCodecPolicy'
 import { describeMissingOptimizationSettings, getMissingOptimizationSettings } from './transcoding/readiness'
 import { SeriesOptimizationFlow, type SeriesOptimizationFlowProps } from './SeriesOptimizationFlow'
 import { OptimizationReviewSummary } from './transcoding/OptimizationReviewSummary'
@@ -173,11 +174,11 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
   const selectedGpu = capabilities?.gpus.find(gpu => gpu.id === options.gpuId)
   const hardwareEncoder = selectedGpu && targetCodec ? getHardwareEncoder(selectedGpu.vendor, targetCodec) : undefined
   const hardwareAvailable = Boolean(hardwareEncoder && selectedGpu && capabilities?.deviceEncoders[selectedGpu.id]?.includes(hardwareEncoder))
-  const softwareEncoder = targetCodec === 'av1' ? 'svt_av1' : targetCodec === 'hevc' ? 'x265' : undefined
+  const softwareEncoder = targetCodec ? getOptimizationVideoCodec(targetCodec).softwareEncoder : undefined
   const softwareAvailable = Boolean(softwareEncoder && capabilities?.deviceEncoders.software.includes(softwareEncoder))
   const targetProfile = targetProfiles.find(profile => profile.id === targetProfileId)
-  const supportedTargetCodecs = (['hevc', 'av1'] as const).filter(codec => {
-    const profileSupports = playbackPolicy === 'allow-transcoding' || !targetProfile || targetProfile.definition.video.codecs.some(value => normalizeVideoCodec(value) === normalizeVideoCodec(codec))
+  const supportedTargetCodecs = OPTIMIZATION_VIDEO_CODECS.map(item => item.value).filter(codec => {
+    const profileSupports = playbackPolicy === 'allow-transcoding' || playbackProfileSupportsOptimizationCodec(codec, targetProfile?.definition.video.codecs)
     const codecCapabilities = capabilities?.encodingMatrix.codecs.find(value => value.codec === codec)?.capabilities ?? []
     const deviceIndex = selectedGpu ? capabilities?.encodingMatrix.devices.findIndex(device => device.id === selectedGpu.id) : undefined
     const encoderSupports = configuration.encoderPolicy === 'software'
@@ -187,11 +188,11 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
         : codecCapabilities.some(Boolean)
     return profileSupports && encoderSupports
   })
-  const unsupportedTargetCodecReasons = Object.fromEntries((['hevc', 'av1'] as const)
+  const unsupportedTargetCodecReasons = Object.fromEntries(OPTIMIZATION_VIDEO_CODECS.map(item => item.value)
     .filter(codec => !supportedTargetCodecs.includes(codec))
     .map(codec => {
-      const label = codec === 'hevc' ? 'H.265' : 'AV1'
-      if (targetProfile && !targetProfile.definition.video.codecs.some(value => normalizeVideoCodec(value) === normalizeVideoCodec(codec))) {
+      const label = getOptimizationVideoCodec(codec).shortLabel
+      if (!playbackProfileSupportsOptimizationCodec(codec, targetProfile?.definition.video.codecs)) {
         return [codec, `Not supported by ${targetProfile.name}.`]
       }
       if (!capabilities) return [codec, 'Checking encoder support.']
