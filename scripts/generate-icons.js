@@ -9,7 +9,7 @@
  */
 
 const sharp = require('sharp');
-const path = require('path');
+const path = require('node:path');
 const fs = require('fs');
 
 const SOURCE_ICON = path.join(__dirname, '..', 'resources', 'icon.png');
