@@ -44,7 +44,7 @@ export default defineConfig({
                 'fsevents', 'chokidar', '@google/genai', 'jsdom', 'ws', 'selfsigned',
                 'fs', 'node:path', 'os', 'crypto', 'http', 'https', 'net', 'util', 'url',
                 'child_process', 'worker_threads', 'dgram', 'events', 'stream',
-                'fs/promises', 'stream/promises', 'node:path', 'node:url', 'node:fs/promises',
+                'fs/promises', 'stream/promises', 'node:url', 'node:fs/promises',
               ],
               output: {
                 format: 'cjs',
