@@ -498,46 +498,51 @@ export class PlexProvider implements MediaProvider {
 
       // First pass: count total items (including episodes for TV shows)
       const itemsToProcess: Array<PlexMediaItem & { _showTmdbId?: string; _showTitleSort?: string }> = []
-      for (const item of items) {
-        if (libraryType === null) {
-          libraryType = item.type === 'show' ? 'show' : 'movie'
+      // Fetch shows concurrently but with bounded requests. The previous serial
+      // show/episode enumeration dominated scans of large TV libraries.
+      const SHOW_DISCOVERY_CONCURRENCY = 6
+      for (let start = 0; start < items.length; start += SHOW_DISCOVERY_CONCURRENCY) {
+        if (this.scanCancelled) {
+          result.cancelled = true
+          result.durationMs = Date.now() - startTime
+          return result
         }
-
-        if (item.type === 'show') {
-          // Get show metadata for TMDB ID
-          const showMetadata = await this.getPlexItemMetadata(item.ratingKey)
+        const batch = items.slice(start, start + SHOW_DISCOVERY_CONCURRENCY)
+        const prepared = await Promise.all(batch.map(async item => {
+          if (item.type !== 'show') return [item] as PlexMediaItem[]
+          const [showMetadata, episodes] = await Promise.all([
+            this.getPlexItemMetadata(item.ratingKey),
+            this.getAllEpisodes(item.ratingKey),
+          ])
+          if (!showMetadata) throw new Error(`Show metadata unavailable for ${item.title}`)
+          if (episodes.length === 0) throw new Error(`Plex returned no episodes for ${item.title}; cannot verify a complete inventory`)
           let showTmdbId: string | undefined
-
-          if (showMetadata?.Guid) {
-            for (const guid of showMetadata.Guid) {
-              if (guid.id.includes('tmdb://')) {
-                showTmdbId = guid.id.replace('tmdb://', '').split('?')[0]
-                break
-              }
+          for (const guid of showMetadata.Guid ?? []) {
+            if (guid.id.includes('tmdb://')) {
+              showTmdbId = guid.id.replace('tmdb://', '').split('?')[0]
+              break
             }
           }
-
-          if (showTmdbId) {
-            showTmdbIdCache.set(item.ratingKey, showTmdbId)
-          }
-
-          const showTitleSort = showMetadata?.titleSort || item.titleSort
-          if (showTitleSort) {
-            showTitleSortCache.set(item.ratingKey, showTitleSort)
-          }
-
-
-          // Get all episodes
-          const episodes = await this.getAllEpisodes(item.ratingKey)
-          for (const ep of episodes) {
-            const epExt = ep as PlexMediaItem & { _showTmdbId?: string; _showTitleSort?: string }
-            epExt._showTmdbId = showTmdbId
-            epExt._showTitleSort = showTitleSort
-          }
-          itemsToProcess.push(...episodes)
-        } else {
-          itemsToProcess.push(item)
+          if (showTmdbId) showTmdbIdCache.set(item.ratingKey, showTmdbId)
+          const showTitleSort = showMetadata.titleSort || item.titleSort
+          if (showTitleSort) showTitleSortCache.set(item.ratingKey, showTitleSort)
+          return episodes.map(ep => ({
+            ...ep,
+            _showTmdbId: showTmdbId,
+            _showTitleSort: showTitleSort,
+          }))
+        }))
+        for (let index = 0; index < batch.length; index++) {
+          if (libraryType === null) libraryType = batch[index].type === 'show' ? 'show' : 'movie'
+          itemsToProcess.push(...prepared[index])
         }
+        onProgress?.({
+          current: start + batch.length,
+          total: items.length,
+          phase: 'fetching',
+          currentItem: `Loading TV and movie inventory: ${start + batch.length}/${items.length} titles`,
+          percentage: 0,
+        })
       }
 
       totalItems = itemsToProcess.length
@@ -553,7 +558,7 @@ export class PlexProvider implements MediaProvider {
       // Start batch mode
       db.startBatch()
 
-      const BATCH_SIZE = 10
+      const BATCH_SIZE = 20
 
       try {
         for (let i = 0; i < itemsToProcess.length; i += BATCH_SIZE) {
@@ -570,6 +575,16 @@ export class PlexProvider implements MediaProvider {
             batch.map(item => this.getPlexItemMetadata(item.ratingKey))
           )
 
+          // Season artwork metadata is shared by episodes. Fetch it once per
+          // season in parallel, rather than blocking every episode serially.
+          const seasonKeys = [...new Set(metadataResults.flatMap(entry => {
+            if (entry.status !== 'fulfilled' || entry.value?.type !== 'episode' || !entry.value.parentKey) return []
+            const key = entry.value.parentKey.split('/').pop()
+            return key && !seasonCache.has(key) ? [key] : []
+          }))]
+          const seasonMetadata = await Promise.all(seasonKeys.map(key => this.getSeasonMetadata(key)))
+          seasonKeys.forEach((key, index) => seasonCache.set(key, seasonMetadata[index]))
+
           for (let j = 0; j < batch.length; j++) {
             const item = batch[j]
             const metaResult = metadataResults[j]
@@ -582,7 +597,7 @@ export class PlexProvider implements MediaProvider {
 
               const detailed = metaResult.value
               if (!detailed || !detailed.Media || detailed.Media.length === 0) {
-                console.warn(`[PlexProvider ${this.sourceId}] Skipping ${item.title}: no media data available`)
+                result.errors.push(`Incomplete Plex media metadata for ${item.title}`)
                 continue
               }
 
@@ -634,6 +649,8 @@ export class PlexProvider implements MediaProvider {
                 } else {
                   result.itemsAdded++
                 }
+              } else {
+                result.errors.push(`Could not convert Plex metadata for ${item.title}; stale-item reconciliation will be skipped`)
               }
 
               if (onProgress) {
@@ -659,6 +676,20 @@ export class PlexProvider implements MediaProvider {
         await db.endBatch()
       }
 
+      // Never reconcile deletion from a cancelled or incomplete inventory.
+      if (result.cancelled || result.errors.length > 0) {
+        result.durationMs = Date.now() - startTime
+        return result
+      }
+
+      // Do not treat an unexpected empty Plex inventory as permission to
+      // reconcile/delete previously indexed media.
+      if (!isIncremental && items.length === 0 && existingPlexIds.size > 0) {
+        result.errors.push(`Plex inventory empty while ${existingPlexIds.size} stored media items exist; deletion skipped`)
+        result.durationMs = Date.now() - startTime
+        return result
+      }
+
       // Remove stale items
       // If libraryType is null (Plex returned 0 items), detect from existing DB items
       if (!isIncremental && !libraryType) {
@@ -671,7 +702,9 @@ export class PlexProvider implements MediaProvider {
 
       if (!isIncremental && libraryType) {
         // Full scan: fetch complete set of current Plex IDs to reconcile deletions
-        const currentPlexIds = await this.getPlexLibraryItemIds(libraryId, libraryType)
+        // We already loaded and validated the full provider inventory above.
+        // Avoid a second expensive show/episode traversal.
+        const currentPlexIds = scannedProviderIds
         const itemType = libraryType === 'show' ? 'episode' : 'movie'
         const removedCount = await this.removeStaleItems(currentPlexIds, itemType, libraryId)
         result.itemsRemoved = removedCount
@@ -721,7 +754,7 @@ export class PlexProvider implements MediaProvider {
         console.warn(`[PlexProvider ${this.sourceId}] Failed to clean orphaned media data:`, error)
       }
 
-      result.success = true
+      result.success = result.errors.length === 0 && !result.cancelled
       result.durationMs = Date.now() - startTime
       console.log(`[PlexProvider ${this.sourceId}] Scan complete: ${result.itemsScanned} scanned, ${result.itemsAdded} added, ${result.itemsRemoved} removed, ${result.errors.length} errors (${(result.durationMs / 1000).toFixed(1)}s)`)
 
@@ -799,16 +832,14 @@ export class PlexProvider implements MediaProvider {
     const items = await this.paginatedPlexFetch<PlexMediaItem>(url)
     const ids = new Set<string>()
 
-    for (const item of items) {
-      if (libraryType === 'show') {
-        // For TV, we need episode ratingKeys
-        const episodes = await this.getAllEpisodes(item.ratingKey)
-        for (const ep of episodes) {
-          ids.add(ep.ratingKey)
-        }
-      } else {
-        ids.add(item.ratingKey)
+    if (libraryType === 'show') {
+      const CONCURRENCY = 8
+      for (let start = 0; start < items.length; start += CONCURRENCY) {
+        const groups = await Promise.all(items.slice(start, start + CONCURRENCY).map(item => this.getAllEpisodes(item.ratingKey)))
+        for (const episodes of groups) for (const ep of episodes) ids.add(ep.ratingKey)
       }
+    } else {
+      for (const item of items) ids.add(item.ratingKey)
     }
 
     console.log(`[PlexProvider ${this.sourceId}] Got ${ids.size} item IDs for reconciliation`)
@@ -972,8 +1003,7 @@ export class PlexProvider implements MediaProvider {
       const url = `${this.selectedServer.uri}/library/metadata/${showKey}/allLeaves`
       return await this.paginatedPlexFetch<PlexMediaItem>(url)
     } catch (error) {
-      console.error('Failed to get episodes:', error)
-      return []
+      throw new Error(`Could not enumerate episodes for show ${showKey}: ${getErrorMessage(error)}`)
     }
   }
 

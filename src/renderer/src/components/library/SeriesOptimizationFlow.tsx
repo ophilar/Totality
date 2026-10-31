@@ -26,6 +26,8 @@ import { getHardwareEncoder } from '@main/services/TranscodingCapabilities'
 import { TaskType } from '@main/types/database'
 import { SETTING_KEYS } from '@shared/settingKeys'
 import { normalizeVideoCodec } from '@main/services/MediaNormalizer'
+import { OPTIMIZATION_VIDEO_CODECS, getOptimizationVideoCodec, chooseOptimizationVideoCodec, playbackProfileSupportsOptimizationCodec , type OptimizationVideoCodec } from '@main/services/transcoding/OptimizationCodecPolicy'
+import { availableOptimizationEncoders, supportedOptimizationCodecs, unsupportedOptimizationCodecReason } from '@main/services/transcoding/OptimizationEncoderPolicy'
 import { OptimizationDialogShell } from './transcoding/OptimizationDialogShell'
 import { optimizationAudioCodecOptions, optimizationContainerOptions } from './transcoding/optimizationOptions'
 import { optimizationCandidateReasonLabel } from './transcoding/optimizationCandidateLabels'
@@ -174,7 +176,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
   const { optimizationMode, targetProfileId, targetContainer, targetContainerSelection, outputMode, audioTrackPolicy, originalAudioLanguage: language, subtitleLanguages: subtitleWhitelist, audioTranscodeEnabled, removeUnnecessaryStreams, playbackPolicy } = configuration
   const qualityProfile = configuration.qualityProfile as OptimizationQualityProfile | ''
   const encoderPolicy = configuration.encoderPolicy as 'automatic' | 'hardware' | 'software' | 'compare' | ''
-  const codec = configuration.targetCodec as 'hevc' | 'av1' | ''
+  const codec = configuration.targetCodec as OptimizationVideoCodec | ''
   const targetAudioCodec = configuration.targetAudioCodec as 'aac' | 'ac3' | 'eac3' | ''
   const targetHdrFormat = configuration.targetHdrFormat as 'SDR' | 'HDR10' | ''
   const setQualityProfile = useCallback((value: OptimizationQualityProfile | '') => updateConfiguration({ qualityProfile: value }), [updateConfiguration])
@@ -362,10 +364,14 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
       : targetProfile
       ? recommendPlaybackTargetContainer(targetProfile, sourceVideo, episode?.container)
       : sourceContainer || 'mkv'
-    updateConfiguration({ targetContainer: preferredContainer, targetContainerSelection: 'automatic' })
-    const targetSupports = (candidate: 'hevc' | 'av1') => !targetProfile || targetProfile.definition.video.codecs.some(codec => normalizeVideoCodec(codec) === normalizeVideoCodec(candidate))
-    const selectedCodec = (['hevc', 'av1'] as const).find(targetSupports) ?? ''
-    setCodec(selectedCodec)
+    if (targetContainerSelection !== 'user-selected') {
+      if (targetContainer !== preferredContainer || targetContainerSelection !== 'automatic') {
+        updateConfiguration({ targetContainer: preferredContainer, targetContainerSelection: 'automatic' })
+      }
+    }
+    const compatible = OPTIMIZATION_VIDEO_CODECS.map(item => item.value).filter(candidate => playbackProfileSupportsOptimizationCodec(candidate, targetProfile?.definition.video.codecs))
+    const selectedCodec = chooseOptimizationVideoCodec(codec, compatible)
+    if (selectedCodec !== codec) setCodec(selectedCodec)
 
     const targetHdrFormats = targetProfile?.definition.hdr.formats.map(format => format.toUpperCase()) ?? []
     const sourceIsSdr = !sourceHdrFormat || ['SDR', 'NONE'].includes(sourceHdrFormat)
@@ -378,7 +384,11 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
       : sourceHdrSupported
         ? sourceHdrFormat as 'SDR' | 'HDR10'
         : targetHdrFormats.includes('HDR10') ? 'HDR10' : 'SDR'
-    setTargetHdrFormat(targetProfile && episode ? recommendedHdr : '')
+    const supportedHdr = !targetProfile || !targetHdrFormat || targetHdrFormat === 'SDR' || targetHdrFormats.includes(targetHdrFormat)
+    if (!supportedHdr || !targetHdrFormat) {
+      const nextHdrFormat = targetProfile && episode ? recommendedHdr : ''
+      if (nextHdrFormat !== targetHdrFormat) setTargetHdrFormat(nextHdrFormat)
+    }
     logOptimizationDiagnostic('TVOptimizationUI', 'info', 'output.settings.recommended', {
       seriesIdentityKey,
       mediaItemId: episode?.id,
@@ -393,7 +403,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
       containerSelection: 'automatic',
       allowedContainers: supportedContainers
     })
-  }, [preflightData, episode, seriesIdentityKey, sourceTargetCodec, sourceHdrFormat, sourceContainer, targetProfile, updateConfiguration, setCodec, setTargetHdrFormat])
+  }, [preflightData, episode, seriesIdentityKey, sourceTargetCodec, sourceHdrFormat, sourceContainer, targetProfile, targetContainer, targetContainerSelection, codec, targetHdrFormat, updateConfiguration, setCodec, setTargetHdrFormat])
 
 
   const handleClose = useCallback(() => {
@@ -512,15 +522,14 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
   useEffect(() => {
     if (!encoderCapabilitiesLoaded || encoderPolicy === 'software' || !codec) return
     const supportsCodec = (gpu: GpuInfo) => {
-      const encoder = getHardwareEncoder(gpu.vendor, codec)
-      return Boolean(encoder && deviceEncoders[gpu.id]?.includes(encoder))
+      return availableOptimizationEncoders(codec, { gpus: [gpu], deviceEncoders, selectedGpuId: gpu.id }).selectedHardware
     }
     setGpuId(gpus.find(gpu => gpu.vendor === 'Intel' && supportsCodec(gpu))?.id ?? gpus.find(supportsCodec)?.id ?? '')
   }, [encoderCapabilitiesLoaded, encoderPolicy, codec, deviceEncoders, gpus])
 
   const subtitleList = parseLanguageWhitelist(subtitleWhitelist)
 
-  const getCleanOptions = (overrides: { removeUnnecessaryStreams?: boolean; targetProfileId?: string; targetCodec?: 'hevc' | 'av1' } = {}) => {
+  const getCleanOptions = (overrides: { removeUnnecessaryStreams?: boolean; targetProfileId?: string; targetCodec?: OptimizationVideoCodec } = {}) => {
     const shouldRemoveStreams = overrides.removeUnnecessaryStreams ?? removeUnnecessaryStreams
     const shouldAdjustToTarget = adjustToTarget
     const effectiveTargetProfileId = overrides.targetProfileId ?? targetProfileId
@@ -583,7 +592,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
     })
   }
 
-  const runPreflight = async (overrides: { removeUnnecessaryStreams?: boolean; targetProfileId?: string; targetCodec?: 'hevc' | 'av1'; representativeMediaItemId?: number; representativeMediaItemIds?: Record<string, number>; selectedMediaItemIds?: number[] } = {}) => {
+  const runPreflight = async (overrides: { removeUnnecessaryStreams?: boolean; targetProfileId?: string; targetCodec?: OptimizationVideoCodec; representativeMediaItemId?: number; representativeMediaItemIds?: Record<string, number>; selectedMediaItemIds?: number[] } = {}) => {
     const { representativeMediaItemId, representativeMediaItemIds, selectedMediaItemIds, ...optionOverrides } = overrides
     const requestId = crypto.randomUUID()
     const requestedAt = Date.now()
@@ -735,7 +744,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
     void handleDiscoverCandidatesRef.current()
   }, [targetProfilesLoading, initialPreflight, resumeRequestId, optimizationDiscovery])
 
-  const handlePreviewPlan = async (selection?: { selectedMediaItemIds: number[]; representativeMediaItemIds: Record<string, number>; targetCodec?: 'hevc' | 'av1' }) => {
+  const handlePreviewPlan = async (selection?: { selectedMediaItemIds: number[]; representativeMediaItemIds: Record<string, number>; targetCodec?: OptimizationVideoCodec }) => {
     setBusy(true)
     setMessage('')
     setIsSuccess(false)
@@ -841,8 +850,8 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
   // Filter tasks belonging to transcoding
   const vendor = gpus.find(gpu => gpu.id === gpuId)?.vendor
   const hardwareEncoder = vendor && codec ? getHardwareEncoder(vendor, codec) : undefined
-  const hardwareAvailable = hardwareEncoder !== undefined && (deviceEncoders[gpuId] ?? []).includes(hardwareEncoder)
-  const softwareEncoder = codec === 'av1' ? 'svt_av1' : codec === 'hevc' ? 'x265' : undefined
+  const hardwareAvailable = Boolean(codec && availableOptimizationEncoders(codec, { gpus, deviceEncoders, selectedGpuId: gpuId }).selectedHardware)
+  const softwareEncoder = codec ? getOptimizationVideoCodec(codec).softwareEncoder : undefined
   const softwareAvailable = softwareEncoder !== undefined && (deviceEncoders.software ?? []).includes(softwareEncoder)
   useEffect(() => {
     const recommendedPolicy = hardwareAvailable || softwareAvailable ? 'automatic' : ''
@@ -856,33 +865,32 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
   const profileSupportedContainers = targetProfile
     ? getPlaybackTargetContainers(targetProfile, { codec: episode?.video_codec, profile: episode?.video_profile, hdrFormat: episode?.hdr_format })
     : ['matroska', 'mp4']
-  const supportedTargetCodecs = (['hevc', 'av1'] as const).filter(candidate => {
-    const profileSupports = playbackPolicy === 'allow-transcoding' || !targetProfile || targetProfile.definition.video.codecs.some(value => normalizeVideoCodec(value) === normalizeVideoCodec(candidate))
-    const softwareEncoder = candidate === 'av1' ? 'svt_av1' : 'x265'
-    const softwareSupports = (deviceEncoders.software ?? []).includes(softwareEncoder)
-    const hardwareSupports = gpus.some(gpu => {
-      const encoder = getHardwareEncoder(gpu.vendor, candidate)
-      return Boolean(encoder && deviceEncoders[gpu.id]?.includes(encoder))
+  const supportedTargetCodecs = !encoderCapabilitiesLoaded
+    ? OPTIMIZATION_VIDEO_CODECS.map(item => item.value).filter(candidate =>
+      playbackPolicy === 'allow-transcoding' || playbackProfileSupportsOptimizationCodec(candidate, targetProfile?.definition.video.codecs))
+    : supportedOptimizationCodecs({
+      gpus,
+      deviceEncoders,
+      selectedGpuId: gpuId,
+      encoderPolicy,
+      playbackPolicy,
+      playbackCodecs: targetProfile?.definition.video.codecs,
     })
-    const selectedHardwareSupports = gpus.some(gpu => {
-      const encoder = getHardwareEncoder(gpu.vendor, candidate)
-      return gpu.id === gpuId && Boolean(encoder && deviceEncoders[gpu.id]?.includes(encoder))
-    })
-    const encoderSupports = encoderPolicy === 'software' ? softwareSupports
-      : encoderPolicy === 'hardware' ? selectedHardwareSupports
-        : softwareSupports || hardwareSupports
-    return profileSupports && (!encoderCapabilitiesLoaded || encoderSupports)
-  })
-  const unsupportedTargetCodecReasons = Object.fromEntries((['hevc', 'av1'] as const)
-    .filter(candidate => !supportedTargetCodecs.includes(candidate))
-    .map(candidate => {
-      const label = candidate === 'hevc' ? 'H.265' : 'AV1'
-      if (targetProfile && !targetProfile.definition.video.codecs.some(value => normalizeVideoCodec(value) === normalizeVideoCodec(candidate))) return [candidate, `Not supported by ${targetProfile.name}.`]
-      if (!encoderCapabilitiesLoaded) return [candidate, 'Checking encoder support.']
-      if (encoderPolicy === 'software') return [candidate, `Software encoding for ${label} is unavailable.`]
-      if (encoderPolicy === 'hardware') return [candidate, gpus.find(gpu => gpu.id === gpuId) ? `${gpus.find(gpu => gpu.id === gpuId)?.name} cannot encode ${label}.` : `Choose a GPU that supports ${label}.`]
-      return [candidate, `No compatible ${label} encoder is available.`]
-    })) as Partial<Record<'hevc' | 'av1', string>>
+  const unsupportedTargetCodecReasons = Object.fromEntries(
+    OPTIMIZATION_VIDEO_CODECS.map(item => item.value)
+      .filter(candidate => !supportedTargetCodecs.includes(candidate))
+      .map(candidate => [candidate, unsupportedOptimizationCodecReason(candidate, {
+        gpus,
+        deviceEncoders,
+        selectedGpuId: gpuId,
+        selectedGpuName: gpus.find(gpu => gpu.id === gpuId)?.name,
+        encoderPolicy,
+        playbackPolicy,
+        playbackCodecs: targetProfile?.definition.video.codecs,
+        playbackTargetName: targetProfile?.name,
+        capabilitiesLoaded: encoderCapabilitiesLoaded,
+      })])
+  ) as Partial<Record<OptimizationVideoCodec, string>>
   const missingSettings = getMissingSettings()
   const queueableEpisodeCount = preflightData?.episodes.filter(episode =>
     episode.compatible && (episode.decisionStatus === 'actionable' || episode.decisionStatus === 'sample_required'),
@@ -1207,7 +1215,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
                     {ep.samplingRole === 'projected' && <p className="text-xs text-amber-300">Savings projected from {ep.sampleRepresentativeLabel}.</p>}
                     {ep.decisionStatus === 'insufficient_evidence' && ep.reason?.startsWith('Not sampled:') && ep.sourceAnalysis?.video && <button className="text-xs underline" disabled={busy} onClick={() => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.representative.reselected', { preflightId: preflightData.preflightId, mediaItemId: ep.mediaItemId, samplingGroupKey: ep.samplingGroupKey }); void prepareAlternateRepresentative(ep).catch(error => { const message = error instanceof Error ? error.message : String(error); setMessage(message); addToast({ type: 'error', title: 'Could not retry representative sample', message }) }) }}>Use this episode as the sample for its technical group</button>}
                     {ep.sourceAnalysis?.video ? <details className="text-[11px]"><summary className="cursor-pointer text-muted-foreground">Source technical evidence</summary><p>{ep.sourceAnalysis.video.codec} · {ep.sourceAnalysis.video.width}×{ep.sourceAnalysis.video.height} · {ep.sourceAnalysis.video.frameRate} fps · {ep.sourceAnalysis.video.bitDepth}-bit · {ep.sourceAnalysis.video.bitrateKbps ? `${Math.round(ep.sourceAnalysis.video.bitrateKbps)} kb/s` : 'bitrate unavailable'} · {ep.hdrFormat} · {ep.sourceCambiMean === undefined ? 'source banding metric unavailable' : `source CAMBI ${ep.sourceCambiMean.toFixed(2)}`} · {ep.sourceSelfVmaf === undefined ? 'source-self control unavailable' : `source-self VMAF ${ep.sourceSelfVmaf.toFixed(2)}`}</p></details> : null}
-                    {ep.qualityChoices?.length ? <details className="text-[11px]"><summary className="cursor-pointer text-muted-foreground">Quality measurements</summary><div className="mt-2 grid gap-2">{ep.qualityChoices.map(choice => <div key={choice.profile}><p><strong>{choice.profile === 'transparent' ? 'Higher fidelity' : 'Smaller file'}:</strong> {choice.status === 'available' ? `${(choice.estimatedSavingsBytes == null ? 'Not measured' : formatBytes(choice.estimatedSavingsBytes))} estimated savings · ${choice.candidate?.encoder}/${choice.candidate?.preset} q${choice.candidate?.quality} · ${choice.candidate?.sampledDurationSeconds.toFixed(0)}s sampled · VMAF ${choice.candidate?.vmafMean.toFixed(1)} mean, ${choice.candidate?.vmafP5.toFixed(1)} p5 · CAMBI ${choice.candidate?.cambiMean.toFixed(2)} output / ${choice.candidate?.sourceCambiMean?.toFixed(2) ?? 'source unavailable'} source · source-self VMAF ${choice.candidate?.sourceSelfVmaf?.toFixed(2) ?? 'unavailable'} · ${((choice.candidate?.encodingDurationMs ?? 0) / 1000).toFixed(1)}s sample encode` : choice.status === 'measurement_incomplete' ? 'Measurements are incomplete' : choice.status === 'incompatible' ? 'Does not meet playback requirements' : choice.status === 'no_positive_savings' ? 'No space saved' : 'No candidate meets this quality setting'}</p>{choice.alternatives && choice.alternatives.length > 1 ? <details className="mt-1"><summary className="cursor-pointer">Compare {choice.alternatives.length} settings</summary><ul className="ml-4 list-disc">{choice.alternatives.map(candidate => <li key={`${candidate.encoder}/${candidate.preset}/${candidate.quality}`}>{candidate.encoder}/{candidate.preset} q{candidate.quality} · {formatBytes(candidate.outputBytes)} / {candidate.sampledDurationSeconds.toFixed(0)}s sampled · VMAF {candidate.vmafMean.toFixed(1)} mean / {candidate.vmafP5.toFixed(1)} p5 · CAMBI {candidate.cambiMean.toFixed(2)} · {((candidate.encodingDurationMs ?? 0) / 1000).toFixed(1)}s</li>)}</ul></details> : null}</div>)}</div></details> : null}
+                    {ep.qualityChoices?.length ? <details className="text-[11px]"><summary className="cursor-pointer text-muted-foreground">Quality measurements</summary><div className="mt-2 grid gap-2">{ep.qualityChoices.map(choice => <div key={choice.profile}><p><strong>{choice.profile === 'transparent' ? 'Higher fidelity' : choice.profile === 'balanced' ? 'Balanced' : 'Smaller file'}:</strong> {choice.status === 'available' ? `${(choice.estimatedSavingsBytes == null ? 'Not measured' : formatBytes(choice.estimatedSavingsBytes))} estimated savings · ${choice.candidate?.encoder}/${choice.candidate?.preset} q${choice.candidate?.quality} · ${choice.candidate?.sampledDurationSeconds.toFixed(0)}s sampled · VMAF ${choice.candidate?.vmafMean.toFixed(1)} mean, ${choice.candidate?.vmafP5.toFixed(1)} p5 · CAMBI ${choice.candidate?.cambiMean.toFixed(2)} output / ${choice.candidate?.sourceCambiMean?.toFixed(2) ?? 'source unavailable'} source · source-self VMAF ${choice.candidate?.sourceSelfVmaf?.toFixed(2) ?? 'unavailable'} · ${((choice.candidate?.encodingDurationMs ?? 0) / 1000).toFixed(1)}s sample encode` : choice.status === 'measurement_incomplete' ? 'Measurements are incomplete' : choice.status === 'incompatible' ? 'Does not meet playback requirements' : choice.status === 'no_positive_savings' ? 'No space saved' : 'No candidate meets this quality setting'}</p>{choice.alternatives && choice.alternatives.length > 1 ? <details className="mt-1"><summary className="cursor-pointer">Compare {choice.alternatives.length} settings</summary><ul className="ml-4 list-disc">{choice.alternatives.map(candidate => <li key={`${candidate.encoder}/${candidate.preset}/${candidate.quality}`}>{candidate.encoder}/{candidate.preset} q{candidate.quality} · {formatBytes(candidate.outputBytes)} / {candidate.sampledDurationSeconds.toFixed(0)}s sampled · VMAF {candidate.vmafMean.toFixed(1)} mean / {candidate.vmafP5.toFixed(1)} p5 · CAMBI {candidate.cambiMean.toFixed(2)} · {((candidate.encodingDurationMs ?? 0) / 1000).toFixed(1)}s</li>)}</ul></details> : null}</div>)}</div></details> : null}
                     {ep.samplePaths?.length && <p className="text-xs text-muted-foreground">Measured sample is shown in its representative group below.</p>}
                     {(ep.evidenceStatus || ep.adviceReason) && <details className="text-[11px]"><summary className="cursor-pointer text-muted-foreground">Analysis details</summary>{ep.evidenceStatus && <p>{ep.evidenceStatus}</p>}{ep.adviceReason && <p>{ep.adviceReason}</p>}</details>}
                   </OptimizationReviewItem>
@@ -1218,7 +1226,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
             {sampleApprovalGroups.map(group => <section key={group.id} className="space-y-2 rounded-xl border border-primary/30 bg-primary/5 p-3">
               <h4 className="text-sm font-semibold">Measured sample group · {group.representativeLabel}</h4>
               <p className="text-xs text-muted-foreground">Other episodes use these settings; their savings are projected.</p>
-              <ul className="space-y-1 text-xs">{group.episodes.map(item => <li key={item.mediaItemId} className="flex justify-between gap-3"><span>{item.label}{item.mediaItemId === group.representativeMediaItemId ? ' · measured representative' : ' · uses representative settings'}</span><span>{item.mediaItemId === group.representativeMediaItemId ? 'Measured savings: ' : 'Projected savings: '}<EstimatedSavingsDisplay bytes={item.estimatedSavingsBytes} /></span></li>)}</ul>
+              <ul className="space-y-1 text-xs">{group.episodes.map(item => <li key={item.mediaItemId} className="flex justify-between gap-3"><span>{item.label}{item.mediaItemId === group.representativeMediaItemId ? ' · measured representative' : ' · uses representative settings'}</span><span>{item.mediaItemId === group.representativeMediaItemId ? 'Sample-based projection: ' : 'Representative-based projection: '}<EstimatedSavingsDisplay bytes={item.estimatedSavingsBytes} /></span></li>)}</ul>
               <div className="flex flex-wrap gap-2">{group.samplePaths.map((sample, index) => <button key={`${sample}-${index}`} type="button" className="underline text-xs" onClick={() => { const mediaItemId = group.representativeMediaItemId; void window.electronAPI.openShowSample(preflightData.preflightId, mediaItemId, index).catch(error => { const message = error instanceof Error ? error.message : String(error); setMessage(message); addToast({ type: 'error', title: 'Could not open measured sample', message }) }) }}>Play representative sample {index + 1}</button>)}</div>
               <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={reviewedSampleGroups.includes(group.id)} disabled={busy} onChange={event => {
                 const approved = event.target.checked

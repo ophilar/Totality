@@ -1,11 +1,15 @@
+import { measuredOptimizationEncoderSpec } from './transcoding/OptimizationEncoderPolicy'
 
 import { APP_CONFIG } from '@main/config'
+import { getOptimizationVideoCodec, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
 import type { MeasurementSourcePreparation } from './MeasuredOptimizationService'
 
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
 
 export const MEASUREMENT_VERSION = 12
-export const OPTIMIZATION_SEARCH_VERSION = 2
+export const OPTIMIZATION_SEARCH_VERSION = 3
+/** Hard bound on expensive full-sample evaluations in each encoder/preset domain. */
+export const MAX_MEASURED_CANDIDATES_PER_PRESET = 5
 export const VMAF_LOW_PERCENTILE = 0.05
 export const SHOW_PREFLIGHT_SETTING_PREFIX = 'transcoding.preflight.'
 export const MEASUREMENT_SETTING_PREFIX = 'transcoding.measurement.'
@@ -57,6 +61,8 @@ export interface MeasuredCandidate {
   playbackBlockers?: string[]
   qualityRejectedReason?: string
   incompleteMeasurement?: boolean
+  /** Bounded search selects the best tested candidate, not a proven global optimum. */
+  searchSummary?: { measuredCount: number; maximumCandidates: number; budgetReached: boolean }
 }
 
 export interface CandidateEncodingParameters {
@@ -82,6 +88,7 @@ export function nextCandidateSearch(
       const qualities = [...new Set(domain.map(candidate => candidate.quality))].sort((a, b) => a - b)
       const tested = new Set(measured.map(candidate => candidate.quality))
       const untested = (values: number[]) => values.filter(quality => !tested.has(quality)).map(quality => domain.find(candidate => candidate.quality === quality) ?? { encoder: presetCandidate.encoder, preset: presetCandidate.preset, quality })
+      if (measured.length >= MAX_MEASURED_CANDIDATES_PER_PRESET) continue
       if (measured.length === 0) {
         const middle = qualities[Math.floor((qualities.length - 1) / 2)]
         return untested([middle])
@@ -91,9 +98,17 @@ export function nextCandidateSearch(
       const passTransitions = passFlags.reduce((count, pass, index) => count + (index > 0 && pass !== passFlags[index - 1] ? 1 : 0), 0)
       const contradictory = passTransitions > 1 || ordered.some((candidate, index) => index > 0 && (candidate.vmafMean > ordered[index - 1].vmafMean || candidate.vmafP5 > ordered[index - 1].vmafP5))
       if (contradictory) {
-        const relevant = Array.from({ length: ordered[ordered.length - 1].quality - ordered[0].quality + 1 }, (_, index) => ordered[0].quality + index)
-        const remaining = untested(relevant)
-        if (remaining.length) return remaining
+        // Perceptual metrics can be non-monotonic. Never schedule the entire
+        // integer interval: it can contain dozens of full encodes per preset.
+        // Probe the widest unresolved gap, one candidate at a time, under the budget.
+        const anchors = [qualities[0], ...ordered.map(candidate => candidate.quality), qualities[qualities.length - 1]]
+        const gaps = [...new Set(anchors)].sort((a, b) => a - b)
+        const midpointCandidates = gaps.slice(1).map((high, index) => {
+          const low = gaps[index]
+          return { gap: high - low, midpoint: Math.floor((high + low) / 2) }
+        }).filter(entry => entry.gap > 1 && !tested.has(entry.midpoint))
+          .sort((a, b) => b.gap - a.gap)
+        if (midpointCandidates.length) return untested([midpointCandidates[0].midpoint])
       }
       const next = new Set<number>()
       if (measured.length === 1) {
@@ -106,29 +121,25 @@ export function nextCandidateSearch(
           if (!tested.has(midpoint)) next.add(midpoint)
         }
       }
-      if (next.size) return untested([...next].sort((a, b) => a - b))
+      if (next.size) return untested([...next].sort((a, b) => a - b)).slice(0, MAX_MEASURED_CANDIDATES_PER_PRESET - measured.length)
     }
   }
   return []
 }
 
-function getQualityDomainKey(encoder: string, targetCodec: 'av1' | 'hevc'): keyof typeof APP_CONFIG.transcoding.sampleQualityDomains {
-  if (encoder === 'x265' || encoder === 'svt_av1') return encoder
-  if (encoder.startsWith('nvenc')) return `nvenc_${targetCodec}`
-  if (encoder.startsWith('qsv')) return `qsv_${targetCodec}`
-  if (encoder.endsWith('_amf')) return `amf_${targetCodec}`
-  throw new Error(`Measured quality domain is not configured for encoder ${encoder}`)
-}
-
-export function buildCandidateLadder(targetCodec: 'av1' | 'hevc', encoderPolicy: 'automatic' | 'hardware' | 'software' | 'compare', hardwareEncoder?: string): CandidateEncodingParameters[] {
-  const softwareEncoder = targetCodec === 'av1' ? 'svt_av1' : 'x265'
+export function buildCandidateLadder(targetCodec: OptimizationVideoCodec, encoderPolicy: 'automatic' | 'hardware' | 'software' | 'compare', hardwareEncoder?: string): CandidateEncodingParameters[] {
+  const softwareEncoder = getOptimizationVideoCodec(targetCodec).softwareEncoder
   const hardware = hardwareEncoder ?? ''
   const encoders = encoderPolicy === 'hardware' ? [hardware] : encoderPolicy === 'software' ? [softwareEncoder] : encoderPolicy === 'automatic' ? [hardware || softwareEncoder] : [hardware, softwareEncoder]
   if (encoders.some(encoder => !encoder)) throw new Error('A verified hardware encoder is required for hardware candidate measurement')
   return encoders.flatMap(encoder => {
-    const presets = encoder.startsWith('nvenc') ? ['p5', 'p6', 'p7'] : encoder === 'svt_av1' ? ['8', '6', '4'] : encoder.startsWith('qsv') ? ['medium', 'slow', 'veryslow'] : encoder.endsWith('_amf') ? ['speed', 'balanced', 'quality'] : encoder === 'vt_h265' ? ['quality', 'quality', 'quality'] : ['medium', 'slow', 'slower']
-    const qualities = APP_CONFIG.transcoding.sampleQualityDomains[getQualityDomainKey(encoder, targetCodec)]
-    return [...new Set(presets)].flatMap(preset => qualities.map(quality => ({ encoder, preset, quality })))
+    const policy = measuredOptimizationEncoderSpec(encoder, targetCodec)
+    const presets = policy.presets
+    const qualities = APP_CONFIG.transcoding.sampleQualityDomains[policy.qualityDomain]
+    // Automatic mode should not benchmark every speed preset before it can
+    // recommend a usable encode. Explicit policies retain full preset exploration.
+    const selectedPresets = encoderPolicy === 'automatic' ? [presets[Math.floor(presets.length / 2)]] : [...new Set(presets)]
+    return selectedPresets.flatMap(preset => qualities.map(quality => ({ encoder, preset, quality })))
   })
 }
 

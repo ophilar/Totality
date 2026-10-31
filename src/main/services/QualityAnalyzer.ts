@@ -19,6 +19,7 @@ import { getVideoResolutionTier } from './VideoResolutionTier'
 import { AudioCodecRanker } from './AudioCodecRanker'
 import { MEASUREMENT_VERSION, MEASUREMENT_SETTING_PREFIX, MeasuredQualityError, selectMeasuredCandidate, type CachedMeasurement } from './MeasuredOptimizationPolicy'
 import { projectMeasuredSavingsBytes } from './OptimizationSavingsService'
+import { fileIdentity, matchesFileIdentity, type FileIdentity } from './utils/FileIdentity'
 
 export interface OptimizationAdvice {
   action: 'video_transcode' | 'stream_pruning' | 'already_optimized'
@@ -431,7 +432,7 @@ export class QualityAnalyzer {
     const savedAnalysis = analysis ?? (mediaItem.deep_analysis ? JSON.parse(mediaItem.deep_analysis) as FileAnalysisResult : undefined)
     if (!analysis && savedAnalysis?.success && savedAnalysis.fileAnalysisFingerprint && mediaItem.file_path) {
       const source = await stat(mediaItem.file_path)
-      if (savedAnalysis.fileAnalysisFingerprint.size === source.size && savedAnalysis.fileAnalysisFingerprint.mtimeMs === source.mtimeMs && PathUtils.arePathsEqual(savedAnalysis.filePath, mediaItem.file_path)) {
+      if (matchesFileIdentity(savedAnalysis.fileAnalysisFingerprint, source) && PathUtils.arePathsEqual(savedAnalysis.filePath, mediaItem.file_path)) {
         analysis = savedAnalysis
       }
     }
@@ -518,18 +519,15 @@ export class QualityAnalyzer {
       detectVolume: options.detectVolume ?? true,
     }
     type PersistedFileAnalysis = FileAnalysisResult & {
-      fileAnalysisFingerprint?: { size: number; mtimeMs: number }
+      fileAnalysisFingerprint?: Partial<FileIdentity>
       analysisOptions?: { scanBitrate?: boolean; detectVolume?: boolean }
     }
     const cachedAnalysis = cachedItem.deep_analysis
       ? JSON.parse(cachedItem.deep_analysis) as PersistedFileAnalysis
       : null
-    const fingerprintMatches = cachedAnalysis?.fileAnalysisFingerprint
-      ? cachedAnalysis.fileAnalysisFingerprint.size === source.size && cachedAnalysis.fileAnalysisFingerprint.mtimeMs === source.mtimeMs
-      : cachedItem.deep_analysis_at != null &&
-        cachedItem.file_size_bytes === source.size &&
-        cachedItem.file_mtime != null &&
-        Math.trunc(cachedItem.file_mtime) === Math.trunc(source.mtimeMs)
+    // Older cache entries without full file identity must be reanalyzed once;
+    // matching only size and mtime can reuse a replaced source incorrectly.
+    const fingerprintMatches = matchesFileIdentity(cachedAnalysis?.fileAnalysisFingerprint, source)
     const analysisIsReusable = Boolean(
       cachedAnalysis?.success &&
       cachedAnalysis.filePath &&
@@ -549,13 +547,13 @@ export class QualityAnalyzer {
       analysis = await getMediaFileAnalyzer().analyzeCompleteFile(filePath, { ...requestedAnalysisOptions, ...options, signal })
       if (!analysis.success) throw new Error(analysis.error || `File analysis failed for ${mediaItem.title}`)
       const afterAnalysis = await stat(filePath)
-      if (source.size !== afterAnalysis.size || source.mtimeMs !== afterAnalysis.mtimeMs) {
+      if (!matchesFileIdentity(fileIdentity(source), afterAnalysis)) {
         throw new Error(`Media file changed during analysis: ${filePath}`)
       }
       analysis = {
         ...analysis,
         ...(fingerprintMatches ? { optimizationMeasurement: cachedAnalysis?.optimizationMeasurement } : {}),
-        fileAnalysisFingerprint: { size: source.size, mtimeMs: source.mtimeMs },
+        fileAnalysisFingerprint: fileIdentity(source),
         analysisOptions: requestedAnalysisOptions,
       }
       if ((db as any).updateDeepAnalysisByPath) {

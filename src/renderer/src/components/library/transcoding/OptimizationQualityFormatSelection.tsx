@@ -1,5 +1,5 @@
 import type { TranscodeOptions } from './types'
-import { OPTIMIZATION_VIDEO_FORMATS } from './optimizationOptions'
+import { OPTIMIZATION_VIDEO_CODECS } from '@main/services/transcoding/OptimizationCodecPolicy'
 import { OPTIMIZATION_CHOICE_ACCENTS } from './optimizationChoiceAccents'
 import { HardDrive, Eye, Scale, Layers } from 'lucide-react'
 
@@ -51,13 +51,13 @@ export function OptimizationQualityFormatSelection({
     <fieldset className="space-y-2">
       <legend className="text-sm font-semibold">Video format</legend>
       <div role="radiogroup" aria-label="Video format" className="grid gap-2 sm:grid-cols-2">
-        {OPTIMIZATION_VIDEO_FORMATS.map(format => {
+        {OPTIMIZATION_VIDEO_CODECS.map(format => {
           const selected = targetCodec === format.value
           const accent = format.value === 'hevc' ? 'recommended' : 'compress'
           return <label key={format.value} className={`flex min-h-12 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium focus-within:ring-2 focus-within:ring-primary ${selected ? 'border-primary bg-muted/40' : 'border-border/60 bg-card hover:bg-muted/30'} ${disabled || !supportedTargetCodecs.includes(format.value) ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
           <input type="radio" name="optimization-video-format" value={format.value} checked={selected} disabled={disabled || !supportedTargetCodecs.includes(format.value)} onChange={() => onTargetCodecChange(format.value)} className="sr-only" />
           <Layers className={`h-4 w-4 shrink-0 ${OPTIMIZATION_CHOICE_ACCENTS[accent]}`} aria-hidden="true" />
-          <span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2">{format.label}{!supportedTargetCodecs.includes(format.value) ? ' (unavailable)' : ''}{selected && <span className="text-primary" aria-hidden="true">✓</span>}</span><span className="mt-1 block text-xs font-normal text-muted-foreground">{supportedTargetCodecs.includes(format.value) ? format.value === 'hevc' ? 'Smaller files with broad device support.' : 'Smaller files; newer devices may be needed.' : unsupportedReasons[format.value] ?? 'No compatible encoder is available.'}</span></span>
+          <span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2">{format.label}{!supportedTargetCodecs.includes(format.value) ? ' (unavailable)' : ''}{selected && <span className="text-primary" aria-hidden="true">✓</span>}</span><span className="mt-1 block text-xs font-normal text-muted-foreground">{supportedTargetCodecs.includes(format.value) ? format.description : unsupportedReasons[format.value] ?? 'No compatible encoder is available.'}</span></span>
         </label>})}
       </div>
       {supportedTargetCodecs.length === 0 && <span role="status" className="block font-normal text-amber-300">No compatible video format is available for this target.</span>}

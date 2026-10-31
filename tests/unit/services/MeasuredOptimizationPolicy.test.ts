@@ -89,7 +89,29 @@ describe('selectMeasuredCandidate', () => {
     const measured = [candidate({ quality: 18, vmafMean: 97, vmafP5: 95 }), candidate({ quality: 26, vmafMean: 92, vmafP5: 88 })]
     expect(nextCandidateSearch(domain, measured, 'balanced')).toEqual([domain[4]])
     const contradictory = [measured[0], candidate({ quality: 22, vmafMean: 98, vmafP5: 96 }), measured[1]]
-    expect(nextCandidateSearch(domain, contradictory, 'balanced')).toEqual([domain[1], domain[2], domain[3], domain[5], domain[6], domain[7]])
+    expect(nextCandidateSearch(domain, contradictory, 'balanced')).toEqual([domain[2]])
+  })
+
+  it('bounds contradictory quality measurements instead of enumerating every integer quality', () => {
+    const domain: CandidateEncodingParameters[] = [18, 22, 26, 30, 34].map(quality => ({ encoder: 'x265', preset: 'medium', quality }))
+    const measured = [
+      candidate({ quality: 18, vmafMean: 97, vmafP5: 95 }),
+      candidate({ quality: 22, vmafMean: 98, vmafP5: 96 }),
+      candidate({ quality: 26, vmafMean: 92, vmafP5: 88 }),
+    ]
+    expect(nextCandidateSearch(domain, measured, 'balanced')).toHaveLength(1)
+    const next = nextCandidateSearch(domain, [
+      ...measured,
+      candidate({ quality: 20, vmafMean: 96, vmafP5: 94 }),
+      candidate({ quality: 24, vmafMean: 94, vmafP5: 90 }),
+    ], 'balanced')
+    expect(next).toEqual([])
+  })
+
+  it('automatically searches one representative speed preset but permits explicit comparisons', () => {
+    const automatic = buildCandidateLadder('hevc', 'automatic', 'nvenc_h265')
+    expect(new Set(automatic.map(item => item.preset)).size).toBe(1)
+    expect(new Set(buildCandidateLadder('hevc', 'compare', 'nvenc_h265').map(item => item.preset)).size).toBeGreaterThan(1)
   })
 
   it('moves to the next preset after adaptively completing the earlier preset domain', () => {

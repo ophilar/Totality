@@ -15,10 +15,11 @@ import type { TranscodeOptions, TranscodingParams, Availability, TranscodeProgre
 import { AdvancedTab, LiveEncodingTab, EncoderPolicySelector, OptimizationDialogShell, buildEffectiveOptimizationOptions } from './transcoding'
 import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
 import type { ShowOptimizationDiscovery } from './transcoding/types'
-import { getHardwareEncoder } from '@main/services/TranscodingCapabilities'
 import { formatLanguage, getOptimizationContainer, isSameLanguage, LANGUAGE_OPTIONS, parseLanguageWhitelist, toIso639_2 } from './mediaUtils'
 import { SETTING_KEYS } from '@shared/settingKeys'
 import { normalizeVideoCodec } from '@main/services/MediaNormalizer'
+import { OPTIMIZATION_VIDEO_CODECS, type OptimizationVideoCodec } from '@main/services/transcoding/OptimizationCodecPolicy'
+import { availableOptimizationEncoders, supportedOptimizationCodecs, unsupportedOptimizationCodecReason } from '@main/services/transcoding/OptimizationEncoderPolicy'
 import { describeMissingOptimizationSettings, getMissingOptimizationSettings } from './transcoding/readiness'
 import { SeriesOptimizationFlow, type SeriesOptimizationFlowProps } from './SeriesOptimizationFlow'
 import { OptimizationReviewSummary } from './transcoding/OptimizationReviewSummary'
@@ -104,7 +105,8 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
   const [analyzingItem, setAnalyzingItem] = useState(false)
   const [outputModeSettingError, setOutputModeSettingError] = useState<string | null>(null)
   const completionReportedRef = useRef(false)
-  const candidateDiscoveryStartedFor = useRef<number | null>(null)
+  const candidateDiscoveryStartedFor = useRef<string | null>(null)
+  const candidateDiscoveryRequest = useRef(0)
   const handleQueueError = useCallback((error: unknown) => addToast({ title: 'Could not read optimization queue', message: error instanceof Error ? error.message : String(error), type: 'error' }), [addToast])
   const workflow = useOptimizationWorkflow(handleQueueError)
   const { queueState, stage, setStage, review: preflight, reviewedSampleGroups, batchId: submittedBatchId, submittedTaskIds, submittedMediaItemIds, queueControlState, batchSummary, reviewMatches, replaceReview, clearReview, submitBatch, toggleQueuePause: toggleWorkflowQueuePause, retryFailedTasks: retryWorkflowFailedTasks, setReviewedSampleGroups } = workflow
@@ -171,34 +173,37 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
 
   const failureReportedRef = useRef(false)
   const selectedGpu = capabilities?.gpus.find(gpu => gpu.id === options.gpuId)
-  const hardwareEncoder = selectedGpu && targetCodec ? getHardwareEncoder(selectedGpu.vendor, targetCodec) : undefined
-  const hardwareAvailable = Boolean(hardwareEncoder && selectedGpu && capabilities?.deviceEncoders[selectedGpu.id]?.includes(hardwareEncoder))
-  const softwareEncoder = targetCodec === 'av1' ? 'svt_av1' : targetCodec === 'hevc' ? 'x265' : undefined
-  const softwareAvailable = Boolean(softwareEncoder && capabilities?.deviceEncoders.software.includes(softwareEncoder))
+  const encoderAvailability = targetCodec ? availableOptimizationEncoders(targetCodec, {
+    gpus: capabilities?.gpus ?? [],
+    deviceEncoders: capabilities?.deviceEncoders ?? {},
+    selectedGpuId: selectedGpu?.id,
+  }) : undefined
+  const hardwareAvailable = encoderAvailability?.selectedHardware ?? false
+  const softwareAvailable = encoderAvailability?.software ?? false
   const targetProfile = targetProfiles.find(profile => profile.id === targetProfileId)
-  const supportedTargetCodecs = (['hevc', 'av1'] as const).filter(codec => {
-    const profileSupports = playbackPolicy === 'allow-transcoding' || !targetProfile || targetProfile.definition.video.codecs.some(value => normalizeVideoCodec(value) === normalizeVideoCodec(codec))
-    const codecCapabilities = capabilities?.encodingMatrix.codecs.find(value => value.codec === codec)?.capabilities ?? []
-    const deviceIndex = selectedGpu ? capabilities?.encodingMatrix.devices.findIndex(device => device.id === selectedGpu.id) : undefined
-    const encoderSupports = configuration.encoderPolicy === 'software'
-      ? Boolean(codecCapabilities[0])
-      : configuration.encoderPolicy === 'hardware'
-        ? deviceIndex !== undefined && deviceIndex >= 0 && Boolean(codecCapabilities[deviceIndex])
-        : codecCapabilities.some(Boolean)
-    return profileSupports && encoderSupports
-  })
-  const unsupportedTargetCodecReasons = Object.fromEntries((['hevc', 'av1'] as const)
-    .filter(codec => !supportedTargetCodecs.includes(codec))
-    .map(codec => {
-      const label = codec === 'hevc' ? 'H.265' : 'AV1'
-      if (targetProfile && !targetProfile.definition.video.codecs.some(value => normalizeVideoCodec(value) === normalizeVideoCodec(codec))) {
-        return [codec, `Not supported by ${targetProfile.name}.`]
-      }
-      if (!capabilities) return [codec, 'Checking encoder support.']
-      if (configuration.encoderPolicy === 'software') return [codec, `Software encoding for ${label} is unavailable.`]
-      if (configuration.encoderPolicy === 'hardware') return [codec, selectedGpu ? `${selectedGpu.name} cannot encode ${label}.` : `Choose a GPU that supports ${label}.`]
-      return [codec, `No compatible ${label} encoder is available.`]
-    })) as Partial<Record<'hevc' | 'av1', string>>
+  const supportedTargetCodecs = capabilities ? supportedOptimizationCodecs({
+    gpus: capabilities.gpus,
+    deviceEncoders: capabilities.deviceEncoders,
+    selectedGpuId: selectedGpu?.id,
+    encoderPolicy: configuration.encoderPolicy,
+    playbackPolicy,
+    playbackCodecs: targetProfile?.definition.video.codecs,
+  }) : []
+  const unsupportedTargetCodecReasons = Object.fromEntries(
+    OPTIMIZATION_VIDEO_CODECS.map(item => item.value)
+      .filter(codec => !supportedTargetCodecs.includes(codec))
+      .map(codec => [codec, unsupportedOptimizationCodecReason(codec, {
+        gpus: capabilities?.gpus ?? [],
+        deviceEncoders: capabilities?.deviceEncoders ?? {},
+        selectedGpuId: selectedGpu?.id,
+        selectedGpuName: selectedGpu?.name,
+        encoderPolicy: configuration.encoderPolicy,
+        playbackPolicy,
+        playbackCodecs: targetProfile?.definition.video.codecs,
+        playbackTargetName: targetProfile?.name,
+        capabilitiesLoaded: Boolean(capabilities),
+      })])
+  ) as Partial<Record<OptimizationVideoCodec, string>>
   const originalAudioLanguageOptions = useMemo<AudioLanguageOption[]>(() => {
     const detected = (optimizationDecision?.trackRemoval.tracks ?? [])
       .map(track => track.language)
@@ -217,16 +222,16 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
 
   const selectEncoderPolicy = (encoderPolicy: TranscodeOptions['encoderPolicy']) => {
     updateConfiguration({ encoderPolicy: encoderPolicy ?? '' })
-    const supportsSelectedCodec = (gpu: NonNullable<typeof capabilities>['gpus'][number]) => {
-      const encoder = targetCodec ? getHardwareEncoder(gpu.vendor, targetCodec) : undefined
-      return Boolean(encoder && capabilities?.deviceEncoders[gpu.id]?.includes(encoder))
-    }
+    const supportsSelectedCodec = (gpu: NonNullable<typeof capabilities>['gpus'][number]) =>
+      Boolean(targetCodec && availableOptimizationEncoders(targetCodec, {
+        gpus: [gpu], deviceEncoders: capabilities?.deviceEncoders ?? {}, selectedGpuId: gpu.id,
+      }).selectedHardware)
     const selectedHardware = capabilities?.gpus.find(gpu => gpu.vendor === 'Intel' && supportsSelectedCodec(gpu))
       ?? capabilities?.gpus.find(supportsSelectedCodec)
     setOptions(prev => ({
       ...prev,
-      useGpu: encoderPolicy !== 'software',
-      gpuId: encoderPolicy === 'software' ? '' : selectedHardware?.id ?? capabilities?.selectedGpuId ?? ''
+      useGpu: encoderPolicy === 'hardware' || (encoderPolicy !== 'software' && Boolean(selectedHardware)),
+      gpuId: encoderPolicy === 'software' ? '' : selectedHardware?.id ?? ''
     }))
   }
 
@@ -273,17 +278,15 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
       }
 
       const defaultEngine = capabilities?.engines?.[0] || 'ffmpeg'
-      const hardwareSupports = (gpu: NonNullable<typeof capabilities>['gpus'][number], codec: 'hevc' | 'av1') => {
-        const encoder = getHardwareEncoder(gpu.vendor, codec)
-        return Boolean(encoder && capabilities?.deviceEncoders[gpu.id]?.includes(encoder))
-      }
-      const codecIsSupported = (codec: NonNullable<typeof targetCodec>) => {
-        const profile = targetProfiles.find(candidate => candidate.id === configuredTargetProfileId)
-        const profileSupports = !profile || profile.definition.video.codecs.some(value => normalizeVideoCodec(value) === normalizeVideoCodec(codec))
-        const matrix = capabilities?.encodingMatrix.codecs.find(value => value.codec === codec)?.capabilities ?? []
-        return profileSupports && matrix.some(Boolean)
-      }
-      const preferredCodec = (['hevc', 'av1'] as const).find(codecIsSupported) ?? 'hevc'
+      const hardwareSupports = (gpu: NonNullable<typeof capabilities>['gpus'][number], codec: OptimizationVideoCodec | '') =>
+        Boolean(codec && availableOptimizationEncoders(codec, { gpus: [gpu], deviceEncoders: capabilities?.deviceEncoders ?? {}, selectedGpuId: gpu.id }).selectedHardware)
+      const profile = targetProfiles.find(candidate => candidate.id === configuredTargetProfileId)
+      const preferredCodec = supportedOptimizationCodecs({
+        gpus: capabilities?.gpus ?? [],
+        deviceEncoders: capabilities?.deviceEncoders ?? {},
+        playbackCodecs: profile?.definition.video.codecs,
+        playbackPolicy: 'direct-play',
+      })[0] ?? ''
       const selectedGpu = capabilities?.gpus?.find(gpu => gpu.vendor === 'Intel' && hardwareSupports(gpu, preferredCodec))
         ?? capabilities?.gpus?.find(gpu => gpu.id === capabilities.selectedGpuId && hardwareSupports(gpu, preferredCodec))
         ?? capabilities?.gpus?.find(gpu => hardwareSupports(gpu, preferredCodec))
@@ -396,6 +399,8 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
       setCandidateDiscoveryError('This item has no source identity for candidate discovery.')
       return
     }
+    const requestNumber = ++candidateDiscoveryRequest.current
+    setCandidateDiscovery(null)
     setCandidateDiscoveryBusy(true)
     setCandidateDiscoveryError(null)
     try {
@@ -406,18 +411,19 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
         libraryId: media.library_id,
         options: getEffectivePreflightOptions(),
       })
-      setCandidateDiscovery(result)
+      if (requestNumber === candidateDiscoveryRequest.current) setCandidateDiscovery(result)
     } catch (error) {
-      setCandidateDiscoveryError(error instanceof Error ? error.message : String(error))
+      if (requestNumber === candidateDiscoveryRequest.current) setCandidateDiscoveryError(error instanceof Error ? error.message : String(error))
     } finally {
-      setCandidateDiscoveryBusy(false)
+      if (requestNumber === candidateDiscoveryRequest.current) setCandidateDiscoveryBusy(false)
     }
   }, [media, getEffectivePreflightOptions])
+  const discoveryFingerprint = media?.id ? `${media.id}:${JSON.stringify(getEffectivePreflightOptions())}` : ''
   useEffect(() => {
-    if (loading || initialPreflightId || !media?.id || candidateDiscoveryStartedFor.current === media.id) return
-    candidateDiscoveryStartedFor.current = media.id
+    if (loading || initialPreflightId || !media?.id || candidateDiscoveryStartedFor.current === discoveryFingerprint) return
+    candidateDiscoveryStartedFor.current = discoveryFingerprint
     void discoverCandidates()
-  }, [loading, initialPreflightId, media?.id, discoverCandidates])
+  }, [loading, initialPreflightId, media?.id, discoveryFingerprint, discoverCandidates])
   const preflightMatchesCurrentSettings = reviewMatches(getEffectivePreflightOptions())
 
   useEffect(() => {

@@ -27,7 +27,7 @@ import { getQualityAnalyzer } from './QualityAnalyzer'
 import { OptimizationCandidateService, type OptimizationCandidateReason } from './OptimizationCandidateService'
 import type { MediaSourceTier } from './transcoding/TrashSourceClassifier'
 import { StreamRemuxCommandBuilder } from './transcoding/StreamRemuxCommandBuilder'
-import { buildCandidateLadder, nextCandidateSearch, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
+import { buildCandidateLadder, nextCandidateSearch, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MAX_MEASURED_CANDIDATES_PER_PRESET, MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
 import { buildTargetTranscodePlan, validateTargetTranscodeBitrate, type TargetTranscodePlan } from './transcoding/TargetTranscodePlan'
 import type { MeasuredCandidate, MeasuredCandidateSample } from './MeasuredOptimizationPolicy'
 import { ChildProcessMeasurementRunner, MeasuredOptimizationService, VMAF_MODEL_VERSION, type MeasurementSourcePreparation } from './MeasuredOptimizationService'
@@ -36,6 +36,9 @@ import { evaluatePlaybackTarget, getPlaybackTargetContainers, recommendPlaybackT
 import { getTaskQueueService } from './TaskQueueService'
 import { buildOptimizationSavingsBreakdown, calculateBitrateSavingsBytes, projectMeasuredSavingsBytes, sumMeasuredStreamBytes, type OptimizationSavingsCoverage, type OptimizationSavingsOperation } from './OptimizationSavingsService'
 import { normalizeAudioCodec, normalizeVideoCodec } from './MediaNormalizer'
+import { DEFAULT_OPTIMIZATION_VIDEO_CODEC, getOptimizationVideoCodec, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
+import { supportsMeasuredOptimizationEncoder } from './transcoding/OptimizationEncoderPolicy'
+import { ValidatedFileAnalysisCache } from './transcoding/ValidatedFileAnalysisCache'
 import { aggregateShowOptimizationMetrics } from './ShowOptimizationMetricsService'
 import { SETTING_KEYS } from '@shared/settingKeys'
 
@@ -48,7 +51,7 @@ export class TranscodeError extends Error {
 
 export interface TranscodeOptions {
   playbackPolicy?: 'allow-transcoding' | 'avoid-video-transcoding' | 'direct-play'
-  targetCodec?: 'av1' | 'hevc'
+  targetCodec?: OptimizationVideoCodec
   streamSelection?: StreamSelectionPolicy
   outputMode?: 'copy' | 'quarantine-replace' | 'replace'
   tempDirectory?: string
@@ -144,7 +147,7 @@ export interface OptimizationDiscoveryGroup {
   representativeMediaItemId: number
   representativeLabel: string
   technicalProfile: string
-  targetCodec?: 'hevc' | 'av1'
+  targetCodec?: OptimizationVideoCodec
   candidateReasons: string[]
   candidateReasonsByMediaItemId: Record<number, string[]>
   estimatedSavingsByMediaItemId: Record<number, number | null>
@@ -265,10 +268,10 @@ function estimateAudioConversionSavings(analysis: FileAnalysisResult, conversion
 export type PlannedOptimizationOperation = 'video_transcode' | 'audio_transcode' | 'stream_pruning' | 'subtitle_pruning' | 'container_change'
 
 export interface OptimizationQualityChoice {
-  profile: Extract<OptimizationQualityProfile, 'transparent' | 'maximum_savings'>
+  profile: OptimizationQualityProfile
   status: 'available' | 'quality_threshold_unmet' | 'no_positive_savings' | 'incompatible' | 'measurement_incomplete'
   estimatedSavingsBytes?: number
-  candidate?: Pick<MeasuredCandidate, 'encoder' | 'preset' | 'quality' | 'outputBytes' | 'sampledDurationSeconds' | 'vmafMean' | 'vmafP5' | 'cambiMean' | 'encodingDurationMs' | 'sourceSelfVmaf' | 'sourceCambiMean'>
+  candidate?: Pick<MeasuredCandidate, 'encoder' | 'preset' | 'quality' | 'outputBytes' | 'sampledDurationSeconds' | 'vmafMean' | 'vmafP5' | 'cambiMean' | 'encodingDurationMs' | 'sourceSelfVmaf' | 'sourceCambiMean' | 'searchSummary'>
   alternatives?: Array<Pick<MeasuredCandidate, 'encoder' | 'preset' | 'quality' | 'outputBytes' | 'sampledDurationSeconds' | 'vmafMean' | 'vmafP5' | 'cambiMean' | 'encodingDurationMs' | 'sourceSelfVmaf' | 'sourceCambiMean'>>
 }
 
@@ -279,7 +282,7 @@ function getOptimizationQualityChoices(
   searchedProfile?: OptimizationQualityProfile,
 ): OptimizationQualityChoice[] {
   if (!cachedMeasurement) return []
-  return (['transparent', 'maximum_savings'] as const).map(profile => {
+  return (['transparent', 'balanced', 'maximum_savings'] as const).map(profile => {
     if (!cachedMeasurement.complete || profile !== searchedProfile) return { profile, status: 'measurement_incomplete' }
     try {
       const maximumOutputBytesPerSecond = sourceSize / sourceDurationSeconds
@@ -301,6 +304,7 @@ function getOptimizationQualityChoices(
           encodingDurationMs: candidate.encodingDurationMs,
           sourceSelfVmaf: candidate.sourceSelfVmaf,
           sourceCambiMean: candidate.sourceCambiMean,
+          searchSummary: candidate.searchSummary,
         },
         alternatives: alternatives.map(alternative => ({
           encoder: alternative.encoder,
@@ -405,7 +409,8 @@ export class TranscodingService {
   private activeJobs = new Map<number, AbortController>()
   private initializedPromise: Promise<void> | null = null
   private capabilitiesPromise: Promise<TranscodingCapabilities> | null = null
-  private analysisCache = new Map<string, Awaited<ReturnType<ReturnType<typeof getMediaFileAnalyzer>['analyzeFile']>>>()
+  private capabilitiesCachedAt = 0
+  private analysisCache = new ValidatedFileAnalysisCache<Awaited<ReturnType<ReturnType<typeof getMediaFileAnalyzer>['analyzeFile']>>>()
   private showPreflights = new Map<string, { request: ShowTranscodeRequest; result: ShowTranscodePreflight }>()
   private measuredOptimizationService = new MeasuredOptimizationService()
   private optimizationCandidateService = new OptimizationCandidateService()
@@ -418,7 +423,9 @@ export class TranscodingService {
   invalidate(): void {
     this.initializedPromise = null
     this.capabilitiesPromise = null
+    this.capabilitiesCachedAt = 0
     this.analysisCache.clear()
+    this.showPreflights.clear()
     getLoggingService().debug('[TranscodingService]', 'TranscodingService invalidated caches')
   }
 
@@ -480,7 +487,7 @@ export class TranscodingService {
     const candidateById = new Map(evidence.map(candidate => [candidate.item.id, candidate]))
     const videoCandidates = evidence.filter(candidate => candidate.reasons.includes('h264_video_transcode') || candidate.reasons.includes('hevc_to_av1'))
     const otherOperationCandidates: OtherOperationCandidate[] = evidence
-      .filter(candidate => candidate.reasons.some(reason => reason === 'audio_stream_pruning' || reason === 'subtitle_stream_pruning' || reason === 'dolby_vision_profile_5_mp4_remux'))
+      .filter(candidate => !videoCandidates.some(video => video.item.id === candidate.item.id) && candidate.reasons.some(reason => reason === 'audio_stream_pruning' || reason === 'subtitle_stream_pruning' || reason === 'dolby_vision_profile_5_mp4_remux'))
       .map(candidate => ({
         mediaItemId: candidate.item.id,
         label: candidate.item.title,
@@ -574,7 +581,7 @@ export class TranscodingService {
     const candidates = items.flatMap(item => {
       const candidate = this.optimizationCandidateService.discover(item, {
         av1HardwareEncodingAvailable,
-        targetCodec: 'hevc',
+        targetCodec: DEFAULT_OPTIMIZATION_VIDEO_CODEC,
         audioPruningEnabled: true,
         originalAudioLanguage: item.original_language ?? undefined,
         subtitleLanguageWhitelist,
@@ -683,7 +690,7 @@ export class TranscodingService {
         if (!analysis.success || analysis.filePath !== episode.file_path || analysis.fileSizeBytes !== stat.size || !video) {
           throw new Error(`File analysis is incomplete or stale for "${episode.title}"`)
         }
-        this.analysisCache.set(episode.file_path, analysis)
+        this.analysisCache.set(episode.file_path, stat, analysis)
         return { episode, status: 'ready', stat, analysis: { ...analysis, video } }
       } catch (error) {
         if (operation?.signal?.aborted) throw error
@@ -1254,7 +1261,7 @@ export class TranscodingService {
     await operation?.waitUntilRunning()
       operation?.signal.throwIfAborted()
     operation?.beginCommit()
-    this.showPreflights.set(preflightId, { request, result })
+    this.retainPreflight(preflightId, { request, result })
     await getDatabase().config.setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ request, result }))
     const measuredResults = results.filter(plan => plan.sourceAnalysis && (plan.samplingRole || plan.decisionStatus === 'quality_threshold_unmet' || plan.decisionStatus === 'measurement_failed' || plan.decisionStatus === 'incompatible'))
     for (const plan of measuredResults) {
@@ -1297,9 +1304,16 @@ export class TranscodingService {
       episodes: [{ mediaItemId, label: item.title, compatible: true, hdrFormat: analysis.video?.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256: fingerprint, operations: ['stream_pruning'], decisionStatus: 'actionable', evidenceStatus: 'measured', confidence: 'high', savingsBasis: `retained audio streams: ${retainedAudioIndexes.join(', ')}`, adviceReason: 'Review explicit retained audio streams before queueing.', options, sourceAnalysis: analysis }],
     }
     const request: ShowTranscodeRequest = { mediaItemId, sourceId: item.source_id, libraryId: item.library_id, options }
-    this.showPreflights.set(id, { request, result })
+    this.retainPreflight(id, { request, result })
     await getDatabase().config.setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${id}`, JSON.stringify({ request, result }))
     return result
+  }
+
+  /** Retains a small hot set; authoritative reviews are persisted in the database. */
+  private retainPreflight(id: string, value: { request: ShowTranscodeRequest; result: ShowTranscodePreflight }): void {
+    this.showPreflights.delete(id)
+    this.showPreflights.set(id, value)
+    while (this.showPreflights.size > 32) this.showPreflights.delete(this.showPreflights.keys().next().value!)
   }
 
   async queueShowTranscode(preflightId: string): Promise<{ batchId: string; queuedMediaItemIds: number[]; queuedTaskIds: string[] }> {
@@ -1376,7 +1390,7 @@ export class TranscodingService {
       queuedMediaItemIds: [...new Set([...(preflight.result.queuedMediaItemIds ?? []), ...queueableEpisodes.map(episode => episode.mediaItemId)])],
       queuedTaskIds: [...new Set([...(preflight.result.queuedTaskIds ?? []), ...taskIds])],
     }
-    this.showPreflights.set(preflightId, { ...preflight, result: queued })
+    this.retainPreflight(preflightId, { ...preflight, result: queued })
     await getDatabase().config.setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ ...preflight, result: queued }))
     getLoggingService().info('[TVOptimization]', `Queue completed: preflight=${preflightId}, batch=${preflight.result.batchId}, queuedMediaItems=${queueableEpisodes.length}`)
     return { batchId: preflight.result.batchId, queuedMediaItemIds: queueableEpisodes.map(episode => episode.mediaItemId), queuedTaskIds: taskIds }
@@ -1449,7 +1463,7 @@ export class TranscodingService {
       delete result.approvedAt
       delete result.approvalFingerprint
     }
-    this.showPreflights.set(preflightId, { ...preflight, result })
+    this.retainPreflight(preflightId, { ...preflight, result })
     await getDatabase().config.setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ ...preflight, result }))
     getLoggingService().info('[TVOptimization]', 'Sample group approval updated', {
       event: approved ? 'sample-group.approved' : 'sample-group.approval-revoked',
@@ -1647,11 +1661,13 @@ export class TranscodingService {
   }
 
   async getCapabilities(options: { refresh?: boolean } = {}): Promise<TranscodingCapabilities> {
-    if (this.capabilitiesPromise && !options.refresh) return this.capabilitiesPromise
+    const cacheFresh = Date.now() - this.capabilitiesCachedAt < 10 * 60 * 1000
+    if (this.capabilitiesPromise && !options.refresh && cacheFresh) return this.capabilitiesPromise
+    this.capabilitiesCachedAt = Date.now()
     this.capabilitiesPromise = (async () => {
       const [availability, detectedGpus] = await Promise.all([
         this.checkAvailability(),
-        GpuDetector.detectGpus({ refresh: options.refresh })
+        GpuDetector.detectGpus({ refresh: options.refresh || !cacheFresh })
       ])
       const gpus = await this.resolveGpuEncoderDevices(detectedGpus)
       const persistedSelection = await getDatabase().config.getSetting('selected_transcoding_gpu_id')
@@ -1681,7 +1697,10 @@ export class TranscodingService {
       await getDatabase().config.setSetting(TranscodingService.CAPABILITIES_CACHE_KEY, JSON.stringify({ fingerprint, detectedAt: capabilities.detectedAt, deviceEncoders: capabilities.deviceEncoders } satisfies TranscodingCapabilitiesCacheRecord))
       getLoggingService().info('[TranscodingService]', `Hardware snapshot captured at ${capabilities.detectedAt}: ${gpus.length} GPU(s), device encoders=${JSON.stringify(capabilities.deviceEncoders)}`)
       return { ...capabilities, snapshotFingerprint: fingerprint }
-    })()
+    })().catch(error => {
+      this.capabilitiesPromise = null
+      throw error
+    })
     return this.capabilitiesPromise
   }
 
@@ -1930,11 +1949,7 @@ export class TranscodingService {
    */
   async getTranscodeParameters(filePath: string, options: TranscodeOptions = {}): Promise<TranscodingParams> {
     const analyzer = getMediaFileAnalyzer()
-    let analysis = this.analysisCache.get(filePath)
-    if (!analysis) {
-      analysis = await analyzer.analyzeFile(filePath)
-      if (analysis.success) this.analysisCache.set(filePath, analysis)
-    }
+    const analysis = await this.analysisCache.get(filePath, () => analyzer.analyzeFile(filePath))
     if (!analysis.success) throw new Error(`Failed to analyze file: ${analysis.error}`)
     const effectiveOptions: TranscodeOptions = { ...options }
 
@@ -2033,7 +2048,7 @@ export class TranscodingService {
       expectedEncoder = getHardwareEncoder(selectedVendor, targetCodec) ?? ''
       if (!expectedEncoder) throw new Error(`${selectedVendor} hardware encoding does not support ${targetCodec.toUpperCase()} in this workflow.`)
     } else {
-      expectedEncoder = targetCodec === 'hevc' ? 'x265' : 'svt_av1'
+      expectedEncoder = getOptimizationVideoCodec(targetCodec).softwareEncoder
     }
     if (capabilitiesForOptions && !capabilitiesForOptions.deviceEncoders[selectedGpuIdForOptions ?? '']?.includes(expectedEncoder)) {
       throw new Error(`The selected device does not support ${targetCodec.toUpperCase()} encoding.`)
@@ -2500,7 +2515,7 @@ export class TranscodingService {
     if (!options.qualityProfile) throw new Error('Measurement requires a quality profile')
     if (!options.encoderPolicy) throw new Error('Measurement requires an encoder policy')
     signal?.throwIfAborted()
-    const analysis = this.analysisCache.get(filePath) ?? await getMediaFileAnalyzer().analyzeFile(filePath)
+    const analysis = await this.analysisCache.get(filePath, () => getMediaFileAnalyzer().analyzeFile(filePath))
     if (!analysis.success || !analysis.video || !analysis.durationMs) throw new Error(analysis.error || 'Complete media analysis is required for measurement')
     if (!analysis.video.frameRate) throw new Error('A source frame rate is required for measured quality analysis')
     const capabilities = options.encoderPolicy === 'software' ? undefined : await this.getCapabilities()
@@ -2508,7 +2523,7 @@ export class TranscodingService {
     const automaticGpuCandidates = options.encoderPolicy === 'automatic'
       ? capabilities?.gpus.filter(gpu => {
         const encoder = getHardwareEncoder(gpu.vendor, options.targetCodec!)
-        return encoder !== undefined && capabilities.deviceEncoders[gpu.id]?.includes(encoder)
+        return encoder !== undefined && supportsMeasuredOptimizationEncoder(encoder) && capabilities.deviceEncoders[gpu.id]?.includes(encoder)
       })
       : undefined
     const automaticGpu = automaticGpuCandidates?.find(gpu => gpu.id === (options.gpuId || capabilities?.selectedGpuId)) ?? automaticGpuCandidates?.[0]
@@ -2517,12 +2532,13 @@ export class TranscodingService {
     const hardwareEncoder = hardwareVendor && options.encoderPolicy !== 'software'
       ? getHardwareEncoder(hardwareVendor, options.targetCodec)
       : undefined
-    if (options.encoderPolicy !== 'software' && options.encoderPolicy !== 'automatic' && !hardwareEncoder) throw new Error(`The selected hardware does not support ${options.targetCodec.toUpperCase()} encoding.`)
+    if (options.encoderPolicy !== 'software' && options.encoderPolicy !== 'automatic' && (!hardwareEncoder || !supportsMeasuredOptimizationEncoder(hardwareEncoder))) throw new Error(`The selected hardware has no validated measured-optimization support for ${options.targetCodec.toUpperCase()}.`)
     if (hardwareEncoder && !capabilities!.deviceEncoders[encoderGpu!.id]?.includes(hardwareEncoder)) throw new Error(`The selected device does not support ${hardwareEncoder} encoding.`)
     const ladder = buildCandidateLadder(options.targetCodec, options.encoderPolicy, hardwareEncoder)
     const measuredCandidates = [...previouslyMeasured]
     let measuredSamples = [...previouslyMeasuredSamples]
     let candidateSearchRounds = 0
+    const maximumCandidates = new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.preset}`)).size * MAX_MEASURED_CANDIDATES_PER_PRESET
     const candidateDomain = [...new Set(ladder.map(candidate => candidate.encoder))].map(encoder => ({
       encoder,
       presets: [...new Set(ladder.filter(candidate => candidate.encoder === encoder).map(candidate => candidate.preset))],
@@ -2596,6 +2612,7 @@ export class TranscodingService {
         if (candidates.length) {
           candidateSearchRounds += 1
           const roundStartedAt = performance.now()
+          await onProgress?.(`Measuring candidate ${measuredCandidates.length + 1} of at most ${maximumCandidates}: ${candidates[0].encoder}/${candidates[0].preset} q${candidates[0].quality}`)
           const roundCandidates = candidates.map(({ encoder, preset, quality }) => ({ encoder, preset, quality }))
           const estimatedCandidateSampleBytes = Math.ceil((plannedBitrate
             ? plannedBitrate / 8 * sampleSeconds
@@ -2664,6 +2681,11 @@ export class TranscodingService {
         if (measurementComplete) break
         if (!nextCandidateSearch(ladder, measuredCandidates, options.qualityProfile).length) {
           measurementComplete = true
+          const budgetReached = [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.preset}`))].some(key =>
+            measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.preset}` === key).length >= MAX_MEASURED_CANDIDATES_PER_PRESET)
+          for (const candidate of measuredCandidates) {
+            candidate.searchSummary = { measuredCount: measuredCandidates.length, maximumCandidates, budgetReached }
+          }
           await onMeasuredCandidates?.(measuredCandidates, true)
           break
         }
@@ -2671,6 +2693,12 @@ export class TranscodingService {
       signal?.throwIfAborted()
       if (measurementComplete && previouslyMeasured.length === measuredCandidates.length) await onMeasuredCandidates?.(measuredCandidates, true)
       const selected = selectMeasuredCandidate(options.qualityProfile, measuredCandidates, maximumOutputBytesPerSecond)
+      const budgetReached = [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.preset}`))].some(key =>
+        measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.preset}` === key).length >= MAX_MEASURED_CANDIDATES_PER_PRESET)
+      selected.searchSummary = { measuredCount: measuredCandidates.length, maximumCandidates, budgetReached }
+      await onProgress?.(budgetReached
+        ? `Search budget reached: recommending the best of ${measuredCandidates.length} measured candidates`
+        : `Quality search completed: compared ${measuredCandidates.length} candidates`)
       getLoggingService().info('[TVOptimization]', 'Measured candidate search completed', {
         event: 'candidate-search.completed',
         qualityProfile: options.qualityProfile,
@@ -2680,6 +2708,8 @@ export class TranscodingService {
         ...searchContext,
         rounds: candidateSearchRounds,
         measuredCandidateCount: measuredCandidates.length,
+        budgetReached,
+        maximumCandidates,
         selectedCandidate: { encoder: selected.encoder, preset: selected.preset, quality: selected.quality },
       })
       if (!onMeasuredCandidates) for (const candidate of measuredCandidates) if (candidate !== selected) for (const sample of candidate.samplePaths!) await fs.unlink(sample)
@@ -2834,7 +2864,7 @@ export class TranscodingService {
     if (requiredSampleGroupIds.some(groupId => !approvedSampleGroupIds.has(groupId))) throw new Error('Review and approve every measured sample group before approving this plan')
     const approved = { ...preflight.result, userApproved: true, approvedAt: new Date().toISOString(), approvalFingerprint: this.preflightFingerprint(preflight.result) }
     getLoggingService().info('[TVOptimization]', `Preflight approved: preflight=${preflightId}, batch=${approved.batchId}, sampleRequiredEpisodes=${approved.episodes.filter(episode => episode.compatible && episode.decisionStatus === 'sample_required').length}`)
-    this.showPreflights.set(preflightId, { ...preflight, result: approved })
+    this.retainPreflight(preflightId, { ...preflight, result: approved })
     await getDatabase().config.setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ ...preflight, result: approved }))
     return approved
   }
