@@ -17,20 +17,26 @@ export class PathUtils {
   static toDatabasePath(filePath: string | null | undefined): string {
     if (!filePath) return ''
     
-    // First, convert all backslashes to forward slashes to ensure posix-style normalization works everywhere
-    let normalized = filePath.replace(/\\/g, '/')
-    
-    // Preserve Windows UNC prefix (e.g., //nas/movies)
-    const isUnc = normalized.startsWith('//')
-    
-    // Resolve redundant segments using posix normalization (which works on forward slashes)
-    normalized = path.posix.normalize(normalized)
-    
-    // If it was a UNC path, ensure it has the double slash (posix.normalize might reduce // to /)
-    if (isUnc && !normalized.startsWith('//')) {
+    // Database paths use '/' regardless of the host OS. Windows absolute paths
+    // must be normalized with win32 rules to retain the drive or UNC share root.
+    const unified = filePath.replace(/\\/g, '/')
+    const isDriveAbsolute = /^[A-Za-z]:\//.test(unified)
+    const isUnc = /^\/\/[^/]+\/[^/]+(?:\/|$)/.test(unified)
+    if (isDriveAbsolute || isUnc) {
+      let normalized = path.win32.normalize(unified).replace(/\\/g, '/')
+      // win32.normalize adds a trailing slash to a bare UNC share root.
+      if (isUnc && !unified.endsWith('/') && normalized.endsWith('/')) {
+        normalized = normalized.slice(0, -1)
+      }
+      return normalized
+    }
+
+    // Keep existing POSIX handling, including the legacy double-slash prefix
+    // for incomplete UNC-style paths such as //host.
+    let normalized = path.posix.normalize(unified)
+    if (unified.startsWith('//') && !normalized.startsWith('//')) {
       normalized = '/' + normalized
     }
-    
     return normalized
   }
 
