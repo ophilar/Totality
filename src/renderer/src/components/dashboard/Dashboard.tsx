@@ -190,7 +190,8 @@ export function Dashboard({
       resizeObserver.disconnect()
       window.removeEventListener('resize', measure)
     }
-  }, [hasMovies, hasTV, hasMusic, isLoading, completenessTab])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- ResizeObserver watches DOM size changes; completenessTab triggers re-render but refs are stable
+  }, [hasMovies, hasTV, hasMusic, isLoading])
 
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const requestIdRef = useRef(0)
