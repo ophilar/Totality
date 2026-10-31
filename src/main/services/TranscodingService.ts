@@ -36,6 +36,7 @@ import { evaluatePlaybackTarget, getPlaybackTargetContainers, recommendPlaybackT
 import { getTaskQueueService } from './TaskQueueService'
 import { buildOptimizationSavingsBreakdown, calculateBitrateSavingsBytes, projectMeasuredSavingsBytes, sumMeasuredStreamBytes, type OptimizationSavingsCoverage, type OptimizationSavingsOperation } from './OptimizationSavingsService'
 import { normalizeAudioCodec, normalizeVideoCodec } from './MediaNormalizer'
+import { DEFAULT_OPTIMIZATION_VIDEO_CODEC } from './transcoding/OptimizationCodecPolicy'
 import { aggregateShowOptimizationMetrics } from './ShowOptimizationMetricsService'
 import { SETTING_KEYS } from '@shared/settingKeys'
 
@@ -575,7 +576,7 @@ export class TranscodingService {
     const candidates = items.flatMap(item => {
       const candidate = this.optimizationCandidateService.discover(item, {
         av1HardwareEncodingAvailable,
-        targetCodec: 'hevc',
+        targetCodec: DEFAULT_OPTIMIZATION_VIDEO_CODEC,
         audioPruningEnabled: true,
         originalAudioLanguage: item.original_language ?? undefined,
         subtitleLanguageWhitelist,
