@@ -1,5 +1,6 @@
 import type { MediaItem, SubtitleTrack } from '@main/types/database'
 import { normalizeVideoCodec } from './MediaNormalizer'
+import { DEFAULT_OPTIMIZATION_VIDEO_CODEC, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { buildOptimizationSavingsBreakdown } from './OptimizationSavingsService'
 import { selectSubtitleStreamIndexes } from './transcoding/StreamSelectionPlan'
@@ -14,12 +15,12 @@ export type OptimizationCandidateReason =
 export interface OptimizationCandidateEvidence {
   reasons: OptimizationCandidateReason[]
   estimatedSavingsBytes: number | null
-  targetCodec?: 'hevc' | 'av1'
+  targetCodec?: OptimizationVideoCodec
 }
 
 export interface OptimizationCandidatePolicy {
   av1HardwareEncodingAvailable: boolean
-  targetCodec?: 'hevc' | 'av1'
+  targetCodec?: OptimizationVideoCodec
   audioPruningEnabled: boolean
   originalAudioLanguage?: string
   subtitleLanguageWhitelist: readonly string[]
@@ -51,7 +52,7 @@ export class OptimizationCandidateService {
     const codec = normalizeVideoCodec(item.video_codec)
     // A selected output codec is authoritative. Hardware availability only determines
     // whether the requested conversion can run; it never changes HEVC into AV1.
-    const selectedVideoCodec = policy.targetCodec ?? 'hevc'
+    const selectedVideoCodec = policy.targetCodec ?? DEFAULT_OPTIMIZATION_VIDEO_CODEC
     if (codec === 'H.264') reasons.push('h264_video_transcode')
     if (codec === 'HEVC' && selectedVideoCodec === 'av1' && policy.av1HardwareEncodingAvailable) reasons.push('hevc_to_av1')
 
