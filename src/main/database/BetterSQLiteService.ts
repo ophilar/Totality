@@ -1798,9 +1798,15 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   getMediaItemByPath(filePath: string): MediaItem | null {
     if (!this.db) throw new Error('Database not initialized')
 
-    const stmt = this.db.prepare('SELECT * FROM media_items WHERE file_path = ?')
-    const row = stmt.get(filePath) as Record<string, unknown> | undefined
-    return row ? this.mapMediaItem(row) : null
+    const row = this.db.prepare('SELECT * FROM media_items WHERE file_path = ?').get(filePath) as Record<string, unknown> | undefined
+    if (row) return this.mapMediaItem(row)
+    // A secondary movie version also belongs to an existing canonical media item.
+    // Never create another parent solely because its file is not the best version.
+    const parents = this.db.prepare(
+      'SELECT m.* FROM media_items m JOIN media_item_versions v ON v.media_item_id = m.id WHERE v.file_path = ? LIMIT 2'
+    ).all(filePath) as Record<string, unknown>[]
+    if (parents.length > 1) throw new Error(`Multiple media items own the same version file ${filePath}`)
+    return parents.length ? this.mapMediaItem(parents[0]) : null
   }
 
   /**
@@ -2667,7 +2673,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
    * Sync versions for a media item: delete stale versions not in the current
    * file paths, upsert current versions, and update best version + version_count.
    */
-  syncMediaItemVersions(mediaItemId: number, versions: MediaItemVersion[]): void {
+  syncMediaItemVersions(mediaItemId: number, versions: MediaItemVersion[], mode: 'replace' | 'merge' = 'replace'): void {
     if (!this.db) throw new Error('Database not initialized')
 
     const selectedFilePath = (this.db.prepare(
@@ -2675,13 +2681,16 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     ).get(mediaItemId) as { file_path: string } | undefined)?.file_path
     const currentFilePaths = versions.map(v => v.file_path).filter(Boolean)
 
-    if (currentFilePaths.length > 0) {
-      const placeholders = currentFilePaths.map(() => '?').join(',')
-      this.db.prepare(
-        `DELETE FROM media_item_versions WHERE media_item_id = ? AND file_path NOT IN (${placeholders})`
-      ).run(mediaItemId, ...currentFilePaths)
-    } else {
-      this.db.prepare('DELETE FROM media_item_versions WHERE media_item_id = ?').run(mediaItemId)
+    if (mode === 'replace') {
+      // Replacement is authorized only when caller supplies an exhaustive inventory.
+      if (currentFilePaths.length > 0) {
+        const placeholders = currentFilePaths.map(() => '?').join(',')
+        this.db.prepare(
+          `DELETE FROM media_item_versions WHERE media_item_id = ? AND file_path NOT IN (${placeholders})`
+        ).run(mediaItemId, ...currentFilePaths)
+      } else {
+        this.db.prepare('DELETE FROM media_item_versions WHERE media_item_id = ?').run(mediaItemId)
+      }
     }
 
     for (const version of versions) {
@@ -2698,10 +2707,15 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
    * Update the best version flag and sync parent media_item fields.
    * Picks the highest quality version and copies its data to the parent item.
    */
-  updateBestVersion(mediaItemId: number): void {
+  updateBestVersion(mediaItemId: number, observedPaths?: ReadonlySet<string>): void {
     if (!this.db) throw new Error('Database not initialized')
 
-    const versions = this.getMediaItemVersions(mediaItemId)
+    // When an inventory is partial, keep all historical versions but choose
+    // the playback parent only from versions actually observed in this scan.
+    const allVersions = this.getMediaItemVersions(mediaItemId)
+    const versions = observedPaths
+      ? allVersions.filter(version => observedPaths.has(version.file_path))
+      : allVersions
     if (versions.length === 0) return
 
     // Resolution is the only available objective source-quality ranking.

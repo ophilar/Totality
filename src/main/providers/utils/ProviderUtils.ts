@@ -147,16 +147,27 @@ export function normalizeGroupTitle(title: string): string {
     .trim()
 }
 
+export interface MediaGroupingIdentity {
+  tmdbId?: string | number | null
+  imdbId?: string | null
+  title?: string | null
+  year?: number | null
+}
+
+/** All movie grouping and existing-parent lookup must use the same identity. */
+export function getMediaGroupingKey(item: MediaGroupingIdentity): string {
+  return item.tmdbId ? `tmdb:${item.tmdbId}`
+    : item.imdbId ? `imdb:${item.imdbId}`
+    : `title:${normalizeGroupTitle(item.title || '')}|${item.year || ''}`
+}
+
 export function groupByMediaIdentity<T>(
   items: readonly T[],
-  getIdentity: (item: T) => { tmdbId?: string | number; imdbId?: string; title?: string; year?: number },
+  getIdentity: (item: T) => MediaGroupingIdentity,
 ): T[][] {
   const groups = new Map<string, T[]>()
   for (const item of items) {
-    const itemIdentity = getIdentity(item)
-    const identity = itemIdentity.tmdbId ? `tmdb:${itemIdentity.tmdbId}`
-      : itemIdentity.imdbId ? `imdb:${itemIdentity.imdbId}`
-      : `title:${normalizeGroupTitle(itemIdentity.title || '')}|${itemIdentity.year || ''}`
+    const identity = getMediaGroupingKey(getIdentity(item))
     const group = groups.get(identity)
     if (group) group.push(item)
     else groups.set(identity, [item])

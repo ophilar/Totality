@@ -262,6 +262,38 @@ describe('BetterSQLiteService — Media Items', () => {
     expect(versions.every(version => version.tier_score === null)).toBe(true)
   })
 
+  it('merges a changed movie edition without deleting unchanged sibling versions', () => {
+    const id = service.upsertMediaItem(makeMediaItem({ source_type: 'local', plex_id: 'canonical-movie' }))
+    const version = (filePath: string, resolution: string, height: number) => ({
+      media_item_id: id, version_source: 'local_file', file_path: filePath,
+      file_size_bytes: 1234, duration_ms: 7_200, resolution, width: 1920, height,
+      video_codec: 'h264', video_bitrate_kbps: 2000, audio_codec: 'aac',
+      audio_channels: 2, audio_bitrate_kbps: 128, quality_tier: resolution,
+      tier_quality: 'UNKNOWN' as const, tier_score: null, is_best: false,
+    })
+    service.syncMediaItemVersions(id, [
+      version('/versions/theatrical.mkv', '1080p', 1080),
+      version('/versions/extended.mkv', '4K', 2160),
+    ])
+    expect(service.getMediaItemByPath('/versions/extended.mkv')?.id).toBe(id)
+
+    // A watcher or incremental scan sees only one file. Its update is not
+    // permission to remove the other version, or to create a second parent.
+    service.syncMediaItemVersions(id, [
+      version('/versions/theatrical.mkv', '1080p', 1080),
+    ], 'merge')
+    expect(service.getMediaItemVersions(id).map(row => row.file_path).sort()).toEqual([
+      '/versions/extended.mkv', '/versions/theatrical.mkv',
+    ])
+    expect(service.getMediaItemByPath('/versions/theatrical.mkv')?.id).toBe(id)
+
+    // If a complete scan currently sees only the theatrical edition, it can
+    // select that version without losing any historical version record.
+    service.updateBestVersion(id, new Set(['/versions/theatrical.mkv']))
+    expect(service.getMediaItem(id)?.file_path).toBe('/versions/theatrical.mkv')
+    expect(service.getMediaItemVersions(id)).toHaveLength(2)
+  })
+
   it('maps SQLite integer flags to booleans when loading versions in batches', () => {
     const mediaItemId = service.upsertMediaItem(makeMediaItem())
     const versionId = service.upsertMediaItemVersion({
