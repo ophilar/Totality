@@ -2892,7 +2892,9 @@ export class TranscodingService {
       }
       const searchComplete = cached.searchVersion === OPTIMIZATION_SEARCH_VERSION && cached.complete
       // Record actual reuse time so eligible unreferenced entries age out last.
-      await fs.utimes(sampleDirectory, new Date(), new Date())
+      await fs.utimes(sampleDirectory, new Date(), new Date()).catch(error => {
+        getLoggingService().warn('[TVOptimization]', `Could not update sample cache recency: ${getErrorMessage(error)}`)
+      })
       getLoggingService().info('[TVOptimization]', 'Measured candidate cache reused', {
         event: 'measurement-cache.reused',
         cacheKey,
