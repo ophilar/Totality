@@ -20,6 +20,7 @@ import { formatLanguage, getOptimizationContainer, isSameLanguage, LANGUAGE_OPTI
 import { SETTING_KEYS } from '@shared/settingKeys'
 import { normalizeVideoCodec } from '@main/services/MediaNormalizer'
 import { OPTIMIZATION_VIDEO_CODECS, getOptimizationVideoCodec, playbackProfileSupportsOptimizationCodec } from '@main/services/transcoding/OptimizationCodecPolicy'
+import { availableOptimizationEncoders, supportedOptimizationCodecs } from '@main/services/transcoding/OptimizationEncoderPolicy'
 import { describeMissingOptimizationSettings, getMissingOptimizationSettings } from './transcoding/readiness'
 import { SeriesOptimizationFlow, type SeriesOptimizationFlowProps } from './SeriesOptimizationFlow'
 import { OptimizationReviewSummary } from './transcoding/OptimizationReviewSummary'
@@ -174,21 +175,23 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
   const failureReportedRef = useRef(false)
   const selectedGpu = capabilities?.gpus.find(gpu => gpu.id === options.gpuId)
   const hardwareEncoder = selectedGpu && targetCodec ? getHardwareEncoder(selectedGpu.vendor, targetCodec) : undefined
-  const hardwareAvailable = Boolean(hardwareEncoder && selectedGpu && capabilities?.deviceEncoders[selectedGpu.id]?.includes(hardwareEncoder))
+  const encoderAvailability = targetCodec ? availableOptimizationEncoders(targetCodec, {
+    gpus: capabilities?.gpus ?? [],
+    deviceEncoders: capabilities?.deviceEncoders ?? {},
+    selectedGpuId: selectedGpu?.id,
+  }) : undefined
+  const hardwareAvailable = encoderAvailability?.selectedHardware ?? false
   const softwareEncoder = targetCodec ? getOptimizationVideoCodec(targetCodec).softwareEncoder : undefined
-  const softwareAvailable = Boolean(softwareEncoder && capabilities?.deviceEncoders.software.includes(softwareEncoder))
+  const softwareAvailable = encoderAvailability?.software ?? false
   const targetProfile = targetProfiles.find(profile => profile.id === targetProfileId)
-  const supportedTargetCodecs = OPTIMIZATION_VIDEO_CODECS.map(item => item.value).filter(codec => {
-    const profileSupports = playbackPolicy === 'allow-transcoding' || playbackProfileSupportsOptimizationCodec(codec, targetProfile?.definition.video.codecs)
-    const codecCapabilities = capabilities?.encodingMatrix.codecs.find(value => value.codec === codec)?.capabilities ?? []
-    const deviceIndex = selectedGpu ? capabilities?.encodingMatrix.devices.findIndex(device => device.id === selectedGpu.id) : undefined
-    const encoderSupports = configuration.encoderPolicy === 'software'
-      ? Boolean(codecCapabilities[0])
-      : configuration.encoderPolicy === 'hardware'
-        ? deviceIndex !== undefined && deviceIndex >= 0 && Boolean(codecCapabilities[deviceIndex])
-        : codecCapabilities.some(Boolean)
-    return profileSupports && encoderSupports
-  })
+  const supportedTargetCodecs = capabilities ? supportedOptimizationCodecs({
+    gpus: capabilities.gpus,
+    deviceEncoders: capabilities.deviceEncoders,
+    selectedGpuId: selectedGpu?.id,
+    encoderPolicy: configuration.encoderPolicy,
+    playbackPolicy,
+    playbackCodecs: targetProfile?.definition.video.codecs,
+  }) : []
   const unsupportedTargetCodecReasons = Object.fromEntries(OPTIMIZATION_VIDEO_CODECS.map(item => item.value)
     .filter(codec => !supportedTargetCodecs.includes(codec))
     .map(codec => {
@@ -275,17 +278,15 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
       }
 
       const defaultEngine = capabilities?.engines?.[0] || 'ffmpeg'
-      const hardwareSupports = (gpu: NonNullable<typeof capabilities>['gpus'][number], codec: 'hevc' | 'av1') => {
-        const encoder = getHardwareEncoder(gpu.vendor, codec)
-        return Boolean(encoder && capabilities?.deviceEncoders[gpu.id]?.includes(encoder))
-      }
-      const codecIsSupported = (codec: NonNullable<typeof targetCodec>) => {
-        const profile = targetProfiles.find(candidate => candidate.id === configuredTargetProfileId)
-        const profileSupports = !profile || profile.definition.video.codecs.some(value => normalizeVideoCodec(value) === normalizeVideoCodec(codec))
-        const matrix = capabilities?.encodingMatrix.codecs.find(value => value.codec === codec)?.capabilities ?? []
-        return profileSupports && matrix.some(Boolean)
-      }
-      const preferredCodec = (['hevc', 'av1'] as const).find(codecIsSupported) ?? 'hevc'
+      const hardwareSupports = (gpu: NonNullable<typeof capabilities>['gpus'][number], codec: 'hevc' | 'av1' | '') =>
+        Boolean(codec && availableOptimizationEncoders(codec, { gpus: [gpu], deviceEncoders: capabilities?.deviceEncoders ?? {}, selectedGpuId: gpu.id }).selectedHardware)
+      const profile = targetProfiles.find(candidate => candidate.id === configuredTargetProfileId)
+      const preferredCodec = supportedOptimizationCodecs({
+        gpus: capabilities?.gpus ?? [],
+        deviceEncoders: capabilities?.deviceEncoders ?? {},
+        playbackCodecs: profile?.definition.video.codecs,
+        playbackPolicy: 'direct-play',
+      })[0] ?? ''
       const selectedGpu = capabilities?.gpus?.find(gpu => gpu.vendor === 'Intel' && hardwareSupports(gpu, preferredCodec))
         ?? capabilities?.gpus?.find(gpu => gpu.id === capabilities.selectedGpuId && hardwareSupports(gpu, preferredCodec))
         ?? capabilities?.gpus?.find(gpu => hardwareSupports(gpu, preferredCodec))
