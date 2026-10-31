@@ -704,6 +704,12 @@ export class LocalFolderProvider implements MediaProvider {
         await db.endBatch()
       }
 
+      // Never reconcile deletions against an incomplete file inventory.
+      if (result.errors.length > 0) {
+        result.durationMs = Date.now() - startTime
+        return result
+      }
+
       // Phase 3: Remove stale items (only for full scans)
       // During incremental scans, we only process changed files, so we can't determine stale items
       if (!isIncremental) {
@@ -1244,7 +1250,7 @@ export class LocalFolderProvider implements MediaProvider {
     let skippedUnchanged = 0
 
     const scanDir = async (dir: string, depth = 0): Promise<void> => {
-      if (depth > 15) return // Prevent infinite recursion
+      if (depth > 15) throw new Error(`Directory scan exceeded the supported depth at ${dir}`)
 
       try {
         const entries = await fs.promises.readdir(dir, { withFileTypes: true })
@@ -1297,8 +1303,8 @@ export class LocalFolderProvider implements MediaProvider {
           await new Promise(resolve => setImmediate(resolve))
         }
       } catch (error) {
-        // Skip inaccessible directories
-        console.warn(`[LocalFolderProvider] Cannot access directory ${path.basename(dir)}:`, error)
+        // An incomplete directory inventory cannot safely drive stale-item removal.
+        throw new Error(`Cannot complete directory scan for ${dir}: ${getErrorMessage(error)}`)
       }
     }
 
