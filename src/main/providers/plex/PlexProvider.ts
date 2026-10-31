@@ -515,6 +515,7 @@ export class PlexProvider implements MediaProvider {
             this.getAllEpisodes(item.ratingKey),
           ])
           if (!showMetadata) throw new Error(`Show metadata unavailable for ${item.title}`)
+          if (episodes.length === 0) throw new Error(`Plex returned no episodes for ${item.title}; cannot verify a complete inventory`)
           let showTmdbId: string | undefined
           for (const guid of showMetadata.Guid ?? []) {
             if (guid.id.includes('tmdb://')) {
@@ -648,6 +649,8 @@ export class PlexProvider implements MediaProvider {
                 } else {
                   result.itemsAdded++
                 }
+              } else {
+                result.errors.push(`Could not convert Plex metadata for ${item.title}; stale-item reconciliation will be skipped`)
               }
 
               if (onProgress) {
