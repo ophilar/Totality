@@ -1,6 +1,6 @@
 
 import { APP_CONFIG } from '@main/config'
-import { getOptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
+import { getOptimizationVideoCodec, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
 import type { MeasurementSourcePreparation } from './MeasuredOptimizationService'
 
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
@@ -126,7 +126,7 @@ export function nextCandidateSearch(
   return []
 }
 
-function getQualityDomainKey(encoder: string, targetCodec: 'av1' | 'hevc'): keyof typeof APP_CONFIG.transcoding.sampleQualityDomains {
+function getQualityDomainKey(encoder: string, targetCodec: OptimizationVideoCodec): keyof typeof APP_CONFIG.transcoding.sampleQualityDomains {
   if (encoder === 'x265' || encoder === 'svt_av1') return encoder
   if (encoder.startsWith('nvenc')) return `nvenc_${targetCodec}`
   if (encoder.startsWith('qsv')) return `qsv_${targetCodec}`
@@ -134,7 +134,7 @@ function getQualityDomainKey(encoder: string, targetCodec: 'av1' | 'hevc'): keyo
   throw new Error(`Measured quality domain is not configured for encoder ${encoder}`)
 }
 
-export function buildCandidateLadder(targetCodec: 'av1' | 'hevc', encoderPolicy: 'automatic' | 'hardware' | 'software' | 'compare', hardwareEncoder?: string): CandidateEncodingParameters[] {
+export function buildCandidateLadder(targetCodec: OptimizationVideoCodec, encoderPolicy: 'automatic' | 'hardware' | 'software' | 'compare', hardwareEncoder?: string): CandidateEncodingParameters[] {
   const softwareEncoder = getOptimizationVideoCodec(targetCodec).softwareEncoder
   const hardware = hardwareEncoder ?? ''
   const encoders = encoderPolicy === 'hardware' ? [hardware] : encoderPolicy === 'software' ? [softwareEncoder] : encoderPolicy === 'automatic' ? [hardware || softwareEncoder] : [hardware, softwareEncoder]
