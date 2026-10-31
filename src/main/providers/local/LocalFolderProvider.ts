@@ -817,14 +817,13 @@ export class LocalFolderProvider implements MediaProvider {
         return parser.isVideoFile(path.basename(filePath))
       })
 
-      // Handle deleted files
+      // A targeted filesystem event is not a complete inventory. An unplugged
+      // volume and an actual deletion look identical to existsSync; only a
+      // successful full scan is authorized to reconcile missing media.
       const deletedFiles = filePaths.filter(filePath => !fs.existsSync(filePath))
       for (const filePath of deletedFiles) {
-        const existingItem = db.getMediaItemByPath(filePath)
-        if (existingItem?.id) {
-          await db.deleteMediaItem(existingItem.id)
-          result.itemsRemoved++
-          console.log(`[LocalFolderProvider ${this.sourceId}] Removed deleted file: ${path.basename(filePath)}`)
+        if (db.getMediaItemByPath(filePath)) {
+          result.errors.push(`Cannot verify deletion of ${path.basename(filePath)} from a targeted event. Stored media retained; run a full library scan to reconcile.`)
         }
       }
 
@@ -944,7 +943,7 @@ export class LocalFolderProvider implements MediaProvider {
         console.log(`[LocalFolderProvider ${this.sourceId}] TMDB matches: ${parts.join(', ')}`)
       }
 
-      result.success = true
+      result.success = result.errors.length === 0
       result.durationMs = Date.now() - startTime
 
       console.log(`[LocalFolderProvider ${this.sourceId}] Targeted scan complete: ${result.itemsAdded} added, ${result.itemsUpdated} updated, ${result.itemsRemoved} removed`)
