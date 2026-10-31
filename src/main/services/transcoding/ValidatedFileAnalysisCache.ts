@@ -33,7 +33,7 @@ export class ValidatedFileAnalysisCache<T extends { success: boolean }> {
     const before = await statFile(filePath)
     const identity = fileIdentity(before)
     const cached = this.entries.get(filePath)
-    if (matchesFileIdentity(cached?.identity, identity)) {
+    if (cached && matchesFileIdentity(cached.identity, identity)) {
       this.entries.delete(filePath)
       this.entries.set(filePath, cached)
       return cached.value
