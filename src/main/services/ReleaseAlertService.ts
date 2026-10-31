@@ -21,10 +21,15 @@ const RELEASE_TYPE_LABELS: Record<number, string> = {
 export class ReleaseAlertService {
   private pollingTimer: NodeJS.Timeout | null = null
   private startupTimer: NodeJS.Timeout | null = null
-  private alertedIds = new Set<string>() // "tmdbId:type" keys already alerted this session
+  private alertedIds = new Set<string>() // "tmdbId:type" keys already alerted
 
   async start(): Promise<void> {
     const db = getDatabase()
+    // Restore alerted IDs from previous sessions
+    const saved = db.getSetting('release_alert_sent_ids')
+    if (saved) {
+      try { for (const id of JSON.parse(saved)) this.alertedIds.add(id) } catch { /* ignore corrupt data */ }
+    }
     const enabled = db.getSetting('release_alerts_enabled')
     if (enabled !== 'true') return
 
@@ -151,6 +156,10 @@ export class ReleaseAlertService {
         getLoggingService().verbose('[ReleaseAlertService]', `Failed to check ${item.title}: ${(err as Error).message}`)
       }
     }
+
+    // Persist alerted IDs (keep last 500 to prevent unbounded growth)
+    const ids = [...this.alertedIds].slice(-500)
+    db.setSetting('release_alert_sent_ids', JSON.stringify(ids))
 
     return alertCount
   }

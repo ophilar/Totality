@@ -193,12 +193,13 @@ export function Dashboard({
   }, [hasMovies, hasTV, hasMusic, isLoading, completenessTab])
 
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
+  const requestIdRef = useRef(0)
 
   const loadDashboardData = useCallback(async () => {
     // Only show loading skeleton on initial load — subsequent refreshes update in-place
     if (!hasLoadedOnce.current) setIsLoading(true)
     setError(null)
+    const requestId = ++requestIdRef.current
     try {
       // Filter by active source if one is selected
       const sourceId = activeSourceId || undefined
@@ -255,6 +256,9 @@ export function Dashboard({
       setPersonSortBy(effectivePersonSort)
       const theatricalCutoff = lagDaysVal ? new Date(Date.now() - parseInt(lagDaysVal) * 86400000).toISOString().slice(0, 10) : null
 
+      // Discard if a newer request has started
+      if (requestId !== requestIdRef.current) return
+
       setLibraryStats(val(tier1[9], null) as typeof libraryStats)
       setMusicStats(val(tier1[10], null) as typeof musicStats)
 
@@ -281,6 +285,7 @@ export function Dashboard({
       ])
 
       const movieUpgradeData = val(tier2[0], []) as MediaItem[]
+      if (requestId !== requestIdRef.current) return
       const tvUpgradeData = val(tier2[1], []) as MediaItem[]
       const musicUpgradeData = val(tier2[2], []) as MusicAlbumUpgrade[]
       const collectionsData = val(tier2[3], []) as MovieCollectionData[]
@@ -382,6 +387,7 @@ export function Dashboard({
         window.electronAPI.wishlistGetCountsByReason(),
       ])
 
+      if (requestId !== requestIdRef.current) return
       setDuplicateCount((val(tier3[0], []) as Array<{ copies: unknown[] }>).length)
       setRecentlyUpgraded(val(tier3[1], []) as typeof _recentlyUpgraded)
       setStorageAnalytics(val(tier3[2], null) as typeof storageAnalytics)

@@ -1108,11 +1108,14 @@ export class KodiLocalProvider implements MediaProvider {
       }
 
       // Remove stale items (only for full scans, not incremental)
-      if (!isIncremental && scannedProviderIds.size > 0) {
+      if (!isIncremental) {
         const itemType = libraryId === 'movies' ? 'movie' : 'episode'
         const existingItems = db.getMediaItems({ type: itemType, sourceId: this.sourceId, libraryId })
 
-        for (const item of existingItems) {
+        // Safety guard: refuse deletion when scan returned 0 items but DB has items
+        if (scannedProviderIds.size === 0 && existingItems.length > 0) {
+          console.warn(`[KodiLocalProvider ${this.sourceId}] Scan found 0 items but DB has ${existingItems.length} — skipping deletion (possible database read failure)`)
+        } else for (const item of existingItems) {
           if (!scannedProviderIds.has(item.plex_id)) {
             if (item.id) {
               await db.deleteMediaItem(item.id)

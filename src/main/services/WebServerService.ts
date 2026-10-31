@@ -129,6 +129,7 @@ export class WebServerService {
   private tlsDir: string
   private eventThrottles = new Map<WebSocket, Map<string, number>>()
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  private cachePruneTimer: ReturnType<typeof setInterval> | null = null
 
   private readonly THROTTLED_EVENTS = new Set([
     'library:updated', 'quality:analysisProgress', 'music:scanProgress',
@@ -285,8 +286,9 @@ export class WebServerService {
         const proto = useHttps ? 'https' : 'http'
         console.log(`[WebServer] Listening on ${proto}://0.0.0.0:${this.port}`)
 
-        // Prune stale image cache on startup
+        // Prune stale image cache on startup and periodically (every hour)
         this.pruneImageCache()
+        this.cachePruneTimer = setInterval(() => this.pruneImageCache(), 60 * 60 * 1000)
 
         // When HTTPS is enabled, start an HTTP companion on port+1 for cert download + redirect
         if (useHttps) {
@@ -343,6 +345,10 @@ export class WebServerService {
     if (this.sessionCleanupTimer) {
       clearInterval(this.sessionCleanupTimer)
       this.sessionCleanupTimer = null
+    }
+    if (this.cachePruneTimer) {
+      clearInterval(this.cachePruneTimer)
+      this.cachePruneTimer = null
     }
     if (this.wss) {
       for (const client of this.wss.clients) {

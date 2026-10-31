@@ -169,6 +169,9 @@ export function SourceProvider({ children }: SourceProviderProps) {
   sourcesRef.current = sources
 
   // Check connection status for all enabled sources
+  const mountedRef = useRef(true)
+  useEffect(() => { return () => { mountedRef.current = false } }, [])
+
   const checkAllConnections = useCallback(async () => {
     const enabledSources = sourcesRef.current.filter(s => s.is_enabled)
     const newStatus = new Map<string, boolean>()
@@ -184,7 +187,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
       })
     )
 
-    setConnectionStatus(newStatus)
+    if (mountedRef.current) setConnectionStatus(newStatus)
   }, [])
 
   // Load sources on mount

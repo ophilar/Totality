@@ -204,6 +204,7 @@ export function useLibraryEventListeners({
     const handleExclusionsChanged = () => {
       loadCompletenessData()
       loadMusicCompletenessData()
+      _loadStats(activeSourceId || undefined)
     }
     window.addEventListener('exclusions-changed', handleExclusionsChanged)
 

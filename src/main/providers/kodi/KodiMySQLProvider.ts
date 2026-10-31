@@ -665,11 +665,14 @@ export class KodiMySQLProvider implements MediaProvider {
       }
 
       // Remove stale items
-      if (scannedProviderIds.size > 0) {
+      {
         const itemType = libraryId === 'movies' ? 'movie' : 'episode'
         const existingItems = db.getMediaItems({ type: itemType, sourceId: this.sourceId, libraryId })
 
-        for (const item of existingItems) {
+        // Safety guard: refuse deletion when scan returned 0 items but DB has items
+        if (scannedProviderIds.size === 0 && existingItems.length > 0) {
+          console.warn(`[KodiMySQLProvider ${this.sourceId}] Scan found 0 items but DB has ${existingItems.length} — skipping deletion (possible database connection failure)`)
+        } else for (const item of existingItems) {
           if (!scannedProviderIds.has(item.plex_id)) {
             if (item.id) {
               await db.deleteMediaItem(item.id)
