@@ -11,7 +11,7 @@ import { ActivityPanel } from '../ui/ActivityPanel'
 import { MoviesView } from './MoviesView'
 import { TVShowsView } from './TVShowsView'
 import { MusicView } from './MusicView'
-import { Grid3x3, List, Search, X, Library, Layers, Music, Disc3, User, RefreshCw, Film, Tv, CircleFadingArrowUp, Settings, Star, Home } from 'lucide-react'
+import { Grid3x3, List, Search, X, Library, Layers, Music, Disc3, User, RefreshCw, Film, Tv, CircleFadingArrowUp, Settings, Star, Home, SlidersHorizontal } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
 import { useNavigation } from '../../contexts/NavigationContext'
 import { useWishlist } from '../../contexts/WishlistContext'
@@ -171,7 +171,6 @@ export function MediaBrowser({
   // Filter refs - using Map for dynamic buttons
   const tierFilterRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
   const qualityFilterRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
-  const alphabetFilterRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const gridViewRef = useRef<HTMLButtonElement>(null)
   const listViewRef = useRef<HTMLButtonElement>(null)
@@ -186,14 +185,14 @@ export function MediaBrowser({
   const {
     paginatedMovies, setPaginatedMovies, totalMovieCount, moviesLoading,
     movieSortBy, setMovieSortBy, loadPaginatedMovies, loadMoreMovies,
-  } = useMoviePagination({ activeSourceId, activeLibraryId, tierFilter: debouncedTierFilter, qualityFilter: debouncedQualityFilter, searchQuery })
+  } = useMoviePagination({ activeSourceId, activeLibraryId, tierFilter: debouncedTierFilter, qualityFilter: debouncedQualityFilter, searchQuery, alphabetFilter, isMobile })
 
   const {
     paginatedShows, totalShowCount, totalEpisodeCount, showsLoading,
     tvSortBy, setTvSortBy,
     selectedShowEpisodes, setSelectedShowEpisodes, selectedShowEpisodesLoading,
     loadPaginatedShows, loadMoreShows, loadSelectedShowEpisodes,
-  } = useTVShowPagination({ activeSourceId, activeLibraryId, searchQuery })
+  } = useTVShowPagination({ activeSourceId, activeLibraryId, searchQuery, alphabetFilter, isMobile })
 
   // Music pagination (artists, tracks, albums via generic hook)
   const {
@@ -201,7 +200,7 @@ export function MediaBrowser({
     totalCount: totalArtistCount, loading: artistsLoading,
     load: loadPaginatedArtists, loadMore: loadMoreArtists,
   } = usePagination<MusicArtist>({
-    pageSize: isMobile ? 100 : 10000,
+    pageSize: isMobile ? 100 : 200,
     fetchItems: (f) => window.electronAPI.musicGetArtists(f) as Promise<MusicArtist[]>,
     fetchCount: (f) => window.electronAPI.musicCountArtists(f) as Promise<number>,
     buildFilters: () => {
@@ -209,9 +208,10 @@ export function MediaBrowser({
       if (activeSourceId) f.sourceId = activeSourceId
       if (activeLibraryId) f.libraryId = activeLibraryId
       if (searchQuery.trim()) f.searchQuery = searchQuery.trim()
+      if (alphabetFilter) f.alphabetFilter = alphabetFilter
       return f
     },
-    deps: [activeSourceId, activeLibraryId, searchQuery],
+    deps: [activeSourceId, activeLibraryId, searchQuery, alphabetFilter],
   })
 
   const {
@@ -219,7 +219,7 @@ export function MediaBrowser({
     totalCount: totalTrackCount, loading: tracksLoading,
     load: loadPaginatedTracks, loadMore: loadMoreTracks,
   } = usePagination<MusicTrack>({
-    pageSize: 500,
+    pageSize: isMobile ? 100 : 500,
     fetchItems: (f) => window.electronAPI.musicGetTracks(f) as Promise<MusicTrack[]>,
     fetchCount: (f) => window.electronAPI.musicCountTracks(f) as Promise<number>,
     buildFilters: () => {
@@ -237,7 +237,7 @@ export function MediaBrowser({
     totalCount: totalAlbumCount, loading: albumsLoading,
     load: loadPaginatedAlbums, loadMore: loadMoreAlbums,
   } = usePagination<MusicAlbum>({
-    pageSize: isMobile ? 100 : 10000,
+    pageSize: isMobile ? 50 : 200,
     fetchItems: (f) => window.electronAPI.musicGetAlbums(f) as Promise<MusicAlbum[]>,
     fetchCount: (f) => window.electronAPI.musicCountAlbums(f) as Promise<number>,
     buildFilters: () => {
@@ -252,12 +252,14 @@ export function MediaBrowser({
         f.artistId = selectedArtist.id
         f.artistName = selectedArtist.name
       }
+      if (alphabetFilter) f.alphabetFilter = alphabetFilter
       return f
     },
-    deps: [activeSourceId, activeLibraryId, searchQuery, albumSortColumn, albumSortDirection, selectedArtist],
+    deps: [activeSourceId, activeLibraryId, searchQuery, albumSortColumn, albumSortDirection, selectedArtist, alphabetFilter],
   })
 
   const [collectionsOnly, setCollectionsOnly] = useState(false)
+  const [showMobileFilters, setShowMobileFilters] = useState(false)
 
   // TV Show navigation
   const [selectedShow, setSelectedShow] = useState<string | null>(null)
@@ -566,7 +568,7 @@ export function MediaBrowser({
       loadPaginatedArtists(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, musicViewMode, activeSourceId, activeLibraryId, searchQuery])
+  }, [view, musicViewMode, activeSourceId, activeLibraryId, searchQuery, alphabetFilter])
 
   // Trigger server-side album loading when albums tab is active and filters change
   useEffect(() => {
@@ -574,7 +576,7 @@ export function MediaBrowser({
       loadPaginatedAlbums(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, musicViewMode, activeSourceId, activeLibraryId, searchQuery, albumSortColumn, albumSortDirection, selectedArtist])
+  }, [view, musicViewMode, activeSourceId, activeLibraryId, searchQuery, albumSortColumn, albumSortDirection, selectedArtist, alphabetFilter])
 
   // Trigger server-side movie loading when movies view is active and filters change
   useEffect(() => {
@@ -582,7 +584,7 @@ export function MediaBrowser({
       loadPaginatedMovies(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, activeSourceId, activeLibraryId, debouncedTierFilter, debouncedQualityFilter, searchQuery])
+  }, [view, activeSourceId, activeLibraryId, debouncedTierFilter, debouncedQualityFilter, searchQuery, alphabetFilter])
 
   // Trigger server-side TV show loading when TV view is active and filters change
   useEffect(() => {
@@ -590,7 +592,7 @@ export function MediaBrowser({
       loadPaginatedShows(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, activeSourceId, activeLibraryId, searchQuery])
+  }, [view, activeSourceId, activeLibraryId, searchQuery, alphabetFilter])
 
   // Load episodes when a show is selected
   useEffect(() => {
@@ -822,7 +824,10 @@ export function MediaBrowser({
     })
     loadCompletenessData()
     loadMusicData()
-    loadMusicCompletenessData()
+    // Defer music completeness to music tab — saves ~1.4MB on movies/TV views
+    if (view === 'music') {
+      loadMusicCompletenessData()
+    }
     loadEpSingleSettings()
     checkTmdbApiKey()
     // Load per-tab view preferences (delegated to useViewPreferences hook)
@@ -836,6 +841,14 @@ export function MediaBrowser({
   useEffect(() => {
     if (!viewPrefsLoadedRef.current) return
     loadViewPrefs(view)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view])
+
+  // Load music completeness on-demand when switching to music tab
+  useEffect(() => {
+    if (view === 'music' && artistCompleteness.size === 0) {
+      loadMusicCompletenessData()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view])
 
@@ -867,12 +880,17 @@ export function MediaBrowser({
       season.episodes.sort((a, b) => (a.episode_number || 0) - (b.episode_number || 0))
     })
 
+    // Get art_url from episodes first, fall back to show summary
+    const showSummary = paginatedShows.find(s => s.series_title === selectedShow)
+    const artUrl = selectedShowEpisodes[0]?.art_url || showSummary?.art_url
+
     return {
       title: selectedShow,
       poster_url: selectedShowEpisodes[0]?.poster_url,
+      art_url: artUrl,
       seasons
     }
-  }, [selectedShow, selectedShowEpisodes])
+  }, [selectedShow, selectedShowEpisodes, paginatedShows])
 
   const filterItem = useCallback((item: MediaItem): boolean => {
     // Search filter
@@ -897,82 +915,14 @@ export function MediaBrowser({
     return true
   }, [searchQuery, debouncedTierFilter, debouncedQualityFilter])
 
-  // Smooth scroll with ease-in-out cubic easing
-  const smoothScrollTo = useCallback((element: HTMLElement, targetTop: number, duration = 400) => {
-    const start = element.scrollTop
-    const distance = targetTop - start
-    if (Math.abs(distance) < 1) return
-    const startTime = performance.now()
-    function step(currentTime: number) {
-      const elapsed = currentTime - startTime
-      const progress = Math.min(elapsed / duration, 1)
-      const ease = progress < 0.5
-        ? 4 * progress * progress * progress
-        : 1 - Math.pow(-2 * progress + 2, 3) / 2
-      element.scrollTop = start + distance * ease
-      if (progress < 1) requestAnimationFrame(step)
-    }
-    requestAnimationFrame(step)
-  }, [])
-
-  // Alphabet navigation — smooth scroll to the first item starting with the selected letter
+  // Alphabet navigation — server-side filter, Plex-style
   const scrollToLetter = useCallback((letter: string | null) => {
     setAlphabetFilter(letter)
-
-    if (!letter) {
-      // "All" — scroll to top
-      const container = scrollContainerRef.current
-      if (container) smoothScrollTo(container, 0)
-      return
-    }
-
     const container = scrollContainerRef.current
-    if (!container) return
-
-    const allTitled = container.querySelectorAll('[data-title]')
-    if (letter === '#') {
-      // Find first item that starts with a non-letter character
-      for (const el of allTitled) {
-        const title = (el as HTMLElement).dataset.title || ''
-        if (title.length > 0 && !/^[A-Za-z]/.test(title)) {
-          const elTop = (el as HTMLElement).offsetTop - container.offsetTop
-          smoothScrollTo(container, elTop)
-          return
-        }
-      }
-      return
-    }
-
-    const upperLetter = letter.toUpperCase()
-    for (const el of allTitled) {
-      const title = (el as HTMLElement).dataset.title || ''
-      if (title.toUpperCase().startsWith(upperLetter)) {
-        const elTop = (el as HTMLElement).offsetTop - container.offsetTop
-        smoothScrollTo(container, elTop)
-        return
-      }
-    }
-  }, [setAlphabetFilter, smoothScrollTo])
+    if (container) container.scrollTop = 0
+  }, [setAlphabetFilter])
 
   // Compute which letters have items for the current view (to dim empty letters)
-  const availableLetters = useMemo(() => {
-    const letters = new Set<string>()
-    let items: Array<{ title?: string; name?: string; series_title?: string }> = []
-
-    if (view === 'movies') items = paginatedMovies
-    else if (view === 'tv') items = paginatedShows as Array<{ series_title?: string }>
-    else if (view === 'music') items = musicArtists as Array<{ name?: string }>
-
-    for (const item of items) {
-      const title = (item.title || item.name || item.series_title || '').trim()
-      if (!title) continue
-      const first = title[0].toUpperCase()
-      if (/[A-Z]/.test(first)) letters.add(first)
-      else letters.add('#')
-    }
-    return letters
-  }, [view, paginatedMovies, paginatedShows, musicArtists])
-
   // Movies are now loaded from the server pre-filtered/sorted/paginated
   const movies = paginatedMovies
 
@@ -1259,6 +1209,11 @@ export function MediaBrowser({
       if (album) {
         setSelectedAlbum(album)
         loadAlbumTracks(album.id)
+      } else {
+        // Album not in paginated list — fetch by ID from server
+        window.electronAPI.musicGetAlbumById(numId).then((a: unknown) => {
+          if (a) { setSelectedAlbum(a as MusicAlbum); loadAlbumTracks((a as MusicAlbum).id) }
+        }).catch(err => console.error('Failed to find album for navigation:', err))
       }
     } else if (type === 'track') {
       switchView('music')
@@ -1304,6 +1259,12 @@ export function MediaBrowser({
 
   // Check if we should show empty state (handled in content area below)
   const showEmptyState = sources.length === 0
+
+  // Mobile detail view — hide controls bar so backdrop can fill to viewport top
+  const isMobileDetail = isMobile && (
+    (view === 'tv' && selectedShow) ||
+    (view === 'music' && (selectedArtist || selectedAlbum))
+  )
 
   return (
     <div className="h-screen flex flex-col">
@@ -1816,17 +1777,19 @@ export function MediaBrowser({
         role="tabpanel"
         aria-label={`${view === 'movies' ? 'Movies' : view === 'tv' ? 'TV Shows' : 'Music'} library`}
       >
-        {/* Controls Bar - sticky within container */}
-        <div className={`shrink-0 py-3 ${isMobile ? 'px-2' : 'px-4'}`}>
+        {/* Controls Bar — desktop: static above scroll, mobile: rendered inside scroll container */}
+        {!isMobileDetail && !isMobile && <div
+          className="shrink-0 py-3 px-4"
+        >
           <div className="flex flex-col gap-2">
-            {/* Row 1: Filters (left) | Separator | View Controls (right) */}
-            <div className={`flex items-center justify-between ${isMobile ? 'flex-wrap gap-2' : ''}`}>
+            {/* Desktop: Row 1: Filters (left) | Separator | View Controls (right) */}
+            <div className="flex items-center justify-between">
               {/* Left side: Filters */}
-              <div className={`flex items-center ${isMobile ? 'gap-2 flex-wrap' : 'gap-4'}`}>
+              <div className="flex items-center gap-4">
                 {/* Music View Mode Toggle — hidden when viewing artist/album detail */}
                 {view === 'music' && !selectedArtist && !selectedAlbum && (
                   <div className="flex items-center gap-2">
-                    {!isMobile && <span className="text-caption text-muted-foreground">View</span>}
+                    <span className="text-caption text-muted-foreground">View</span>
                     <div className="flex gap-1">
                       {(['artists', 'albums', 'tracks'] as const).map((mode) => (
                         <button
@@ -1837,7 +1800,7 @@ export function MediaBrowser({
                             setSelectedAlbum(null)
                             setAlbumTracks([])
                           }}
-                          className={`${isMobile ? 'px-3 py-2 min-h-[44px]' : 'px-2.5 py-1.5'} rounded-lg text-caption transition-colors ${
+                          className={`px-2.5 py-1.5 rounded-lg text-caption transition-colors ${
                             musicViewMode === mode
                               ? 'bg-foreground text-background'
                               : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1853,7 +1816,7 @@ export function MediaBrowser({
                 {/* Library Filter (shown when source has 2+ libraries of current type) */}
                 {activeSourceId && currentTypeLibraries.length >= 2 && (
                   <div className="flex items-center gap-2">
-                    {!isMobile && <span className="text-caption text-muted-foreground">Library</span>}
+                    <span className="text-caption text-muted-foreground">Library</span>
                     <Select
                       inputSize="sm"
                       value={activeLibraryId || ''}
@@ -1995,12 +1958,141 @@ export function MediaBrowser({
             </div>
 
           </div>
-        </div>
+
+        </div>}
 
         {/* Scrollable Content Area with Alphabet Filter */}
         <div className="flex-1 relative min-h-0">
           {/* Main scrollable content */}
-          <div ref={scrollContainerRef} className={`absolute inset-0 overflow-y-auto scrollbar-visible ${isMobile ? 'px-2 pb-24' : 'px-4 pb-4'} ${isMobile ? '' : 'pr-10'}`}>
+          <div
+            ref={scrollContainerRef}
+            className={`absolute inset-0 overflow-y-auto scrollbar-visible ${isMobile ? 'px-4 pb-20' : 'px-4 pb-4'} ${isMobile ? '' : 'pr-10'}`}
+            style={isMobile && !isMobileDetail ? { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)' } : undefined}
+            onScroll={isMobile && isMobileDetail ? (e) => {
+              const el = e.currentTarget
+              el.style.setProperty('--parallax-y', `${el.scrollTop * 0.4}px`)
+            } : undefined}
+          >
+
+        {/* Mobile controls bar — only show when there are controls for the current view */}
+        {isMobile && !isMobileDetail && (() => {
+          const hasMusicToggle = view === 'music' && !selectedArtist && !selectedAlbum
+          const hasLibraryDropdown = activeSourceId && currentTypeLibraries.length >= 2
+          const hasFilters = view === 'movies' || (view === 'music' && musicViewMode === 'tracks')
+          if (!hasMusicToggle && !hasLibraryDropdown && !hasFilters) return null
+          return (
+          <div className="pb-2">
+            <div className="flex items-center gap-2">
+              {/* Music view mode toggle */}
+              {hasMusicToggle && (
+                <div className="flex gap-1">
+                  {(['artists', 'albums', 'tracks'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => {
+                        setMusicViewMode(mode)
+                        setSelectedArtist(null)
+                        setSelectedAlbum(null)
+                        setAlbumTracks([])
+                      }}
+                      className={`px-3 py-2 min-h-[44px] rounded-lg text-caption transition-colors ${
+                        musicViewMode === mode
+                          ? 'bg-foreground text-background'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Library dropdown */}
+              {hasLibraryDropdown && (
+                <Select
+                  inputSize="sm"
+                  value={activeLibraryId || ''}
+                  onChange={(e) => setActiveLibraryId(e.target.value || null)}
+                  className="w-auto"
+                >
+                  <option value="">All libraries</option>
+                  {currentTypeLibraries.map(lib => (
+                    <option key={lib.id} value={lib.id}>{lib.name}</option>
+                  ))}
+                </Select>
+              )}
+
+              {/* Filter icon — only show when there are filter options */}
+              {hasFilters && (
+              <button
+                onClick={() => setShowMobileFilters(!showMobileFilters)}
+                className={`ml-auto min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors ${
+                  showMobileFilters || tierFilter !== 'all' || qualityFilter !== 'all' || collectionsOnly
+                    ? 'bg-foreground text-background'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title="Filters"
+              >
+                <SlidersHorizontal className="w-5 h-5" />
+              </button>
+              )}
+            </div>
+
+            {/* Filter options */}
+            {hasFilters && showMobileFilters && (
+              <div className="mt-3 flex flex-col gap-3">
+                {view === 'movies' && (
+                  <div>
+                    <span className="text-caption text-muted-foreground mb-1.5 block">Resolution</span>
+                    <div className="flex gap-1 flex-wrap">
+                      {['all', '4K', '1080p', '720p', 'SD'].map((tier) => (
+                        <button
+                          key={tier}
+                          onClick={() => setTierFilter(tier as typeof tierFilter)}
+                          className={`px-3 py-2 min-h-[44px] rounded-lg text-caption transition-colors ${
+                            tierFilter === tier ? 'bg-foreground text-background' : 'bg-card text-muted-foreground hover:bg-muted'
+                          }`}
+                        >
+                          {tier === 'all' ? 'All' : tier}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {(view === 'movies' || (view === 'music' && musicViewMode === 'tracks')) && (
+                  <div>
+                    <span className="text-caption text-muted-foreground mb-1.5 block">Quality</span>
+                    <div className="flex gap-1 flex-wrap">
+                      {['all', 'high', 'medium', 'low'].map((quality) => (
+                        <button
+                          key={quality}
+                          onClick={() => setQualityFilter(quality as typeof qualityFilter)}
+                          className={`px-3 py-2 min-h-[44px] rounded-lg text-caption transition-colors ${
+                            qualityFilter === quality ? 'bg-foreground text-background' : 'bg-card text-muted-foreground hover:bg-muted'
+                          }`}
+                        >
+                          {quality.charAt(0).toUpperCase() + quality.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {view === 'movies' && movieCollections.length > 0 && (
+                  <button
+                    onClick={() => setCollectionsOnly(!collectionsOnly)}
+                    className={`px-3 py-2 min-h-[44px] rounded-lg text-caption transition-colors flex items-center gap-1.5 self-start ${
+                      collectionsOnly ? 'bg-foreground text-background' : 'bg-card text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    Collections only
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          )
+        })()}
 
         {/* Content Display */}
         {showEmptyState ? (
@@ -2165,10 +2257,6 @@ export function MediaBrowser({
           {/* Vertical Alphabet Filter - positioned left of scrollbar (hidden on mobile) */}
           <div className={`absolute right-3 top-0 bottom-0 flex flex-col items-center justify-between py-2 ${isMobile ? 'hidden' : ''}`} role="group" aria-label="Filter by letter">
             <button
-              ref={(el) => {
-                if (el) alphabetFilterRefs.current.set('all', el)
-                else alphabetFilterRefs.current.delete('all')
-              }}
               onClick={() => scrollToLetter(null)}
               className={`w-5 h-5 flex items-center justify-center text-caption font-medium transition-colors focus:outline-hidden ${
                 alphabetFilter === null
@@ -2182,49 +2270,33 @@ export function MediaBrowser({
               All
             </button>
             <button
-              ref={(el) => {
-                if (el) alphabetFilterRefs.current.set('#', el)
-                else alphabetFilterRefs.current.delete('#')
-              }}
-              onClick={() => availableLetters.has('#') && scrollToLetter('#')}
+              onClick={() => scrollToLetter('#')}
               className={`w-5 h-5 flex items-center justify-center text-caption font-medium transition-colors focus:outline-hidden ${
                 alphabetFilter === '#'
                   ? 'text-foreground'
-                  : availableLetters.has('#')
-                    ? 'text-muted-foreground hover:text-foreground'
-                    : 'text-muted-foreground/20 cursor-default'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
               title="Numbers and special characters"
               aria-label="Filter by numbers and special characters"
               aria-pressed={alphabetFilter === '#'}
-              aria-disabled={!availableLetters.has('#')}
             >
               #
             </button>
-            {Array.from('ABCDEFGHIJKLMNOPQRSTUVWXYZ').map((letter) => {
-              const hasItems = availableLetters.has(letter)
-              return (
+            {Array.from('ABCDEFGHIJKLMNOPQRSTUVWXYZ').map((letter) => (
               <button
                 key={letter}
-                ref={(el) => {
-                  if (el) alphabetFilterRefs.current.set(letter, el)
-                  else alphabetFilterRefs.current.delete(letter)
-                }}
-                onClick={() => hasItems && scrollToLetter(letter)}
+                onClick={() => scrollToLetter(letter)}
                 className={`w-5 h-5 flex items-center justify-center text-caption font-medium transition-colors focus:outline-hidden ${
                   alphabetFilter === letter
                     ? 'text-foreground'
-                    : hasItems
-                      ? 'text-muted-foreground hover:text-foreground'
-                      : 'text-muted-foreground/20 cursor-default'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
-                aria-label={`Scroll to letter ${letter}`}
+                aria-label={`Filter by letter ${letter}`}
                 aria-pressed={alphabetFilter === letter}
-                aria-disabled={!hasItems}
               >
                 {letter}
               </button>
-              )})}
+            ))}
           </div>
         </div>
       </main>

@@ -127,6 +127,84 @@ function WishlistSearch({ isMobile = false }: { isMobile?: boolean }) {
     if (debounceRef.current) clearTimeout(debounceRef.current)
   }, [])
 
+  if (isMobile) {
+    // Mobile: pill-shaped search matching MobileSearchOverlay style
+    return (
+      <div>
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground/50 pointer-events-none z-10" />
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => handleInput(e.target.value)}
+            placeholder="Add movies, TV shows..."
+            className="w-full pl-12 pr-10 py-3.5 bg-muted/50 rounded-full text-body text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-foreground/20"
+            autoComplete="off"
+          />
+          {isSearching ? (
+            <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 animate-spin text-muted-foreground" />
+          ) : query && (
+            <button onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors">
+              <X className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+
+        {results.length > 0 && (
+          <div className="mt-3 max-h-[50vh] overflow-y-auto rounded-2xl border border-border/30 bg-card">
+            {results.map((result) => {
+              const alreadyAdded = addedIds.has(result.id) || isInWishlist(result)
+              return (
+                <div
+                  key={result.id}
+                  className="flex items-center gap-3 px-4 min-h-[56px] py-2 hover:bg-muted/30 transition-colors"
+                >
+                  {result.poster_url ? (
+                    <img src={result.poster_url} alt="" className="w-10 h-14 object-cover rounded-lg shrink-0" loading="lazy" decoding="async" />
+                  ) : (
+                    <div className="w-10 h-14 bg-muted/50 rounded-lg flex items-center justify-center shrink-0">
+                      {typeIcon(result.type)}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-body font-medium truncate">{result.title}</div>
+                    <div className="text-label text-muted-foreground flex items-center gap-1">
+                      {typeIcon(result.type)}
+                      <span>{result.type === 'tv' ? 'TV' : 'Movie'}</span>
+                      {result.release_date && <span>· {new Date(result.release_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
+                      {!result.release_date && result.year && <span>· {result.year}</span>}
+                    </div>
+                    {result.physical_release_date && (
+                      <div className="text-caption text-muted-foreground">Blu-ray/Digital: {new Date(result.physical_release_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                    )}
+                  </div>
+                  {result.owned ? (
+                    <span className="shrink-0 text-label text-muted-foreground/60 px-1.5">Owned</span>
+                  ) : (
+                    <button
+                      onClick={() => handleAdd(result)}
+                      disabled={alreadyAdded}
+                      className={`shrink-0 p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors ${
+                        alreadyAdded
+                          ? 'text-foreground'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                      }`}
+                      title={alreadyAdded ? 'Already in wishlist' : 'Add to wishlist'}
+                    >
+                      {alreadyAdded ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Desktop: compact panel search
   return (
     <div className="px-3 pt-2 pb-2 border-b border-border/30">
       <div className="relative">
@@ -137,7 +215,7 @@ function WishlistSearch({ isMobile = false }: { isMobile?: boolean }) {
           inputSize="sm"
           value={query}
           onChange={(e) => handleInput(e.target.value)}
-          placeholder="Search movies, TV shows..."
+          placeholder="Add movies, TV shows..."
           className="pl-8 pr-8"
         />
         {isSearching ? (
@@ -156,12 +234,12 @@ function WishlistSearch({ isMobile = false }: { isMobile?: boolean }) {
             return (
               <div
                 key={result.id}
-                className={`flex items-center gap-2 ${isMobile ? 'px-3 py-2.5' : 'px-2.5 py-1.5'} hover:bg-muted/30 transition-colors`}
+                className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-muted/30 transition-colors"
               >
                 {result.poster_url ? (
-                  <img src={result.poster_url} alt="" className={`${isMobile ? 'w-9 h-[52px]' : 'w-7 h-10'} object-cover rounded shrink-0`} />
+                  <img src={result.poster_url} alt="" className="w-7 h-10 object-cover rounded shrink-0" loading="lazy" decoding="async" />
                 ) : (
-                  <div className={`${isMobile ? 'w-9 h-[52px]' : 'w-7 h-10'} bg-muted/50 rounded flex items-center justify-center shrink-0`}>
+                  <div className="w-7 h-10 bg-muted/50 rounded flex items-center justify-center shrink-0">
                     {typeIcon(result.type)}
                   </div>
                 )}
@@ -183,14 +261,14 @@ function WishlistSearch({ isMobile = false }: { isMobile?: boolean }) {
                   <button
                     onClick={() => handleAdd(result)}
                     disabled={alreadyAdded}
-                    className={`shrink-0 ${isMobile ? 'p-2 min-h-[44px] min-w-[44px] flex items-center justify-center' : 'p-1'} rounded-lg transition-colors ${
+                    className={`shrink-0 p-1 rounded-lg transition-colors ${
                       alreadyAdded
                         ? 'text-foreground'
                         : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                     }`}
                     title={alreadyAdded ? 'Already in wishlist' : 'Add to wishlist'}
                   >
-                    {alreadyAdded ? <Check className={`${isMobile ? 'w-5 h-5' : 'w-3.5 h-3.5'}`} /> : <Plus className={`${isMobile ? 'w-5 h-5' : 'w-3.5 h-3.5'}`} />}
+                    {alreadyAdded ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
                   </button>
                 )}
               </div>
@@ -336,7 +414,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
   // Status tabs
   const statusOptions: { type: StatusType; icon: typeof Circle; label: string; count: number }[] = [
     { type: 'active', icon: Circle, label: 'Active', count: counts.active },
-    { type: 'completed', icon: CheckCircle2, label: 'Completed', count: 0 }
+    { type: 'completed', icon: CheckCircle2, label: 'Completed', count: counts.completed }
   ]
 
   // Category options with counts
@@ -357,6 +435,9 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
   const missingItems = items.filter(item => item.reason === 'missing')
   const upgradeItems = items.filter(item => item.reason === 'upgrade')
 
+  // Mobile inline mode — render as a full page, not a panel
+  const isMobileInline = isMobile && inline
+
   return (
     <>
     {/* Backdrop scrim — hidden in inline mode */}
@@ -373,7 +454,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
       id="wishlist-panel"
       className={inline
         ? 'flex flex-col h-full overflow-hidden'
-        : `fixed top-[76px] bottom-4 right-4 w-80 bg-card border border-border rounded-2xl shadow-xl z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
+        : `fixed top-[76px] bottom-4 right-4 w-[22rem] bg-card border border-border rounded-2xl shadow-xl z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
             isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`
       }
@@ -381,52 +462,54 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
       role="complementary"
       aria-label="Shopping wishlist"
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
-        <div className="flex items-center gap-2">
-          <Star className="w-4 h-4 text-muted-foreground" />
-          <h2 className="text-label font-semibold">
-            Wishlist
-          </h2>
-          {counts.active > 0 && (
-            <span className="px-1.5 py-0.5 text-caption font-medium bg-muted text-foreground rounded-full">
-              {counts.active}
-            </span>
-          )}
-        </div>
-        {!inline && (
-          <div className="flex items-center gap-1">
-            <Button
-              variant="tertiary"
-              size="icon-sm"
-              onClick={() => setShowSyncSection(!showSyncSection)}
-              icon={<RefreshCw className="w-4 h-4" />}
-              aria-label="Sync watchlists"
-              title="Sync from Plex/Trakt"
-            />
-            {counts.total > 0 && (
+      {/* Header — hidden on mobile inline (tab bar already identifies the page) */}
+      {!isMobileInline && (
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
+          <div className="flex items-center gap-2">
+            <Star className="w-4 h-4 text-muted-foreground" />
+            <h2 className="text-label font-semibold">
+              Wishlist
+            </h2>
+            {counts.active > 0 && (
+              <span className="px-1.5 py-0.5 text-caption font-medium bg-muted text-foreground rounded-full">
+                {counts.active}
+              </span>
+            )}
+          </div>
+          {!inline && (
+            <div className="flex items-center gap-1">
               <Button
-                ref={exportButtonRef}
                 variant="tertiary"
                 size="icon-sm"
-                onClick={handleExport}
-                loading={isExporting}
-                icon={<Download className="w-4 h-4" />}
-                aria-label="Export wishlist to CSV"
-                title="Export to CSV"
+                onClick={() => setShowSyncSection(!showSyncSection)}
+                icon={<RefreshCw className="w-4 h-4" />}
+                aria-label="Sync watchlists"
+                title="Sync from Plex/Trakt"
               />
-            )}
-            <Button
-              ref={closeButtonRef}
-              variant="tertiary"
-              size="icon-sm"
-              onClick={onClose}
-              icon={<X className="w-4 h-4" />}
-              aria-label="Close wishlist panel"
-            />
-          </div>
-        )}
-      </div>
+              {counts.total > 0 && (
+                <Button
+                  ref={exportButtonRef}
+                  variant="tertiary"
+                  size="icon-sm"
+                  onClick={handleExport}
+                  loading={isExporting}
+                  icon={<Download className="w-4 h-4" />}
+                  aria-label="Export wishlist to CSV"
+                  title="Export to CSV"
+                />
+              )}
+              <Button
+                ref={closeButtonRef}
+                variant="tertiary"
+                size="icon-sm"
+                onClick={onClose}
+                icon={<X className="w-4 h-4" />}
+                aria-label="Close wishlist panel"
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Sync sections — hidden in inline/mobile mode, toggled via header button */}
       {!inline && showSyncSection && <div className="px-3 pt-2 pb-1 border-b border-border/30 space-y-1.5">
@@ -521,7 +604,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
                     {selected && <Check className="w-3 h-3 text-primary-foreground" />}
                   </div>
                   {item.poster_url ? (
-                    <img src={item.poster_url} alt="" className="w-7 h-10 object-cover rounded shrink-0" />
+                    <img src={item.poster_url} alt="" className="w-7 h-10 object-cover rounded shrink-0" loading="lazy" decoding="async" />
                   ) : (
                     <div className="w-7 h-10 bg-muted/50 rounded flex items-center justify-center shrink-0">
                       {item.media_type === 'season' ? <Tv className="w-3 h-3 text-muted-foreground" /> : <Film className="w-3 h-3 text-muted-foreground" />}
@@ -579,96 +662,183 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
         </div>
       )}
 
-      {/* Search to add */}
-      <WishlistSearch isMobile={isMobile} />
-
-      {/* Status toggle — top level view selector */}
-      {counts.total > 0 && (
-        <div className="border-b border-border/30">
-          <div className="px-3 py-2 flex items-center gap-2">
-            <div className="flex gap-1">
-              {statusOptions.map(({ type, icon: Icon, label, count }) => (
-                <button
-                  key={type}
-                  onClick={() => { setActiveStatus(type); setActiveCategory('all'); setActiveFilter('all'); setSortBy(type === 'completed' ? 'completed_at' : 'priority') }}
-                  className={`flex items-center gap-1.5 ${isMobile ? 'px-3 py-2 min-h-[44px] text-label' : 'px-2.5 py-1.5 text-caption'} rounded-lg transition-colors ${
-                    activeStatus === type
-                      ? 'bg-foreground text-background'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{label}</span>
-                  {count > 0 && <span className="opacity-60">({count})</span>}
-                </button>
-              ))}
-            </div>
-
-            {/* Sort — pushed to the right */}
-            <div className="ml-auto flex items-center gap-1">
-            <Select
-              inputSize="sm"
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as SortOption)}
-              className="w-auto"
-            >
-              {(activeStatus === 'completed'
-                ? (['completed_at', 'added_at', 'title'] as SortOption[])
-                : (['priority', 'added_at', 'title'] as SortOption[])
-              ).map(field => (
-                <option key={field} value={field}>
-                  {field === 'priority' ? 'Priority' : field === 'added_at' ? 'Added' : field === 'title' ? 'Title' : field === 'year' ? 'Year' : 'Completed'}
-                </option>
-              ))}
-            </Select>
-            <Button
-              variant="tertiary"
-              size="icon-sm"
-              onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-              icon={<ArrowUpDown className="w-3 h-3" />}
-              title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
-            />
-          </div>
-          </div>
-
-          {/* Category + media type filters — only when viewing active items */}
-          {activeStatus !== 'completed' && (
-            <div className="px-3 py-1.5 flex flex-wrap items-center gap-1">
-              {categoryOptions.filter(o => o.type !== 'all').map(({ type, icon: Icon, label }) => (
-                <button
-                  key={type}
-                  onClick={() => { setActiveCategory(activeCategory === type ? 'all' : type); if (type === 'all') setActiveFilter('all') }}
-                  className={`flex items-center gap-1.5 ${isMobile ? 'px-3 py-2 min-h-[44px] text-label' : 'px-2 py-1 text-caption'} rounded-full transition-colors ${
-                    activeCategory === type
-                      ? 'bg-foreground text-background'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span>{label}</span>
-                </button>
-              ))}
-              <span className="text-border/40 mx-0.5">·</span>
-              {filterOptions.map(({ type, icon: Icon }) => (
-                <button
-                  key={type}
-                  onClick={() => setActiveFilter(activeFilter === type ? 'all' : type)}
-                  className={`flex items-center justify-center ${isMobile ? 'p-2 min-h-[44px] min-w-[44px]' : 'px-2 py-1'} rounded-full transition-colors ${
-                    activeFilter === type
-                      ? 'bg-foreground text-background'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                </button>
-              ))}
+      {/* Controls — search + filters */}
+      {isMobileInline ? (
+        // Mobile page layout: search + wrapped filter rows
+        <div className="shrink-0 px-4 py-3" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)' }}>
+          <WishlistSearch isMobile={isMobile} />
+          {counts.total > 0 && (
+            <div className="mt-3 space-y-2">
+              {/* Row 1: Status + Sort */}
+              <div className="flex items-center gap-2">
+                {statusOptions.map(({ type, icon: Icon, label, count }) => (
+                  <button
+                    key={type}
+                    onClick={() => { setActiveStatus(type); setActiveCategory('all'); setActiveFilter('all'); setSortBy(type === 'completed' ? 'completed_at' : 'priority') }}
+                    className={`flex items-center gap-1.5 px-3 py-2 min-h-[44px] text-label rounded-lg transition-colors ${
+                      activeStatus === type
+                        ? 'bg-foreground text-background'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    <span>{label}</span>
+                    {count > 0 && <span className="opacity-60">({count})</span>}
+                  </button>
+                ))}
+                <div className="ml-auto flex items-center gap-1">
+                  <Select
+                    inputSize="sm"
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as SortOption)}
+                    className="w-auto"
+                  >
+                    {(activeStatus === 'completed'
+                      ? (['completed_at', 'added_at', 'title'] as SortOption[])
+                      : (['priority', 'added_at', 'title'] as SortOption[])
+                    ).map(field => (
+                      <option key={field} value={field}>
+                        {field === 'priority' ? 'Priority' : field === 'added_at' ? 'Added' : field === 'title' ? 'Title' : field === 'year' ? 'Year' : 'Completed'}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    variant="tertiary"
+                    size="icon-sm"
+                    onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                    icon={<ArrowUpDown className="w-3 h-3" />}
+                    title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+                  />
+                </div>
+              </div>
+              {/* Row 2: Category + Media type (only when active) */}
+              {activeStatus !== 'completed' && (
+                <div className="flex items-center gap-2">
+                  {categoryOptions.filter(o => o.type !== 'all').map(({ type, icon: Icon, label }) => (
+                    <button
+                      key={type}
+                      onClick={() => { setActiveCategory(activeCategory === type ? 'all' : type); if (type === 'all') setActiveFilter('all') }}
+                      className={`flex items-center gap-1.5 px-3 py-2 min-h-[44px] text-label rounded-lg transition-colors ${
+                        activeCategory === type
+                          ? 'bg-foreground text-background'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                  <div className="h-5 w-px bg-border/40" />
+                  {filterOptions.map(({ type, icon: Icon }) => (
+                    <button
+                      key={type}
+                      onClick={() => setActiveFilter(activeFilter === type ? 'all' : type)}
+                      className={`flex items-center justify-center p-2 min-h-[44px] min-w-[44px] rounded-lg transition-colors ${
+                        activeFilter === type
+                          ? 'bg-foreground text-background'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
+      ) : (
+        // Desktop panel layout: search + stacked filter sections
+        <>
+          <WishlistSearch isMobile={isMobile} />
+
+          {/* Status toggle — top level view selector */}
+          {counts.total > 0 && (
+            <div className="border-b border-border/30">
+              {/* Row 1: Status + Sort */}
+              <div className="px-3 py-2 flex items-center gap-1">
+                {statusOptions.map(({ type, icon: Icon, label, count }) => (
+                  <button
+                    key={type}
+                    onClick={() => { setActiveStatus(type); setActiveCategory('all'); setActiveFilter('all'); setSortBy(type === 'completed' ? 'completed_at' : 'priority') }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 text-caption rounded-lg transition-colors ${
+                      activeStatus === type
+                        ? 'bg-foreground text-background'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    <span>{label}</span>
+                    {count > 0 && <span className="opacity-60">({count})</span>}
+                  </button>
+                ))}
+                <div className="ml-auto flex items-center gap-1">
+                  <Select
+                    inputSize="sm"
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as SortOption)}
+                    className="w-auto"
+                  >
+                    {(activeStatus === 'completed'
+                      ? (['completed_at', 'added_at', 'title'] as SortOption[])
+                      : (['priority', 'added_at', 'title'] as SortOption[])
+                    ).map(field => (
+                      <option key={field} value={field}>
+                        {field === 'priority' ? 'Priority' : field === 'added_at' ? 'Added' : field === 'title' ? 'Title' : field === 'year' ? 'Year' : 'Completed'}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    variant="tertiary"
+                    size="icon-sm"
+                    onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                    icon={<ArrowUpDown className="w-3 h-3" />}
+                    title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+                  />
+                </div>
+              </div>
+
+              {/* Row 2: Category + media type filters */}
+              {activeStatus !== 'completed' && (
+                <div className="px-3 py-1.5 flex items-center gap-1">
+                  {categoryOptions.filter(o => o.type !== 'all').map(({ type, icon: Icon, label }) => (
+                    <button
+                      key={type}
+                      onClick={() => { setActiveCategory(activeCategory === type ? 'all' : type); if (type === 'all') setActiveFilter('all') }}
+                      className={`flex items-center gap-1 px-2 py-1 text-caption rounded-lg transition-colors ${
+                        activeCategory === type
+                          ? 'bg-foreground text-background'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                      title={label}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                  <div className="h-4 w-px bg-border/40 mx-0.5" />
+                  {filterOptions.map(({ type, icon: Icon }) => (
+                    <button
+                      key={type}
+                      onClick={() => setActiveFilter(activeFilter === type ? 'all' : type)}
+                      className={`flex items-center justify-center p-1 rounded-lg transition-colors ${
+                        activeFilter === type
+                          ? 'bg-foreground text-background'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-3">
+      <div className={`flex-1 overflow-y-auto ${isMobileInline ? 'px-4 pb-24' : 'p-3'}`}>
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />

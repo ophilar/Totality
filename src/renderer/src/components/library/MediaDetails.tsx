@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { RefreshCw, Pencil, EyeOff, X, Copy, Check, ChevronDown, Star } from 'lucide-react'
 import { SETTING_KEYS } from '../../../../shared/settingKeys'
@@ -155,6 +155,16 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
   const [isRescanning, setIsRescanning] = useState(false)
   const [copied, setCopied] = useState(false)
   const [backdropUrl, setBackdropUrl] = useState<string | null>(null)
+  const [isClosing, setIsClosing] = useState(false)
+
+  const handleClose = useCallback(() => {
+    if (isMobile) {
+      setIsClosing(true)
+      setTimeout(() => { setIsClosing(false); onClose() }, 350)
+    } else {
+      onClose()
+    }
+  }, [isMobile, onClose])
 
   const handleRescan = async () => {
     if (!media || !onRescan) return
@@ -268,8 +278,10 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
       }
       setMedia(mediaWithQuality)
 
-      // Fetch TMDB backdrop for hero image
-      if (item.tmdb_id) {
+      // Use Plex art_url (wide backdrop) if available, otherwise fetch from TMDB
+      if ((item as { art_url?: string }).art_url) {
+        setBackdropUrl((item as { art_url?: string }).art_url!)
+      } else if (item.tmdb_id) {
         try {
           const tmdbDetails = item.type === 'episode'
             ? await window.electronAPI.tmdbGetTVShowDetails((item as unknown as { series_tmdb_id?: string }).series_tmdb_id || item.tmdb_id) as { backdropPath?: string } | null
@@ -536,142 +548,25 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
   const bestAudioBitrate = bestAudioTrack?.bitrate ?? sv?.audio_bitrate ?? media.audio_bitrate
 
   return createPortal(
-    <div className={`fixed inset-0 bg-black/60 flex justify-center z-50 ${isMobile ? 'items-center p-4' : 'items-center p-6'}`} role="dialog" aria-modal="true" onClick={onClose}>
+    <div
+      className={`fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center z-50 transition-opacity duration-300 ${
+        isMobile ? 'items-end' : 'items-center p-6'
+      } ${isClosing ? 'opacity-0' : ''}`}
+      role="dialog"
+      aria-modal="true"
+      onClick={handleClose}
+    >
       <div
         ref={modalRef}
-        className={`bg-card overflow-hidden flex flex-col shadow-2xl border border-border ${
+        className={`bg-card overflow-hidden flex flex-col shadow-2xl relative ${
           isMobile
-            ? 'w-full max-h-full rounded-2xl'
-            : 'rounded-xl w-full max-w-4xl max-h-[calc(100vh-48px)]'
+            ? `w-full max-h-[90vh] rounded-t-[2rem] border border-border border-b-0 ${isClosing ? 'animate-slide-down' : 'animate-slide-up'}`
+            : 'rounded-xl w-full max-w-4xl max-h-[calc(100vh-48px)] border border-border'
         }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        {isMobile ? (
-          // ── Mobile: Hero artwork with seamless background ──
-          <div className="shrink-0 rounded-t-2xl overflow-hidden">
-            {/* Hero artwork with gradient fade into card background */}
-            <div className="relative">
-              {(() => {
-                // Episodes: prefer episode still, then series backdrop, then poster
-                // Movies: prefer TMDB backdrop, then poster
-                const heroSrc = media.type === 'episode'
-                  ? (media.episode_thumb_url || backdropUrl || media.poster_url)
-                  : (backdropUrl || media.poster_url)
-                const isWide = !!(media.type === 'episode' ? (media.episode_thumb_url || backdropUrl) : backdropUrl)
-                return heroSrc ? (
-                  <img
-                    src={heroSrc}
-                    alt=""
-                    className={`w-full object-cover ${isWide ? 'aspect-video' : 'aspect-[3/2]'}`}
-                    onError={(e) => { e.currentTarget.style.display = 'none' }}
-                  />
-                ) : null
-              })()}
-              {/* Gradient fade — blends into the card background seamlessly */}
-              <div className="absolute inset-0 bg-gradient-to-t from-card via-card/60 to-black/20" />
-
-              {/* Close button */}
-              <button
-                onClick={onClose}
-                className="absolute top-3 right-3 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm hover:bg-white/20 transition-colors z-10"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              {/* Title overlaid at bottom of artwork */}
-              <div className="absolute bottom-0 left-0 right-0 px-4 pb-4">
-                <h2 className="text-h2 font-semibold text-foreground leading-tight tracking-tight">{displayTitle}</h2>
-                {media.type === 'episode' && (
-                  <p className="text-label text-foreground/80 mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
-                )}
-                {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
-                  <p className="text-label text-foreground/70 font-medium">{sv?.edition || versions[0]?.edition}</p>
-                )}
-              </div>
-            </div>
-
-            {/* Metadata + actions — seamless with card background */}
-            <div className="px-4 pt-2 pb-3">
-              {/* Stats row */}
-              <div className="flex flex-wrap items-center gap-1.5 text-label text-muted-foreground">
-                {media.year && <span>{media.year}</span>}
-                {(sv?.duration ?? media.duration) > 0 && <><span className="mx-0.5">·</span><span>{formatDuration(sv?.duration ?? media.duration)}</span></>}
-                {(sv?.file_size ?? media.file_size) > 0 && <><span className="mx-0.5">·</span><span>{formatFileSize(sv?.file_size ?? media.file_size)}</span></>}
-                {media.tmdb_rating != null && media.tmdb_rating > 0 && (
-                  <><span className="mx-0.5">·</span><span>★ {media.tmdb_rating.toFixed(1)}</span></>
-                )}
-                {(media.play_count ?? 0) > 0 && (
-                  <><span className="mx-0.5">·</span><span>Played {media.play_count}×</span></>
-                )}
-              </div>
-
-              {/* Action buttons — round icon buttons */}
-              <div className="flex items-center gap-3 mt-3">
-                {media.tier_quality && media.tier_quality !== 'HIGH' && (
-                  <AddToWishlistButton
-                    mediaType={media.type as WishlistMediaType}
-                    title={media.title}
-                    year={media.year}
-                    tmdbId={media.tmdb_id}
-                    imdbId={media.imdb_id}
-                    seriesTitle={media.series_title}
-                    seasonNumber={media.season_number}
-                    episodeNumber={media.episode_number}
-                    posterUrl={media.poster_url}
-                    reason="upgrade"
-                    mediaItemId={media.id}
-                    currentQualityTier={media.quality_tier}
-                    currentQualityLevel={media.tier_quality}
-                    currentResolution={media.resolution}
-                    currentVideoCodec={media.video_codec}
-                    currentAudioCodec={media.audio_codec}
-                  />
-                )}
-
-                {onRescan && media.file_path && (
-                  <button
-                    onClick={handleRescan}
-                    disabled={isRescanning}
-                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
-                    title="Rescan File"
-                  >
-                    <RefreshCw className={`w-5 h-5 ${isRescanning ? 'animate-spin' : ''}`} />
-                  </button>
-                )}
-
-                {onFixMatch && media.type === 'movie' && (
-                  <button
-                    onClick={handleFixMatch}
-                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
-                    title="Fix Match"
-                  >
-                    <Pencil className="w-5 h-5" />
-                  </button>
-                )}
-
-                {onDismissUpgrade && media.tier_quality !== 'HIGH' && (
-                  <button
-                    onClick={() => {
-                      if (window.confirm(`Remove "${displayTitle}" from upgrade recommendations?`)) {
-                        handleDismissUpgrade()
-                      }
-                    }}
-                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
-                    title="Dismiss Upgrade"
-                  >
-                    <EyeOff className="w-5 h-5" />
-                  </button>
-                )}
-              </div>
-
-              {/* Summary */}
-              {media.summary && (
-                <p className="mt-3 text-label text-muted-foreground leading-relaxed line-clamp-3">{media.summary}</p>
-              )}
-            </div>
-          </div>
-        ) : (
+        {isMobile ? null : (
           // ── Desktop: backdrop bleed in top-right, title + metadata left ──
           <div className="shrink-0 rounded-t-xl overflow-hidden">
             <div className="relative px-5 pt-24 pb-3">
@@ -807,7 +702,144 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
         )}
 
         {/* Scrollable Content — flat layout, no tabs */}
-        <div className={`flex-1 overflow-y-auto ${isMobile ? 'p-3' : 'px-5 py-4'} space-y-6`}>
+        <div
+          className={`flex-1 overflow-y-auto ${isMobile ? '' : 'px-5 py-4'} space-y-6`}
+          onScroll={isMobile ? (e) => {
+            const scrollTop = e.currentTarget.scrollTop
+            const heroImg = e.currentTarget.querySelector('[data-hero-img]') as HTMLElement
+            if (heroImg) heroImg.style.transform = `translateY(${scrollTop * 0.3}px)`
+            const fadeEl = e.currentTarget.querySelector('[data-fade-content]') as HTMLElement
+            if (fadeEl) fadeEl.style.opacity = `${Math.max(0, 1 - scrollTop / 150)}`
+            // Show/hide blur scrim behind sticky header
+            const scrim = e.currentTarget.querySelector('[data-sticky-scrim]') as HTMLElement
+            const heroH = e.currentTarget.querySelector('[data-hero-wrap]')?.clientHeight || 0
+            if (scrim) {
+              const progress = Math.min(1, Math.max(0, (scrollTop - (heroH - 120)) / 80))
+              scrim.style.opacity = `${progress}`
+            }
+          } : undefined}
+        >
+          {/* Mobile header — restructured for sticky collapsing behavior */}
+          {isMobile && (
+            <>
+              {/* Hero artwork */}
+              <div data-hero-wrap className="rounded-t-[2rem] overflow-hidden">
+                <div className="relative overflow-hidden">
+                  {(() => {
+                    const heroSrc = media.type === 'episode'
+                      ? (media.episode_thumb_url || backdropUrl || media.poster_url)
+                      : (backdropUrl || media.poster_url)
+                    const isWide = !!(media.type === 'episode' ? (media.episode_thumb_url || backdropUrl) : backdropUrl)
+                    return heroSrc ? (
+                      <img
+                        data-hero-img
+                        src={heroSrc}
+                        alt=""
+                        className={`w-full object-cover will-change-transform ${isWide ? 'aspect-video' : 'aspect-[3/2]'}`}
+                        onError={(e) => { e.currentTarget.style.display = 'none' }}
+                      />
+                    ) : null
+                  })()}
+                  <div className="absolute inset-0 bg-gradient-to-t from-card via-card/60 to-black/20" />
+                </div>
+              </div>
+
+              {/* Blur scrim — covers top of sheet behind sticky title/actions, fades in on scroll */}
+              <div
+                data-sticky-scrim
+                className="sticky top-0 z-[9] -mb-[140px] pointer-events-none"
+                style={{ opacity: 0, height: '140px' }}
+              >
+                <div
+                  className="w-full h-full backdrop-blur-md"
+                  style={{
+                    background: 'linear-gradient(to bottom, hsl(var(--card) / 0.5), hsl(var(--card) / 0.3), transparent)',
+                    maskImage: 'linear-gradient(to bottom, black 40%, transparent)',
+                    WebkitMaskImage: 'linear-gradient(to bottom, black 40%, transparent)',
+                  }}
+                />
+              </div>
+
+              {/* Sticky title — overlaps hero via negative margin, sticks at close button level */}
+              <div
+                data-sticky-title
+                className="sticky top-[12px] z-10 -mt-14 px-4 pb-2 pr-16"
+              >
+                <h2 className="text-h2 font-semibold text-foreground leading-tight tracking-tight">{displayTitle}</h2>
+                {media.type === 'episode' && (
+                  <p className="text-label text-foreground/80 mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
+                )}
+                {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
+                  <p className="text-label text-foreground/70 font-medium">{sv?.edition || versions[0]?.edition}</p>
+                )}
+              </div>
+
+              {/* Sticky action buttons — stick below title */}
+              <div
+                data-sticky-actions
+                className="sticky top-[52px] z-10 px-4 pb-2"
+              >
+                <div className="flex items-center gap-3">
+                  {media.tier_quality && media.tier_quality !== 'HIGH' && (
+                    <AddToWishlistButton
+                      mediaType={media.type as WishlistMediaType}
+                      title={media.title}
+                      year={media.year}
+                      tmdbId={media.tmdb_id}
+                      imdbId={media.imdb_id}
+                      seriesTitle={media.series_title}
+                      seasonNumber={media.season_number}
+                      episodeNumber={media.episode_number}
+                      posterUrl={media.poster_url}
+                      reason="upgrade"
+                      mediaItemId={media.id}
+                      currentQualityTier={media.quality_tier}
+                      currentQualityLevel={media.tier_quality}
+                      currentResolution={media.resolution}
+                      currentVideoCodec={media.video_codec}
+                      currentAudioCodec={media.audio_codec}
+                    />
+                  )}
+                  {onRescan && media.file_path && (
+                    <button onClick={handleRescan} disabled={isRescanning} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors" title="Rescan File">
+                      <RefreshCw className={`w-5 h-5 ${isRescanning ? 'animate-spin' : ''}`} />
+                    </button>
+                  )}
+                  {onFixMatch && media.type === 'movie' && (
+                    <button onClick={handleFixMatch} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors" title="Fix Match">
+                      <Pencil className="w-5 h-5" />
+                    </button>
+                  )}
+                  {onDismissUpgrade && media.tier_quality !== 'HIGH' && (
+                    <button onClick={() => { if (window.confirm(`Remove "${displayTitle}" from upgrade recommendations?`)) handleDismissUpgrade() }} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors" title="Dismiss Upgrade">
+                      <EyeOff className="w-5 h-5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Stats + summary — scroll away normally */}
+              <div data-fade-content className="px-4 pt-1 pb-3 will-change-[opacity]">
+                <div className="flex flex-wrap items-center gap-1.5 text-label text-muted-foreground">
+                  {media.year && <span>{media.year}</span>}
+                  {(sv?.duration ?? media.duration) > 0 && <><span className="mx-0.5">·</span><span>{formatDuration(sv?.duration ?? media.duration)}</span></>}
+                  {(sv?.file_size ?? media.file_size) > 0 && <><span className="mx-0.5">·</span><span>{formatFileSize(sv?.file_size ?? media.file_size)}</span></>}
+                  {media.tmdb_rating != null && media.tmdb_rating > 0 && (
+                    <><span className="mx-0.5">·</span><span>★ {media.tmdb_rating.toFixed(1)}</span></>
+                  )}
+                  {(media.play_count ?? 0) > 0 && (
+                    <><span className="mx-0.5">·</span><span>Played {media.play_count}×</span></>
+                  )}
+                </div>
+                {media.summary && (
+                  <p className="mt-3 text-label text-muted-foreground leading-relaxed line-clamp-3">{media.summary}</p>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Detail content (padding only needed here for mobile since header has its own) */}
+          <div className={isMobile ? 'p-3 space-y-6' : 'space-y-6'}>
 
           {/* Summary — below header, in scrollable area */}
           {!isMobile && media.summary && (
@@ -1133,7 +1165,17 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
               </>}
             </div>
           </div>
+          </div>
         </div>
+        {/* Mobile close button — after scroll container, anchored to modal via relative parent */}
+        {isMobile && (
+          <button
+            onClick={handleClose}
+            className="absolute top-3 right-3 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm text-white/80 hover:bg-black/60 hover:text-white transition-colors z-20"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
       </div>
     </div>,
     document.body

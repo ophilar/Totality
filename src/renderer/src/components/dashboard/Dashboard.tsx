@@ -172,19 +172,24 @@ export function Dashboard({
 
   // Measure list container heights - observe each list container directly
   useEffect(() => {
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const height = entry.contentRect.height
-        if (entry.target === upgradeListRef.current) setUpgradeListHeight(height)
-        else if (entry.target === completenessListRef.current) setCompletenessListHeight(height)
-      }
-    })
+    const measure = () => {
+      if (upgradeListRef.current) setUpgradeListHeight(upgradeListRef.current.offsetHeight)
+      if (completenessListRef.current) setCompletenessListHeight(completenessListRef.current.offsetHeight)
+    }
+
+    const resizeObserver = new ResizeObserver(measure)
 
     // Observe list containers
     if (upgradeListRef.current) resizeObserver.observe(upgradeListRef.current)
     if (completenessListRef.current) resizeObserver.observe(completenessListRef.current)
 
-    return () => resizeObserver.disconnect()
+    // Also listen for window resize as fallback
+    window.addEventListener('resize', measure)
+
+    return () => {
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', measure)
+    }
   }, [hasMovies, hasTV, hasMusic, isLoading, completenessTab])
 
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -198,8 +203,11 @@ export function Dashboard({
       // Filter by active source if one is selected
       const sourceId = activeSourceId || undefined
 
-      const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
-        r.status === 'fulfilled' ? r.value : fallback
+      const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T => {
+        if (r.status === 'fulfilled') return r.value
+        console.warn('[Dashboard] IPC call failed, using fallback:', r.reason)
+        return fallback
+      }
 
       // --- Tier 1: Critical — settings + bento card stats (render skeleton immediately) ---
       const tier1 = await Promise.allSettled([
@@ -212,7 +220,8 @@ export function Dashboard({
         window.electronAPI.getSetting(SETTING_KEYS.dashboard_artist_sort),
         window.electronAPI.getSetting(SETTING_KEYS.auto_dismiss_rules),
         window.electronAPI.getSetting(SETTING_KEYS.dashboard_person_sort),
-        // Bento card stats (8-9)
+        window.electronAPI.getSetting(SETTING_KEYS.collection_theatrical_lag_days),
+        // Bento card stats (9-10)
         window.electronAPI.getLibraryStats(sourceId),
         window.electronAPI.musicGetStats(sourceId),
       ])
@@ -226,6 +235,7 @@ export function Dashboard({
       const autoRulesJson = val(tier1[6], null) as string | null
       const autoRules = parseAutoRules(autoRulesJson)
       const personSort = val(tier1[7], null) as string | null
+      const lagDaysVal = val(tier1[8], null) as string | null
 
       const epsEnabled = epsSettingVal !== 'false'
       const singlesEnabled = singlesSettingVal !== 'false'
@@ -243,9 +253,10 @@ export function Dashboard({
       setSeriesSortBy(effectiveSerSort)
       setArtistSortBy(effectiveArtSort)
       setPersonSortBy(effectivePersonSort)
+      const theatricalCutoff = lagDaysVal ? new Date(Date.now() - parseInt(lagDaysVal) * 86400000).toISOString().slice(0, 10) : null
 
-      setLibraryStats(val(tier1[8], null) as typeof libraryStats)
-      setMusicStats(val(tier1[9], null) as typeof musicStats)
+      setLibraryStats(val(tier1[9], null) as typeof libraryStats)
+      setMusicStats(val(tier1[10], null) as typeof musicStats)
 
       // Show UI with stats — remove skeleton
       setIsLoading(false)
@@ -316,7 +327,7 @@ export function Dashboard({
       // Filter collections, series, and artists using shared utility functions + auto rules
       const filteredCollections = collectionsData
         .map(c => {
-          const filtered = applyCollectionFilters(c, excludedCollectionMovies, null)
+          const filtered = applyCollectionFilters(c, excludedCollectionMovies, theatricalCutoff)
           if (autoRules.length === 0) return filtered
           const ruledMissing = filterMissingMoviesByRules(filtered.missing_movies || [], autoRules)
           if (ruledMissing.length === (filtered.missing_movies || []).length) return filtered
@@ -401,6 +412,13 @@ export function Dashboard({
   useEffect(() => {
     loadDashboardData()
   }, [loadDashboardData])
+
+  // Clean up debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current)
+    }
+  }, [])
 
   // Event-driven reloads use debounced version to coalesce rapid events
   useEffect(() => {

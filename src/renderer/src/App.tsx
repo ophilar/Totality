@@ -101,70 +101,32 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
     }
   }, [])
 
-  // Load music completeness stats with real-time EP/Singles filtering
+  // Load music completeness stats — server-side aggregation (~0.5KB vs 680KB full dataset)
   const loadMusicCompletenessData = useCallback(async () => {
     try {
-      const [artistsData, epsVal, singlesVal] = await Promise.all([
-        window.electronAPI.musicGetAllArtistCompleteness(),
+      const [epsVal, singlesVal] = await Promise.all([
         window.electronAPI.getSetting(SETTING_KEYS.completeness_include_eps),
         window.electronAPI.getSetting(SETTING_KEYS.completeness_include_singles),
       ])
-      const artists = artistsData as Array<{
-        completeness_percentage: number
-        total_albums: number
-        owned_albums: number
-        total_eps: number
-        owned_eps: number
-        total_singles: number
-        owned_singles: number
-      }>
       const epsEnabled = (epsVal as string) !== 'false'
       const singlesEnabled = (singlesVal as string) !== 'false'
-
-      // Recalculate stats from raw counts using current settings
-      const totalArtists = artists.length
-      let completeArtists = 0
-      let totalMissingAlbums = 0
-      let totalPctSum = 0
-      for (const a of artists) {
-        const totalItems = (a.total_albums || 0) * 3
-          + (epsEnabled ? (a.total_eps || 0) * 2 : 0)
-          + (singlesEnabled ? (a.total_singles || 0) : 0)
-        const ownedItems = (a.owned_albums || 0) * 3
-          + (epsEnabled ? (a.owned_eps || 0) * 2 : 0)
-          + (singlesEnabled ? (a.owned_singles || 0) : 0)
-        const pct = totalItems > 0 ? Math.round((ownedItems / totalItems) * 100) : 100
-        totalPctSum += pct
-        if (pct >= 100) completeArtists++
-
-        const missingAlbumCount = Math.max(0, (a.total_albums || 0) - (a.owned_albums || 0))
-        const missingEpCount = epsEnabled ? Math.max(0, (a.total_eps || 0) - (a.owned_eps || 0)) : 0
-        const missingSingleCount = singlesEnabled ? Math.max(0, (a.total_singles || 0) - (a.owned_singles || 0)) : 0
-        totalMissingAlbums += missingAlbumCount + missingEpCount + missingSingleCount
+      const stats = await window.electronAPI.musicGetCompletenessStats(epsEnabled, singlesEnabled) as {
+        totalArtists: number; analyzedArtists: number; completeArtists: number
+        incompleteArtists: number; totalMissingAlbums: number; averageCompleteness: number
       }
-      const incompleteArtists = totalArtists - completeArtists
-      const avgCompleteness = totalArtists > 0
-        ? Math.round(totalPctSum / totalArtists)
-        : 0
-
-      setMusicCompletenessStats({
-        totalArtists,
-        analyzedArtists: totalArtists,
-        completeArtists,
-        incompleteArtists,
-        totalMissingAlbums,
-        averageCompleteness: avgCompleteness
-      })
+      setMusicCompletenessStats(stats)
     } catch (err) {
       console.warn('Failed to load music completeness stats:', err)
     }
   }, [])
 
-  // Load completeness data on mount and when sources change
+  // Load completeness data on mount — skip on mobile (no dashboard view, saves ~1.7MB)
   useEffect(() => {
-    loadCompletenessData()
-    loadMusicCompletenessData()
-  }, [loadCompletenessData, loadMusicCompletenessData])
+    if (!isMobile) {
+      loadCompletenessData()
+      loadMusicCompletenessData()
+    }
+  }, [loadCompletenessData, loadMusicCompletenessData, isMobile])
 
   // Listen for completeness analysis progress events
   useEffect(() => {
@@ -283,6 +245,8 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
     }
     if (tab) setLibraryTab(tab)
     setCurrentView('library')
+    setShowWishlistPanel(false)
+    setShowMobileSearch(false)
   }
 
   const handleNavigateToDashboard = () => {
@@ -378,7 +342,7 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
 
   if (isLoading) {
     return (
-      <div className="h-screen bg-background flex items-center justify-center">
+      <div className="h-full bg-background flex items-center justify-center">
         <div className="text-muted-foreground">Loading...</div>
       </div>
     )
@@ -389,7 +353,7 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
   return (
     <>
       {/* Render main app - it loads behind the splash screen */}
-      <div className="relative h-screen overflow-hidden bg-main-gradient text-foreground">
+      <div className="relative h-full overflow-hidden bg-main-gradient text-foreground">
         {!isMobile && (
           <Sidebar
             onOpenAbout={() => setShowAboutModal(true)}
@@ -462,7 +426,7 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
               left: isMobile ? '0px' : (sidebarCollapsed ? '96px' : '288px'),
               right: isMobile ? '0px' : '16px',
               bottom: '0px',
-              paddingTop: isMobile ? 'max(env(safe-area-inset-top, 0px), 8px)' : undefined,
+              paddingTop: isMobile ? '0px' : undefined,
             }}
           >
             <SectionErrorBoundary section="Media Library">
@@ -570,9 +534,9 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
               handleNavigateToLibrary('tv')
               navigateTo({ type: 'episode', id })
             }}
-            onSelectArtist={(_id, name) => {
+            onSelectArtist={(id, name) => {
               handleNavigateToLibrary('music')
-              navigateTo({ type: 'artist', id: name })
+              navigateTo({ type: 'artist', id, artistName: name })
             }}
             onSelectAlbum={(id) => {
               handleNavigateToLibrary('music')

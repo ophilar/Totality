@@ -17,8 +17,8 @@ const tabs: { id: MobileTab; label: string; icon: typeof Film }[] = [
 
 export function MobileTabBar({ activeTab, onTabChange, onSearchOpen }: MobileTabBarProps) {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black/72 backdrop-blur-xl border-t border-white/10" style={{ transform: 'none', touchAction: 'none' }}>
-      <div className="px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-center gap-1" role="tablist" aria-label="Navigation">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black/72 backdrop-blur-xl border-t border-white/10" style={{ transform: 'none', touchAction: 'none', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+      <div className="px-2 py-2 flex items-center gap-1" role="tablist" aria-label="Navigation">
         {tabs.map(({ id, label, icon: Icon }) => {
           const active = activeTab === id
           return (
