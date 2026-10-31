@@ -484,7 +484,10 @@ export class LocalFolderProvider implements MediaProvider {
       console.log(`[LocalFolderProvider ${this.sourceId}] Found ${totalFiles} ${scanType} files`)
 
       if (totalFiles === 0) {
-        result.success = true
+        // Preserve the library if a missing mount appears as an empty folder.
+        const existing = db.getMediaItems({ type: scanType, sourceId: this.sourceId, libraryId })
+        if (existing.length > 0) result.errors.push(`Empty folder inventory but ${existing.length} stored media items exist; deletion skipped`)
+        else result.success = true
         result.durationMs = Date.now() - startTime
         return result
       }
