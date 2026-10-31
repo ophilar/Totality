@@ -15,7 +15,6 @@ import type { TranscodeOptions, TranscodingParams, Availability, TranscodeProgre
 import { AdvancedTab, LiveEncodingTab, EncoderPolicySelector, OptimizationDialogShell, buildEffectiveOptimizationOptions } from './transcoding'
 import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
 import type { ShowOptimizationDiscovery } from './transcoding/types'
-import { getHardwareEncoder } from '@main/services/TranscodingCapabilities'
 import { formatLanguage, getOptimizationContainer, isSameLanguage, LANGUAGE_OPTIONS, parseLanguageWhitelist, toIso639_2 } from './mediaUtils'
 import { SETTING_KEYS } from '@shared/settingKeys'
 import { normalizeVideoCodec } from '@main/services/MediaNormalizer'
@@ -174,14 +173,12 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
 
   const failureReportedRef = useRef(false)
   const selectedGpu = capabilities?.gpus.find(gpu => gpu.id === options.gpuId)
-  const hardwareEncoder = selectedGpu && targetCodec ? getHardwareEncoder(selectedGpu.vendor, targetCodec) : undefined
   const encoderAvailability = targetCodec ? availableOptimizationEncoders(targetCodec, {
     gpus: capabilities?.gpus ?? [],
     deviceEncoders: capabilities?.deviceEncoders ?? {},
     selectedGpuId: selectedGpu?.id,
   }) : undefined
   const hardwareAvailable = encoderAvailability?.selectedHardware ?? false
-  const softwareEncoder = targetCodec ? getOptimizationVideoCodec(targetCodec).softwareEncoder : undefined
   const softwareAvailable = encoderAvailability?.software ?? false
   const targetProfile = targetProfiles.find(profile => profile.id === targetProfileId)
   const supportedTargetCodecs = capabilities ? supportedOptimizationCodecs({
