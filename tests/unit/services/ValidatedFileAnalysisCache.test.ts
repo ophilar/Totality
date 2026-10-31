@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ValidatedFileAnalysisCache } from '@main/services/transcoding/ValidatedFileAnalysisCache'
+import { ValidatedFileAnalysisCache, matchesFileIdentity } from '@main/services/transcoding/ValidatedFileAnalysisCache'
 
 describe('validated file analysis cache', () => {
   const directories: string[] = []
@@ -14,6 +14,15 @@ describe('validated file analysis cache', () => {
     return file
   }
   afterEach(async () => { await Promise.all(directories.splice(0).map(directory => rm(directory, { recursive: true, force: true }))) })
+
+  it('uses identical, complete source identity requirements for durable and hot cache evidence', () => {
+    const current = { size: 10, mtimeMs: 100, ctimeMs: 101, ino: 13 }
+    expect(matchesFileIdentity(current, current)).toBe(true)
+    expect(matchesFileIdentity({ size: 10, mtimeMs: 100 }, current)).toBe(false)
+    expect(matchesFileIdentity({ ...current, ctimeMs: 102 }, current)).toBe(false)
+    expect(matchesFileIdentity({ ...current, ino: 14 }, current)).toBe(false)
+    expect(matchesFileIdentity({ ...current, size: 11 }, current)).toBe(false)
+  })
 
   it('coalesces concurrent lookups and reuses only unchanged files', async () => {
     const file = await source()
