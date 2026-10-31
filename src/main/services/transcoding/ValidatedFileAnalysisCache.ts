@@ -1,4 +1,5 @@
-import { stat as statFile, type Stats } from 'node:fs/promises'
+import { stat as statFile } from 'node:fs/promises'
+import type { Stats } from 'node:fs'
 
 /** LRU cache of completed file analyses. File identity includes metadata that changes on replacement. */
 export class ValidatedFileAnalysisCache<T extends { success: boolean }> {
