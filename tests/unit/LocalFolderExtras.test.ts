@@ -50,6 +50,7 @@ import { getDatabase } from '@main/database/getDatabase'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { getFileNameParser } from '@main/services/FileNameParser'
 import { LocalFolderProvider, isExtrasContent, readFfprobeBatchSize } from '@main/providers/local/LocalFolderProvider'
+import { APP_CONFIG } from '@main/config'
 
 describe('isExtrasContent', () => {
   it('detects sample files', () => {
@@ -134,6 +135,14 @@ describe('isExtrasContent', () => {
 })
 
 describe('ffprobe batch-size validation', () => {
+  it('uses one configured upper bound for all local scan modes', () => {
+    const policy = APP_CONFIG.workers.ffprobe
+    expect(readFfprobeBatchSize(null, policy.defaultVideoBatchSize)).toBe(policy.defaultVideoBatchSize)
+    expect(readFfprobeBatchSize(null, policy.defaultMusicBatchSize)).toBe(policy.defaultMusicBatchSize)
+    expect(readFfprobeBatchSize(String(policy.maxBatchSize), policy.defaultVideoBatchSize)).toBe(policy.maxBatchSize)
+    expect(() => readFfprobeBatchSize(String(policy.maxBatchSize + 1), policy.defaultMusicBatchSize)).toThrow('ffprobe_batch_size')
+  })
+
   it('uses the documented default only for absent settings', () => {
     expect(readFfprobeBatchSize(null, 25)).toBe(25)
     expect(readFfprobeBatchSize('', 50)).toBe(50)
