@@ -1022,10 +1022,12 @@ export class TaskQueueService {
       isFirstScan,
       optimizationCandidates,
       optimizationCandidateError,
+      errors: result.errors,
+      failedCount: result.errors.length + (optimizationCandidateError ? 1 : 0),
     }
 
-    if (!result.success && result.errors?.length > 0) {
-      throw new Error(result.errors.join(', '))
+    if (!result.success) {
+      throw new Error(result.errors.length > 0 ? result.errors.join('; ') : 'Library scan did not complete successfully')
     }
   }
 
@@ -1048,6 +1050,8 @@ export class TaskQueueService {
     let totalRemoved = 0
     let allLibrariesScannedSuccessfully = true
     let optimizationCandidateError: string | undefined
+    const scanFailures: string[] = []
+    const scanItemErrors: string[] = []
 
     for (let i = 0; i < enabledLibraries.length; i++) {
       const lib = enabledLibraries[i]
@@ -1077,6 +1081,8 @@ export class TaskQueueService {
       totalUpdated += result.itemsUpdated || 0
       totalRemoved += result.itemsRemoved || 0
       allLibrariesScannedSuccessfully &&= result.success
+      if (!result.success) scanFailures.push(`${lib.libraryName}: ${result.errors.join('; ') || 'scan failed'}`)
+      else if (result.errors.length > 0) scanItemErrors.push(`${lib.libraryName}: ${result.errors.join('; ')}`)
     }
 
     let optimizationCandidates: OptimizationCandidateScanSummary | undefined
@@ -1095,7 +1101,10 @@ export class TaskQueueService {
       itemsRemoved: totalRemoved,
       optimizationCandidates,
       optimizationCandidateError,
+      errors: [...scanFailures, ...scanItemErrors],
+      failedCount: scanFailures.length + scanItemErrors.length + (optimizationCandidateError && scanFailures.length === 0 ? 1 : 0),
     }
+    if (scanFailures.length > 0) throw new Error(`Source scan failed for ${scanFailures.length} libraries: ${scanFailures.join(' | ')}`)
   }
 
   private async executeSeriesCompleteness(task: QueuedTask, onProgress: (p: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void): Promise<void> {
