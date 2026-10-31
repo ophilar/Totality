@@ -202,7 +202,7 @@ export interface FileAnalysisResult {
     isVariableBitrate?: boolean
     [key: string]: unknown
   }
-  fileAnalysisFingerprint?: { size: number; mtimeMs: number }
+  fileAnalysisFingerprint?: { size: number; mtimeMs: number; ctimeMs?: number; ino?: number }
   analysisOptions?: { scanBitrate?: boolean; detectVolume?: boolean }
 }
 
