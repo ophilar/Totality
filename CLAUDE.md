@@ -401,7 +401,7 @@ All setting keys are defined in `src/shared/settingKeys.ts` as `SETTING_KEYS` �
 - No semicolons, single quotes, 2-space indent, trailing commas (es5), 100-char line width, `arrowParens: "always"`
 - TypeScript strict mode with `noUnusedLocals` and `noUnusedParameters` — prefix intentionally unused parameters with `_` where supported
 - Avoid `any`; the authoritative lint rules are in `.oxlintrc.json` and the `lint` script.
-- Current lint runner is oxlint (`.oxlintrc.json`). Do not rely on historical ESLint-specific rules or commands.slint/no-unused-expressions` are off, `caughtErrors: 'none'` on no-unused-vars
+- Current lint runner is oxlint (`.oxlintrc.json`). Do not rely on historical ESLint-specific rules or commands.
 - IPC handlers validate inputs with **Zod v4** schemas (`src/main/validation/schemas.ts`) using `validateInput(schema, input, 'context')` — note Zod v4 has different APIs from v3 (e.g., `z.object()` methods differ)
 - **Zod v4 `z.record(enum, value)` gotcha**: Unlike v3, Zod v4 treats enum-keyed records as requiring ALL enum keys. For partial records (e.g., `pollingIntervals` where only some providers are configured), use `z.record(enum, value.optional())` so missing keys pass validation as `undefined`
 
