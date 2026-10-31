@@ -26,6 +26,7 @@ import { getHardwareEncoder } from '@main/services/TranscodingCapabilities'
 import { TaskType } from '@main/types/database'
 import { SETTING_KEYS } from '@shared/settingKeys'
 import { normalizeVideoCodec } from '@main/services/MediaNormalizer'
+import { OPTIMIZATION_VIDEO_CODECS, getOptimizationVideoCodec, chooseOptimizationVideoCodec, playbackProfileSupportsOptimizationCodec } from '@main/services/transcoding/OptimizationCodecPolicy'
 import { OptimizationDialogShell } from './transcoding/OptimizationDialogShell'
 import { optimizationAudioCodecOptions, optimizationContainerOptions } from './transcoding/optimizationOptions'
 import { optimizationCandidateReasonLabel } from './transcoding/optimizationCandidateLabels'
@@ -367,8 +368,8 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
         updateConfiguration({ targetContainer: preferredContainer, targetContainerSelection: 'automatic' })
       }
     }
-    const targetSupports = (candidate: 'hevc' | 'av1') => !targetProfile || targetProfile.definition.video.codecs.some(codec => normalizeVideoCodec(codec) === normalizeVideoCodec(candidate))
-    const selectedCodec = codec && targetSupports(codec) ? codec : (['hevc', 'av1'] as const).find(targetSupports) ?? ''
+    const compatible = OPTIMIZATION_VIDEO_CODECS.map(item => item.value).filter(candidate => playbackProfileSupportsOptimizationCodec(candidate, targetProfile?.definition.video.codecs))
+    const selectedCodec = chooseOptimizationVideoCodec(codec, compatible)
     if (selectedCodec !== codec) setCodec(selectedCodec)
 
     const targetHdrFormats = targetProfile?.definition.hdr.formats.map(format => format.toUpperCase()) ?? []
@@ -864,9 +865,9 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
   const profileSupportedContainers = targetProfile
     ? getPlaybackTargetContainers(targetProfile, { codec: episode?.video_codec, profile: episode?.video_profile, hdrFormat: episode?.hdr_format })
     : ['matroska', 'mp4']
-  const supportedTargetCodecs = (['hevc', 'av1'] as const).filter(candidate => {
-    const profileSupports = playbackPolicy === 'allow-transcoding' || !targetProfile || targetProfile.definition.video.codecs.some(value => normalizeVideoCodec(value) === normalizeVideoCodec(candidate))
-    const softwareEncoder = candidate === 'av1' ? 'svt_av1' : 'x265'
+  const supportedTargetCodecs = OPTIMIZATION_VIDEO_CODECS.map(item => item.value).filter(candidate => {
+    const profileSupports = playbackPolicy === 'allow-transcoding' || playbackProfileSupportsOptimizationCodec(candidate, targetProfile?.definition.video.codecs)
+    const softwareEncoder = getOptimizationVideoCodec(candidate).softwareEncoder
     const softwareSupports = (deviceEncoders.software ?? []).includes(softwareEncoder)
     const hardwareSupports = gpus.some(gpu => {
       const encoder = getHardwareEncoder(gpu.vendor, candidate)
@@ -881,11 +882,11 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
         : softwareSupports || hardwareSupports
     return profileSupports && (!encoderCapabilitiesLoaded || encoderSupports)
   })
-  const unsupportedTargetCodecReasons = Object.fromEntries((['hevc', 'av1'] as const)
+  const unsupportedTargetCodecReasons = Object.fromEntries(OPTIMIZATION_VIDEO_CODECS.map(item => item.value)
     .filter(candidate => !supportedTargetCodecs.includes(candidate))
     .map(candidate => {
-      const label = candidate === 'hevc' ? 'H.265' : 'AV1'
-      if (targetProfile && !targetProfile.definition.video.codecs.some(value => normalizeVideoCodec(value) === normalizeVideoCodec(candidate))) return [candidate, `Not supported by ${targetProfile.name}.`]
+      const label = getOptimizationVideoCodec(candidate).shortLabel
+      if (!playbackProfileSupportsOptimizationCodec(candidate, targetProfile?.definition.video.codecs)) return [candidate, `Not supported by ${targetProfile?.name}.`]
       if (!encoderCapabilitiesLoaded) return [candidate, 'Checking encoder support.']
       if (encoderPolicy === 'software') return [candidate, `Software encoding for ${label} is unavailable.`]
       if (encoderPolicy === 'hardware') return [candidate, gpus.find(gpu => gpu.id === gpuId) ? `${gpus.find(gpu => gpu.id === gpuId)?.name} cannot encode ${label}.` : `Choose a GPU that supports ${label}.`]
