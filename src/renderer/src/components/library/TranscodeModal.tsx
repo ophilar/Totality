@@ -194,7 +194,7 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
     .map(codec => {
       const label = getOptimizationVideoCodec(codec).shortLabel
       if (!playbackProfileSupportsOptimizationCodec(codec, targetProfile?.definition.video.codecs)) {
-        return [codec, `Not supported by ${targetProfile.name}.`]
+        return [codec, `Not supported by ${targetProfile?.name ?? 'the selected target'}.`]
       }
       if (!capabilities) return [codec, 'Checking encoder support.']
       if (configuration.encoderPolicy === 'software') return [codec, `Software encoding for ${label} is unavailable.`]
