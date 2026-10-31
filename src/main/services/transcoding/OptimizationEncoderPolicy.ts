@@ -2,11 +2,26 @@ import type { GpuInfo } from '../utils/GpuDetector'
 import { getHardwareEncoder } from '../TranscodingCapabilities'
 import { OPTIMIZATION_VIDEO_CODECS, getOptimizationVideoCodec, playbackProfileSupportsOptimizationCodec, type OptimizationVideoCodec } from './OptimizationCodecPolicy'
 
-/** A detected FFmpeg encoder is not necessarily supported by the measured-quality workflow. */
+/** Explicitly validated measured encoding modes (not every FFmpeg encoder is eligible). */
+const MEASURED_ENCODERS = [
+  { encoder: 'x265', codec: 'hevc', qualityDomain: 'x265', presets: ['medium', 'slow', 'slower'] },
+  { encoder: 'svt_av1', codec: 'av1', qualityDomain: 'svt_av1', presets: ['8', '6', '4'] },
+  { encoder: 'nvenc_h265', codec: 'hevc', qualityDomain: 'nvenc_hevc', presets: ['p5', 'p6', 'p7'] },
+  { encoder: 'nvenc_av1', codec: 'av1', qualityDomain: 'nvenc_av1', presets: ['p5', 'p6', 'p7'] },
+  { encoder: 'qsv_h265', codec: 'hevc', qualityDomain: 'qsv_hevc', presets: ['medium', 'slow', 'veryslow'] },
+  { encoder: 'qsv_av1', codec: 'av1', qualityDomain: 'qsv_av1', presets: ['medium', 'slow', 'veryslow'] },
+  { encoder: 'hevc_amf', codec: 'hevc', qualityDomain: 'amf_hevc', presets: ['speed', 'balanced', 'quality'] },
+  { encoder: 'av1_amf', codec: 'av1', qualityDomain: 'amf_av1', presets: ['speed', 'balanced', 'quality'] },
+] as const satisfies ReadonlyArray<{ encoder: string; codec: OptimizationVideoCodec; qualityDomain: string; presets: readonly string[] }>
+
+export function measuredOptimizationEncoderSpec(encoder: string, codec: OptimizationVideoCodec) {
+  const policy = MEASURED_ENCODERS.find(candidate => candidate.encoder === encoder)
+  if (!policy || policy.codec !== codec) throw new Error(`Encoder ${encoder} has no validated measured-optimization quality domain for ${codec}`)
+  return policy
+}
+
 export function supportsMeasuredOptimizationEncoder(encoder: string): boolean {
-  return encoder === 'x265' || encoder === 'svt_av1' ||
-    /^nvenc_(h265|av1)$/.test(encoder) || /^qsv_(h265|av1)$/.test(encoder) ||
-    /^(hevc|av1)_amf$/.test(encoder)
+  return MEASURED_ENCODERS.some(policy => policy.encoder === encoder)
 }
 
 export interface OptimizationEncoderAvailability {
