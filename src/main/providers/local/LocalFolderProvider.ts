@@ -709,8 +709,12 @@ export class LocalFolderProvider implements MediaProvider {
             })
             db.syncMediaItemVersions(id, scoredVersions, 'merge')
 
-            mediaItem.id = id
-            const qualityScore = await analyzer.analyzeMediaItem(mediaItem, bestItem.analysis)
+            // Version reconciliation may choose an unchanged higher-quality sibling.
+            // Score the authoritative canonical item rather than the just-modified file.
+            const canonical = db.getMediaItem(id)
+            if (!canonical) throw new Error('Updated movie parent is missing')
+            const canonicalAnalysis = group.find(item => item.metadata.filePath === canonical.file_path)?.analysis
+            const qualityScore = await analyzer.analyzeMediaItem(canonical, canonicalAnalysis)
             await db.upsertQualityScore(qualityScore)
 
             result.itemsScanned++
@@ -944,9 +948,10 @@ export class LocalFolderProvider implements MediaProvider {
               const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
               db.syncMediaItemVersions(id, [{ ...version, media_item_id: id, ...vScore } as MediaItemVersion], 'merge')
 
-              // Analyze quality
-              mediaItem.id = id
-              const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
+              // The best version may be a different unchanged sibling.
+              const canonical = db.getMediaItem(id)
+              if (!canonical) throw new Error('Updated local media parent is missing')
+              const qualityScore = await analyzer.analyzeMediaItem(canonical)
               await db.upsertQualityScore(qualityScore)
 
               result.itemsScanned++
