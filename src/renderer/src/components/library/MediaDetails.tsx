@@ -578,9 +578,11 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                 return heroSrc ? (
                   <>
                     <img
+                      data-desktop-hero
                       src={heroSrc}
                       alt=""
-                      className="absolute top-0 right-0 w-3/4 h-full object-cover object-top"
+                      className="absolute top-0 right-0 w-3/4 h-full object-cover object-top will-change-transform"
+                      style={{ height: '120%' }}
                       onError={(e) => { e.currentTarget.style.display = 'none' }}
                     />
                     <div className="absolute top-0 right-0 w-3/4 h-full bg-gradient-to-r from-card to-transparent" />
@@ -705,20 +707,55 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
         <div
           className={`flex-1 overflow-y-auto ${isMobile ? '' : 'px-5 py-4'} space-y-6`}
           style={isMobile ? { overscrollBehavior: 'none', WebkitOverflowScrolling: 'auto' } : undefined}
-          onScroll={isMobile ? (e) => {
+          onScroll={(e) => {
+            if (!isMobile) {
+              // Desktop: subtle parallax on header backdrop
+              const heroImg = e.currentTarget.parentElement?.querySelector('[data-desktop-hero]') as HTMLElement
+              if (heroImg) heroImg.style.transform = `translateY(${e.currentTarget.scrollTop * 0.15}px)`
+              return
+            }
             const scrollTop = e.currentTarget.scrollTop
             const heroImg = e.currentTarget.querySelector('[data-hero-img]') as HTMLElement
             if (heroImg) heroImg.style.transform = `translateY(${scrollTop * 0.3}px)`
             const fadeEl = e.currentTarget.querySelector('[data-fade-content]') as HTMLElement
             if (fadeEl) fadeEl.style.opacity = `${Math.max(0, 1 - scrollTop / 150)}`
-            // Show/hide blur scrim behind sticky header
+            // Show/hide blur scrim behind sticky header + dissolve title format
             const scrim = e.currentTarget.querySelector('[data-sticky-scrim]') as HTMLElement
             const heroH = e.currentTarget.querySelector('[data-hero-wrap]')?.clientHeight || 0
+            const isStuck = scrollTop > Math.max(0, heroH - 60)
             if (scrim) {
               const progress = Math.min(1, Math.max(0, (scrollTop - (heroH - 120)) / 80))
               scrim.style.opacity = `${progress}`
             }
-          } : undefined}
+            // Scroll-driven title transition — interpolate through transition zone
+            const transitionStart = Math.max(0, heroH - 120)
+            const transitionEnd = Math.max(0, heroH - 40)
+            const t = transitionEnd > transitionStart
+              ? Math.min(1, Math.max(0, (scrollTop - transitionStart) / (transitionEnd - transitionStart)))
+              : (isStuck ? 1 : 0)
+            // Ease out cubic for smooth deceleration into final position
+            const eased = 1 - Math.pow(1 - t, 3)
+
+            // Episodes: dissolve crossfade + height collapse driven by scroll
+            const titleFull = e.currentTarget.querySelector('[data-title-full]') as HTMLElement
+            const titleCompact = e.currentTarget.querySelector('[data-title-compact]') as HTMLElement
+            if (titleFull && titleCompact) {
+              titleFull.style.opacity = `${1 - eased}`
+              titleFull.style.pointerEvents = eased > 0.5 ? 'none' : ''
+              titleCompact.style.opacity = `${eased}`
+              titleCompact.style.pointerEvents = eased > 0.5 ? '' : 'none'
+              // Collapse full title height so actions move up to match movie layout
+              const compactH = titleCompact.scrollHeight
+              const fullH = titleFull.scrollHeight
+              titleFull.style.maxHeight = `${fullH - eased * (fullH - compactH)}px`
+              titleFull.style.overflow = 'hidden'
+            }
+            // Non-episodes: font-size interpolation driven by scroll
+            const titleScale = e.currentTarget.querySelector('[data-title-scale] h2') as HTMLElement
+            if (titleScale) {
+              titleScale.style.fontSize = `${24 - eased * 7}px`
+            }
+          }}
         >
           {/* Mobile header — restructured for sticky collapsing behavior */}
           {isMobile && (
@@ -761,28 +798,44 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                 />
               </div>
 
-              {/* Sticky title — overlaps hero via negative margin, sticks at close button level */}
+              {/* Sticky header — title + actions as one unit, overlaps hero via negative margin */}
               <div
-                data-sticky-title
+                data-sticky-header
                 className="sticky top-[12px] z-10 -mt-14 px-4 pb-2 pr-16"
               >
-                <h2 className="text-h2 font-semibold text-foreground leading-tight tracking-tight">{displayTitle}</h2>
-                {media.type === 'episode' && (
-                  <p className="text-label text-foreground/80 mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
+                {media.type === 'episode' ? (
+                  <>
+                    {/* Episode full title — dissolves out via scroll */}
+                    <div data-title-full>
+                      <h2 className="font-semibold text-foreground leading-tight tracking-tight" style={{ fontSize: '24px' }}>{displayTitle}</h2>
+                      <p className="text-label text-foreground/80 mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
+                      {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
+                        <p className="text-label text-foreground/70 font-medium">{sv?.edition || versions[0]?.edition}</p>
+                      )}
+                    </div>
+                    {/* Episode compact title — dissolves in via scroll */}
+                    <div data-title-compact className="absolute top-0 left-0 right-16 px-4" style={{ opacity: 0, pointerEvents: 'none' }}>
+                      <h2 className="text-title font-semibold text-foreground leading-tight tracking-tight truncate">
+                        {displayTitle}
+                        <span className="text-muted-foreground font-medium"> · S{media.season_number}E{media.episode_number}</span>
+                      </h2>
+                    </div>
+                  </>
+                ) : (
+                  /* Non-episode: single title element, font-size scales smoothly */
+                  <div data-title-scale>
+                    <h2 className="font-semibold text-foreground leading-tight tracking-tight" style={{ fontSize: '24px' }}>{displayTitle}</h2>
+                    {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
+                      <p className="text-label text-foreground/70 font-medium">{sv?.edition || versions[0]?.edition}</p>
+                    )}
+                  </div>
                 )}
-                {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
-                  <p className="text-label text-foreground/70 font-medium">{sv?.edition || versions[0]?.edition}</p>
-                )}
-              </div>
 
-              {/* Sticky action buttons — stick below title */}
-              <div
-                data-sticky-actions
-                className="sticky top-[52px] z-10 px-4 pb-2"
-              >
-                <div className="flex items-center gap-3">
+                {/* Action buttons — below title, scroll as unit */}
+                <div className="flex items-center gap-3 mt-2">
                   {media.tier_quality && media.tier_quality !== 'HIGH' && (
                     <AddToWishlistButton
+                      compact
                       mediaType={media.type as WishlistMediaType}
                       title={media.title}
                       year={media.year}
@@ -829,7 +882,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                     <><span className="mx-0.5">·</span><span>★ {media.tmdb_rating.toFixed(1)}</span></>
                   )}
                   {(media.play_count ?? 0) > 0 && (
-                    <><span className="mx-0.5">·</span><span>Played {media.play_count}×</span></>
+                    <><span className="mx-0.5">·</span><span>{media.play_count === 1 ? 'Watched once' : `Watched ${media.play_count}×`}</span></>
                   )}
                 </div>
                 {media.summary && (

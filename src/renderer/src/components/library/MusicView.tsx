@@ -141,11 +141,7 @@ export function MusicView({
   useEffect(() => {
     if (!artistSentinelRef.current || musicViewMode !== 'artists') return
     const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          onLoadMoreArtists()
-        }
-      },
+      (entries) => { if (entries[0].isIntersecting) onLoadMoreArtists() },
       { rootMargin: '400px' }
     )
     observer.observe(artistSentinelRef.current)
@@ -156,11 +152,7 @@ export function MusicView({
   useEffect(() => {
     if (!albumSentinelRef.current || musicViewMode !== 'albums' || viewType !== 'grid') return
     const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          onLoadMoreAlbums()
-        }
-      },
+      (entries) => { if (entries[0].isIntersecting) onLoadMoreAlbums() },
       { rootMargin: '400px' }
     )
     observer.observe(albumSentinelRef.current)
@@ -336,7 +328,7 @@ export function MusicView({
     ? 'grid grid-cols-3 gap-3'
     : isTablet
       ? 'grid grid-cols-4 gap-4'
-      : 'grid gap-8'
+      : 'grid gap-6'
 
   const gridStyle = (!isMobile && !isTablet)
     ? { gridTemplateColumns: `repeat(auto-fill, ${posterMinWidth}px)` }
@@ -419,28 +411,30 @@ export function MusicView({
   // Album detail view
   if (selectedAlbum) {
     return (
-      <div className="space-y-6">
-        {/* Breadcrumb */}
-        <Button
-          variant="tertiary"
-          size="sm"
-          onClick={onBack}
-          icon={<ChevronLeft className="w-4 h-4" />}
-        >
-          Back to {selectedArtist ? selectedArtist.name : 'albums'}
-        </Button>
-
+      <div className={isMobile ? '' : 'space-y-6'}>
         {/* Album Header */}
         {isMobile ? (
-          <div className="relative px-4 pt-20 pb-3 mb-4 -mx-2 -mt-6 overflow-hidden">
-            {selectedAlbum.thumb_url && (
-              <>
-                <img src={selectedAlbum.thumb_url} alt="" className="absolute inset-0 w-full h-full object-cover object-center" />
-                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/40" />
-              </>
+          <div className="relative px-4 pb-3 mb-4 -mx-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)', minHeight: '200px' }}>
+            <div className="relative z-[1] mb-4">
+              <Button variant="tertiary" size="sm" onClick={onBack} icon={<ChevronLeft className="w-4 h-4" />} className="text-white">
+                Back to {selectedArtist ? selectedArtist.name : 'albums'}
+              </Button>
+            </div>
+            {(selectedAlbum.art_url || selectedAlbum.thumb_url) && (
+              <div className="absolute top-0 right-0 w-3/4 will-change-transform" style={{ height: '130%', transform: 'translateY(var(--parallax-y, 0px))' }}>
+                <img src={(selectedAlbum.art_url || selectedAlbum.thumb_url)!} alt="" className="w-full h-full object-cover object-center" />
+                <div className="absolute inset-0 bg-gradient-to-r from-background to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+              </div>
             )}
             <div className="relative z-[1]">
-              <div className="flex items-center gap-1.5 ">
+              {/* Album cover art */}
+              {selectedAlbum.thumb_url && (
+                <div className="w-28 h-28 rounded-lg overflow-hidden shadow-lg shadow-black/30 mb-3">
+                  <img src={selectedAlbum.thumb_url} alt={selectedAlbum.title} className="w-full h-full object-cover" />
+                </div>
+              )}
+              <div className="flex items-center gap-1.5">
                 <h2 className="text-h2 font-semibold">{selectedAlbum.title}</h2>
                 <button
                   onClick={(e) => {
@@ -505,8 +499,22 @@ export function MusicView({
             </div>
           </div>
         ) : (
-          <div className="flex items-start gap-6">
-            <div className="w-44 aspect-square bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30">
+          <div className="relative mb-6 -mx-4 px-4 overflow-hidden" style={{ minHeight: '200px' }}>
+            {/* Backdrop image */}
+            {(selectedAlbum.art_url || selectedAlbum.thumb_url) && (
+              <div className="absolute top-0 right-0 w-3/4 h-full overflow-hidden">
+                <img src={(selectedAlbum.art_url || selectedAlbum.thumb_url)!} alt="" className="w-full h-full object-cover object-center" onError={(e) => { e.currentTarget.style.display = 'none' }} />
+                <div className="absolute inset-0 bg-gradient-to-r from-background to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+              </div>
+            )}
+            <div className="relative z-[1]">
+              <Button variant="tertiary" size="sm" onClick={onBack} icon={<ChevronLeft className="w-4 h-4" />}>
+                Back to {selectedArtist ? selectedArtist.name : 'albums'}
+              </Button>
+            </div>
+            <div className="relative z-[1] flex items-start gap-6 mt-3">
+              <div className="w-44 aspect-square bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30">
               {selectedAlbum.thumb_url ? (
                 <img
                   src={selectedAlbum.thumb_url}
@@ -583,6 +591,7 @@ export function MusicView({
                 </Button>
               </div>
             </div>
+          </div>
           </div>
         )}
 
@@ -740,7 +749,7 @@ export function MusicView({
           })
 
           return (
-            <div className="divide-y divide-border/50">
+            <div className={`divide-y divide-border/50 ${isMobile ? 'relative z-[1]' : ''}`}>
               {unifiedTracks.map((track) => {
                 const qualityTier = getQualityTier(track)
                 const tierConfig = qualityTier ? qualityTierConfig[qualityTier] : null
@@ -903,23 +912,31 @@ export function MusicView({
 
           return createPortal(
             <div
-              className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-6"
+              className={`fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center z-50 transition-opacity duration-300 ${
+                isMobile ? 'items-end' : 'items-center p-6'
+              }`}
               onClick={() => setSelectedTrackForQuality(null)}
             >
               <div
-                className="bg-card rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl border border-border flex flex-col max-h-[90vh]"
+                className={`bg-card overflow-hidden shadow-2xl flex flex-col ${
+                  isMobile
+                    ? 'w-full h-[85vh] rounded-t-[2rem] border border-border border-b-0 animate-slide-up'
+                    : 'rounded-2xl w-full max-w-lg max-h-[90vh] border border-border'
+                }`}
                 onClick={(e) => e.stopPropagation()}
               >
-                {/* Header — backdrop image pattern matching MediaDetails */}
-                <div className="shrink-0 rounded-t-2xl overflow-hidden">
-                  <div className="relative px-5 pt-20 pb-3">
-                    {/* Album art as backdrop */}
-                    {selectedAlbum?.thumb_url && (
+                {/* Header — matching album detail view pattern */}
+                <div className="shrink-0 rounded-t-[2rem] overflow-hidden">
+                  <div className="relative px-4 pb-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
+                    {/* Background art — hidden until loaded to prevent flash */}
+                    {(selectedAlbum?.art_url || selectedAlbum?.thumb_url) && (
                       <>
                         <img
-                          src={selectedAlbum.thumb_url}
+                          data-hero-img
+                          src={selectedAlbum.art_url || selectedAlbum.thumb_url!}
                           alt=""
-                          className="absolute top-0 right-0 w-3/4 h-full object-cover object-top"
+                          className="absolute top-0 right-0 w-3/4 h-full object-cover object-center will-change-transform opacity-0 transition-opacity duration-300"
+                          onLoad={(e) => { e.currentTarget.style.opacity = '1' }}
                           onError={(e) => { e.currentTarget.style.display = 'none' }}
                         />
                         <div className="absolute top-0 right-0 w-3/4 h-full bg-gradient-to-r from-card to-transparent" />
@@ -927,7 +944,7 @@ export function MusicView({
                       </>
                     )}
 
-                    {/* Close button — glass pill top-right */}
+                    {/* Close button */}
                     <button
                       onClick={() => setSelectedTrackForQuality(null)}
                       className="absolute top-3 right-3 z-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm text-white/80 hover:bg-black/60 hover:text-white transition-colors"
@@ -936,37 +953,23 @@ export function MusicView({
                       <X className="w-5 h-5" />
                     </button>
 
-                    {/* Title & subtitle */}
                     <div className="relative z-[1]">
-                      <h2 className="text-h3 font-semibold leading-tight tracking-tight pr-12">{selectedTrackForQuality.title}</h2>
+                      {/* Album cover art above title */}
+                      {selectedAlbum?.thumb_url && (
+                        <div className="w-28 h-28 rounded-lg overflow-hidden shadow-lg shadow-black/30 mb-3">
+                          <img src={selectedAlbum.thumb_url} alt={selectedAlbum?.title} className="w-full h-full object-cover" />
+                        </div>
+                      )}
+                      <h2 className="text-h3 font-semibold leading-tight tracking-tight">{selectedTrackForQuality.title}</h2>
                       {(selectedTrackForQuality.artist_name || selectedTrackForQuality.album_title) && (
                         <p className="text-label text-muted-foreground mt-1">
                           {[selectedTrackForQuality.artist_name, selectedTrackForQuality.album_title].filter(Boolean).join(' · ')}
                         </p>
                       )}
 
-                      {/* Genre/mood tags */}
-                      {(() => {
-                        let genres: string[] = []
-                        let moods: string[] = []
-                        try { genres = selectedTrackForQuality.genres ? JSON.parse(selectedTrackForQuality.genres) : [] } catch { /* malformed */ }
-                        try { moods = selectedTrackForQuality.mood ? JSON.parse(selectedTrackForQuality.mood) : [] } catch { /* malformed */ }
-                        if (genres.length === 0 && moods.length === 0) return null
-                        return (
-                          <div className="flex flex-wrap gap-1.5 mt-2">
-                            {genres.map((g) => (
-                              <span key={g} className="px-2 py-0.5 text-caption rounded bg-muted text-muted-foreground">{g}</span>
-                            ))}
-                            {moods.map((m) => (
-                              <span key={m} className="px-2 py-0.5 text-caption rounded bg-muted text-muted-foreground">{m}</span>
-                            ))}
-                          </div>
-                        )
-                      })()}
-
-                      {/* Action buttons — bare icons */}
-                      <div className="flex items-center gap-2 mt-3">
-                        {(tier === 'low' || tier === 'medium') && (
+                      {/* Action buttons */}
+                      {(tier === 'low' || tier === 'medium') && (
+                        <div className="flex items-center gap-2 mt-3">
                           <AddToWishlistButton
                             mediaType="track"
                             title={selectedTrackForQuality.title}
@@ -974,25 +977,21 @@ export function MusicView({
                             albumTitle={selectedTrackForQuality.album_title}
                             posterUrl={selectedAlbum?.thumb_url || undefined}
                             reason="upgrade"
-                            compact
                           />
-                        )}
-                        {(tier === 'low' || tier === 'medium') && (
-                          <button
-                            onClick={() => setSelectedTrackForQuality(null)}
-                            className="p-1 rounded-lg text-white hover:bg-white/15 transition-colors"
-                            title="Dismiss upgrade"
-                          >
-                            <EyeOff className="w-5 h-5" />
-                          </button>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 {/* Scrollable Content */}
-                <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+                <div
+                  className="flex-1 overflow-y-auto px-5 py-4 space-y-6"
+                  onScroll={isMobile ? (e) => {
+                    const heroImg = e.currentTarget.parentElement?.querySelector('[data-hero-img]') as HTMLElement
+                    if (heroImg) heroImg.style.transform = `translateY(${e.currentTarget.scrollTop * 0.4}px)`
+                  } : undefined}
+                >
 
                   {/* Quality Score */}
                   <div>
@@ -1080,25 +1079,22 @@ export function MusicView({
   // Artist detail view (showing albums)
   if (selectedArtist) {
     return (
-      <div className="space-y-6">
-        {/* Breadcrumb */}
-        <Button
-          variant="tertiary"
-          size="sm"
-          onClick={onBack}
-          icon={<ChevronLeft className="w-4 h-4" />}
-        >
-          Back to artists
-        </Button>
-
+      <div className={isMobile ? '' : 'space-y-6'}>
         {/* Artist Header */}
         {isMobile ? (
-          <div className="relative px-4 pt-20 pb-3 mb-4 -mx-2 -mt-6 overflow-hidden">
-            {selectedArtist.thumb_url && (
-              <>
-                <img src={selectedArtist.thumb_url} alt="" className="absolute inset-0 w-full h-full object-cover object-center" />
-                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/40" />
-              </>
+          <div className="relative px-4 pb-3 mb-4 -mx-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)', minHeight: '200px' }}>
+            {/* Breadcrumb — inside backdrop on mobile */}
+            <div className="relative z-[1] mb-4">
+              <Button variant="tertiary" size="sm" onClick={onBack} icon={<ChevronLeft className="w-4 h-4" />} className="text-white">
+                Back to artists
+              </Button>
+            </div>
+            {(selectedArtist.art_url || selectedArtist.thumb_url) && (
+              <div className="absolute top-0 right-0 w-3/4 will-change-transform" style={{ height: '130%', transform: 'translateY(var(--parallax-y, 0px))' }}>
+                <img src={(selectedArtist.art_url || selectedArtist.thumb_url)!} alt="" className="w-full h-full object-cover object-center" />
+                <div className="absolute inset-0 bg-gradient-to-r from-background to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+              </div>
             )}
             <div className="relative z-[1]">
               <div className="flex items-center gap-1.5 ">
@@ -1115,23 +1111,6 @@ export function MusicView({
                 >
                   {copiedTitle ? <Check className="w-4 h-4 text-foreground" /> : <Copy className="w-4 h-4" />}
                 </button>
-              </div>
-              <div className="flex items-center gap-2 mt-1 text-label text-muted-foreground flex-wrap">
-                {selectedArtist.country && (
-                  <>
-                    <span>{selectedArtist.country}</span>
-                    <span>•</span>
-                  </>
-                )}
-                {selectedArtist.genres && (
-                  <>
-                    <span>{(() => { try { const g = JSON.parse(selectedArtist.genres); return Array.isArray(g) ? g.join(', ') : selectedArtist.genres } catch { return selectedArtist.genres } })()}</span>
-                    <span>•</span>
-                  </>
-                )}
-                <span>{selectedArtist.album_count} albums</span>
-                <span>•</span>
-                <span>{selectedArtist.track_count} tracks</span>
               </div>
               {artistCompleteness.has(selectedArtist.name) && (
                 <p className="text-label text-muted-foreground mt-1">
@@ -1179,9 +1158,28 @@ export function MusicView({
             </div>
           </div>
         ) : (
-          <div className="flex gap-6 mb-6">
-            {/* Artist Image */}
-            <div className="w-44 h-44 bg-muted rounded-full overflow-hidden shrink-0 shadow-lg shadow-black/30">
+          <div className="relative mb-6 -mx-4 px-4 overflow-hidden" style={{ minHeight: '200px' }}>
+            {/* Backdrop image */}
+            {(selectedArtist.art_url || selectedArtist.thumb_url) && (
+              <div className="absolute top-0 right-0 w-3/4 h-full overflow-hidden">
+                <img src={(selectedArtist.art_url || selectedArtist.thumb_url)!} alt="" className="w-full h-full object-cover object-center" onError={(e) => { e.currentTarget.style.display = 'none' }} />
+                <div className="absolute inset-0 bg-gradient-to-r from-background to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+              </div>
+            )}
+            <div className="relative z-[1]">
+              <Button
+                variant="tertiary"
+                size="sm"
+                onClick={onBack}
+                icon={<ChevronLeft className="w-4 h-4" />}
+              >
+                Back to artists
+              </Button>
+            </div>
+            <div className="relative z-[1] flex gap-6 mt-3">
+              {/* Artist Image */}
+              <div className="w-44 h-44 bg-muted rounded-full overflow-hidden shrink-0 shadow-lg shadow-black/30">
               {selectedArtist.thumb_url ? (
                 <img
                   src={selectedArtist.thumb_url}
@@ -1274,10 +1272,11 @@ export function MusicView({
               )}
             </div>
           </div>
+          </div>
         )}
 
         {/* Albums Grid/List */}
-        <div>
+        <div className={isMobile ? 'relative z-[1]' : ''}>
           <h3 className="text-title font-semibold mb-4">Your Albums</h3>
           {filteredAlbums.length === 0 ? (
             <div className="p-12 text-center">
@@ -1406,7 +1405,7 @@ export function MusicView({
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       {/* Stats Bar */}
       {stats && (
         <div className="flex items-center gap-6 text-label text-muted-foreground">
@@ -1449,10 +1448,7 @@ export function MusicView({
               ))}
             </div>
           ) : (
-            <div
-              className={gridClassName}
-              style={gridStyle}
-            >
+            <div className={gridClassName} style={gridStyle}>
               {artists.map(artist => (
                 <div key={artist.id} data-title={artist.name}>
                   <ArtistCard
@@ -1466,7 +1462,6 @@ export function MusicView({
               ))}
             </div>
           )}
-          {/* Infinite scroll sentinel + loading indicator */}
           <div ref={artistSentinelRef} className="h-1" />
           {artistsLoading && (
             <div className="flex justify-center py-4" aria-live="polite" role="status">
@@ -1565,10 +1560,7 @@ export function MusicView({
               </VirtualList>
             </div>
           ) : (
-            <div
-              className={gridClassName}
-              style={gridStyle}
-            >
+            <div className={gridClassName} style={gridStyle}>
               {allFilteredAlbums.map(album => (
                 <div key={album.id} data-title={album.title}>
                   <AlbumCard
@@ -1584,7 +1576,6 @@ export function MusicView({
               ))}
             </div>
           )}
-          {/* Sentinel for album grid infinite scroll */}
           <div ref={albumSentinelRef} className="h-1" />
           {/* Album count footer */}
           <div className="px-4 py-1.5 text-caption text-muted-foreground flex items-center gap-2" aria-live="polite" role="status">
@@ -1845,11 +1836,17 @@ export function MusicView({
 
         return createPortal(
           <div
-            className="fixed inset-0 bg-black/60 flex items-center justify-center z-200 p-6"
+            className={`fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center z-200 transition-opacity duration-300 ${
+              isMobile ? 'items-end' : 'items-center p-6'
+            }`}
             onClick={() => setSelectedTrackForQuality(null)}
           >
             <div
-              className="bg-card rounded-xl w-full max-w-lg overflow-hidden shadow-2xl border border-border"
+              className={`bg-card overflow-hidden shadow-2xl ${
+                isMobile
+                  ? 'w-full h-[85vh] rounded-t-[2rem] border border-border border-b-0 animate-slide-up flex flex-col'
+                  : 'rounded-xl w-full max-w-lg border border-border'
+              }`}
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header — matches MediaDetails pattern */}
@@ -2616,7 +2613,7 @@ const MissingAlbumCard = memo(({ album, artistName, onDismiss }: {
             year={album.year}
             musicbrainzId={album.musicbrainz_id}
             artistName={artistName}
-            posterUrl={coverUrl || undefined}
+            posterUrl={coverUrl && !imageError ? coverUrl : undefined}
             compact
           />
           {onDismiss && (
@@ -2690,7 +2687,7 @@ const MissingAlbumListItem = memo(({ album, artistName, onDismiss }: {
           year={album.year}
           musicbrainzId={album.musicbrainz_id}
           artistName={artistName}
-          posterUrl={coverUrl || undefined}
+          posterUrl={coverUrl && !imageError ? coverUrl : undefined}
           compact
         />
         {onDismiss && (

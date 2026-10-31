@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
-import { RefreshCw, MoreVertical, Pencil, Folder, CircleFadingArrowUp, EyeOff, ChevronDown, ChevronUp, ChevronLeft, Copy, Check } from 'lucide-react'
+import { RefreshCw, MoreVertical, Pencil, Folder, CircleFadingArrowUp, EyeOff, ChevronDown, ChevronUp, ChevronLeft, Copy, Check, Star } from 'lucide-react'
 import { TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
 import { DropdownMenu, DropdownMenuItem } from '../ui/DropdownMenu'
 import { Button } from '../ui/Button'
@@ -139,11 +139,12 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
 })
 
 // Episode row component with keyboard navigation
-const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, isMobile = false }: {
+const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onAddToWishlist, isMobile = false }: {
   episode: MediaItem
   onClick: () => void
   onRescan?: (episode: MediaItem) => Promise<void>
   onDismissUpgrade?: (episode: MediaItem) => void
+  onAddToWishlist?: (episode: MediaItem) => void
   isMobile?: boolean
 }) => {
   const cardRef = useRef<HTMLDivElement>(null)
@@ -175,6 +176,14 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, isMobil
   const needsUpgrade = episode.tier_quality === 'LOW' || !!episode.needs_upgrade
   const showMenuButton = (onRescan && episode.file_path) || (onDismissUpgrade && needsUpgrade)
 
+  // Format audio channels to standard labels (6ch = 5.1, 8ch = 7.1, etc.)
+  const formatChannels = (ch: number): string => {
+    if (ch <= 1) return 'Mono'
+    if (ch === 2) return 'Stereo'
+    return `${ch - 1}.1`
+  }
+  const audioDisplay = episode.audio_channels ? formatChannels(episode.audio_channels) : ''
+
   return (
     <div
       ref={cardRef}
@@ -188,7 +197,7 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, isMobil
         }
       }}
     >
-      {/* Episode Thumbnail - 16:9 aspect ratio with shadow */}
+      {/* Episode Thumbnail */}
       <div className={`${isMobile ? 'w-24' : 'w-44'} aspect-video bg-muted overflow-hidden rounded-lg shadow-md shadow-black/20 shrink-0`}>
         {episode.episode_thumb_url ? (
           <img
@@ -212,52 +221,64 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, isMobil
           <span className="text-label font-semibold text-muted-foreground shrink-0">
             E{episode.episode_number}
           </span>
-          <h4 className="font-semibold truncate">{episode.title}</h4>
+          <h4 className={`font-semibold truncate ${isMobile ? 'text-label' : ''}`}>{episode.title}</h4>
         </div>
-        <div className="flex items-center gap-1 mt-0.5 text-caption text-muted-foreground">
-          <span>{episode.resolution} • {(episode.video_bitrate / 1000).toFixed(1)} Mbps • {episode.audio_channels}.0 Audio</span>
+        <div className="flex items-center gap-1.5 mt-0.5 text-caption text-muted-foreground">
+          {episode.resolution && <span>{episode.resolution}</span>}
+          {audioDisplay && <><span>·</span><span>{audioDisplay}</span></>}
           {needsUpgrade && (
-            <>
-              <span>•</span>
-              <span title="Quality upgrade recommended"><CircleFadingArrowUp className="w-4 h-4 text-destructive shrink-0" /></span>
-            </>
+            <span title="Quality upgrade recommended"><CircleFadingArrowUp className="w-3.5 h-3.5 text-destructive shrink-0 ml-0.5" /></span>
           )}
         </div>
       </div>
 
-      {/* 3-dot menu */}
-      {showMenuButton && (
-        <div ref={menuRef} className="relative shrink-0">
+      {/* Actions */}
+      <div className="flex items-center gap-0.5 shrink-0">
+        {/* Add to wishlist shortcut for upgrade items */}
+        {needsUpgrade && onAddToWishlist && (
           <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowMenu(!showMenu)
-            }}
-            className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+            onClick={(e) => { e.stopPropagation(); onAddToWishlist(episode) }}
+            className={`${isMobile ? 'min-h-[44px] min-w-[44px]' : 'p-1.5'} flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground transition-colors`}
+            title="Add to wishlist"
           >
-            {isRescanning ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <MoreVertical className="w-4 h-4" />
-            )}
+            <Star className={isMobile ? 'w-5 h-5' : 'w-4 h-4'} />
           </button>
+        )}
 
-          {showMenu && !isRescanning && (
-            <DropdownMenu>
-              {onRescan && episode.file_path && (
-                <DropdownMenuItem onClick={handleRescan} icon={<RefreshCw className="w-3.5 h-3.5" />}>
-                  Rescan File
-                </DropdownMenuItem>
+        {/* 3-dot menu */}
+        {showMenuButton && (
+          <div ref={menuRef} className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowMenu(!showMenu)
+              }}
+              className={`${isMobile ? 'min-h-[44px] min-w-[44px]' : 'p-1.5'} flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors`}
+            >
+              {isRescanning ? (
+                <RefreshCw className={`${isMobile ? 'w-5 h-5' : 'w-4 h-4'} animate-spin`} />
+              ) : (
+                <MoreVertical className={isMobile ? 'w-5 h-5' : 'w-4 h-4'} />
               )}
-              {onDismissUpgrade && needsUpgrade && (
-                <DropdownMenuItem onClick={handleDismissUpgrade} icon={<EyeOff className="w-3.5 h-3.5" />}>
-                  Dismiss Upgrade
-                </DropdownMenuItem>
-              )}
-            </DropdownMenu>
-          )}
-        </div>
-      )}
+            </button>
+
+            {showMenu && !isRescanning && (
+              <DropdownMenu>
+                {onRescan && episode.file_path && (
+                  <DropdownMenuItem onClick={handleRescan} icon={<RefreshCw className={isMobile ? 'w-4 h-4' : 'w-3.5 h-3.5'} />}>
+                    Rescan File
+                  </DropdownMenuItem>
+                )}
+                {onDismissUpgrade && needsUpgrade && (
+                  <DropdownMenuItem onClick={handleDismissUpgrade} icon={<EyeOff className={isMobile ? 'w-4 h-4' : 'w-3.5 h-3.5'} />}>
+                    Dismiss Upgrade
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenu>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 })
@@ -394,14 +415,14 @@ export function TVShowsView({
   // IntersectionObserver for infinite scroll
   const showSentinelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (!showSentinelRef.current || selectedShow) return
+    if (viewType !== 'list' || !showSentinelRef.current || selectedShow) return
     const observer = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) onLoadMoreShows() },
       { rootMargin: '400px' }
     )
     observer.observe(showSentinelRef.current)
     return () => observer.disconnect()
-  }, [onLoadMoreShows, selectedShow])
+  }, [viewType, onLoadMoreShows, selectedShow])
 
   const posterMinWidth = useMemo(() => {
     const widthMap: Record<number, number> = {
@@ -414,7 +435,7 @@ export function TVShowsView({
     ? 'grid grid-cols-3 gap-3'
     : isTablet
       ? 'grid grid-cols-4 gap-4'
-      : 'grid gap-8'
+      : 'grid gap-6'
 
   const gridStyle = (!isMobile && !isTablet)
     ? { gridTemplateColumns: `repeat(auto-fill, ${posterMinWidth}px)` }
@@ -506,17 +527,14 @@ export function TVShowsView({
       )
     }
 
-    // Grid view (default)
+    // Grid view — native CSS Grid
     return (
       <>
         {statsBar}
-        <div
-          className={`${gridClassName} mt-4`}
-          style={gridStyle}
-        >
+        <div className={`${gridClassName} mt-4`} style={gridStyle}>
           {shows.map((show) => {
             const completeness = seriesCompleteness.get(show.series_title)
-            return <div key={`${show.source_id || ''}-${show.series_title}`} data-title={show.series_title}><ShowCard show={show} onClick={() => onSelectShow(show.series_title)} completenessData={completeness} showSourceBadge={showSourceBadge} onAnalyzeSeries={() => onAnalyzeSeries(show.series_title)} onFixMatch={onFixMatch ? (sourceId, folderPath) => onFixMatch(show.series_title, sourceId, folderPath) : undefined} /></div>
+            return <div key={`${show.source_id || ''}-${show.series_title}`} data-title={show.series_title}><ShowCard show={show} onClick={() => onSelectShow(show.series_title)} completenessData={completeness} showSourceBadge={showSourceBadge} onAnalyzeSeries={() => onAnalyzeSeries(show.series_title)} onFixMatch={onFixMatch ? (sourceId: string, folderPath?: string) => onFixMatch(show.series_title, sourceId, folderPath) : undefined} /></div>
           })}
         </div>
         <div ref={showSentinelRef} className="h-1" />
@@ -569,26 +587,29 @@ export function TVShowsView({
     const totalSeasons = completenessData?.total_seasons || ownedSeasons.length
 
     return (
-      <div className="space-y-6">
-        {/* Breadcrumb */}
-        <Button
-          variant="tertiary"
-          size="sm"
-          onClick={handleBack}
-          icon={<ChevronLeft className="w-4 h-4" />}
-        >
-          Back to TV shows
-        </Button>
-
+      <div className={isMobile ? '' : 'space-y-6'}>
         {/* Show Header */}
         {isMobile ? (
-          <div className="relative px-4 pt-20 pb-3 mb-4 -mx-2 -mt-6 overflow-hidden">
-            {selectedShowData.poster_url && (
-              <>
-                <img src={selectedShowData.poster_url} alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
-                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/40" />
-              </>
+          <div className="relative px-4 pb-3 mb-4 -mx-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)', minHeight: '200px' }}>
+            {(selectedShowData.art_url || selectedShowData.poster_url) && (
+              <div className="absolute top-0 right-0 w-3/4 will-change-transform" style={{ height: '130%', transform: 'translateY(var(--parallax-y, 0px))' }}>
+                <img src={(selectedShowData.art_url || selectedShowData.poster_url)!} alt="" className="w-full h-full object-cover object-top" />
+                <div className="absolute inset-0 bg-gradient-to-r from-background to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+              </div>
             )}
+            {/* Breadcrumb — inside backdrop on mobile */}
+            <div className="relative z-[1] mb-4">
+              <Button
+                variant="tertiary"
+                size="sm"
+                onClick={handleBack}
+                icon={<ChevronLeft className="w-4 h-4" />}
+                className="text-white"
+              >
+                Back to TV shows
+              </Button>
+            </div>
             <div className="relative z-[1]">
               <div className="flex items-center gap-1.5">
                 <h3 className="text-h2 font-semibold">{selectedShowData.title}</h3>
@@ -653,24 +674,49 @@ export function TVShowsView({
             </div>
           </div>
         ) : (
-          <div className="flex gap-6 mb-6">
-            {/* Poster */}
-            {selectedShowData.poster_url && (
-              <div className="w-44 shrink-0">
+          <div className="relative mb-6 -mx-4 px-4 overflow-hidden" style={{ minHeight: '200px' }}>
+            {/* Backdrop image */}
+            {(selectedShowData.art_url || selectedShowData.poster_url) && (
+              <div className="absolute top-0 right-0 w-3/4 h-full overflow-hidden">
                 <img
-                  src={selectedShowData.poster_url}
-                  alt={selectedShowData.title}
-                  loading="lazy"
-                  className="w-full h-auto rounded-lg shadow-lg shadow-black/30"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none'
-                  }}
+                  src={(selectedShowData.art_url || selectedShowData.poster_url)!}
+                  alt=""
+                  className="w-full h-full object-cover object-top"
+                  onError={(e) => { e.currentTarget.style.display = 'none' }}
                 />
+                <div className="absolute inset-0 bg-gradient-to-r from-background to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
               </div>
             )}
 
-            {/* Info */}
-            <div className="flex-1 min-w-0">
+            <div className="relative z-[1]">
+              <Button
+                variant="tertiary"
+                size="sm"
+                onClick={handleBack}
+                icon={<ChevronLeft className="w-4 h-4" />}
+              >
+                Back to TV shows
+              </Button>
+            </div>
+            <div className="relative z-[1] flex gap-6 mt-3">
+              {/* Poster */}
+              {selectedShowData.poster_url && (
+                <div className="w-44 shrink-0">
+                  <img
+                    src={selectedShowData.poster_url}
+                    alt={selectedShowData.title}
+                    loading="lazy"
+                    className="w-full h-auto rounded-lg shadow-lg shadow-black/30"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none'
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Info */}
+              <div className="flex-1 min-w-0">
               {/* Title */}
               <div className="flex items-center gap-1.5">
                 <h3 className="text-h1 font-semibold">{selectedShowData.title}</h3>
@@ -740,10 +786,11 @@ export function TVShowsView({
               )}
             </div>
           </div>
+          </div>
         )}
 
         <div
-          className={gridClassName}
+          className={`${gridClassName} ${isMobile ? 'relative z-[1]' : ''}`}
           style={gridStyle}
         >
           {allSeasonItems.map((item) => (
@@ -812,22 +859,68 @@ export function TVShowsView({
     })
 
     return (
-      <div className="space-y-6">
-        {/* Breadcrumb */}
-        <Button
-          variant="tertiary"
-          size="sm"
-          onClick={handleBack}
-          icon={<ChevronLeft className="w-4 h-4" />}
-        >
-          Back to {selectedShowData.title}
-        </Button>
+      <div className={isMobile ? '' : 'space-y-6'}>
+        {isMobile ? (
+          <div className="relative px-4 pb-3 mb-4 -mx-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)', minHeight: '200px' }}>
+            {(() => { const url = selectedShowData.art_url || season?.posterUrl || completenessData?.poster_url || selectedShowData.poster_url; return url ? (
+              <div className="absolute top-0 right-0 w-3/4 h-full will-change-transform" style={{ transform: 'translateY(var(--parallax-y, 0px))' }}>
+                <img src={url} alt="" className="w-full h-full object-cover object-top" />
+                <div className="absolute inset-0 bg-gradient-to-r from-background to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+              </div>
+            ) : null })()}
+            {/* Breadcrumb inside backdrop */}
+            <div className="relative z-[1] mb-4">
+              <Button variant="tertiary" size="sm" onClick={handleBack} icon={<ChevronLeft className="w-4 h-4" />} className="text-white">
+                Back to {selectedShowData.title}
+              </Button>
+            </div>
+            <div className="relative z-[1]">
+              {/* Season poster art */}
+              {(season?.posterUrl || selectedShowData.poster_url) && (
+                <div className="w-24 h-36 rounded-lg overflow-hidden shadow-lg shadow-black/30 mb-3">
+                  <img src={season?.posterUrl || selectedShowData.poster_url!} alt={formatSeasonLabel(selectedSeason!)} className="w-full h-full object-cover" />
+                </div>
+              )}
+              <h3 className="text-h2 font-semibold">{formatSeasonLabel(selectedSeason!)}</h3>
+              <p className="text-label text-muted-foreground mt-0.5">
+                {selectedShowData.title} · {allOwnedEpisodes.length} episode{allOwnedEpisodes.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="relative mb-4 -mx-4 px-4 overflow-hidden" style={{ minHeight: '180px' }}>
+            {/* Backdrop image */}
+            {(() => { const url = selectedShowData.art_url || season?.posterUrl || completenessData?.poster_url || selectedShowData.poster_url; return url ? (
+              <div className="absolute top-0 right-0 w-3/4 h-full overflow-hidden">
+                <img src={url} alt="" className="w-full h-full object-cover object-top" onError={(e) => { e.currentTarget.style.display = 'none' }} />
+                <div className="absolute inset-0 bg-gradient-to-r from-background to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+              </div>
+            ) : null })()}
+            <div className="relative z-[1]">
+              <Button variant="tertiary" size="sm" onClick={handleBack} icon={<ChevronLeft className="w-4 h-4" />}>
+                Back to {selectedShowData.title}
+              </Button>
+            </div>
+            <div className="relative z-[1] flex gap-5 mt-3">
+              {(season?.posterUrl || selectedShowData.poster_url) && (
+                <div className="w-24 h-36 shrink-0 rounded-lg overflow-hidden shadow-lg shadow-black/30">
+                  <img src={season?.posterUrl || selectedShowData.poster_url!} alt={formatSeasonLabel(selectedSeason!)} className="w-full h-full object-cover" />
+                </div>
+              )}
+              <div>
+                <h3 className="text-h2 font-semibold">{formatSeasonLabel(selectedSeason!)}</h3>
+                <p className="text-label text-muted-foreground mt-0.5">
+                  {selectedShowData.title} · {allOwnedEpisodes.length} episode{allOwnedEpisodes.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
-        <h3 className="text-h3 font-semibold">
-          {selectedShowData.title} - {formatSeasonLabel(selectedSeason!)}
-        </h3>
-
-        {/* Episode filters */}
+        {/* Episode filters — desktop only (mobile shows resolution/quality inline per episode row) */}
+        {!isMobile && (
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <span className="text-caption text-muted-foreground">Resolution</span>
@@ -872,8 +965,9 @@ export function TVShowsView({
             </span>
           )}
         </div>
+        )}
 
-        <div className="divide-y divide-border/50">
+        <div className={`divide-y divide-border/50 ${isMobile ? 'relative z-[1]' : ''}`}>
           {allEpisodeItems.map((item) => (
             item.type === 'owned' ? (
               <EpisodeRow
@@ -1108,8 +1202,9 @@ const MissingEpisodeRowWithArtwork = memo(({
   const cardRef = useRef<HTMLDivElement>(null)
   const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
 
+  // Skip individual TMDB still fetches on mobile — use fallback poster to avoid N RPC round trips
   useEffect(() => {
-    if (tmdbId) {
+    if (tmdbId && !isMobile) {
       window.electronAPI.seriesGetEpisodeStill(tmdbId, episode.season_number, episode.episode_number)
         .then((url) => {
           if (url) setStillUrl(url)
@@ -1118,7 +1213,7 @@ const MissingEpisodeRowWithArtwork = memo(({
           console.warn(`Failed to fetch episode still for S${episode.season_number}E${episode.episode_number}:`, err)
         })
     }
-  }, [tmdbId, episode.season_number, episode.episode_number])
+  }, [tmdbId, episode.season_number, episode.episode_number, isMobile])
 
   return (
     <div
