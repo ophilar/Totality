@@ -679,6 +679,14 @@ export class PlexProvider implements MediaProvider {
         return result
       }
 
+      // Do not treat an unexpected empty Plex inventory as permission to
+      // reconcile/delete previously indexed media.
+      if (!isIncremental && items.length === 0 && existingPlexIds.size > 0) {
+        result.errors.push(`Plex inventory empty while ${existingPlexIds.size} stored media items exist; deletion skipped`)
+        result.durationMs = Date.now() - startTime
+        return result
+      }
+
       // Remove stale items
       // If libraryType is null (Plex returned 0 items), detect from existing DB items
       if (!isIncremental && !libraryType) {
