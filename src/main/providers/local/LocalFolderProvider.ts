@@ -36,7 +36,7 @@ import type {
 } from '../base/MediaProvider'
 import type { MediaItem, MediaItemVersion, AudioTrack } from '../../types/database'
 import { extractVersionNames } from '../utils/VersionNaming'
-import { groupByMediaIdentity, scoreVersion } from '../utils/ProviderUtils'
+import { getMediaGroupingKey, groupByMediaIdentity, scoreVersion } from '../utils/ProviderUtils'
 import { AudioCodecRanker } from '../../services/AudioCodecRanker'
 import { APP_CONFIG } from '../../config'
 
@@ -531,7 +531,7 @@ export class LocalFolderProvider implements MediaProvider {
         fileMtime: number
         analysis?: import('../../services/MediaFileAnalyzer').FileAnalysisResult
       }
-      const processedItems: ProcessedItem[] = []
+      const existingMovieIndex = scanType === 'movie' ? this.getMovieParentIndex(db, libraryId) : undefined
 
       try {
         // Process in batches for parallel FFprobe analysis
@@ -541,6 +541,7 @@ export class LocalFolderProvider implements MediaProvider {
         for (let batchStart = 0; batchStart < mediaFiles.length; batchStart += ffprobeBatchSize) {
           const batchEnd = Math.min(batchStart + ffprobeBatchSize, mediaFiles.length)
           const batchFiles = mediaFiles.slice(batchStart, batchEnd)
+          const processedItems: ProcessedItem[] = []
 
           // Phase 2a: Pre-process batch (mtime check, parsing, TMDB lookup)
           const filesToProcess: FileToProcess[] = []
@@ -644,9 +645,10 @@ export class LocalFolderProvider implements MediaProvider {
               result.errors.push(`Failed to process ${path.basename(filePath)}: ${getErrorMessage(error)}`)
             }
           }
-        }
 
-        // Phase 2d: Group movies by TMDB ID, then save to DB with versions
+        // Phase 2d: Group only this batch, rather than retaining every processed
+        // media object for the full inventory. Cross-batch groups merge by identity.
+
         type VersionData = Omit<MediaItemVersion, 'id' | 'media_item_id'>
 
         const groups = scanType === 'movie'
@@ -677,21 +679,42 @@ export class LocalFolderProvider implements MediaProvider {
 
 
             mediaItem.file_mtime = bestItem.fileMtime
-            mediaItem.version_count = versions.length
-            // Use first item's plex_id as canonical (stable across rescans)
-            mediaItem.plex_id = group[0].metadata.itemId
-
+            // Partial groups (unchanged files are omitted) are not exhaustive.
+            // Resolve a canonical parent by existing version path first, then by a unique
+            // movie identity. Never create a duplicate parent merely for a new edition.
+            let existingParent: MediaItem | undefined
+            if (existingMovieIndex) {
+              for (const candidate of group) {
+                const parent = this.getMovieParent(db, candidate.metadata, libraryId, existingMovieIndex)
+                if (parent && existingParent && parent.id !== existingParent.id) {
+                  throw new Error('Conflicting existing movie version parents; manual reconciliation required')
+                }
+                if (parent) existingParent = parent
+              }
+            }
+            mediaItem.plex_id = existingParent?.plex_id ?? group[0].metadata.itemId
+            mediaItem.version_count = existingParent?.version_count ?? versions.length
             const id = await db.upsertMediaItem(mediaItem)
+            if (existingMovieIndex) {
+              const key = getMediaGroupingKey(group[0].metadata)
+              if (!existingMovieIndex.has(key) || existingMovieIndex.get(key) !== null) {
+                existingMovieIndex.set(key, { ...mediaItem, id } as MediaItem)
+              }
+            }
 
-            // Sync versions: delete stale, upsert current, update best version
+            // Incremental groups are partial; never delete existing sibling versions.
             const scoredVersions = versions.map(version => {
               const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
               return { ...version, media_item_id: id, ...vScore } as MediaItemVersion
             })
-            db.syncMediaItemVersions(id, scoredVersions)
+            db.syncMediaItemVersions(id, scoredVersions, 'merge')
 
-            mediaItem.id = id
-            const qualityScore = await analyzer.analyzeMediaItem(mediaItem, bestItem.analysis)
+            // Version reconciliation may choose an unchanged higher-quality sibling.
+            // Score the authoritative canonical item rather than the just-modified file.
+            const canonical = db.getMediaItem(id)
+            if (!canonical) throw new Error('Updated movie parent is missing')
+            const canonicalAnalysis = group.find(item => item.metadata.filePath === canonical.file_path)?.analysis
+            const qualityScore = await analyzer.analyzeMediaItem(canonical, canonicalAnalysis)
             await db.upsertQualityScore(qualityScore)
 
             result.itemsScanned++
@@ -703,6 +726,8 @@ export class LocalFolderProvider implements MediaProvider {
             const names = group.map(g => path.basename(g.metadata.filePath || '')).join(', ')
             result.errors.push(`Failed to save ${names}: ${getErrorMessage(error)}`)
           }
+        }
+        // Batch-scoped media and analysis objects can now be released.
         }
       } finally {
         await db.endBatch()
@@ -727,18 +752,15 @@ export class LocalFolderProvider implements MediaProvider {
 
         const existingItems = db.getMediaItems({ type: scanType, sourceId: this.sourceId, libraryId })
 
-        // Safety guard: refuse deletion when scan found 0 files but DB has items
-        if (scannedFilePaths.size === 0 && existingItems.length > 0) {
-          console.warn(`[LocalFolderProvider ${this.sourceId}] Scan returned 0 files but DB has ${existingItems.length} — skipping deletion (possible access issue)`)
-        } else {
-          for (const item of existingItems) {
-            if (!scannedFilePaths.has(item.file_path)) {
-              if (item.id) {
-                await db.deleteMediaItem(item.id)
-                result.itemsRemoved++
-              }
-            }
-          }
+        // A complete directory enumeration still cannot prove an offline NAS child,
+        // permission change, or rename is a real deletion. Never automatically purge
+        // media or its versions here; cleanup needs a separate verified user action.
+        const absentParents = existingItems.filter(item => !scannedFilePaths.has(item.file_path))
+        if (absentParents.length > 0) {
+          getLoggingService().warn('[LocalFolderProvider]',
+            `Deferred reconciliation of ${absentParents.length} unobserved ${scanType} records; retained for safety`)
+          // Keep stale version history, but prefer a currently observed sibling for playback.
+          for (const item of absentParents) if (item.id) db.updateBestVersion(item.id, scannedFilePaths)
         }
       }
 
@@ -854,6 +876,7 @@ export class LocalFolderProvider implements MediaProvider {
 
       // Cache for movie TMDB lookups - avoids redundant searches for same movie
       const movieTmdbCache: MovieMetadataCache = new Map()
+      const existingMovieIndex = scanType === 'movie' ? this.getMovieParentIndex(db, libraryId) : undefined
 
       try {
         for (let i = 0; i < validFiles.length; i++) {
@@ -908,17 +931,27 @@ export class LocalFolderProvider implements MediaProvider {
             const mediaItem = MediaConverter.toMediaItem(metadata, { sourceId: this.sourceId, sourceType: this.providerType, libraryId })
 
               mediaItem.file_mtime = fileMtime
-
+              if (existingMovieIndex) {
+                const parent = this.getMovieParent(db, metadata, libraryId, existingMovieIndex)
+                if (parent) mediaItem.plex_id = parent.plex_id
+              }
               const id = await db.upsertMediaItem(mediaItem)
+              if (existingMovieIndex) {
+                const key = getMediaGroupingKey(metadata)
+                if (!existingMovieIndex.has(key) || existingMovieIndex.get(key) !== null) {
+                  existingMovieIndex.set(key, { ...mediaItem, id } as MediaItem)
+                }
+              }
 
-              // Sync version: delete stale, upsert current, update best version
+              // Targeted events never represent a complete set of sibling versions.
               const version = this.convertMetadataToVersion(metadata, parsed as ParsedMovieInfo | ParsedEpisodeInfo, fileMtime)
               const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
-              db.syncMediaItemVersions(id, [{ ...version, media_item_id: id, ...vScore } as MediaItemVersion])
+              db.syncMediaItemVersions(id, [{ ...version, media_item_id: id, ...vScore } as MediaItemVersion], 'merge')
 
-              // Analyze quality
-              mediaItem.id = id
-              const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
+              // The best version may be a different unchanged sibling.
+              const canonical = db.getMediaItem(id)
+              if (!canonical) throw new Error('Updated local media parent is missing')
+              const qualityScore = await analyzer.analyzeMediaItem(canonical)
               await db.upsertQualityScore(qualityScore)
 
               result.itemsScanned++
@@ -990,6 +1023,7 @@ export class LocalFolderProvider implements MediaProvider {
       const db = getDatabase()
       const fileAnalyzer = getMediaFileAnalyzer()
       const parser = getFileNameParser()
+      await getQualityAnalyzer().loadThresholdsFromDatabase()
 
       // Check both FFprobe availability AND user setting (default to enabled if not set)
       const ffprobeEnabled = db.getSetting('ffprobe_enabled') !== 'false'
@@ -1078,7 +1112,7 @@ export class LocalFolderProvider implements MediaProvider {
                   bitDepth: primaryAudio.bitDepth,
                   channels: primaryAudio.channels,
                   duration: analysis.durationMs,
-                  isLossless: this.isLosslessCodec(primaryAudio.codec),
+                  isLossless: AudioCodecRanker.isLossless(primaryAudio.codec),
                   hasEmbeddedArtwork: analysis.embeddedArtwork?.hasArtwork,
                 }
               }
@@ -1175,7 +1209,7 @@ export class LocalFolderProvider implements MediaProvider {
               bit_depth: audioInfo.bitDepth,
               channels: audioInfo.channels,
               is_lossless: audioInfo.isLossless,
-              is_hi_res: this.isHiRes(audioInfo.sampleRate, audioInfo.bitDepth),
+              is_hi_res: getQualityAnalyzer().isHighResolutionAudio(audioInfo.sampleRate, audioInfo.bitDepth),
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             })
@@ -1846,6 +1880,38 @@ export class LocalFolderProvider implements MediaProvider {
     return enhanced
   }
 
+  /** One authoritative lookup for local movie parents, including secondary version files.
+   * Ambiguous existing identity groups are deliberately not selected by title alone.
+   */
+  private getMovieParentIndex(db: ReturnType<typeof getDatabase>, libraryId: string): Map<string, MediaItem | null> {
+    const index = new Map<string, MediaItem | null>()
+    for (const item of db.getMediaItems({ sourceId: this.sourceId, libraryId, type: 'movie' })) {
+      const key = getMediaGroupingKey({ tmdbId: item.tmdb_id, imdbId: item.imdb_id, title: item.title, year: item.year })
+      index.set(key, index.has(key) ? null : item)
+    }
+    return index
+  }
+
+  private getMovieParent(
+    db: ReturnType<typeof getDatabase>,
+    metadata: MediaMetadata,
+    libraryId: string,
+    index: Map<string, MediaItem | null>,
+  ): MediaItem | undefined {
+    const byPath = metadata.filePath ? db.getMediaItemByPath(metadata.filePath) : null
+    if (byPath) {
+      if (byPath.source_id !== this.sourceId || byPath.library_id !== libraryId || byPath.type !== 'movie') {
+        throw new Error('Local movie version belongs to a different source/library')
+      }
+      return byPath
+    }
+    const key = getMediaGroupingKey(metadata)
+    if (index.has(key) && index.get(key) === null) {
+      throw new Error('Multiple existing movie parents share this identity; manual reconciliation required')
+    }
+    return index.get(key) ?? undefined
+  }
+
   private generateItemId(filePath: string): string {
     // Create a stable ID based on the file path
     const hash = this.simpleHash(filePath)
@@ -2034,6 +2100,7 @@ export class LocalFolderProvider implements MediaProvider {
       const db = getDatabase()
       const fileAnalyzer = getMediaFileAnalyzer()
       const parser = getFileNameParser()
+      await getQualityAnalyzer().loadThresholdsFromDatabase()
 
       // Check both FFprobe availability AND user setting (default to enabled if not set)
       const ffprobeEnabled = db.getSetting('ffprobe_enabled') !== 'false'
@@ -2121,30 +2188,25 @@ export class LocalFolderProvider implements MediaProvider {
             })
 
             try {
-              // Parse filename and folder structure
-              const folderContext = path.dirname(relativePath)
-              const parsed = parser.parseMusic(path.basename(filePath, path.extname(filePath)), folderContext)
-
-              let artistName = parsed.artist || 'Unknown Artist'
-              const albumName = parsed.album || 'Unknown Album'
-              const trackTitle = parsed.title || path.basename(filePath, path.extname(filePath))
-
-              // Lookup canonical artist name from MusicBrainz if enabled
-              if (mbNameCorrectionEnabled && artistName !== 'Unknown Artist') {
-                artistName = await this.lookupCanonicalArtistName(artistName, mbArtistNameCache)
-              }
-
-              // Get file stats
+              // Determine whether any work is needed before parsing or remote metadata lookups.
+              scannedFilePaths.add(filePath)
               const stats = await fs.promises.stat(filePath)
               const fileMtime = stats.mtime.getTime()
-
-              // Delta scanning: Check if track exists and is unchanged
               const existingTrack = db.getMusicTrackByPath(filePath)
-              if (existingTrack?.file_mtime === fileMtime) {
+              if (existingTrack?.file_mtime === fileMtime && existingTrack.file_size === stats.size) {
                 // File unchanged, skip expensive FFprobe analysis
                 scannedFilePaths.add(filePath)
                 result.itemsScanned++
                 continue
+              }
+
+              const folderContext = path.dirname(relativePath)
+              const parsed = parser.parseMusic(path.basename(filePath, path.extname(filePath)), folderContext)
+              let artistName = parsed.artist || 'Unknown Artist'
+              const albumName = parsed.album || 'Unknown Album'
+              const trackTitle = parsed.title || path.basename(filePath, path.extname(filePath))
+              if (mbNameCorrectionEnabled && artistName !== 'Unknown Artist') {
+                artistName = await this.lookupCanonicalArtistName(artistName, mbArtistNameCache)
               }
 
               // Collect file for processing
@@ -2221,7 +2283,7 @@ export class LocalFolderProvider implements MediaProvider {
                   bitDepth: primaryAudio.bitDepth,
                   channels: primaryAudio.channels,
                   duration: analysis.durationMs,
-                  isLossless: this.isLosslessCodec(primaryAudio.codec),
+                  isLossless: AudioCodecRanker.isLossless(primaryAudio.codec),
                   hasEmbeddedArtwork: analysis.embeddedArtwork?.hasArtwork,
                 }
               }
@@ -2335,7 +2397,7 @@ export class LocalFolderProvider implements MediaProvider {
               bit_depth: audioInfo.bitDepth,
               channels: audioInfo.channels,
               is_lossless: audioInfo.isLossless,
-              is_hi_res: this.isHiRes(audioInfo.sampleRate, audioInfo.bitDepth),
+              is_hi_res: getQualityAnalyzer().isHighResolutionAudio(audioInfo.sampleRate, audioInfo.bitDepth),
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             })
@@ -2371,16 +2433,11 @@ export class LocalFolderProvider implements MediaProvider {
         // A track excluded by current parsing rules is not evidence of deletion.
         return isInMusicRoot && !scannedFilePaths.has(track.file_path) && !fs.existsSync(track.file_path)
       })
-      // A sudden mass disappearance can also indicate a partially detached NAS mount.
-      // Fail closed rather than silently clearing many previously indexed tracks.
-      if (missingTracks.length > 10 && missingTracks.length > totalFiles / 4) {
-        result.errors.push(`Music inventory would remove ${missingTracks.length} tracks; mass deletion requires verification of the mounted folders`)
-        result.durationMs = Date.now() - startTime
-        return result
-      }
-      for (const track of missingTracks) {
-        db.deleteMusicTrack(track.id!)
-        result.itemsRemoved++
+      // An apparently complete scan cannot distinguish a real removal from an
+      // inaccessible NAS child or mount. Preserve records until explicit cleanup.
+      if (missingTracks.length > 0) {
+        getLoggingService().warn('[LocalFolderProvider]',
+          `Retained ${missingTracks.length} unobserved music tracks; unverified deletion is deferred`)
       }
 
       // Update album stats (track count, duration, etc.)
@@ -2448,19 +2505,6 @@ export class LocalFolderProvider implements MediaProvider {
     await scanDir(rootDir)
 
     return files
-  }
-
-  private isLosslessCodec(codec: string): boolean {
-    const losslessCodecs = ['flac', 'alac', 'wav', 'aiff', 'ape', 'pcm', 'dsd', 'dsf', 'dff']
-    const lower = codec.toLowerCase()
-    return losslessCodecs.some(c => lower.includes(c))
-  }
-
-  private isHiRes(sampleRate?: number, bitDepth?: number): boolean {
-    // Hi-Res is typically > 44.1kHz/16-bit
-    if (sampleRate && sampleRate > 48000) return true
-    if (bitDepth && bitDepth > 16) return true
-    return false
   }
 
   private async updateAlbumStats(

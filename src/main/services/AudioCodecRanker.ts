@@ -141,8 +141,9 @@ export class AudioCodecRanker {
    * @returns true if the codec is lossless
    */
   static isLossless(codec: string): boolean {
-    const tier = AudioCodecRanker.getTier(codec)
-    return tier >= AudioCodecRanker.TIER_LOSSLESS
+    // Object-audio metadata is orthogonal to lossless encoding (e.g. E-AC-3 Atmos).
+    const normalized = codec.toLowerCase()
+    return AudioCodecRanker.LOSSLESS_CODECS.some(name => normalized.includes(name))
   }
 
   /**

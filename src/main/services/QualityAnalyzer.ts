@@ -175,6 +175,12 @@ export class QualityAnalyzer {
   private videoWeight = APP_CONFIG.quality.videoWeight
   private videoSavingsTargetCodecs: string[] = DEFAULT_VIDEO_SAVINGS_TARGET_CODECS
 
+  /** Use the same configurable music thresholds as album-quality analysis. */
+  isHighResolutionAudio(sampleRate?: number, bitDepth?: number): boolean {
+    return (sampleRate !== undefined && sampleRate > this.musicThresholds.hiResSampleRate) ||
+      (bitDepth !== undefined && bitDepth > this.musicThresholds.hiResBitDepth)
+  }
+
   /**
    * Load all configurable settings from database (cached after first load)
    * Optimized: Uses single batch query instead of multiple individual calls
