@@ -27,14 +27,17 @@ export class OperationFileHasher {
 
   private async run(filePath: string): Promise<string> {
     if (this.active >= this.parallelReads) {
+      // A queued reader inherits a reserved permit from the completing reader.
       await new Promise<void>(resolve => this.waiting.push(resolve))
+    } else {
+      this.active++
     }
-    this.active++
     try {
       return await this.digest(filePath)
     } finally {
-      this.active--
-      this.waiting.shift()?.()
+      const next = this.waiting.shift()
+      if (next) next()
+      else this.active--
     }
   }
 }
