@@ -1008,6 +1008,7 @@ export class LocalFolderProvider implements MediaProvider {
       const db = getDatabase()
       const fileAnalyzer = getMediaFileAnalyzer()
       const parser = getFileNameParser()
+      await getQualityAnalyzer().loadThresholdsFromDatabase()
 
       // Check both FFprobe availability AND user setting (default to enabled if not set)
       const ffprobeEnabled = db.getSetting('ffprobe_enabled') !== 'false'
@@ -2081,6 +2082,7 @@ export class LocalFolderProvider implements MediaProvider {
       const db = getDatabase()
       const fileAnalyzer = getMediaFileAnalyzer()
       const parser = getFileNameParser()
+      await getQualityAnalyzer().loadThresholdsFromDatabase()
 
       // Check both FFprobe availability AND user setting (default to enabled if not set)
       const ffprobeEnabled = db.getSetting('ffprobe_enabled') !== 'false'
