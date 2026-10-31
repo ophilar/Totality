@@ -32,6 +32,27 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
+      - name: Install FFmpeg and FFprobe (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install FFmpeg and FFprobe (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+
+      - name: Install FFmpeg and FFprobe (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install ffmpeg -y --no-progress
+
+      - name: Verify media tools
+        shell: bash
+        run: |
+          ffmpeg -version
+          ffprobe -version
+
       - name: Typecheck and run portable unit tests
         run: npm run test:run
 
