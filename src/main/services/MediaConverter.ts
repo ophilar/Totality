@@ -151,6 +151,7 @@ export class MediaConverter {
       color_space: metadata.colorSpace,
       video_profile: metadata.videoProfile,
       video_level: metadata.videoLevel ? parseInt(metadata.videoLevel, 10) : undefined,
+      dolby_vision_profile: metadata.dolbyVisionProfile,
 
       // Audio quality (from best track or primary)
       audio_codec: bestTrack?.codec || (metadata.audioCodec ? normalizeAudioCodec(metadata.audioCodec) : ''),

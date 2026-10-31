@@ -11,7 +11,7 @@ export const EvidenceStatusBadge: React.FC<EvidenceStatusBadgeProps> = ({ status
     return (
       <span
         className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground ${className}`}
-        title={status === 'insufficient' ? 'Insufficient: Partial data or low confidence measurement' : 'Unmeasured: Analysis has not measured file optimization details'}
+        title={status === 'insufficient' ? 'More evidence is needed.' : 'No measurement is available.'}
       >
         {status === 'insufficient' ? 'Insufficient' : 'Unmeasured'}
       </span>
@@ -22,7 +22,7 @@ export const EvidenceStatusBadge: React.FC<EvidenceStatusBadgeProps> = ({ status
     return (
       <span
         className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 ${className}`}
-        title="Measured: Verified against media file streams and codec profiles"
+        title="Measured from file streams and codec profiles."
       >
         Measured
       </span>
@@ -32,7 +32,7 @@ export const EvidenceStatusBadge: React.FC<EvidenceStatusBadgeProps> = ({ status
   return (
     <span
       className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/15 text-amber-600 dark:text-amber-400 ${className}`}
-      title="Estimated: Heuristic approximation based on container and bitrate tier"
+      title="Estimated from file metadata."
     >
       Estimated
     </span>

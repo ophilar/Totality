@@ -62,7 +62,7 @@ export function TranscodingHardwareCard() {
           <Cpu className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
           <div>
             <h3 id="transcoding-hardware-title" className="text-sm font-semibold">Video encoding hardware</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Choose the hardware encoder family. FFmpeg verifies encoder support; this setting does not pin a physical adapter when multiple devices share a vendor.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Choose a preferred GPU family. FFmpeg selects the physical device.</p>
           </div>
         </div>
         <button type="button" onClick={() => void refresh()} disabled={loading || refreshing} className="rounded p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-50" aria-label="Refresh hardware capabilities">
@@ -70,10 +70,10 @@ export function TranscodingHardwareCard() {
         </button>
       </div>
       {loading ? (
-        <p className="mt-3 text-xs text-muted-foreground">Detecting video hardware and verifying encoders…</p>
+        <p className="mt-3 text-xs text-muted-foreground">Checking video encoders…</p>
       ) : capabilities && (
         <div className="mt-3 space-y-3 border-t border-border/30 pt-3">
-          <label className="block text-xs font-medium text-muted-foreground" htmlFor="transcoding-gpu">Selected encoder family</label>
+          <label className="block text-xs font-medium text-muted-foreground" htmlFor="transcoding-gpu">Preferred GPU family</label>
           <select
             id="transcoding-gpu"
             value={capabilities.selectedGpuId ?? ''}

@@ -1,22 +1,12 @@
 import { useEffect, useState } from 'react'
 import { AlertCircle, Loader2, Zap } from 'lucide-react'
-import { TranscodeModal } from '@/components/library/TranscodeModal'
+import { SharedOptimizationDialog } from '@/components/library/TranscodeModal'
+import { optimizationScopeForMedia } from './transcoding/OptimizationScope'
 import type { MediaItem } from '@/components/library/types'
-import type { OptimizationDecision, OptimizationDecisionMechanism } from '@main/services/OptimizationDecisionService'
+import type { OptimizationDecision } from '@main/services/OptimizationDecisionService'
 import { EstimatedSavingsDisplay } from '@/components/library/EstimatedSavingsDisplay'
 
 type DecisionState = { mediaId: number; decision: OptimizationDecision | null; error: string | null }
-
-function MechanismRow({ label, mechanism, analysisRequired = false }: { label: string; mechanism: OptimizationDecisionMechanism; analysisRequired?: boolean }) {
-  return <div className="flex items-center gap-3 border-t border-border/30 py-2 first:border-t-0">
-    <div className="min-w-0 flex-1">
-      <div className="font-medium">{label}</div>
-      {analysisRequired && <div className="font-semibold text-amber-300">Analysis required</div>}
-      <div className="text-muted-foreground">{mechanism.reason}</div>
-    </div>
-    {!analysisRequired && <span className="shrink-0 text-muted-foreground">Potential savings <EstimatedSavingsDisplay bytes={mechanism.estimatedSavingsBytes} /></span>}
-  </div>
-}
 
 const pendingDecisionRequests = new Map<number, Promise<OptimizationDecision>>()
 
@@ -35,7 +25,7 @@ function getOptimizationDecision(mediaId: number): Promise<OptimizationDecision>
   return request
 }
 
-export function ConversionRecommendation({ item, compact = false, onOptimizationCompleted }: { item: MediaItem; compact?: boolean; onOptimizationCompleted?: () => void }) {
+export function ConversionRecommendation({ item, onOptimizationCompleted }: { item: MediaItem; onOptimizationCompleted?: () => void }) {
   const [decisionState, setDecisionState] = useState<DecisionState | null>(null)
   const [showTranscodeModal, setShowTranscodeModal] = useState(false)
   const [analysisPending, setAnalysisPending] = useState(false)
@@ -62,8 +52,8 @@ export function ConversionRecommendation({ item, compact = false, onOptimization
     return () => { active = false }
   }, [mediaId])
 
-  if (loading) return <div className="flex items-center gap-2 p-3 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Analyzing optimization options</div>
-  if (error) return <div className="flex items-center gap-2 p-3 text-destructive"><AlertCircle className="h-4 w-4" />{error}</div>
+  if (loading) return <div className="flex items-center gap-2 p-3 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Checking options…</div>
+  if (error) return <div role="alert" className="p-3 text-destructive"><div className="flex items-center gap-2"><AlertCircle className="h-4 w-4" />Optimization options unavailable</div><details className="mt-1 text-xs"><summary className="cursor-pointer">Technical details</summary><p className="pt-1">{error}</p></details></div>
   if (!decision) return null
 
   const pruneStreams = decision.trackRemoval.status === 'executable'
@@ -87,26 +77,21 @@ export function ConversionRecommendation({ item, compact = false, onOptimization
       setAnalysisPending(false)
     }
   }
-  return <div className={`${compact ? 'text-[10px]' : 'text-xs'} mt-3 rounded-md border border-primary/20 bg-primary/5 p-3`}>
-    <div className="mb-2 flex items-center gap-2 font-semibold text-primary"><Zap className="h-3.5 w-3.5" />Disk optimization</div>
-    <MechanismRow label="Remove audio tracks" mechanism={decision.trackRemoval} />
-    <MechanismRow label="Transcode audio" mechanism={decision.audioTranscode} />
-    <MechanismRow label="Transcode video" mechanism={decision.videoTranscode} analysisRequired={analysisRequired} />
-    {!compact && <div className="mt-3 border-t border-border/30 pt-3">
-      <div className="mb-1 font-medium">Audio track analysis</div>
-      <div className="space-y-1 text-muted-foreground">
-        {decision.trackRemoval.tracks.map(track => <div key={track.index} className="flex justify-between gap-2">
-          <span>{track.language || 'Unknown'}{track.title ? ` · ${track.title}` : ''} · {track.codec} · {track.channelLayout || `${track.channels}ch`}{track.hasObjectAudio ? ' · Object audio' : ''}{track.isCommentary ? ' · Commentary' : ''}{track.isAudioDescription ? ' · Audio description' : ''}{track.isAccessibility ? ' · Accessibility' : ''}</span>
-          <span>{decision.trackRemoval.retainedTrackIndexes.includes(track.index) ? 'Retain' : decision.trackRemoval.removableTrackIndexes.includes(track.index) ? 'Remove' : 'Review'}</span>
-        </div>)}
-      </div>
-      <div className="mt-2">Language confidence: {decision.trackRemoval.confidence}</div>
-    </div>}
-    {!hasSupportedOperation && analysisRequired && <div className="pt-2 text-muted-foreground">Run analysis for this item to evaluate video optimization and stream cleanup.</div>}
-    {!hasSupportedOperation && !analysisRequired && <div className="pt-2 text-muted-foreground">No supported optimization action is available.</div>}
+  return <div className="mt-3 rounded-md border border-primary/20 bg-primary/5 p-3 text-xs">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex items-center gap-2 font-semibold text-primary"><Zap className="h-3.5 w-3.5" />{analysisRequired ? 'Analysis needed' : hasSupportedOperation ? 'Optimization available' : 'No optimization available'}</div>
+      <span className="shrink-0 text-muted-foreground">Estimated savings <EstimatedSavingsDisplay bytes={item.estimated_savings_bytes} /></span>
+    </div>
     {analysisError && <p role="alert" className="mt-2 text-destructive">{analysisError}</p>}
-    {analysisRequired && <button type="button" onClick={() => void analyzeItem()} disabled={analysisPending} className="mt-3 rounded border border-border px-3 py-1.5 font-semibold disabled:opacity-50">{analysisPending ? 'Analyzing item…' : 'Analyze item'}</button>}
-    {hasSupportedOperation && <button type="button" onClick={() => setShowTranscodeModal(true)} className="mt-3 rounded bg-primary px-3 py-1.5 font-semibold text-primary-foreground">Review optimization</button>}
-    {showTranscodeModal && <TranscodeModal mediaId={mediaId} initialOptimizationMode={transcodeVideo ? 'smart' : 'remux_only'} initialStreamPruning={pruneStreams} onOptimizationCompleted={onOptimizationCompleted} onClose={() => setShowTranscodeModal(false)} />}
+    {analysisRequired && <button type="button" onClick={() => void analyzeItem()} disabled={analysisPending} className="mt-3 rounded border border-border px-3 py-1.5 font-semibold disabled:opacity-50">{analysisPending ? 'Analyzing…' : 'Analyze item'}</button>}
+    {hasSupportedOperation && <button type="button" onClick={() => setShowTranscodeModal(true)} className="mt-3 rounded bg-primary px-3 py-1.5 font-semibold text-primary-foreground">Optimize</button>}
+    {showTranscodeModal && <SharedOptimizationDialog request={{
+      controller: 'media',
+      scope: optimizationScopeForMedia(item),
+      onClose: () => setShowTranscodeModal(false),
+      onOptimizationCompleted,
+      initialOptimizationMode: transcodeVideo ? 'smart' : 'remux_only',
+      initialStreamPruning: pruneStreams,
+    }} />}
   </div>
 }

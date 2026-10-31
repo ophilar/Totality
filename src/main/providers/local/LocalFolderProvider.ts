@@ -512,6 +512,7 @@ export class LocalFolderProvider implements MediaProvider {
         metadata: MediaMetadata
         parsed: ParsedMovieInfo | ParsedEpisodeInfo
         fileMtime: number
+        analysis?: import('../../services/MediaFileAnalyzer').FileAnalysisResult
       }
       const processedItems: ProcessedItem[] = []
 
@@ -546,7 +547,7 @@ export class LocalFolderProvider implements MediaProvider {
               const fileMtime = stat.mtime.getTime()
               const existingItem = db.getMediaItemByPath(filePath)
 
-              if (existingItem?.file_mtime === fileMtime) {
+              if (existingItem?.file_mtime === fileMtime && (!ffprobeAvailable || existingItem.dolby_vision_profile != null)) {
                 // File unchanged, mark as present and skip processing
                 scannedFilePaths.add(filePath)
                 result.itemsScanned++
@@ -633,7 +634,7 @@ export class LocalFolderProvider implements MediaProvider {
                 }
               }
 
-              processedItems.push({ metadata, parsed, fileMtime })
+              processedItems.push({ metadata, parsed, fileMtime, analysis: analysis?.success ? analysis : undefined })
               scannedFilePaths.add(filePath)
             } catch (error: unknown) {
               result.errors.push(`Failed to process ${path.basename(filePath)}: ${getErrorMessage(error)}`)
@@ -686,7 +687,7 @@ export class LocalFolderProvider implements MediaProvider {
             db.syncMediaItemVersions(id, scoredVersions)
 
             mediaItem.id = id
-            const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
+            const qualityScore = await analyzer.analyzeMediaItem(mediaItem, bestItem.analysis)
             await db.upsertQualityScore(qualityScore)
 
             result.itemsScanned++
@@ -1748,6 +1749,7 @@ export class LocalFolderProvider implements MediaProvider {
       enhanced.colorBitDepth = analysis.video.bitDepth
       enhanced.hdrFormat = analysis.video.hdrFormat
       enhanced.videoProfile = analysis.video.profile
+      enhanced.dolbyVisionProfile = analysis.video.dolbyVisionProfile ?? 0
       enhanced.colorSpace = analysis.video.colorSpace
     }
 

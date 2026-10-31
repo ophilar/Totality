@@ -1,4 +1,5 @@
 import React from 'react'
+import { formatOptimizationBytes } from './transcoding/optimizationResults'
 
 export interface EstimatedSavingsDisplayProps {
   bytes?: number | null
@@ -10,15 +11,13 @@ export const EstimatedSavingsDisplay: React.FC<EstimatedSavingsDisplayProps> = (
   className = '',
 }) => {
   if (bytes == null) {
-    return <span className={`text-xs text-muted-foreground font-mono ${className}`}>--</span>
+    return <span className={`text-xs text-muted-foreground ${className}`}>Not measured</span>
   }
 
-  const value = bytes >= 1024 ** 3
-    ? `${(bytes / 1024 ** 3).toFixed(1)} GB`
-    : `${(bytes / 1024 ** 2).toFixed(1)} MB`
+  const value = formatOptimizationBytes(bytes)
 
   return (
-    <span className={`text-xs font-medium text-orange-500 font-mono ${className}`} title={`Estimated savings: ${value}`}>
+    <span className={`text-xs font-medium text-orange-500 font-mono ${className}`}>
       {value}
     </span>
   )

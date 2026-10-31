@@ -1,4 +1,5 @@
 import { getErrorMessage, isHttpError, isNodeError } from '../../services/utils/errorUtils'
+import { parseDolbyVisionProfile } from '../../services/utils/dolbyVision'
 import { retryWithBackoff } from '../../services/utils/retryWithBackoff'
 /**
  * JellyfinEmbyBase
@@ -1238,6 +1239,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
       videoBitrate: normalizeBitrate(videoStream?.BitRate || mediaSource?.Bitrate, 'bps'),
       videoFrameRate: normalizeFrameRate(videoStream?.RealFrameRate),
       colorBitDepth: videoStream?.BitDepth,
+      dolbyVisionProfile: parseDolbyVisionProfile(videoStream?.Profile, videoStream?.DisplayTitle, videoStream?.Title),
       hdrFormat: normalizeHdrFormat(
         videoStream?.VideoRange,
         undefined,
@@ -1486,6 +1488,8 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
     // Pick the best version for parent MediaItem (highest resolution tier, then HDR, then bitrate)
     const best = versions.reduce((a, b) => scoreVersion(b) > scoreVersion(a) ? b : a)
+    const bestVideoStream = item.MediaSources?.find(source => source.Path === best.file_path)?.MediaStreams?.find(stream => stream.Type === 'Video')
+    const dolbyVisionProfile = parseDolbyVisionProfile(bestVideoStream?.Profile, bestVideoStream?.DisplayTitle, bestVideoStream?.Title)
 
     const isEpisode = item.Type === 'Episode'
 
@@ -1563,6 +1567,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         color_space: best.color_space,
         video_profile: best.video_profile,
         video_level: best.video_level,
+        dolby_vision_profile: dolbyVisionProfile,
         audio_profile: best.audio_profile,
         audio_sample_rate: best.audio_sample_rate,
         has_object_audio: best.has_object_audio,

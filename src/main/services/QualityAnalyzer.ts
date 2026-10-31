@@ -31,6 +31,7 @@ export interface OptimizationAdvice {
   savings_basis: SavingsBasis
 }
 
+
 /**
  * Shared input shape for quality scoring.
  * Both MediaItem and MediaItemVersion have these fields.
@@ -568,23 +569,27 @@ export class QualityAnalyzer {
     return { analysis }
   }
 
-  getOptimizationSavingsBreakdown(item: MediaItem, analysis?: FileAnalysisResult, targetCodec?: 'hevc' | 'av1'): OptimizationSavingsBreakdown {
+  getOptimizationSavingsBreakdown(item: MediaItem, analysis?: FileAnalysisResult, targetCodec?: 'hevc' | 'av1', policy?: { originalLanguage?: string | null; subtitleLanguageWhitelist?: readonly string[] }): OptimizationSavingsBreakdown {
     const analyzedItem = analysis ? mergeAnalysisIntoMediaItem(item, analysis) : item
-    return this.calculateOptimizationSavings(analyzedItem, analysis, { targetCodec }).breakdown
+    return this.calculateOptimizationSavings(analyzedItem, analysis, { targetCodec, ...policy }).breakdown
   }
 
-  private calculateOptimizationSavings(item: MediaItem, analysis: FileAnalysisResult | undefined, options?: { measuredPlanSavingsBytes?: number; hasApplicableMeasurements?: boolean; targetCodec?: 'hevc' | 'av1' }) {
+  getRemovableAudioTrackIndexes(item: MediaItem, originalLanguage: string | null | undefined = item.original_language): number[] {
+    return buildOptimizationDecision({ originalLanguage, audioTracks: this.getOptimizationAudioTracks(item) }).trackRemoval.removableTrackIndexes
+  }
+
+  private calculateOptimizationSavings(item: MediaItem, analysis: FileAnalysisResult | undefined, options?: { measuredPlanSavingsBytes?: number; hasApplicableMeasurements?: boolean; targetCodec?: 'hevc' | 'av1'; originalLanguage?: string | null; subtitleLanguageWhitelist?: readonly string[] }) {
     const audioTracks = this.getOptimizationAudioTracks(item, analysis)
     const durationMs = metadataNumber(analysis?.durationMs ?? item.duration_ms, 'duration_ms')
     const optimizationDecision = buildOptimizationDecision({
-      originalLanguage: item.original_language,
+      originalLanguage: options && 'originalLanguage' in options ? options.originalLanguage : item.original_language,
       durationMs: durationMs ?? undefined,
       audioTracks,
     })
     const audioPruningEvidence = this.getAudioPruningEvidence(item, analysis, optimizationDecision)
-    const subtitleWhitelist = this.getSubtitleLanguageWhitelist()
+    const subtitleWhitelist = options?.subtitleLanguageWhitelist ?? this.getSubtitleLanguageWhitelist()
     const subtitlePruningBytes = analysis && subtitleWhitelist.length > 0
-      ? this.getSubtitlePruningBytes(analysis, subtitleWhitelist)
+      ? this.getSubtitlePruningBytes(analysis, [...subtitleWhitelist])
       : null
     const sourceCodec = normalizeVideoCodec(analysis?.video?.codec ?? item.video_codec)
     const targetCodec = options?.targetCodec ? normalizeVideoCodec(options.targetCodec)
@@ -626,7 +631,7 @@ export class QualityAnalyzer {
     return { breakdown, audioPruningEvidence, optimizationDecision }
   }
 
-  private getSubtitleLanguageWhitelist(): string[] {
+  getSubtitleLanguageWhitelist(): string[] {
     const configuredLanguages = getDatabase().config.getSetting(SETTING_KEYS.subtitle_preferred_languages)
     if (!configuredLanguages?.trim()) return []
     return configuredLanguages.split(/[\s,]+/)
@@ -923,7 +928,7 @@ export class QualityAnalyzer {
     analysis?: FileAnalysisResult,
     decision?: ReturnType<typeof buildOptimizationDecision>,
   ): {
-    status: 'measured' | 'insufficient'
+    status: 'measured' | 'estimated' | 'insufficient'
     estimatedSavingsBytes: number | null
   } {
     const optimizationDecision = decision ?? buildOptimizationDecision({
@@ -936,13 +941,24 @@ export class QualityAnalyzer {
 
     const removedIndexes = optimizationDecision.trackRemoval.removableTrackIndexes
     if (removedIndexes.length === 0) return { status: 'measured', estimatedSavingsBytes: 0 }
-    if (!analysis?.streamBytes) return { status: 'insufficient', estimatedSavingsBytes: null }
-    const measuredBytes = sumMeasuredStreamBytes(analysis.streamBytes, removedIndexes)
-    if (measuredBytes === null) return { status: 'insufficient', estimatedSavingsBytes: null }
-    if (!Number.isSafeInteger(measuredBytes) || measuredBytes < 0) {
-      throw new MediaMetadataError('INVALID_MEDIA_METADATA', 'audio stream byte count must be a non-negative safe integer')
+    if (analysis?.streamBytes) {
+      const measuredBytes = sumMeasuredStreamBytes(analysis.streamBytes, removedIndexes)
+      if (measuredBytes !== null) {
+        if (!Number.isSafeInteger(measuredBytes) || measuredBytes < 0) {
+          throw new MediaMetadataError('INVALID_MEDIA_METADATA', 'audio stream byte count must be a non-negative safe integer')
+        }
+        return { status: 'measured', estimatedSavingsBytes: measuredBytes }
+      }
     }
-    return { status: 'measured', estimatedSavingsBytes: measuredBytes }
+    const durationMs = metadataNumber(analysis?.durationMs ?? item.duration_ms, 'duration_ms')
+    const tracksByIndex = new Map(this.getOptimizationAudioTracks(item, analysis).map(track => [track.index, track]))
+    const removableTracks = removedIndexes.map(index => tracksByIndex.get(index))
+    if (durationMs == null || durationMs <= 0 || removableTracks.some(track => !track?.bitrateKbps || track.bitrateKbps <= 0)) {
+      return { status: 'insufficient', estimatedSavingsBytes: null }
+    }
+    const estimatedBytes = removableTracks.reduce((sum, track) =>
+      sum + calculateBytesAtBitrateKbps(track!.bitrateKbps!, durationMs / 1000), 0)
+    return { status: 'estimated', estimatedSavingsBytes: estimatedBytes }
   }
 
   calculateDubBloatBytes(item: MediaItem, analysis?: FileAnalysisResult): number | null {

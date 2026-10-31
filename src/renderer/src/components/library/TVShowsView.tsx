@@ -5,7 +5,7 @@ import { DropdownMenu, DropdownMenuItem } from '../ui/DropdownMenu'
 import { Button } from '../ui/Button'
 import { AnimatedNumber } from '../ui/AnimatedNumber'
 import { MissingItemCard } from './MissingItemCard'
-import { TranscodeModal } from './TranscodeModal'
+import { SharedOptimizationDialog } from './TranscodeModal'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors, formatBytes, formatSeasonLabel, getStatusBadge } from './mediaUtils'
 import type { MediaItem, TVShow, TVShowSummary, SeasonInfo, TVSeason, SeriesCompletenessData, MissingEpisode, TVOptimizationNavigation } from './types'
@@ -159,7 +159,7 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
                 }}
                 icon={<Zap className="w-3.5 h-3.5 text-purple-400" />}
               >
-                <span className="text-purple-300">Optimize Series</span>
+                <span className="text-purple-300">Optimize show</span>
               </DropdownMenuItem>
             )}
           </DropdownMenu>
@@ -265,7 +265,6 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onOptim
           <div className="mt-1 flex items-center gap-1.5 text-xs" aria-label="Estimated savings">
             <span className="text-muted-foreground">Estimated savings</span>
             <EstimatedSavingsDisplay bytes={episode.estimated_savings_bytes} />
-            <span className="text-muted-foreground">· {episode.savings_coverage ?? 'insufficient'} evidence</span>
           </div>
         )}
       </div>
@@ -293,7 +292,7 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onOptim
                   }}
                   icon={<Zap className="w-3.5 h-3.5 text-purple-400" />}
                 >
-                  Optimize Episode
+                  Optimize episode
                 </DropdownMenuItem>
               )}
               {onRescan && episode.file_path && (
@@ -769,14 +768,11 @@ export function TVShowsView({
             </div>
           )}
           {optimizingShow && (
-            <TranscodeModal
-              show={optimizingShow}
-              episode={optimizingEpisode ?? undefined}
-              seasonNumber={optimizingSeason ?? undefined}
-              initialPreflight={reviewingPreflight}
-              resumeRequestId={resumePreflightRequestId}
-              onClose={closeOptimization}
-            />
+            <SharedOptimizationDialog request={{
+              controller: 'series',
+              onClose: closeOptimization,
+              series: { show: optimizingShow, episode: optimizingEpisode ?? undefined, seasonNumber: optimizingSeason ?? undefined, initialPreflight: reviewingPreflight, resumeRequestId: resumePreflightRequestId }
+            }} />
           )}
         </>
       )
@@ -812,14 +808,7 @@ export function TVShowsView({
           </div>
         )}
         {optimizingShow && (
-          <TranscodeModal
-            show={optimizingShow}
-            episode={optimizingEpisode ?? undefined}
-            seasonNumber={optimizingSeason ?? undefined}
-            initialPreflight={reviewingPreflight}
-            resumeRequestId={resumePreflightRequestId}
-            onClose={closeOptimization}
-          />
+          <SharedOptimizationDialog request={{ controller: 'series', onClose: closeOptimization, series: { show: optimizingShow, episode: optimizingEpisode ?? undefined, seasonNumber: optimizingSeason ?? undefined, initialPreflight: reviewingPreflight, resumeRequestId: resumePreflightRequestId } }} />
         )}
       </>
     )
@@ -947,10 +936,10 @@ export function TVShowsView({
                 onClick={() => handleOpenOptimize()}
                 disabled={!firstIdentifiedEpisode}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm bg-purple-600/20 text-purple-300 border border-purple-500/30 rounded-md hover:bg-purple-600/30 transition-colors"
-                title={firstIdentifiedEpisode ? 'Optimize Series' : 'Optimization requires a canonical series identity'}
+                title={firstIdentifiedEpisode ? 'Optimize show' : 'Optimization requires a canonical series identity'}
               >
                 <Zap className="w-3.5 h-3.5 text-purple-400" />
-                Optimize Series
+                Optimize show
               </button>
               {onFixMatch && (
                 <button
@@ -1206,14 +1195,7 @@ export function TVShowsView({
           ))}
         </div>
         {optimizingShow && (
-          <TranscodeModal
-            show={optimizingShow}
-            episode={optimizingEpisode ?? undefined}
-            seasonNumber={optimizingSeason ?? undefined}
-            initialPreflight={reviewingPreflight}
-            resumeRequestId={resumePreflightRequestId}
-            onClose={closeOptimization}
-          />
+          <SharedOptimizationDialog request={{ controller: 'series', onClose: closeOptimization, series: { show: optimizingShow, episode: optimizingEpisode ?? undefined, seasonNumber: optimizingSeason ?? undefined, initialPreflight: reviewingPreflight, resumeRequestId: resumePreflightRequestId } }} />
         )}
       </div>
     )
@@ -1311,10 +1293,10 @@ export function TVShowsView({
             onClick={handleOpenOptimizeSeason}
             disabled={!seasonHasCanonicalIdentity}
             className="flex items-center gap-2 px-3 py-1.5 text-sm bg-purple-600/20 text-purple-300 border border-purple-500/30 rounded-md hover:bg-purple-600/30 transition-colors"
-            title={seasonHasCanonicalIdentity ? `Optimize Season ${selectedSeason}` : 'Optimization requires a canonical series identity'}
+            title={seasonHasCanonicalIdentity ? `Optimize season ${selectedSeason}` : 'Optimization requires a canonical series identity'}
           >
             <Zap className="w-3.5 h-3.5 text-purple-400" />
-            Optimize Season
+            Optimize season
           </button>
         </div>
 
@@ -1400,14 +1382,7 @@ export function TVShowsView({
           ))}
         </div>
         {optimizingShow && (
-          <TranscodeModal
-            show={optimizingShow}
-            episode={optimizingEpisode ?? undefined}
-            seasonNumber={optimizingSeason ?? undefined}
-            initialPreflight={reviewingPreflight}
-            resumeRequestId={resumePreflightRequestId}
-            onClose={closeOptimization}
-          />
+          <SharedOptimizationDialog request={{ controller: 'series', onClose: closeOptimization, series: { show: optimizingShow, episode: optimizingEpisode ?? undefined, seasonNumber: optimizingSeason ?? undefined, initialPreflight: reviewingPreflight, resumeRequestId: resumePreflightRequestId } }} />
         )}
       </div>
     )
@@ -1496,7 +1471,7 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
                   }}
                   icon={<Zap className="w-3.5 h-3.5 text-purple-400" />}
                 >
-                  <span className="text-purple-300">Optimize Series</span>
+                  <span className="text-purple-300">Optimize show</span>
                 </DropdownMenuItem>
               )}
             </DropdownMenu>

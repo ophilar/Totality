@@ -31,7 +31,7 @@ import type { ScanResult } from '../providers/base/MediaProvider'
 import { getWishlistCompletionService } from './WishlistCompletionService'
 import { getTMDBService } from './TMDBService'
 import { getTranscodingService } from './TranscodingService'
-import type { ShowTranscodeRequest, ShowTranscodePreflight, ShowTranscodeEpisodeCheckpoint } from './TranscodingService'
+import type { OptimizationCandidateScanSummary, ShowTranscodeRequest, ShowTranscodePreflight, ShowTranscodeEpisodeCheckpoint } from './TranscodingService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { analyzeAlbumQuality } from './MusicQualityAnalyzer'
 import { getArtistAlbumsCombined } from './utils/musicUtils'
@@ -44,6 +44,17 @@ import type {
   TaskStatus,
   TaskType,
 } from '../types/taskQueue'
+
+function formatCandidateSavings(bytes: number): string {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${value.toFixed(unit === 0 || value >= 100 ? 0 : 1)} ${units[unit]}`
+}
 
 export type {
   ActivityLogEntry,
@@ -993,6 +1004,15 @@ export class TaskQueueService {
 
     const manager = getSourceManager()
     const result = await manager.scanLibrary(task.sourceId, task.libraryId, onProgress)
+    let optimizationCandidates: OptimizationCandidateScanSummary | undefined
+    let optimizationCandidateError: string | undefined
+    if (result.success) {
+      try {
+        optimizationCandidates = await getTranscodingService().discoverLibraryOptimizationCandidates(task.sourceId, task.libraryId)
+      } catch (error) {
+        optimizationCandidateError = getErrorMessage(error)
+      }
+    }
 
     task.result = {
       itemsScanned: result.itemsScanned,
@@ -1000,6 +1020,8 @@ export class TaskQueueService {
       itemsUpdated: result.itemsUpdated,
       itemsRemoved: result.itemsRemoved,
       isFirstScan,
+      optimizationCandidates,
+      optimizationCandidateError,
     }
 
     if (!result.success && result.errors?.length > 0) {
@@ -1024,6 +1046,8 @@ export class TaskQueueService {
     let totalAdded = 0
     let totalUpdated = 0
     let totalRemoved = 0
+    let allLibrariesScannedSuccessfully = true
+    let optimizationCandidateError: string | undefined
 
     for (let i = 0; i < enabledLibraries.length; i++) {
       const lib = enabledLibraries[i]
@@ -1052,13 +1076,25 @@ export class TaskQueueService {
       totalAdded += result.itemsAdded || 0
       totalUpdated += result.itemsUpdated || 0
       totalRemoved += result.itemsRemoved || 0
+      allLibrariesScannedSuccessfully &&= result.success
     }
+
+    let optimizationCandidates: OptimizationCandidateScanSummary | undefined
+    if (allLibrariesScannedSuccessfully) {
+      try {
+        optimizationCandidates = await getTranscodingService().discoverSourceOptimizationCandidates(task.sourceId)
+      } catch (error) {
+        optimizationCandidateError = getErrorMessage(error)
+      }
+    } else optimizationCandidateError = 'One or more libraries failed to scan; source-wide candidates were not calculated.'
 
     task.result = {
       itemsScanned: totalScanned,
       itemsAdded: totalAdded,
       itemsUpdated: totalUpdated,
       itemsRemoved: totalRemoved,
+      optimizationCandidates,
+      optimizationCandidateError,
     }
   }
 
@@ -1340,6 +1376,8 @@ export class TaskQueueService {
         itemsUpdated: task.result?.itemsUpdated || 0,
         itemsScanned: task.result?.itemsScanned || 0,
         isFirstScan: task.result?.isFirstScan || false,
+        optimizationCandidates: task.result?.optimizationCandidates,
+        optimizationCandidateError: task.result?.optimizationCandidateError,
       })
 
       // Create notification for scan completion
@@ -1351,6 +1389,13 @@ export class TaskQueueService {
         if (added > 0) parts.push(`${added} added`)
         if (updated > 0) parts.push(`${updated} updated`)
         if (parts.length === 0) parts.push(`${scanned} scanned`)
+        const optimizationCandidates = task.result?.optimizationCandidates as OptimizationCandidateScanSummary | undefined
+        if (optimizationCandidates && optimizationCandidates.candidateCount > 0) {
+          const candidates = `${optimizationCandidates.candidateCount} optimization candidates`
+          if (optimizationCandidates.estimatedSavingsBytes === null) parts.push(candidates)
+          else parts.push(`${candidates}, about ${formatCandidateSavings(optimizationCandidates.estimatedSavingsBytes)} potential savings`)
+        }
+        if (task.result?.optimizationCandidateError) parts.push('optimization candidate discovery failed')
         getDatabase().createNotification({
           type: 'scan_complete',
           title: 'Library scan complete',
