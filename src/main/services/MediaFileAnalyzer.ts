@@ -202,7 +202,7 @@ export interface FileAnalysisResult {
     isVariableBitrate?: boolean
     [key: string]: unknown
   }
-  fileAnalysisFingerprint?: { size: number; mtimeMs: number; ctimeMs?: number; ino?: number }
+  fileAnalysisFingerprint?: Partial<import('./utils/FileIdentity').FileIdentity>
   analysisOptions?: { scanBitrate?: boolean; detectVolume?: boolean }
 }
 
