@@ -19,7 +19,7 @@ vi.mock('../../src/main/database/getDatabase', () => ({
   getDatabase: vi.fn(() => ({})),
 }))
 vi.mock('../../src/main/services/QualityAnalyzer', () => ({
-  getQualityAnalyzer: vi.fn(() => ({})),
+  getQualityAnalyzer: vi.fn(() => ({ loadThresholdsFromDatabase: vi.fn().mockResolvedValue(undefined), isHighResolutionAudio: vi.fn().mockReturnValue(false) })),
 }))
 vi.mock('../../src/main/services/MediaFileAnalyzer', () => ({
   getMediaFileAnalyzer: vi.fn(() => ({})),
