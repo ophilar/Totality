@@ -27,6 +27,7 @@ import { TaskType } from '@main/types/database'
 import { SETTING_KEYS } from '@shared/settingKeys'
 import { normalizeVideoCodec } from '@main/services/MediaNormalizer'
 import { OPTIMIZATION_VIDEO_CODECS, getOptimizationVideoCodec, chooseOptimizationVideoCodec, playbackProfileSupportsOptimizationCodec } from '@main/services/transcoding/OptimizationCodecPolicy'
+import { availableOptimizationEncoders, supportedOptimizationCodecs } from '@main/services/transcoding/OptimizationEncoderPolicy'
 import { OptimizationDialogShell } from './transcoding/OptimizationDialogShell'
 import { optimizationAudioCodecOptions, optimizationContainerOptions } from './transcoding/optimizationOptions'
 import { optimizationCandidateReasonLabel } from './transcoding/optimizationCandidateLabels'
@@ -521,8 +522,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
   useEffect(() => {
     if (!encoderCapabilitiesLoaded || encoderPolicy === 'software' || !codec) return
     const supportsCodec = (gpu: GpuInfo) => {
-      const encoder = getHardwareEncoder(gpu.vendor, codec)
-      return Boolean(encoder && deviceEncoders[gpu.id]?.includes(encoder))
+      return availableOptimizationEncoders(codec, { gpus: [gpu], deviceEncoders, selectedGpuId: gpu.id }).selectedHardware
     }
     setGpuId(gpus.find(gpu => gpu.vendor === 'Intel' && supportsCodec(gpu))?.id ?? gpus.find(supportsCodec)?.id ?? '')
   }, [encoderCapabilitiesLoaded, encoderPolicy, codec, deviceEncoders, gpus])
@@ -850,8 +850,8 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
   // Filter tasks belonging to transcoding
   const vendor = gpus.find(gpu => gpu.id === gpuId)?.vendor
   const hardwareEncoder = vendor && codec ? getHardwareEncoder(vendor, codec) : undefined
-  const hardwareAvailable = hardwareEncoder !== undefined && (deviceEncoders[gpuId] ?? []).includes(hardwareEncoder)
-  const softwareEncoder = codec === 'av1' ? 'svt_av1' : codec === 'hevc' ? 'x265' : undefined
+  const hardwareAvailable = Boolean(codec && availableOptimizationEncoders(codec, { gpus, deviceEncoders, selectedGpuId: gpuId }).selectedHardware)
+  const softwareEncoder = codec ? getOptimizationVideoCodec(codec).softwareEncoder : undefined
   const softwareAvailable = softwareEncoder !== undefined && (deviceEncoders.software ?? []).includes(softwareEncoder)
   useEffect(() => {
     const recommendedPolicy = hardwareAvailable || softwareAvailable ? 'automatic' : ''
@@ -865,23 +865,17 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
   const profileSupportedContainers = targetProfile
     ? getPlaybackTargetContainers(targetProfile, { codec: episode?.video_codec, profile: episode?.video_profile, hdrFormat: episode?.hdr_format })
     : ['matroska', 'mp4']
-  const supportedTargetCodecs = OPTIMIZATION_VIDEO_CODECS.map(item => item.value).filter(candidate => {
-    const profileSupports = playbackPolicy === 'allow-transcoding' || playbackProfileSupportsOptimizationCodec(candidate, targetProfile?.definition.video.codecs)
-    const softwareEncoder = getOptimizationVideoCodec(candidate).softwareEncoder
-    const softwareSupports = (deviceEncoders.software ?? []).includes(softwareEncoder)
-    const hardwareSupports = gpus.some(gpu => {
-      const encoder = getHardwareEncoder(gpu.vendor, candidate)
-      return Boolean(encoder && deviceEncoders[gpu.id]?.includes(encoder))
+  const supportedTargetCodecs = !encoderCapabilitiesLoaded
+    ? OPTIMIZATION_VIDEO_CODECS.map(item => item.value).filter(candidate =>
+      playbackPolicy === 'allow-transcoding' || playbackProfileSupportsOptimizationCodec(candidate, targetProfile?.definition.video.codecs))
+    : supportedOptimizationCodecs({
+      gpus,
+      deviceEncoders,
+      selectedGpuId: gpuId,
+      encoderPolicy,
+      playbackPolicy,
+      playbackCodecs: targetProfile?.definition.video.codecs,
     })
-    const selectedHardwareSupports = gpus.some(gpu => {
-      const encoder = getHardwareEncoder(gpu.vendor, candidate)
-      return gpu.id === gpuId && Boolean(encoder && deviceEncoders[gpu.id]?.includes(encoder))
-    })
-    const encoderSupports = encoderPolicy === 'software' ? softwareSupports
-      : encoderPolicy === 'hardware' ? selectedHardwareSupports
-        : softwareSupports || hardwareSupports
-    return profileSupports && (!encoderCapabilitiesLoaded || encoderSupports)
-  })
   const unsupportedTargetCodecReasons = Object.fromEntries(OPTIMIZATION_VIDEO_CODECS.map(item => item.value)
     .filter(candidate => !supportedTargetCodecs.includes(candidate))
     .map(candidate => {
