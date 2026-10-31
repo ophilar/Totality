@@ -19,7 +19,7 @@ import { getVideoResolutionTier } from './VideoResolutionTier'
 import { AudioCodecRanker } from './AudioCodecRanker'
 import { MEASUREMENT_VERSION, MEASUREMENT_SETTING_PREFIX, MeasuredQualityError, selectMeasuredCandidate, type CachedMeasurement } from './MeasuredOptimizationPolicy'
 import { projectMeasuredSavingsBytes } from './OptimizationSavingsService'
-import { fileIdentity, matchesFileIdentity, type FileIdentity } from './transcoding/ValidatedFileAnalysisCache'
+import { fileIdentity, matchesFileIdentity, type FileIdentity } from './utils/FileIdentity'
 
 export interface OptimizationAdvice {
   action: 'video_transcode' | 'stream_pruning' | 'already_optimized'
