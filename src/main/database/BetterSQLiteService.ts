@@ -2707,10 +2707,15 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
    * Update the best version flag and sync parent media_item fields.
    * Picks the highest quality version and copies its data to the parent item.
    */
-  updateBestVersion(mediaItemId: number): void {
+  updateBestVersion(mediaItemId: number, observedPaths?: ReadonlySet<string>): void {
     if (!this.db) throw new Error('Database not initialized')
 
-    const versions = this.getMediaItemVersions(mediaItemId)
+    // When an inventory is partial, keep all historical versions but choose
+    // the playback parent only from versions actually observed in this scan.
+    const allVersions = this.getMediaItemVersions(mediaItemId)
+    const versions = observedPaths
+      ? allVersions.filter(version => observedPaths.has(version.file_path))
+      : allVersions
     if (versions.length === 0) return
 
     // Resolution is the only available objective source-quality ranking.
