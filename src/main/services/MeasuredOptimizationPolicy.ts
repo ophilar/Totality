@@ -59,6 +59,8 @@ export interface MeasuredCandidate {
   playbackBlockers?: string[]
   qualityRejectedReason?: string
   incompleteMeasurement?: boolean
+  /** Bounded search selects the best tested candidate, not a proven global optimum. */
+  searchSummary?: { measuredCount: number; maximumCandidates: number; budgetReached: boolean }
 }
 
 export interface CandidateEncodingParameters {
@@ -117,7 +119,7 @@ export function nextCandidateSearch(
           if (!tested.has(midpoint)) next.add(midpoint)
         }
       }
-      if (next.size) return untested([...next].sort((a, b) => a - b))
+      if (next.size) return untested([...next].sort((a, b) => a - b)).slice(0, MAX_MEASURED_CANDIDATES_PER_PRESET - measured.length)
     }
   }
   return []
