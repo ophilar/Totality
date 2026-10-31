@@ -1246,74 +1246,75 @@ export class LocalFolderProvider implements MediaProvider {
   ): Promise<Array<{ filePath: string; relativePath: string }>> {
     const parser = getFileNameParser()
     const files: Array<{ filePath: string; relativePath: string }> = []
-    let directoriesProcessed = 0
+    const directories: Array<{ dir: string; depth: number }> = [{ dir: rootDir, depth: 0 }]
     let skippedUnchanged = 0
+    let directoriesProcessed = 0
 
-    const scanDir = async (dir: string, depth = 0): Promise<void> => {
-      if (depth > 15) throw new Error(`Directory scan exceeded the supported depth at ${dir}`)
-
-      try {
-        const entries = await fs.promises.readdir(dir, { withFileTypes: true })
-
+    // Work in bounded breadth-first batches: independent NAS directory reads
+    // can overlap, without creating an unbounded number of open operations.
+    const DISCOVERY_CONCURRENCY = 8
+    while (directories.length > 0) {
+      const batch = directories.splice(0, DISCOVERY_CONCURRENCY)
+      const discoveries = await Promise.all(batch.map(async ({ dir, depth }) => {
+        if (depth > 15) throw new Error(`Directory scan exceeded the supported depth at ${dir}`)
+        let entries: Awaited<ReturnType<typeof fs.promises.readdir>>
+        try {
+          entries = await fs.promises.readdir(dir, { withFileTypes: true })
+        } catch (error) {
+          throw new Error(`Cannot complete directory scan for ${dir}: ${getErrorMessage(error)}`)
+        }
+        const next: Array<{ dir: string; depth: number }> = []
+        const videos: string[] = []
         for (const entry of entries) {
           const fullPath = path.join(dir, entry.name)
-
           if (entry.isDirectory()) {
-            // Skip common non-media folders and extras content
             const lowerName = entry.name.toLowerCase()
             if ([
               '@eadir', '.ds_store', 'thumbs', 'metadata',
-              // Extras and bonus content folders
               'extras', 'extra', 'featurettes', 'featurette', 'behind the scenes',
               'deleted scenes', 'interviews', 'interview', 'scenes', 'shorts', 'short',
               'trailers', 'trailer', 'other', 'bonus', 'bonuses', 'bonus features',
               'special features', 'specials', 'samples', 'sample', 'subs', 'subtitles'
-            ].includes(lowerName)) {
-              continue
-            }
-            await scanDir(fullPath, depth + 1)
-          } else if (parser.isVideoFile(entry.name)) {
-            // Skip extras/featurettes/bonus content based on filename patterns
-            if (isExtrasContent(entry.name)) {
-              getLoggingService().verbose('[LocalFolderProvider]', `Skipping extras: ${entry.name}`)
-              continue
-            }
-
-            // For incremental scans, skip files not modified since last scan
-            if (sinceTimestamp) {
-              try {
-                const stat = await fs.promises.stat(fullPath)
-                if (stat.mtime < sinceTimestamp) {
-                  skippedUnchanged++
-                  continue
-                }
-              } catch {
-                // If we can't stat the file, include it anyway
-              }
-            }
-
-            const relativePath = path.relative(rootDir, fullPath)
-            files.push({ filePath: fullPath, relativePath })
+            ].includes(lowerName)) continue
+            next.push({ dir: fullPath, depth: depth + 1 })
+          } else if (parser.isVideoFile(entry.name) && !isExtrasContent(entry.name)) {
+            videos.push(fullPath)
           }
         }
-
-        // Yield to event loop periodically to prevent UI blocking
-        directoriesProcessed++
-        if (directoriesProcessed % 50 === 0) {
-          await new Promise(resolve => setImmediate(resolve))
+        // Stat modified files concurrently in small groups, without reading
+        // media contents during directory discovery.
+        const discovered: string[] = []
+        for (let index = 0; index < videos.length; index += 32) {
+          const results = await Promise.all(videos.slice(index, index + 32).map(async filePath => {
+            if (!sinceTimestamp) return filePath
+            try {
+              const stat = await fs.promises.stat(filePath)
+              if (stat.mtime < sinceTimestamp) return null
+            } catch {
+              // Keep an inaccessible file for the processing stage to report.
+            }
+            return filePath
+          }))
+          for (const value of results) {
+            if (value) discovered.push(value)
+            else skippedUnchanged++
+          }
         }
-      } catch (error) {
-        // An incomplete directory inventory cannot safely drive stale-item removal.
-        throw new Error(`Cannot complete directory scan for ${dir}: ${getErrorMessage(error)}`)
+        return { next, discovered }
+      }))
+      for (const found of discoveries) {
+        directories.push(...found.next)
+        for (const filePath of found.discovered) {
+          files.push({ filePath, relativePath: path.relative(rootDir, filePath) })
+        }
       }
+      directoriesProcessed += batch.length
+      if (directoriesProcessed % 48 === 0) await new Promise(resolve => setImmediate(resolve))
     }
-
-    await scanDir(rootDir)
-
+    files.sort((a, b) => a.filePath.localeCompare(b.filePath))
     if (sinceTimestamp && skippedUnchanged > 0) {
-      console.log(`[LocalFolderProvider ${this.sourceId}] Incremental scan: skipped ${skippedUnchanged} unchanged files`)
+      getLoggingService().info('[LocalFolderProvider]', `Incremental scan: skipped ${skippedUnchanged} unchanged files`)
     }
-
     return files
   }
 
