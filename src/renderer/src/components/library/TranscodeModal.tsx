@@ -19,7 +19,7 @@ import { formatLanguage, getOptimizationContainer, isSameLanguage, LANGUAGE_OPTI
 import { SETTING_KEYS } from '@shared/settingKeys'
 import { normalizeVideoCodec } from '@main/services/MediaNormalizer'
 import { OPTIMIZATION_VIDEO_CODECS, getOptimizationVideoCodec, playbackProfileSupportsOptimizationCodec , type OptimizationVideoCodec } from '@main/services/transcoding/OptimizationCodecPolicy'
-import { availableOptimizationEncoders, supportedOptimizationCodecs } from '@main/services/transcoding/OptimizationEncoderPolicy'
+import { availableOptimizationEncoders, supportedOptimizationCodecs, unsupportedOptimizationCodecReason } from '@main/services/transcoding/OptimizationEncoderPolicy'
 import { describeMissingOptimizationSettings, getMissingOptimizationSettings } from './transcoding/readiness'
 import { SeriesOptimizationFlow, type SeriesOptimizationFlowProps } from './SeriesOptimizationFlow'
 import { OptimizationReviewSummary } from './transcoding/OptimizationReviewSummary'
@@ -189,18 +189,21 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
     playbackPolicy,
     playbackCodecs: targetProfile?.definition.video.codecs,
   }) : []
-  const unsupportedTargetCodecReasons = Object.fromEntries(OPTIMIZATION_VIDEO_CODECS.map(item => item.value)
-    .filter(codec => !supportedTargetCodecs.includes(codec))
-    .map(codec => {
-      const label = getOptimizationVideoCodec(codec).shortLabel
-      if (!playbackProfileSupportsOptimizationCodec(codec, targetProfile?.definition.video.codecs)) {
-        return [codec, `Not supported by ${targetProfile?.name ?? 'the selected target'}.`]
-      }
-      if (!capabilities) return [codec, 'Checking encoder support.']
-      if (configuration.encoderPolicy === 'software') return [codec, `Software encoding for ${label} is unavailable.`]
-      if (configuration.encoderPolicy === 'hardware') return [codec, selectedGpu ? `${selectedGpu.name} cannot encode ${label}.` : `Choose a GPU that supports ${label}.`]
-      return [codec, `No compatible ${label} encoder is available.`]
-    })) as Partial<Record<OptimizationVideoCodec, string>>
+  const unsupportedTargetCodecReasons = Object.fromEntries(
+    OPTIMIZATION_VIDEO_CODECS.map(item => item.value)
+      .filter(codec => !supportedTargetCodecs.includes(codec))
+      .map(codec => [codec, unsupportedOptimizationCodecReason(codec, {
+        gpus: capabilities?.gpus ?? [],
+        deviceEncoders: capabilities?.deviceEncoders ?? {},
+        selectedGpuId: selectedGpu?.id,
+        selectedGpuName: selectedGpu?.name,
+        encoderPolicy: configuration.encoderPolicy,
+        playbackPolicy,
+        playbackCodecs: targetProfile?.definition.video.codecs,
+        playbackTargetName: targetProfile?.name,
+        capabilitiesLoaded: Boolean(capabilities),
+      })])
+  ) as Partial<Record<OptimizationVideoCodec, string>>
   const originalAudioLanguageOptions = useMemo<AudioLanguageOption[]>(() => {
     const detected = (optimizationDecision?.trackRemoval.tracks ?? [])
       .map(track => track.language)
