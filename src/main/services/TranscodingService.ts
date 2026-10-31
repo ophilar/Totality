@@ -36,7 +36,9 @@ import { evaluatePlaybackTarget, getPlaybackTargetContainers, recommendPlaybackT
 import { getTaskQueueService } from './TaskQueueService'
 import { buildOptimizationSavingsBreakdown, calculateBitrateSavingsBytes, projectMeasuredSavingsBytes, sumMeasuredStreamBytes, type OptimizationSavingsCoverage, type OptimizationSavingsOperation } from './OptimizationSavingsService'
 import { normalizeAudioCodec, normalizeVideoCodec } from './MediaNormalizer'
-import { DEFAULT_OPTIMIZATION_VIDEO_CODEC, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
+import { DEFAULT_OPTIMIZATION_VIDEO_CODEC, getOptimizationVideoCodec, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
+import { supportsMeasuredOptimizationEncoder } from './transcoding/OptimizationEncoderPolicy'
+import { ValidatedFileAnalysisCache } from './transcoding/ValidatedFileAnalysisCache'
 import { aggregateShowOptimizationMetrics } from './ShowOptimizationMetricsService'
 import { SETTING_KEYS } from '@shared/settingKeys'
 
@@ -407,7 +409,7 @@ export class TranscodingService {
   private activeJobs = new Map<number, AbortController>()
   private initializedPromise: Promise<void> | null = null
   private capabilitiesPromise: Promise<TranscodingCapabilities> | null = null
-  private analysisCache = new Map<string, Awaited<ReturnType<ReturnType<typeof getMediaFileAnalyzer>['analyzeFile']>>>()
+  private analysisCache = new ValidatedFileAnalysisCache<Awaited<ReturnType<ReturnType<typeof getMediaFileAnalyzer>['analyzeFile']>>>()
   private showPreflights = new Map<string, { request: ShowTranscodeRequest; result: ShowTranscodePreflight }>()
   private measuredOptimizationService = new MeasuredOptimizationService()
   private optimizationCandidateService = new OptimizationCandidateService()
@@ -421,6 +423,7 @@ export class TranscodingService {
     this.initializedPromise = null
     this.capabilitiesPromise = null
     this.analysisCache.clear()
+    this.showPreflights.clear()
     getLoggingService().debug('[TranscodingService]', 'TranscodingService invalidated caches')
   }
 
@@ -685,7 +688,7 @@ export class TranscodingService {
         if (!analysis.success || analysis.filePath !== episode.file_path || analysis.fileSizeBytes !== stat.size || !video) {
           throw new Error(`File analysis is incomplete or stale for "${episode.title}"`)
         }
-        this.analysisCache.set(episode.file_path, analysis)
+        this.analysisCache.set(episode.file_path, stat, analysis)
         return { episode, status: 'ready', stat, analysis: { ...analysis, video } }
       } catch (error) {
         if (operation?.signal?.aborted) throw error
@@ -1256,7 +1259,7 @@ export class TranscodingService {
     await operation?.waitUntilRunning()
       operation?.signal.throwIfAborted()
     operation?.beginCommit()
-    this.showPreflights.set(preflightId, { request, result })
+    this.retainPreflight(preflightId, { request, result })
     await getDatabase().config.setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ request, result }))
     const measuredResults = results.filter(plan => plan.sourceAnalysis && (plan.samplingRole || plan.decisionStatus === 'quality_threshold_unmet' || plan.decisionStatus === 'measurement_failed' || plan.decisionStatus === 'incompatible'))
     for (const plan of measuredResults) {
@@ -1299,9 +1302,16 @@ export class TranscodingService {
       episodes: [{ mediaItemId, label: item.title, compatible: true, hdrFormat: analysis.video?.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256: fingerprint, operations: ['stream_pruning'], decisionStatus: 'actionable', evidenceStatus: 'measured', confidence: 'high', savingsBasis: `retained audio streams: ${retainedAudioIndexes.join(', ')}`, adviceReason: 'Review explicit retained audio streams before queueing.', options, sourceAnalysis: analysis }],
     }
     const request: ShowTranscodeRequest = { mediaItemId, sourceId: item.source_id, libraryId: item.library_id, options }
-    this.showPreflights.set(id, { request, result })
+    this.retainPreflight(id, { request, result })
     await getDatabase().config.setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${id}`, JSON.stringify({ request, result }))
     return result
+  }
+
+  /** Retains a small hot set; authoritative reviews are persisted in the database. */
+  private retainPreflight(id: string, value: { request: ShowTranscodeRequest; result: ShowTranscodePreflight }): void {
+    this.showPreflights.delete(id)
+    this.showPreflights.set(id, value)
+    while (this.showPreflights.size > 32) this.showPreflights.delete(this.showPreflights.keys().next().value!)
   }
 
   async queueShowTranscode(preflightId: string): Promise<{ batchId: string; queuedMediaItemIds: number[]; queuedTaskIds: string[] }> {
@@ -1378,7 +1388,7 @@ export class TranscodingService {
       queuedMediaItemIds: [...new Set([...(preflight.result.queuedMediaItemIds ?? []), ...queueableEpisodes.map(episode => episode.mediaItemId)])],
       queuedTaskIds: [...new Set([...(preflight.result.queuedTaskIds ?? []), ...taskIds])],
     }
-    this.showPreflights.set(preflightId, { ...preflight, result: queued })
+    this.retainPreflight(preflightId, { ...preflight, result: queued })
     await getDatabase().config.setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ ...preflight, result: queued }))
     getLoggingService().info('[TVOptimization]', `Queue completed: preflight=${preflightId}, batch=${preflight.result.batchId}, queuedMediaItems=${queueableEpisodes.length}`)
     return { batchId: preflight.result.batchId, queuedMediaItemIds: queueableEpisodes.map(episode => episode.mediaItemId), queuedTaskIds: taskIds }
@@ -1451,7 +1461,7 @@ export class TranscodingService {
       delete result.approvedAt
       delete result.approvalFingerprint
     }
-    this.showPreflights.set(preflightId, { ...preflight, result })
+    this.retainPreflight(preflightId, { ...preflight, result })
     await getDatabase().config.setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ ...preflight, result }))
     getLoggingService().info('[TVOptimization]', 'Sample group approval updated', {
       event: approved ? 'sample-group.approved' : 'sample-group.approval-revoked',
@@ -1683,7 +1693,10 @@ export class TranscodingService {
       await getDatabase().config.setSetting(TranscodingService.CAPABILITIES_CACHE_KEY, JSON.stringify({ fingerprint, detectedAt: capabilities.detectedAt, deviceEncoders: capabilities.deviceEncoders } satisfies TranscodingCapabilitiesCacheRecord))
       getLoggingService().info('[TranscodingService]', `Hardware snapshot captured at ${capabilities.detectedAt}: ${gpus.length} GPU(s), device encoders=${JSON.stringify(capabilities.deviceEncoders)}`)
       return { ...capabilities, snapshotFingerprint: fingerprint }
-    })()
+    })().catch(error => {
+      this.capabilitiesPromise = null
+      throw error
+    })
     return this.capabilitiesPromise
   }
 
@@ -1932,11 +1945,7 @@ export class TranscodingService {
    */
   async getTranscodeParameters(filePath: string, options: TranscodeOptions = {}): Promise<TranscodingParams> {
     const analyzer = getMediaFileAnalyzer()
-    let analysis = this.analysisCache.get(filePath)
-    if (!analysis) {
-      analysis = await analyzer.analyzeFile(filePath)
-      if (analysis.success) this.analysisCache.set(filePath, analysis)
-    }
+    const analysis = await this.analysisCache.get(filePath, () => analyzer.analyzeFile(filePath))
     if (!analysis.success) throw new Error(`Failed to analyze file: ${analysis.error}`)
     const effectiveOptions: TranscodeOptions = { ...options }
 
@@ -2035,7 +2044,7 @@ export class TranscodingService {
       expectedEncoder = getHardwareEncoder(selectedVendor, targetCodec) ?? ''
       if (!expectedEncoder) throw new Error(`${selectedVendor} hardware encoding does not support ${targetCodec.toUpperCase()} in this workflow.`)
     } else {
-      expectedEncoder = targetCodec === 'hevc' ? 'x265' : 'svt_av1'
+      expectedEncoder = getOptimizationVideoCodec(targetCodec).softwareEncoder
     }
     if (capabilitiesForOptions && !capabilitiesForOptions.deviceEncoders[selectedGpuIdForOptions ?? '']?.includes(expectedEncoder)) {
       throw new Error(`The selected device does not support ${targetCodec.toUpperCase()} encoding.`)
@@ -2502,7 +2511,7 @@ export class TranscodingService {
     if (!options.qualityProfile) throw new Error('Measurement requires a quality profile')
     if (!options.encoderPolicy) throw new Error('Measurement requires an encoder policy')
     signal?.throwIfAborted()
-    const analysis = this.analysisCache.get(filePath) ?? await getMediaFileAnalyzer().analyzeFile(filePath)
+    const analysis = await this.analysisCache.get(filePath, () => getMediaFileAnalyzer().analyzeFile(filePath))
     if (!analysis.success || !analysis.video || !analysis.durationMs) throw new Error(analysis.error || 'Complete media analysis is required for measurement')
     if (!analysis.video.frameRate) throw new Error('A source frame rate is required for measured quality analysis')
     const capabilities = options.encoderPolicy === 'software' ? undefined : await this.getCapabilities()
@@ -2510,7 +2519,7 @@ export class TranscodingService {
     const automaticGpuCandidates = options.encoderPolicy === 'automatic'
       ? capabilities?.gpus.filter(gpu => {
         const encoder = getHardwareEncoder(gpu.vendor, options.targetCodec!)
-        return encoder !== undefined && capabilities.deviceEncoders[gpu.id]?.includes(encoder)
+        return encoder !== undefined && supportsMeasuredOptimizationEncoder(encoder) && capabilities.deviceEncoders[gpu.id]?.includes(encoder)
       })
       : undefined
     const automaticGpu = automaticGpuCandidates?.find(gpu => gpu.id === (options.gpuId || capabilities?.selectedGpuId)) ?? automaticGpuCandidates?.[0]
@@ -2519,7 +2528,7 @@ export class TranscodingService {
     const hardwareEncoder = hardwareVendor && options.encoderPolicy !== 'software'
       ? getHardwareEncoder(hardwareVendor, options.targetCodec)
       : undefined
-    if (options.encoderPolicy !== 'software' && options.encoderPolicy !== 'automatic' && !hardwareEncoder) throw new Error(`The selected hardware does not support ${options.targetCodec.toUpperCase()} encoding.`)
+    if (options.encoderPolicy !== 'software' && options.encoderPolicy !== 'automatic' && (!hardwareEncoder || !supportsMeasuredOptimizationEncoder(hardwareEncoder))) throw new Error(`The selected hardware has no validated measured-optimization support for ${options.targetCodec.toUpperCase()}.`)
     if (hardwareEncoder && !capabilities!.deviceEncoders[encoderGpu!.id]?.includes(hardwareEncoder)) throw new Error(`The selected device does not support ${hardwareEncoder} encoding.`)
     const ladder = buildCandidateLadder(options.targetCodec, options.encoderPolicy, hardwareEncoder)
     const measuredCandidates = [...previouslyMeasured]
@@ -2851,7 +2860,7 @@ export class TranscodingService {
     if (requiredSampleGroupIds.some(groupId => !approvedSampleGroupIds.has(groupId))) throw new Error('Review and approve every measured sample group before approving this plan')
     const approved = { ...preflight.result, userApproved: true, approvedAt: new Date().toISOString(), approvalFingerprint: this.preflightFingerprint(preflight.result) }
     getLoggingService().info('[TVOptimization]', `Preflight approved: preflight=${preflightId}, batch=${approved.batchId}, sampleRequiredEpisodes=${approved.episodes.filter(episode => episode.compatible && episode.decisionStatus === 'sample_required').length}`)
-    this.showPreflights.set(preflightId, { ...preflight, result: approved })
+    this.retainPreflight(preflightId, { ...preflight, result: approved })
     await getDatabase().config.setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ ...preflight, result: approved }))
     return approved
   }
