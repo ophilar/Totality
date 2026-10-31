@@ -415,6 +415,7 @@ export class TranscodingService {
   private showPreflights = new Map<string, { request: ShowTranscodeRequest; result: ShowTranscodePreflight }>()
   private measuredOptimizationService = new MeasuredOptimizationService()
   private optimizationCandidateService = new OptimizationCandidateService()
+  private activePreflights = 0
   private sampleCacheLastPrunedAt = 0
   private sampleCachePrunePromise: Promise<void> | null = null
   private readonly sampleCacheUsers = new Map<string, number>()
@@ -609,6 +610,7 @@ export class TranscodingService {
    * Cached files referenced by reviews or active work must remain available.
    */
   private async pruneMeasuredSamples(): Promise<void> {
+    if (this.activePreflights > 0) return
     if (Date.now() - this.sampleCacheLastPrunedAt < APP_CONFIG.transcoding.measuredSampleCache.pruneIntervalMs) return
     if (this.sampleCachePrunePromise) return this.sampleCachePrunePromise
     this.sampleCachePrunePromise = (async () => {
@@ -644,7 +646,7 @@ export class TranscodingService {
         root, records, protectedKeys,
         settingPrefix: MEASUREMENT_SETTING_PREFIX,
         deleteRecord: async key => { await db.config.deleteSetting(key) },
-        isActive: key => (this.sampleCacheUsers.get(key) ?? 0) > 0,
+        isActive: key => this.activePreflights > 0 || (this.sampleCacheUsers.get(key) ?? 0) > 0,
       })
       this.sampleCacheLastPrunedAt = Date.now()
       if (removed.removed) getLoggingService().info('[TVOptimization]', `Pruned ${removed.removed} unused sample-cache entries (${removed.reclaimedBytes} bytes)`)
@@ -666,8 +668,12 @@ export class TranscodingService {
     loadEpisodeCheckpoint?: (mediaItemId: number) => Promise<ShowTranscodeEpisodeCheckpoint | undefined>
     saveEpisodeCheckpoint?: (mediaItemId: number, checkpoint: ShowTranscodeEpisodeCheckpoint) => Promise<void>
   }): Promise<ShowTranscodePreflight> {
+    // Run cache maintenance after preflight, never on the critical response path.
+    // If a prior maintenance sweep is deleting entries, wait for it before reading.
+    if (this.sampleCachePrunePromise) await this.sampleCachePrunePromise
+    this.activePreflights++
+    try {
     operation?.signal.throwIfAborted()
-    await this.pruneMeasuredSamples()
     if (!request.sourceId.trim()) throw new Error('Source ID is required')
     if (request.mediaItemId === undefined && (!request.seriesTitle?.trim() || !request.seriesIdentityKey?.trim() || !request.libraryId?.trim())) throw new Error('TV series identity and library are required')
     const profileId = request.options.targetProfileId === undefined
@@ -1335,6 +1341,10 @@ export class TranscodingService {
     }
     if (measuredResults.length) getStatsCacheService().invalidate()
     return result
+    } finally {
+      this.activePreflights--
+      if (this.activePreflights === 0) void this.pruneMeasuredSamples()
+    }
   }
 
   async preflightRemux(mediaItemId: number): Promise<ShowTranscodePreflight> {
