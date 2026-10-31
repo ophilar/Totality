@@ -1,4 +1,4 @@
-import { supportsMeasuredOptimizationEncoder } from './transcoding/OptimizationEncoderPolicy'
+import { measuredOptimizationEncoderSpec } from './transcoding/OptimizationEncoderPolicy'
 
 import { APP_CONFIG } from '@main/config'
 import { getOptimizationVideoCodec, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
@@ -127,24 +127,15 @@ export function nextCandidateSearch(
   return []
 }
 
-function getQualityDomainKey(encoder: string, targetCodec: OptimizationVideoCodec): keyof typeof APP_CONFIG.transcoding.sampleQualityDomains {
-  if (!supportsMeasuredOptimizationEncoder(encoder)) throw new Error(`Encoder ${encoder} has no validated measured-optimization quality domain`)
-  if (encoder === 'x265' || encoder === 'svt_av1') return encoder
-  if (encoder.startsWith('nvenc')) return `nvenc_${targetCodec}`
-  if (encoder.startsWith('qsv')) return `qsv_${targetCodec}`
-  if (encoder.endsWith('_amf')) return `amf_${targetCodec}`
-  throw new Error(`Measured quality domain is not configured for encoder ${encoder}`)
-}
-
 export function buildCandidateLadder(targetCodec: OptimizationVideoCodec, encoderPolicy: 'automatic' | 'hardware' | 'software' | 'compare', hardwareEncoder?: string): CandidateEncodingParameters[] {
   const softwareEncoder = getOptimizationVideoCodec(targetCodec).softwareEncoder
   const hardware = hardwareEncoder ?? ''
   const encoders = encoderPolicy === 'hardware' ? [hardware] : encoderPolicy === 'software' ? [softwareEncoder] : encoderPolicy === 'automatic' ? [hardware || softwareEncoder] : [hardware, softwareEncoder]
   if (encoders.some(encoder => !encoder)) throw new Error('A verified hardware encoder is required for hardware candidate measurement')
-  if (encoders.some(encoder => !supportsMeasuredOptimizationEncoder(encoder))) throw new Error('The selected encoder lacks a validated measured-optimization quality domain')
   return encoders.flatMap(encoder => {
-    const presets = encoder.startsWith('nvenc') ? ['p5', 'p6', 'p7'] : encoder === 'svt_av1' ? ['8', '6', '4'] : encoder.startsWith('qsv') ? ['medium', 'slow', 'veryslow'] : encoder.endsWith('_amf') ? ['speed', 'balanced', 'quality'] : encoder === 'vt_h265' ? ['quality', 'quality', 'quality'] : ['medium', 'slow', 'slower']
-    const qualities = APP_CONFIG.transcoding.sampleQualityDomains[getQualityDomainKey(encoder, targetCodec)]
+    const policy = measuredOptimizationEncoderSpec(encoder, targetCodec)
+    const presets = policy.presets
+    const qualities = APP_CONFIG.transcoding.sampleQualityDomains[policy.qualityDomain]
     // Automatic mode should not benchmark every speed preset before it can
     // recommend a usable encode. Explicit policies retain full preset exploration.
     const selectedPresets = encoderPolicy === 'automatic' ? [presets[Math.floor(presets.length / 2)]] : [...new Set(presets)]
