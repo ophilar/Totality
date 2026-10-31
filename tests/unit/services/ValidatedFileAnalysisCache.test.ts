@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ValidatedFileAnalysisCache, matchesFileIdentity } from '@main/services/transcoding/ValidatedFileAnalysisCache'
+import { ValidatedFileAnalysisCache } from '@main/services/transcoding/ValidatedFileAnalysisCache'
+import { matchesFileIdentity } from '@main/services/utils/FileIdentity'
 
 describe('validated file analysis cache', () => {
   const directories: string[] = []
