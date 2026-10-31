@@ -531,7 +531,7 @@ export class LocalFolderProvider implements MediaProvider {
         fileMtime: number
         analysis?: import('../../services/MediaFileAnalyzer').FileAnalysisResult
       }
-      const processedItems: ProcessedItem[] = []
+      const existingMovieIndex = scanType === 'movie' ? this.getMovieParentIndex(db, libraryId) : undefined
 
       try {
         // Process in batches for parallel FFprobe analysis
@@ -541,6 +541,7 @@ export class LocalFolderProvider implements MediaProvider {
         for (let batchStart = 0; batchStart < mediaFiles.length; batchStart += ffprobeBatchSize) {
           const batchEnd = Math.min(batchStart + ffprobeBatchSize, mediaFiles.length)
           const batchFiles = mediaFiles.slice(batchStart, batchEnd)
+          const processedItems: ProcessedItem[] = []
 
           // Phase 2a: Pre-process batch (mtime check, parsing, TMDB lookup)
           const filesToProcess: FileToProcess[] = []
@@ -644,12 +645,12 @@ export class LocalFolderProvider implements MediaProvider {
               result.errors.push(`Failed to process ${path.basename(filePath)}: ${getErrorMessage(error)}`)
             }
           }
-        }
 
-        // Phase 2d: Group movies by TMDB ID, then save to DB with versions
+        // Phase 2d: Group only this batch, rather than retaining every processed
+        // media object for the full inventory. Cross-batch groups merge by identity.
+
         type VersionData = Omit<MediaItemVersion, 'id' | 'media_item_id'>
 
-        const existingMovieIndex = scanType === 'movie' ? this.getMovieParentIndex(db, libraryId) : undefined
         const groups = scanType === 'movie'
           ? groupByMediaIdentity(processedItems, item => item.metadata)
           : processedItems.map(item => [item])
@@ -716,6 +717,8 @@ export class LocalFolderProvider implements MediaProvider {
             const names = group.map(g => path.basename(g.metadata.filePath || '')).join(', ')
             result.errors.push(`Failed to save ${names}: ${getErrorMessage(error)}`)
           }
+        }
+        // Batch-scoped media and analysis objects can now be released.
         }
       } finally {
         await db.endBatch()
