@@ -27,6 +27,8 @@ vi.mock('node:fs/promises', () => ({
   stat: vi.fn(async () => ({
     size: 1048576,
     mtimeMs: 1700000000000,
+    ctimeMs: 1700000000300,
+    ino: 15,
   })),
 }))
 
@@ -59,13 +61,15 @@ describe('QualityAnalyzer - File Evidence Analysis Caching', () => {
     await expect(analyzer.analyzeMediaItemFileEvidence(item)).rejects.toThrow('has no local file path')
   })
 
-  it('reuses cached deep analysis when file size and mtime fingerprint match', async () => {
+  it('reuses cached deep analysis only with complete source identity', async () => {
     const cachedAnalysis = {
       success: true,
       filePath: '/media/movies/Test.mkv',
       fileAnalysisFingerprint: {
         size: 1048576,
         mtimeMs: 1700000000000,
+        ctimeMs: 1700000000300,
+        ino: 15,
       },
       analysisOptions: {
         scanBitrate: true,
@@ -171,6 +175,10 @@ describe('QualityAnalyzer - File Evidence Analysis Caching', () => {
       signal: undefined,
     })
     expect(mockUpdateDeepAnalysisByPath).toHaveBeenCalled()
+    const saved = mockUpdateDeepAnalysisByPath.mock.calls[0][1]
+    expect(saved.fileAnalysisFingerprint).toEqual({
+      size: 1048576, mtimeMs: 1700000000000, ctimeMs: 1700000000300, ino: 15,
+    })
     expect((await analyzer.analyzeMediaItem(item, result.analysis)).quality_tier).toBe('1080p')
   })
 })
