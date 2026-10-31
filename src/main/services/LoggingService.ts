@@ -5,7 +5,7 @@
 import { BrowserWindow, app } from 'electron'
 import { safeSend } from '@main/ipc/utils/safeSend'
 import * as fs from 'fs/promises'
-import * as path from 'path'
+import * as path from 'node:path'
 import * as os from 'os'
 import * as crypto from 'crypto'
 import { APP_CONFIG } from '@main/config'
