@@ -14,7 +14,7 @@
 import { getErrorMessage } from '../../services/utils/errorUtils'
 import type { Database } from 'sql.js'
 import * as fs from 'fs'
-import * as path from 'path'
+import * as path from 'node:path'
 import { app } from 'electron'
 import { getDatabase } from '../../database/getDatabase'
 import { getMediaFileAnalyzer } from '../../services/MediaFileAnalyzer'

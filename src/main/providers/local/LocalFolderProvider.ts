@@ -8,7 +8,7 @@ import { getErrorMessage } from '../../services/utils/errorUtils'
 
 import * as fs from 'fs'
 import * as fsPromises from 'fs/promises'
-import * as path from 'path'
+import * as path from 'node:path'
 import { app } from 'electron'
 import { getDatabase } from '../../database/getDatabase'
 import { getQualityAnalyzer } from '../../services/QualityAnalyzer'
@@ -2476,7 +2476,7 @@ export class LocalFolderProvider implements MediaProvider {
         const entries = await fs.promises.readdir(dir, { withFileTypes: true })
 
         for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name)
+          const fullPath = path.posix.join(dir, entry.name)
 
           if (entry.isDirectory()) {
             // Skip common non-music folders
@@ -2486,7 +2486,7 @@ export class LocalFolderProvider implements MediaProvider {
             }
             await scanDir(fullPath, depth + 1)
           } else if (parser.isAudioFile(entry.name)) {
-            const relativePath = path.relative(rootDir, fullPath)
+            const relativePath = path.posix.relative(rootDir, fullPath)
             files.push({ filePath: fullPath, relativePath })
           }
         }

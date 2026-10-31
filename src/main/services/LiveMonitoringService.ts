@@ -14,7 +14,7 @@ import { getErrorMessage } from './utils/errorUtils'
 
 import { BrowserWindow } from 'electron'
 import * as chokidar from 'chokidar'
-import * as path from 'path'
+import * as path from 'node:path'
 import * as fs from 'fs'
 import { execFile } from 'child_process'
 import { promisify } from 'util'

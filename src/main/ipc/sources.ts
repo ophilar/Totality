@@ -7,7 +7,7 @@ import { IPC_CHANNELS } from '../../shared/ipcChannels'
 
 import { dialog, shell } from 'electron'
 import fs from 'fs/promises'
-import path from 'path'
+import path from 'node:path'
 import { getSourceManager } from '../services/SourceManager'
 import { getDatabase } from '../database/getDatabase'
 import { getKodiLocalDiscoveryService } from '../services/KodiLocalDiscoveryService'

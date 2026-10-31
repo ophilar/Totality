@@ -18,7 +18,7 @@
 import http from 'http'
 import https from 'https'
 import fs from 'fs'
-import path from 'path'
+import path from 'node:path'
 import crypto from 'crypto'
 import os from 'os'
 import { app } from 'electron'

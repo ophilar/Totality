@@ -6,7 +6,7 @@ import { IPC_CHANNELS } from '../../shared/ipcChannels'
  */
 
 import { BrowserWindow } from 'electron'
-import * as path from 'path'
+import * as path from 'node:path'
 import { getMoodSyncService } from '../services/MoodSyncService'
 import { getSourceManager } from '../services/SourceManager'
 import { getDatabase } from '../database/getDatabase'

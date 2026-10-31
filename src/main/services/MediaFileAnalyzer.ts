@@ -13,7 +13,7 @@ import { getLoggingService } from './LoggingService'
 import { spawn } from 'child_process'
 import * as crypto from 'crypto'
 import * as fs from 'fs'
-import * as path from 'path'
+import * as path from 'node:path'
 import * as http from 'http'
 import AdmZip from 'adm-zip'
 import * as https from 'https'
@@ -203,7 +203,7 @@ export interface FileAnalysisResult {
     [key: string]: unknown
   }
   fileAnalysisFingerprint?: Partial<import('./utils/FileIdentity').FileIdentity>
-  analysisOptions?: { scanBitrate?: boolean; detectVolume?: boolean }
+  analysisOptions?: { scanBitrate?: boolean; detectVolume?: boolean; includePacketMetrics?: boolean }
 }
 
 // Singleton instance
@@ -933,7 +933,7 @@ export class MediaFileAnalyzer {
    */
   async analyzeCompleteFile(
     filePath: string,
-    options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string; signal?: AbortSignal } = {}
+    options: { scanBitrate?: boolean; detectVolume?: boolean; includePacketMetrics?: boolean; requestId?: string; signal?: AbortSignal } = {}
   ): Promise<FileAnalysisResult> {
     const metadataStartedAt = Date.now()
     const fileAnalysis = await this.analyzeFile(filePath, options.signal)
@@ -942,6 +942,11 @@ export class MediaFileAnalyzer {
     getLoggingService().debug('[MediaFileAnalyzer]', `Metadata probe completed: ${requestContext}, elapsedMs=${Date.now() - metadataStartedAt}, success=${fileAnalysis.success}`)
     if (!fileAnalysis.success) {
       getLoggingService().error('[MediaFileAnalyzer]', `Metadata probe failed: ${requestContext}`, fileAnalysis.error)
+      return fileAnalysis
+    }
+
+    if (options.includePacketMetrics === false) {
+      getLoggingService().debug('[MediaFileAnalyzer]', `Packet metrics skipped: ${requestContext}`)
       return fileAnalysis
     }
 

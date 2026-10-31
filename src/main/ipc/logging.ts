@@ -28,7 +28,7 @@ const RendererLogEventSchema = z.object({
   details: z.record(z.string(), z.unknown()).optional(),
 })
 import * as fs from 'fs'
-import * as path from 'path'
+import * as path from 'node:path'
 
 async function getSourceInfo(): Promise<SourceInfo[]> {
   const manager = getSourceManager()

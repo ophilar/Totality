@@ -42,7 +42,7 @@ export default defineConfig({
               external: [
                 'electron', 'electron-updater', 'sql.js', 'better-sqlite3', 'mysql2',
                 'fsevents', 'chokidar', '@google/genai', 'jsdom', 'ws', 'selfsigned',
-                'fs', 'path', 'os', 'crypto', 'http', 'https', 'net', 'util', 'url',
+                'fs', 'node:path', 'os', 'crypto', 'http', 'https', 'net', 'util', 'url',
                 'child_process', 'worker_threads', 'dgram', 'events', 'stream',
                 'fs/promises', 'stream/promises', 'node:path', 'node:url', 'node:fs/promises',
               ],
@@ -74,7 +74,7 @@ export default defineConfig({
               fileName: () => 'ffprobe-worker.cjs'
             },
             rollupOptions: {
-              external: ['worker_threads', 'child_process', 'fs', 'path'],
+              external: ['worker_threads', 'child_process', 'fs', 'node:path'],
               output: {
                 format: 'cjs',
                 entryFileNames: 'ffprobe-worker.cjs'

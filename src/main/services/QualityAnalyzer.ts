@@ -520,7 +520,7 @@ export class QualityAnalyzer {
   async analyzeMediaItemFileEvidence(
     mediaItem: MediaItem,
     signal?: AbortSignal,
-    options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string } = {},
+    options: { scanBitrate?: boolean; detectVolume?: boolean; includePacketMetrics?: boolean; requestId?: string } = {},
   ): Promise<{ analysis: FileAnalysisResult }> {
     if (!mediaItem.file_path) throw new Error(`Media item ${mediaItem.id ?? mediaItem.title} has no local file path`)
     await this.loadThresholdsFromDatabase()
@@ -532,10 +532,11 @@ export class QualityAnalyzer {
     const requestedAnalysisOptions = {
       scanBitrate: options.scanBitrate ?? true,
       detectVolume: options.detectVolume ?? true,
+      includePacketMetrics: options.includePacketMetrics ?? true,
     }
     type PersistedFileAnalysis = FileAnalysisResult & {
       fileAnalysisFingerprint?: Partial<FileIdentity>
-      analysisOptions?: { scanBitrate?: boolean; detectVolume?: boolean }
+      analysisOptions?: { scanBitrate?: boolean; detectVolume?: boolean; includePacketMetrics?: boolean }
     }
     const cachedAnalysis = cachedItem.deep_analysis
       ? JSON.parse(cachedItem.deep_analysis) as PersistedFileAnalysis
@@ -549,7 +550,9 @@ export class QualityAnalyzer {
       PathUtils.arePathsEqual(cachedAnalysis.filePath, filePath) &&
       fingerprintMatches &&
       (cachedAnalysis.analysisOptions
-        ? cachedAnalysis.analysisOptions.scanBitrate === requestedAnalysisOptions.scanBitrate && cachedAnalysis.analysisOptions.detectVolume === requestedAnalysisOptions.detectVolume
+        ? cachedAnalysis.analysisOptions.scanBitrate === requestedAnalysisOptions.scanBitrate &&
+          cachedAnalysis.analysisOptions.detectVolume === requestedAnalysisOptions.detectVolume &&
+          (!requestedAnalysisOptions.includePacketMetrics || (cachedAnalysis.analysisOptions.includePacketMetrics ?? true))
         : requestedAnalysisOptions.scanBitrate && requestedAnalysisOptions.detectVolume),
     )
 
@@ -758,6 +761,73 @@ export class QualityAnalyzer {
         currentStage = 'loading media versions'
         const versionsByMediaId = await db.media.getItemVersionsForMediaIds(multiVersionItemIds)
 
+        if (fileAnalysis) {
+          const workerLimit = APP_CONFIG.workers.ffprobe.defaultWorkersLimit
+          for (let batchStart = 0; batchStart < mediaItems.length; batchStart += workerLimit) {
+            if (isCancelled?.() || signal?.aborted) {
+              await flushQualityScores()
+              signal?.throwIfAborted()
+              logging.info('[QualityAnalyzer]', `Analysis cancelled after ${analyzed}/${totalItems} items`)
+              return analyzed
+            }
+            if (fileAnalysis.shouldYield?.()) return { itemsScanned: analyzed, yielded: true }
+
+            const batch = mediaItems.slice(batchStart, batchStart + workerLimit)
+            const pendingItems = batch
+              .map((item, batchIndex) => ({ item, index: batchStart + batchIndex }))
+              .filter(({ item }) => !completedMediaItemIds.has(item.id!))
+
+            for (const { index } of batch
+              .map((item, batchIndex) => ({ item, index: batchStart + batchIndex }))
+              .filter(({ item }) => completedMediaItemIds.has(item.id!))) {
+              analyzed++
+              onProgress?.(offset + index + 1, totalItems)
+            }
+
+            const results = await Promise.all(pendingItems.map(async ({ item, index }) => {
+              const itemIndex = offset + index + 1
+              const itemStartedAt = Date.now()
+              currentItemId = item.id
+              currentItemIndex = itemIndex
+              currentItemStartedAt = itemStartedAt
+              currentStage = 'media file analysis'
+              fileAnalysis.onItemStarted(item.title, itemIndex - 1, totalItems)
+              logging.debug('[QualityAnalyzer]', `Analyzing item ${itemIndex}/${totalItems}: id=${item.id}, type=${item.type}`)
+              try {
+                const { analysis } = await this.analyzeMediaItemFileEvidence(item, signal, {
+                  requestId: String(item.id),
+                  includePacketMetrics: false,
+                })
+                return { ok: true as const, item, itemIndex, itemStartedAt, savings: await this.analyzeMediaItemSavings(item, analysis) }
+              } catch (error) {
+                if (signal?.aborted || isCancelled?.()) throw error
+                onItemFailure?.(item.id, error)
+                logging.error('[QualityAnalyzer]', `Item analysis failed: id=${item.id ?? 'unknown'}, index=${itemIndex}/${totalItems}`, error)
+                return { ok: false as const, item, itemIndex, itemStartedAt, error }
+              }
+            }))
+
+            for (const result of results) {
+              if (result.ok) savingsBatch.push(result.savings)
+            }
+
+            currentStage = 'persisting quality scores'
+            await flushQualityScores()
+            for (const result of results) {
+              if (!result.ok) {
+                onProgress?.(result.itemIndex, totalItems)
+                continue
+              }
+              fileAnalysis.onItemComplete(result.item.id!)
+              analyzed++
+              logging.debug('[QualityAnalyzer]', `Analyzed item ${result.itemIndex}/${totalItems}: id=${result.item.id}, elapsedMs=${Date.now() - result.itemStartedAt}`)
+              onProgress?.(result.itemIndex, totalItems)
+            }
+            if (fileAnalysis.shouldYield?.()) return { itemsScanned: analyzed, yielded: true }
+          }
+          continue
+        }
+
         for (const [index, item] of mediaItems.entries()) {
           if (isCancelled?.() || signal?.aborted) {
             await flushQualityScores()
@@ -765,29 +835,18 @@ export class QualityAnalyzer {
             logging.info('[QualityAnalyzer]', `Analysis cancelled after ${analyzed}/${totalItems} items`)
             return analyzed
           }
-          if (completedMediaItemIds.has(item.id!)) {
-            analyzed++
-            onProgress?.(offset + index + 1, totalItems)
-            continue
-          }
           currentItemId = item.id
           currentItemIndex = offset + index + 1
           currentItemStartedAt = Date.now()
-          currentStage = fileAnalysis ? 'media file analysis' : 'calculating quality score'
-          fileAnalysis?.onItemStarted(item.title, currentItemIndex - 1, totalItems)
+          currentStage = 'calculating quality score'
           logging.debug(
             '[QualityAnalyzer]',
             `Analyzing item ${currentItemIndex}/${totalItems}: id=${currentItemId}, type=${item.type}`
           )
           let qualityScore: QualityScore | undefined
           try {
-            if (fileAnalysis) {
-              const { analysis } = await this.analyzeMediaItemFileEvidence(item, signal, { requestId: String(item.id) })
-              savingsBatch.push(await this.analyzeMediaItemSavings(item, analysis))
-            } else {
-              qualityScore = await this.analyzeQualityScore(item)
-              qualityScoresBatch.push(qualityScore)
-            }
+            qualityScore = await this.analyzeQualityScore(item)
+            qualityScoresBatch.push(qualityScore)
           } catch (error) {
             if (signal?.aborted || isCancelled?.()) throw error
             onItemFailure?.(item.id, error)
@@ -803,7 +862,7 @@ export class QualityAnalyzer {
             qualityCounts[quality] = (qualityCounts[quality] ?? 0) + 1
           }
 
-          if (!fileAnalysis && item.id && item.version_count && item.version_count > 1) {
+          if (item.id && item.version_count && item.version_count > 1) {
             currentStage = 'persisting quality scores before version analysis'
             await flushQualityScores()
             currentStage = 'analyzing alternate versions'
@@ -823,12 +882,10 @@ export class QualityAnalyzer {
             db.media.updateBestVersion(item.id)
           }
 
-          if (fileAnalysis || qualityScoresBatch.length >= QUALITY_ANALYSIS_BATCH_SIZE) {
+          if (qualityScoresBatch.length >= QUALITY_ANALYSIS_BATCH_SIZE) {
             currentStage = 'persisting quality scores'
             await flushQualityScores()
           }
-
-          fileAnalysis?.onItemComplete(item.id!)
 
           analyzed++
           logging.debug(
@@ -836,9 +893,6 @@ export class QualityAnalyzer {
             `Analyzed item ${currentItemIndex}/${totalItems}: id=${currentItemId}, elapsedMs=${Date.now() - currentItemStartedAt}`
           )
           if (onProgress) onProgress(currentItemIndex, totalItems)
-          if (fileAnalysis?.shouldYield?.()) {
-            return { itemsScanned: analyzed, yielded: true }
-          }
         }
       }
 
