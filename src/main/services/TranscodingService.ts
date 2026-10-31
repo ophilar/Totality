@@ -409,6 +409,7 @@ export class TranscodingService {
   private activeJobs = new Map<number, AbortController>()
   private initializedPromise: Promise<void> | null = null
   private capabilitiesPromise: Promise<TranscodingCapabilities> | null = null
+  private capabilitiesCachedAt = 0
   private analysisCache = new ValidatedFileAnalysisCache<Awaited<ReturnType<ReturnType<typeof getMediaFileAnalyzer>['analyzeFile']>>>()
   private showPreflights = new Map<string, { request: ShowTranscodeRequest; result: ShowTranscodePreflight }>()
   private measuredOptimizationService = new MeasuredOptimizationService()
@@ -422,6 +423,7 @@ export class TranscodingService {
   invalidate(): void {
     this.initializedPromise = null
     this.capabilitiesPromise = null
+    this.capabilitiesCachedAt = 0
     this.analysisCache.clear()
     this.showPreflights.clear()
     getLoggingService().debug('[TranscodingService]', 'TranscodingService invalidated caches')
@@ -1659,11 +1661,13 @@ export class TranscodingService {
   }
 
   async getCapabilities(options: { refresh?: boolean } = {}): Promise<TranscodingCapabilities> {
-    if (this.capabilitiesPromise && !options.refresh) return this.capabilitiesPromise
+    const cacheFresh = Date.now() - this.capabilitiesCachedAt < 10 * 60 * 1000
+    if (this.capabilitiesPromise && !options.refresh && cacheFresh) return this.capabilitiesPromise
+    this.capabilitiesCachedAt = Date.now()
     this.capabilitiesPromise = (async () => {
       const [availability, detectedGpus] = await Promise.all([
         this.checkAvailability(),
-        GpuDetector.detectGpus({ refresh: options.refresh })
+        GpuDetector.detectGpus({ refresh: options.refresh || !cacheFresh })
       ])
       const gpus = await this.resolveGpuEncoderDevices(detectedGpus)
       const persistedSelection = await getDatabase().config.getSetting('selected_transcoding_gpu_id')
