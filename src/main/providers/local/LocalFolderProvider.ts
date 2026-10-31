@@ -1078,7 +1078,7 @@ export class LocalFolderProvider implements MediaProvider {
                   bitDepth: primaryAudio.bitDepth,
                   channels: primaryAudio.channels,
                   duration: analysis.durationMs,
-                  isLossless: this.isLosslessCodec(primaryAudio.codec),
+                  isLossless: AudioCodecRanker.isLossless(primaryAudio.codec),
                   hasEmbeddedArtwork: analysis.embeddedArtwork?.hasArtwork,
                 }
               }
@@ -1175,7 +1175,7 @@ export class LocalFolderProvider implements MediaProvider {
               bit_depth: audioInfo.bitDepth,
               channels: audioInfo.channels,
               is_lossless: audioInfo.isLossless,
-              is_hi_res: this.isHiRes(audioInfo.sampleRate, audioInfo.bitDepth),
+              is_hi_res: getQualityAnalyzer().isHighResolutionAudio(audioInfo.sampleRate, audioInfo.bitDepth),
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             })
@@ -2121,30 +2121,25 @@ export class LocalFolderProvider implements MediaProvider {
             })
 
             try {
-              // Parse filename and folder structure
-              const folderContext = path.dirname(relativePath)
-              const parsed = parser.parseMusic(path.basename(filePath, path.extname(filePath)), folderContext)
-
-              let artistName = parsed.artist || 'Unknown Artist'
-              const albumName = parsed.album || 'Unknown Album'
-              const trackTitle = parsed.title || path.basename(filePath, path.extname(filePath))
-
-              // Lookup canonical artist name from MusicBrainz if enabled
-              if (mbNameCorrectionEnabled && artistName !== 'Unknown Artist') {
-                artistName = await this.lookupCanonicalArtistName(artistName, mbArtistNameCache)
-              }
-
-              // Get file stats
+              // Determine whether any work is needed before parsing or remote metadata lookups.
+              scannedFilePaths.add(filePath)
               const stats = await fs.promises.stat(filePath)
               const fileMtime = stats.mtime.getTime()
-
-              // Delta scanning: Check if track exists and is unchanged
               const existingTrack = db.getMusicTrackByPath(filePath)
-              if (existingTrack?.file_mtime === fileMtime) {
+              if (existingTrack?.file_mtime === fileMtime && existingTrack.file_size === stats.size) {
                 // File unchanged, skip expensive FFprobe analysis
                 scannedFilePaths.add(filePath)
                 result.itemsScanned++
                 continue
+              }
+
+              const folderContext = path.dirname(relativePath)
+              const parsed = parser.parseMusic(path.basename(filePath, path.extname(filePath)), folderContext)
+              let artistName = parsed.artist || 'Unknown Artist'
+              const albumName = parsed.album || 'Unknown Album'
+              const trackTitle = parsed.title || path.basename(filePath, path.extname(filePath))
+              if (mbNameCorrectionEnabled && artistName !== 'Unknown Artist') {
+                artistName = await this.lookupCanonicalArtistName(artistName, mbArtistNameCache)
               }
 
               // Collect file for processing
@@ -2221,7 +2216,7 @@ export class LocalFolderProvider implements MediaProvider {
                   bitDepth: primaryAudio.bitDepth,
                   channels: primaryAudio.channels,
                   duration: analysis.durationMs,
-                  isLossless: this.isLosslessCodec(primaryAudio.codec),
+                  isLossless: AudioCodecRanker.isLossless(primaryAudio.codec),
                   hasEmbeddedArtwork: analysis.embeddedArtwork?.hasArtwork,
                 }
               }
@@ -2335,7 +2330,7 @@ export class LocalFolderProvider implements MediaProvider {
               bit_depth: audioInfo.bitDepth,
               channels: audioInfo.channels,
               is_lossless: audioInfo.isLossless,
-              is_hi_res: this.isHiRes(audioInfo.sampleRate, audioInfo.bitDepth),
+              is_hi_res: getQualityAnalyzer().isHighResolutionAudio(audioInfo.sampleRate, audioInfo.bitDepth),
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             })
@@ -2448,19 +2443,6 @@ export class LocalFolderProvider implements MediaProvider {
     await scanDir(rootDir)
 
     return files
-  }
-
-  private isLosslessCodec(codec: string): boolean {
-    const losslessCodecs = ['flac', 'alac', 'wav', 'aiff', 'ape', 'pcm', 'dsd', 'dsf', 'dff']
-    const lower = codec.toLowerCase()
-    return losslessCodecs.some(c => lower.includes(c))
-  }
-
-  private isHiRes(sampleRate?: number, bitDepth?: number): boolean {
-    // Hi-Res is typically > 44.1kHz/16-bit
-    if (sampleRate && sampleRate > 48000) return true
-    if (bitDepth && bitDepth > 16) return true
-    return false
   }
 
   private async updateAlbumStats(
