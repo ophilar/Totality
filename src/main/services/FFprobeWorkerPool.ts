@@ -7,7 +7,7 @@
 
 import { Worker } from 'worker_threads'
 import * as os from 'os'
-import * as path from 'node:path'
+import * as path from 'path'
 import { app } from 'electron'
 import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
 import { getLoggingService } from '@main/services/LoggingService'

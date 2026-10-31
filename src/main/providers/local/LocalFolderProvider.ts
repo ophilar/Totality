@@ -41,7 +41,7 @@ interface SeriesMatchCacheEntry { tmdbId: number; name: string; posterPath?: str
 
 import * as fs from 'fs'
 import * as fsPromises from 'fs/promises'
-import * as path from 'node:path'
+import * as path from 'path'
 import { app } from 'electron'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'

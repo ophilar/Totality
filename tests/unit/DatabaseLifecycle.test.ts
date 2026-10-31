@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { BetterSQLiteService, resetBetterSQLiteServiceForTesting } from '@main/database/BetterSQLiteService'
 import { _setupTestDb, _cleanupTestDb } from '@tests/TestUtils'
-import * as path from 'node:path'
+import * as path from 'path'
 import * as fs from 'fs'
 import { app } from 'electron'
 

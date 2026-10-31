@@ -5,7 +5,7 @@ import type { MediaProvider, SourceConfig } from '@main/providers/base/MediaProv
 import { ProviderType } from '@main/types/database'
 import type { MediaSource } from '@main/types/database'
 import { app } from 'electron'
-import * as path from 'node:path'
+import * as path from 'path'
 import * as fs from 'fs/promises'
 import { generateSourceId } from '@main/providers/utils/IdUtils'
 

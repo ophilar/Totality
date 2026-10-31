@@ -3,7 +3,7 @@ import { TaskQueueService } from '@main/services/TaskQueueService'
 import { SourceManager } from '@main/services/SourceManager'
 import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
 import * as fs from 'fs'
-import * as path from 'node:path'
+import * as path from 'path'
 import { ProviderType } from '@main/types/database'
 
 describe('TaskQueue Music Scan Targeting (No Mocks)', () => {

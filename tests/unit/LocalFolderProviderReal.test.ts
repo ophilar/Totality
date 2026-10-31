@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import * as fs from 'fs'
-import * as path from 'node:path'
+import * as path from 'path'
 import { LocalFolderProvider } from '@main/providers/local/LocalFolderProvider'
 import { LibraryType } from '@main/types/database'
 import { setupTestDb, cleanupTestDb, createTempDir, LocalIntegratedApiServer } from '@tests/TestUtils'

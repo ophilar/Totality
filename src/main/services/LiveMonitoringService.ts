@@ -4,7 +4,7 @@ import { MediaItem, SourceLibrary } from '@main/types/database'
  */
 
 import { BrowserWindow } from 'electron'
-import * as path from 'node:path'
+import * as path from 'path'
 import * as fs from 'fs'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
