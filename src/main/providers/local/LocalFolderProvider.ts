@@ -36,7 +36,7 @@ import type {
 } from '../base/MediaProvider'
 import type { MediaItem, MediaItemVersion, AudioTrack } from '../../types/database'
 import { extractVersionNames } from '../utils/VersionNaming'
-import { groupByMediaIdentity, scoreVersion } from '../utils/ProviderUtils'
+import { getMediaGroupingKey, groupByMediaIdentity, scoreVersion } from '../utils/ProviderUtils'
 import { AudioCodecRanker } from '../../services/AudioCodecRanker'
 import { APP_CONFIG } from '../../config'
 
@@ -649,6 +649,7 @@ export class LocalFolderProvider implements MediaProvider {
         // Phase 2d: Group movies by TMDB ID, then save to DB with versions
         type VersionData = Omit<MediaItemVersion, 'id' | 'media_item_id'>
 
+        const existingMovieIndex = scanType === 'movie' ? this.getMovieParentIndex(db, libraryId) : undefined
         const groups = scanType === 'movie'
           ? groupByMediaIdentity(processedItems, item => item.metadata)
           : processedItems.map(item => [item])
@@ -677,18 +678,30 @@ export class LocalFolderProvider implements MediaProvider {
 
 
             mediaItem.file_mtime = bestItem.fileMtime
-            mediaItem.version_count = versions.length
-            // Use first item's plex_id as canonical (stable across rescans)
-            mediaItem.plex_id = group[0].metadata.itemId
-
+            // Partial groups (unchanged files are omitted) are not exhaustive.
+            // Resolve a canonical parent by existing version path first, then by a unique
+            // movie identity. Never create a duplicate parent merely for a new edition.
+            let existingParent: MediaItem | undefined
+            if (existingMovieIndex) {
+              for (const candidate of group) {
+                const parent = this.getMovieParent(db, candidate.metadata, libraryId, existingMovieIndex)
+                if (parent && existingParent && parent.id !== existingParent.id) {
+                  throw new Error('Conflicting existing movie version parents; manual reconciliation required')
+                }
+                if (parent) existingParent = parent
+              }
+            }
+            mediaItem.plex_id = existingParent?.plex_id ?? group[0].metadata.itemId
+            mediaItem.version_count = existingParent?.version_count ?? versions.length
             const id = await db.upsertMediaItem(mediaItem)
+            if (existingMovieIndex) existingMovieIndex.set(getMediaGroupingKey(group[0].metadata), { ...mediaItem, id } as MediaItem)
 
-            // Sync versions: delete stale, upsert current, update best version
+            // Incremental groups are partial; never delete existing sibling versions.
             const scoredVersions = versions.map(version => {
               const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
               return { ...version, media_item_id: id, ...vScore } as MediaItemVersion
             })
-            db.syncMediaItemVersions(id, scoredVersions)
+            db.syncMediaItemVersions(id, scoredVersions, 'merge')
 
             mediaItem.id = id
             const qualityScore = await analyzer.analyzeMediaItem(mediaItem, bestItem.analysis)
@@ -727,18 +740,15 @@ export class LocalFolderProvider implements MediaProvider {
 
         const existingItems = db.getMediaItems({ type: scanType, sourceId: this.sourceId, libraryId })
 
-        // Safety guard: refuse deletion when scan found 0 files but DB has items
-        if (scannedFilePaths.size === 0 && existingItems.length > 0) {
-          console.warn(`[LocalFolderProvider ${this.sourceId}] Scan returned 0 files but DB has ${existingItems.length} — skipping deletion (possible access issue)`)
-        } else {
-          for (const item of existingItems) {
-            if (!scannedFilePaths.has(item.file_path)) {
-              if (item.id) {
-                await db.deleteMediaItem(item.id)
-                result.itemsRemoved++
-              }
-            }
-          }
+        // A complete directory enumeration still cannot prove an offline NAS child,
+        // permission change, or rename is a real deletion. Never automatically purge
+        // media or its versions here; cleanup needs a separate verified user action.
+        const absentParents = existingItems.filter(item => !scannedFilePaths.has(item.file_path))
+        if (absentParents.length > 0) {
+          getLoggingService().warn('[LocalFolderProvider]',
+            `Deferred reconciliation of ${absentParents.length} unobserved ${scanType} records; retained for safety`)
+          // Keep stale version history, but prefer a currently observed sibling for playback.
+          for (const item of absentParents) if (item.id) db.updateBestVersion(item.id, scannedFilePaths)
         }
       }
 
@@ -854,6 +864,7 @@ export class LocalFolderProvider implements MediaProvider {
 
       // Cache for movie TMDB lookups - avoids redundant searches for same movie
       const movieTmdbCache: MovieMetadataCache = new Map()
+      const existingMovieIndex = scanType === 'movie' ? this.getMovieParentIndex(db, libraryId) : undefined
 
       try {
         for (let i = 0; i < validFiles.length; i++) {
@@ -908,13 +919,17 @@ export class LocalFolderProvider implements MediaProvider {
             const mediaItem = MediaConverter.toMediaItem(metadata, { sourceId: this.sourceId, sourceType: this.providerType, libraryId })
 
               mediaItem.file_mtime = fileMtime
-
+              if (existingMovieIndex) {
+                const parent = this.getMovieParent(db, metadata, libraryId, existingMovieIndex)
+                if (parent) mediaItem.plex_id = parent.plex_id
+              }
               const id = await db.upsertMediaItem(mediaItem)
+              if (existingMovieIndex) existingMovieIndex.set(getMediaGroupingKey(metadata), { ...mediaItem, id } as MediaItem)
 
-              // Sync version: delete stale, upsert current, update best version
+              // Targeted events never represent a complete set of sibling versions.
               const version = this.convertMetadataToVersion(metadata, parsed as ParsedMovieInfo | ParsedEpisodeInfo, fileMtime)
               const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
-              db.syncMediaItemVersions(id, [{ ...version, media_item_id: id, ...vScore } as MediaItemVersion])
+              db.syncMediaItemVersions(id, [{ ...version, media_item_id: id, ...vScore } as MediaItemVersion], 'merge')
 
               // Analyze quality
               mediaItem.id = id
@@ -1844,6 +1859,35 @@ export class LocalFolderProvider implements MediaProvider {
     }
 
     return enhanced
+  }
+
+  /** One authoritative lookup for local movie parents, including secondary version files.
+   * Ambiguous existing identity groups are deliberately not selected by title alone.
+   */
+  private getMovieParentIndex(db: ReturnType<typeof getDatabase>, libraryId: string): Map<string, MediaItem | null> {
+    const index = new Map<string, MediaItem | null>()
+    for (const item of db.getMediaItems({ sourceId: this.sourceId, libraryId, type: 'movie' })) {
+      const key = getMediaGroupingKey({ tmdbId: item.tmdb_id, imdbId: item.imdb_id, title: item.title, year: item.year })
+      index.set(key, index.has(key) ? null : item)
+    }
+    return index
+  }
+
+  private getMovieParent(
+    db: ReturnType<typeof getDatabase>,
+    metadata: MediaMetadata,
+    libraryId: string,
+    index: Map<string, MediaItem | null>,
+  ): MediaItem | undefined {
+    const byPath = metadata.filePath ? db.getMediaItemByPath(metadata.filePath) : null
+    if (byPath) {
+      if (byPath.source_id !== this.sourceId || byPath.library_id !== libraryId || byPath.type !== 'movie') {
+        throw new Error('Local movie version belongs to a different source/library')
+      }
+      return byPath
+    }
+    const key = getMediaGroupingKey(metadata)
+    return index.get(key) ?? undefined
   }
 
   private generateItemId(filePath: string): string {
