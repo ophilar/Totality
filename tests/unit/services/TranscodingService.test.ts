@@ -3,7 +3,7 @@ import { TranscodingService, TranscodeError, TranscodeOptions } from '../../../s
 import { TranscodeCommandFactory } from '../../../src/main/services/transcoding/TranscodeCommandFactory'
 import { getMediaFileAnalyzer } from '../../../src/main/services/MediaFileAnalyzer'
 import * as fsPromises from 'fs/promises'
-import * as path from 'path'
+import * as path from 'node:path'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import type { MediaItem } from '@main/types/database'
 import { PathUtils } from '@main/services/utils/PathUtils'
