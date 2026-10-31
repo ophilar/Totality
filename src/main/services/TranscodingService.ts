@@ -27,7 +27,7 @@ import { getQualityAnalyzer } from './QualityAnalyzer'
 import { OptimizationCandidateService, type OptimizationCandidateReason } from './OptimizationCandidateService'
 import type { MediaSourceTier } from './transcoding/TrashSourceClassifier'
 import { StreamRemuxCommandBuilder } from './transcoding/StreamRemuxCommandBuilder'
-import { buildCandidateLadder, nextCandidateSearch, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
+import { buildCandidateLadder, nextCandidateSearch, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MAX_MEASURED_CANDIDATES_PER_PRESET, MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
 import { buildTargetTranscodePlan, validateTargetTranscodeBitrate, type TargetTranscodePlan } from './transcoding/TargetTranscodePlan'
 import type { MeasuredCandidate, MeasuredCandidateSample } from './MeasuredOptimizationPolicy'
 import { ChildProcessMeasurementRunner, MeasuredOptimizationService, VMAF_MODEL_VERSION, type MeasurementSourcePreparation } from './MeasuredOptimizationService'
@@ -268,7 +268,7 @@ export interface OptimizationQualityChoice {
   profile: Extract<OptimizationQualityProfile, 'transparent' | 'maximum_savings'>
   status: 'available' | 'quality_threshold_unmet' | 'no_positive_savings' | 'incompatible' | 'measurement_incomplete'
   estimatedSavingsBytes?: number
-  candidate?: Pick<MeasuredCandidate, 'encoder' | 'preset' | 'quality' | 'outputBytes' | 'sampledDurationSeconds' | 'vmafMean' | 'vmafP5' | 'cambiMean' | 'encodingDurationMs' | 'sourceSelfVmaf' | 'sourceCambiMean'>
+  candidate?: Pick<MeasuredCandidate, 'encoder' | 'preset' | 'quality' | 'outputBytes' | 'sampledDurationSeconds' | 'vmafMean' | 'vmafP5' | 'cambiMean' | 'encodingDurationMs' | 'sourceSelfVmaf' | 'sourceCambiMean' | 'searchSummary'>
   alternatives?: Array<Pick<MeasuredCandidate, 'encoder' | 'preset' | 'quality' | 'outputBytes' | 'sampledDurationSeconds' | 'vmafMean' | 'vmafP5' | 'cambiMean' | 'encodingDurationMs' | 'sourceSelfVmaf' | 'sourceCambiMean'>>
 }
 
@@ -301,6 +301,7 @@ function getOptimizationQualityChoices(
           encodingDurationMs: candidate.encodingDurationMs,
           sourceSelfVmaf: candidate.sourceSelfVmaf,
           sourceCambiMean: candidate.sourceCambiMean,
+          searchSummary: candidate.searchSummary,
         },
         alternatives: alternatives.map(alternative => ({
           encoder: alternative.encoder,
@@ -480,7 +481,7 @@ export class TranscodingService {
     const candidateById = new Map(evidence.map(candidate => [candidate.item.id, candidate]))
     const videoCandidates = evidence.filter(candidate => candidate.reasons.includes('h264_video_transcode') || candidate.reasons.includes('hevc_to_av1'))
     const otherOperationCandidates: OtherOperationCandidate[] = evidence
-      .filter(candidate => candidate.reasons.some(reason => reason === 'audio_stream_pruning' || reason === 'subtitle_stream_pruning' || reason === 'dolby_vision_profile_5_mp4_remux'))
+      .filter(candidate => !videoCandidates.some(video => video.item.id === candidate.item.id) && candidate.reasons.some(reason => reason === 'audio_stream_pruning' || reason === 'subtitle_stream_pruning' || reason === 'dolby_vision_profile_5_mp4_remux'))
       .map(candidate => ({
         mediaItemId: candidate.item.id,
         label: candidate.item.title,
@@ -2523,6 +2524,7 @@ export class TranscodingService {
     const measuredCandidates = [...previouslyMeasured]
     let measuredSamples = [...previouslyMeasuredSamples]
     let candidateSearchRounds = 0
+    const maximumCandidates = new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.preset}`)).size * MAX_MEASURED_CANDIDATES_PER_PRESET
     const candidateDomain = [...new Set(ladder.map(candidate => candidate.encoder))].map(encoder => ({
       encoder,
       presets: [...new Set(ladder.filter(candidate => candidate.encoder === encoder).map(candidate => candidate.preset))],
@@ -2596,6 +2598,7 @@ export class TranscodingService {
         if (candidates.length) {
           candidateSearchRounds += 1
           const roundStartedAt = performance.now()
+          await onProgress?.(`Measuring candidate ${measuredCandidates.length + 1} of at most ${maximumCandidates}: ${candidates[0].encoder}/${candidates[0].preset} q${candidates[0].quality}`)
           const roundCandidates = candidates.map(({ encoder, preset, quality }) => ({ encoder, preset, quality }))
           const estimatedCandidateSampleBytes = Math.ceil((plannedBitrate
             ? plannedBitrate / 8 * sampleSeconds
@@ -2671,6 +2674,12 @@ export class TranscodingService {
       signal?.throwIfAborted()
       if (measurementComplete && previouslyMeasured.length === measuredCandidates.length) await onMeasuredCandidates?.(measuredCandidates, true)
       const selected = selectMeasuredCandidate(options.qualityProfile, measuredCandidates, maximumOutputBytesPerSecond)
+      const budgetReached = [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.preset}`))].some(key =>
+        measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.preset}` === key).length >= MAX_MEASURED_CANDIDATES_PER_PRESET)
+      selected.searchSummary = { measuredCount: measuredCandidates.length, maximumCandidates, budgetReached }
+      await onProgress?.(budgetReached
+        ? `Search budget reached: recommending the best of ${measuredCandidates.length} measured candidates`
+        : `Quality search completed: compared ${measuredCandidates.length} candidates`)
       getLoggingService().info('[TVOptimization]', 'Measured candidate search completed', {
         event: 'candidate-search.completed',
         qualityProfile: options.qualityProfile,
@@ -2680,6 +2689,8 @@ export class TranscodingService {
         ...searchContext,
         rounds: candidateSearchRounds,
         measuredCandidateCount: measuredCandidates.length,
+        budgetReached,
+        maximumCandidates,
         selectedCandidate: { encoder: selected.encoder, preset: selected.preset, quality: selected.quality },
       })
       if (!onMeasuredCandidates) for (const candidate of measuredCandidates) if (candidate !== selected) for (const sample of candidate.samplePaths!) await fs.unlink(sample)
