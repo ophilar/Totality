@@ -2,26 +2,54 @@ import type { GpuInfo } from '../utils/GpuDetector'
 import { getHardwareEncoder } from '../TranscodingCapabilities'
 import { OPTIMIZATION_VIDEO_CODECS, getOptimizationVideoCodec, playbackProfileSupportsOptimizationCodec, type OptimizationVideoCodec } from './OptimizationCodecPolicy'
 
-/** Explicitly validated measured encoding modes (not every FFmpeg encoder is eligible). */
-const MEASURED_ENCODERS = [
-  { encoder: 'x265', codec: 'hevc', qualityDomain: 'x265', presets: ['medium', 'slow', 'slower'] },
-  { encoder: 'svt_av1', codec: 'av1', qualityDomain: 'svt_av1', presets: ['8', '6', '4'] },
-  { encoder: 'nvenc_h265', codec: 'hevc', qualityDomain: 'nvenc_hevc', presets: ['p5', 'p6', 'p7'] },
-  { encoder: 'nvenc_av1', codec: 'av1', qualityDomain: 'nvenc_av1', presets: ['p5', 'p6', 'p7'] },
-  { encoder: 'qsv_h265', codec: 'hevc', qualityDomain: 'qsv_hevc', presets: ['medium', 'slow', 'veryslow'] },
-  { encoder: 'qsv_av1', codec: 'av1', qualityDomain: 'qsv_av1', presets: ['medium', 'slow', 'veryslow'] },
-  { encoder: 'hevc_amf', codec: 'hevc', qualityDomain: 'amf_hevc', presets: ['speed', 'balanced', 'quality'] },
-  { encoder: 'av1_amf', codec: 'av1', qualityDomain: 'amf_av1', presets: ['speed', 'balanced', 'quality'] },
-] as const satisfies ReadonlyArray<{ encoder: string; codec: OptimizationVideoCodec; qualityDomain: string; presets: readonly string[] }>
+/** Only these hardware families have a validated measured-quality search domain.
+ * Encoder names live exclusively in TranscodingCapabilities; software encoder
+ * names live exclusively in OptimizationCodecPolicy.
+ */
+const MEASURED_HARDWARE = {
+  NVIDIA: {
+    hevc: { qualityDomain: 'nvenc_hevc', presets: ['p5', 'p6', 'p7'] },
+    av1: { qualityDomain: 'nvenc_av1', presets: ['p5', 'p6', 'p7'] },
+  },
+  Intel: {
+    hevc: { qualityDomain: 'qsv_hevc', presets: ['medium', 'slow', 'veryslow'] },
+    av1: { qualityDomain: 'qsv_av1', presets: ['medium', 'slow', 'veryslow'] },
+  },
+  AMD: {
+    hevc: { qualityDomain: 'amf_hevc', presets: ['speed', 'balanced', 'quality'] },
+    av1: { qualityDomain: 'amf_av1', presets: ['speed', 'balanced', 'quality'] },
+  },
+} as const satisfies Partial<Record<GpuInfo['vendor'], Partial<Record<OptimizationVideoCodec, {
+  qualityDomain: string
+  presets: readonly string[]
+}>>>>
 
-export function measuredOptimizationEncoderSpec(encoder: string, codec: OptimizationVideoCodec) {
-  const policy = MEASURED_ENCODERS.find(candidate => candidate.encoder === encoder)
-  if (!policy || policy.codec !== codec) throw new Error(`Encoder ${encoder} has no validated measured-optimization quality domain for ${codec}`)
-  return policy
+const MEASURED_SOFTWARE_PRESETS = {
+  hevc: ['medium', 'slow', 'slower'],
+  av1: ['8', '6', '4'],
+} as const satisfies Record<OptimizationVideoCodec, readonly string[]>
+
+export function measuredOptimizationEncoderSpec(encoder: string, codec: OptimizationVideoCodec): {
+  qualityDomain: string
+  presets: readonly string[]
+} {
+  const software = getOptimizationVideoCodec(codec).softwareEncoder
+  if (encoder === software) return { qualityDomain: software, presets: MEASURED_SOFTWARE_PRESETS[codec] }
+  for (const vendor of ['NVIDIA', 'Intel', 'AMD'] as const) {
+    if (encoder === getHardwareEncoder(vendor, codec)) return MEASURED_HARDWARE[vendor][codec]
+  }
+  throw new Error(`Encoder ${encoder} has no validated measured-optimization quality domain for ${codec}`)
 }
 
 export function supportsMeasuredOptimizationEncoder(encoder: string): boolean {
-  return MEASURED_ENCODERS.some(policy => policy.encoder === encoder)
+  return OPTIMIZATION_VIDEO_CODECS.some(codec => {
+    try {
+      measuredOptimizationEncoderSpec(encoder, codec.value)
+      return true
+    } catch {
+      return false
+    }
+  })
 }
 
 export interface OptimizationEncoderAvailability {
