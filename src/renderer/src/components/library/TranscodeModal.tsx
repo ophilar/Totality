@@ -220,16 +220,16 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
 
   const selectEncoderPolicy = (encoderPolicy: TranscodeOptions['encoderPolicy']) => {
     updateConfiguration({ encoderPolicy: encoderPolicy ?? '' })
-    const supportsSelectedCodec = (gpu: NonNullable<typeof capabilities>['gpus'][number]) => {
-      const encoder = targetCodec ? getHardwareEncoder(gpu.vendor, targetCodec) : undefined
-      return Boolean(encoder && capabilities?.deviceEncoders[gpu.id]?.includes(encoder))
-    }
+    const supportsSelectedCodec = (gpu: NonNullable<typeof capabilities>['gpus'][number]) =>
+      Boolean(targetCodec && availableOptimizationEncoders(targetCodec, {
+        gpus: [gpu], deviceEncoders: capabilities?.deviceEncoders ?? {}, selectedGpuId: gpu.id,
+      }).selectedHardware)
     const selectedHardware = capabilities?.gpus.find(gpu => gpu.vendor === 'Intel' && supportsSelectedCodec(gpu))
       ?? capabilities?.gpus.find(supportsSelectedCodec)
     setOptions(prev => ({
       ...prev,
-      useGpu: encoderPolicy !== 'software',
-      gpuId: encoderPolicy === 'software' ? '' : selectedHardware?.id ?? capabilities?.selectedGpuId ?? ''
+      useGpu: encoderPolicy === 'hardware' || (encoderPolicy !== 'software' && Boolean(selectedHardware)),
+      gpuId: encoderPolicy === 'software' ? '' : selectedHardware?.id ?? ''
     }))
   }
 
