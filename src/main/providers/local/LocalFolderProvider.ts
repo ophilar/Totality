@@ -545,6 +545,9 @@ export class LocalFolderProvider implements MediaProvider {
             })
 
             try {
+              // Enumeration establishes presence even when parsing or analysis is skipped.
+              // A name that fails current parsing rules must not delete a previously indexed file.
+              scannedFilePaths.add(filePath)
               // Check if file is unchanged (skip expensive re-analysis)
               const stat = await fsPromises.stat(filePath)
               const fileMtime = stat.mtime.getTime()
