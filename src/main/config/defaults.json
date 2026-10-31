@@ -175,7 +175,8 @@
       "maxBytes": 5368709120,
       "maxAgeMs": 2592000000,
       "minEvictionAgeMs": 604800000,
-      "pruneIntervalMs": 86400000
+      "pruneIntervalMs": 86400000,
+      "maxConcurrentHashReads": 2
     },
     "sampleQualityDomains": {
       "x265": [
