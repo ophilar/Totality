@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import * as path from 'node:path'
+import * as path from 'path'
 import { resolveDatabasePath } from '../../src/main/database/DatabasePath'
 
 describe('resolveDatabasePath', () => {

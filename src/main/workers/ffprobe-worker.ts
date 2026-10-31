@@ -8,7 +8,7 @@
 import { parentPort, workerData } from 'worker_threads'
 import type { ChildProcess } from 'child_process'
 import { spawn } from 'child_process'
-import * as path from 'node:path'
+import * as path from 'path'
 import { detectHdrFormat } from '../types/mediaContracts'
 import type { HdrFormat } from '../types/mediaContracts'
 import { normalizeVideoLevel } from '../services/MediaNormalizer'

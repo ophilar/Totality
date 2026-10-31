@@ -1,7 +1,7 @@
 import { spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import * as fs from 'fs'
-import * as path from 'node:path'
+import * as path from 'path'
 import {
   normalizeVideoCodec,
   normalizeResolution,

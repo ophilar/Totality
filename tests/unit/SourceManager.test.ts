@@ -3,7 +3,7 @@ import { SourceManager } from '@main/services/SourceManager'
 import { LibraryType, ProviderType, TaskType } from '@main/types/database'
 import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
 import * as fs from 'fs'
-import * as path from 'node:path'
+import * as path from 'path'
 
 describe('SourceManager (No Mocks)', () => {
   let manager: SourceManager
