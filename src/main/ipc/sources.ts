@@ -7,7 +7,7 @@ import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 
 import { dialog, shell, IpcMainInvokeEvent } from 'electron'
 import fs from 'fs/promises'
-import path from 'path'
+import path from 'node:path'
 import { getSourceManager } from '@main/services/SourceManager'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getDatabase } from '@main/database/BetterSQLiteService'

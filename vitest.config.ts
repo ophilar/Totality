@@ -1,5 +1,5 @@
 import { defineConfig } from 'vitest/config'
-import path from 'path'
+import path from 'node:path'
 
 const mediaIntegrationSuite = process.env.TOTALITY_TEST_SUITE === 'media-integration'
 const acceptanceSuite = process.env.TOTALITY_TEST_SUITE === 'acceptance'

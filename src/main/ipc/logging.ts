@@ -1,7 +1,7 @@
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcMain, dialog, BrowserWindow, shell, app } from 'electron'
 import { getLoggingService } from '@main/services/LoggingService'
-import path from 'path'
+import path from 'node:path'
 import fs from 'fs/promises'
 import { createIpcHandler, createIpcHandlerWithEvent, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
 import { z } from 'zod'

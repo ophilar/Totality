@@ -3,7 +3,7 @@ import { LiveMonitoringService } from '@main/services/LiveMonitoringService'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import * as fs from 'fs'
 import * as os from 'os'
-import * as path from 'path'
+import * as path from 'node:path'
 
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>()

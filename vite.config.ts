@@ -24,7 +24,7 @@ export const electronTargets: ElectronOptions[] = [
               external: [
                 'electron', 'electron-updater', 'sql.js', 'mysql2', 'jsdom',
                 'fsevents',
-                'fs', 'path', 'os', 'crypto', 'http', 'https', 'net', 'util', 'url',
+                'fs', 'os', 'crypto', 'http', 'https', 'net', 'util', 'url',
                 'child_process', 'worker_threads', 'dgram', 'events', 'stream',
                 'fs/promises', 'stream/promises', 'node:path', 'node:url', 'node:fs/promises',
                 'node:sqlite'
@@ -52,7 +52,7 @@ export const electronTargets: ElectronOptions[] = [
               fileName: () => 'ffprobe-worker.cjs'
             },
             rollupOptions: {
-              external: ['worker_threads', 'child_process', 'fs', 'path'],
+              external: ['worker_threads', 'child_process', 'fs', 'node:path'],
               output: {
                 format: 'cjs',
                 entryFileNames: 'ffprobe-worker.cjs',

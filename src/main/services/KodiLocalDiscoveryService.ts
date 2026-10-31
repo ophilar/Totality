@@ -10,7 +10,7 @@
  */
 
 import * as fs from 'fs'
-import * as path from 'path'
+import * as path from 'node:path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { getLoggingService } from '@main/services/LoggingService'

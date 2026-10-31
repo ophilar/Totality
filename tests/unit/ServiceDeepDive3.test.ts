@@ -8,7 +8,7 @@ import { _MediaRepository } from '@main/database/repositories/MediaRepository'
 import { _WishlistRepository } from '@main/database/repositories/WishlistRepository'
 import { _DuplicateRepository } from '@main/database/repositories/DuplicateRepository'
 import * as _fs from 'fs'
-import * as _path from 'path'
+import * as _path from 'node:path'
 
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 

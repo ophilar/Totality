@@ -1,7 +1,7 @@
 import { getStatsCacheService } from '@main/services/StatsCacheService'
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { BrowserWindow, dialog, shell } from 'electron'
-import * as path from 'path'
+import * as path from 'node:path'
 import { z } from 'zod'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'

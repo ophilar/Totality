@@ -4,7 +4,7 @@ import { LibraryType } from '@main/types/database'
 import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
 import { getTaskQueueService } from '@main/services/TaskQueueService'
 import * as fs from 'fs'
-import * as path from 'path'
+import * as path from 'node:path'
 
 describe('Library Issues Fixes (Deep Dive)', () => {
   let db: Awaited<ReturnType<typeof setupTestDb>>
