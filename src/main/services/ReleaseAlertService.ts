@@ -20,6 +20,7 @@ const RELEASE_TYPE_LABELS: Record<number, string> = {
 
 export class ReleaseAlertService {
   private pollingTimer: NodeJS.Timeout | null = null
+  private startupTimer: NodeJS.Timeout | null = null
   private alertedIds = new Set<string>() // "tmdbId:type" keys already alerted this session
 
   async start(): Promise<void> {
@@ -28,7 +29,8 @@ export class ReleaseAlertService {
     if (enabled !== 'true') return
 
     // Run initial check after a short delay to let app settle
-    setTimeout(() => {
+    this.startupTimer = setTimeout(() => {
+      this.startupTimer = null
       this.checkForReleases().catch(err =>
         console.error('[ReleaseAlertService] Initial check failed:', err)
       )
@@ -43,6 +45,10 @@ export class ReleaseAlertService {
   }
 
   stop(): void {
+    if (this.startupTimer) {
+      clearTimeout(this.startupTimer)
+      this.startupTimer = null
+    }
     if (this.pollingTimer) {
       clearInterval(this.pollingTimer)
       this.pollingTimer = null

@@ -107,6 +107,7 @@ export const RPC_CHANNEL_MAP: Record<string, string> = {
 
   // Database - Media Items
   getMediaItems: 'db:getMediaItems',
+  getMediaItemsSlim: 'db:getMediaItemsSlim',
   countMediaItems: 'db:countMediaItems',
   getTVShows: 'db:getTVShows',
   countTVShows: 'db:countTVShows',
@@ -177,6 +178,7 @@ export const RPC_CHANNEL_MAP: Record<string, string> = {
   musicGetAlbums: 'music:getAlbums',
   musicGetAlbumsByArtist: 'music:getAlbumsByArtist',
   musicGetAlbumById: 'music:getAlbumById',
+  musicGetTrackById: 'music:getTrackById',
   musicGetTracks: 'music:getTracks',
   musicGetTracksByAlbum: 'music:getTracksByAlbum',
   musicGetStats: 'music:getStats',
@@ -192,6 +194,7 @@ export const RPC_CHANNEL_MAP: Record<string, string> = {
   musicAnalyzeArtistCompleteness: 'music:analyzeArtistCompleteness',
   musicGetArtistCompleteness: 'music:getArtistCompleteness',
   musicGetAllArtistCompleteness: 'music:getAllArtistCompleteness',
+  musicGetCompletenessStats: 'music:getCompletenessStats',
   musicAnalyzeAlbumTrackCompleteness: 'music:analyzeAlbumTrackCompleteness',
   musicGetAlbumCompleteness: 'music:getAlbumCompleteness',
   musicGetAllAlbumCompleteness: 'music:getAllAlbumCompleteness',

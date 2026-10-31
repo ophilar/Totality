@@ -214,6 +214,17 @@ export function registerMusicHandlers(): void {
     }
   })
 
+  ipcMain.handle('music:getTrackById', async (_event, id: unknown) => {
+    try {
+      const validId = validateInput(PositiveIntSchema, id, 'music:getTrackById')
+      const db = getDatabase()
+      return db.getMusicTrackById(validId)
+    } catch (error: unknown) {
+      console.error('[music:getTrackById] Error:', error)
+      throw error
+    }
+  })
+
   /**
    * Get all music tracks
    */
@@ -289,6 +300,16 @@ export function registerMusicHandlers(): void {
       return db.getMusicStats(validSourceId, validLibraryId)
     } catch (error: unknown) {
       console.error('[music:getStats] Error:', error)
+      throw error
+    }
+  })
+
+  ipcMain.handle('music:getCompletenessStats', async (_event, includeEps?: unknown, includeSingles?: unknown) => {
+    try {
+      const db = getDatabase()
+      return db.getMusicCompletenessStats(!!includeEps, !!includeSingles)
+    } catch (error: unknown) {
+      console.error('[music:getCompletenessStats] Error:', error)
       throw error
     }
   })

@@ -305,6 +305,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Database - Media Items
   getMediaItems: (filters?: unknown) => ipcRenderer.invoke('db:getMediaItems', filters),
+  getMediaItemsSlim: (filters?: unknown) => ipcRenderer.invoke('db:getMediaItemsSlim', filters),
   countMediaItems: (filters?: unknown) => ipcRenderer.invoke('db:countMediaItems', filters),
   getTVShows: (filters?: unknown) => ipcRenderer.invoke('db:getTVShows', filters),
   countTVShows: (filters?: unknown) => ipcRenderer.invoke('db:countTVShows', filters),
@@ -421,6 +422,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   musicGetAlbums: (filters?: unknown) => ipcRenderer.invoke('music:getAlbums', filters),
   musicGetAlbumsByArtist: (artistId: number) => ipcRenderer.invoke('music:getAlbumsByArtist', artistId),
   musicGetAlbumById: (id: number) => ipcRenderer.invoke('music:getAlbumById', id),
+  musicGetTrackById: (id: number) => ipcRenderer.invoke('music:getTrackById', id),
   musicGetTracks: (filters?: unknown) => ipcRenderer.invoke('music:getTracks', filters),
   musicGetTracksByAlbum: (albumId: number) => ipcRenderer.invoke('music:getTracksByAlbum', albumId),
   musicGetStats: (sourceId?: string, libraryId?: string) => ipcRenderer.invoke('music:getStats', sourceId, libraryId),
@@ -453,6 +455,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   musicGetArtistCompleteness: (artistName: string) =>
     ipcRenderer.invoke('music:getArtistCompleteness', artistName),
   musicGetAllArtistCompleteness: (sourceId?: string) => ipcRenderer.invoke('music:getAllArtistCompleteness', sourceId),
+  musicGetCompletenessStats: (includeEps: boolean, includeSingles: boolean) => ipcRenderer.invoke('music:getCompletenessStats', includeEps, includeSingles),
 
   // Music - Album Track Completeness
   musicAnalyzeAlbumTrackCompleteness: (albumId: number) =>
@@ -1320,6 +1323,7 @@ export interface ElectronAPI {
 
   // Database - Media Items
   getMediaItems: (filters?: unknown) => Promise<unknown[]>
+  getMediaItemsSlim: (filters?: unknown) => Promise<unknown[]>
   countMediaItems: (filters?: unknown) => Promise<number>
   getTVShows: (filters?: unknown) => Promise<unknown[]>
   countTVShows: (filters?: unknown) => Promise<number>
@@ -1460,6 +1464,7 @@ export interface ElectronAPI {
   musicGetAlbums: (filters?: unknown) => Promise<unknown[]>
   musicGetAlbumsByArtist: (artistId: number) => Promise<unknown[]>
   musicGetAlbumById: (id: number) => Promise<unknown | null>
+  musicGetTrackById: (id: number) => Promise<unknown | null>
   musicGetTracks: (filters?: unknown) => Promise<unknown[]>
   musicGetTracksByAlbum: (albumId: number) => Promise<unknown[]>
   musicGetStats: (sourceId?: string, libraryId?: string) => Promise<{
@@ -1490,6 +1495,7 @@ export interface ElectronAPI {
   musicAnalyzeArtistCompleteness: (artistId: number) => Promise<unknown>
   musicGetArtistCompleteness: (artistName: string) => Promise<unknown | null>
   musicGetAllArtistCompleteness: (sourceId?: string) => Promise<unknown[]>
+  musicGetCompletenessStats: (includeEps: boolean, includeSingles: boolean) => Promise<unknown>
 
   // Album Track Completeness
   musicAnalyzeAlbumTrackCompleteness: (albumId: number) => Promise<unknown | null>

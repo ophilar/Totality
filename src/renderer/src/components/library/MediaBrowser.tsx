@@ -108,6 +108,8 @@ export function MediaBrowser({
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false) // For background incremental scan on app start
   const hasInitialLoadRef = useRef(false) // Track if initial load is complete
   const hasAutoSwitchedRef = useRef(false) // Track if auto-switch has been done (to prevent loop)
+  const mountedRef = useRef(true)
+  useEffect(() => { return () => { mountedRef.current = false } }, [])
   const [stats, setStats] = useState<LibraryStats | null>(null)
   const [view, setView] = useState<'movies' | 'tv' | 'music'>('movies')
 
@@ -353,7 +355,7 @@ export function MediaBrowser({
         const album = musicAlbums.find((a: { id?: number }) => a.id === state.selectedAlbum.id)
         setSelectedAlbum(album || null)
         if (album?.id) {
-          window.electronAPI.musicGetTracksByAlbum(album.id).then((tracks: unknown[]) => setAlbumTracks(tracks as never[]))
+          window.electronAPI.musicGetTracksByAlbum(album.id).then((tracks: unknown[]) => { if (mountedRef.current) setAlbumTracks(tracks as never[]) })
         }
       } else {
         setSelectedAlbum(null)
@@ -1197,6 +1199,7 @@ export function MediaBrowser({
       } else if (artistName) {
         // Artist not in paginated list — search server by name
         window.electronAPI.musicGetArtists({ searchQuery: artistName, limit: 1, offset: 0 }).then(result => {
+          if (!mountedRef.current) return
           const artists = result as MusicArtist[]
           if (artists.length > 0) setSelectedArtist(artists[0])
         }).catch(err => console.error('Failed to find artist for navigation:', err))
@@ -1212,6 +1215,7 @@ export function MediaBrowser({
       } else {
         // Album not in paginated list — fetch by ID from server
         window.electronAPI.musicGetAlbumById(numId).then((a: unknown) => {
+          if (!mountedRef.current) return
           if (a) { setSelectedAlbum(a as MusicAlbum); loadAlbumTracks((a as MusicAlbum).id) }
         }).catch(err => console.error('Failed to find album for navigation:', err))
       }
@@ -1221,15 +1225,14 @@ export function MediaBrowser({
       // For tracks, we need to find the track first to get its album
       const numId = typeof id === 'string' ? parseInt(id, 10) : id
       // Look up the track to find its album
-      window.electronAPI.musicGetTracks({ limit: 10000 }).then(result => {
-        const tracks = result as MusicTrack[]
-        const track = tracks.find(t => t.id === numId)
+      window.electronAPI.musicGetTrackById(numId).then((result: unknown) => {
+        if (!mountedRef.current) return
+        const track = result as MusicTrack | null
         if (track?.album_id) {
-          const album = musicAlbums.find(a => a.id === track.album_id)
-          if (album) {
-            setSelectedAlbum(album)
-            loadAlbumTracks(album.id)
-          }
+          window.electronAPI.musicGetAlbumById(track.album_id).then((a: unknown) => {
+            if (!mountedRef.current) return
+            if (a) { setSelectedAlbum(a as MusicAlbum); loadAlbumTracks((a as MusicAlbum).id) }
+          })
         }
       }).catch(err => console.error('Failed to find track for navigation:', err))
     }

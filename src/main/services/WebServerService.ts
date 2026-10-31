@@ -60,6 +60,7 @@ type WebMessage = RpcMessage | AuthMessage
 interface AuthenticatedWebSocket extends WebSocket {
   sessionToken?: string
   clientIp?: string
+  isAlive?: boolean
 }
 
 // MIME types for static file serving
@@ -127,6 +128,7 @@ export class WebServerService {
   private artworkBasePath: string
   private tlsDir: string
   private eventThrottles = new Map<WebSocket, Map<string, number>>()
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null
 
   private readonly THROTTLED_EVENTS = new Set([
     'library:updated', 'quality:analysisProgress', 'music:scanProgress',
@@ -143,6 +145,36 @@ export class WebServerService {
     this.tlsDir = path.join(app.getPath('userData'), 'tls')
   }
 
+  /** Load persisted sessions from database (survive app restarts) */
+  private loadPersistedSessions(): void {
+    try {
+      const db = getDatabase()
+      const raw = db.getSetting('web_sessions')
+      if (!raw) return
+      const entries = JSON.parse(raw) as Array<[string, Session]>
+      const now = Date.now()
+      for (const [token, session] of entries) {
+        if (session.expiresAt > now) {
+          this.sessions.set(token, session)
+        }
+      }
+      getLoggingService().verbose('WebServer', `Restored ${this.sessions.size} persisted sessions`)
+    } catch {
+      // Ignore parse errors
+    }
+  }
+
+  /** Save current sessions to database */
+  private persistSessions(): void {
+    try {
+      const db = getDatabase()
+      const entries = Array.from(this.sessions.entries())
+      db.setSetting('web_sessions', JSON.stringify(entries))
+    } catch {
+      // Non-critical
+    }
+  }
+
   async start(port?: number): Promise<void> {
     if (this.httpServer) return
 
@@ -153,6 +185,7 @@ export class WebServerService {
     }
 
     this.port = port || this.getConfiguredPort()
+    this.loadPersistedSessions()
 
     // Create HTTP or HTTPS server
     const useHttps = this.isHttpsEnabled()
@@ -201,17 +234,33 @@ export class WebServerService {
         return
       }
 
-      getLoggingService().verbose('WebServer', `WebSocket connected from ${ws.clientIp}`)
+      getLoggingService().verbose('WebServer', `WebSocket connected from ${ws.clientIp} (clients: ${this.wss!.clients.size})`)
+      ws.isAlive = true
 
+      ws.on('pong', () => { ws.isAlive = true })
       ws.on('message', (data) => this.handleWebSocket(ws, data))
-      ws.on('close', () => {
+      ws.on('close', (code, reason) => {
         this.eventThrottles.delete(ws)
-        getLoggingService().verbose('WebServer', `WebSocket disconnected from ${ws.clientIp}`)
+        getLoggingService().verbose('WebServer', `WebSocket disconnected from ${ws.clientIp} (code: ${code}, reason: ${reason || 'none'}, clients: ${this.wss!.clients.size})`)
       })
       ws.on('error', (err) => {
         console.error('[WebServer] WebSocket error:', err.message)
       })
     })
+
+    // Heartbeat: ping every 30s, terminate unresponsive clients
+    this.heartbeatTimer = setInterval(() => {
+      if (!this.wss) return
+      for (const client of this.wss.clients) {
+        const ws = client as AuthenticatedWebSocket
+        if (ws.isAlive === false) {
+          ws.terminate()
+          continue
+        }
+        ws.isAlive = false
+        ws.ping()
+      }
+    }, 30_000)
 
     return new Promise((resolve, reject) => {
       let settled = false
@@ -263,11 +312,21 @@ export class WebServerService {
           })
         }
 
-        // Periodic cleanup of expired sessions
+        // Periodic cleanup of expired sessions and rate limit entries
         this.sessionCleanupTimer = setInterval(() => {
           const now = Date.now()
+          let cleaned = false
           for (const [token, session] of this.sessions.entries()) {
-            if (session.expiresAt < now) this.sessions.delete(token)
+            if (session.expiresAt < now) { this.sessions.delete(token); cleaned = true }
+          }
+          if (cleaned) this.persistSessions()
+          // Evict expired rate limit entries
+          for (const [ip, entry] of this.rateLimits.entries()) {
+            if (entry.lockedUntil < now && entry.failures === 0) this.rateLimits.delete(ip)
+          }
+          // Evict stale artwork rate limit entries (older than 2x window)
+          for (const [ip, entry] of this.artworkRateLimits.entries()) {
+            if (now - entry.windowStart > ARTWORK_RATE_WINDOW_MS * 2) this.artworkRateLimits.delete(ip)
           }
         }, SESSION_CLEANUP_INTERVAL_MS)
 
@@ -277,6 +336,10 @@ export class WebServerService {
   }
 
   stop(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
     if (this.sessionCleanupTimer) {
       clearInterval(this.sessionCleanupTimer)
       this.sessionCleanupTimer = null
@@ -319,6 +382,8 @@ export class WebServerService {
     const message = JSON.stringify({ type: 'event', channel, args })
     const now = Date.now()
     const isThrottled = this.THROTTLED_EVENTS.has(channel)
+    let sent = 0
+    let throttled = 0
 
     for (const client of this.wss.clients) {
       const ws = client as AuthenticatedWebSocket
@@ -330,11 +395,19 @@ export class WebServerService {
             this.eventThrottles.set(ws, clientThrottles)
           }
           const lastSent = clientThrottles.get(channel) || 0
-          if (now - lastSent < this.EVENT_THROTTLE_MS) continue
+          if (now - lastSent < this.EVENT_THROTTLE_MS) {
+            throttled++
+            continue
+          }
           clientThrottles.set(channel, now)
         }
         ws.send(message)
+        sent++
       }
+    }
+
+    if (sent > 0 || throttled > 0) {
+      getLoggingService().verbose('WebServer', `Broadcast ${channel}: sent=${sent} throttled=${throttled} size=${(message.length / 1024).toFixed(1)}KB`)
     }
   }
 
@@ -501,6 +574,7 @@ export class WebServerService {
       hostname.match(/^172\.(1[6-9]|2[0-9]|3[01])\./) ||
       hostname.endsWith('.plex.direct') ||
       hostname === 'image.tmdb.org' ||
+      hostname === 'coverartarchive.org' ||
       parsedUrl.searchParams.has('X-Plex-Token')
 
     if (!isAllowed) {
@@ -509,17 +583,34 @@ export class WebServerService {
       return
     }
 
-    // Add Plex thumbnail sizing if not already specified
+    // Add thumbnail sizing to reduce bandwidth for mobile clients
     const isPlexUrl = hostname.startsWith('192.168.') || hostname.startsWith('10.') ||
       hostname.endsWith('.plex.direct') || parsedUrl.searchParams.has('X-Plex-Token')
-    if (isPlexUrl && !parsedUrl.searchParams.has('width')) {
-      parsedUrl.searchParams.set('width', '600')
-      parsedUrl.searchParams.set('height', '900')
+    if (isPlexUrl) {
+      const existingWidth = Number(parsedUrl.searchParams.get('width') || 0)
+      // Cap at 300×450 — always override if larger or unset
+      if (!existingWidth || existingWidth > 450) {
+        parsedUrl.searchParams.set('width', '300')
+        parsedUrl.searchParams.set('height', '450')
+      }
+    }
+    // Jellyfin/Emby: add maxWidth if not already specified (API supports it natively)
+    const isJellyfinEmby = parsedUrl.pathname.includes('/Items/') && parsedUrl.pathname.includes('/Images/')
+    if (isJellyfinEmby && !parsedUrl.searchParams.has('maxWidth')) {
+      parsedUrl.searchParams.set('maxWidth', '600')
+      parsedUrl.searchParams.set('quality', '80')
     }
     const finalUrl = parsedUrl.toString()
 
+    // Build cache key without auth tokens so cache survives across sessions
+    const cacheUrl = new URL(finalUrl)
+    cacheUrl.searchParams.delete('X-Plex-Token')
+    cacheUrl.searchParams.delete('api_key')
+    cacheUrl.searchParams.delete('ApiKey')
+
     // Check disk cache first
-    const cacheKey = crypto.createHash('sha256').update(finalUrl).digest('hex')
+    const proxyStart = Date.now()
+    const cacheKey = crypto.createHash('sha256').update(cacheUrl.toString()).digest('hex')
     const cachePath = path.join(this.imageCacheDir, `${cacheKey}.img`)
 
     try {
@@ -532,6 +623,7 @@ export class WebServerService {
           'Content-Length': String(stat.size),
         })
         fs.createReadStream(cachePath).pipe(res)
+        getLoggingService().verbose('WebServer', `Image proxy HIT: ${(stat.size / 1024).toFixed(0)}KB in ${Date.now() - proxyStart}ms`)
         return
       }
     } catch {
@@ -550,10 +642,16 @@ export class WebServerService {
       }
 
       const contentType = proxyRes.headers['content-type'] || 'image/jpeg'
+      const contentLength = proxyRes.headers['content-length']
+      const sizeKb = contentLength ? Number(contentLength) / 1024 : 0
       res.writeHead(200, {
         'Content-Type': contentType,
         'Cache-Control': 'public, max-age=604800',
       })
+      getLoggingService().verbose('WebServer', `Image proxy MISS: ${sizeKb ? sizeKb.toFixed(0) + 'KB' : '?KB'} in ${Date.now() - proxyStart}ms (${hostname})`)
+      if (sizeKb > 2048) {
+        console.warn(`[WebServer] Oversized image (${sizeKb.toFixed(0)}KB): ${parsedUrl.pathname}`)
+      }
 
       // Write to cache and response simultaneously
       try {
@@ -825,9 +923,10 @@ export class WebServerService {
       this.sessions.delete(ipSessions[0][0])
     }
 
-    // Issue IP-bound token
+    // Issue token
     const token = crypto.randomUUID()
     this.sessions.set(token, { expiresAt: Date.now() + this.getSessionTimeout(), ip })
+    this.persistSessions()
     ws.sessionToken = token
     ws.send(JSON.stringify({ type: 'auth', success: true, token }))
     getLoggingService().verbose('WebServer', `Authenticated client from ${ip}`)
@@ -835,6 +934,7 @@ export class WebServerService {
 
   private async handleRpc(ws: AuthenticatedWebSocket, msg: RpcMessage): Promise<void> {
     const { id, channel, args } = msg
+    const rpcStart = Date.now()
 
     // Check denylist
     if (WEB_DENIED_CHANNELS.has(channel)) {
@@ -908,10 +1008,18 @@ export class WebServerService {
         result = filtered
       }
 
-      ws.send(JSON.stringify({ type: 'response', id, result }))
+      const responseJson = JSON.stringify({ type: 'response', id, result })
+      const rpcMs = Date.now() - rpcStart
+      const responseKb = (responseJson.length / 1024).toFixed(1)
+      ws.send(responseJson)
+      getLoggingService().verbose('WebServer', `RPC ${channel} → ${rpcMs}ms, ${responseKb}KB (${ws.clientIp})`)
+      if (rpcMs > 1000) {
+        console.warn(`[WebServer] Slow RPC: ${channel} took ${rpcMs}ms (${responseKb}KB)`)
+      }
     } catch (err) {
+      const rpcMs = Date.now() - rpcStart
       // Sanitize error — never expose stack traces or internal details to web clients
-      console.error(`[WebServer] RPC error on ${channel}:`, err)
+      console.error(`[WebServer] RPC error on ${channel} after ${rpcMs}ms:`, err)
       ws.send(JSON.stringify({ type: 'response', id, error: 'Internal error' }))
     }
   }
@@ -959,16 +1067,10 @@ export class WebServerService {
     }
   }
 
-  private isValidSession(token: string, clientIp?: string): boolean {
+  private isValidSession(token: string, _clientIp?: string): boolean {
     const session = this.sessions.get(token)
     if (!session) return false
     if (session.expiresAt < Date.now()) {
-      this.sessions.delete(token)
-      return false
-    }
-    // Verify token is being used from the same IP it was issued to
-    if (clientIp && session.ip !== clientIp) {
-      console.warn(`[WebServer] Session token used from different IP: issued to ${session.ip}, used from ${clientIp}`)
       this.sessions.delete(token)
       return false
     }
@@ -984,16 +1086,62 @@ export class WebServerService {
     }
   }
 
+  /**
+   * Check if the existing cert's SANs cover all current network IPs
+   */
+  private certSansMatchCurrentIps(certPem: string): boolean {
+    try {
+      const cert = new crypto.X509Certificate(certPem)
+      const sanText = cert.subjectAltName || ''
+      // Parse "IP Address:192.168.1.5, IP Address:127.0.0.1, DNS:localhost" format
+      const certIps = new Set(
+        sanText.split(',')
+          .map(s => s.trim())
+          .filter(s => s.startsWith('IP Address:'))
+          .map(s => s.replace('IP Address:', ''))
+      )
+
+      // Get current non-internal IPv4 addresses
+      const interfaces = os.networkInterfaces()
+      for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name] || []) {
+          if (iface.family === 'IPv4' && !iface.internal && !certIps.has(iface.address)) {
+            console.log(`[WebServer] Current IP ${iface.address} not in cert SANs`)
+            return false
+          }
+        }
+      }
+      return true
+    } catch {
+      // If cert parsing fails, regenerate
+      return false
+    }
+  }
+
   private async ensureTlsCertificate(): Promise<{ key: string; cert: string }> {
     const keyPath = path.join(this.tlsDir, 'key.pem')
     const certPath = path.join(this.tlsDir, 'cert.pem')
 
-    // Reuse existing certificate if it exists
-    if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+    // Priority 1: User-provided custom certificate (for reverse proxies, real SSL)
+    const customCertPath = path.join(this.tlsDir, 'custom-cert.pem')
+    const customKeyPath = path.join(this.tlsDir, 'custom-key.pem')
+    if (fs.existsSync(customCertPath) && fs.existsSync(customKeyPath)) {
+      console.log('[WebServer] Using custom TLS certificate from', this.tlsDir)
       return {
-        key: fs.readFileSync(keyPath, 'utf-8'),
-        cert: fs.readFileSync(certPath, 'utf-8'),
+        key: fs.readFileSync(customKeyPath, 'utf-8'),
+        cert: fs.readFileSync(customCertPath, 'utf-8'),
       }
+    }
+
+    // Priority 2: Reuse existing self-signed certificate if IPs still match
+    if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+      const certPem = fs.readFileSync(certPath, 'utf-8')
+      if (this.certSansMatchCurrentIps(certPem)) {
+        return { key: fs.readFileSync(keyPath, 'utf-8'), cert: certPem }
+      }
+      console.log('[WebServer] Network IPs changed — regenerating self-signed certificate')
+      fs.unlinkSync(keyPath)
+      fs.unlinkSync(certPath)
     }
 
     console.log('[WebServer] Generating self-signed TLS certificate...')

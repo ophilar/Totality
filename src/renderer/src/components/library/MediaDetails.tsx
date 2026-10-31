@@ -704,6 +704,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
         {/* Scrollable Content — flat layout, no tabs */}
         <div
           className={`flex-1 overflow-y-auto ${isMobile ? '' : 'px-5 py-4'} space-y-6`}
+          style={isMobile ? { overscrollBehavior: 'none', WebkitOverflowScrolling: 'auto' } : undefined}
           onScroll={isMobile ? (e) => {
             const scrollTop = e.currentTarget.scrollTop
             const heroImg = e.currentTarget.querySelector('[data-hero-img]') as HTMLElement
