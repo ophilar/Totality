@@ -154,7 +154,7 @@ describe('targeted music inventory safety', () => {
     const deleteMusicTrack = vi.fn()
     const getMusicTrackByPath = vi.fn().mockReturnValue({ id: 42 })
     vi.mocked(getDatabase).mockReturnValue({
-      getSetting: vi.fn().mockReturnValue('false'),
+      getSetting: vi.fn().mockImplementation((key: string) => key === 'ffprobe_batch_size' ? null : 'false'),
       getMusicTrackByPath, deleteMusicTrack,
     } as never)
     vi.mocked(getMediaFileAnalyzer).mockReturnValue({ isAvailable: vi.fn().mockResolvedValue(false) } as never)
@@ -176,7 +176,7 @@ describe('targeted music inventory safety', () => {
     vi.mocked(fs.promises.readdir).mockRejectedValue(new Error('volume unavailable'))
     const deleteMusicTrack = vi.fn()
     vi.mocked(getDatabase).mockReturnValue({
-      getSetting: vi.fn().mockReturnValue('false'),
+      getSetting: vi.fn().mockImplementation((key: string) => key === 'ffprobe_batch_size' ? null : 'false'),
       deleteMusicTrack,
       getMusicTracks: vi.fn().mockReturnValue([{ id: 42, file_path: '/music/kept.flac' }]),
     } as never)
