@@ -37,7 +37,7 @@ import { getTaskQueueService } from './TaskQueueService'
 import { buildOptimizationSavingsBreakdown, calculateBitrateSavingsBytes, projectMeasuredSavingsBytes, sumMeasuredStreamBytes, type OptimizationSavingsCoverage, type OptimizationSavingsOperation } from './OptimizationSavingsService'
 import { normalizeAudioCodec, normalizeVideoCodec } from './MediaNormalizer'
 import { DEFAULT_OPTIMIZATION_VIDEO_CODEC, getOptimizationVideoCodec, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
-import { supportsMeasuredOptimizationEncoder } from './transcoding/OptimizationEncoderPolicy'
+import { isMeasuredSoftwareEncoder, supportsMeasuredOptimizationEncoder } from './transcoding/OptimizationEncoderPolicy'
 import { ValidatedFileAnalysisCache } from './transcoding/ValidatedFileAnalysisCache'
 import { aggregateShowOptimizationMetrics } from './ShowOptimizationMetricsService'
 import { SETTING_KEYS } from '@shared/settingKeys'
@@ -1019,7 +1019,7 @@ export class TranscodingService {
                 Object.assign(options, measuredParameters)
               }
             }
-            options.useGpu = options.encoder !== 'x265' && options.encoder !== 'svt_av1'
+            options.useGpu = !isMeasuredSoftwareEncoder(options.encoder ?? '')
             if (!options.useGpu) options.gpuId = undefined
           }
           params = await this.getTranscodeParameters(episode.file_path, options)
@@ -2557,7 +2557,7 @@ export class TranscodingService {
     })
     const isMeasured = (candidate: CandidateEncodingParameters) => measuredCandidates.some(measured => measured.encoder === candidate.encoder && measured.preset === candidate.preset && measured.quality === candidate.quality)
     const buildCandidates = (parameters: CandidateEncodingParameters[]) => parameters.filter(candidate => !isMeasured(candidate)).map(candidate => {
-      const useGpu = candidate.encoder !== 'x265' && candidate.encoder !== 'svt_av1'
+      const useGpu = !isMeasuredSoftwareEncoder(candidate.encoder)
       const candidateOptions = {
         ...options,
         useGpu,
