@@ -18,7 +18,7 @@ import type { ShowOptimizationDiscovery } from './transcoding/types'
 import { formatLanguage, getOptimizationContainer, isSameLanguage, LANGUAGE_OPTIONS, parseLanguageWhitelist, toIso639_2 } from './mediaUtils'
 import { SETTING_KEYS } from '@shared/settingKeys'
 import { normalizeVideoCodec } from '@main/services/MediaNormalizer'
-import { OPTIMIZATION_VIDEO_CODECS, getOptimizationVideoCodec, playbackProfileSupportsOptimizationCodec } from '@main/services/transcoding/OptimizationCodecPolicy'
+import { OPTIMIZATION_VIDEO_CODECS, getOptimizationVideoCodec, playbackProfileSupportsOptimizationCodec , type OptimizationVideoCodec } from '@main/services/transcoding/OptimizationCodecPolicy'
 import { availableOptimizationEncoders, supportedOptimizationCodecs } from '@main/services/transcoding/OptimizationEncoderPolicy'
 import { describeMissingOptimizationSettings, getMissingOptimizationSettings } from './transcoding/readiness'
 import { SeriesOptimizationFlow, type SeriesOptimizationFlowProps } from './SeriesOptimizationFlow'
@@ -200,7 +200,7 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
       if (configuration.encoderPolicy === 'software') return [codec, `Software encoding for ${label} is unavailable.`]
       if (configuration.encoderPolicy === 'hardware') return [codec, selectedGpu ? `${selectedGpu.name} cannot encode ${label}.` : `Choose a GPU that supports ${label}.`]
       return [codec, `No compatible ${label} encoder is available.`]
-    })) as Partial<Record<'hevc' | 'av1', string>>
+    })) as Partial<Record<OptimizationVideoCodec, string>>
   const originalAudioLanguageOptions = useMemo<AudioLanguageOption[]>(() => {
     const detected = (optimizationDecision?.trackRemoval.tracks ?? [])
       .map(track => track.language)
@@ -275,7 +275,7 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
       }
 
       const defaultEngine = capabilities?.engines?.[0] || 'ffmpeg'
-      const hardwareSupports = (gpu: NonNullable<typeof capabilities>['gpus'][number], codec: 'hevc' | 'av1' | '') =>
+      const hardwareSupports = (gpu: NonNullable<typeof capabilities>['gpus'][number], codec: OptimizationVideoCodec | '') =>
         Boolean(codec && availableOptimizationEncoders(codec, { gpus: [gpu], deviceEncoders: capabilities?.deviceEncoders ?? {}, selectedGpuId: gpu.id }).selectedHardware)
       const profile = targetProfiles.find(candidate => candidate.id === configuredTargetProfileId)
       const preferredCodec = supportedOptimizationCodecs({
