@@ -609,7 +609,7 @@ export class TranscodingService {
    * Cached files referenced by reviews or active work must remain available.
    */
   private async pruneMeasuredSamples(): Promise<void> {
-    if (Date.now() - this.sampleCacheLastPrunedAt < 24 * 60 * 60 * 1000) return
+    if (Date.now() - this.sampleCacheLastPrunedAt < APP_CONFIG.transcoding.measuredSampleCache.pruneIntervalMs) return
     if (this.sampleCachePrunePromise) return this.sampleCachePrunePromise
     this.sampleCachePrunePromise = (async () => {
       const db = getDatabase()
@@ -2882,12 +2882,23 @@ export class TranscodingService {
           return isWithinSampleDirectory(sample.samplePath)
         })
       if (!valid) throw new Error('Cached measurement record does not match its source or cache directory')
-      const actualHashes = await Promise.all(cached.candidates.map(candidate => Promise.all((candidate.samplePaths ?? []).map(sha256File))))
+      // A sample may be referenced by several candidates or preparation records.
+      // Hash each pathname once during this validation; future validations rehash it.
+      const validatedHashes = new Map<string, Promise<string>>()
+      const hashOnce = (filePath: string): Promise<string> => {
+        let pending = validatedHashes.get(filePath)
+        if (!pending) {
+          pending = sha256File(filePath)
+          validatedHashes.set(filePath, pending)
+        }
+        return pending
+      }
+      const actualHashes = await Promise.all(cached.candidates.map(candidate => Promise.all((candidate.samplePaths ?? []).map(hashOnce))))
       if (actualHashes.some((hashes, candidateIndex) => hashes.some((hash, index) => hash !== cached.sampleHashes[candidateIndex][index]))) throw new Error('Cached sample content changed')
-      const actualPartialHashes = await Promise.all(cached.partialSamples.map(sample => sha256File(sample.samplePath)))
+      const actualPartialHashes = await Promise.all(cached.partialSamples.map(sample => hashOnce(sample.samplePath)))
       if (actualPartialHashes.some((hash, index) => hash !== cached.partialSampleHashes[index])) throw new Error('Cached partial sample content changed')
       if (cached.sourcePreparation) {
-        const actualSourcePreparationHashes = await Promise.all(cached.sourcePreparation.samples.map(sample => Promise.all([sample.sourcePath, ...(sample.referencePath ? [sample.referencePath] : [])].map(sha256File))))
+        const actualSourcePreparationHashes = await Promise.all(cached.sourcePreparation.samples.map(sample => Promise.all([sample.sourcePath, ...(sample.referencePath ? [sample.referencePath] : [])].map(hashOnce))))
         if (actualSourcePreparationHashes.some((hashes, index) => hashes.some((hash, pathIndex) => hash !== cached.sourcePreparationHashes![index][pathIndex]))) throw new Error('Cached source preparation content changed')
       }
       const searchComplete = cached.searchVersion === OPTIMIZATION_SEARCH_VERSION && cached.complete

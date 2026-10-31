@@ -29,7 +29,10 @@
   "workers": {
     "ffprobe": {
       "maxQueueDepth": 10000,
-      "defaultWorkersLimit": 4
+      "defaultWorkersLimit": 4,
+      "defaultVideoBatchSize": 25,
+      "defaultMusicBatchSize": 50,
+      "maxBatchSize": 128
     }
   },
   "monitoring": {
@@ -109,6 +112,12 @@
     "encoderProbeWidth": 640,
     "encoderProbeHeight": 360,
     "sampleDurationSeconds": 30,
+    "measuredSampleCache": {
+      "maxBytes": 5368709120,
+      "maxAgeMs": 2592000000,
+      "minEvictionAgeMs": 604800000,
+      "pruneIntervalMs": 86400000
+    },
     "sampleQualityDomains": {
       "x265": [18, 22, 26],
       "svt_av1": [24, 32, 40],

@@ -50,6 +50,7 @@ import { getDatabase } from '@main/database/getDatabase'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { getFileNameParser } from '@main/services/FileNameParser'
 import { LocalFolderProvider, isExtrasContent, readFfprobeBatchSize } from '@main/providers/local/LocalFolderProvider'
+import { APP_CONFIG } from '@main/config'
 
 describe('isExtrasContent', () => {
   it('detects sample files', () => {
@@ -134,14 +135,23 @@ describe('isExtrasContent', () => {
 })
 
 describe('ffprobe batch-size validation', () => {
-  it('uses the documented default only for absent settings', () => {
-    expect(readFfprobeBatchSize(null, 25)).toBe(25)
-    expect(readFfprobeBatchSize('', 50)).toBe(50)
-    expect(readFfprobeBatchSize('8', 25)).toBe(8)
-    expect(readFfprobeBatchSize('128', 25)).toBe(128)
+  it('uses one configured upper bound for all local scan modes', () => {
+    const policy = APP_CONFIG.workers.ffprobe
+    expect(readFfprobeBatchSize(null, policy.defaultVideoBatchSize)).toBe(policy.defaultVideoBatchSize)
+    expect(readFfprobeBatchSize(null, policy.defaultMusicBatchSize)).toBe(policy.defaultMusicBatchSize)
+    expect(readFfprobeBatchSize(String(policy.maxBatchSize), policy.defaultVideoBatchSize)).toBe(policy.maxBatchSize)
+    expect(() => readFfprobeBatchSize(String(policy.maxBatchSize + 1), policy.defaultMusicBatchSize)).toThrow('ffprobe_batch_size')
   })
 
-  it.each(['0', '-1', 'NaN', '1.5', '3junk', '129', 'Infinity'])(
+  it('uses the documented default only for absent settings', () => {
+    const { defaultVideoBatchSize, defaultMusicBatchSize, maxBatchSize } = APP_CONFIG.workers.ffprobe
+    expect(readFfprobeBatchSize(null, defaultVideoBatchSize)).toBe(defaultVideoBatchSize)
+    expect(readFfprobeBatchSize('', defaultMusicBatchSize)).toBe(defaultMusicBatchSize)
+    expect(readFfprobeBatchSize('8', defaultVideoBatchSize)).toBe(8)
+    expect(readFfprobeBatchSize(String(maxBatchSize), defaultVideoBatchSize)).toBe(maxBatchSize)
+  })
+
+  it.each(['0', '-1', 'NaN', '1.5', '3junk', 'Infinity'])(
     'rejects a non-advancing or invalid setting %s', value => {
       expect(() => readFfprobeBatchSize(value, 25)).toThrow('ffprobe_batch_size')
     },

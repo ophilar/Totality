@@ -1,9 +1,6 @@
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
-
-export const MEASURED_SAMPLE_CACHE_MAX_BYTES = 5 * 1024 ** 3
-export const MEASURED_SAMPLE_CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
-const MIN_EVICTION_AGE_MS = 7 * 24 * 60 * 60 * 1000
+import { APP_CONFIG } from '@main/config'
 const HASH_DIRECTORY = /^[a-f0-9]{64}$/
 
 /** Only account for ordinary files and directories. Never traverse symbolic links. */
@@ -36,7 +33,8 @@ export interface MeasuredSampleRetentionOptions {
 export async function pruneMeasuredSampleCache(options: MeasuredSampleRetentionOptions): Promise<{ removed: number; reclaimedBytes: number }> {
   const { root, records, protectedKeys, settingPrefix, deleteRecord } = options
   const now = options.now ?? Date.now()
-  const maxBytes = options.maxBytes ?? MEASURED_SAMPLE_CACHE_MAX_BYTES
+  const policy = APP_CONFIG.transcoding.measuredSampleCache
+  const maxBytes = options.maxBytes ?? policy.maxBytes
   if (!Number.isFinite(maxBytes) || maxBytes < 0) throw new Error('Invalid measured-sample cache capacity')
   let entries: import('node:fs').Dirent[]
   try {
@@ -74,9 +72,9 @@ export async function pruneMeasuredSampleCache(options: MeasuredSampleRetentionO
   let reclaimedBytes = 0
   for (const candidate of candidates) {
     const ageMs = now - candidate.mtimeMs
-    const expired = ageMs >= MEASURED_SAMPLE_CACHE_MAX_AGE_MS
-    const overBudget = totalBytes > maxBytes && ageMs >= MIN_EVICTION_AGE_MS
-    if (!expired && !(candidate.orphan && ageMs >= MIN_EVICTION_AGE_MS) && !overBudget) continue
+    const expired = ageMs >= policy.maxAgeMs
+    const overBudget = totalBytes > maxBytes && ageMs >= policy.minEvictionAgeMs
+    if (!expired && !(candidate.orphan && ageMs >= policy.minEvictionAgeMs) && !overBudget) continue
     if (options.isActive?.(candidate.key)) continue
     if (!candidate.orphan) await deleteRecord(`${settingPrefix}${candidate.key}`)
     await fs.rm(candidate.directory, { recursive: true, force: true })

@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readdir, rm, stat, utimes, writeFile } from 'node:fs/pr
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pruneMeasuredSampleCache } from '@main/services/transcoding/MeasuredSampleCacheRetention'
+import { APP_CONFIG } from '@main/config'
 
 describe('measured-sample disk cache retention', () => {
   const roots: string[] = []
@@ -56,6 +57,20 @@ describe('measured-sample disk cache retention', () => {
     })
     expect(result.removed).toBe(0)
     expect(await readdir(dir)).toEqual(['user-made-directory'])
+  })
+
+  it('respects the centrally configured minimum retention age even above budget', async () => {
+    const dir = await root()
+    const recent = key('a')
+    const minAge = APP_CONFIG.transcoding.measuredSampleCache.minEvictionAgeMs
+    await sample(dir, recent, new Date(now - minAge + 1000))
+    const record = { [prefix + recent]: JSON.stringify({ cacheKey: recent, complete: true }) }
+    const result = await pruneMeasuredSampleCache({
+      root: dir, records: record, protectedKeys: new Set(), settingPrefix: prefix,
+      deleteRecord: vi.fn(), now, maxBytes: 0,
+    })
+    expect(result.removed).toBe(0)
+    expect(await readdir(dir)).toContain(recent)
   })
 
   it('preserves active old cache entries even when over budget', async () => {

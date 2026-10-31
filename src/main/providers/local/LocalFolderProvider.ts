@@ -38,13 +38,14 @@ import type { MediaItem, MediaItemVersion, AudioTrack } from '../../types/databa
 import { extractVersionNames } from '../utils/VersionNaming'
 import { groupByMediaIdentity, scoreVersion } from '../utils/ProviderUtils'
 import { AudioCodecRanker } from '../../services/AudioCodecRanker'
+import { APP_CONFIG } from '../../config'
 
 /** Reject invalid batch settings rather than enter a non-advancing scan loop. */
 export function readFfprobeBatchSize(setting: string | null | undefined, defaultSize: number): number {
   if (setting == null || setting.trim() === '') return defaultSize
   const size = Number(setting)
-  if (!Number.isSafeInteger(size) || size < 1 || size > 128) {
-    throw new Error('Invalid ffprobe_batch_size: expected an integer from 1 to 128')
+  if (!Number.isSafeInteger(size) || size < 1 || size > APP_CONFIG.workers.ffprobe.maxBatchSize) {
+    throw new Error(`Invalid ffprobe_batch_size: expected an integer from 1 to ${APP_CONFIG.workers.ffprobe.maxBatchSize}`)
   }
   return size
 }
@@ -475,7 +476,7 @@ export class LocalFolderProvider implements MediaProvider {
 
       // Parallel FFprobe settings
       const ffprobeParallelEnabled = db.getSetting('ffprobe_parallel_enabled') !== 'false'
-      const ffprobeBatchSize = readFfprobeBatchSize(db.getSetting('ffprobe_batch_size'), 25)
+      const ffprobeBatchSize = readFfprobeBatchSize(db.getSetting('ffprobe_batch_size'), APP_CONFIG.workers.ffprobe.defaultVideoBatchSize)
 
       const scannedFilePaths = new Set<string>()
       const scanType = libraryType === 'movies' ? 'movie' : 'episode'
@@ -2043,7 +2044,7 @@ export class LocalFolderProvider implements MediaProvider {
 
       // Parallel FFprobe settings
       const ffprobeParallelEnabled = db.getSetting('ffprobe_parallel_enabled') !== 'false'
-      const ffprobeBatchSize = readFfprobeBatchSize(db.getSetting('ffprobe_batch_size'), 50)
+      const ffprobeBatchSize = readFfprobeBatchSize(db.getSetting('ffprobe_batch_size'), APP_CONFIG.workers.ffprobe.defaultMusicBatchSize)
 
       if (mbNameCorrectionEnabled) {
         console.log(`[LocalFolderProvider ${this.sourceId}] MusicBrainz name correction enabled`)
