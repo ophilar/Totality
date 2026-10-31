@@ -181,6 +181,44 @@ describe('targeted music inventory safety', () => {
     expect(deleteMusicTrack).not.toHaveBeenCalled()
   })
 
+  it('skips filename parsing and MusicBrainz on an unchanged file with equal size and mtime', async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.promises.readdir).mockResolvedValue([
+      { name: 'unchanged.flac', isDirectory: () => false },
+    ] as never)
+    vi.mocked(fs.promises.stat).mockResolvedValue({
+      size: 123, mtime: new Date(1700000000000),
+    } as never)
+    const parseMusic = vi.fn()
+    const db = {
+      getSetting: vi.fn().mockImplementation((key: string) =>
+        key === 'ffprobe_batch_size' ? null : key === 'musicbrainz_name_correction' ? 'true' : 'false'),
+      getMusicTrackByPath: vi.fn().mockReturnValue({
+        id: 1, file_path: '/music/unchanged.flac', file_mtime: 1700000000000, file_size: 123,
+      }),
+      getMusicTracks: vi.fn().mockReturnValue([]),
+      startBatch: vi.fn(), endBatch: vi.fn().mockResolvedValue(undefined),
+      forceSave: vi.fn().mockResolvedValue(undefined),
+      updateSourceScanTime: vi.fn().mockResolvedValue(undefined),
+      deleteMusicTrack: vi.fn(),
+    }
+    vi.mocked(getDatabase).mockReturnValue(db as never)
+    vi.mocked(getMediaFileAnalyzer).mockReturnValue({ isAvailable: vi.fn().mockResolvedValue(false) } as never)
+    vi.mocked(getFileNameParser).mockReturnValue({
+      isAudioFile: vi.fn().mockReturnValue(true), parseMusic,
+    } as never)
+    const provider = new LocalFolderProvider({
+      sourceId: 'local-library',
+      connectionConfig: { folderPath: '/music', mediaType: 'music' },
+    } as never)
+    const result = await provider.scanLibrary('music')
+    expect(result.success).toBe(true)
+    expect(result.itemsScanned).toBe(1)
+    expect(parseMusic).not.toHaveBeenCalled()
+    expect(db.getMusicTrackByPath).toHaveBeenCalledWith('/music/unchanged.flac')
+    expect(db.deleteMusicTrack).not.toHaveBeenCalled()
+  })
+
   it('fails closed when a full music inventory cannot read a directory', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true)
     vi.mocked(fs.promises.readdir).mockRejectedValue(new Error('volume unavailable'))
