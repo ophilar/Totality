@@ -27,7 +27,7 @@ import { TaskType } from '@main/types/database'
 import { SETTING_KEYS } from '@shared/settingKeys'
 import { normalizeVideoCodec } from '@main/services/MediaNormalizer'
 import { OPTIMIZATION_VIDEO_CODECS, getOptimizationVideoCodec, chooseOptimizationVideoCodec, playbackProfileSupportsOptimizationCodec , type OptimizationVideoCodec } from '@main/services/transcoding/OptimizationCodecPolicy'
-import { availableOptimizationEncoders, supportedOptimizationCodecs } from '@main/services/transcoding/OptimizationEncoderPolicy'
+import { availableOptimizationEncoders, supportedOptimizationCodecs, unsupportedOptimizationCodecReason } from '@main/services/transcoding/OptimizationEncoderPolicy'
 import { OptimizationDialogShell } from './transcoding/OptimizationDialogShell'
 import { optimizationAudioCodecOptions, optimizationContainerOptions } from './transcoding/optimizationOptions'
 import { optimizationCandidateReasonLabel } from './transcoding/optimizationCandidateLabels'
@@ -876,16 +876,21 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
       playbackPolicy,
       playbackCodecs: targetProfile?.definition.video.codecs,
     })
-  const unsupportedTargetCodecReasons = Object.fromEntries(OPTIMIZATION_VIDEO_CODECS.map(item => item.value)
-    .filter(candidate => !supportedTargetCodecs.includes(candidate))
-    .map(candidate => {
-      const label = getOptimizationVideoCodec(candidate).shortLabel
-      if (!playbackProfileSupportsOptimizationCodec(candidate, targetProfile?.definition.video.codecs)) return [candidate, `Not supported by ${targetProfile?.name}.`]
-      if (!encoderCapabilitiesLoaded) return [candidate, 'Checking encoder support.']
-      if (encoderPolicy === 'software') return [candidate, `Software encoding for ${label} is unavailable.`]
-      if (encoderPolicy === 'hardware') return [candidate, gpus.find(gpu => gpu.id === gpuId) ? `${gpus.find(gpu => gpu.id === gpuId)?.name} cannot encode ${label}.` : `Choose a GPU that supports ${label}.`]
-      return [candidate, `No compatible ${label} encoder is available.`]
-    })) as Partial<Record<OptimizationVideoCodec, string>>
+  const unsupportedTargetCodecReasons = Object.fromEntries(
+    OPTIMIZATION_VIDEO_CODECS.map(item => item.value)
+      .filter(candidate => !supportedTargetCodecs.includes(candidate))
+      .map(candidate => [candidate, unsupportedOptimizationCodecReason(candidate, {
+        gpus,
+        deviceEncoders,
+        selectedGpuId: gpuId,
+        selectedGpuName: gpus.find(gpu => gpu.id === gpuId)?.name,
+        encoderPolicy,
+        playbackPolicy,
+        playbackCodecs: targetProfile?.definition.video.codecs,
+        playbackTargetName: targetProfile?.name,
+        capabilitiesLoaded: encoderCapabilitiesLoaded,
+      })])
+  ) as Partial<Record<OptimizationVideoCodec, string>>
   const missingSettings = getMissingSettings()
   const queueableEpisodeCount = preflightData?.episodes.filter(episode =>
     episode.compatible && (episode.decisionStatus === 'actionable' || episode.decisionStatus === 'sample_required'),
