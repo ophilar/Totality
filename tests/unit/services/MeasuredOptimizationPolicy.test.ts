@@ -109,9 +109,9 @@ describe('selectMeasuredCandidate', () => {
   })
 
   it('automatically searches one representative speed preset but permits explicit comparisons', () => {
-    const automatic = buildCandidateLadder('hevc', 'automatic', 'hevc_nvenc')
+    const automatic = buildCandidateLadder('hevc', 'automatic', 'nvenc_h265')
     expect(new Set(automatic.map(item => item.preset)).size).toBe(1)
-    expect(new Set(buildCandidateLadder('hevc', 'compare', 'hevc_nvenc').map(item => item.preset)).size).toBeGreaterThan(1)
+    expect(new Set(buildCandidateLadder('hevc', 'compare', 'nvenc_h265').map(item => item.preset)).size).toBeGreaterThan(1)
   })
 
   it('moves to the next preset after adaptively completing the earlier preset domain', () => {
