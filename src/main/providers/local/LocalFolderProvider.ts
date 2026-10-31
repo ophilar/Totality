@@ -39,6 +39,9 @@ import { extractVersionNames } from '../utils/VersionNaming'
 import { groupByMediaIdentity, scoreVersion } from '../utils/ProviderUtils'
 import { AudioCodecRanker } from '../../services/AudioCodecRanker'
 
+type MovieMetadataCache = Map<string, { tmdbId: number; title: string; originalLanguage: string; year?: number; posterPath?: string; backdropPath?: string } | null>
+type SeriesMetadataCache = Map<string, { tmdbId: number; name: string; originalLanguage: string; posterPath?: string; seasonPosters: Map<number, string | null> } | null>
+
 export interface LocalFolderConfig {
   folderPath: string
   mediaType: 'movies' | 'tvshows' | 'music' | 'mixed'
@@ -496,10 +499,10 @@ export class LocalFolderProvider implements MediaProvider {
       db.startBatch()
 
       // Cache for series TMDB lookups - avoids searching for same series 50+ times
-      const seriesTmdbCache = new Map<string, { tmdbId: number; name: string; originalLanguage: string; posterPath?: string; seasonPosters: Map<number, string | null> } | null>()
+      const seriesTmdbCache = new SeriesMetadataCache()
 
       // Cache for movie TMDB lookups - avoids redundant searches for same movie
-      const movieTmdbCache = new Map<string, { tmdbId: number; title: string; originalLanguage: string; year?: number; posterPath?: string; backdropPath?: string } | null>()
+      const movieTmdbCache = new MovieMetadataCache()
 
       // Structure to hold pre-processed file info for batch FFprobe
       interface FileToProcess {
@@ -560,25 +563,9 @@ export class LocalFolderProvider implements MediaProvider {
                 continue
               }
 
-              // Parse filename
-              const folderContext = path.dirname(relativePath)
-              const parsed = parser.parse(path.basename(filePath), folderContext)
-
-              if (!parsed || (scanType === 'movie' && parsed.type !== 'movie') ||
-                  (scanType === 'episode' && parsed.type !== 'episode')) {
-                continue
-              }
-
-              // Create base metadata (includes TMDB lookup)
-              let metadata: MediaMetadata
-
-              if (parsed.type === 'movie') {
-                const movieInfo = parsed as ParsedMovieInfo
-                metadata = await this.createMovieMetadata(filePath, movieInfo, tmdbConfigured, tmdb, movieTmdbCache)
-              } else {
-                const episodeInfo = parsed as ParsedEpisodeInfo
-                metadata = await this.createEpisodeMetadata(filePath, episodeInfo, tmdbConfigured, tmdb, seriesTmdbCache)
-              }
+              const prepared = await this.prepareVideoMetadata(filePath, relativePath, stat.size, scanType, tmdbConfigured, tmdb, movieTmdbCache, seriesTmdbCache)
+              if (!prepared) continue
+              const { parsed, metadata } = prepared
 
               // Collect file for processing
               filesToProcess.push({ filePath, relativePath, fileMtime, parsed: parsed as ParsedMovieInfo | ParsedEpisodeInfo, metadata })
@@ -853,10 +840,10 @@ export class LocalFolderProvider implements MediaProvider {
       db.startBatch()
 
       // Cache for series TMDB lookups - avoids searching for same series multiple times
-      const seriesTmdbCache = new Map<string, { tmdbId: number; name: string; originalLanguage: string; posterPath?: string; seasonPosters: Map<number, string | null> } | null>()
+      const seriesTmdbCache = new SeriesMetadataCache()
 
       // Cache for movie TMDB lookups - avoids redundant searches for same movie
-      const movieTmdbCache = new Map<string, { tmdbId: number; title: string; originalLanguage: string; year?: number; posterPath?: string; backdropPath?: string } | null>()
+      const movieTmdbCache = new MovieMetadataCache()
 
       try {
         for (let i = 0; i < validFiles.length; i++) {
@@ -880,25 +867,10 @@ export class LocalFolderProvider implements MediaProvider {
             const existingItem = db.getMediaItemByPath(filePath)
             const isNew = !existingItem
 
-            // Parse filename
-            const folderContext = path.dirname(relativePath)
-            const parsed = parser.parse(path.basename(filePath), folderContext)
-
-            if (!parsed || (scanType === 'movie' && parsed.type !== 'movie') ||
-                (scanType === 'episode' && parsed.type !== 'episode')) {
-              continue
-            }
-
-            // Create base metadata
-            let metadata: MediaMetadata
-
-            if (parsed.type === 'movie') {
-              const movieInfo = parsed as ParsedMovieInfo
-              metadata = await this.createMovieMetadata(filePath, movieInfo, tmdbConfigured, tmdb, movieTmdbCache)
-            } else {
-              const episodeInfo = parsed as ParsedEpisodeInfo
-              metadata = await this.createEpisodeMetadata(filePath, episodeInfo, tmdbConfigured, tmdb, seriesTmdbCache)
-            }
+            const prepared = await this.prepareVideoMetadata(filePath, relativePath, stat.size, scanType, tmdbConfigured, tmdb, movieTmdbCache, seriesTmdbCache)
+            if (!prepared) continue
+            const { parsed } = prepared
+            let { metadata } = prepared
 
             // Analyze with FFprobe if available
             if (ffprobeAvailable) {
@@ -1388,14 +1360,33 @@ export class LocalFolderProvider implements MediaProvider {
     }
   }
 
+  /** Shared filename and metadata policy for full and targeted scans. */
+  private async prepareVideoMetadata(
+    filePath: string,
+    relativePath: string,
+    fileSize: number,
+    scanType: 'movie' | 'episode',
+    tmdbConfigured: boolean,
+    tmdb: ReturnType<typeof getTMDBService>,
+    movieCache: MovieMetadataCache,
+    seriesCache: SeriesMetadataCache,
+  ): Promise<{ parsed: ParsedMovieInfo | ParsedEpisodeInfo; metadata: MediaMetadata } | undefined> {
+    const parsed = getFileNameParser().parse(path.basename(filePath), path.dirname(relativePath))
+    if (!parsed || (scanType === 'movie' && parsed.type !== 'movie') || (scanType === 'episode' && parsed.type !== 'episode')) return undefined
+    const metadata = parsed.type === 'movie'
+      ? await this.createMovieMetadata(filePath, parsed as ParsedMovieInfo, tmdbConfigured, tmdb, movieCache, fileSize)
+      : await this.createEpisodeMetadata(filePath, parsed as ParsedEpisodeInfo, tmdbConfigured, tmdb, seriesCache, fileSize)
+    return { parsed: parsed as ParsedMovieInfo | ParsedEpisodeInfo, metadata }
+  }
+
   private async createMovieMetadata(
     filePath: string,
     parsed: ParsedMovieInfo,
     fetchFromTMDB: boolean,
     tmdb: ReturnType<typeof getTMDBService>,
-    movieTmdbCache?: Map<string, { tmdbId: number; title: string; originalLanguage: string; year?: number; posterPath?: string; backdropPath?: string } | null>
+    movieTmdbCache: MovieMetadataCache,
+    fileSize: number,
   ): Promise<MediaMetadata> {
-    const stats = await fs.promises.stat(filePath)
 
     const metadata: MediaMetadata = {
       providerId: this.sourceId,
@@ -1405,7 +1396,7 @@ export class LocalFolderProvider implements MediaProvider {
       type: 'movie',
       year: parsed.year,
       filePath,
-      fileSize: stats.size,
+      fileSize,
       resolution: parsed.resolution,
       videoCodec: parsed.codec,
     }
@@ -1627,9 +1618,9 @@ export class LocalFolderProvider implements MediaProvider {
     parsed: ParsedEpisodeInfo,
     fetchFromTMDB: boolean,
     tmdb: ReturnType<typeof getTMDBService>,
-    seriesTmdbCache?: Map<string, { tmdbId: number; name: string; originalLanguage: string; posterPath?: string; seasonPosters: Map<number, string | null> } | null>
+    seriesTmdbCache: SeriesMetadataCache,
+    fileSize: number,
   ): Promise<MediaMetadata> {
-    const stats = await fs.promises.stat(filePath)
 
     const metadata: MediaMetadata = {
       providerId: this.sourceId,
@@ -1642,7 +1633,7 @@ export class LocalFolderProvider implements MediaProvider {
       episodeNumber: parsed.episodeNumber,
       year: parsed.year,
       filePath,
-      fileSize: stats.size,
+      fileSize,
       resolution: parsed.resolution,
       videoCodec: parsed.codec,
     }
