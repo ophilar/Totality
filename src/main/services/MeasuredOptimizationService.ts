@@ -128,38 +128,48 @@ export function verifySampleFrameAlignment(source: SampleTimingEvidence, output:
 }
 
 export class MeasuredOptimizationService {
-  private readonly filterListings = new Map<string, Promise<string>>()
-  private readonly measurementFingerprints = new Map<string, Promise<string>>()
+  private static readonly PROBE_CACHE_TTL_MS = 10 * 60 * 1000
+  private static readonly MAX_PROBED_BINARIES = 8
+  private readonly filterListings = new Map<string, { value: Promise<string>; expiresAt: number }>()
+  private readonly measurementFingerprints = new Map<string, { value: Promise<string>; expiresAt: number }>()
 
   constructor(private readonly processRunner: MeasurementProcessRunner = new ChildProcessMeasurementRunner()) {}
 
+  private rememberProbe(
+    cache: Map<string, { value: Promise<string>; expiresAt: number }>,
+    binary: string,
+    value: Promise<string>,
+  ): Promise<string> {
+    cache.delete(binary)
+    cache.set(binary, { value, expiresAt: Date.now() + MeasuredOptimizationService.PROBE_CACHE_TTL_MS })
+    while (cache.size > MeasuredOptimizationService.MAX_PROBED_BINARIES) cache.delete(cache.keys().next().value!)
+    return value
+  }
+
   private getFilterListing(binary: string): Promise<string> {
     const cached = this.filterListings.get(binary)
-    if (cached) return cached
-
+    if (cached && cached.expiresAt > Date.now()) return cached.value
     const listing = this.processRunner.run(binary, ['-hide_banner', '-filters']).catch(error => {
-      this.filterListings.delete(binary)
+      if (this.filterListings.get(binary)?.value === listing) this.filterListings.delete(binary)
       throw error
     })
-    this.filterListings.set(binary, listing)
-    return listing
+    return this.rememberProbe(this.filterListings, binary, listing)
   }
 
   getMeasurementFingerprint(): Promise<string> {
     const binary = getMediaFileAnalyzer().getFFmpegPath()
     if (!binary) throw new Error('FFmpeg is unavailable for measured optimization')
     const cached = this.measurementFingerprints.get(binary)
-    if (cached) return cached
+    if (cached && cached.expiresAt > Date.now()) return cached.value
 
     const fingerprint = Promise.all([
       this.processRunner.run(binary, ['-version']),
       this.processRunner.run(binary, ['-hide_banner', '-h', 'filter=libvmaf']),
     ]).then(([version, filterHelp]) => createHash('sha256').update(JSON.stringify({ version, filterHelp, model: VMAF_MODEL_VERSION })).digest('hex')).catch(error => {
-      this.measurementFingerprints.delete(binary)
+      if (this.measurementFingerprints.get(binary)?.value === fingerprint) this.measurementFingerprints.delete(binary)
       throw error
     })
-    this.measurementFingerprints.set(binary, fingerprint)
-    return fingerprint
+    return this.rememberProbe(this.measurementFingerprints, binary, fingerprint)
   }
 
   private async inspectSample(filePath: string, signal?: AbortSignal): Promise<SampleTimingEvidence & { durationSeconds: number }> {
