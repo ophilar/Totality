@@ -39,6 +39,8 @@ import { normalizeAudioCodec, normalizeVideoCodec } from './MediaNormalizer'
 import { DEFAULT_OPTIMIZATION_VIDEO_CODEC, getOptimizationVideoCodec, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
 import { isMeasuredSoftwareEncoder, supportsMeasuredOptimizationEncoder } from './transcoding/OptimizationEncoderPolicy'
 import { ValidatedFileAnalysisCache } from './transcoding/ValidatedFileAnalysisCache'
+import { OperationFileHasher } from './transcoding/OperationFileHasher'
+import { fileIdentity, matchesFileIdentity } from './utils/FileIdentity'
 import { pruneMeasuredSampleCache } from './transcoding/MeasuredSampleCacheRetention'
 import { aggregateShowOptimizationMetrics } from './ShowOptimizationMetricsService'
 import { SETTING_KEYS } from '@shared/settingKeys'
@@ -702,6 +704,18 @@ export class TranscodingService {
     const needsHardwareSnapshot = request.options.optimizationMode !== 'remux_only' && request.options.encoderPolicy !== 'software'
     const optionsFingerprint = createHash('sha256').update(JSON.stringify({ measurementVersion: MEASUREMENT_VERSION, searchVersion: OPTIMIZATION_SEARCH_VERSION, options: request.options, representativeMediaItemId: request.representativeMediaItemId, representativeMediaItemIds: request.representativeMediaItemIds, selectedMediaItemIds: request.selectedMediaItemIds })).digest('hex')
     const queuedMediaIds = new Set((await getTaskQueueService().getTasks()).filter(task => task.type === TaskType.Transcode && ['queued', 'running'].includes(task.status)).map(task => task.mediaItemId).filter((id): id is number => id !== undefined))
+    const sourceHasher = new OperationFileHasher(sha256File, APP_CONFIG.transcoding.measuredSampleCache.maxConcurrentHashReads)
+    // The hash is reused only inside this preflight, keyed by complete file identity.
+    // Recheck identity on every reuse; queue/execute still require fresh verification.
+    const hashSource = async (filePath: string): Promise<string> => {
+      const before = await fs.stat(filePath)
+      const digest = await sourceHasher.hash(filePath, JSON.stringify([filePath, fileIdentity(before)]))
+      if (!matchesFileIdentity(before, await fs.stat(filePath))) {
+        throw new Error('Source file changed during preflight hashing; retry after it settles')
+      }
+      return digest
+    }
+
     let completedEpisodes = 0
     let completedInspections = 0
     const activeEpisodeSteps = new Map<number, string>()
@@ -937,7 +951,7 @@ export class TranscodingService {
         const audioPruningSavings = sumMeasuredStreamBytes(analysis.streamBytes, removedAudioTracks.map(track => track.index))
         const subtitlePruningSavings = sumMeasuredStreamBytes(analysis.streamBytes, removedSubtitleTracks.map(track => track.index))
         await operation?.waitUntilRunning()
-        const sourceSha256 = await sha256File(episode.file_path)
+        const sourceSha256 = await hashSource(episode.file_path)
         const measurementOptions = {
           targetCodec: options.targetCodec,
           qualityProfile: options.qualityProfile,
@@ -1021,18 +1035,11 @@ export class TranscodingService {
                 publishPreflightProgress(episode, 'Measuring encode samples for this episode')
                 let partialSamples = cachedMeasurement?.partialSamples ?? []
                 let sourcePreparation = cachedMeasurement?.sourcePreparation ?? { samples: [] }
-                const sampleHashesByPath = new Map<string, Promise<string>>()
-                const getSampleHash = (samplePath: string): Promise<string> => {
-                  const existing = sampleHashesByPath.get(samplePath)
-                  if (existing) return existing
-                  const hash = sha256File(samplePath).catch(error => {
-                    sampleHashesByPath.delete(samplePath)
-                    throw error
-                  })
-                  sampleHashesByPath.set(samplePath, hash)
-                  return hash
-                }
                 const persistMeasurement = async (candidates: MeasuredCandidate[], complete: boolean, samples: MeasuredCandidateSample[]) => {
+                  // Each persisted checkpoint rehashes actual bytes; dedupe only inside
+                  // that snapshot to avoid stale digests after an FFmpeg rewrite.
+                  const hashSnapshot = new OperationFileHasher(sha256File, APP_CONFIG.transcoding.measuredSampleCache.maxConcurrentHashReads)
+                  const getSampleHash = (samplePath: string) => hashSnapshot.hash(samplePath)
                   const completedCandidateKeys = new Set(candidates.map(candidate => `${candidate.encoder}/${candidate.preset}/${candidate.quality}`))
                   const pendingSamples = samples.filter(sample => !completedCandidateKeys.has(`${sample.encoder}/${sample.preset}/${sample.quality}`))
                   const cacheRecord: CachedMeasurement = {
@@ -1227,7 +1234,7 @@ export class TranscodingService {
           if (saved && saved.optionsFingerprint === optionsFingerprint && saved.capabilityFingerprint === capabilityFingerprint && saved.plan.sourceSha256 &&
             saved.plan.sourceSize === prepared.stat.size && saved.plan.sourceMtimeMs === prepared.stat.mtimeMs &&
             JSON.stringify(saved.plan.targetProfile) === JSON.stringify(targetProfile)) {
-            const sourceHash = await sha256File(episode.file_path!)
+            const sourceHash = await hashSource(episode.file_path!)
             const samples = saved.plan.samplePaths ?? []
             let sampleHashes: string[] = []
             try {
@@ -2892,17 +2899,10 @@ export class TranscodingService {
           return isWithinSampleDirectory(sample.samplePath)
         })
       if (!valid) throw new Error('Cached measurement record does not match its source or cache directory')
-      // A sample may be referenced by several candidates or preparation records.
-      // Hash each pathname once during this validation; future validations rehash it.
-      const validatedHashes = new Map<string, Promise<string>>()
-      const hashOnce = (filePath: string): Promise<string> => {
-        let pending = validatedHashes.get(filePath)
-        if (!pending) {
-          pending = sha256File(filePath)
-          validatedHashes.set(filePath, pending)
-        }
-        return pending
-      }
+      // Each cache validation reads current bytes afresh. Shared paths are
+      // hashed once, but concurrent disk reads are bounded for slow NAS volumes.
+      const hasher = new OperationFileHasher(sha256File, APP_CONFIG.transcoding.measuredSampleCache.maxConcurrentHashReads)
+      const hashOnce = (filePath: string) => hasher.hash(filePath)
       const actualHashes = await Promise.all(cached.candidates.map(candidate => Promise.all((candidate.samplePaths ?? []).map(hashOnce))))
       if (actualHashes.some((hashes, candidateIndex) => hashes.some((hash, index) => hash !== cached.sampleHashes[candidateIndex][index]))) throw new Error('Cached sample content changed')
       const actualPartialHashes = await Promise.all(cached.partialSamples.map(sample => hashOnce(sample.samplePath)))
