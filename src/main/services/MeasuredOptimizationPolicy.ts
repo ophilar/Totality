@@ -1,5 +1,6 @@
 
 import { APP_CONFIG } from '@main/config'
+import { getOptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
 import type { MeasurementSourcePreparation } from './MeasuredOptimizationService'
 
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
@@ -134,7 +135,7 @@ function getQualityDomainKey(encoder: string, targetCodec: 'av1' | 'hevc'): keyo
 }
 
 export function buildCandidateLadder(targetCodec: 'av1' | 'hevc', encoderPolicy: 'automatic' | 'hardware' | 'software' | 'compare', hardwareEncoder?: string): CandidateEncodingParameters[] {
-  const softwareEncoder = targetCodec === 'av1' ? 'svt_av1' : 'x265'
+  const softwareEncoder = getOptimizationVideoCodec(targetCodec).softwareEncoder
   const hardware = hardwareEncoder ?? ''
   const encoders = encoderPolicy === 'hardware' ? [hardware] : encoderPolicy === 'software' ? [softwareEncoder] : encoderPolicy === 'automatic' ? [hardware || softwareEncoder] : [hardware, softwareEncoder]
   if (encoders.some(encoder => !encoder)) throw new Error('A verified hardware encoder is required for hardware candidate measurement')
