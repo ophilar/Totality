@@ -62,3 +62,24 @@ export function supportedOptimizationCodecs(input: OptimizationEncoderAvailabili
     return encoders.software || encoders.hardware
   })
 }
+
+export function unsupportedOptimizationCodecReason(
+  codec: OptimizationVideoCodec,
+  input: OptimizationEncoderAvailability & {
+    capabilitiesLoaded: boolean
+    playbackTargetName?: string
+    selectedGpuName?: string
+  },
+): string | undefined {
+  if (supportedOptimizationCodecs(input).includes(codec)) return undefined
+  if (input.playbackPolicy !== 'allow-transcoding' && !playbackProfileSupportsOptimizationCodec(codec, input.playbackCodecs)) {
+    return `Not supported by ${input.playbackTargetName ?? 'the selected playback target'}.`
+  }
+  if (!input.capabilitiesLoaded) return 'Checking encoder support.'
+  const label = getOptimizationVideoCodec(codec).shortLabel
+  if (input.encoderPolicy === 'software') return `Software encoding for ${label} is unavailable.`
+  if (input.encoderPolicy === 'hardware') return input.selectedGpuName
+    ? `${input.selectedGpuName} cannot encode ${label} with validated measured optimization.`
+    : `Choose a GPU with validated ${label} encoding support.`
+  return `No validated ${label} encoder is available.`
+}
