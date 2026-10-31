@@ -2064,7 +2064,12 @@ export class LocalFolderProvider implements MediaProvider {
       console.log(`[LocalFolderProvider ${this.sourceId}] Found ${totalFiles} audio files`)
 
       if (totalFiles === 0) {
-        result.success = true
+        const hasStoredTracks = db.getMusicTracks({ sourceId: this.sourceId }).some(track => {
+          const relative = path.relative(musicPath, track.file_path || '')
+          return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+        })
+        if (hasStoredTracks) result.errors.push('Empty music inventory with previously indexed tracks; reconciliation skipped to protect an inaccessible mount')
+        else result.success = true
         result.durationMs = Date.now() - startTime
         return result
       }
@@ -2351,6 +2356,23 @@ export class LocalFolderProvider implements MediaProvider {
         await db.endBatch()
       }
 
+      // Only an error-free full inventory can reconcile missing database records.
+      // Never remove physical files during scanning, and never affect other source roots.
+      if (result.errors.length > 0) {
+        result.durationMs = Date.now() - startTime
+        return result
+      }
+      for (const track of db.getMusicTracks({ sourceId: this.sourceId })) {
+        if (!track.id || !track.file_path) continue
+        const relative = path.relative(musicPath, track.file_path)
+        const isInMusicRoot = relative !== '' && relative !== '..' &&
+          !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+        if (isInMusicRoot && !scannedFilePaths.has(track.file_path)) {
+          db.deleteMusicTrack(track.id)
+          result.itemsRemoved++
+        }
+      }
+
       // Update album stats (track count, duration, etc.)
       await this.updateAlbumStats(db, albumMap)
 
@@ -2381,7 +2403,7 @@ export class LocalFolderProvider implements MediaProvider {
     let directoriesProcessed = 0
 
     const scanDir = async (dir: string, depth = 0): Promise<void> => {
-      if (depth > 15) return // Prevent infinite recursion
+      if (depth > 15) throw new Error(`Music library directory depth exceeds 15 at ${dir}`)
 
       try {
         const entries = await fs.promises.readdir(dir, { withFileTypes: true })
@@ -2408,8 +2430,8 @@ export class LocalFolderProvider implements MediaProvider {
           await new Promise(resolve => setImmediate(resolve))
         }
       } catch (error) {
-        // Skip inaccessible directories
-        console.warn(`[LocalFolderProvider] Cannot access directory ${path.basename(dir)}:`, error)
+        // An incomplete inventory must not authorize reconciliation.
+        throw new Error(`Cannot complete music inventory at ${dir}: ${getErrorMessage(error)}`)
       }
     }
 
