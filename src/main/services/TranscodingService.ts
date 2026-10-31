@@ -643,7 +643,7 @@ export class TranscodingService {
       const removed = await pruneMeasuredSampleCache({
         root, records, protectedKeys,
         settingPrefix: MEASUREMENT_SETTING_PREFIX,
-        deleteRecord: key => db.config.deleteSetting(key),
+        deleteRecord: async key => { await db.config.deleteSetting(key) },
         isActive: key => (this.sampleCacheUsers.get(key) ?? 0) > 0,
       })
       this.sampleCacheLastPrunedAt = Date.now()
