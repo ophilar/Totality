@@ -153,6 +153,30 @@ function makeMusicTrack(overrides: Record<string, any> = {}) {
   }
 }
 
+describe('BetterSQLiteService — upgrading older savings schemas', () => {
+  it('adds the savings column when upgrading a 0.4.2 database that has neither column', async () => {
+    testDb = await createTestDatabase()
+    testDb.exec('ALTER TABLE quality_scores DROP COLUMN video_savings_bytes')
+
+    new BetterSQLiteService().initialize()
+
+    const columns = testDb.prepare('PRAGMA table_info(quality_scores)').all() as Array<{ name: string }>
+    expect(columns.some(column => column.name === 'video_savings_bytes')).toBe(true)
+    expect(columns.some(column => column.name === 'storage_debt_bytes')).toBe(false)
+  })
+
+  it('renames the legacy savings column rather than creating a duplicate', async () => {
+    testDb = await createTestDatabase()
+    testDb.exec('ALTER TABLE quality_scores RENAME COLUMN video_savings_bytes TO storage_debt_bytes')
+
+    new BetterSQLiteService().initialize()
+
+    const columns = testDb.prepare('PRAGMA table_info(quality_scores)').all() as Array<{ name: string }>
+    expect(columns.filter(column => column.name === 'video_savings_bytes')).toHaveLength(1)
+    expect(columns.some(column => column.name === 'storage_debt_bytes')).toBe(false)
+  })
+})
+
 // ============================================================================
 // SETTINGS
 // ============================================================================
