@@ -280,9 +280,25 @@ export interface OptimizationQualityChoice {
   alternatives?: Array<Pick<MeasuredCandidate, 'encoder' | 'preset' | 'quality' | 'outputBytes' | 'sampledDurationSeconds' | 'vmafMean' | 'vmafP5' | 'cambiMean' | 'encodingDurationMs' | 'sourceSelfVmaf' | 'sourceCambiMean'>>
 }
 
+function plannedNonVideoBytesPerSecond(analysis: FileAnalysisResult, options: TranscodeOptions): number {
+  const plan = buildStreamSelectionPlan(analysis, options)
+  const conversions = options.targetConversion?.audio ?? options.audioConversions ?? []
+  const durationSeconds = analysis.durationMs! / 1000
+  const totalBytes = [...plan.audioStreamIndexes, ...plan.subtitleStreamIndexes].reduce((total, index) => {
+    const conversion = conversions.find(track => track.sourceIndex === index)
+    const bytes = conversion?.bitrateKbps !== undefined
+      ? conversion.bitrateKbps * 1000 * durationSeconds / 8
+      : analysis.streamBytes?.[index]
+    if (bytes === undefined) throw new Error(`Measured stream byte accounting is required for retained stream ${index}`)
+    return total + bytes
+  }, 0)
+  return totalBytes / durationSeconds
+}
+
 function getOptimizationQualityChoices(
   sourceSize: number,
   sourceDurationSeconds: number,
+  nonVideoBytesPerSecond: number,
   cachedMeasurement?: CachedMeasurement,
   searchedProfile?: OptimizationQualityProfile,
 ): OptimizationQualityChoice[] {
@@ -290,13 +306,13 @@ function getOptimizationQualityChoices(
   return (['transparent', 'balanced', 'maximum_savings'] as const).map(profile => {
     if (!cachedMeasurement.complete || profile !== searchedProfile) return { profile, status: 'measurement_incomplete' }
     try {
-      const maximumOutputBytesPerSecond = sourceSize / sourceDurationSeconds
+      const maximumOutputBytesPerSecond = sourceSize / sourceDurationSeconds - nonVideoBytesPerSecond
       const candidate = selectMeasuredCandidate(profile, cachedMeasurement.candidates, maximumOutputBytesPerSecond)
       const alternatives = getNonDominatedMeasuredCandidates(profile, cachedMeasurement.candidates, maximumOutputBytesPerSecond)
       return {
         profile,
         status: 'available',
-        estimatedSavingsBytes: projectMeasuredSavingsBytes(sourceSize, sourceDurationSeconds, candidate.outputBytes, candidate.sampledDurationSeconds),
+        estimatedSavingsBytes: projectMeasuredSavingsBytes(sourceSize, sourceDurationSeconds, candidate.outputBytes + nonVideoBytesPerSecond * candidate.sampledDurationSeconds, candidate.sampledDurationSeconds),
         candidate: {
           encoder: candidate.encoder,
           preset: candidate.preset,
@@ -846,7 +862,7 @@ export class TranscodingService {
           sourceAnalysis: prepared.status === 'ready' ? prepared.analysis : undefined,
           operations: [],
           decisionStatus,
-          qualityChoices: prepared.status === 'ready' ? getOptimizationQualityChoices(prepared.stat.size, prepared.analysis.durationMs! / 1000, cachedMeasurement, request.options.qualityProfile) : undefined,
+          qualityChoices: prepared.status === 'ready' ? getOptimizationQualityChoices(prepared.stat.size, prepared.analysis.durationMs! / 1000, plannedNonVideoBytesPerSecond(prepared.analysis, request.options), cachedMeasurement, request.options.qualityProfile) : undefined,
           evidenceStatus: measuredOutcome ? 'measured' : 'insufficient',
           confidence: measuredOutcome ? 'high' : 'none',
           savingsCoverage: measuredOutcome ? 'complete' : 'insufficient',
@@ -1060,8 +1076,7 @@ export class TranscodingService {
                     candidates: candidates.map(({ playbackBlockers: _playbackBlockers, ...candidate }) => candidate),
                     sampleHashes: await Promise.all(candidates.map(candidate => Promise.all((candidate.samplePaths ?? []).map(getSampleHash)))),
                     sourcePreparation,
-                    sourcePreparationHashes: await Promise.all(sourcePreparation.samples.map(async sample => Promise.all([sample.sourcePath, ...(sample.referencePath ? [sample.referencePath] : [])].map(getSampleHash)))),
-                    partialSamples: pendingSamples,
+                                        partialSamples: pendingSamples,
                     partialSampleHashes: await Promise.all(pendingSamples.map(sample => getSampleHash(sample.samplePath))),
                   }
                   await getDatabase().config.setSetting(`${MEASUREMENT_SETTING_PREFIX}${measurementCacheKey}`, JSON.stringify(cacheRecord))
@@ -1134,14 +1149,18 @@ export class TranscodingService {
           }
         }
         const measuredPlanSavingsBytes = shouldEncode
-          ? projectMeasuredSavingsBytes(stat.size, analysis.durationMs! / 1000, params.measuredCandidate!.outputBytes, params.measuredCandidate!.sampledDurationSeconds)
+          ? projectMeasuredSavingsBytes(
+              stat.size, analysis.durationMs! / 1000,
+              params.measuredCandidate!.outputBytes + plannedNonVideoBytesPerSecond(analysis, options) * params.measuredCandidate!.sampledDurationSeconds,
+              params.measuredCandidate!.sampledDurationSeconds,
+            )
           : undefined
         if (shouldEncode && measuredPlanSavingsBytes !== undefined && measuredPlanSavingsBytes <= 0) {
           return {
             mediaItemId, label, compatible: playbackCompatible, audioPlan, hdrFormat: analysis.video.hdrFormat || 'SDR',
             samplingGroupKey,
             sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256, sourceAnalysis: analysis, sourceCambiMean: reusableRepresentativePlan ? undefined : params.measuredCandidate?.sourceCambiMean, sourceSelfVmaf: reusableRepresentativePlan ? undefined : params.measuredCandidate?.sourceSelfVmaf, targetProfile,
-            qualityChoices: reusableRepresentativePlan?.qualityChoices ?? getOptimizationQualityChoices(stat.size, analysis.durationMs! / 1000, cachedMeasurement, request.options.qualityProfile),
+            qualityChoices: reusableRepresentativePlan?.qualityChoices ?? getOptimizationQualityChoices(stat.size, analysis.durationMs! / 1000, plannedNonVideoBytesPerSecond(analysis, options), cachedMeasurement, request.options.qualityProfile),
             options, params, operations: [], decisionStatus: 'no_savings', estimatedSavingsBytes: 0,
             evidenceStatus: 'estimated', confidence: 'medium', savingsCoverage: 'complete', savingsBasis: 'video_sample_encode',
             samplingRole: reusableRepresentativePlan ? 'projected' : 'measured',
@@ -1188,7 +1207,7 @@ export class TranscodingService {
           decisionStatus: shouldEncode ? 'sample_required' : 'actionable', evidenceStatus, savingsCoverage: reusableRepresentativePlan ? 'partial' : savingsBreakdown.coverage, confidence: evidenceStatus === 'measured' ? 'high' : evidenceStatus === 'estimated' ? 'medium' : 'none',
           samplingGroupKey,
           estimatedSavingsBytes: savingsBreakdown.totalEstimatedSavingsBytes,
-          qualityChoices: reusableRepresentativePlan?.qualityChoices ?? getOptimizationQualityChoices(stat.size, analysis.durationMs! / 1000, cachedMeasurement, request.options.qualityProfile),
+          qualityChoices: reusableRepresentativePlan?.qualityChoices ?? getOptimizationQualityChoices(stat.size, analysis.durationMs! / 1000, plannedNonVideoBytesPerSecond(analysis, options), cachedMeasurement, request.options.qualityProfile),
           savingsBasis, sourceTier: advice.sourceTier, adviceReason: preserveDynamicHdr && !shouldEncode
             ? playbackCompatible ? 'Dynamic HDR source video is preserved; only the container or selected streams are remuxed.' : 'Dynamic HDR source video is preserved, but the selected playback policy is not satisfied by the source and allowed remux operations.'
             : shouldEncode
@@ -2654,8 +2673,7 @@ export class TranscodingService {
         gpuDeviceSelector: useGpu ? encoderGpu?.encoderDeviceSelector : undefined,
         encoder: candidate.encoder,
         crf: candidate.quality,
-        preset: candidate.preset,
-        measurementReferenceInput: true
+        preset: candidate.preset
       }
       return { ...candidate, outputBytes: 0, sampledDurationSeconds: 0, encodingDurationMs: 0, vmafMean: 0, vmafP5: 0, cambiMean: 0, ffmpegArgs: TranscodeCommandFactory.getBuilder(hardwareVendor, candidateOptions).buildFFmpegArgs('<input>', '<output>', candidateOptions, analysis) }
     })
@@ -2664,10 +2682,8 @@ export class TranscodingService {
       const stat = await fs.stat(filePath)
       await fs.mkdir(outputDirectory, { recursive: true })
       const sampleSeconds = Math.min(analysis.durationMs / 1000, APP_CONFIG.transcoding.sampleDurationSeconds * APP_CONFIG.transcoding.samplePositions.length)
-      const maximumOutputBytesPerSecond = Math.min(options.maxOutputBytes ?? stat.size, stat.size) / (analysis.durationMs / 1000)
-      const plannedBitrate = options.targetConversion ? options.targetConversion.maximumVideoBitrate + options.targetConversion.audio.reduce((sum, track) => sum + (track.bitrateKbps ?? analysis.audioTracks.find(audio => audio.index === track.sourceIndex)?.bitrateKbps ?? 0) * 1000, 0) : undefined
-      const sourceSampleBytes = stat.size * sampleSeconds / (analysis.durationMs / 1000)
-      const referenceBytes = options.targetConversion?.videoFilter ? options.targetConversion.width * options.targetConversion.height * (options.targetConversion.bitDepth > 8 ? 3 : 1.5) * analysis.video.frameRate * sampleSeconds : 0
+      const maximumOutputBytesPerSecond = Math.min(options.maxOutputBytes ?? stat.size, stat.size) / (analysis.durationMs / 1000) - plannedNonVideoBytesPerSecond(analysis, options)
+      const plannedBitrate = options.targetConversion?.maximumVideoBitrate
       const outputContainer = options.targetConversion?.container ?? options.targetContainer
       const outputExtension = outputContainer === 'mp4' ? '.mp4' : outputContainer === 'mkv' ? '.mkv' : path.extname(filePath)
       const targetProfile = options.targetProfileId ? await getDatabase().playbackTargetProfiles.get(options.targetProfileId) : undefined
@@ -2681,12 +2697,10 @@ export class TranscodingService {
         }
         if (targetProfile && options.playbackPolicy !== 'allow-transcoding') {
           const evaluation = evaluatePlaybackTarget(targetProfile, sample)
-          if (options.playbackPolicy === 'direct-play') {
-            for (const finding of Object.values(evaluation.findings)) if (finding.status === 'incompatible') blockers.push(`${finding.rule}: ${finding.evidence}`)
-          } else {
-            for (const finding of [evaluation.findings.video, evaluation.findings.hdr, evaluation.findings.network, evaluation.findings.subtitle]) {
-              if (finding.status === 'incompatible') blockers.push(`${finding.rule}: ${finding.evidence}`)
-            }
+          // Video samples contain no audio, subtitles, or attachments. Those are
+          // validated by the executable stream plan and on the final output.
+          for (const finding of [evaluation.findings.video, evaluation.findings.hdr, evaluation.findings.network]) {
+            if (finding.status === 'incompatible') blockers.push(`${finding.rule}: ${finding.evidence}`)
           }
         }
         return blockers
@@ -2708,10 +2722,10 @@ export class TranscodingService {
             ? plannedBitrate / 8 * sampleSeconds
             : (options.maxOutputBytes ?? stat.size) * sampleSeconds / (analysis.durationMs / 1000)) * candidates.length)
           const rateControlBufferBytes = (options.targetConversion?.maximumVideoBitrate ?? 0) / 4
-          const estimatedRequiredBytes = Math.ceil(estimatedCandidateSampleBytes + sourceSampleBytes + referenceBytes + rateControlBufferBytes)
+          const estimatedRequiredBytes = Math.ceil(estimatedCandidateSampleBytes + rateControlBufferBytes)
           const space = await fs.statfs(outputDirectory)
           const availableBytes = Number(space.bavail) * Number(space.bsize)
-          if (availableBytes < estimatedRequiredBytes) throw new Error(`Estimated disk headroom is insufficient for episode sampling: volume=${path.parse(outputDirectory).root}, availableBytes=${availableBytes}, estimatedRequiredBytes=${estimatedRequiredBytes}, estimatedCandidateSampleBytes=${estimatedCandidateSampleBytes}, estimatedSourceSampleBytes=${Math.ceil(sourceSampleBytes)}, estimatedReferenceSampleBytes=${Math.ceil(referenceBytes)}, estimatedRateControlBufferBytes=${Math.ceil(rateControlBufferBytes)}, candidateCount=${candidates.length}, sampleDurationSeconds=${sampleSeconds}`)
+          if (availableBytes < estimatedRequiredBytes) throw new Error(`Estimated disk headroom is insufficient for episode sampling: volume=${path.parse(outputDirectory).root}, availableBytes=${availableBytes}, estimatedRequiredBytes=${estimatedRequiredBytes}, estimatedCandidateSampleBytes=${estimatedCandidateSampleBytes}, estimatedRateControlBufferBytes=${Math.ceil(rateControlBufferBytes)}, candidateCount=${candidates.length}, sampleDurationSeconds=${sampleSeconds}`)
           const roundStart = measuredCandidates.length
           const measured = await this.measuredOptimizationService.measure({
             inputPath: filePath,
@@ -2820,7 +2834,6 @@ export class TranscodingService {
       if (!onMeasuredCandidates) await fs.rm(outputDirectory, { recursive: true, force: true })
       throw error
     } finally {
-      if (!onMeasuredCandidates) await Promise.all([...new Set(sourcePreparation.samples.flatMap(sample => [sample.sourcePath, ...(sample.referencePath ? [sample.referencePath] : [])]))].map(filePath => fs.rm(filePath, { force: true })))
     }
   }
 
@@ -2879,16 +2892,11 @@ export class TranscodingService {
       }
       const validSourcePreparation = cached.sourcePreparation === undefined ||
         Array.isArray(cached.sourcePreparation.samples) && cached.sourcePreparation.samples.length === APP_CONFIG.transcoding.samplePositions.length && cached.sourcePreparation.samples.every(sample =>
-          typeof sample.sourcePath === 'string' && isWithinSampleDirectory(sample.sourcePath) && hasValidTimingEvidence(sample.source) &&
-          (sample.referencePath === undefined || typeof sample.referencePath === 'string' && isWithinSampleDirectory(sample.referencePath)) &&
-          hasValidTimingEvidence(sample.reference) && Number.isFinite(sample.sourceSelfVmaf) && Number.isFinite(sample.sourceCambiMean))
-      const validSourcePreparationHashes = cached.sourcePreparation === undefined
-        ? cached.sourcePreparationHashes === undefined
-        : Array.isArray(cached.sourcePreparationHashes) && cached.sourcePreparationHashes.length === cached.sourcePreparation.samples.length &&
-          cached.sourcePreparation.samples.every((sample, index) => cached.sourcePreparationHashes![index]?.length === 1 + (sample.referencePath ? 1 : 0))
+          hasValidTimingEvidence(sample.source) && hasValidTimingEvidence(sample.reference) &&
+          Number.isFinite(sample.sourceSelfVmaf) && Number.isFinite(sample.sourceCambiMean))
       const valid = cached.version === MEASUREMENT_VERSION && cached.cacheKey === cacheKey && cached.sourceSha256 === sourceSha256 && typeof cached.complete === 'boolean' &&
         Array.isArray(cached.candidates) && Array.isArray(cached.sampleHashes) && Array.isArray(cached.partialSamples) && Array.isArray(cached.partialSampleHashes) &&
-        validSourcePreparation && validSourcePreparationHashes &&
+        validSourcePreparation &&
         cached.candidates.every(candidate => Number.isFinite(candidate.outputBytes) && candidate.outputBytes > 0 &&
           Number.isFinite(candidate.sampledDurationSeconds) && candidate.sampledDurationSeconds > 0 &&
           Number.isFinite(candidate.vmafMean) && Number.isFinite(candidate.vmafP5) && Number.isFinite(candidate.cambiMean) &&
@@ -2917,10 +2925,6 @@ export class TranscodingService {
       if (actualHashes.some((hashes, candidateIndex) => hashes.some((hash, index) => hash !== cached.sampleHashes[candidateIndex][index]))) throw new Error('Cached sample content changed')
       const actualPartialHashes = await Promise.all(cached.partialSamples.map(sample => hashOnce(sample.samplePath)))
       if (actualPartialHashes.some((hash, index) => hash !== cached.partialSampleHashes[index])) throw new Error('Cached partial sample content changed')
-      if (cached.sourcePreparation) {
-        const actualSourcePreparationHashes = await Promise.all(cached.sourcePreparation.samples.map(sample => Promise.all([sample.sourcePath, ...(sample.referencePath ? [sample.referencePath] : [])].map(hashOnce))))
-        if (actualSourcePreparationHashes.some((hashes, index) => hashes.some((hash, pathIndex) => hash !== cached.sourcePreparationHashes![index][pathIndex]))) throw new Error('Cached source preparation content changed')
-      }
       const searchComplete = cached.searchVersion === OPTIMIZATION_SEARCH_VERSION && cached.complete
       // Record actual reuse time so eligible unreferenced entries age out last.
       await fs.utimes(sampleDirectory, new Date(), new Date()).catch(error => {
