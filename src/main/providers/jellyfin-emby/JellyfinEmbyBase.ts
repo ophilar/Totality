@@ -1328,6 +1328,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
         return {
           index,
+          streamIndex: stream.Index,
           codec: normalizeAudioCodec(stream.Codec, stream.Profile),
           channels: normalizeAudioChannels(stream.Channels, stream.ChannelLayout),
           bitrate: normalizeBitrate(streamBitrate, 'bps'),

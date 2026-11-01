@@ -239,14 +239,48 @@ export function formatLanguage(code?: string | null): string {
   }
 }
 
+// Resolve human-readable names using the runtime's CLDR translations.
+// Build the index only for text labels; normal ISO tags take the direct path.
+let languageCodesByName: Map<string, string | null> | undefined
+
+function languageCodeFromName(name: string): string | undefined {
+  if (!languageCodesByName) {
+    const english = new Intl.DisplayNames(['en'], { type: 'language' })
+    const codes: string[] = []
+    for (let a = 97; a <= 122; a++) {
+      for (let b = 97; b <= 122; b++) {
+        const code = String.fromCharCode(a, b)
+        if (english.of(code) !== code) codes.push(code)
+      }
+    }
+
+    const names = new Map<string, string | null>()
+    for (const locale of codes) {
+      const localized = new Intl.DisplayNames([locale], { type: 'language' })
+      for (const code of codes) {
+        const label = localized.of(code)?.normalize('NFKC').toLowerCase()
+        const canonical = new Intl.Locale(code).language
+        if (!label || !canonical) continue
+        if (!names.has(label)) names.set(label, canonical)
+        else if (names.get(label) !== canonical) names.set(label, null)
+      }
+    }
+    languageCodesByName = names
+  }
+  return languageCodesByName.get(name) ?? undefined
+}
+
 /**
- * Normalizes any language string to its canonical 2-letter ISO 639-1 code (or 3-letter if und/unmapped)
+ * Normalize ISO language codes, BCP 47 language subtags, and recognized
+ * language names in any locale supported by the runtime's ICU data.
  */
 export function normalizeLanguage(language?: string | null): string | null {
   if (!language) return null
-  const cleaned = language.trim().toLowerCase().split(/[-_]/)[0]
+  const cleaned = language.trim().normalize('NFKC').toLowerCase().split(/[-_]/)[0]
   if (!cleaned) return null
-  return LANGUAGE_ALIASES_TO_2[cleaned] || cleaned
+  if (LANGUAGE_ALIASES_TO_2[cleaned]) return LANGUAGE_ALIASES_TO_2[cleaned]
+  if (/^[a-z]{2,3}$/.test(cleaned)) return new Intl.Locale(cleaned).language ?? cleaned
+  return languageCodeFromName(cleaned) ?? cleaned
 }
 
 /**

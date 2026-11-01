@@ -60,6 +60,7 @@ describe('buildOptimizationDecision', () => {
       durationMs: 3_600_000,
       audioTranscodeSavingsBytes: null,
       audioTracks: [
+        { index: 0, language: 'en', codec: 'aac', channels: 2, bitrateKbps: 128, isDefault: true, hasObjectAudio: false, reliableTag: true },
         { index: 1, language: 'fr', codec: 'truehd', channels: 8, bitrateKbps: 4800, isDefault: false, hasObjectAudio: false, reliableTag: true },
         { index: 2, codec: 'truehd', channels: 8, bitrateKbps: 4800, isDefault: false, hasObjectAudio: false },
       ],
@@ -68,6 +69,21 @@ describe('buildOptimizationDecision', () => {
     expect(result.trackRemoval.status).toBe('review-required')
     expect(result.trackRemoval.removableTrackIndexes).toEqual([1])
     expect(result.audioTranscode.estimatedSavingsBytes).toBe(1_872_000_000)
+  })
+
+  it('keeps Japanese track metadata visible while original-language metadata needs review', () => {
+    const decision = buildOptimizationDecision({
+      originalLanguage: null,
+      durationMs: 60_000,
+      audioTracks: [
+        { index: 1, language: 'jpn', codec: 'aac', channels: 2, bitrateKbps: 192, isDefault: true, hasObjectAudio: false, reliableTag: true },
+        { index: 2, language: 'eng', codec: 'ac3', channels: 6, bitrateKbps: 448, isDefault: false, hasObjectAudio: false, reliableTag: true },
+      ],
+    })
+    expect(decision.trackRemoval.tracks[0].language).toBe('jpn')
+    expect(decision.trackRemoval.reason).toContain('Japanese (stream 1)')
+    expect(decision.trackRemoval.removableTrackIndexes).toEqual([])
+    expect(decision.trackRemoval.status).toBe('review-required')
   })
 
   it('protects commentary and object-audio tracks from removal', () => {

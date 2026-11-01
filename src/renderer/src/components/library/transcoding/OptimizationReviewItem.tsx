@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { formatLanguage } from '@main/constants/languages'
 import type { PlaybackTargetEvaluation } from '@main/types/playbackTarget'
 import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
 import type { PlannedAudioStream } from '@main/services/transcoding/StreamSelectionPlan'
@@ -46,7 +47,7 @@ export function OptimizationReviewItem<T extends OptimizationReviewItemModel>({ 
         {item.audioPlan.map(({ index, action, targetCodec }) => {
           const track = item.sourceAnalysis?.audioTracks.find(candidate => candidate.index === index)
           return <li key={index} className="flex justify-between gap-3">
-            <span>{track?.language || 'Unknown'}{track?.title ? ` · ${track.title}` : ''} · {track?.codec || 'Unknown codec'} · {track?.channelLayout || (track?.channels ? `${track.channels}ch` : 'Unknown channels')}</span>
+            <span>{formatLanguage(track?.language)}{track?.title ? ` · ${track.title}` : ''} · {track?.codec || 'Unknown codec'} · {track?.channelLayout || (track?.channels ? `${track.channels}ch` : 'Unknown channels')}</span>
             <span>{action === 'convert' ? `Convert to ${targetCodec?.toUpperCase()}` : action === 'remove' ? 'Remove' : 'Keep'}</span>
           </li>
         })}
