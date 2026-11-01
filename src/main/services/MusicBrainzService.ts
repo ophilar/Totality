@@ -690,7 +690,7 @@ export class MusicBrainzService extends CancellableOperation {
       + (includeSingles ? ownedSinglesCount : 0)
 
     const completenessPercentage = totalItems > 0
-      ? Math.round((ownedItems / totalItems) * 100)
+      ? Math.min(100, Math.round((ownedItems / totalItems) * 100))
       : 100
 
     getLoggingService().verbose('[MusicBrainzService]',
@@ -798,7 +798,7 @@ export class MusicBrainzService extends CancellableOperation {
 
     const ownedTracks = tracklist.tracks.length - missingTracks.length
     const completenessPercentage = tracklist.tracks.length > 0
-      ? Math.round((ownedTracks / tracklist.tracks.length) * 100)
+      ? Math.min(100, Math.round((ownedTracks / tracklist.tracks.length) * 100))
       : 100
 
     return {
