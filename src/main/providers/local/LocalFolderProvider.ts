@@ -37,6 +37,16 @@ import type { MediaItem, MediaItemVersion, AudioTrack } from '../../types/databa
 import { extractVersionNames } from '../utils/VersionNaming'
 import { scoreVersion } from '../utils/ProviderUtils'
 
+/** Reject invalid batch settings instead of entering a non-advancing scan loop. */
+export function readFfprobeBatchSize(value: string | null | undefined, defaultSize: number): number {
+  if (value == null || value.trim() === '') return defaultSize
+  const size = Number(value)
+  if (!Number.isSafeInteger(size) || size < 1 || size > 128) {
+    throw new Error('Invalid ffprobe_batch_size: expected an integer from 1 to 128')
+  }
+  return size
+}
+
 export interface LocalFolderConfig {
   folderPath: string
   mediaType: 'movies' | 'tvshows' | 'music' | 'mixed'
@@ -465,9 +475,8 @@ export class LocalFolderProvider implements MediaProvider {
 
       // Parallel FFprobe settings
       const ffprobeParallelEnabled = db.getSetting('ffprobe_parallel_enabled') !== 'false'
-      const ffprobeBatchSize = parseInt(db.getSetting('ffprobe_batch_size') || '25', 10)
+      const ffprobeBatchSize = readFfprobeBatchSize(db.getSetting('ffprobe_batch_size'), 25)
 
-      const scannedFilePaths = new Set<string>()
       const scanType = libraryType === 'movies' ? 'movie' : 'episode'
 
       // Phase 1: Discover all media files
@@ -482,6 +491,8 @@ export class LocalFolderProvider implements MediaProvider {
 
       const mediaFiles = await this.discoverMediaFiles(scanPath, scanType, onProgress, isIncremental ? sinceTimestamp : undefined)
       const totalFiles = mediaFiles.length
+      // Enumeration proves presence even when parsing or metadata analysis is skipped.
+      const scannedFilePaths = new Set(mediaFiles.map(file => file.filePath))
 
       console.log(`[LocalFolderProvider ${this.sourceId}] Found ${totalFiles} ${scanType} files`)
 
@@ -549,8 +560,7 @@ export class LocalFolderProvider implements MediaProvider {
               const existingItem = db.getMediaItemByPath(filePath)
 
               if (existingItem?.file_mtime === fileMtime) {
-                // File unchanged, mark as present and skip processing
-                scannedFilePaths.add(filePath)
+                // File unchanged, skip processing
                 result.itemsScanned++
                 continue
               }
@@ -636,7 +646,6 @@ export class LocalFolderProvider implements MediaProvider {
               }
 
               processedItems.push({ metadata, parsed, fileMtime })
-              scannedFilePaths.add(filePath)
             } catch (error: unknown) {
               result.errors.push(`Failed to process ${path.basename(filePath)}: ${getErrorMessage(error)}`)
             }
@@ -1265,7 +1274,7 @@ export class LocalFolderProvider implements MediaProvider {
     let skippedUnchanged = 0
 
     const scanDir = async (dir: string, depth = 0): Promise<void> => {
-      if (depth > 15) return // Prevent infinite recursion
+      if (depth > 15) throw new Error('Media directory nesting exceeds scan limit')
 
       try {
         const entries = await fs.promises.readdir(dir, { withFileTypes: true })
@@ -1318,8 +1327,7 @@ export class LocalFolderProvider implements MediaProvider {
           await new Promise(resolve => setImmediate(resolve))
         }
       } catch (error) {
-        // Skip inaccessible directories
-        console.warn(`[LocalFolderProvider] Cannot access directory: ${path.basename(dir)}`)
+        throw new Error(`Cannot complete media inventory in ${dir}: ${getErrorMessage(error)}`)
       }
     }
 
@@ -2203,7 +2211,7 @@ export class LocalFolderProvider implements MediaProvider {
 
       // Parallel FFprobe settings
       const ffprobeParallelEnabled = db.getSetting('ffprobe_parallel_enabled') !== 'false'
-      const ffprobeBatchSize = parseInt(db.getSetting('ffprobe_batch_size') || '50', 10)
+      const ffprobeBatchSize = readFfprobeBatchSize(db.getSetting('ffprobe_batch_size'), 50)
 
       if (mbNameCorrectionEnabled) {
         console.log(`[LocalFolderProvider ${this.sourceId}] MusicBrainz name correction enabled`)
