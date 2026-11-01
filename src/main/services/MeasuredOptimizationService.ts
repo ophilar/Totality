@@ -87,7 +87,7 @@ export function buildMeasuredCandidateArgs(template: string[], inputPath: string
   const filterIndex = args.indexOf('-vf')
   if (filterIndex >= 0) args[filterIndex + 1] = `${trim},${args[filterIndex + 1]}`
   else args.splice(args.length - 1, 0, '-vf', trim)
-  args.splice(args.length - 1, 0, '-an', '-sn', '-dn', '-t', String(window.durationSeconds), '-enc_time_base:v:0', 'demux')
+  args.splice(args.length - 1, 0, '-an', '-sn', '-dn', '-enc_time_base:v:0', 'demux')
   return args
 }
 
