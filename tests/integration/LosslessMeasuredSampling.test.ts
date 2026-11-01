@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,7 +8,9 @@ import { buildMeasuredCandidateArgs } from '@main/services/MeasuredOptimizationS
 const toolsAvailable = ['ffmpeg', 'ffprobe'].every(binary => spawnSync(binary, ['-version'], { stdio: 'ignore' }).status === 0)
 
 function run(binary: string, args: string[]): string {
-  return execFileSync(binary, args, { encoding: 'utf8', timeout: 30000, maxBuffer: 8 * 1024 * 1024 })
+  const result = spawnSync(binary, args, { encoding: 'utf8', timeout: 30000, maxBuffer: 8 * 1024 * 1024 })
+  if (result.status !== 0) throw result.error ?? new Error(result.stderr)
+  return result.stdout + result.stderr
 }
 
 function decodedTimestamps(filePath: string): number[] {
@@ -51,6 +53,7 @@ describe.skipIf(!toolsAvailable)('direct-source measured video sampling (real FF
       const actual = decodedTimestamps(candidate)
       expect(expected.length).toBeGreaterThan(20)
       expect(actual.length).toBe(expected.length)
+      expect(run('ffprobe', ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=index', '-of', 'csv=p=0', candidate]).trim()).toBe('')
       for (let index = 0; index < expected.length; index++) {
         expect(Math.abs((expected[index] - expected[0]) - (actual[index] - actual[0]))).toBeLessThanOrEqual(0.002)
       }
