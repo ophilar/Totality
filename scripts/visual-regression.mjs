@@ -186,7 +186,7 @@ async function navigate(page, screen, viewport) {
     }
   } else if (screen === 'settings') {
     if (viewport === 'mobile') return false
-    const settings = page.getByRole('button', { name: 'Open settings' })
+    const settings = page.getByRole('banner', { name: 'Main navigation' }).getByRole('button', { name: 'Open settings' })
     await settings.focus()
     await settings.press('Enter')
     await page.getByRole('dialog').waitFor()
