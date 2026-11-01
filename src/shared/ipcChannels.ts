@@ -70,6 +70,7 @@ export const IPC_CHANNELS = {
   dbGetMediaItemById: 'db:getMediaItemById',
   dbGetMediaItemVersions: 'db:getMediaItemVersions',
   dbGetMediaItems: 'db:getMediaItems',
+  dbGetMediaItemsSlim: 'db:getMediaItemsSlim',
   dbGetPath: 'db:getPath',
   dbGetQualityScoreByMediaId: 'db:getQualityScoreByMediaId',
   dbGetQualityScores: 'db:getQualityScores',

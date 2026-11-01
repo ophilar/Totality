@@ -81,7 +81,7 @@ export function GeneralTab() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [trayVal, startVal, version, uState, uSetting, weVal, wpVal, wpinVal, wtVal, subtitleLanguages] = await Promise.all([
+        const [trayVal, startVal, version, uState, uSetting, weVal, wpVal, wpinVal, wtVal, subtitleLanguages, ipAllowlist] = await Promise.all([
           window.electronAPI.getSetting('minimize_to_tray'),
           window.electronAPI.getSetting('start_minimized_to_tray'),
           window.electronAPI.getAppVersion(),
@@ -92,6 +92,7 @@ export function GeneralTab() {
           window.electronAPI.getSetting(SETTING_KEYS.web_access_pin),
           window.electronAPI.getSetting(SETTING_KEYS.web_access_session_timeout),
           window.electronAPI.getSetting(SETTING_KEYS.subtitle_preferred_languages),
+          window.electronAPI.getSetting(SETTING_KEYS.web_access_ip_allowlist),
         ])
         setMinimizeToTray(trayVal === 'true')
         setStartMinimized(startVal === 'true')
@@ -106,6 +107,7 @@ export function GeneralTab() {
         }
         if (wtVal) setWebSessionTimeout(wtVal)
         setSubtitlePreferredLanguages(subtitleLanguages || '')
+        setWebIpAllowlist(ipAllowlist || '')
         await loadWebStatus()
       } catch (error) {
         console.error('Failed to load general settings:', error)
@@ -468,6 +470,28 @@ export function GeneralTab() {
                     {showPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   </button>
                 </div>
+              </div>
+
+              <div className="flex items-center justify-between px-4 py-3 gap-4">
+                <div>
+                  <p className="text-sm text-foreground">Allowed IP addresses</p>
+                  <p className="text-xs text-muted-foreground">Comma-separated addresses; empty permits any client. Restart web access to apply.</p>
+                </div>
+                <input
+                  type="text"
+                  value={webIpAllowlist}
+                  onChange={(e) => setWebIpAllowlist(e.target.value)}
+                  onBlur={async () => {
+                    try {
+                      await window.electronAPI.setSetting(SETTING_KEYS.web_access_ip_allowlist, webIpAllowlist.trim())
+                    } catch (error) {
+                      setWebAccessError(error instanceof Error ? error.message : String(error))
+                    }
+                  }}
+                  placeholder="192.168.1.10, 192.168.1.11"
+                  aria-label="Allowed web client IP addresses"
+                  className="min-w-0 w-64 px-2 py-1 text-sm bg-muted/50 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+                />
               </div>
 
               {/* Session timeout */}

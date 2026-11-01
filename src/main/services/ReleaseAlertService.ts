@@ -22,17 +22,15 @@ const RELEASE_TYPE_LABELS: Record<number, string> = {
 export class ReleaseAlertService {
   private pollingTimer: NodeJS.Timeout | null = null
   private startupTimer: NodeJS.Timeout | null = null
-  private alertedIds = new Set<string>() // "tmdbId:type" keys already alerted
+  private alertedIds = new Set<string>() // "tmdbId:type" keys already alerted this session
 
   async start(): Promise<void> {
     const db = getDatabase()
-    // Restore alerted IDs from previous sessions
-    const saved = db.getSetting('release_alert_sent_ids')
-    if (saved) {
-      try { for (const id of JSON.parse(saved)) this.alertedIds.add(id) } catch { /* ignore corrupt data */ }
-    }
+    if (this.pollingTimer) return
     const enabled = db.getSetting('release_alerts_enabled')
     if (enabled !== 'true') return
+    const persisted = db.getSetting('release_alert_sent_ids')
+    if (persisted) this.alertedIds = new Set(JSON.parse(persisted) as string[])
 
     // Run initial check after a short delay to let app settle
     this.startupTimer = setTimeout(() => {
@@ -107,10 +105,8 @@ export class ReleaseAlertService {
             const releaseDate = release.release_date.split('T')[0]
             if (releaseDate < today || releaseDate > cutoffStr) continue
 
-            const alertKey = `${tmdbId}:${release.type}`
+            const alertKey = `${tmdbId}:${release.type}:${releaseDate}`
             if (this.alertedIds.has(alertKey)) continue
-            this.alertedIds.add(alertKey)
-
             const typeLabel = RELEASE_TYPE_LABELS[release.type] || 'Release'
             const formattedDate = new Date(releaseDate).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
 
@@ -120,6 +116,7 @@ export class ReleaseAlertService {
               message: `${item.title} has a ${typeLabel.toLowerCase()} release on ${formattedDate}${release.note ? ` (${release.note})` : ''}`,
               metadata: { release_alert_tmdb_id: tmdbId, wishlist_id: item.id, release_type: release.type },
             })
+            this.alertedIds.add(alertKey)
             emitNotificationCreated()
             alertCount++
 
@@ -132,9 +129,8 @@ export class ReleaseAlertService {
             if (details.next_episode_to_air) {
               const airDate = (details.next_episode_to_air as Record<string, string>).air_date
               if (airDate && airDate >= today && airDate <= cutoffStr) {
-                const alertKey = `${tmdbId}:tv`
+                const alertKey = `${tmdbId}:tv:${airDate}`
                 if (!this.alertedIds.has(alertKey)) {
-                  this.alertedIds.add(alertKey)
                   const formattedDate = new Date(airDate).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
                   db.createNotification({
                     type: 'info',
@@ -142,6 +138,7 @@ export class ReleaseAlertService {
                     message: `${item.title} has a new episode airing on ${formattedDate}`,
                     metadata: { release_alert_tmdb_id: tmdbId, wishlist_id: item.id },
                   })
+                  this.alertedIds.add(alertKey)
                   emitNotificationCreated()
                   alertCount++
                 }
@@ -156,10 +153,8 @@ export class ReleaseAlertService {
       }
     }
 
-    // Persist alerted IDs (keep last 500 to prevent unbounded growth)
-    const ids = [...this.alertedIds].slice(-500)
-    db.setSetting('release_alert_sent_ids', JSON.stringify(ids))
-
+    this.alertedIds = new Set([...this.alertedIds].slice(-500))
+    db.setSetting('release_alert_sent_ids', JSON.stringify([...this.alertedIds]))
     return alertCount
   }
 }
