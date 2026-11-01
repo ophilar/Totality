@@ -77,6 +77,8 @@ export interface TranscodeOptions {
   targetContainerSelection?: 'automatic' | 'user-selected'
   targetAudioCodec?: 'aac' | 'ac3' | 'eac3'
   audioConversions?: Array<{ sourceIndex: number; codec: string; bitrateKbps: number }>
+  /** Internal: the measurement candidate decodes an FFV1 lossless reference. */
+  measurementReferenceInput?: boolean
   targetHdrFormat?: 'SDR' | 'HDR10'
   targetConversion?: TargetTranscodePlan
 }
@@ -2652,7 +2654,8 @@ export class TranscodingService {
         gpuDeviceSelector: useGpu ? encoderGpu?.encoderDeviceSelector : undefined,
         encoder: candidate.encoder,
         crf: candidate.quality,
-        preset: candidate.preset
+        preset: candidate.preset,
+        measurementReferenceInput: true
       }
       return { ...candidate, outputBytes: 0, sampledDurationSeconds: 0, encodingDurationMs: 0, vmafMean: 0, vmafP5: 0, cambiMean: 0, ffmpegArgs: TranscodeCommandFactory.getBuilder(hardwareVendor, candidateOptions).buildFFmpegArgs('<input>', '<output>', candidateOptions, analysis) }
     })
