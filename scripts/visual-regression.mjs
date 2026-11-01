@@ -187,9 +187,11 @@ async function shootApp(appRoot, mediaRoot, outputDir, version, seedDb) {
   await mkdir(path.join(profile, 'home'), { recursive: true })
   await mkdir(path.join(profile, 'xdg'), { recursive: true })
   let instance = await startApplication(appRoot, profile)
+  try {
   if (seedDb) {
     const dbPath = path.join(instance.userData, 'totality-v2.db')
     await instance.electronApp.close()
+    instance = null
     await rm(dbPath + '-wal', { force: true })
     await rm(dbPath + '-shm', { force: true })
     await copyFile(seedDb, dbPath)
@@ -237,10 +239,12 @@ async function shootApp(appRoot, mediaRoot, outputDir, version, seedDb) {
     await context.close()
   } finally {
     await browser.close()
-    await instance.electronApp.close()
   }
   await writeFile(path.join(outputDir, version + '.json'), JSON.stringify(results, null, 2))
   return results
+  } finally {
+    if (instance) await instance.electronApp.close()
+  }
 }
 function escapeHtml(value) {
   return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
