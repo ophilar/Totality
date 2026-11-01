@@ -2,7 +2,7 @@
 import type { FileAnalysisResult } from '../MediaFileAnalyzer'
 import type { TranscodeOptions } from './types'
 import { normalizeLanguage } from '../../constants/languages'
-import { isProtectedAudioTrack } from '../utils/audioTrackUtils'
+import { isProtectedAudioTrack, isCommentaryTrack, isAudioDescriptionTrack, isAccessibilityTrack } from '../utils/audioTrackUtils'
 
 export type DefaultSubtitleSelection = 'preserve' | 'none' | number
 
@@ -10,6 +10,27 @@ export interface StreamSelectionPlan {
   audioStreamIndexes: number[]
   subtitleStreamIndexes: number[]
   defaultSubtitle: DefaultSubtitleSelection
+}
+
+/** Read-only review projection of the stream mappings used by FFmpeg. */
+export interface PlannedAudioStream {
+  index: number
+  action: 'keep' | 'remove' | 'convert'
+  targetCodec?: string
+}
+
+export function getPlannedAudioStreams(
+  analysis: Pick<FileAnalysisResult, 'audioTracks'>,
+  plan: Pick<StreamSelectionPlan, 'audioStreamIndexes'>,
+  conversions: readonly { sourceIndex: number; codec: string }[] = [],
+): PlannedAudioStream[] {
+  const retained = new Set(plan.audioStreamIndexes)
+  const converted = new Map(conversions.map(({ sourceIndex, codec }) => [sourceIndex, codec]))
+  return analysis.audioTracks.map(({ index }) => {
+    if (!retained.has(index)) return { index, action: 'remove' }
+    const targetCodec = converted.get(index)
+    return targetCodec ? { index, action: 'convert', targetCodec } : { index, action: 'keep' }
+  })
 }
 
 export interface SubtitleSelectionPolicy {
@@ -45,14 +66,18 @@ function resolvePolicyIndexes(analysis: FileAnalysisResult, policy: StreamSelect
   if (policy.audio === 'all') return analysis.audioTracks.map(track => track.index)
   if (policy.audio === 'explicit') return policy.audioIndexes
   const original = normalizeLanguage(policy.originalLanguage)
-  if (!original) throw new Error('Original language is required for original-and-protected audio policy')
+  if (!original || original === 'und') throw new Error('A known original language is required for original-and-protected audio policy')
   const result = analysis.audioTracks.filter(track => {
     const protectedTrack = isProtectedAudioTrack(track)
     const language = normalizeLanguage(track.language)
-    if (!language && !protectedTrack) throw new Error(`Audio stream ${track.index} has no reliable language tag`)
+    if ((!language || language === 'und') && !protectedTrack) throw new Error(`Audio stream ${track.index} has no reliable language tag`)
     return protectedTrack || language === original
   }).map(track => track.index)
-  if (result.length === 0) throw new Error(`No audio stream matches original language ${policy.originalLanguage}`)
+  const originalTracks = analysis.audioTracks.filter(track => normalizeLanguage(track.language) === original)
+  if (originalTracks.length === 0) throw new Error(`No audio stream matches original language ${policy.originalLanguage}`)
+  if (!originalTracks.some(track => !isCommentaryTrack(track) && !isAudioDescriptionTrack(track) && !isAccessibilityTrack(track))) {
+    throw new Error(`No primary audio stream matches original language ${policy.originalLanguage}`)
+  }
   return result
 }
 

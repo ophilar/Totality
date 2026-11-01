@@ -18,7 +18,7 @@ import { validateHdrTranscode } from './transcoding/HdrTranscodingPolicy'
 import { buildTranscodingCapabilities, getHardwareEncoder, TranscodingCapabilities } from './TranscodingCapabilities'
 import type { FileAnalysisResult } from './MediaFileAnalyzer'
 import type { StreamSelectionPolicy } from './transcoding/StreamSelectionPlan'
-import { buildStreamSelectionPlan } from './transcoding/StreamSelectionPlan'
+import { buildStreamSelectionPlan, getPlannedAudioStreams, type PlannedAudioStream } from './transcoding/StreamSelectionPlan'
 import { MediaPathAuthorization } from './MediaPathAuthorization'
 import { TaskType, MediaItem } from '@main/types/database'
 import type { QueuedTask } from '@main/types/taskQueue'
@@ -370,6 +370,7 @@ export interface ShowTranscodePreflight {
     options?: TranscodeOptions
     params?: TranscodingParams
     sourceAnalysis?: FileAnalysisResult
+    audioPlan?: PlannedAudioStream[]
     sourceCambiMean?: number
     sourceSelfVmaf?: number
     targetProfile?: PlaybackTargetProfile
@@ -823,6 +824,7 @@ export class TranscodingService {
         ? getPreflightSamplingProfileKey(episode, request.options, prepared.analysis) ?? `unclassified:${mediaItemId}`
         : `unclassified:${mediaItemId}`
       let cachedMeasurement: CachedMeasurement | undefined
+      let audioPlan: PlannedAudioStream[] | undefined
       const toInsufficientPlan = (error: unknown): ShowTranscodePreflight['episodes'][number] => {
         if (operation?.signal?.aborted) throw error
         const errorMsg = getErrorMessage(error)
@@ -833,6 +835,7 @@ export class TranscodingService {
           mediaItemId: fallbackMediaItemId,
           label,
           samplingGroupKey,
+          audioPlan,
           compatible: measuredOutcome && decisionStatus !== 'incompatible',
           reason: errorMsg,
           hdrFormat: 'Unknown',
@@ -865,6 +868,7 @@ export class TranscodingService {
           : undefined
         const advice = getQualityAnalyzer().getOptimizationAdvice(episode, analysis, request.options.targetCodec)
         const sourcePlan = buildStreamSelectionPlan(analysis, request.options)
+        audioPlan = getPlannedAudioStreams(analysis, sourcePlan)
         const removedAudioTracks = analysis.audioTracks.filter(track => !sourcePlan.audioStreamIndexes.includes(track.index))
         const removedSubtitleTracks = analysis.subtitleTracks.filter(track => !sourcePlan.subtitleStreamIndexes.includes(track.index))
         const audioStreamsChanged = removedAudioTracks.length > 0
@@ -875,6 +879,7 @@ export class TranscodingService {
           throw new Error(`Audio codec ${request.options.targetAudioCodec} is not supported by ${targetProfile.name}`)
         }
         const plannedAudioConversions = buildAudioConversions(selectedAnalysis, request.options)
+        audioPlan = getPlannedAudioStreams(analysis, sourcePlan, plannedAudioConversions)
         const compatibleAudioTracks = selectedAnalysis.audioTracks.map(track => {
           const conversion = plannedAudioConversions.find(item => item.sourceIndex === track.index)
           return conversion ? { ...track, codec: conversion.codec, bitrate: conversion.bitrateKbps } : track
@@ -915,7 +920,7 @@ export class TranscodingService {
         const options: TranscodeOptions = { ...request.options, targetProfileId: targetProfile?.id, targetContainer: plannedContainer === 'mp4' ? 'mp4' : 'mkv', optimizationMode: shouldEncode ? 'transcode' : 'remux_only', audioConversions: shouldEncode && targetProfile ? undefined : plannedAudioConversions, encoderPolicy: request.options.encoderPolicy, useGpu: shouldEncode && request.options.encoderPolicy !== 'software', gpuId: shouldEncode && request.options.encoderPolicy !== 'software' ? request.options.gpuId : undefined }
         if (!shouldEncode && !streamsChanged && !containerChanged && plannedAudioConversions.length === 0) {
           const compatible = playbackCompatible
-          return { mediaItemId, label, compatible, reason: compatible ? undefined : 'Retained streams do not satisfy the selected playback profile', hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, operations: [], decisionStatus: compatible ? 'already_optimized' : 'incompatible', targetCompatibility: sourceCompatibility, sourceTier: advice.sourceTier, adviceReason: preserveCompatibleHevc ? 'Compatible H.265 video is preserved; no same-codec recompression was measured.' : advice.reason }
+          return { mediaItemId, label, compatible, audioPlan, reason: compatible ? undefined : 'Retained streams do not satisfy the selected playback profile', hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, operations: [], decisionStatus: compatible ? 'already_optimized' : 'incompatible', targetCompatibility: sourceCompatibility, sourceTier: advice.sourceTier, adviceReason: preserveCompatibleHevc ? 'Compatible H.265 video is preserved; no same-codec recompression was measured.' : advice.reason }
         }
         if (shouldEncode) {
           options.maxOutputBytes = stat.size
@@ -930,6 +935,7 @@ export class TranscodingService {
             mediaItemId,
             label,
             compatible: false,
+            audioPlan,
             reason,
             hdrFormat: analysis.video.hdrFormat || 'SDR',
             sourceSize: stat.size,
@@ -947,6 +953,7 @@ export class TranscodingService {
           }
         }
         const audioConversions = options.targetConversion?.audio.flatMap(track => track.bitrateKbps === undefined ? [] : [{ sourceIndex: track.sourceIndex, codec: track.codec, bitrateKbps: track.bitrateKbps }]) ?? options.audioConversions ?? []
+        audioPlan = getPlannedAudioStreams(analysis, sourcePlan, audioConversions)
         const audioConversionSavings = estimateAudioConversionSavings(analysis, audioConversions)
         const audioPruningSavings = sumMeasuredStreamBytes(analysis.streamBytes, removedAudioTracks.map(track => track.index))
         const subtitlePruningSavings = sumMeasuredStreamBytes(analysis.streamBytes, removedSubtitleTracks.map(track => track.index))
@@ -1129,7 +1136,7 @@ export class TranscodingService {
           : undefined
         if (shouldEncode && measuredPlanSavingsBytes !== undefined && measuredPlanSavingsBytes <= 0) {
           return {
-            mediaItemId, label, compatible: playbackCompatible, hdrFormat: analysis.video.hdrFormat || 'SDR',
+            mediaItemId, label, compatible: playbackCompatible, audioPlan, hdrFormat: analysis.video.hdrFormat || 'SDR',
             samplingGroupKey,
             sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256, sourceAnalysis: analysis, sourceCambiMean: reusableRepresentativePlan ? undefined : params.measuredCandidate?.sourceCambiMean, sourceSelfVmaf: reusableRepresentativePlan ? undefined : params.measuredCandidate?.sourceSelfVmaf, targetProfile,
             qualityChoices: reusableRepresentativePlan?.qualityChoices ?? getOptimizationQualityChoices(stat.size, analysis.durationMs! / 1000, cachedMeasurement, request.options.qualityProfile),
@@ -1168,7 +1175,7 @@ export class TranscodingService {
         getLoggingService().debug('[TVOptimization]', `Episode planned: mediaItem=${episode.id}, label="${label}", compatible=true, container=${plannedContainer}, containerSelection=${request.options.targetContainerSelection ?? 'explicit'}, dynamicHdrPreserved=${preserveDynamicHdr && !shouldEncode}, operations=${plannedSavingsOperations.join(',') || 'none'}, decision=${shouldEncode ? 'sample_required' : 'actionable'}, savingsBytes=${savingsBreakdown.totalEstimatedSavingsBytes ?? 'unknown'}, coverage=${savingsBreakdown.coverage}, encoder=${params.encoder}`)
         const samplePaths = params.measuredCandidate?.samplePaths
         return {
-          mediaItemId, label, compatible: true, hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256, sourceCambiMean: reusableRepresentativePlan ? undefined : params.measuredCandidate?.sourceCambiMean, sourceSelfVmaf: reusableRepresentativePlan ? undefined : params.measuredCandidate?.sourceSelfVmaf,
+          mediaItemId, label, compatible: true, audioPlan, hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256, sourceCambiMean: reusableRepresentativePlan ? undefined : params.measuredCandidate?.sourceCambiMean, sourceSelfVmaf: reusableRepresentativePlan ? undefined : params.measuredCandidate?.sourceSelfVmaf,
           operations: [
             ...(audioStreamsChanged ? ['stream_pruning' as const] : []),
             ...(subtitleStreamsChanged ? ['subtitle_pruning' as const] : []),
@@ -1381,7 +1388,7 @@ export class TranscodingService {
       episodeCount: 1,
       compatible: true,
       userApproved: false,
-      episodes: [{ mediaItemId, label: item.title, compatible: true, hdrFormat: analysis.video?.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256: fingerprint, operations: ['stream_pruning'], decisionStatus: 'actionable', evidenceStatus: 'measured', confidence: 'high', savingsBasis: `retained audio streams: ${retainedAudioIndexes.join(', ')}`, adviceReason: 'Review explicit retained audio streams before queueing.', options, sourceAnalysis: analysis }],
+      episodes: [{ mediaItemId, label: item.title, compatible: true, hdrFormat: analysis.video?.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256: fingerprint, operations: ['stream_pruning'], decisionStatus: 'actionable', evidenceStatus: 'measured', confidence: 'high', savingsBasis: `retained audio streams: ${retainedAudioIndexes.join(', ')}`, adviceReason: 'Review explicit retained audio streams before queueing.', options, sourceAnalysis: analysis, audioPlan: getPlannedAudioStreams(analysis, buildStreamSelectionPlan(analysis, options)) }],
     }
     const request: ShowTranscodeRequest = { mediaItemId, sourceId: item.source_id, libraryId: item.library_id, options }
     this.retainPreflight(id, { request, result })

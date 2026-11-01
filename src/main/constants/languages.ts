@@ -10,6 +10,8 @@ export const LANGUAGE_ALIASES_TO_2: Record<string, string> = {
   // English
   eng: 'en',
   en: 'en',
+  english: 'en',
+  '英語': 'en',
 
   // Hebrew
   heb: 'he',
@@ -37,6 +39,8 @@ export const LANGUAGE_ALIASES_TO_2: Record<string, string> = {
   // Japanese
   jpn: 'ja',
   ja: 'ja',
+  japanese: 'ja',
+  '日本語': 'ja',
 
   // Korean
   kor: 'ko',
@@ -167,6 +171,7 @@ export const LANGUAGE_ALIASES_TO_2: Record<string, string> = {
   // Undetermined
   und: 'und',
   undetermined: 'und',
+  unknown: 'und',
 }
 
 // Canonical 2-letter to ISO 639-2 standard 3-letter code mapping

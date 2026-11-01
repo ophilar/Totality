@@ -267,6 +267,25 @@ describe('optimization UI contract', () => {
     expect(markup).not.toContain('sample_required')
   })
 
+  it('shows the actual planned audio stream choices even for a blocked video measurement', () => {
+    const markup = renderToStaticMarkup(React.createElement(OptimizationReviewItem, {
+      item: {
+        label: 'BLUE LOCK S01E01', compatible: false,
+        reason: 'Encoded sample frame count differs from its source',
+        sourceAnalysis: { audioTracks: [
+          { index: 1, language: '日本語', codec: 'flac', channels: 2, isDefault: true, hasObjectAudio: false },
+          { index: 2, language: 'English', codec: 'aac', channels: 2, isDefault: false, hasObjectAudio: false },
+        ] },
+        audioPlan: [{ index: 1, action: 'keep' }, { index: 2, action: 'remove' }],
+      },
+      targetSelected: false,
+    }))
+    expect(markup).toContain('Audio track decisions')
+    expect(markup).toMatch(/日本語.*?Keep/)
+    expect(markup).toMatch(/English.*?Remove/)
+    expect(markup).toContain('Proposed selections only; optimization is blocked.')
+  })
+
   it('uses measured savings and space-freed labels for task results', () => {
     const markup = renderToStaticMarkup(React.createElement(OptimizationTaskResults, { tasks: [
       { id: 'task-1', type: 'transcode', label: 'Example.mkv', status: 'completed', createdAt: '2026-10-30T00:00:00Z', result: { encodedReductionBytes: 123, physicallyReclaimedBytes: 50 } },
