@@ -205,6 +205,16 @@ describe('BetterSQLiteService — Media Items', () => {
     insertSource(service)
   })
 
+  it('projects movie cards without loading deep analysis or changing filters', () => {
+    service.upsertMediaItem(makeMediaItem({ plex_id: 'card-a', title: 'Alpha' }))
+    service.upsertMediaItem(makeMediaItem({ plex_id: 'card-b', title: 'Beta' }))
+    const cards = service.getMediaItems({ type: 'movie', sortBy: 'title', sortOrder: 'asc' }, 'card')
+    expect(cards.map(movie => movie.title)).toEqual(['Alpha', 'Beta'])
+    expect(cards[0]).toMatchObject({ resolution: '1080p', video_bitrate_kbps: 5000, file_path: '/movies/test.mkv' })
+    expect(cards[0]).not.toHaveProperty('deep_analysis')
+    expect(cards[0]).not.toHaveProperty('subtitle_tracks')
+  })
+
   it('upsertMediaItem inserts and returns ID', () => {
     const id = service.upsertMediaItem(makeMediaItem())
     expect(id).toBeGreaterThan(0)
