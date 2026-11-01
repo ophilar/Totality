@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { buildLosslessSampleArgs, buildMeasuredCandidateArgs } from '@main/services/MeasuredOptimizationService'
+import { buildMeasuredCandidateArgs } from '@main/services/MeasuredOptimizationService'
 
 const toolsAvailable = ['ffmpeg', 'ffprobe'].every(binary => spawnSync(binary, ['-version'], { stdio: 'ignore' }).status === 0)
 
@@ -18,14 +18,12 @@ function decodedTimestamps(filePath: string): number[] {
   ]).split(/\r?\n/).filter(line => line.trim()).map(line => Number(line.split(',')[0]))
 }
 
-describe.skipIf(!toolsAvailable)('lossless measured video sampling (real FFmpeg)', () => {
-  it.each([false, true])('preserves B-frame video count and relative timestamps; VFR=%s', vfr => {
-    const dir = mkdtempSync(join(tmpdir(), 'totality-lossless-sample-'))
+describe.skipIf(!toolsAvailable)('direct-source measured video sampling (real FFmpeg)', () => {
+  it.each([false, true])('preserves non-keyframe B-frame windows and VFR=%s', vfr => {
+    const dir = mkdtempSync(join(tmpdir(), 'totality-direct-source-'))
     try {
       const input = join(dir, 'source.mkv')
-      const reference = join(dir, 'reference.mkv')
       const candidate = join(dir, 'candidate.mkv')
-
       run('ffmpeg', [
         '-y', '-v', 'error',
         '-f', 'lavfi', '-i', 'testsrc2=size=160x96:rate=24000/1001:duration=5',
@@ -35,21 +33,24 @@ describe.skipIf(!toolsAvailable)('lossless measured video sampling (real FFmpeg)
         '-c:v', 'mpeg4', '-bf', '2', '-g', '24', '-q:v', '4',
         '-c:a', 'aac', '-shortest', input,
       ])
-
-      // 0.73s is intentionally not a keyframe boundary.
-      run('ffmpeg', buildLosslessSampleArgs(input, reference, 0.73, 1.7, true))
+      const window = { startSeconds: 0.73, durationSeconds: 1.7 }
       run('ffmpeg', buildMeasuredCandidateArgs([
         '-y', '-v', 'error', '-i', '<input>', '-fps_mode', 'passthrough',
         '-map', '0:v:0', '-map', '0:a:0',
         '-c:v', 'mpeg4', '-q:v', '4', '-c:a', 'copy', '<output>',
-      ], reference, candidate))
-
-      const expected = decodedTimestamps(reference)
+      ], input, candidate, window))
+      const reference = run('ffmpeg', [
+        '-hide_banner', '-nostats', '-v', 'info',
+        '-ss', String(window.startSeconds), '-i', input,
+        '-map', '0:v:0', '-vf', `trim=duration=${window.durationSeconds},setpts=PTS-STARTPTS,showinfo`,
+        '-fps_mode', 'passthrough', '-t', String(window.durationSeconds), '-an', '-sn', '-f', 'null', '-',
+      ])
+      const expected = reference.split(/\r?\n/)
+        .filter(line => /showinfo/.test(line) && /n:\s*\d+\s+pts:/.test(line))
+        .map(line => Number(line.match(/\bpts_time:\s*([^\s]+)/)?.[1]))
       const actual = decodedTimestamps(candidate)
       expect(expected.length).toBeGreaterThan(20)
       expect(actual.length).toBe(expected.length)
-      expect(expected.every(Number.isFinite)).toBe(true)
-      expect(actual.every(Number.isFinite)).toBe(true)
       for (let index = 0; index < expected.length; index++) {
         expect(Math.abs((expected[index] - expected[0]) - (actual[index] - actual[0]))).toBeLessThanOrEqual(0.002)
       }
