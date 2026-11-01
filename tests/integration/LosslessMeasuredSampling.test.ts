@@ -21,6 +21,36 @@ function decodedTimestamps(filePath: string): number[] {
 }
 
 describe.skipIf(!toolsAvailable)('direct-source measured video sampling (real FFmpeg)', () => {
+  it('preserves the final frame of a 30-second 23.976 fps window', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'totality-sample-boundary-'))
+    try {
+      const source = join(dir, 'source.mkv')
+      const output = join(dir, 'sample.mkv')
+      run('ffmpeg', [
+        '-y', '-v', 'error', '-f', 'lavfi',
+        '-i', 'testsrc2=size=96x72:rate=24000/1001:duration=40',
+        '-c:v', 'mpeg4', '-q:v', '4', source,
+      ])
+      const window = { startSeconds: 8.0176, durationSeconds: 30 }
+      run('ffmpeg', buildMeasuredCandidateArgs([
+        '-y', '-v', 'error', '-i', '<input>', '-fps_mode', 'passthrough',
+        '-c:v', 'mpeg4', '-q:v', '4', '<output>',
+      ], source, output, window))
+      const reference = run('ffmpeg', [
+        '-hide_banner', '-nostats', '-v', 'info',
+        '-ss', String(window.startSeconds), '-i', source,
+        '-map', '0:v:0', '-vf', 'trim=duration=30,setpts=PTS-STARTPTS,showinfo',
+        '-fps_mode', 'passthrough', '-t', '30', '-an', '-sn', '-f', 'null', '-',
+      ])
+      const expectedFrames = reference.split(/\\r?\\n/)
+        .filter(line => /showinfo/.test(line) && /n:\\s*\\d+\\s+pts:/.test(line)).length
+      expect(expectedFrames).toBe(720)
+      expect(decodedTimestamps(output)).toHaveLength(expectedFrames)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 90000)
+
   it.each([false, true])('preserves non-keyframe B-frame windows and VFR=%s', vfr => {
     const dir = mkdtempSync(join(tmpdir(), 'totality-direct-source-'))
     try {
