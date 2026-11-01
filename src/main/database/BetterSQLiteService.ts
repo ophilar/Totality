@@ -1674,13 +1674,13 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
    */
   getRecentlyUpgraded(days: number = 30): Array<{
     id: number; title: string; year: number | null; type: string
-    poster_url: string | null; quality_tier: string
+    poster_url: string | null; quality_tier: string; source_id: string
     previous_quality_tier: string; upgraded_at: string
     series_title: string | null; season_number: number | null; episode_number: number | null
   }> {
     if (!this.db) throw new Error('Database not initialized')
     return this.db.prepare(`
-      SELECT m.id, m.title, m.year, m.type, m.poster_url,
+      SELECT m.id, m.title, m.year, m.type, m.poster_url, m.source_id,
         qs.quality_tier, qs.previous_quality_tier, qs.upgraded_at,
         m.series_title, m.season_number, m.episode_number
       FROM quality_scores qs
@@ -1693,19 +1693,19 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       LIMIT 50
     `).all(`-${days} days`) as Array<{
       id: number; title: string; year: number | null; type: string
-      poster_url: string | null; quality_tier: string
+      poster_url: string | null; quality_tier: string; source_id: string
       previous_quality_tier: string; upgraded_at: string
       series_title: string | null; season_number: number | null; episode_number: number | null
     }>
   }
 
   getRecentlyUpgradedMusic(days: number = 30): Array<{
-    album_id: number; title: string; artist_name: string
+    album_id: number; title: string; artist_name: string; source_id: string
     quality_tier: string; previous_quality_tier: string; upgraded_at: string
   }> {
     if (!this.db) throw new Error('Database not initialized')
     return this.db.prepare(`
-      SELECT a.id as album_id, a.title, a.artist_name,
+      SELECT a.id as album_id, a.title, a.artist_name, a.source_id,
         mqs.quality_tier, mqs.previous_quality_tier, mqs.upgraded_at
       FROM music_quality_scores mqs
       JOIN music_albums a ON a.id = mqs.album_id
@@ -1714,7 +1714,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       ORDER BY mqs.upgraded_at DESC
       LIMIT 50
     `).all(`-${days} days`) as Array<{
-      album_id: number; title: string; artist_name: string
+      album_id: number; title: string; artist_name: string; source_id: string
       quality_tier: string; previous_quality_tier: string; upgraded_at: string
     }>
   }

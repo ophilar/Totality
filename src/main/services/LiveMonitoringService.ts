@@ -770,6 +770,8 @@ export class LiveMonitoringService {
       hasChanges: events.length > 0,
     })
 
+    this.notifyQualityUpgrades(sourceId, source.display_name, events)
+
     // Check wishlist for auto-completion after items were added or updated
     if (events.some((e) => e.changeType === 'added' || e.changeType === 'updated' || e.changeType === 'mixed')) {
       getWishlistCompletionService().checkAndComplete().catch((err) => {
@@ -788,6 +790,30 @@ export class LiveMonitoringService {
   /**
    * Start polling for a remote source
    */
+  private notifyQualityUpgrades(sourceId: string, sourceName: string, events: SourceChangeEvent[]): void {
+    const updated = events.filter(event => event.changeType === 'updated' || event.changeType === 'mixed')
+    if (updated.length === 0) return
+    const db = getDatabase()
+    const since = Math.min(...updated.map(event => Date.parse(event.detectedAt)))
+    const recent = (timestamp: string) => Date.parse(timestamp.includes('T')
+      ? timestamp : timestamp.replace(' ', 'T') + 'Z') >= since
+    const video = db.getRecentlyUpgraded(1)
+      .filter(item => item.source_id === sourceId && recent(item.upgraded_at))
+      .map(item => `${item.title}: ${item.previous_quality_tier} → ${item.quality_tier}`)
+    const music = db.getRecentlyUpgradedMusic(1)
+      .filter(item => item.source_id === sourceId && recent(item.upgraded_at))
+      .map(item => `${item.title} (${item.artist_name}): ${item.previous_quality_tier} → ${item.quality_tier}`)
+    const upgrades = [...video, ...music]
+    if (upgrades.length === 0) return
+    db.createNotification({
+      type: 'info',
+      title: `${upgrades.length} quality upgrade${upgrades.length === 1 ? '' : 's'} detected`,
+      message: upgrades.slice(0, 5).join(', ') + (upgrades.length > 5 ? ` +${upgrades.length - 5} more` : ''),
+      sourceId, sourceName, itemCount: upgrades.length,
+    })
+    emitNotificationCreated()
+  }
+
   private startPolling(sourceId: string, sourceType: ProviderType): void {
     const interval = this.config.pollingIntervals[sourceType] || DEFAULT_MONITORING_CONFIG.pollingIntervals[sourceType] || 300000
 
@@ -1042,6 +1068,8 @@ export class LiveMonitoringService {
       sourceId,
       hasChanges: events.length > 0,
     })
+
+    this.notifyQualityUpgrades(sourceId, source.display_name, events)
 
     // Check wishlist for auto-completion after items were added or updated
     if (events.some((e) => e.changeType === 'added' || e.changeType === 'updated' || e.changeType === 'mixed')) {
