@@ -493,7 +493,6 @@ export class WebServerService {
       return
     }
 
-    // Only proxy URLs from local/private networks or known media services
     let parsedUrl: URL
     try {
       parsedUrl = new URL(imageUrl)
@@ -503,49 +502,108 @@ export class WebServerService {
       return
     }
 
-    // Allow: private IPs, Plex domains, TMDB, Jellyfin/Emby local servers
     const hostname = parsedUrl.hostname
-    const isAllowed = hostname === 'localhost' || hostname === '127.0.0.1' ||
+    const privateHost = hostname === 'localhost' || hostname === '127.0.0.1' ||
       hostname.startsWith('192.168.') || hostname.startsWith('10.') ||
-      hostname.match(/^172\.(1[6-9]|2[0-9]|3[01])\./) ||
-      hostname.endsWith('.plex.direct') ||
-      hostname === 'image.tmdb.org' ||
-      parsedUrl.searchParams.has('X-Plex-Token')
-
-    if (!isAllowed) {
+      /^172\\.(1[6-9]|2[0-9]|3[01])\\./.test(hostname)
+    const trustedHost = privateHost || hostname.endsWith('.plex.direct') ||
+      hostname === 'image.tmdb.org' || hostname === 'coverartarchive.org'
+    if (!['http:', 'https:'].includes(parsedUrl.protocol) || !trustedHost) {
       res.writeHead(403)
       res.end('URL not allowed')
       return
     }
 
-    const fetchOptions = parsedUrl.protocol === 'https:'
-      ? { rejectUnauthorized: false } as https.RequestOptions // Accept self-signed Plex certs
-      : {}
+    const isPlex = hostname.endsWith('.plex.direct') || (privateHost && parsedUrl.searchParams.has('X-Plex-Token'))
+    if (isPlex && !parsedUrl.searchParams.has('width')) {
+      parsedUrl.searchParams.set('width', '300')
+      parsedUrl.searchParams.set('height', '450')
+    }
+    if (parsedUrl.pathname.includes('/Items/') && parsedUrl.pathname.includes('/Images/') && !parsedUrl.searchParams.has('maxWidth')) {
+      parsedUrl.searchParams.set('maxWidth', '600')
+    }
+
+    const requestUrl = parsedUrl.toString()
+    const cacheKey = crypto.createHash('sha256').update(requestUrl).digest('hex')
+    const cachePath = path.join(this.imageCacheDir, `${cacheKey}.jpg`)
+    try {
+      const stat = fs.statSync(cachePath)
+      if (stat.isFile() && Date.now() - stat.mtimeMs < this.imageCacheMaxAgeMs) {
+        res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': String(stat.size), 'Cache-Control': 'private, max-age=86400' })
+        const stream = fs.createReadStream(cachePath)
+        stream.on('error', error => {
+          getLoggingService().warn('WebServer', 'Image cache read failed', error)
+          res.destroy(error)
+        })
+        stream.pipe(res)
+        return
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+
     const fetcher = parsedUrl.protocol === 'https:' ? https : http
-    const proxyReq = fetcher.get(imageUrl, fetchOptions, (proxyRes) => {
-      res.writeHead(proxyRes.statusCode || 200, {
-        'Content-Type': proxyRes.headers['content-type'] || 'image/jpeg',
-        'Cache-Control': 'public, max-age=86400',
+    const options = parsedUrl.protocol === 'https:' ? { rejectUnauthorized: false } : {}
+    const proxyReq = fetcher.get(requestUrl, options, proxyRes => {
+      const contentType = proxyRes.headers['content-type'] || 'application/octet-stream'
+      res.writeHead(proxyRes.statusCode || 502, {
+        'Content-Type': contentType,
+        'Cache-Control': 'private, max-age=86400',
+      })
+      const chunks: Buffer[] = []
+      let bytes = 0
+      const cacheable = proxyRes.statusCode === 200 && contentType.toLowerCase().startsWith('image/jpeg')
+      proxyRes.on('data', (chunk: Buffer) => {
+        bytes += chunk.length
+        if (cacheable && bytes <= this.maxCachedImageBytes) chunks.push(chunk)
+      })
+      proxyRes.on('end', () => {
+        if (!cacheable || bytes > this.maxCachedImageBytes) return
+        const tempPath = `${cachePath}.${crypto.randomUUID()}.tmp`
+        void fs.promises.mkdir(this.imageCacheDir, { recursive: true })
+          .then(() => fs.promises.writeFile(tempPath, Buffer.concat(chunks)))
+          .then(() => fs.promises.rename(tempPath, cachePath))
+          .catch(error => {
+            getLoggingService().warn('WebServer', 'Image cache write failed', error)
+            void fs.promises.rm(tempPath, { force: true }).catch(cleanupError =>
+              getLoggingService().warn('WebServer', 'Image cache cleanup failed', cleanupError))
+          })
+      })
+      proxyRes.on('error', error => {
+        getLoggingService().warn('WebServer', 'Upstream image stream failed', error)
+        res.destroy(error)
       })
       proxyRes.pipe(res)
     })
-    proxyReq.on('error', () => {
+    proxyReq.on('error', error => {
+      getLoggingService().warn('WebServer', 'Image proxy request failed', error)
       if (!res.headersSent) {
         res.writeHead(502)
         res.end('Failed to fetch image')
-      } else {
-        res.end()
-      }
+      } else res.destroy(error)
     })
-    proxyReq.setTimeout(10000, () => {
-      proxyReq.destroy()
-      if (!res.headersSent) {
-        res.writeHead(504)
-        res.end('Timeout')
-      } else {
-        res.end()
-      }
-    })
+    proxyReq.setTimeout(30000, () => proxyReq.destroy(new Error('Image request timed out')))
+  }
+
+  private async pruneImageCache(): Promise<void> {
+    let names: string[]
+    try {
+      names = await fs.promises.readdir(this.imageCacheDir)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+      throw error
+    }
+    const files = await Promise.all(names.map(async name => {
+      const filePath = path.join(this.imageCacheDir, name)
+      const stat = await fs.promises.stat(filePath)
+      return { filePath, size: stat.size, age: stat.mtimeMs }
+    }))
+    let total = files.reduce((sum, file) => sum + file.size, 0)
+    for (const file of files.sort((a, b) => a.age - b.age)) {
+      if (Date.now() - file.age <= this.imageCacheMaxAgeMs && total <= this.imageCacheMaxBytes) break
+      await fs.promises.rm(file.filePath)
+      total -= file.size
+    }
   }
 
   private proxyToDevServer(req: http.IncomingMessage, res: http.ServerResponse): void {
