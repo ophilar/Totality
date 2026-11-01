@@ -50,10 +50,15 @@ async function generateMedia(root) {
   fail('ffmpeg music fixture', music)
 }
 async function waitForScans(page) {
-  await page.waitForFunction(async () => {
-    const state = await window.electronAPI.taskQueueGetState()
-    return !state.currentTask && state.queue.length === 0 && state.completedTasks.length >= 3
-  }, null, { timeout: 180_000, polling: 1000 })
+  try {
+    await page.waitForFunction(async () => {
+      const state = await window.electronAPI.taskQueueGetState()
+      return !state.currentTask && state.queue.length === 0 && state.completedTasks.length >= 3
+    }, null, { timeout: 90_000, polling: 1000 })
+  } catch (error) {
+    const state = await page.evaluate(() => window.electronAPI.taskQueueGetState())
+    throw new Error('Real media scan did not finish: ' + JSON.stringify(state), { cause: error })
+  }
   const state = await page.evaluate(() => window.electronAPI.taskQueueGetState())
   const failures = state.completedTasks.filter(task => task.status !== 'completed')
   if (failures.length) throw new Error('Real media scanning failed: ' + JSON.stringify(failures))
@@ -191,6 +196,7 @@ async function shootApp(appRoot, mediaRoot, outputDir, version, seedDb) {
   await mkdir(path.join(profile, 'home'), { recursive: true })
   await mkdir(path.join(profile, 'xdg'), { recursive: true })
   let instance = await startApplication(appRoot, profile)
+  let completed = false
   try {
   if (seedDb) {
     const dbPath = path.join(instance.userData, 'totality-v2.db')
@@ -245,9 +251,13 @@ async function shootApp(appRoot, mediaRoot, outputDir, version, seedDb) {
     await browser.close()
   }
   await writeFile(path.join(outputDir, version + '.json'), JSON.stringify(results, null, 2))
+  completed = true
   return results
   } finally {
-    if (instance) await instance.electronApp.close()
+    if (instance) {
+      if (completed) await instance.electronApp.close()
+      else instance.electronApp.process().kill('SIGKILL')
+    }
   }
 }
 function escapeHtml(value) {
