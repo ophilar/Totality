@@ -669,6 +669,13 @@ describe('PlexProvider', () => {
       expect(mockDeleteMediaItem).not.toHaveBeenCalled()
     })
 
+    it('propagates TV episode-fetch failures instead of interpreting them as deletions', async () => {
+      mockFetchJSON.mockRejectedValueOnce(new Error('Plex unavailable'))
+      const provider = createProviderWithServer()
+      await expect(provider.getAllEpisodes('show-1')).rejects.toThrow('Plex unavailable')
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+
     it('accepts an explicitly empty inventory and a complete multi-page inventory', async () => {
       const provider = createProviderWithServer()
       mockFetchJSON.mockResolvedValueOnce({ MediaContainer: { Metadata: [], totalSize: 0 } })
