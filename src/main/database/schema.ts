@@ -597,6 +597,7 @@ CREATE TABLE IF NOT EXISTS library_scans (
   library_type TEXT NOT NULL,
   last_scan_at TEXT NOT NULL,
   items_scanned INTEGER DEFAULT 0,
+  is_enabled INTEGER NOT NULL DEFAULT 1,
 
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),

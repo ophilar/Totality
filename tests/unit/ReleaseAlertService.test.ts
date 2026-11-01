@@ -10,6 +10,7 @@ const mockEmitNotificationCreated = vi.hoisted(() => vi.fn())
 vi.mock('../../src/main/database/getDatabase', () => ({
   getDatabase: vi.fn(() => ({
     getSetting: mockGetSetting,
+    setSetting: vi.fn(),
     getWishlistItems: mockGetWishlistItems,
     createNotification: mockCreateNotification,
   })),
