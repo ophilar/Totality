@@ -488,6 +488,9 @@ export class PlexProvider implements MediaProvider {
 
           // Get all episodes
           const episodes = await this.getAllEpisodes(item.ratingKey)
+          if (episodes.length === 0) {
+            throw new Error(`Plex returned no episodes for ${item.title}; cannot verify a complete inventory`)
+          }
           for (const ep of episodes) {
             const epExt = ep as PlexMediaItem & { _showTmdbId?: string; _showTitleSort?: string }
             epExt._showTmdbId = showTmdbId
@@ -593,6 +596,8 @@ export class PlexProvider implements MediaProvider {
                 } else {
                   result.itemsAdded++
                 }
+              } else {
+                result.errors.push(`Could not convert Plex metadata for ${item.title}; incomplete scan cannot verify deletions`)
               }
 
               if (onProgress) {
@@ -618,7 +623,7 @@ export class PlexProvider implements MediaProvider {
         await db.endBatch()
       }
 
-      if (result.cancelled) {
+      if (result.cancelled || result.errors.length > 0) {
         result.durationMs = Date.now() - startTime
         return result
       }
