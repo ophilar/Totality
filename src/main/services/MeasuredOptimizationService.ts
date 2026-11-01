@@ -227,6 +227,7 @@ export class MeasuredOptimizationService {
     if (timestamps.length < 2 || timestamps.some((timestamp, index) => !Number.isFinite(timestamp) || index > 0 && timestamp <= timestamps[index - 1])) {
       throw new Error(`Direct-source sample has incomplete or non-monotonic frame timestamps: ${filePath}`)
     }
+    const [timeBaseNumerator, timeBaseDenominator] = output.match(/config in time_base:\s*(\d+)\/(\d+)/)!.slice(1).map(Number)
     const first = lines[0]
     const color = output.split(/\r?\n/).find(line => /showinfo/.test(line) && /color_range:/.test(line)) ?? ''
     const size = first.match(/\bs:\s*(\d+)x(\d+)/)
@@ -242,7 +243,7 @@ export class MeasuredOptimizationService {
       frames: timestamps.length,
       durationSeconds: timestamps[timestamps.length - 1] - timestamps[0] + frameDuration,
       timestamps: timestamps.map(value => value - timestamps[0]),
-      timestampPrecisionSeconds: 1 / 1000000,
+      timestampPrecisionSeconds: timeBaseNumerator / timeBaseDenominator,
       width: size ? Number(size[1]) : undefined,
       height: size ? Number(size[2]) : undefined,
       pixelFormat: metadata('fmt'),
