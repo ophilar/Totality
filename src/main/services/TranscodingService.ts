@@ -862,7 +862,7 @@ export class TranscodingService {
           sourceAnalysis: prepared.status === 'ready' ? prepared.analysis : undefined,
           operations: [],
           decisionStatus,
-          qualityChoices: prepared.status === 'ready' ? getOptimizationQualityChoices(prepared.stat.size, prepared.analysis.durationMs! / 1000, cachedMeasurement, request.options.qualityProfile) : undefined,
+          qualityChoices: prepared.status === 'ready' ? getOptimizationQualityChoices(prepared.stat.size, prepared.analysis.durationMs! / 1000, plannedNonVideoBytesPerSecond(prepared.analysis, request.options), cachedMeasurement, request.options.qualityProfile) : undefined,
           evidenceStatus: measuredOutcome ? 'measured' : 'insufficient',
           confidence: measuredOutcome ? 'high' : 'none',
           savingsCoverage: measuredOutcome ? 'complete' : 'insufficient',
