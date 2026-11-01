@@ -42,8 +42,8 @@ describe.skipIf(!toolsAvailable)('direct-source measured video sampling (real FF
         '-map', '0:v:0', '-vf', 'trim=duration=30,setpts=PTS-STARTPTS,showinfo',
         '-fps_mode', 'passthrough', '-t', '30', '-an', '-sn', '-f', 'null', '-',
       ])
-      const expectedFrames = reference.split(/\\r?\\n/)
-        .filter(line => /showinfo/.test(line) && /n:\\s*\\d+\\s+pts:/.test(line)).length
+      const expectedFrames = reference.split(/\r?\n/)
+        .filter(line => /showinfo/.test(line) && /n:\s*\d+\s+pts:/.test(line)).length
       expect(expectedFrames).toBe(720)
       expect(decodedTimestamps(output)).toHaveLength(expectedFrames)
     } finally {
