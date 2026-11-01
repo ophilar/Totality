@@ -191,6 +191,15 @@ async function navigate(page, screen, viewport) {
   }
   return true
 }
+async function closeScenario(page, screen, viewport) {
+  if (screen === 'wishlist' && viewport !== 'mobile') {
+    await page.getByRole('button', { name: 'Toggle wishlist panel' }).click()
+  } else if (screen === 'settings' && viewport !== 'mobile') {
+    await page.getByRole('button', { name: 'Close settings' }).click()
+  } else if (screen === 'movie-search' && viewport !== 'mobile') {
+    await page.getByRole('textbox', { name: 'Search all libraries' }).fill('')
+  }
+}
 async function shootApp(appRoot, mediaRoot, outputDir, version, seedDb) {
   const profile = path.join(outputDir, 'profiles', version)
   await mkdir(path.join(profile, 'home'), { recursive: true })
@@ -230,8 +239,6 @@ async function shootApp(appRoot, mediaRoot, outputDir, version, seedDb) {
       for (const screen of screens) {
         const key = viewport + '/' + screen
         try {
-          await page.reload({ waitUntil: 'domcontentloaded' })
-          await page.getByRole('tablist', { name: 'Navigation' }).first().waitFor({ timeout: 20_000 })
           const included = await navigate(page, screen, viewport)
           if (!included) continue
           await page.evaluate(async () => { await document.fonts.ready })
@@ -240,17 +247,23 @@ async function shootApp(appRoot, mediaRoot, outputDir, version, seedDb) {
           await page.screenshot({ path: file, animations: 'disabled', fullPage: false })
           results.screenshots[key] = path.relative(outputDir, file).replaceAll(path.sep, '/')
           results.interactions[key] = 'passed'
+          await closeScenario(page, screen, viewport)
         } catch (error) {
           results.interactions[key] = 'FAILED: ' + String(error)
           results.errors.push(key + ': ' + String(error))
+          break
         }
       }
+      if (results.errors.length) break
     }
     await context.close()
   } finally {
     await browser.close()
   }
   await writeFile(path.join(outputDir, version + '.json'), JSON.stringify(results, null, 2))
+  if (Object.values(results.interactions).some(result => result.startsWith('FAILED'))) {
+    throw new Error('Visual scenario failed; inspect ' + path.join(outputDir, version + '.json'))
+  }
   completed = true
   return results
   } finally {
