@@ -225,7 +225,7 @@ export class MeasuredOptimizationService {
       throw new Error(`Direct-source sample has incomplete or non-monotonic frame timestamps: ${filePath}`)
     }
     const first = lines[0]
-    const color = output.split(/\\r?\\n/).find(line => /showinfo/.test(line) && /color_range:/.test(line)) ?? ''
+    const color = output.split(/\r?\n/).find(line => /showinfo/.test(line) && /color_range:/.test(line)) ?? ''
     const size = first.match(/\bs:\s*(\d+)x(\d+)/)
     const lastDuration = Number(lines[lines.length - 1].match(/\bduration_time:\s*([^\s]+)/)?.[1])
     const frameDuration = Number.isFinite(lastDuration) && lastDuration > 0
