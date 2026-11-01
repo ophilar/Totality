@@ -646,6 +646,45 @@ describe('PlexProvider', () => {
   })
 
   // ========================================================================
+  // Inventory pagination must be complete before deletion reconciliation
+  // ========================================================================
+
+  describe('paginatedPlexFetch', () => {
+    it('rejects a missing Plex response container', async () => {
+      mockFetchJSON.mockResolvedValueOnce({})
+      const provider = createProviderWithServer()
+      await expect((provider as any).paginatedPlexFetch('/library/sections/1/all'))
+        .rejects.toThrow('missing MediaContainer')
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+
+    it('rejects a truncated inventory rather than returning a partial deletion set', async () => {
+      mockFetchJSON
+        .mockResolvedValueOnce({ MediaContainer: { Metadata: [makeMovieItem()], totalSize: 2 } })
+        .mockResolvedValueOnce({ MediaContainer: { Metadata: [], totalSize: 2 } })
+      const provider = createProviderWithServer()
+      await expect((provider as any).paginatedPlexFetch('/library/sections/1/all'))
+        .rejects.toThrow('Incomplete Plex inventory')
+      expect(mockFetchJSON).toHaveBeenCalledTimes(2)
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+
+    it('accepts an explicitly empty inventory and a complete multi-page inventory', async () => {
+      const provider = createProviderWithServer()
+      mockFetchJSON.mockResolvedValueOnce({ MediaContainer: { Metadata: [], totalSize: 0 } })
+      await expect((provider as any).paginatedPlexFetch('/library/sections/1/all'))
+        .resolves.toEqual([])
+
+      const second = makeMovieItem({ ratingKey: '67890' })
+      mockFetchJSON
+        .mockResolvedValueOnce({ MediaContainer: { Metadata: [makeMovieItem()], totalSize: 2 } })
+        .mockResolvedValueOnce({ MediaContainer: { Metadata: [second], totalSize: 2 } })
+      await expect((provider as any).paginatedPlexFetch('/library/sections/1/all'))
+        .resolves.toEqual([makeMovieItem(), second])
+    })
+  })
+
+  // ========================================================================
   // removeStaleItems (safety guard)
   // ========================================================================
 
