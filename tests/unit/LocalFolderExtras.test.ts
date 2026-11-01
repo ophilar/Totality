@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
 import * as fs from 'fs'
 
+const mockGetMediaItemByPath = vi.hoisted(() => vi.fn())
+const mockGetMusicTrackByPath = vi.hoisted(() => vi.fn())
+const mockDeleteMediaItem = vi.hoisted(() => vi.fn())
+const mockDeleteMusicTrack = vi.hoisted(() => vi.fn())
+
 // Mock all heavy dependencies of LocalFolderProvider module
 vi.mock('fs', () => ({
   default: { existsSync: vi.fn(), statSync: vi.fn() },
@@ -17,16 +22,25 @@ vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => '/tmp') },
 }))
 vi.mock('../../src/main/database/getDatabase', () => ({
-  getDatabase: vi.fn(() => ({})),
+  getDatabase: vi.fn(() => ({
+    getSetting: vi.fn(() => 'false'),
+    getMediaItemByPath: mockGetMediaItemByPath,
+    getMusicTrackByPath: mockGetMusicTrackByPath,
+    deleteMediaItem: mockDeleteMediaItem,
+    deleteMusicTrack: mockDeleteMusicTrack,
+  })),
 }))
 vi.mock('../../src/main/services/QualityAnalyzer', () => ({
-  getQualityAnalyzer: vi.fn(() => ({})),
+  getQualityAnalyzer: vi.fn(() => ({ loadThresholdsFromDatabase: vi.fn(async () => {}) })),
 }))
 vi.mock('../../src/main/services/MediaFileAnalyzer', () => ({
-  getMediaFileAnalyzer: vi.fn(() => ({})),
+  getMediaFileAnalyzer: vi.fn(() => ({ isAvailable: vi.fn(async () => false) })),
 }))
 vi.mock('../../src/main/services/FileNameParser', () => ({
-  getFileNameParser: vi.fn(() => ({})),
+  getFileNameParser: vi.fn(() => ({
+    isVideoFile: vi.fn(() => true),
+    isAudioFile: vi.fn(() => true),
+  })),
 }))
 vi.mock('../../src/main/services/TMDBService', () => ({
   getTMDBService: vi.fn(() => ({})),
@@ -131,6 +145,10 @@ describe('isExtrasContent', () => {
 })
 
 describe('LocalFolderProvider scan safety', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('uses configured defaults only when the setting is absent', () => {
     expect(readFfprobeBatchSize(null, 25)).toBe(25)
     expect(readFfprobeBatchSize('', 50)).toBe(50)
@@ -160,4 +178,46 @@ describe('LocalFolderProvider scan safety', () => {
       'Cannot complete media inventory'
     )
   })
+  it('retains a missing video when a targeted watcher event cannot prove deletion', async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+    mockGetMediaItemByPath.mockReturnValue({ id: 21 })
+    const provider = new LocalFolderProvider({
+      sourceId: 'test-local',
+      connectionConfig: { folderPath: '/media', mediaType: 'movies' },
+    } as ConstructorParameters<typeof LocalFolderProvider>[0])
+    const scan = Reflect.get(provider, 'scanTargetedFiles') as
+      (libraryId: string, files: string[]) => Promise<{ success: boolean; itemsRemoved: number; errors: string[] }>
+    const result = await scan.call(provider, 'movies', ['/unavailable/Movie.mkv'])
+    expect(result.success).toBe(false)
+    expect(result.itemsRemoved).toBe(0)
+    expect(result.errors).toHaveLength(1)
+    expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+  })
+
+  it('retains a missing track when a targeted watcher event cannot prove deletion', async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+    mockGetMusicTrackByPath.mockReturnValue({ id: 22 })
+    const provider = new LocalFolderProvider({
+      sourceId: 'test-local',
+      connectionConfig: { folderPath: '/music', mediaType: 'music' },
+    } as ConstructorParameters<typeof LocalFolderProvider>[0])
+    const scan = Reflect.get(provider, 'scanTargetedMusicFiles') as
+      (files: string[]) => Promise<{ success: boolean; itemsRemoved: number; errors: string[] }>
+    const result = await scan.call(provider, ['/unavailable/Song.flac'])
+    expect(result.success).toBe(false)
+    expect(result.itemsRemoved).toBe(0)
+    expect(result.errors).toHaveLength(1)
+    expect(mockDeleteMusicTrack).not.toHaveBeenCalled()
+  })
+
+  it('rejects inaccessible music subdirectories as incomplete inventory', async () => {
+    vi.mocked(fs.promises.readdir).mockRejectedValueOnce(new Error('EACCES'))
+    const provider = new LocalFolderProvider({
+      sourceId: 'test-local',
+      connectionConfig: { folderPath: '/music', mediaType: 'music' },
+    } as ConstructorParameters<typeof LocalFolderProvider>[0])
+    const discover = Reflect.get(provider, 'discoverAudioFiles') as (root: string) => Promise<unknown>
+    await expect(discover.call(provider, '/music')).rejects.toThrow('Cannot complete music inventory')
+  })
+
 })
