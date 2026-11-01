@@ -497,7 +497,12 @@ export class LocalFolderProvider implements MediaProvider {
       console.log(`[LocalFolderProvider ${this.sourceId}] Found ${totalFiles} ${scanType} files`)
 
       if (totalFiles === 0) {
-        result.success = true
+        const existingItems = db.getMediaItems({ type: scanType, sourceId: this.sourceId, libraryId })
+        if (existingItems.length > 0) {
+          result.errors.push(`Empty media inventory but ${existingItems.length} stored items exist; scan cannot verify deletions`)
+        } else {
+          result.success = true
+        }
         result.durationMs = Date.now() - startTime
         return result
       }
@@ -731,6 +736,12 @@ export class LocalFolderProvider implements MediaProvider {
         await db.endBatch()
       }
 
+      // A partial scan cannot establish which stored media files are truly absent.
+      if (result.errors.length > 0) {
+        result.durationMs = Date.now() - startTime
+        return result
+      }
+
       // Phase 3: Remove stale items (only for full scans)
       // During incremental scans, we only process changed files, so we can't determine stale items
       if (!isIncremental) {
@@ -846,19 +857,16 @@ export class LocalFolderProvider implements MediaProvider {
         return parser.isVideoFile(path.basename(filePath))
       })
 
-      // Handle deleted files
-      const deletedFiles = filePaths.filter(filePath => !fs.existsSync(filePath))
-      for (const filePath of deletedFiles) {
-        const existingItem = db.getMediaItemByPath(filePath)
-        if (existingItem?.id) {
-          await db.deleteMediaItem(existingItem.id)
-          result.itemsRemoved++
-          console.log(`[LocalFolderProvider ${this.sourceId}] Removed deleted file: ${path.basename(filePath)}`)
+      // A targeted filesystem event is not proof of deletion (the volume may be unavailable).
+      const missingFiles = filePaths.filter(filePath => !fs.existsSync(filePath))
+      for (const filePath of missingFiles) {
+        if (db.getMediaItemByPath(filePath)) {
+          result.errors.push(`Cannot verify deletion of ${path.basename(filePath)} from a targeted event; stored item retained`)
         }
       }
 
-      if (validFiles.length === 0 && deletedFiles.length === 0) {
-        result.success = true
+      if (validFiles.length === 0) {
+        result.success = result.errors.length === 0
         result.durationMs = Date.now() - startTime
         return result
       }
@@ -991,7 +999,7 @@ export class LocalFolderProvider implements MediaProvider {
         console.log(`[LocalFolderProvider ${this.sourceId}] TMDB matches: ${parts.join(', ')}`)
       }
 
-      result.success = true
+      result.success = result.errors.length === 0
       result.durationMs = Date.now() - startTime
 
       console.log(`[LocalFolderProvider ${this.sourceId}] Targeted scan complete: ${result.itemsAdded} added, ${result.itemsUpdated} updated, ${result.itemsRemoved} removed`)
@@ -1039,23 +1047,15 @@ export class LocalFolderProvider implements MediaProvider {
         return parser.isAudioFile(path.basename(filePath))
       })
 
-      // Handle deleted files
-      const deletedFiles = filePaths.filter(filePath => !fs.existsSync(filePath))
-      console.log(`[LocalFolderProvider ${this.sourceId}] Checking ${deletedFiles.length} deleted files`)
-      for (const filePath of deletedFiles) {
-        console.log(`[LocalFolderProvider ${this.sourceId}] Looking up deleted track: ${path.basename(filePath)}`)
-        const existingTrack = db.getMusicTrackByPath(filePath)
-        if (existingTrack?.id) {
-          await db.deleteMusicTrack(existingTrack.id)
-          result.itemsRemoved++
-          console.log(`[LocalFolderProvider ${this.sourceId}] Removed deleted track: ${path.basename(filePath)}`)
-        } else {
-          console.log(`[LocalFolderProvider ${this.sourceId}] Track not found in database for: ${path.basename(filePath)}`)
+      const missingFiles = filePaths.filter(filePath => !fs.existsSync(filePath))
+      for (const filePath of missingFiles) {
+        if (db.getMusicTrackByPath(filePath)) {
+          result.errors.push(`Cannot verify deletion of ${path.basename(filePath)} from a targeted event; stored track retained`)
         }
       }
 
-      if (validFiles.length === 0 && deletedFiles.length === 0) {
-        result.success = true
+      if (validFiles.length === 0) {
+        result.success = result.errors.length === 0
         result.durationMs = Date.now() - startTime
         return result
       }
@@ -1245,7 +1245,7 @@ export class LocalFolderProvider implements MediaProvider {
         await db.updateMusicArtistCounts(artistId, albums.length, tracks.length)
       }
 
-      result.success = true
+      result.success = result.errors.length === 0
       result.durationMs = Date.now() - startTime
 
       console.log(`[LocalFolderProvider ${this.sourceId}] Targeted music scan complete: ${result.itemsAdded} added, ${result.itemsUpdated} updated, ${result.itemsRemoved} removed`)
