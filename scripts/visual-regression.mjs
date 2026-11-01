@@ -5,7 +5,6 @@
 import { mkdir, readFile, writeFile, copyFile, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
-import os from 'node:os'
 import { createRequire } from 'node:module'
 import { spawnSync } from 'node:child_process'
 import { randomInt } from 'node:crypto'
@@ -148,11 +147,14 @@ async function navigate(page, screen, viewport) {
 }
 async function shootApp(appRoot, mediaRoot, outputDir, version, seedDb) {
   const profile = path.join(outputDir, 'profiles', version)
-  await mkdir(profile, { recursive: true })
+  await mkdir(path.join(profile, 'home'), { recursive: true })
+  await mkdir(path.join(profile, 'xdg'), { recursive: true })
   let instance = await startApplication(appRoot, profile)
   if (seedDb) {
     const dbPath = path.join(instance.userData, 'totality-v2.db')
     await instance.electronApp.close()
+    await rm(dbPath + '-wal', { force: true })
+    await rm(dbPath + '-shm', { force: true })
     await copyFile(seedDb, dbPath)
     instance = await startApplication(appRoot, profile)
   } else {
