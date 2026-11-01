@@ -78,6 +78,9 @@ export interface SampleWindow {
 
 export function buildMeasuredCandidateArgs(template: string[], inputPath: string, outputPath: string, window: SampleWindow): string[] {
   const args = template.map(arg => arg === '<input>' ? PathUtils.sanitizeAbsolutePath(inputPath) : arg === '<output>' ? outputPath : arg)
+  for (let index = args.length - 1; index > 0; index--) {
+    if (args[index] === '0:t?' && args[index - 1] === '-map') args.splice(index - 1, 2)
+  }
   const inputIndex = args.indexOf('-i')
   args.splice(inputIndex, 0, '-ss', String(window.startSeconds))
   const trim = `trim=duration=${window.durationSeconds},setpts=PTS-STARTPTS`
