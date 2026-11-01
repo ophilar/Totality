@@ -84,7 +84,7 @@ export function buildMeasuredCandidateArgs(template: string[], inputPath: string
   const filterIndex = args.indexOf('-vf')
   if (filterIndex >= 0) args[filterIndex + 1] = `${trim},${args[filterIndex + 1]}`
   else args.splice(args.length - 1, 0, '-vf', trim)
-  args.splice(args.length - 1, 0, '-t', String(window.durationSeconds), '-enc_time_base:v:0', 'demux')
+  args.splice(args.length - 1, 0, '-an', '-sn', '-dn', '-t', String(window.durationSeconds), '-enc_time_base:v:0', 'demux')
   return args
 }
 
@@ -225,13 +225,14 @@ export class MeasuredOptimizationService {
       throw new Error(`Direct-source sample has incomplete or non-monotonic frame timestamps: ${filePath}`)
     }
     const first = lines[0]
+    const color = output.split(/\\r?\\n/).find(line => /showinfo/.test(line) && /color_range:/.test(line)) ?? ''
     const size = first.match(/\bs:\s*(\d+)x(\d+)/)
     const lastDuration = Number(lines[lines.length - 1].match(/\bduration_time:\s*([^\s]+)/)?.[1])
     const frameDuration = Number.isFinite(lastDuration) && lastDuration > 0
       ? lastDuration
       : timestamps[timestamps.length - 1] - timestamps[timestamps.length - 2]
     const metadata = (key: string): string | undefined => {
-      const value = first.match(new RegExp(`\\b${key}:\\s*([^\\s]+)`))?.[1]
+      const value = (first + ' ' + color).match(new RegExp(`\\b${key}:\\s*([^\\s]+)`))?.[1]
       return value && value !== 'unknown' ? value : undefined
     }
     return {
