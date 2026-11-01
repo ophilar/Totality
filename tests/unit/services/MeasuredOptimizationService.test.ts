@@ -1,5 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { verifyQsvQualityMode, verifySampleFrameAlignment, type SampleTimingEvidence } from '@main/services/MeasuredOptimizationService'
+import { buildLosslessSampleArgs, verifyQsvQualityMode, verifySampleFrameAlignment, type SampleTimingEvidence } from '@main/services/MeasuredOptimizationService'
+
+describe('buildLosslessSampleArgs', () => {
+  it('accurately seeks and encodes the video reference losslessly without copying video packets', () => {
+    const args = buildLosslessSampleArgs('/tmp/source.mkv', '/tmp/reference.mkv', 12.25, 3.5, true)
+    expect(args).toContain('ffv1')
+    expect(args).toContain('setpts=PTS-STARTPTS')
+    expect(args).toContain('passthrough')
+    expect(args).toContain('filter')
+    expect(args).toContain('0')
+    expect(args).toEqual(expect.arrayContaining(['-ss', '12.25', '-t', '3.5', '-c:v:0', 'ffv1']))
+    expect(args.indexOf('-ss')).toBeLessThan(args.indexOf('-i'))
+    expect(args).not.toContain('-noaccurate_seek')
+  })
+  it('maps only video during full-output verification', () => {
+    const args = buildLosslessSampleArgs('/tmp/source.mkv', '/tmp/reference.mkv', 0, 2)
+    expect(args).toEqual(expect.arrayContaining(['-map', '0:v:0', '-an', '-sn', '-dn']))
+    expect(args).not.toContain('-c')
+  })
+  it('rejects invalid windows instead of silently extracting the wrong segment', () => {
+    expect(() => buildLosslessSampleArgs('/tmp/source.mkv', '/tmp/reference.mkv', -1, 4)).toThrow()
+    expect(() => buildLosslessSampleArgs('/tmp/source.mkv', '/tmp/reference.mkv', 1, 0)).toThrow()
+  })
+})
 
 describe('verifyQsvQualityMode', () => {
   it.each(['ICQ', 'LA_ICQ'])('accepts %s when FFmpeg reports the configured quality', rateControl => {
