@@ -740,7 +740,7 @@ export class TaskQueueService {
       itemsRemoved: result.itemsRemoved,
       isFirstScan,
       errors: result.errors,
-      failedCount: result.errors.length,
+      failedCount: result.success ? result.errors.length : Math.max(1, result.errors.length),
     }
 
     if (!result.success) {
