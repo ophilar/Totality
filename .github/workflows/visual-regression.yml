@@ -1,0 +1,83 @@
+name: Totality visual comparison (0.4.2 vs 0.5)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [v0.5.0-clean]
+    paths:
+      - 'src/renderer/**'
+      - 'src/main/**'
+      - 'src/preload/**'
+      - 'scripts/visual-regression.mjs'
+      - '.github/workflows/visual-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  visual-comparison:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout 0.4.2 reference
+        uses: actions/checkout@v4
+        with:
+          ref: integration/upstream-v0.4.2-base
+          path: baseline
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+        with:
+          path: candidate
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            baseline/package-lock.json
+            candidate/package-lock.json
+      - name: Install real application dependencies
+        run: |
+          npm ci --prefix baseline
+          npm ci --prefix candidate
+      - name: Install Playwright runner without changing the application lockfile
+        run: |
+          npm install --prefix candidate --no-save --package-lock=false --ignore-scripts playwright@1.64.1
+          cd candidate
+          npx playwright install --with-deps chromium
+      - name: Install system media and display tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg xvfb
+      - name: Build both real Electron applications
+        run: |
+          (cd baseline && npx vite build)
+          (cd candidate && npx vite build)
+      - name: Generate real local-media regression fixtures
+        run: node candidate/scripts/visual-regression.mjs fixtures "$RUNNER_TEMP/visual-media"
+      - name: Capture reference 0.4.2
+        run: |
+          xvfb-run -a node candidate/scripts/visual-regression.mjs capture \
+            "$GITHUB_WORKSPACE/baseline" "$RUNNER_TEMP/visual-media" \
+            "$GITHUB_WORKSPACE/visual-report" 0.4.2 -
+      - name: Capture 0.5 from a separate migrated copy of the same database
+        run: |
+          DB=$(node -e "process.stdout.write(require('./visual-report/0.4.2.json').dbPath)")
+          xvfb-run -a node candidate/scripts/visual-regression.mjs capture \
+            "$GITHUB_WORKSPACE/candidate" "$RUNNER_TEMP/visual-media" \
+            "$GITHUB_WORKSPACE/visual-report" 0.5 "$DB"
+      - name: Generate visual difference report
+        run: node candidate/scripts/visual-regression.mjs report "$GITHUB_WORKSPACE/visual-report"
+      - name: Upload inspectable HTML comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: totality-042-vs-05-visual-report
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            visual-report/index.html
+            visual-report/*.json
+            visual-report/0.4.2/**/*.png
+            visual-report/0.5/**/*.png
+            visual-report/diffs/**/*.png
