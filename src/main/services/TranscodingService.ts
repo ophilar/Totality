@@ -2874,16 +2874,11 @@ export class TranscodingService {
       }
       const validSourcePreparation = cached.sourcePreparation === undefined ||
         Array.isArray(cached.sourcePreparation.samples) && cached.sourcePreparation.samples.length === APP_CONFIG.transcoding.samplePositions.length && cached.sourcePreparation.samples.every(sample =>
-          typeof sample.sourcePath === 'string' && isWithinSampleDirectory(sample.sourcePath) && hasValidTimingEvidence(sample.source) &&
-          (sample.referencePath === undefined || typeof sample.referencePath === 'string' && isWithinSampleDirectory(sample.referencePath)) &&
-          hasValidTimingEvidence(sample.reference) && Number.isFinite(sample.sourceSelfVmaf) && Number.isFinite(sample.sourceCambiMean))
-      const validSourcePreparationHashes = cached.sourcePreparation === undefined
-        ? cached.sourcePreparationHashes === undefined
-        : Array.isArray(cached.sourcePreparationHashes) && cached.sourcePreparationHashes.length === cached.sourcePreparation.samples.length &&
-          cached.sourcePreparation.samples.every((sample, index) => cached.sourcePreparationHashes![index]?.length === 1 + (sample.referencePath ? 1 : 0))
+          hasValidTimingEvidence(sample.source) && hasValidTimingEvidence(sample.reference) &&
+          Number.isFinite(sample.sourceSelfVmaf) && Number.isFinite(sample.sourceCambiMean))
       const valid = cached.version === MEASUREMENT_VERSION && cached.cacheKey === cacheKey && cached.sourceSha256 === sourceSha256 && typeof cached.complete === 'boolean' &&
         Array.isArray(cached.candidates) && Array.isArray(cached.sampleHashes) && Array.isArray(cached.partialSamples) && Array.isArray(cached.partialSampleHashes) &&
-        validSourcePreparation && validSourcePreparationHashes &&
+        validSourcePreparation &&
         cached.candidates.every(candidate => Number.isFinite(candidate.outputBytes) && candidate.outputBytes > 0 &&
           Number.isFinite(candidate.sampledDurationSeconds) && candidate.sampledDurationSeconds > 0 &&
           Number.isFinite(candidate.vmafMean) && Number.isFinite(candidate.vmafP5) && Number.isFinite(candidate.cambiMean) &&
@@ -2912,10 +2907,6 @@ export class TranscodingService {
       if (actualHashes.some((hashes, candidateIndex) => hashes.some((hash, index) => hash !== cached.sampleHashes[candidateIndex][index]))) throw new Error('Cached sample content changed')
       const actualPartialHashes = await Promise.all(cached.partialSamples.map(sample => hashOnce(sample.samplePath)))
       if (actualPartialHashes.some((hash, index) => hash !== cached.partialSampleHashes[index])) throw new Error('Cached partial sample content changed')
-      if (cached.sourcePreparation) {
-        const actualSourcePreparationHashes = await Promise.all(cached.sourcePreparation.samples.map(sample => Promise.all([sample.sourcePath, ...(sample.referencePath ? [sample.referencePath] : [])].map(hashOnce))))
-        if (actualSourcePreparationHashes.some((hashes, index) => hashes.some((hash, pathIndex) => hash !== cached.sourcePreparationHashes![index][pathIndex]))) throw new Error('Cached source preparation content changed')
-      }
       const searchComplete = cached.searchVersion === OPTIMIZATION_SEARCH_VERSION && cached.complete
       // Record actual reuse time so eligible unreferenced entries age out last.
       await fs.utimes(sampleDirectory, new Date(), new Date()).catch(error => {
