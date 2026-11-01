@@ -6603,12 +6603,13 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   /**
    * Get episode count for a TV show by its series-level TMDB ID
    */
-  getEpisodeCountBySeriesTmdbId(seriesTmdbId: string): number {
+  getEpisodeCountBySeriesTmdbId(seriesTmdbId: string, seasonNumber?: number): number {
     if (!this.db) throw new Error('Database not initialized')
     const stmt = this.db.prepare(
-      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_tmdb_id = ?"
+      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_tmdb_id = ?" +
+      (seasonNumber === undefined ? '' : ' AND season_number = ?')
     )
-    return (stmt.get(seriesTmdbId) as { count: number }).count
+    return (stmt.get(...(seasonNumber === undefined ? [seriesTmdbId] : [seriesTmdbId, seasonNumber])) as { count: number }).count
   }
 
   /**
@@ -6651,6 +6652,21 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       for (const row of rows) {
         if (row.musicbrainz_id) result.set(row.musicbrainz_id, row)
       }
+    }
+    return result
+  }
+
+  /**
+   * Resolve wishlist tracks by MusicBrainz IDs with one batched query.
+   */
+  getMusicTracksByMusicbrainzIds(ids: string[]): Map<string, MusicTrack> {
+    if (!this.db) throw new Error('Database not initialized')
+    const result = new Map<string, MusicTrack>()
+    for (let offset = 0; offset < ids.length; offset += 500) {
+      const batch = ids.slice(offset, offset + 500)
+      const placeholders = batch.map(() => '?').join(',')
+      const rows = this.db.prepare(`SELECT * FROM music_tracks WHERE musicbrainz_id IN (${placeholders})`).all(...batch) as MusicTrack[]
+      for (const row of rows) if (row.musicbrainz_id) result.set(row.musicbrainz_id, row)
     }
     return result
   }
