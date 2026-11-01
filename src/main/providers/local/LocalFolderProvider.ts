@@ -2232,7 +2232,12 @@ export class LocalFolderProvider implements MediaProvider {
       console.log(`[LocalFolderProvider ${this.sourceId}] Found ${totalFiles} audio files`)
 
       if (totalFiles === 0) {
-        result.success = true
+        const existing = db.getMusicTracks({ sourceId: this.sourceId })
+        if (existing.length > 0) {
+          result.errors.push(`Empty music inventory but ${existing.length} stored tracks exist; scan incomplete`)
+        } else {
+          result.success = true
+        }
         result.durationMs = Date.now() - startTime
         return result
       }
@@ -2528,7 +2533,7 @@ export class LocalFolderProvider implements MediaProvider {
       // Update scan time
       await db.updateSourceScanTime(this.sourceId)
 
-      result.success = true
+      result.success = result.errors.length === 0
       result.durationMs = Date.now() - startTime
 
       console.log(`[LocalFolderProvider ${this.sourceId}] Music scan complete: ${result.itemsScanned} tracks, ${artistMap.size} artists, ${albumMap.size} albums`)
@@ -2549,7 +2554,7 @@ export class LocalFolderProvider implements MediaProvider {
     let directoriesProcessed = 0
 
     const scanDir = async (dir: string, depth = 0): Promise<void> => {
-      if (depth > 15) return // Prevent infinite recursion
+      if (depth > 15) throw new Error(`Music directory scan exceeded the supported depth at ${dir}`)
 
       try {
         const entries = await fs.promises.readdir(dir, { withFileTypes: true })
@@ -2576,8 +2581,7 @@ export class LocalFolderProvider implements MediaProvider {
           await new Promise(resolve => setImmediate(resolve))
         }
       } catch (error) {
-        // Skip inaccessible directories
-        console.warn(`[LocalFolderProvider] Cannot access directory: ${path.basename(dir)}`)
+        throw new Error(`Cannot complete music inventory in ${dir}: ${getErrorMessage(error)}`)
       }
     }
 
