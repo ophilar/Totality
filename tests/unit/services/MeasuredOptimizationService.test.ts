@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest'
+import { resolve } from 'node:path'
 import { buildMeasuredCandidateArgs, verifyQsvQualityMode, verifySampleFrameAlignment, type SampleTimingEvidence } from '@main/services/MeasuredOptimizationService'
 
 describe('buildMeasuredCandidateArgs', () => {
   it('seeks into the original source and trims before hardware filters', () => {
+    const source = resolve('original.mkv')
     const args = buildMeasuredCandidateArgs(
       ['-y', '-i', '<input>', '-vf', 'vpp_qsv=format=nv12', '-c:v', 'hevc_qsv', '<output>'],
-      '/tmp/original.mkv', 'candidate.mkv', { startSeconds: 12.25, durationSeconds: 3.5 },
+      source, 'candidate.mkv', { startSeconds: 12.25, durationSeconds: 3.5 },
     )
     expect(args).toEqual([
-      '-y', '-ss', '12.25', '-i', '/tmp/original.mkv',
+      '-y', '-ss', '12.25', '-i', source,
       '-vf', 'trim=duration=3.5,setpts=PTS-STARTPTS,vpp_qsv=format=nv12',
       '-c:v', 'hevc_qsv', '-an', '-sn', '-dn', '-t', '3.5', '-enc_time_base:v:0', 'demux', 'candidate.mkv',
     ])
