@@ -6,6 +6,7 @@ import { mkdir, readFile, writeFile, copyFile, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { randomInt } from 'node:crypto'
 import { _electron as electron, chromium } from 'playwright'
@@ -109,7 +110,12 @@ async function startApplication(appRoot, profile) {
     process.stdout.write(message)
   })
   try {
-    const page = await electronApp.firstWindow({ timeout: 20_000 })
+    await electronApp.firstWindow({ timeout: 20_000 })
+    // Electron opens docked DevTools in development builds. Playwright may
+    // report DevTools as the first page, so select the exact real app URL.
+    const appUrl = pathToFileURL(path.join(appRoot, 'dist', 'index.html')).href
+    const page = electronApp.windows().find(window => window.url() === appUrl)
+    if (!page) throw new Error('Application window not found at ' + appUrl + '. Windows: ' + electronApp.windows().map(w => w.url()).join(', '))
     page.on('pageerror', error => console.error('[Electron renderer]', error))
     page.on('console', message => {
       if (message.type() === 'error') console.error('[Electron console]', message.text())
