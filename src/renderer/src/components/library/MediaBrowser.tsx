@@ -261,7 +261,7 @@ export function MediaBrowser({
         f.artistId = selectedArtist.id
         f.artistName = selectedArtist.name
       }
-      if (alphabetFilter) f.alphabetFilter = alphabetFilter
+      if (alphabetFilter && !selectedArtist) f.alphabetFilter = alphabetFilter
       return f
     },
     deps: [activeSourceId, activeLibraryId, searchQuery, albumSortColumn, albumSortDirection, selectedArtist, alphabetFilter],
