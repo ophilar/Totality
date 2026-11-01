@@ -38,20 +38,12 @@ export function StoreLinksMenu({ storeLinks, onOpenLink, isLoading, compact = fa
       <button
         onClick={() => setIsOpen(!isOpen)}
         disabled={isLoading}
-        className={compact
-          ? 'p-1 rounded-lg transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50'
-          : 'flex items-center gap-1.5 px-2.5 py-1.5 text-caption font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50'}
-        title="Shop links"
+        className={`flex items-center text-xs font-medium rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50 ${compact ? "gap-1 p-1.5" : "gap-1.5 px-2.5 py-1.5"}`}
+        aria-label={compact ? "Shop" : undefined}
       >
-        {compact ? (
-          <ExternalLink className="w-3.5 h-3.5" />
-        ) : (
-          <>
-            <Star className="w-3.5 h-3.5" />
-            <span>Shop</span>
-            <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-          </>
-        )}
+        <Star className="w-3.5 h-3.5" />
+        {!compact && <span>Shop</span>}
+        {!compact && <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />}
       </button>
 
       {isOpen && (
