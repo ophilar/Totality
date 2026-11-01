@@ -10,7 +10,7 @@ describe('buildMeasuredCandidateArgs', () => {
     expect(args).toEqual([
       '-y', '-ss', '12.25', '-i', '/tmp/original.mkv',
       '-vf', 'trim=duration=3.5,setpts=PTS-STARTPTS,vpp_qsv=format=nv12',
-      '-c:v', 'hevc_qsv', '-t', '3.5', '-enc_time_base:v:0', 'demux', 'candidate.mkv',
+      '-c:v', 'hevc_qsv', '-an', '-sn', '-dn', '-t', '3.5', '-enc_time_base:v:0', 'demux', 'candidate.mkv',
     ])
   })
 
