@@ -1806,6 +1806,8 @@ export class LocalFolderProvider implements MediaProvider {
 
     if (analysis.audioTracks && analysis.audioTracks.length > 0) {
       enhanced.audioTracks = analysis.audioTracks.map((track: AnalyzedAudioStream) => ({
+        streamIndex: track.index,
+        title: track.title,
         codec: normalizeAudioCodec(track.codec, track.profile),
         channels: track.channels,
         bitrate: track.bitrateKbps,
@@ -1936,6 +1938,10 @@ export class LocalFolderProvider implements MediaProvider {
       metadata.audioTracks.forEach((track, index) => {
         audioTracks.push({
           index,
+          streamIndex: track.streamIndex,
+          title: track.title,
+          sampleRate: track.sampleRate,
+          isDefault: track.isDefault,
           codec: track.codec || 'Unknown',
           channels: track.channels || 2,
           bitrate: track.bitrate || 0,
@@ -2013,6 +2019,7 @@ export class LocalFolderProvider implements MediaProvider {
           isDefault: track.isDefault,
           hasObjectAudio: track.hasObjectAudio,
           index: track.index,
+          streamIndex: track.streamIndex,
         }))
       } catch {
         // Ignore parse errors

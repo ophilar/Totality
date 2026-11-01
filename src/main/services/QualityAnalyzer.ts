@@ -13,6 +13,7 @@ import { stat } from 'node:fs/promises'
 import { PathUtils } from '@main/services/utils/PathUtils'
 import { buildOptimizationDecision } from './OptimizationDecisionService'
 import { selectBestAudioTrack } from '@main/providers/utils/ProviderUtils'
+import { reconcileAnalyzedAudioTracks, mapAudioTracksForOptimization } from '@main/services/utils/audioTrackUtils'
 import { buildStreamSelectionPlan } from './transcoding/StreamSelectionPlan'
 import { normalizeVideoCodec } from '@main/services/MediaNormalizer'
 import { getVideoResolutionTier } from './VideoResolutionTier'
@@ -582,7 +583,14 @@ export class QualityAnalyzer {
     }
 
     if (!analysis.success) throw new Error(analysis.error || `File analysis failed for ${mediaItem.title}`)
-    return { analysis }
+    const providerTracks = cachedItem.audio_tracks ? parseAudioTracks(cachedItem.audio_tracks) : []
+    const reconciled = reconcileAnalyzedAudioTracks(providerTracks, analysis.audioTracks)
+    if (providerTracks.length > 0 && !reconciled.aligned) {
+      getLoggingService().warn('[QualityAnalyzer]', `Stored audio track inventory differs from FFprobe for mediaItem=${mediaItem.id}; not assigning provider languages to unmatched streams`)
+    }
+    // The persisted analysis remains the actual FFprobe result. Provider tags
+    // are joined on each read, so later rescans cannot leave stale labels.
+    return { analysis: { ...analysis, audioTracks: reconciled.tracks } }
   }
 
   getOptimizationSavingsBreakdown(item: MediaItem, analysis?: FileAnalysisResult, targetCodec?: 'hevc' | 'av1', policy?: { originalLanguage?: string | null; subtitleLanguageWhitelist?: readonly string[] }): OptimizationSavingsBreakdown {
@@ -666,22 +674,9 @@ export class QualityAnalyzer {
     return removedIndexes.length === 0 ? 0 : sumMeasuredStreamBytes(analysis.streamBytes, removedIndexes)
   }
 
-  private getOptimizationAudioTracks(item: MediaItem, analysis?: FileAnalysisResult) {
-    if (analysis) {
-      return analysis.audioTracks.map(track => ({
-        ...track,
-        bitrateKbps: track.bitrateKbps,
-        reliableTag: Boolean(track.language),
-      }))
-    }
-    if (item.audio_tracks == null) return []
-    return parseAudioTracks(item.audio_tracks).map(track => ({
-      ...track,
-      bitrateKbps: track.bitrate,
-      isDefault: track.isDefault ?? false,
-      hasObjectAudio: track.hasObjectAudio ?? false,
-      reliableTag: Boolean(track.language),
-    }))
+  getOptimizationAudioTracks(item: MediaItem, analysis?: FileAnalysisResult) {
+    const providerTracks = item.audio_tracks ? parseAudioTracks(item.audio_tracks) : []
+    return mapAudioTracksForOptimization(providerTracks, analysis?.audioTracks)
   }
 
   private classifyTier(resolution?: string | null, height?: number | null): QualityTier | 'Unknown' {

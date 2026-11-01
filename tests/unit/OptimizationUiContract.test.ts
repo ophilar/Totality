@@ -281,7 +281,7 @@ describe('optimization UI contract', () => {
       targetSelected: false,
     }))
     expect(markup).toContain('Audio track decisions')
-    expect(markup).toMatch(/日本語.*?Keep/)
+    expect(markup).toMatch(/Japanese.*?Keep/)
     expect(markup).toMatch(/English.*?Remove/)
     expect(markup).toContain('Proposed selections only; optimization is blocked.')
   })

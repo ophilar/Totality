@@ -473,7 +473,7 @@ describe('QualityAnalyzer', () => {
         audio_tracks: JSON.stringify([{ index: 0, codec: 'aac', channels: 2, bitrate: 128 }]),
       })
       const score = await analyzer.analyzeMediaItem(item)
-      expect(JSON.parse(score.issues)).toContain('One or more audio tracks have unknown or unreliable language evidence (audio track indexes: 0)')
+      expect(JSON.parse(score.issues)).toContain('No reliable primary audio stream matches the original language; removing other tracks could eliminate the soundtrack (audio track indexes: 0)')
     })
 
     it('does not report low bitrate as a visual-quality issue', async () => {

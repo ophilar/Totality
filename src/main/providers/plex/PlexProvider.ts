@@ -1141,6 +1141,7 @@ export class PlexProvider implements MediaProvider {
       // Build audio tracks array with normalized values
       const audioTracks: AudioTrack[] = audioStreams.map((stream, index) => ({
         index,
+        streamIndex: stream.index,
         codec: normalizeAudioCodec(stream.codec, stream.profile),
         channels: normalizeAudioChannels(stream.channels, stream.audioChannelLayout),
         bitrate: normalizeBitrate(stream.bitrate, 'kbps'),
@@ -2184,11 +2185,11 @@ export class PlexProvider implements MediaProvider {
       timeoutMs: 30000,
     })
     const container = response?.MediaContainer
-    const decisionText = String(container?.transcodeDecisionText || container?.generalDecisionText || '').toLowerCase()
-    const decisionCode = Number(container?.transcodeDecisionCode ?? container?.generalDecisionCode)
-    const directPlay = decisionCode === 1000 || decisionText.includes('direct play available')
-    const overall = directPlay ? 'direct-play' : decisionText.includes('direct stream') ? 'direct-stream' : decisionText.includes('transcod') || decisionCode > 0 ? 'transcode' : undefined
-    if (!overall) throw new Error('Plex returned no recognizable playback decision')
+    const rawCode = container?.generalDecisionCode ?? container?.transcodeDecisionCode
+    const decisionCode = Number(rawCode)
+    if (decisionCode !== 1000 && decisionCode !== 1001) {
+      throw new Error(`Plex playback decision was not successful: ${container?.generalDecisionText || container?.transcodeDecisionText || rawCode}`)
+    }
     const streams = container?.Metadata?.flatMap(item => item.Media ?? []).flatMap(media => media.Part ?? []).flatMap(part => part.Stream ?? []) ?? []
     const streamDecision = (streamType: number): 'copy' | 'transcode' | 'burn' | 'unknown' | 'not-applicable' => {
       if (!streams.length) return 'unknown'
@@ -2200,11 +2201,22 @@ export class PlexProvider implements MediaProvider {
       if (decisions.every(decision => decision === 'copy' || decision === 'direct')) return 'copy'
       return 'unknown'
     }
+    const video = streamDecision(1)
+    const audio = streamDecision(2)
+    const subtitle = streamDecision(3)
+    const decisions = [video, audio, subtitle]
+    const overall = decisionCode === 1000
+      ? 'direct-play'
+      : decisions.some(decision => decision === 'transcode' || decision === 'burn')
+        ? 'transcode'
+        : decisions.includes('copy') && decisions.every(decision => decision === 'copy' || decision === 'not-applicable')
+          ? 'direct-stream'
+          : 'conversion'
     return {
       overall,
-      video: streamDecision(1),
-      audio: streamDecision(2),
-      subtitle: streamDecision(3),
+      video,
+      audio,
+      subtitle,
       evidence: String(container?.transcodeDecisionText || container?.generalDecisionText || `decision code ${decisionCode}`)
     }
   }

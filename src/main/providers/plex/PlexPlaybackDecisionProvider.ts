@@ -10,7 +10,7 @@ export interface PlexPlaybackDecisionResponse {
 }
 export interface PlexPlaybackDecisionTransport { request(input: { plexId: string; client: NonNullable<PlaybackTargetDefinition['client']> }): Promise<PlexPlaybackDecisionResponse> }
 
-const modes = new Set(['direct-play', 'direct-stream', 'transcode'])
+const modes = new Set(['direct-play', 'direct-stream', 'transcode', 'conversion'])
 function mode(value: string | undefined, field: string): ProviderPlaybackDecision['overall'] { if (!value || !modes.has(value)) throw new Error(`Plex playback response has invalid ${field}`); return value as ProviderPlaybackDecision['overall'] }
 
 export class PlexPlaybackDecisionProvider implements PlaybackDecisionProvider {

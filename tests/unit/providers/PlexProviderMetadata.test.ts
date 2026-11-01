@@ -45,6 +45,55 @@ describe('PlexProvider - JSON Headers for Metadata Requests', () => {
     providerInternal.authToken = 'auth-token-456'
   })
 
+  it('reports successful Plex conversion without inventing a stream operation', async () => {
+    fetchJSONSpy.mockResolvedValueOnce({ MediaContainer: {
+      generalDecisionCode: 1001, generalDecisionText: 'Direct play not available; Conversion OK.',
+    } })
+    const decision = await provider.requestPlaybackDecision('100', {
+      product: 'Plex for LG', platform: 'webOS', version: '1',
+    })
+    expect(decision.overall).toBe('conversion')
+  })
+
+  it('detects codec transcoding from selected stream decisions', async () => {
+    fetchJSONSpy.mockResolvedValueOnce({ MediaContainer: {
+      generalDecisionCode: 1001,
+      Metadata: [{ Media: [{ Part: [{ Stream: [
+        { streamType: 1, selected: true, decision: 'copy' },
+        { streamType: 2, selected: true, decision: 'transcode' },
+      ] }] }] }],
+    } })
+    const decision = await provider.requestPlaybackDecision('100', {
+      product: 'Plex for LG', platform: 'webOS', version: '1',
+    })
+    expect(decision.overall).toBe('transcode')
+    expect(decision.video).toBe('copy')
+    expect(decision.audio).toBe('transcode')
+  })
+
+  it('detects direct streaming when Plex copies all selected streams', async () => {
+    fetchJSONSpy.mockResolvedValueOnce({ MediaContainer: {
+      generalDecisionCode: 1001,
+      Metadata: [{ Media: [{ Part: [{ Stream: [
+        { streamType: 1, selected: true, decision: 'copy' },
+        { streamType: 2, selected: true, decision: 'copy' },
+      ] }] }] }],
+    } })
+    const decision = await provider.requestPlaybackDecision('100', {
+      product: 'Plex for LG', platform: 'webOS', version: '1',
+    })
+    expect(decision.overall).toBe('direct-stream')
+  })
+
+  it('rejects Plex error codes rather than treating them as transcoding support', async () => {
+    fetchJSONSpy.mockResolvedValueOnce({ MediaContainer: {
+      generalDecisionCode: 3000, generalDecisionText: 'Playback prohibited by server policy',
+    } })
+    await expect(provider.requestPlaybackDecision('100', {
+      product: 'Plex for LG', platform: 'webOS', version: '1',
+    })).rejects.toThrow('Plex playback decision was not successful')
+  })
+
   it('includes defaultHeaders with Accept: application/json when fetching album metadata', async () => {
     fetchJSONSpy.mockResolvedValueOnce({
       MediaContainer: {
