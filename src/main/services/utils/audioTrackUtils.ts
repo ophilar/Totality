@@ -72,7 +72,7 @@ export function isProtectedAudioTrack(track: ProtectedAudioTrackInput): boolean 
 export function reconcileAnalyzedAudioTracks(
   provider: readonly AudioTrack[],
   probed: readonly AnalyzedAudioStream[],
-): { aligned: boolean; tracks: AnalyzedAudioStream[] } {
+): { aligned: boolean; matchedCount: number; tracks: AnalyzedAudioStream[] } {
   const matches = new Map<number, number>()
   const available = new Set(probed.map((_, index) => index))
   const remaining = new Set(provider.map((_, index) => index))
@@ -133,7 +133,7 @@ export function reconcileAnalyzedAudioTracks(
       : fromProbe ?? fromProvider ?? undefined
     target.title ??= source.title
   }
-  return { aligned: matches.size === provider.length && matches.size === probed.length, tracks }
+  return { aligned: matches.size === provider.length && matches.size === probed.length, matchedCount: matches.size, tracks }
 }
 
 /** Preserve provider language evidence; use FFprobe stream indexes for executable plans. */

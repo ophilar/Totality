@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mapAudioTracksForOptimization } from '@main/services/utils/audioTrackUtils'
+import { mapAudioTracksForOptimization, reconcileAnalyzedAudioTracks } from '@main/services/utils/audioTrackUtils'
 import { buildOptimizationDecision } from '@main/services/OptimizationDecisionService'
 import type { AudioTrack } from '@main/types/database'
 import type { AnalyzedAudioStream } from '@main/services/MediaFileAnalyzer'
@@ -43,6 +43,9 @@ describe('optimization audio evidence mapping', () => {
 
   it('does not misassign language tags when provider and probe stream inventories differ', () => {
     const changed = [{ ...analyzedTracks[0], codec: 'flac' }, analyzedTracks[1]]
+    const reconciliation = reconcileAnalyzedAudioTracks(providerTracks, changed)
+    expect(reconciliation.aligned).toBe(false)
+    expect(reconciliation.matchedCount).toBe(1)
     const tracks = mapAudioTracksForOptimization(providerTracks, changed)
     expect(tracks[0].language).toBeUndefined()
     expect(tracks[0].reliableTag).toBe(false)
