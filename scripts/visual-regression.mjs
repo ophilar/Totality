@@ -253,6 +253,8 @@ async function shootApp(appRoot, mediaRoot, outputDir, version, seedDb) {
       for (const screen of screens) {
         const key = viewport + '/' + screen
         try {
+          const obstructions = await findObstructedControls(page)
+          if (obstructions.length) results.pointerObstructions[key] = obstructions
           const included = await navigate(page, screen, viewport)
           if (!included) continue
           await page.evaluate(async () => { await document.fonts.ready })
@@ -261,8 +263,6 @@ async function shootApp(appRoot, mediaRoot, outputDir, version, seedDb) {
           await page.screenshot({ path: file, animations: 'disabled', fullPage: false })
           results.screenshots[key] = path.relative(outputDir, file).replaceAll(path.sep, '/')
           results.interactions[key] = 'passed'
-          const obstructions = await findObstructedControls(page)
-          if (obstructions.length) results.pointerObstructions[key] = obstructions
           await closeScenario(page, screen, viewport)
         } catch (error) {
           results.interactions[key] = 'FAILED: ' + String(error)
@@ -337,8 +337,13 @@ async function report(outputDir) {
     }
     if (statusA.startsWith('FAILED') || statusB.startsWith('FAILED') || Boolean(a) !== Boolean(b)) failed = true
     const cell = file => file ? '<a href="' + encodeURI(file) + '"><img loading="lazy" src="' + encodeURI(file) + '"></a>' : 'not captured'
+    const obstructed = [
+      '0.4.2 pointer-obstructed: ' + (baseline.pointerObstructions?.[key] || []).join(', '),
+      '0.5 pointer-obstructed: ' + (candidate.pointerObstructions?.[key] || []).join(', '),
+    ]
     rows.push('<tr><th>' + escapeHtml(key) + '</th><td>' + cell(a) + '</td><td>' + cell(b) + '</td><td>' + cell(overlayFile) +
-      '</td><td>' + percent + '<p>' + escapeHtml(statusA) + ' / ' + escapeHtml(statusB) + '</p></td></tr>')
+      '</td><td>' + percent + '<p>' + escapeHtml(statusA) + ' / ' + escapeHtml(statusB) + '</p><p>' +
+      escapeHtml(obstructed.join('\n')) + '</p></td></tr>')
   }
   const html = '<!doctype html><html lang="en"><meta charset="utf-8"><title>Totality UI 0.4.2 vs 0.5</title>' +
     '<style>body{font:14px system-ui;background:#17181c;color:#f8f9fa;margin:24px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #555;padding:10px;vertical-align:top}img{width:100%;max-width:400px}p{white-space:pre-wrap;overflow-wrap:anywhere}a{color:#90caff}</style>' +
