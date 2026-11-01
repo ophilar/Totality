@@ -180,11 +180,15 @@ async function navigate(page, screen, viewport) {
     if (viewport === 'mobile') {
       await page.getByRole('tablist', { name: 'Navigation' }).getByRole('tab', { name: 'Wishlist' }).click()
     } else {
-      await page.getByRole('button', { name: 'Toggle wishlist panel' }).click()
+      const wishlist = page.getByRole('button', { name: 'Toggle wishlist panel' })
+      await wishlist.focus()
+      await wishlist.press('Enter')
     }
   } else if (screen === 'settings') {
     if (viewport === 'mobile') return false
-    await page.getByRole('button', { name: /settings/i }).first().click()
+    const settings = page.getByRole('button', { name: 'Open settings' })
+    await settings.focus()
+    await settings.press('Enter')
     await page.getByRole('dialog').waitFor()
   }
   if (screen === 'movie-search') {
@@ -196,12 +200,12 @@ async function navigate(page, screen, viewport) {
   return true
 }
 async function findObstructedControls(page) {
-  return page.getByRole('tablist', { name: 'Navigation' }).getByRole('tab').evaluateAll(tabs =>
-    tabs.flatMap(tab => {
-      const rect = tab.getBoundingClientRect()
+  return page.locator('[role="tablist"][aria-label="Navigation"] [role="tab"], button[aria-label="Open settings"], button[aria-label="Toggle wishlist panel"]').evaluateAll(controls =>
+    controls.flatMap(control => {
+      const rect = control.getBoundingClientRect()
       const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
-      if (hit && tab.contains(hit)) return []
-      return [tab.getAttribute('aria-label') || tab.textContent?.trim() || '(unnamed tab)']
+      if (hit && control.contains(hit)) return []
+      return [control.getAttribute('aria-label') || control.textContent?.trim() || '(unnamed control)']
     }),
   )
 }
@@ -209,7 +213,9 @@ async function closeScenario(page, screen, viewport) {
   if (screen === 'wishlist' && viewport !== 'mobile') {
     await page.getByRole('button', { name: 'Toggle wishlist panel' }).click()
   } else if (screen === 'settings' && viewport !== 'mobile') {
-    await page.getByRole('button', { name: 'Close settings' }).click()
+    const close = page.getByRole('button', { name: 'Close settings' })
+    await close.focus()
+    await close.press('Enter')
   } else if (screen === 'movie-search' && viewport !== 'mobile') {
     await page.getByRole('textbox', { name: 'Search all libraries' }).fill('')
   }
