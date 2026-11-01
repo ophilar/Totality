@@ -186,12 +186,14 @@ export function Dashboard({
   }, [hasMovies, hasTV, hasMusic, isLoading, completenessTab])
 
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dashboardRequestIdRef = useRef(0)
 
 
   const loadDashboardData = useCallback(async () => {
     // Only show loading skeleton on initial load — subsequent refreshes update in-place
     if (!hasLoadedOnce.current) setIsLoading(true)
     setError(null)
+    const requestId = ++dashboardRequestIdRef.current
     try {
       // Filter by active source if one is selected
       const sourceId = activeSourceId || undefined
@@ -236,6 +238,8 @@ export function Dashboard({
         window.electronAPI.qualityGetDistribution(),
         window.electronAPI.wishlistGetCountsByReason(),
       ])
+
+      if (requestId !== dashboardRequestIdRef.current) return
 
       const failures = allResults.filter(r => r.status === 'rejected')
       if (failures.length > 0) {
@@ -387,13 +391,19 @@ export function Dashboard({
         })
       setArtists(incompleteArtists)
     } catch (err) {
-      console.error('Failed to load dashboard data:', err)
-      setError('Failed to load dashboard data. Please try again.')
+      if (requestId === dashboardRequestIdRef.current) {
+        console.error('Failed to load dashboard data:', err)
+        setError('Failed to load dashboard data. Please try again.')
+      }
     } finally {
-      setIsLoading(false)
-      hasLoadedOnce.current = true
+      if (requestId === dashboardRequestIdRef.current) {
+        setIsLoading(false)
+        hasLoadedOnce.current = true
+      }
     }
   }, [activeSourceId])
+
+  useEffect(() => () => { dashboardRequestIdRef.current++ }, [])
 
   // Debounced reload coalesces rapid event-driven refreshes (300ms)
   const debouncedReload = useCallback(() => {

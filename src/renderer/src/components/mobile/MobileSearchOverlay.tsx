@@ -77,10 +77,11 @@ export function MobileSearchOverlay({
   return (
     <>
       {/* Dimmed backdrop */}
-      <div className="fixed inset-0 z-[58] bg-black/40 backdrop-blur-md" onClick={onClose} />
+      {/* Scrim: z-[45] per design tokens (Z.scrim) */}
+      <div className="fixed inset-0 z-[45] bg-black/40 backdrop-blur-md" onClick={onClose} />
 
       {/* Floating search panel — fixed at top */}
-      <div className="fixed left-4 right-4 z-[59] flex flex-col items-stretch" style={{ top: 'max(env(safe-area-inset-top, 0px), 16px)' }}>
+      <div className="fixed left-4 right-4 z-[46] flex flex-col items-stretch" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 24px)' }}>
         {/* Search input */}
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50 z-10" />
@@ -89,7 +90,7 @@ export function MobileSearchOverlay({
             value={query}
             onChange={(e) => handleInputChange(e.target.value)}
             placeholder="Search all libraries..."
-            className="w-full pl-12 pr-10 py-3.5 bg-white/10 border border-white/15 rounded-full text-base text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/25 shadow-2xl backdrop-blur-sm"
+            className="w-full pl-12 pr-10 py-3.5 bg-white/10 border border-white/15 rounded-full text-body text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/25 shadow-2xl backdrop-blur-sm"
             autoComplete="off"
           />
           {query ? (
@@ -97,7 +98,7 @@ export function MobileSearchOverlay({
               <X className="w-5 h-5" />
             </button>
           ) : (
-            <button onClick={onClose} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 text-sm font-medium">
+            <button onClick={onClose} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 text-label font-medium">
               Cancel
             </button>
           )}
@@ -113,7 +114,7 @@ export function MobileSearchOverlay({
             )}
 
             {!loading && !hasResults && (
-              <div className="text-center py-8 text-sm text-muted-foreground">No results found</div>
+              <div className="text-center py-8 text-label text-muted-foreground">No results found</div>
             )}
 
             {!loading && hasResults && results && (
@@ -177,7 +178,7 @@ export function MobileSearchOverlay({
 function ResultSection({ icon: Icon, label, children }: { icon: typeof Film; label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="px-4 py-2.5 text-xs font-bold text-white/90 uppercase tracking-wider bg-black/70 backdrop-blur-2xl flex items-center gap-2 sticky top-0 z-10 border-b border-white/10">
+      <div className="px-4 py-2.5 text-caption font-semibold text-white/90 bg-black/70 backdrop-blur-2xl flex items-center gap-2 sticky top-0 z-10 border-b border-white/10">
         <Icon className="w-3 h-3" />
         {label}
       </div>
@@ -199,7 +200,7 @@ function ResultRow({ thumb, thumbIcon: Icon, thumbRound, title, subtitle, onClic
       onClick={onClick}
       className="w-full flex items-center gap-3 px-4 min-h-[56px] py-2 text-left active:bg-white/5"
     >
-      <div className={`${thumbRound ? 'w-12 h-12 rounded-full' : 'w-10 h-14 rounded-md'} bg-muted overflow-hidden shrink-0`}>
+      <div className={`${thumbRound ? 'w-12 h-12 rounded-full' : 'w-10 h-14 rounded-lg'} bg-muted overflow-hidden shrink-0`}>
         {thumb ? (
           <img src={thumb} alt="" className="w-full h-full object-cover" />
         ) : (
@@ -207,8 +208,8 @@ function ResultRow({ thumb, thumbIcon: Icon, thumbRound, title, subtitle, onClic
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="text-base font-medium truncate">{title}</div>
-        {subtitle && <div className="text-sm text-white/50 truncate">{subtitle}</div>}
+        <div className="text-body font-medium truncate">{title}</div>
+        {subtitle && <div className="text-label text-white/50 truncate">{subtitle}</div>}
       </div>
     </button>
   )

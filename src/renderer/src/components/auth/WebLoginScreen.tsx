@@ -5,7 +5,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { Lock, AlertCircle } from 'lucide-react'
+import { Button } from '../ui/Button'
 
 interface WebLoginScreenProps {
   onAuthenticated: () => void
@@ -43,51 +43,43 @@ export function WebLoginScreen({ onAuthenticated, authenticate, logoSrc }: WebLo
   }, [pin, loading, authenticate, onAuthenticated])
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
-      <div className="w-full max-w-xs mx-auto px-6">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          {logoSrc ? (
-            <img src={logoSrc} alt="Totality" className="h-20 mx-auto mb-4" />
-          ) : (
-            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
-              <Lock className="w-6 h-6 text-primary" />
-            </div>
-          )}
-          <p className="text-sm text-muted-foreground">Enter PIN to access</p>
-        </div>
+    <div className="min-h-screen flex flex-col items-center bg-background text-foreground px-4" style={{ paddingTop: '30vh' }}>
+      {/* Logo */}
+      {logoSrc ? (
+        <img src={logoSrc} alt="Totality" className="h-28 mb-10" />
+      ) : (
+        <h1 className="text-display font-semibold mb-10">Totality</h1>
+      )}
 
-        {/* Form */}
-        <form onSubmit={handleSubmit}>
-          <input
-            ref={inputRef}
-            type="password"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            value={pin}
-            onChange={(e) => setPin(e.target.value)}
-            placeholder="Enter PIN"
-            className="w-full px-4 py-3 min-h-[48px] text-center text-lg tracking-[0.3em] bg-white/10 border border-white/15 rounded-full text-foreground placeholder:tracking-normal placeholder:text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/25 transition-all"
-            autoComplete="off"
-            disabled={loading}
-          />
+      {/* PIN form */}
+      <form onSubmit={handleSubmit} className="w-full max-w-[280px] flex flex-col items-center gap-4">
+        <input
+          ref={inputRef}
+          type="password"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={pin}
+          onChange={(e) => setPin(e.target.value)}
+          placeholder="Enter PIN"
+          className="w-full px-4 py-3 text-center text-title tracking-widest bg-muted/50 rounded-lg text-foreground placeholder:tracking-normal placeholder:text-label placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-foreground/20"
+          autoComplete="off"
+          disabled={loading}
+        />
 
-          {error && (
-            <div className="flex items-center justify-center gap-2 mt-3 text-sm text-destructive">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
+        {error && (
+          <p className="text-label text-destructive">{error}</p>
+        )}
 
-          <button
-            type="submit"
-            disabled={!pin.trim() || loading}
-            className="w-full mt-4 px-4 min-h-[48px] bg-primary text-primary-foreground rounded-full font-medium text-sm hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {loading ? 'Verifying...' : 'Unlock'}
-          </button>
-        </form>
-      </div>
+        <Button
+          type="submit"
+          disabled={!pin.trim() || loading}
+          loading={loading}
+          size="lg"
+          className="w-full"
+        >
+          Unlock
+        </Button>
+      </form>
     </div>
   )
 }

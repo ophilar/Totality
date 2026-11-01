@@ -17,11 +17,8 @@ const tabs: { id: MobileTab; label: string; icon: typeof Film }[] = [
 
 export function MobileTabBar({ activeTab, onTabChange, onSearchOpen }: MobileTabBarProps) {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 safe-area-bottom pointer-events-none">
-      {/* Gradient behind tab bar — fades content into theme background */}
-      <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-background via-background/80 to-transparent" />
-      <div className="relative px-4 pb-4 mt-auto pointer-events-auto" style={{ paddingTop: '80px' }}>
-        <div className="bg-black rounded-3xl shadow-2xl px-2 py-2.5 flex items-center gap-1.5" role="tablist" aria-label="Navigation">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black/72 backdrop-blur-xl border-t border-white/10" style={{ transform: 'none', touchAction: 'none', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+      <div className="px-2 py-2 flex items-center gap-1" role="tablist" aria-label="Navigation">
         {tabs.map(({ id, label, icon: Icon }) => {
           const active = activeTab === id
           return (
@@ -31,30 +28,27 @@ export function MobileTabBar({ activeTab, onTabChange, onSearchOpen }: MobileTab
               role="tab"
               aria-selected={active}
               aria-label={label}
-              className={`flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[52px] rounded-2xl text-sm font-medium transition-colors ${
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[52px] rounded-2xl transition-colors ${
                 active
-                  ? 'bg-white text-black'
-                  : 'text-white hover:bg-white/10'
+                  ? 'bg-foreground text-background'
+                  : 'text-white'
               }`}
             >
               <Icon className="w-5 h-5" />
-              <span className="text-xs">{label}</span>
+              <span className="text-micro">{label}</span>
             </button>
           )
         })}
 
-        {/* Divider */}
-        <div className="w-px h-8 bg-white/20 mx-0.5" />
-
         {/* Search */}
         <button
           onClick={onSearchOpen}
-          className="min-h-[52px] min-w-[44px] flex flex-col items-center justify-center gap-0.5 rounded-2xl text-white hover:bg-white/10 transition-colors"
+          className="flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[52px] rounded-2xl text-white transition-colors"
           aria-label="Search"
         >
           <Search className="w-5 h-5" />
+          <span className="text-micro">Search</span>
         </button>
-        </div>
       </div>
     </nav>
   )

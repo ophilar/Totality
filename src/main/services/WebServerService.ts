@@ -243,6 +243,12 @@ export class WebServerService {
           for (const [token, session] of this.sessions.entries()) {
             if (session.expiresAt < now) this.sessions.delete(token)
           }
+          for (const [ip, entry] of this.rateLimits.entries()) {
+            if (entry.lockedUntil < now && entry.failures === 0) this.rateLimits.delete(ip)
+          }
+          for (const [ip, entry] of this.artworkRateLimits.entries()) {
+            if (now - entry.windowStart > ARTWORK_RATE_WINDOW_MS * 2) this.artworkRateLimits.delete(ip)
+          }
         }, SESSION_CLEANUP_INTERVAL_MS)
 
         resolve()

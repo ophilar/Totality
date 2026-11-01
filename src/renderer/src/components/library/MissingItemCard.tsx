@@ -48,7 +48,7 @@ export const MissingItemCard = memo(function MissingItemCard({
         }
       }}
     >
-      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
+      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-lg shadow-lg shadow-black/30">
         {/* Grayscale poster or placeholder */}
         {posterUrl ? (
           <img
@@ -70,9 +70,9 @@ export const MissingItemCard = memo(function MissingItemCard({
       {/* Title and wishlist button below poster */}
       <div className="pt-2 flex gap-2 items-start">
         <div className="flex-1 min-w-0">
-          <h4 className="font-medium text-sm truncate text-muted-foreground">{title}</h4>
+          <h4 className="font-medium text-label truncate text-muted-foreground">{title}</h4>
           {subtitle && (
-            <p className="text-xs text-muted-foreground/70">{subtitle}</p>
+            <p className="text-caption text-muted-foreground/70">{subtitle}</p>
           )}
         </div>
         {/* Action buttons */}

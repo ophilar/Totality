@@ -31,7 +31,7 @@ function ToastItem({ toast, onRemove }: { toast: ToastType; onRemove: () => void
     <div
       className={`
         bg-card border border-border/50 rounded-lg shadow-lg p-4 min-w-[300px] max-w-[400px]
-        transform transition-all duration-200 ease-out
+        transform transition-[opacity,transform] duration-200 ease-out
         ${isVisible ? 'translate-x-0 opacity-100' : 'translate-x-4 opacity-0'}
       `}
     >
@@ -39,15 +39,15 @@ function ToastItem({ toast, onRemove }: { toast: ToastType; onRemove: () => void
         {icons[toast.type]}
 
         <div className="flex-1 min-w-0">
-          <p className="font-medium text-foreground text-sm">{toast.title}</p>
+          <p className="font-medium text-foreground text-label">{toast.title}</p>
           {toast.message && (
-            <p className="text-muted-foreground text-xs mt-0.5">{toast.message}</p>
+            <p className="text-muted-foreground text-caption mt-0.5">{toast.message}</p>
           )}
 
           {toast.action && (
             <button
               onClick={handleActionClick}
-              className="mt-2 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+              className="mt-2 text-caption font-medium text-primary hover:text-primary/80 transition-colors"
             >
               {toast.action.label}
             </button>

@@ -52,7 +52,7 @@ export function ChatMessage({ message, activeTools }: ChatMessageProps) {
       {/* Avatar */}
       <div
         className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${
-          isUser ? 'bg-primary/20 text-primary' : 'bg-accent/20 text-accent-foreground'
+          isUser ? 'bg-muted text-foreground' : 'bg-muted text-muted-foreground'
         }`}
       >
         {isUser ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
@@ -61,7 +61,7 @@ export function ChatMessage({ message, activeTools }: ChatMessageProps) {
       {/* Content */}
       <div className={`flex-1 min-w-0 ${isUser ? 'text-right' : 'text-left'}`}>
         <div
-          className={`inline-block max-w-full rounded-lg px-3 py-2 text-sm ${
+          className={`inline-block max-w-full rounded-lg px-3 py-2 text-label ${
             isUser
               ? 'bg-primary text-primary-foreground'
               : 'bg-muted/50'
@@ -71,7 +71,7 @@ export function ChatMessage({ message, activeTools }: ChatMessageProps) {
             <div className="space-y-1.5">
               {activeTools.length > 0 ? (
                 activeTools.map((tool, i) => (
-                  <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <div key={i} className="flex items-center gap-2 text-caption text-muted-foreground">
                     <Database className="w-3 h-3 animate-pulse" />
                     <span>{TOOL_LABELS[tool] || tool}...</span>
                   </div>
@@ -92,7 +92,7 @@ export function ChatMessage({ message, activeTools }: ChatMessageProps) {
           {/* Actionable items — add to wishlist buttons */}
           {!isUser && message.actionableItems && message.actionableItems.length > 0 && (
             <div className="mt-2 pt-2 border-t border-border/20">
-              <p className="text-[10px] text-muted-foreground mb-1.5">Add to wishlist:</p>
+              <p className="text-caption text-muted-foreground mb-1.5">Add to wishlist:</p>
               <div className="flex flex-col gap-1">
                 {message.actionableItems.map((item, i) => (
                   <ChatWishlistButton key={`${item.tmdb_id || item.title}-${i}`} item={item} />
@@ -108,7 +108,7 @@ export function ChatMessage({ message, activeTools }: ChatMessageProps) {
             {message.toolsUsed.map((tool, i) => (
               <span
                 key={i}
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-muted-foreground bg-muted/30 rounded"
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 text-caption text-muted-foreground bg-muted/30 rounded"
               >
                 <Database className="w-2.5 h-2.5" />
                 {TOOL_LABELS[tool] || tool}
@@ -138,7 +138,7 @@ function SimpleMarkdown({ text }: { text: string }) {
     if (line.startsWith('```')) {
       if (inCodeBlock) {
         elements.push(
-          <pre key={`code-${i}`} className="bg-background/50 rounded p-2 text-xs overflow-x-auto my-1">
+          <pre key={`code-${i}`} className="bg-background/50 rounded p-2 text-caption overflow-x-auto my-1">
             <code>{codeBlockContent.join('\n')}</code>
           </pre>,
         )
@@ -199,7 +199,7 @@ function SimpleMarkdown({ text }: { text: string }) {
   // Handle unclosed code block
   if (inCodeBlock && codeBlockContent.length > 0) {
     elements.push(
-      <pre key="code-unclosed" className="bg-background/50 rounded p-2 text-xs overflow-x-auto my-1">
+      <pre key="code-unclosed" className="bg-background/50 rounded p-2 text-caption overflow-x-auto my-1">
         <code>{codeBlockContent.join('\n')}</code>
       </pre>,
     )
@@ -220,7 +220,7 @@ function InlineMarkdown({ text }: { text: string }) {
     const codeMatch = remaining.match(/^`([^`]+)`/)
     if (codeMatch) {
       parts.push(
-        <code key={key++} className="bg-background/50 px-1 py-0.5 rounded text-xs">
+        <code key={key++} className="bg-background/50 px-1 py-0.5 rounded text-caption">
           {codeMatch[1]}
         </code>,
       )
@@ -233,7 +233,7 @@ function InlineMarkdown({ text }: { text: string }) {
     if (linkMatch) {
       parts.push(
         <a key={key++} href={linkMatch[2]} target="_blank" rel="noopener noreferrer"
-          className="text-primary underline hover:text-primary/80 cursor-pointer"
+          className="text-muted-foreground underline hover:text-foreground cursor-pointer transition-colors"
           onClick={(e) => { e.preventDefault(); window.electronAPI.openExternal(linkMatch[2]) }}>
           {linkMatch[1]}
         </a>,
@@ -325,7 +325,7 @@ function ChatWishlistButton({ item }: { item: ActionableItem }) {
     <button
       onClick={handleToggle}
       disabled={loading}
-      className={`flex items-center gap-1.5 py-0.5 text-xs transition-colors cursor-pointer ${
+      className={`flex items-center gap-1.5 py-0.5 text-caption transition-colors cursor-pointer ${
         inWishlist
           ? 'text-foreground'
           : 'text-muted-foreground hover:text-foreground'

@@ -32,13 +32,13 @@ export class ErrorBoundary extends Component<Props, State> {
           <div className="max-w-2xl w-full bg-card border border-border rounded-lg p-6">
             <h1 className="text-xl font-semibold text-destructive mb-4">Something went wrong</h1>
             <div className="bg-muted rounded p-4 mb-4 overflow-auto max-h-48">
-              <pre className="text-sm text-foreground whitespace-pre-wrap">
+              <pre className="text-label text-foreground whitespace-pre-wrap">
                 {this.state.error?.toString()}
               </pre>
             </div>
             {this.state.errorInfo && (
               <div className="bg-muted rounded p-4 overflow-auto max-h-64">
-                <pre className="text-xs text-muted-foreground whitespace-pre-wrap">
+                <pre className="text-caption text-muted-foreground whitespace-pre-wrap">
                   {this.state.errorInfo.componentStack}
                 </pre>
               </div>
