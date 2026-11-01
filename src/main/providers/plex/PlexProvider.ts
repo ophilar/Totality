@@ -618,6 +618,11 @@ export class PlexProvider implements MediaProvider {
         await db.endBatch()
       }
 
+      if (result.cancelled) {
+        result.durationMs = Date.now() - startTime
+        return result
+      }
+
       // Remove stale items
       // If libraryType is null (Plex returned 0 items), detect from existing DB items
       if (!isIncremental && !libraryType) {
@@ -866,11 +871,17 @@ export class PlexProvider implements MediaProvider {
       )
 
       const container = responseData?.MediaContainer
-      const items = container?.Metadata || []
+      if (!container) throw new Error('Invalid Plex library response: missing MediaContainer')
+      const items = container.Metadata || []
       allItems.push(...items)
 
-      const totalSize = container?.totalSize
-      if (items.length === 0 || (totalSize != null && allItems.length >= totalSize)) {
+      const totalSize = container.totalSize
+      if (items.length === 0) {
+        if (totalSize != null && allItems.length < totalSize) {
+          throw new Error(`Incomplete Plex inventory: received ${allItems.length} of ${totalSize} items`)
+        }
+        hasMore = false
+      } else if (totalSize != null && allItems.length >= totalSize) {
         hasMore = false
       } else {
         offset += items.length
