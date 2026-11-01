@@ -911,7 +911,8 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         }
         if (columnNames.has(oldName)) {
           this.db!.exec(`ALTER TABLE ${table} RENAME COLUMN ${oldName} TO ${newName}`)
-        } else if (!columnNames.has(newName)) {
+        } else if (!columnNames.has(newName) && table !== 'quality_scores') {
+          // Savings did not exist in 0.4.2; the ADD COLUMN migration below creates it.
           throw new Error(`Cannot find ${table}.${oldName} or ${newName} during media quality migration`)
         }
       }
