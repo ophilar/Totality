@@ -12,7 +12,7 @@ describe('buildMeasuredCandidateArgs', () => {
     expect(args).toEqual([
       '-y', '-ss', '12.25', '-i', source,
       '-vf', 'trim=duration=3.5,setpts=PTS-STARTPTS,vpp_qsv=format=nv12',
-      '-c:v', 'hevc_qsv', '-an', '-sn', '-dn', '-t', '3.5', '-enc_time_base:v:0', 'demux', 'candidate.mkv',
+      '-c:v', 'hevc_qsv', '-an', '-sn', '-dn', '-enc_time_base:v:0', 'demux', 'candidate.mkv',
     ])
   })
 
@@ -23,6 +23,7 @@ describe('buildMeasuredCandidateArgs', () => {
     )
     expect(args).toContain('trim=duration=2,setpts=PTS-STARTPTS')
     expect(args).not.toContain('ffv1')
+    expect(args).not.toContain('-t')
   })
 })
 
