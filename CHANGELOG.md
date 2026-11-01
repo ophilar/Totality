@@ -2,6 +2,69 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.4.2](https://github.com/bbidwell85/Totality/compare/v0.4.1...v0.4.2) (2026-10-31)
+
+
+### New Feature (Beta)
+
+* **Web Access** — Access Totality from your phone or any browser on your network. Includes HTTPS with self-signed certificates, PIN-based authentication, escalating lockout security, IP allowlisting, and WebSocket-based real-time communication. Enable in Settings > General > Web Access.
+
+
+### Bug Fixes
+
+**Database & Data Integrity**
+* Fixed database constraint violations that could crash scan operations
+* Fixed stale data after source deletion — shared artist completeness records no longer incorrectly removed
+* Fixed person completeness records becoming orphaned on source deletion
+* Fixed sort stability across all paginated queries
+
+**Wishlist & Auto-Completion**
+* Fixed wishlist items not auto-completing for TV shows (TMDB series ID mismatch)
+* Fixed auto-completion not triggering after music scans, series analysis, and quality re-analysis
+* Fixed movie, album, and track completion skipping items without TMDB/MusicBrainz IDs
+* Fixed "Add to Wishlist" failing on web client (Zod validation rejected proxy URLs)
+* Fixed "Mark as Completed" button not working
+* Fixed wishlist badge counting completed items instead of active only
+* Fixed wishlist filter rejecting 'tv' and 'music' filter types
+
+**Scanning & Monitoring**
+* Fixed quality upgrade notifications not firing from live monitoring
+* Fixed monitoring resume race condition with new scan tasks
+* Fixed music library UI not refreshing after quality re-analysis
+* Fixed excessive log noise when Plex server is unreachable
+* Added safety guards to KodiLocal and KodiMySQL providers to prevent data wipe on DB read failure
+
+**Memory & Performance**
+* Fixed unbounded memory growth in WebServerService rate limit maps
+* Fixed ReleaseAlertService and LiveMonitoringService startup timer leaks
+* Fixed state updates after component unmount in MediaBrowser
+* Replaced expensive 10,000-track fetch with targeted single-track lookup
+* Fixed Dashboard race condition causing stale data on rapid source switching
+* Fixed release alert duplicate notifications after app restart (IDs now persisted)
+* Added periodic image cache pruning (hourly, was startup-only)
+* Fixed incomplete stats invalidation after exclusion changes
+
+**Mobile & Touch**
+* Fixed iOS standalone app not filling full screen (gap below tab bar)
+* Fixed tab bar background not extending to physical screen bottom
+* Fixed hover effects getting stuck on touch devices after tapping
+* Fixed thumbnail scale-on-hover triggering during touch scroll
+* Fixed detail modal overscroll bounce on iOS
+* Fixed "Add to Wishlist" button too small to tap (28px to 44px touch target)
+* Fixed missing albums grid rendering as single column on mobile
+
+**Image Caching**
+* Web/mobile clients now route TMDB and CoverArtArchive images through the server's 7-day disk cache instead of loading from external CDNs on every session
+
+
+### Optimizations
+
+* WAN image proxy with disk caching, thumbnail sizing, and extended timeout
+* Security hardening with escalating lockouts and IP allowlist
+* Input validation added to notification and mood sync IPC handlers
+* TMDB cache purge on startup to prevent unbounded growth
+* Dashboard data loading with request deduplication to prevent stale overwrites
+
 ### [0.4.1](https://github.com/bbidwell85/Totality/compare/v0.4.0...v0.4.1) (2026-10-06)
 
 

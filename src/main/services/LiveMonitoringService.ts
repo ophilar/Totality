@@ -118,6 +118,7 @@ export class LiveMonitoringService {
   private fileWatchers: Map<string, chokidar.FSWatcher> = new Map()
   private fileChangeDebounce: Map<string, NodeJS.Timeout> = new Map()
   private pendingFileChanges: Map<string, Set<string>> = new Map()
+  private startupTimer: NodeJS.Timeout | null = null
 
   // Timing constants
   private static readonly MIN_POLL_INTERVAL_MS = 30000 // Minimum 30s between polls
@@ -164,7 +165,10 @@ export class LiveMonitoringService {
     // Auto-start if enabled
     if (this.config.enabled && this.config.startOnLaunch) {
       // Delay start to allow app initialization
-      setTimeout(() => this.start(), LiveMonitoringService.STARTUP_DELAY_MS)
+      this.startupTimer = setTimeout(() => {
+        this.startupTimer = null
+        this.start()
+      }, LiveMonitoringService.STARTUP_DELAY_MS)
     }
   }
 
@@ -260,6 +264,10 @@ export class LiveMonitoringService {
    * Stop all monitoring
    */
   stop(): void {
+    if (this.startupTimer) {
+      clearTimeout(this.startupTimer)
+      this.startupTimer = null
+    }
     if (!this.isActive) {
       console.log('[LiveMonitoring] Already stopped')
       return

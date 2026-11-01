@@ -88,13 +88,13 @@ export function AddToWishlistButton({
     if ((effectiveMediaType === 'album' || effectiveMediaType === 'track') && artistName) {
       const match = items.find(
         item => item.media_type === effectiveMediaType &&
-                item.title === effectiveTitle &&
-                item.artist_name === artistName
+                item.title.toLowerCase() === effectiveTitle.toLowerCase() &&
+                item.artist_name?.toLowerCase() === artistName.toLowerCase()
       )
       if (match) return match
     }
-    // General fallback: match by title + media type
-    return items.find(item => item.title === effectiveTitle && item.media_type === effectiveMediaType)
+    // General fallback: match by title + media type (case-insensitive)
+    return items.find(item => item.title.toLowerCase() === effectiveTitle.toLowerCase() && item.media_type === effectiveMediaType)
   }, [items, mediaType, isEpisode, seriesTitle, seasonNumber, tmdbId, musicbrainzId, mediaItemId, effectiveMediaType, effectiveTitle, artistName])
 
   const isInWishlist = !!wishlistMatch
@@ -160,9 +160,9 @@ export function AddToWishlistButton({
       <button
         onClick={(e) => { e.stopPropagation(); handleToggle() }}
         disabled={isLoading}
-        className={`p-1 transition-colors disabled:opacity-50 ${
+        className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors disabled:opacity-50 ${
           isInWishlist
-            ? 'text-amber-400 hover:text-amber-300'
+            ? 'text-amber-400'
             : 'text-muted-foreground hover:text-foreground'
         }`}
         title={isInWishlist ? removeLabel : buttonLabel}
@@ -175,10 +175,10 @@ export function AddToWishlistButton({
 
   return (
     <button
-      onClick={handleToggle}
+      onClick={(e) => { e.stopPropagation(); handleToggle() }}
       disabled={isLoading}
       title={isInWishlist ? removeLabel : buttonLabel}
-      className={`inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm disabled:opacity-50 transition-colors ${
+      className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-label disabled:opacity-50 transition-colors ${
         isInWishlist
           ? 'bg-muted/50 text-foreground hover:bg-muted border border-border'
           : 'bg-primary text-primary-foreground hover:bg-primary/90'

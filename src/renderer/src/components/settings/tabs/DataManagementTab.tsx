@@ -11,6 +11,7 @@
 import { useState, useEffect } from 'react'
 import { Loader2, FolderOpen, Download, Upload, Trash2, AlertTriangle, FileSpreadsheet, X, Database, RefreshCw, HardDrive } from 'lucide-react'
 import { Toggle } from '../../ui/Toggle'
+import { Button, Card } from '../../ui'
 
 interface CSVExportOptions {
   includeUpgrades: boolean
@@ -215,36 +216,37 @@ export function DataManagementTab() {
     <div className="p-6 space-y-5 overflow-y-auto">
       {/* Database Location Section */}
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-foreground">Database</h3>
+        <h3 className="text-label font-medium text-foreground">Database</h3>
 
-        <div className="bg-muted/30 rounded-lg border border-border/40">
+        <Card variant="muted" padding="none">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-3 min-w-0">
               <Database className="w-5 h-5 text-muted-foreground shrink-0" />
               <div className="min-w-0">
-                <span className="text-sm text-foreground">Database Location</span>
-                <p className="text-xs text-muted-foreground truncate">{dbPath}</p>
+                <span className="text-label text-foreground">Database Location</span>
+                <p className="text-caption text-muted-foreground truncate">{dbPath}</p>
               </div>
             </div>
-            <button
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<FolderOpen className="w-3.5 h-3.5" />}
               onClick={() => window.electronAPI.dbOpenFolder()}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
             >
-              <FolderOpen className="w-3.5 h-3.5" />
               Open Folder
-            </button>
+            </Button>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Storage Analytics */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <HardDrive className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-sm font-medium text-foreground">Storage Analytics</h3>
+          <h3 className="text-label font-medium text-foreground">Storage Analytics</h3>
         </div>
 
-        <div className="bg-muted/30 rounded-lg border border-border/40 p-4 space-y-4">
+        <Card variant="muted" className="space-y-4">
           {!storageData ? (
             <div className="flex items-center justify-center py-4">
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
@@ -252,7 +254,7 @@ export function DataManagementTab() {
           ) : (
               <>
                 {/* Summary */}
-                <div className="flex items-center gap-6 text-sm">
+                <div className="flex items-center gap-6 text-label">
                   <div>
                     <span className="text-muted-foreground">Total Size:</span>{' '}
                     <span className="font-medium">{formatSize(storageData.totalSize)}</span>
@@ -266,10 +268,10 @@ export function DataManagementTab() {
                 {/* By Codec */}
                 {storageData.byCodec.length > 0 && (
                   <div className="space-y-1">
-                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">By Codec</h4>
+                    <h4 className="text-caption font-medium text-muted-foreground">By Codec</h4>
                     <div className="space-y-1">
                       {storageData.byCodec.map(c => (
-                        <div key={c.codec} className="flex items-center justify-between text-xs">
+                        <div key={c.codec} className="flex items-center justify-between text-caption">
                           <span className="font-mono">{c.codec || 'Unknown'}</span>
                           <span className="text-muted-foreground">{c.count} items · {formatSize(c.size)}</span>
                         </div>
@@ -281,10 +283,10 @@ export function DataManagementTab() {
                 {/* By Quality Tier */}
                 {storageData.byTier.length > 0 && (
                   <div className="space-y-1">
-                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">By Quality Tier</h4>
+                    <h4 className="text-caption font-medium text-muted-foreground">By Quality Tier</h4>
                     <div className="space-y-1">
                       {storageData.byTier.map(t => (
-                        <div key={t.tier} className="flex items-center justify-between text-xs">
+                        <div key={t.tier} className="flex items-center justify-between text-caption">
                           <span>{t.tier}</span>
                           <span className="text-muted-foreground">{t.count} items · {formatSize(t.size)}</span>
                         </div>
@@ -296,8 +298,8 @@ export function DataManagementTab() {
                 {/* Multi-Version Storage */}
                 {storageData.versionStats && storageData.versionStats.itemsWithVersions > 0 && (
                   <div className="space-y-1">
-                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Multi-Version Items</h4>
-                    <div className="space-y-1 text-xs">
+                    <h4 className="text-caption font-medium text-muted-foreground">Multi-Version Items</h4>
+                    <div className="space-y-1 text-caption">
                       <div className="flex items-center justify-between">
                         <span>Items with multiple versions</span>
                         <span className="text-muted-foreground">{storageData.versionStats.itemsWithVersions} items · {storageData.versionStats.totalVersions} versions</span>
@@ -315,7 +317,7 @@ export function DataManagementTab() {
                 {/* Music Storage */}
                 {storageData.music && storageData.music.totalTracks > 0 && (
                   <div className="space-y-2 pt-2 border-t border-border/30">
-                    <div className="flex items-center gap-6 text-sm">
+                    <div className="flex items-center gap-6 text-label">
                       <div>
                         <span className="text-muted-foreground">Music:</span>{' '}
                         <span className="font-medium">{formatSize(storageData.music.totalSize)}</span>
@@ -328,10 +330,10 @@ export function DataManagementTab() {
 
                     {storageData.music.byCodec.length > 0 && (
                       <div className="space-y-1">
-                        <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Audio Codecs</h4>
+                        <h4 className="text-caption font-medium text-muted-foreground">Audio Codecs</h4>
                         <div className="space-y-1">
                           {storageData.music.byCodec.map(c => (
-                            <div key={c.codec} className="flex items-center justify-between text-xs">
+                            <div key={c.codec} className="flex items-center justify-between text-caption">
                               <span className="font-mono">{c.codec || 'Unknown'}</span>
                               <span className="text-muted-foreground">{c.count} tracks · {formatSize(c.size)}</span>
                             </div>
@@ -342,10 +344,10 @@ export function DataManagementTab() {
 
                     {storageData.music.byTier.length > 0 && (
                       <div className="space-y-1">
-                        <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Audio Quality</h4>
+                        <h4 className="text-caption font-medium text-muted-foreground">Audio Quality</h4>
                         <div className="space-y-1">
                           {storageData.music.byTier.map(t => (
-                            <div key={t.tier} className="flex items-center justify-between text-xs">
+                            <div key={t.tier} className="flex items-center justify-between text-caption">
                               <span>{t.tier}</span>
                               <span className="text-muted-foreground">{t.count} tracks · {formatSize(t.size)}</span>
                             </div>
@@ -359,10 +361,10 @@ export function DataManagementTab() {
                 {/* Duplicates */}
                 {duplicates.length > 0 && (
                   <div className="space-y-1">
-                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Duplicate Movies ({duplicates.length})</h4>
+                    <h4 className="text-caption font-medium text-muted-foreground">Duplicate Movies ({duplicates.length})</h4>
                     <div className="space-y-2 max-h-48 overflow-y-auto">
                       {duplicates.map(dup => (
-                        <div key={dup.tmdb_id} className="text-xs border border-border/30 rounded p-2">
+                        <div key={dup.tmdb_id} className="text-caption border border-border/30 rounded p-2">
                           <div className="font-medium">{dup.title}{dup.year ? ` (${dup.year})` : ''}</div>
                           <div className="mt-1 space-y-0.5">
                             {dup.copies.map((copy, i) => (
@@ -382,34 +384,35 @@ export function DataManagementTab() {
                 )}
               </>
             )}
-          </div>
+          </Card>
       </div>
 
       {/* Auto-Hide Rules — moved to Library tab */}
 
       {/* Export Options */}
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-foreground">Export Options</h3>
+        <h3 className="text-label font-medium text-foreground">Export Options</h3>
 
-        <div className="bg-muted/30 rounded-lg border border-border/40 divide-y divide-border/30">
+        <Card variant="muted" padding="none" className="divide-y divide-border/30">
           {/* Working Document */}
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-3">
               <FileSpreadsheet className="w-5 h-5 text-muted-foreground" />
               <div>
-                <span className="text-sm text-foreground">Working Document</span>
-                <p className="text-xs text-muted-foreground">
+                <span className="text-label text-foreground">Working Document</span>
+                <p className="text-caption text-muted-foreground">
                   CSV with upgrade candidates and missing items
                 </p>
               </div>
             </div>
-            <button
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Download className="w-3.5 h-3.5" />}
               onClick={() => setShowCSVExportModal(true)}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
             >
-              <Download className="w-3.5 h-3.5" />
               Export
-            </button>
+            </Button>
           </div>
 
           {/* Full Backup */}
@@ -417,98 +420,90 @@ export function DataManagementTab() {
             <div className="flex items-center gap-3">
               <FolderOpen className="w-5 h-5 text-muted-foreground" />
               <div>
-                <span className="text-sm text-foreground">Full Backup</span>
-                <p className="text-xs text-muted-foreground">
+                <span className="text-label text-foreground">Full Backup</span>
+                <p className="text-caption text-muted-foreground">
                   Complete database backup (JSON)
                 </p>
               </div>
             </div>
-            <button
+            <Button
+              variant="primary"
+              size="sm"
+              icon={isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
               onClick={handleExport}
               disabled={isExporting}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              {isExporting ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Download className="w-3.5 h-3.5" />
-              )}
               Export
-            </button>
+            </Button>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Import Options */}
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-foreground">Import</h3>
+        <h3 className="text-label font-medium text-foreground">Import</h3>
 
-        <div className="bg-muted/30 rounded-lg border border-border/40">
+        <Card variant="muted" padding="none">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-3">
               <Upload className="w-5 h-5 text-muted-foreground" />
               <div>
-                <span className="text-sm text-foreground">Restore Backup</span>
-                <p className="text-xs text-muted-foreground">
+                <span className="text-label text-foreground">Restore Backup</span>
+                <p className="text-caption text-muted-foreground">
                   Import a previously exported database
                 </p>
               </div>
             </div>
-            <button
+            <Button
+              variant="primary"
+              size="sm"
+              icon={isImporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
               onClick={handleImport}
               disabled={isImporting}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              {isImporting ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Upload className="w-3.5 h-3.5" />
-              )}
               Import
-            </button>
+            </Button>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Reset Options */}
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-foreground">Reset</h3>
+        <h3 className="text-label font-medium text-foreground">Reset</h3>
 
         {/* Reset Library Data (preserves settings) */}
-        <div className="bg-muted/30 rounded-lg border border-border/40">
+        <Card variant="muted" padding="none">
           {showLibraryResetConfirm ? (
             <div className="p-4 space-y-4">
               <div className="flex items-start gap-3">
                 <RefreshCw className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-foreground">
+                  <p className="text-label font-medium text-foreground">
                     Reset library data?
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="text-caption text-muted-foreground mt-1">
                     This will clear all scanned media, quality scores, and completeness data. Your settings, API keys, sources, exclusions, and wishlist will be preserved.
                   </p>
                 </div>
               </div>
               <div className="flex gap-3 justify-end">
-                <button
+                <Button
+                  variant="tertiary"
+                  size="sm"
                   onClick={() => setShowLibraryResetConfirm(false)}
                   disabled={isResettingLibrary}
-                  className="px-3 py-1.5 text-xs hover:bg-muted rounded-md transition-colors"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={isResettingLibrary ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                   onClick={handleResetLibraryData}
                   disabled={isResettingLibrary}
-                  className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
-                  {isResettingLibrary ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-3.5 h-3.5" />
-                  )}
                   Yes, Reset Library Data
-                </button>
+                </Button>
               </div>
             </div>
           ) : (
@@ -516,57 +511,56 @@ export function DataManagementTab() {
               <div className="flex items-center gap-3">
                 <RefreshCw className="w-5 h-5 text-muted-foreground" />
                 <div>
-                  <span className="text-sm text-foreground">Reset Library Data</span>
-                  <p className="text-xs text-muted-foreground">
+                  <span className="text-label text-foreground">Reset Library Data</span>
+                  <p className="text-caption text-muted-foreground">
                     Clear scanned media and start fresh. Keeps settings, exclusions, and wishlist.
                   </p>
                 </div>
               </div>
-              <button
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<RefreshCw className="w-3.5 h-3.5" />}
                 onClick={() => setShowLibraryResetConfirm(true)}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
                 Reset
-              </button>
+              </Button>
             </div>
           )}
-        </div>
+        </Card>
 
-        <div className="bg-muted/30 rounded-lg border border-border/40">
+        <Card variant="muted" padding="none">
           {showResetConfirm ? (
             <div className="p-4 space-y-4">
               <div className="flex items-start gap-3">
                 <AlertTriangle className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-foreground">
+                  <p className="text-label font-medium text-foreground">
                     Are you sure you want to reset the database?
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="text-caption text-muted-foreground mt-1">
                     This will permanently delete all your scanned media, quality scores, completeness data, and settings. This action cannot be undone.
                   </p>
                 </div>
               </div>
               <div className="flex gap-3 justify-end">
-                <button
+                <Button
+                  variant="tertiary"
+                  size="sm"
                   onClick={() => setShowResetConfirm(false)}
                   disabled={isResetting}
-                  className="px-3 py-1.5 text-xs hover:bg-muted rounded-md transition-colors"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  icon={isResetting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                   onClick={handleReset}
                   disabled={isResetting}
-                  className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
-                  {isResetting ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="w-3.5 h-3.5" />
-                  )}
                   Yes, Reset Database
-                </button>
+                </Button>
               </div>
             </div>
           ) : (
@@ -574,31 +568,32 @@ export function DataManagementTab() {
               <div className="flex items-center gap-3">
                 <Trash2 className="w-5 h-5 text-muted-foreground" />
                 <div>
-                  <span className="text-sm text-foreground">Reset Database</span>
-                  <p className="text-xs text-muted-foreground">
+                  <span className="text-label text-foreground">Reset Database</span>
+                  <p className="text-caption text-muted-foreground">
                     Delete all data and start fresh
                   </p>
                 </div>
               </div>
-              <button
+              <Button
+                variant="danger-secondary"
+                size="sm"
+                icon={<Trash2 className="w-3.5 h-3.5" />}
                 onClick={() => setShowResetConfirm(true)}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
               >
-                <Trash2 className="w-3.5 h-3.5" />
                 Reset
-              </button>
+              </Button>
             </div>
           )}
-        </div>
+        </Card>
       </div>
 
       {/* Status message */}
       {message && (
         <div
-          className={`p-3 rounded-lg text-xs ${
+          className={`text-caption ${
             message.type === 'success'
-              ? 'bg-green-500/10 border border-green-500/30 text-green-400'
-              : 'bg-red-500/10 border border-red-500/30 text-red-400'
+              ? 'text-foreground'
+              : 'text-destructive'
           }`}
         >
           {message.text}
@@ -611,7 +606,7 @@ export function DataManagementTab() {
           <div className="bg-background border border-border rounded-lg shadow-xl w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
             {/* Modal Header */}
             <div className="flex items-center justify-between p-4 border-b border-border">
-              <h2 className="text-base font-medium">Export Working Document</h2>
+              <h2 className="text-body font-medium">Export Working Document</h2>
               <button
                 onClick={() => setShowCSVExportModal(false)}
                 className="p-1 hover:bg-muted rounded transition-colors"
@@ -622,16 +617,16 @@ export function DataManagementTab() {
 
             {/* Modal Content */}
             <div className="p-4 space-y-3">
-              <p className="text-xs text-muted-foreground">
+              <p className="text-caption text-muted-foreground">
                 Select what to include in the CSV export:
               </p>
 
-              <div className="bg-muted/30 rounded-lg border border-border/40 divide-y divide-border/30">
+              <Card variant="muted" padding="none" className="divide-y divide-border/30">
                 {/* Upgrade Candidates */}
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <div>
-                    <span className="text-sm text-foreground">Upgrade Candidates</span>
-                    <p className="text-xs text-muted-foreground">
+                    <span className="text-label text-foreground">Upgrade Candidates</span>
+                    <p className="text-caption text-muted-foreground">
                       Movies and episodes that need quality upgrades
                     </p>
                   </div>
@@ -644,8 +639,8 @@ export function DataManagementTab() {
                 {/* Missing Movies */}
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <div>
-                    <span className="text-sm text-foreground">Missing Movies</span>
-                    <p className="text-xs text-muted-foreground">
+                    <span className="text-label text-foreground">Missing Movies</span>
+                    <p className="text-caption text-muted-foreground">
                       Movies missing from incomplete collections
                     </p>
                   </div>
@@ -658,8 +653,8 @@ export function DataManagementTab() {
                 {/* Missing Episodes */}
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <div>
-                    <span className="text-sm text-foreground">Missing TV Episodes</span>
-                    <p className="text-xs text-muted-foreground">
+                    <span className="text-label text-foreground">Missing TV Episodes</span>
+                    <p className="text-caption text-muted-foreground">
                       Episodes missing from incomplete TV series
                     </p>
                   </div>
@@ -672,8 +667,8 @@ export function DataManagementTab() {
                 {/* Missing Albums */}
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <div>
-                    <span className="text-sm text-foreground">Missing Albums</span>
-                    <p className="text-xs text-muted-foreground">
+                    <span className="text-label text-foreground">Missing Albums</span>
+                    <p className="text-caption text-muted-foreground">
                       Albums missing from artist discographies
                     </p>
                   </div>
@@ -686,8 +681,8 @@ export function DataManagementTab() {
                 {/* Music Quality Upgrades */}
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <div>
-                    <span className="text-sm text-foreground">Music Quality Upgrades</span>
-                    <p className="text-xs text-muted-foreground">
+                    <span className="text-label text-foreground">Music Quality Upgrades</span>
+                    <p className="text-caption text-muted-foreground">
                       Albums that could benefit from higher quality versions
                     </p>
                   </div>
@@ -696,29 +691,27 @@ export function DataManagementTab() {
                     onChange={() => toggleCSVOption('includeMusicUpgrades')}
                   />
                 </div>
-              </div>
+              </Card>
             </div>
 
             {/* Modal Footer */}
             <div className="flex gap-3 justify-end p-4 border-t border-border">
-              <button
+              <Button
+                variant="tertiary"
+                size="sm"
                 onClick={() => setShowCSVExportModal(false)}
-                className="px-3 py-1.5 text-xs hover:bg-muted rounded-md transition-colors"
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={isExportingCSV ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                 onClick={handleExportCSV}
                 disabled={isExportingCSV}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
-                {isExportingCSV ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Download className="w-3.5 h-3.5" />
-                )}
                 Export CSV
-              </button>
+              </Button>
             </div>
           </div>
         </div>

@@ -94,7 +94,7 @@ export class SectionErrorBoundary extends Component<Props, State> {
       // Compact inline error
       if (compact) {
         return (
-          <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm">
+          <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-label">
             <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />
             <span className="text-destructive">
               {this.props.section} failed to load
@@ -129,7 +129,7 @@ export class SectionErrorBoundary extends Component<Props, State> {
             {allowRetry && (
               <button
                 onClick={this.handleReset}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
               >
                 <RefreshCw className="w-4 h-4" />
                 Try Again
@@ -137,7 +137,7 @@ export class SectionErrorBoundary extends Component<Props, State> {
             )}
             <button
               onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-muted text-foreground rounded-md hover:bg-muted/80 transition-colors"
+              className="px-4 py-2 bg-muted text-foreground rounded-lg hover:bg-muted/80 transition-colors"
             >
               Reload App
             </button>
@@ -147,7 +147,7 @@ export class SectionErrorBoundary extends Component<Props, State> {
             <div className="w-full max-w-2xl">
               <button
                 onClick={this.toggleDetails}
-                className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2"
+                className="flex items-center gap-1 text-label text-muted-foreground hover:text-foreground mb-2"
               >
                 {this.state.showDetails ? (
                   <>
@@ -165,13 +165,13 @@ export class SectionErrorBoundary extends Component<Props, State> {
               {this.state.showDetails && (
                 <div className="space-y-2">
                   <div className="bg-background rounded p-3 overflow-auto max-h-32 border border-border">
-                    <pre className="text-xs text-destructive whitespace-pre-wrap">
+                    <pre className="text-caption text-destructive whitespace-pre-wrap">
                       {this.state.error.toString()}
                     </pre>
                   </div>
                   {this.state.errorInfo?.componentStack && (
                     <div className="bg-background rounded p-3 overflow-auto max-h-48 border border-border">
-                      <pre className="text-xs text-muted-foreground whitespace-pre-wrap">
+                      <pre className="text-caption text-muted-foreground whitespace-pre-wrap">
                         {this.state.errorInfo.componentStack}
                       </pre>
                     </div>
