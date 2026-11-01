@@ -280,9 +280,25 @@ export interface OptimizationQualityChoice {
   alternatives?: Array<Pick<MeasuredCandidate, 'encoder' | 'preset' | 'quality' | 'outputBytes' | 'sampledDurationSeconds' | 'vmafMean' | 'vmafP5' | 'cambiMean' | 'encodingDurationMs' | 'sourceSelfVmaf' | 'sourceCambiMean'>>
 }
 
+function plannedNonVideoBytesPerSecond(analysis: FileAnalysisResult, options: TranscodeOptions): number {
+  const plan = buildStreamSelectionPlan(analysis, options)
+  const conversions = options.targetConversion?.audio ?? options.audioConversions ?? []
+  const durationSeconds = analysis.durationMs! / 1000
+  const totalBytes = [...plan.audioStreamIndexes, ...plan.subtitleStreamIndexes].reduce((total, index) => {
+    const conversion = conversions.find(track => track.sourceIndex === index)
+    const bytes = conversion?.bitrateKbps !== undefined
+      ? conversion.bitrateKbps * 1000 * durationSeconds / 8
+      : analysis.streamBytes?.[index]
+    if (bytes === undefined) throw new Error(`Measured stream byte accounting is required for retained stream ${index}`)
+    return total + bytes
+  }, 0)
+  return totalBytes / durationSeconds
+}
+
 function getOptimizationQualityChoices(
   sourceSize: number,
   sourceDurationSeconds: number,
+  nonVideoBytesPerSecond: number,
   cachedMeasurement?: CachedMeasurement,
   searchedProfile?: OptimizationQualityProfile,
 ): OptimizationQualityChoice[] {
@@ -290,13 +306,13 @@ function getOptimizationQualityChoices(
   return (['transparent', 'balanced', 'maximum_savings'] as const).map(profile => {
     if (!cachedMeasurement.complete || profile !== searchedProfile) return { profile, status: 'measurement_incomplete' }
     try {
-      const maximumOutputBytesPerSecond = sourceSize / sourceDurationSeconds
+      const maximumOutputBytesPerSecond = sourceSize / sourceDurationSeconds - nonVideoBytesPerSecond
       const candidate = selectMeasuredCandidate(profile, cachedMeasurement.candidates, maximumOutputBytesPerSecond)
       const alternatives = getNonDominatedMeasuredCandidates(profile, cachedMeasurement.candidates, maximumOutputBytesPerSecond)
       return {
         profile,
         status: 'available',
-        estimatedSavingsBytes: projectMeasuredSavingsBytes(sourceSize, sourceDurationSeconds, candidate.outputBytes, candidate.sampledDurationSeconds),
+        estimatedSavingsBytes: projectMeasuredSavingsBytes(sourceSize, sourceDurationSeconds, candidate.outputBytes + nonVideoBytesPerSecond * candidate.sampledDurationSeconds, candidate.sampledDurationSeconds),
         candidate: {
           encoder: candidate.encoder,
           preset: candidate.preset,
@@ -1133,14 +1149,18 @@ export class TranscodingService {
           }
         }
         const measuredPlanSavingsBytes = shouldEncode
-          ? projectMeasuredSavingsBytes(stat.size, analysis.durationMs! / 1000, params.measuredCandidate!.outputBytes, params.measuredCandidate!.sampledDurationSeconds)
+          ? projectMeasuredSavingsBytes(
+              stat.size, analysis.durationMs! / 1000,
+              params.measuredCandidate!.outputBytes + plannedNonVideoBytesPerSecond(analysis, options) * params.measuredCandidate!.sampledDurationSeconds,
+              params.measuredCandidate!.sampledDurationSeconds,
+            )
           : undefined
         if (shouldEncode && measuredPlanSavingsBytes !== undefined && measuredPlanSavingsBytes <= 0) {
           return {
             mediaItemId, label, compatible: playbackCompatible, audioPlan, hdrFormat: analysis.video.hdrFormat || 'SDR',
             samplingGroupKey,
             sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256, sourceAnalysis: analysis, sourceCambiMean: reusableRepresentativePlan ? undefined : params.measuredCandidate?.sourceCambiMean, sourceSelfVmaf: reusableRepresentativePlan ? undefined : params.measuredCandidate?.sourceSelfVmaf, targetProfile,
-            qualityChoices: reusableRepresentativePlan?.qualityChoices ?? getOptimizationQualityChoices(stat.size, analysis.durationMs! / 1000, cachedMeasurement, request.options.qualityProfile),
+            qualityChoices: reusableRepresentativePlan?.qualityChoices ?? getOptimizationQualityChoices(stat.size, analysis.durationMs! / 1000, plannedNonVideoBytesPerSecond(analysis, options), cachedMeasurement, request.options.qualityProfile),
             options, params, operations: [], decisionStatus: 'no_savings', estimatedSavingsBytes: 0,
             evidenceStatus: 'estimated', confidence: 'medium', savingsCoverage: 'complete', savingsBasis: 'video_sample_encode',
             samplingRole: reusableRepresentativePlan ? 'projected' : 'measured',
@@ -1187,7 +1207,7 @@ export class TranscodingService {
           decisionStatus: shouldEncode ? 'sample_required' : 'actionable', evidenceStatus, savingsCoverage: reusableRepresentativePlan ? 'partial' : savingsBreakdown.coverage, confidence: evidenceStatus === 'measured' ? 'high' : evidenceStatus === 'estimated' ? 'medium' : 'none',
           samplingGroupKey,
           estimatedSavingsBytes: savingsBreakdown.totalEstimatedSavingsBytes,
-          qualityChoices: reusableRepresentativePlan?.qualityChoices ?? getOptimizationQualityChoices(stat.size, analysis.durationMs! / 1000, cachedMeasurement, request.options.qualityProfile),
+          qualityChoices: reusableRepresentativePlan?.qualityChoices ?? getOptimizationQualityChoices(stat.size, analysis.durationMs! / 1000, plannedNonVideoBytesPerSecond(analysis, options), cachedMeasurement, request.options.qualityProfile),
           savingsBasis, sourceTier: advice.sourceTier, adviceReason: preserveDynamicHdr && !shouldEncode
             ? playbackCompatible ? 'Dynamic HDR source video is preserved; only the container or selected streams are remuxed.' : 'Dynamic HDR source video is preserved, but the selected playback policy is not satisfied by the source and allowed remux operations.'
             : shouldEncode
@@ -2662,8 +2682,8 @@ export class TranscodingService {
       const stat = await fs.stat(filePath)
       await fs.mkdir(outputDirectory, { recursive: true })
       const sampleSeconds = Math.min(analysis.durationMs / 1000, APP_CONFIG.transcoding.sampleDurationSeconds * APP_CONFIG.transcoding.samplePositions.length)
-      const maximumOutputBytesPerSecond = Math.min(options.maxOutputBytes ?? stat.size, stat.size) / (analysis.durationMs / 1000)
-      const plannedBitrate = options.targetConversion ? options.targetConversion.maximumVideoBitrate + options.targetConversion.audio.reduce((sum, track) => sum + (track.bitrateKbps ?? analysis.audioTracks.find(audio => audio.index === track.sourceIndex)?.bitrateKbps ?? 0) * 1000, 0) : undefined
+      const maximumOutputBytesPerSecond = Math.min(options.maxOutputBytes ?? stat.size, stat.size) / (analysis.durationMs / 1000) - plannedNonVideoBytesPerSecond(analysis, options)
+      const plannedBitrate = options.targetConversion?.maximumVideoBitrate
       const outputContainer = options.targetConversion?.container ?? options.targetContainer
       const outputExtension = outputContainer === 'mp4' ? '.mp4' : outputContainer === 'mkv' ? '.mkv' : path.extname(filePath)
       const targetProfile = options.targetProfileId ? await getDatabase().playbackTargetProfiles.get(options.targetProfileId) : undefined
@@ -2677,12 +2697,10 @@ export class TranscodingService {
         }
         if (targetProfile && options.playbackPolicy !== 'allow-transcoding') {
           const evaluation = evaluatePlaybackTarget(targetProfile, sample)
-          if (options.playbackPolicy === 'direct-play') {
-            for (const finding of Object.values(evaluation.findings)) if (finding.status === 'incompatible') blockers.push(`${finding.rule}: ${finding.evidence}`)
-          } else {
-            for (const finding of [evaluation.findings.video, evaluation.findings.hdr, evaluation.findings.network, evaluation.findings.subtitle]) {
-              if (finding.status === 'incompatible') blockers.push(`${finding.rule}: ${finding.evidence}`)
-            }
+          // Video samples contain no audio, subtitles, or attachments. Those are
+          // validated by the executable stream plan and on the final output.
+          for (const finding of [evaluation.findings.video, evaluation.findings.hdr, evaluation.findings.network]) {
+            if (finding.status === 'incompatible') blockers.push(`${finding.rule}: ${finding.evidence}`)
           }
         }
         return blockers
