@@ -727,7 +727,13 @@ export class WebServerService {
   private loadPersistedSessions(): void {
     const stored = getDatabase().getSetting('web_sessions')
     if (!stored) return
-    if (!getCredentialEncryptionService().isEncrypted(stored)) throw new Error('Persisted web sessions are not encrypted')
+    if (!getCredentialEncryptionService().isEncrypted(stored)) {
+      // 0.4.2 persisted bearer tokens as plaintext. Revoke them on upgrade;
+      // do not load or re-encrypt previously exposed authentication sessions.
+      getDatabase().deleteSetting('web_sessions')
+      console.warn('[WebServer] Revoked unencrypted legacy web sessions during upgrade')
+      return
+    }
     const plain = getCredentialEncryptionService().decrypt(stored)
     if (!plain) throw new Error('Persisted web sessions cannot be decrypted')
     const sessions = JSON.parse(plain) as Array<[string, Session]>
