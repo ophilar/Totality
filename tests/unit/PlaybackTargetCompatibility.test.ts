@@ -32,7 +32,7 @@ describe('evaluatePlaybackTarget', () => {
     expect(JSON.parse(result.findings.video.evidence)).toMatchObject({ level: 40, ffprobeLevel: 120 })
   })
 
-  it('recognizes an explicitly supported PGS stream in Matroska', () => {
+  it('does not treat unselected embedded subtitles as direct-play incompatibility', () => {
     const analysis: FileAnalysisResult = {
       success: true,
       filePath: 'episode.mkv',
@@ -43,6 +43,25 @@ describe('evaluatePlaybackTarget', () => {
       subtitleTracks: [{ index: 4, codec: 'hdmv_pgs_subtitle', isDefault: false, isForced: false }],
     }
 
-    expect(evaluatePlaybackTarget(profile, analysis).findings.subtitle.status).toBe('compatible')
+    expect(evaluatePlaybackTarget(profile, analysis).findings.subtitle.status).toBe('not-applicable')
   })
+  it('does not reject direct play because an optional alternate audio language uses an unsupported codec', () => {
+    const analysis: FileAnalysisResult = {
+      success: true,
+      filePath: 'episode.mkv',
+      container: 'matroska',
+      overallBitrateKbps: 7_435,
+      video: { index: 0, codec: 'hevc', profile: 'Main 10', level: 120, width: 1440, height: 1080, bitDepth: 10 },
+      audioTracks: [
+        { index: 1, codec: 'aac', channels: 2, language: 'jpn', isDefault: true, hasObjectAudio: false },
+        { index: 2, codec: 'truehd', channels: 8, language: 'eng', isDefault: false, hasObjectAudio: true },
+      ],
+      subtitleTracks: [{ index: 3, codec: 'hdmv_pgs_subtitle', isDefault: false, isForced: false }],
+    }
+    const result = evaluatePlaybackTarget(profile, analysis)
+    expect(result.findings.audio.status).toBe('compatible')
+    expect(result.findings.subtitle.status).toBe('not-applicable')
+    expect(result.overall).toBe('compatible')
+  })
+
 })

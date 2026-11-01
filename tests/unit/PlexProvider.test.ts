@@ -452,6 +452,14 @@ describe('PlexProvider', () => {
       expect(result.versions).toHaveLength(1)
     })
 
+    it('stores Plex stream identities separately from audio ordinals', () => {
+      const provider = createProviderWithServer()
+      const result = (provider as any).convertToMediaItem(makeMovieItem())
+      const audioTracks = JSON.parse(result.mediaItem.audio_tracks)
+      expect(audioTracks[0].index).toBe(0)
+      expect(audioTracks[0].streamIndex).toBe(1)
+    })
+
     it('retains the media file path when Plex omits stream metadata', () => {
       const item = makeMovieItem()
       item.Media![0].Part![0].Stream = []

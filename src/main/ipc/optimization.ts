@@ -2,16 +2,13 @@ import { z } from 'zod'
 import { IPC_CHANNELS } from '@shared/ipcChannels'
 import { createIpcHandler, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
 import { getDatabase } from '@main/database/getDatabase'
-import type { AnalyzedAudioStream } from '@main/services/MediaFileAnalyzer'
 import { MediaPathAuthorization } from '@main/services/MediaPathAuthorization'
 import {
   buildOptimizationDecision,
   buildUnavailableOptimizationDecision,
-  type OptimizationDecisionAudioTrack,
 } from '@main/services/OptimizationDecisionService'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
-import { normalizeAudioCodec } from '@main/services/MediaNormalizer'
 import { PathUtils } from '@main/services/utils/PathUtils'
 import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
 
@@ -28,25 +25,6 @@ async function getMediaItemAndSource(db: ReturnType<typeof getDatabase>, mediaIt
   const source = await db.sources.getSourceById(item.source_id)
   if (!source) throw new Error('Media source was not found')
   return { item: item as typeof item & { id: number; file_path: string }, source }
-}
-
-function mapAnalysisAudioTracksToDecisionTracks(audioTracks: AnalyzedAudioStream[]): OptimizationDecisionAudioTrack[] {
-  return audioTracks.map(track => ({
-    index: track.index,
-    language: track.language,
-    title: track.title,
-    codec: normalizeAudioCodec(track.codec, track.profile),
-    profile: track.profile,
-    channels: track.channels,
-    channelLayout: track.channelLayout,
-    bitrateKbps: track.bitrateKbps,
-    isDefault: track.isDefault,
-    hasObjectAudio: track.hasObjectAudio,
-    reliableTag: Boolean(track.language),
-    isCommentary: track.isCommentary,
-    isAudioDescription: track.isAudioDescription,
-    isAccessibility: track.isAccessibility,
-  }))
 }
 
 function readCurrentAnalysis(item: Awaited<ReturnType<ReturnType<typeof getDatabase>['media']['getItemById']>> & { file_path: string }): {
@@ -101,7 +79,7 @@ export function registerOptimizationHandlers() {
     const { analysis, rejectionReason } = readCurrentAnalysis(item)
     getLoggingService().debug('[Optimization]', `Recommendation evidence ${analysis ? 'reused' : 'metadata-only'}: mediaItem=${item.id}, analysisEvidence=${rejectionReason}`)
     const savings = qualityAnalyzer.getOptimizationSavingsBreakdown(item, analysis)
-    const audioTracks = analysis?.audioTracks ?? (item.audio_tracks ? JSON.parse(item.audio_tracks) as AnalyzedAudioStream[] : [])
+    const audioTracks = qualityAnalyzer.getOptimizationAudioTracks(item, analysis)
     return buildOptimizationDecision({
       originalLanguage: item.original_language,
       durationMs: analysis?.durationMs ?? item.duration_ms ?? undefined,
@@ -109,7 +87,7 @@ export function registerOptimizationHandlers() {
       videoTargetCodec: savings.videoTargetCodec,
       videoAvailable: Boolean(analysis?.video ?? item.video_codec),
       audioTranscodeSavingsBytes: null,
-      audioTracks: mapAnalysisAudioTracksToDecisionTracks(audioTracks),
+      audioTracks,
     })
   })
 }

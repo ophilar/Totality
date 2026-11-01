@@ -123,6 +123,7 @@ export interface AudioStreamInfo {
   isDefault?: boolean
   hasObjectAudio?: boolean
   index?: number
+  streamIndex?: number
 }
 
 // Subtitle stream metadata

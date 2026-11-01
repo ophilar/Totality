@@ -6,11 +6,11 @@ import { getSourceManager } from '@main/services/SourceManager'
 import { PlexPlaybackDecisionProvider } from '@main/providers/plex/PlexPlaybackDecisionProvider'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 
-export type PlaybackDeliveryMode = 'direct-play' | 'direct-stream' | 'transcode'
+export type PlaybackDeliveryMode = 'direct-play' | 'direct-stream' | 'transcode' | 'conversion'
 export type PlaybackStreamDecision = 'copy' | 'transcode' | 'burn' | 'unknown' | 'not-applicable'
 export interface ProviderPlaybackDecision { provider: 'plex'; overall: PlaybackDeliveryMode; video: PlaybackStreamDecision; audio: PlaybackStreamDecision; subtitle: PlaybackStreamDecision; evidence: string }
 export interface PlaybackDecisionProvider { getDecision(input: { plexId: string; profile: PlaybackTargetProfile }): Promise<ProviderPlaybackDecision> }
-export type PlaybackPresentationState = 'compatible' | 'incompatible' | 'provider-decision-unavailable'
+export type PlaybackPresentationState = 'direct-play-supported' | 'direct-play-unsupported' | 'direct-stream' | 'server-transcode' | 'server-conversion' | 'provider-decision-unavailable'
 export interface PlaybackCompatibilityResult { profile: PlaybackTargetProfile; evaluation: PlaybackTargetEvaluation; providerDecision?: ProviderPlaybackDecision; providerDecisionError?: string; presentation: PlaybackPresentationState }
 
 export class PlaybackCompatibilityService {
@@ -26,13 +26,21 @@ export class PlaybackCompatibilityService {
     const analysis = JSON.parse(item.deep_analysis) as FileAnalysisResult
     if (!analysis.success || analysis.filePath !== item.file_path) throw new Error('Persisted file analysis is invalid')
     const evaluation = evaluatePlaybackTarget(profile, analysis)
-    if (item.source_type !== 'plex' || !item.source_id || !profile.definition.client) return { profile, evaluation, presentation: evaluation.overall }
+    const directPlayPresentation: PlaybackPresentationState = evaluation.overall === 'compatible' ? 'direct-play-supported' : 'direct-play-unsupported'
+    if (item.source_type !== 'plex' || !item.source_id || !profile.definition.client) return { profile, evaluation, presentation: directPlayPresentation }
     const plex = this.providers.plex || await this.getConfiguredPlexProvider(item.source_id)
-    if (!plex) return { profile, evaluation, presentation: evaluation.overall }
+    if (!plex) return { profile, evaluation, presentation: directPlayPresentation }
     try {
       if (!item.plex_id) throw new Error('Plex media identifier is missing')
       const providerDecision = await plex.getDecision({ plexId: item.plex_id, profile })
-      return { profile, evaluation, providerDecision, presentation: evaluation.overall }
+      const presentation: PlaybackPresentationState = providerDecision.overall === 'direct-play'
+        ? 'direct-play-supported'
+        : providerDecision.overall === 'direct-stream'
+          ? 'direct-stream'
+          : providerDecision.overall === 'transcode'
+            ? 'server-transcode'
+            : 'server-conversion'
+      return { profile, evaluation, providerDecision, presentation }
     } catch (error) {
       return { profile, evaluation, providerDecisionError: getErrorMessage(error), presentation: 'provider-decision-unavailable' }
     }
