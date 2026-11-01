@@ -420,7 +420,7 @@ export class MeasuredOptimizationService {
             const encodingDurationMs = performance.now() - encodingStartedAt
             getLoggingService().info('[MeasuredOptimization]', `stage=encoding encoder=${candidate.encoder} preset=${candidate.preset} quality=${candidate.quality} sample=${index} durationMs=${Math.round(encodingDurationMs)}`)
             if (candidate.encoder.startsWith('qsv')) verifyQsvQualityMode(diagnostics, candidate.quality)
-            const outputSample = await this.inspectSample(outputPath, request.signal)
+            const outputSample = await this.inspectWindow(binary, outputPath, { startSeconds: 0, durationSeconds: length }, request.signal)
             try {
               verifySampleFrameAlignment(referenceSamples[index], outputSample)
             } catch (error) {

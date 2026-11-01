@@ -6,7 +6,7 @@ import type { MeasurementSourcePreparation } from './MeasuredOptimizationService
 
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
 
-export const MEASUREMENT_VERSION = 13
+export const MEASUREMENT_VERSION = 14
 export const OPTIMIZATION_SEARCH_VERSION = 3
 /** Hard bound on expensive full-sample evaluations in each encoder/preset domain. */
 export const MAX_MEASURED_CANDIDATES_PER_PRESET = 5
@@ -23,7 +23,6 @@ export interface CachedMeasurement {
   candidates: MeasuredCandidate[]
   sampleHashes: string[][]
   sourcePreparation?: MeasurementSourcePreparation
-  sourcePreparationHashes?: string[][]
   partialSamples: MeasuredCandidateSample[]
   partialSampleHashes: string[]
 }

@@ -1060,8 +1060,7 @@ export class TranscodingService {
                     candidates: candidates.map(({ playbackBlockers: _playbackBlockers, ...candidate }) => candidate),
                     sampleHashes: await Promise.all(candidates.map(candidate => Promise.all((candidate.samplePaths ?? []).map(getSampleHash)))),
                     sourcePreparation,
-                    sourcePreparationHashes: await Promise.all(sourcePreparation.samples.map(async sample => Promise.all([sample.sourcePath, ...(sample.referencePath ? [sample.referencePath] : [])].map(getSampleHash)))),
-                    partialSamples: pendingSamples,
+                                        partialSamples: pendingSamples,
                     partialSampleHashes: await Promise.all(pendingSamples.map(sample => getSampleHash(sample.samplePath))),
                   }
                   await getDatabase().config.setSetting(`${MEASUREMENT_SETTING_PREFIX}${measurementCacheKey}`, JSON.stringify(cacheRecord))
@@ -2654,8 +2653,7 @@ export class TranscodingService {
         gpuDeviceSelector: useGpu ? encoderGpu?.encoderDeviceSelector : undefined,
         encoder: candidate.encoder,
         crf: candidate.quality,
-        preset: candidate.preset,
-        measurementReferenceInput: true
+        preset: candidate.preset
       }
       return { ...candidate, outputBytes: 0, sampledDurationSeconds: 0, encodingDurationMs: 0, vmafMean: 0, vmafP5: 0, cambiMean: 0, ffmpegArgs: TranscodeCommandFactory.getBuilder(hardwareVendor, candidateOptions).buildFFmpegArgs('<input>', '<output>', candidateOptions, analysis) }
     })
@@ -2666,8 +2664,6 @@ export class TranscodingService {
       const sampleSeconds = Math.min(analysis.durationMs / 1000, APP_CONFIG.transcoding.sampleDurationSeconds * APP_CONFIG.transcoding.samplePositions.length)
       const maximumOutputBytesPerSecond = Math.min(options.maxOutputBytes ?? stat.size, stat.size) / (analysis.durationMs / 1000)
       const plannedBitrate = options.targetConversion ? options.targetConversion.maximumVideoBitrate + options.targetConversion.audio.reduce((sum, track) => sum + (track.bitrateKbps ?? analysis.audioTracks.find(audio => audio.index === track.sourceIndex)?.bitrateKbps ?? 0) * 1000, 0) : undefined
-      const sourceSampleBytes = stat.size * sampleSeconds / (analysis.durationMs / 1000)
-      const referenceBytes = options.targetConversion?.videoFilter ? options.targetConversion.width * options.targetConversion.height * (options.targetConversion.bitDepth > 8 ? 3 : 1.5) * analysis.video.frameRate * sampleSeconds : 0
       const outputContainer = options.targetConversion?.container ?? options.targetContainer
       const outputExtension = outputContainer === 'mp4' ? '.mp4' : outputContainer === 'mkv' ? '.mkv' : path.extname(filePath)
       const targetProfile = options.targetProfileId ? await getDatabase().playbackTargetProfiles.get(options.targetProfileId) : undefined
@@ -2708,10 +2704,10 @@ export class TranscodingService {
             ? plannedBitrate / 8 * sampleSeconds
             : (options.maxOutputBytes ?? stat.size) * sampleSeconds / (analysis.durationMs / 1000)) * candidates.length)
           const rateControlBufferBytes = (options.targetConversion?.maximumVideoBitrate ?? 0) / 4
-          const estimatedRequiredBytes = Math.ceil(estimatedCandidateSampleBytes + sourceSampleBytes + referenceBytes + rateControlBufferBytes)
+          const estimatedRequiredBytes = Math.ceil(estimatedCandidateSampleBytes + rateControlBufferBytes)
           const space = await fs.statfs(outputDirectory)
           const availableBytes = Number(space.bavail) * Number(space.bsize)
-          if (availableBytes < estimatedRequiredBytes) throw new Error(`Estimated disk headroom is insufficient for episode sampling: volume=${path.parse(outputDirectory).root}, availableBytes=${availableBytes}, estimatedRequiredBytes=${estimatedRequiredBytes}, estimatedCandidateSampleBytes=${estimatedCandidateSampleBytes}, estimatedSourceSampleBytes=${Math.ceil(sourceSampleBytes)}, estimatedReferenceSampleBytes=${Math.ceil(referenceBytes)}, estimatedRateControlBufferBytes=${Math.ceil(rateControlBufferBytes)}, candidateCount=${candidates.length}, sampleDurationSeconds=${sampleSeconds}`)
+          if (availableBytes < estimatedRequiredBytes) throw new Error(`Estimated disk headroom is insufficient for episode sampling: volume=${path.parse(outputDirectory).root}, availableBytes=${availableBytes}, estimatedRequiredBytes=${estimatedRequiredBytes}, estimatedCandidateSampleBytes=${estimatedCandidateSampleBytes}, estimatedRateControlBufferBytes=${Math.ceil(rateControlBufferBytes)}, candidateCount=${candidates.length}, sampleDurationSeconds=${sampleSeconds}`)
           const roundStart = measuredCandidates.length
           const measured = await this.measuredOptimizationService.measure({
             inputPath: filePath,
@@ -2820,7 +2816,6 @@ export class TranscodingService {
       if (!onMeasuredCandidates) await fs.rm(outputDirectory, { recursive: true, force: true })
       throw error
     } finally {
-      if (!onMeasuredCandidates) await Promise.all([...new Set(sourcePreparation.samples.flatMap(sample => [sample.sourcePath, ...(sample.referencePath ? [sample.referencePath] : [])]))].map(filePath => fs.rm(filePath, { force: true })))
     }
   }
 
