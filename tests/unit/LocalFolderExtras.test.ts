@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import * as fs from 'fs'
 
 const mockGetMediaItemByPath = vi.hoisted(() => vi.fn())
