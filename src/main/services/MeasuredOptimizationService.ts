@@ -307,7 +307,7 @@ export class MeasuredOptimizationService {
         if (request.referenceFilter) {
           const transformedPath = path.join(request.outputDirectory, `verify-reference-${index}.mkv`)
           ownedPaths.push(transformedPath)
-          await this.processRunner.run(binary, ['-y', '-v', 'error', ...(request.referenceInputArgs ?? []), '-i', sourceSamplePath, '-vf', request.referenceFilter, '-fps_mode', 'passthrough', '-an', '-sn', '-c:v', 'ffv1', transformedPath], request.signal)
+          await this.processRunner.run(binary, ['-y', '-v', 'error', ...(request.referenceInputArgs ?? []), '-i', sourceSamplePath, '-vf', request.referenceFilter, '-fps_mode', 'passthrough', '-enc_time_base:v:0', 'demux', '-an', '-sn', '-c:v', 'ffv1', transformedPath], request.signal)
           Object.assign(sourceSample, await this.inspectSample(transformedPath, request.signal))
         }
         const referenceFile = request.referenceFilter ? path.join(request.outputDirectory, `verify-reference-${index}.mkv`) : referencePath
@@ -409,7 +409,7 @@ export class MeasuredOptimizationService {
         if (request.referenceFilter) {
           const referencePath = path.join(request.outputDirectory, `reference-${index}.mkv`)
           ownedPaths.add(referencePath)
-          await this.processRunner.run(binary, ['-y', '-v', 'error', ...(request.referenceInputArgs ?? []), '-i', sourceSamplePath, '-vf', request.referenceFilter, '-fps_mode', 'passthrough', '-an', '-sn', '-c:v', 'ffv1', referencePath], request.signal)
+          await this.processRunner.run(binary, ['-y', '-v', 'error', ...(request.referenceInputArgs ?? []), '-i', sourceSamplePath, '-vf', request.referenceFilter, '-fps_mode', 'passthrough', '-enc_time_base:v:0', 'demux', '-an', '-sn', '-c:v', 'ffv1', referencePath], request.signal)
           referencePaths.push(referencePath)
           const referenceSample = await this.inspectSample(referencePath, request.signal)
           if (referenceSample.frames !== sourceSamples[index].frames) throw new Error('Reference transform changed the source frame count')
