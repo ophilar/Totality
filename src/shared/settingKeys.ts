@@ -103,6 +103,7 @@ export const SETTING_KEYS = {
   web_access_pin: 'web_access_pin',
   web_access_session_timeout: 'web_access_session_timeout',
   web_access_https: 'web_access_https',
+  web_access_ip_allowlist: 'web_access_ip_allowlist',
 } as const
 
 export type SettingKey = typeof SETTING_KEYS[keyof typeof SETTING_KEYS]

@@ -53,6 +53,7 @@ interface Session {
 interface RateLimitEntry {
   failures: number
   lockedUntil: number
+  lockoutCount: number
 }
 
 type WebMessage = RpcMessage | AuthMessage
@@ -60,6 +61,7 @@ type WebMessage = RpcMessage | AuthMessage
 interface AuthenticatedWebSocket extends WebSocket {
   sessionToken?: string
   clientIp?: string
+  isAlive?: boolean
 }
 
 // MIME types for static file serving
@@ -105,6 +107,7 @@ const PROTECTED_SETTINGS: Set<string> = new Set([
   SETTING_KEYS.web_access_enabled,
   SETTING_KEYS.web_access_port,
   SETTING_KEYS.web_access_session_timeout,
+  SETTING_KEYS.web_access_ip_allowlist,
   SETTING_KEYS.gemini_api_key,
   SETTING_KEYS.tmdb_api_key,
   SETTING_KEYS.musicbrainz_api_token,
@@ -120,6 +123,12 @@ export class WebServerService {
   private rateLimits = new Map<string, RateLimitEntry>()
   private artworkRateLimits = new Map<string, { count: number; windowStart: number }>()
   private sessionCleanupTimer: ReturnType<typeof setInterval> | null = null
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  private cachePruneTimer: ReturnType<typeof setInterval> | null = null
+  private readonly imageCacheDir = path.join(app.getPath('userData'), 'image-cache')
+  private readonly imageCacheMaxBytes = 500 * 1024 * 1024
+  private readonly imageCacheMaxAgeMs = 7 * 24 * 60 * 60 * 1000
+  private readonly maxCachedImageBytes = 2 * 1024 * 1024
   private port = DEFAULT_PORT
   private staticRoot: string
   private devServerUrl: string | null = null
@@ -144,6 +153,7 @@ export class WebServerService {
     }
 
     this.port = port || this.getConfiguredPort()
+    this.loadPersistedSessions()
 
     // Create HTTP or HTTPS server
     const useHttps = this.isHttpsEnabled()
@@ -157,6 +167,7 @@ export class WebServerService {
     this.wss = new WebSocketServer({
       server: this.httpServer,
       maxPayload: MAX_WS_MESSAGE_SIZE,
+      perMessageDeflate: { threshold: 1024 },
     })
 
     this.wss.on('connection', (ws: AuthenticatedWebSocket, req) => {
@@ -179,6 +190,12 @@ export class WebServerService {
       }
 
       ws.clientIp = req.socket.remoteAddress || 'unknown'
+      if (!this.isIpAllowed(ws.clientIp)) {
+        ws.close(4003, 'IP not allowed')
+        return
+      }
+      ws.isAlive = true
+      ws.on('pong', () => { ws.isAlive = true })
       getLoggingService().verbose('WebServer', `WebSocket connected from ${ws.clientIp}`)
 
       ws.on('message', (data) => this.handleWebSocket(ws, data))
@@ -189,6 +206,18 @@ export class WebServerService {
         console.error('[WebServer] WebSocket error:', err.message)
       })
     })
+
+    this.heartbeatTimer = setInterval(() => {
+      for (const client of this.wss?.clients ?? []) {
+        const ws = client as AuthenticatedWebSocket
+        if (ws.isAlive === false) {
+          ws.terminate()
+          continue
+        }
+        ws.isAlive = false
+        ws.ping()
+      }
+    }, 30_000)
 
     return new Promise((resolve, reject) => {
       let settled = false
@@ -237,12 +266,22 @@ export class WebServerService {
           })
         }
 
+        void this.pruneImageCache().catch(error => getLoggingService().warn('WebServer', 'Image cache pruning failed', error))
+        this.cachePruneTimer = setInterval(() => {
+          void this.pruneImageCache().catch(error => getLoggingService().warn('WebServer', 'Image cache pruning failed', error))
+        }, 60 * 60 * 1000)
+
         // Periodic cleanup of expired sessions
         this.sessionCleanupTimer = setInterval(() => {
           const now = Date.now()
+          let expired = false
           for (const [token, session] of this.sessions.entries()) {
-            if (session.expiresAt < now) this.sessions.delete(token)
+            if (session.expiresAt < now) {
+              this.sessions.delete(token)
+              expired = true
+            }
           }
+          if (expired) this.persistSessions()
           for (const [ip, entry] of this.rateLimits.entries()) {
             if (entry.lockedUntil < now && entry.failures === 0) this.rateLimits.delete(ip)
           }
@@ -257,6 +296,14 @@ export class WebServerService {
   }
 
   stop(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
+    if (this.cachePruneTimer) {
+      clearInterval(this.cachePruneTimer)
+      this.cachePruneTimer = null
+    }
     if (this.sessionCleanupTimer) {
       clearInterval(this.sessionCleanupTimer)
       this.sessionCleanupTimer = null
@@ -327,6 +374,13 @@ export class WebServerService {
     this.setSecurityHeaders(res)
 
     const url = new URL(req.url || '/', `http://${req.headers.host}`)
+
+    const clientIp = req.socket.remoteAddress || 'unknown'
+    if (!this.isIpAllowed(clientIp)) {
+      res.writeHead(403)
+      res.end('IP not allowed')
+      return
+    }
 
     // Image proxy — serves Plex/Jellyfin artwork through Totality to avoid mixed content
     if (url.pathname === '/api/proxy-image') {
@@ -603,6 +657,30 @@ export class WebServerService {
     ws.send(JSON.stringify({ type: 'error', error: 'Unknown message type' }))
   }
 
+  private isIpAllowed(ip: string): boolean {
+    const setting = getDatabase().getSetting(SETTING_KEYS.web_access_ip_allowlist)
+    if (!setting?.trim()) return true
+    const normalized = ip.replace(/^::ffff:/, '')
+    return setting.split(',').map(value => value.trim()).filter(Boolean).includes(normalized)
+  }
+
+  private loadPersistedSessions(): void {
+    const stored = getDatabase().getSetting('web_sessions')
+    if (!stored) return
+    const plain = getCredentialEncryptionService().decrypt(stored)
+    if (!plain) throw new Error('Persisted web sessions cannot be decrypted')
+    const sessions = JSON.parse(plain) as Array<[string, Session]>
+    const now = Date.now()
+    for (const [token, session] of sessions) {
+      if (session.expiresAt > now) this.sessions.set(token, session)
+    }
+  }
+
+  private persistSessions(): void {
+    const serialized = JSON.stringify(Array.from(this.sessions.entries()))
+    getDatabase().setSetting('web_sessions', getCredentialEncryptionService().encrypt(serialized))
+  }
+
   private async handleAuth(ws: AuthenticatedWebSocket, msg: AuthMessage): Promise<void> {
     const ip = ws.clientIp || 'unknown'
 
@@ -617,10 +695,13 @@ export class WebServerService {
     // Validate PIN (always required) — uses constant-time comparison
     const storedPin = this.getStoredPin()
     if (!storedPin || !timingSafeCompare(msg.pin, storedPin)) {
-      const entry = this.rateLimits.get(ip) || { failures: 0, lockedUntil: 0 }
+      const entry = this.rateLimits.get(ip) || { failures: 0, lockedUntil: 0, lockoutCount: 0 }
       entry.failures++
       if (entry.failures >= MAX_AUTH_FAILURES) {
-        entry.lockedUntil = Date.now() + AUTH_LOCKOUT_MS
+        entry.lockoutCount++
+        const lockoutDuration = entry.lockoutCount >= 3 ? 24 * 60 * 60 * 1000
+          : entry.lockoutCount === 2 ? 15 * 60 * 1000 : AUTH_LOCKOUT_MS
+        entry.lockedUntil = Date.now() + lockoutDuration
         entry.failures = 0
         console.warn(`[WebServer] Auth lockout for IP ${ip} — ${MAX_AUTH_FAILURES} failed attempts`)
       }
@@ -654,6 +735,7 @@ export class WebServerService {
     // Issue IP-bound token
     const token = crypto.randomUUID()
     this.sessions.set(token, { expiresAt: Date.now() + this.getSessionTimeout(), ip })
+    this.persistSessions()
     ws.sessionToken = token
     ws.send(JSON.stringify({ type: 'auth', success: true, token }))
     getLoggingService().verbose('WebServer', `Authenticated client from ${ip}`)
@@ -774,12 +856,14 @@ export class WebServerService {
     if (!session) return false
     if (session.expiresAt < Date.now()) {
       this.sessions.delete(token)
+      this.persistSessions()
       return false
     }
     // Verify token is being used from the same IP it was issued to
     if (clientIp && session.ip !== clientIp) {
       console.warn(`[WebServer] Session token used from different IP: issued to ${session.ip}, used from ${clientIp}`)
       this.sessions.delete(token)
+      this.persistSessions()
       return false
     }
     return true
