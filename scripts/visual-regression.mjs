@@ -59,27 +59,31 @@ async function waitForScans(page) {
   if (failures.length) throw new Error('Real media scanning failed: ' + JSON.stringify(failures))
 }
 async function seedViaRealApplication(page, root) {
-  const media = [
-    { name: 'Regression Movies', folder: path.join(root, 'Movies'), type: 'movies' },
-    { name: 'Regression TV', folder: path.join(root, 'TV Shows'), type: 'tvshows' },
-    { name: 'Regression Music', folder: path.join(root, 'Music'), type: 'music' },
+  const libraries = [
+    { name: 'Movies', path: path.join(root, 'Movies'), mediaType: 'movies', enabled: true },
+    { name: 'TV Shows', path: path.join(root, 'TV Shows'), mediaType: 'tvshows', enabled: true },
+    { name: 'Music', path: path.join(root, 'Music'), mediaType: 'music', enabled: true },
   ]
-  for (const item of media) {
-    await page.evaluate(async ({ folder, name, type }) => {
-      const api = window.electronAPI
-      const source = await api.localAddSource({ folderPath: folder, displayName: name, mediaType: type })
-      const libraries = await api.sourcesGetLibraries(source.source_id)
-      if (!libraries.length) throw new Error('No real libraries found for ' + name)
-      for (const library of libraries) {
-        await api.taskQueueAddTask({
-          type: library.type === 'music' ? 'music-scan' : 'library-scan',
-          label: 'Visual comparison scan ' + library.name,
-          sourceId: source.source_id,
-          libraryId: library.id,
-        })
-      }
-    }, item)
-  }
+  await page.evaluate(async ({ folderPath, libraries }) => {
+    const api = window.electronAPI
+    const source = await api.localAddSourceWithLibraries({
+      folderPath,
+      displayName: 'Visual Regression Media',
+      libraries,
+    })
+    const sourceLibraries = await api.sourcesGetLibraries(source.source_id)
+    if (sourceLibraries.length !== libraries.length) {
+      throw new Error('Expected ' + libraries.length + ' real libraries, got ' + sourceLibraries.length)
+    }
+    for (const library of sourceLibraries) {
+      await api.taskQueueAddTask({
+        type: library.type === 'music' ? 'music-scan' : 'library-scan',
+        label: 'Visual comparison scan ' + library.name,
+        sourceId: source.source_id,
+        libraryId: library.id,
+      })
+    }
+  }, { folderPath: root, libraries })
   await waitForScans(page)
 }
 async function startApplication(appRoot, profile) {
