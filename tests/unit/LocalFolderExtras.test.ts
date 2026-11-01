@@ -1,10 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
+import * as fs from 'fs'
 
 // Mock all heavy dependencies of LocalFolderProvider module
 vi.mock('fs', () => ({
   default: { existsSync: vi.fn(), statSync: vi.fn() },
   existsSync: vi.fn(),
   statSync: vi.fn(),
+  promises: { readdir: vi.fn() },
 }))
 vi.mock('fs/promises', () => ({
   default: { readdir: vi.fn(), stat: vi.fn() },
@@ -44,7 +46,7 @@ vi.mock('../../src/main/services/MediaNormalizer', () => ({
   normalizeAudioCodec: vi.fn((c: string) => c),
 }))
 
-import { isExtrasContent } from '@main/providers/local/LocalFolderProvider'
+import { isExtrasContent, readFfprobeBatchSize, LocalFolderProvider } from '@main/providers/local/LocalFolderProvider'
 
 describe('isExtrasContent', () => {
   it('detects sample files', () => {
@@ -125,5 +127,37 @@ describe('isExtrasContent', () => {
   it('is case insensitive', () => {
     expect(isExtrasContent('FEATURETTE.MKV')).toBe(true)
     expect(isExtrasContent('BEHIND THE SCENES.MKV')).toBe(true)
+  })
+})
+
+describe('LocalFolderProvider scan safety', () => {
+  it('uses configured defaults only when the setting is absent', () => {
+    expect(readFfprobeBatchSize(null, 25)).toBe(25)
+    expect(readFfprobeBatchSize('', 50)).toBe(50)
+    expect(readFfprobeBatchSize('  ', 25)).toBe(25)
+    expect(readFfprobeBatchSize('8', 25)).toBe(8)
+    expect(readFfprobeBatchSize('128', 25)).toBe(128)
+  })
+
+  it.each(['0', '-1', '1.5', '12items', '129', 'NaN', 'Infinity'])(
+    'rejects invalid ffprobe_batch_size %s instead of looping indefinitely',
+    setting => {
+      expect(() => readFfprobeBatchSize(setting, 25)).toThrow('Invalid ffprobe_batch_size')
+    }
+  )
+
+  it('rejects an incomplete directory enumeration rather than treating it as a deletion', async () => {
+    vi.mocked(fs.promises.readdir).mockRejectedValueOnce(new Error('EACCES'))
+    const provider = new LocalFolderProvider({
+      sourceId: 'test-local',
+      connectionConfig: { folderPath: '/media', mediaType: 'movies' },
+    } as ConstructorParameters<typeof LocalFolderProvider>[0])
+
+    const discover = Reflect.get(provider, 'discoverMediaFiles') as (
+      dir: string, type: 'movie' | 'episode'
+    ) => Promise<unknown>
+    await expect(discover.call(provider, '/media', 'movie')).rejects.toThrow(
+      'Cannot complete media inventory'
+    )
   })
 })
