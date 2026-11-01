@@ -86,7 +86,7 @@ async function startApplication(appRoot, profile) {
   const executablePath = appRequire('electron')
   const electronApp = await electron.launch({
     executablePath,
-    args: [appRoot, '--no-sandbox', '--disable-gpu'],
+    args: ['--no-sandbox', '--disable-gpu', '--enable-logging=stderr', appRoot],
     cwd: appRoot,
     env: {
       ...process.env,
@@ -96,13 +96,44 @@ async function startApplication(appRoot, profile) {
     },
     timeout: 90_000,
   })
-  const page = await electronApp.firstWindow()
-  await page.waitForFunction(() => Boolean(window.electronAPI?.taskQueueGetState), null, { timeout: 60_000 })
-  const userData = await electronApp.evaluate(({ app, BrowserWindow }) => {
-    BrowserWindow.getAllWindows().forEach(win => win.webContents.closeDevTools())
-    return app.getPath('userData')
+  const diagnostics = []
+  const proc = electronApp.process()
+  proc.stderr?.on('data', chunk => {
+    const message = String(chunk)
+    diagnostics.push(message)
+    process.stderr.write(message)
   })
-  return { electronApp, page, userData }
+  proc.stdout?.on('data', chunk => {
+    const message = String(chunk)
+    diagnostics.push(message)
+    process.stdout.write(message)
+  })
+  try {
+    const page = await electronApp.firstWindow({ timeout: 20_000 })
+    page.on('pageerror', error => console.error('[Electron renderer]', error))
+    page.on('console', message => {
+      if (message.type() === 'error') console.error('[Electron console]', message.text())
+    })
+    await page.waitForFunction(() => Boolean(window.electronAPI?.taskQueueGetState), null, { timeout: 15_000 })
+    const userData = await electronApp.evaluate(({ app, BrowserWindow }) => {
+      BrowserWindow.getAllWindows().forEach(win => win.webContents.closeDevTools())
+      return app.getPath('userData')
+    })
+    return { electronApp, page, userData }
+  } catch (error) {
+    const windows = electronApp.windows()
+    console.error('[Electron startup diagnostics]', JSON.stringify({
+      appRoot,
+      windows: await Promise.all(windows.map(async page => ({
+        url: page.url(),
+        title: await page.title().catch(e => String(e)),
+        body: await page.locator('body').innerText({ timeout: 2000 }).then(s => s.slice(0, 1000)).catch(e => String(e)),
+      }))),
+      output: diagnostics.join('').slice(-12000),
+    }, null, 2))
+    await electronApp.close()
+    throw error
+  }
 }
 async function configureWeb(page, pin) {
   await page.evaluate(async ({ port, pin }) => {
