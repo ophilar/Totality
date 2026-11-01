@@ -586,7 +586,7 @@ export class QualityAnalyzer {
     const providerTracks = cachedItem.audio_tracks ? parseAudioTracks(cachedItem.audio_tracks) : []
     const reconciled = reconcileAnalyzedAudioTracks(providerTracks, analysis.audioTracks)
     if (providerTracks.length > 0 && !reconciled.aligned) {
-      getLoggingService().warn('[QualityAnalyzer]', `Stored audio track inventory differs from FFprobe for mediaItem=${mediaItem.id}; not assigning provider languages to unmatched streams`)
+      getLoggingService().warn('[QualityAnalyzer]', `Audio stream evidence mismatch: mediaItem=${mediaItem.id}, matched=${reconciled.matchedCount}/${providerTracks.length} provider tracks, probed=${analysis.audioTracks.length}, nativeIndexes=${providerTracks.filter(track => track.streamIndex !== undefined).length}; unmatched stream languages are not inferred`)
     }
     // The persisted analysis remains the actual FFprobe result. Provider tags
     // are joined on each read, so later rescans cannot leave stale labels.
