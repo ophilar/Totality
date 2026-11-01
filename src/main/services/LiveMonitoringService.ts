@@ -587,6 +587,7 @@ export class LiveMonitoringService {
    * Check a source using targeted file scanning (for file watcher changes)
    */
   private async checkSourceWithTargetedFiles(sourceId: string, filePaths: string[]): Promise<SourceChangeEvent[]> {
+    const scanStartedAt = new Date().toISOString()
     const sourceManager = getSourceManager()
     const db = getDatabase()
 
@@ -770,7 +771,7 @@ export class LiveMonitoringService {
       hasChanges: events.length > 0,
     })
 
-    this.notifyQualityUpgrades(sourceId, source.display_name, events)
+    this.notifyQualityUpgrades(sourceId, source.display_name, events, scanStartedAt)
 
     // Check wishlist for auto-completion after items were added or updated
     if (events.some((e) => e.changeType === 'added' || e.changeType === 'updated' || e.changeType === 'mixed')) {
@@ -790,18 +791,18 @@ export class LiveMonitoringService {
   /**
    * Start polling for a remote source
    */
-  private notifyQualityUpgrades(sourceId: string, sourceName: string, events: SourceChangeEvent[]): void {
+  private notifyQualityUpgrades(sourceId: string, sourceName: string, events: SourceChangeEvent[], scanStartedAt: string): void {
     const updated = events.filter(event => event.changeType === 'updated' || event.changeType === 'mixed')
     if (updated.length === 0) return
     const db = getDatabase()
-    const since = Math.min(...updated.map(event => Date.parse(event.detectedAt)))
-    const recent = (timestamp: string) => Date.parse(timestamp.includes('T')
-      ? timestamp : timestamp.replace(' ', 'T') + 'Z') >= since
-    const video = db.getRecentlyUpgraded(1)
-      .filter(item => item.source_id === sourceId && recent(item.upgraded_at))
+    const since = Math.floor(Date.parse(scanStartedAt) / 1000) * 1000
+    const recent = (timestamp: string) => Date.parse(timestamp.includes(' ')
+      ? timestamp.replace(' ', 'T') + 'Z' : timestamp) >= since
+    const video = db.getRecentlyUpgraded(1, sourceId)
+      .filter(item => recent(item.upgraded_at))
       .map(item => `${item.title}: ${item.previous_quality_tier} → ${item.quality_tier}`)
-    const music = db.getRecentlyUpgradedMusic(1)
-      .filter(item => item.source_id === sourceId && recent(item.upgraded_at))
+    const music = db.getRecentlyUpgradedMusic(1, sourceId)
+      .filter(item => recent(item.upgraded_at))
       .map(item => `${item.title} (${item.artist_name}): ${item.previous_quality_tier} → ${item.quality_tier}`)
     const upgrades = [...video, ...music]
     if (upgrades.length === 0) return
@@ -888,6 +889,7 @@ export class LiveMonitoringService {
    * Check a source for changes using incremental scan
    */
   private async checkSource(sourceId: string): Promise<SourceChangeEvent[]> {
+    const scanStartedAt = new Date().toISOString()
     const sourceManager = getSourceManager()
     const db = getDatabase()
 
@@ -1069,7 +1071,7 @@ export class LiveMonitoringService {
       hasChanges: events.length > 0,
     })
 
-    this.notifyQualityUpgrades(sourceId, source.display_name, events)
+    this.notifyQualityUpgrades(sourceId, source.display_name, events, scanStartedAt)
 
     // Check wishlist for auto-completion after items were added or updated
     if (events.some((e) => e.changeType === 'added' || e.changeType === 'updated' || e.changeType === 'mixed')) {

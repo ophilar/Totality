@@ -1672,7 +1672,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   /**
    * Get items that recently received a quality tier upgrade
    */
-  getRecentlyUpgraded(days: number = 30): Array<{
+  getRecentlyUpgraded(days: number = 30, sourceId?: string): Array<{
     id: number; title: string; year: number | null; type: string
     poster_url: string | null; quality_tier: string; source_id: string
     previous_quality_tier: string; upgraded_at: string
@@ -1689,9 +1689,10 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       WHERE qs.upgraded_at IS NOT NULL
         AND qs.upgraded_at >= datetime('now', ?)
         AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
+        AND (? IS NULL OR m.source_id = ?)
       ORDER BY qs.upgraded_at DESC
-      LIMIT 50
-    `).all(`-${days} days`) as Array<{
+      ${sourceId ? '' : 'LIMIT 50'}
+    `).all(`-${days} days`, sourceId ?? null, sourceId ?? null) as Array<{
       id: number; title: string; year: number | null; type: string
       poster_url: string | null; quality_tier: string; source_id: string
       previous_quality_tier: string; upgraded_at: string
@@ -1699,7 +1700,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     }>
   }
 
-  getRecentlyUpgradedMusic(days: number = 30): Array<{
+  getRecentlyUpgradedMusic(days: number = 30, sourceId?: string): Array<{
     album_id: number; title: string; artist_name: string; source_id: string
     quality_tier: string; previous_quality_tier: string; upgraded_at: string
   }> {
@@ -1711,9 +1712,10 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       JOIN music_albums a ON a.id = mqs.album_id
       WHERE mqs.upgraded_at IS NOT NULL
         AND mqs.upgraded_at >= datetime('now', ?)
+        AND (? IS NULL OR a.source_id = ?)
       ORDER BY mqs.upgraded_at DESC
-      LIMIT 50
-    `).all(`-${days} days`) as Array<{
+      ${sourceId ? '' : 'LIMIT 50'}
+    `).all(`-${days} days`, sourceId ?? null, sourceId ?? null) as Array<{
       album_id: number; title: string; artist_name: string; source_id: string
       quality_tier: string; previous_quality_tier: string; upgraded_at: string
     }>
