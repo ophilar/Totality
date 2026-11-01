@@ -16,6 +16,8 @@ export class IntelCommandBuilder implements ITranscodeCommandBuilder {
     const bitDepth = getEncoderBitDepth(analysis, options)
     const codec = options.targetCodec === 'av1' ? 'av1_qsv' : 'hevc_qsv'
     const quality = (options.crf ?? APP_CONFIG.transcoding.defaultIntelQuality).toString()
+    const referenceInput = options.measurementReferenceInput === true
+    const surfaceFormat = bitDepth === 10 ? 'p010le' : 'nv12'
 
     const args: string[] = [
       '-y',
@@ -23,12 +25,14 @@ export class IntelCommandBuilder implements ITranscodeCommandBuilder {
         ? `qsv=selected:hw,child_device=${options.gpuDeviceSelector?.kind === 'directx' ? options.gpuDeviceSelector.index : ''},child_device_type=d3d11va`
         : `qsv=selected:hw,child_device=${options.gpuDeviceSelector?.kind === 'drm' ? options.gpuDeviceSelector.path : ''}`,
       '-filter_hw_device', 'selected',
-      '-hwaccel', 'qsv',
-      '-hwaccel_output_format', 'qsv',
-      '-hwaccel_device', 'selected',
+      // FFV1 reference samples have no QSV hardware decoder. Decode in software
+      // and upload the lossless frames for the measured QSV encoding only.
+      ...(referenceInput ? [] : ['-hwaccel', 'qsv', '-hwaccel_output_format', 'qsv', '-hwaccel_device', 'selected']),
       '-i', input,
       '-fps_mode', 'passthrough',
-      '-vf', `vpp_qsv=format=${bitDepth === 10 ? 'p010le' : 'nv12'}`,
+      '-vf', referenceInput
+        ? `format=${surfaceFormat},hwupload=extra_hw_frames=64,vpp_qsv=format=${surfaceFormat}`
+        : `vpp_qsv=format=${surfaceFormat}`,
       '-c:v', codec,
       '-preset', options.preset || APP_CONFIG.transcoding.defaultIntelPreset,
       '-global_quality', quality,

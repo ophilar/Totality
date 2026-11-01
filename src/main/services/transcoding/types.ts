@@ -26,6 +26,8 @@ export interface TranscodeOptions {
   targetContainer?: 'mkv' | 'mp4'
   targetAudioCodec?: 'aac' | 'ac3' | 'eac3'
   audioConversions?: Array<{ sourceIndex: number; codec: string; bitrateKbps: number }>
+  /** Internal: measured candidate is encoding a software-decoded FFV1 reference. */
+  measurementReferenceInput?: boolean
   targetHdrFormat?: 'SDR' | 'HDR10'
   targetConversion?: unknown
 }
