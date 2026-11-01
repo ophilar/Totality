@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 import type { PlaybackTargetEvaluation } from '@main/types/playbackTarget'
+import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
+import type { PlannedAudioStream } from '@main/services/transcoding/StreamSelectionPlan'
 import { PlaybackCompatibilityFindings } from '../PlaybackCompatibilityPanel'
 import { EstimatedSavingsDisplay } from '../EstimatedSavingsDisplay'
 import { optimizationDecisionLabel } from './optimizationStatus'
@@ -17,6 +19,8 @@ export interface OptimizationReviewItemModel {
   samplingRole?: string
   savingsBasis?: string
   estimatedSavingsBytes?: number | null
+  audioPlan?: PlannedAudioStream[]
+  sourceAnalysis?: Pick<FileAnalysisResult, 'audioTracks'>
 }
 
 export function OptimizationReviewItem<T extends OptimizationReviewItemModel>({ item, targetSelected, badges, onOpenSample, children }: {
@@ -35,6 +39,19 @@ export function OptimizationReviewItem<T extends OptimizationReviewItemModel>({ 
     {!targetSelected && !item.targetCompatibility && <p className="text-xs text-muted-foreground">Playback compatibility not checked</p>}
     {item.params?.summary && <p className="text-xs text-muted-foreground">{item.params.summary}</p>}
     {item.params?.measuredCandidate?.searchSummary && <p className="text-xs text-muted-foreground" role="note">{item.params.measuredCandidate.searchSummary.measuredCount} candidate settings evaluated (limit {item.params.measuredCandidate.searchSummary.maximumCandidates}). {item.params.measuredCandidate.searchSummary.budgetReached ? 'Search budget reached; best tested setting, not a guaranteed global optimum.' : 'Search completed within the configured quality grid.'}</p>}
+    {item.audioPlan?.length ? <details className="text-xs">
+      <summary className="cursor-pointer font-medium">Audio track decisions</summary>
+      {!item.compatible && <p className="pt-1 text-muted-foreground">Proposed selections only; optimization is blocked.</p>}
+      <ul className="space-y-1 pt-2">
+        {item.audioPlan.map(({ index, action, targetCodec }) => {
+          const track = item.sourceAnalysis?.audioTracks.find(candidate => candidate.index === index)
+          return <li key={index} className="flex justify-between gap-3">
+            <span>{track?.language || 'Unknown'}{track?.title ? ` · ${track.title}` : ''} · {track?.codec || 'Unknown codec'} · {track?.channelLayout || (track?.channels ? `${track.channels}ch` : 'Unknown channels')}</span>
+            <span>{action === 'convert' ? `Convert to ${targetCodec?.toUpperCase()}` : action === 'remove' ? 'Remove' : 'Keep'}</span>
+          </li>
+        })}
+      </ul>
+    </details> : null}
     {item.changes?.map(change => <p key={change} className="text-xs text-muted-foreground">{change}</p>)}
     {item.targetCompatibility && <PlaybackCompatibilityFindings evaluation={item.targetCompatibility} targetName={item.targetProfile?.name} />}
     {item.samplePaths?.map((sample, index) => onOpenSample && <button key={sample} type="button" className="mr-3 text-xs underline" onClick={() => onOpenSample(index)}>Open sample {index + 1}</button>)}

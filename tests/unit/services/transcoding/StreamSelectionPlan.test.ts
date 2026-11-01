@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appendStreamMappingArgs, buildStreamSelectionPlan } from '../../../../src/main/services/transcoding/StreamSelectionPlan'
+import { appendStreamMappingArgs, buildStreamSelectionPlan, getPlannedAudioStreams } from '../../../../src/main/services/transcoding/StreamSelectionPlan'
 import type { FileAnalysisResult } from '../../../../src/main/services/MediaFileAnalyzer'
 
 const analysis = {
@@ -20,6 +20,50 @@ const analysis = {
 } as FileAnalysisResult
 
 describe('buildStreamSelectionPlan', () => {
+  it('recognizes localized Japanese and English language tags in original-language selection', () => {
+    const source = { ...analysis, audioTracks: [
+      { ...analysis.audioTracks[0], codec: 'flac', language: '日本語', hasObjectAudio: false },
+      { ...analysis.audioTracks[1], language: 'English' },
+    ] } as FileAnalysisResult
+    const plan = buildStreamSelectionPlan(source, {
+      streamSelection: { audio: 'original-and-protected', originalLanguage: 'jpn', subtitle: 'all' },
+    })
+    expect(plan.audioStreamIndexes).toEqual([1])
+    expect(getPlannedAudioStreams(source, plan)).toEqual([
+      { index: 1, action: 'keep' },
+      { index: 2, action: 'remove' },
+    ])
+  })
+
+  it('refuses to discard the only primary audio while keeping protected commentary', () => {
+    const source = { ...analysis, audioTracks: [
+      { ...analysis.audioTracks[0], language: 'eng', title: 'Commentary', hasObjectAudio: false, isCommentary: true },
+      { ...analysis.audioTracks[1], language: 'jpn' },
+    ] } as FileAnalysisResult
+    expect(() => buildStreamSelectionPlan(source, {
+      streamSelection: { audio: 'original-and-protected', originalLanguage: 'eng', subtitle: 'all' },
+    })).toThrow('No primary audio stream matches original language eng')
+  })
+
+  it('reports conversions from the executable stream plan and never converts removed tracks', () => {
+    const plan = buildStreamSelectionPlan(analysis, {
+      streamSelection: { audio: 'original-and-protected', originalLanguage: 'jpn', subtitle: 'all' },
+    })
+    expect(getPlannedAudioStreams(analysis, plan, [
+      { sourceIndex: 1, codec: 'aac' },
+      { sourceIndex: 2, codec: 'aac' },
+    ])).toEqual([
+      { index: 1, action: 'convert', targetCodec: 'aac' },
+      { index: 2, action: 'remove' },
+      { index: 3, action: 'remove' },
+    ])
+  })
+
+  it('rejects undetermined original-language metadata', () => {
+    expect(() => buildStreamSelectionPlan(analysis, {
+      streamSelection: { audio: 'original-and-protected', originalLanguage: 'und', subtitle: 'all' },
+    })).toThrow('A known original language is required')
+  })
   it('rejects original-language selection when a retained audio track has no reliable language', () => {
     const untaggedAnalysis: FileAnalysisResult = {
       ...analysis,
