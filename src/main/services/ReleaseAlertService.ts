@@ -153,7 +153,8 @@ export class ReleaseAlertService {
       }
     }
 
-    db.setSetting('release_alert_sent_ids', JSON.stringify([...this.alertedIds].slice(-500)))
+    this.alertedIds = new Set([...this.alertedIds].slice(-500))
+    db.setSetting('release_alert_sent_ids', JSON.stringify([...this.alertedIds]))
     return alertCount
   }
 }

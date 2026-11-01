@@ -419,4 +419,6 @@ export const WEB_SENSITIVE_SETTINGS = new Set([
   'web_access_enabled',
   'web_access_port',
   'web_access_session_timeout',
+  'web_access_ip_allowlist',
+  'web_sessions',
 ])

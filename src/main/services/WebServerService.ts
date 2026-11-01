@@ -48,12 +48,14 @@ interface AuthMessage {
 interface Session {
   expiresAt: number
   ip: string
+  pinFingerprint: string
 }
 
 interface RateLimitEntry {
   failures: number
   lockedUntil: number
   lockoutCount: number
+  lastAttemptAt: number
 }
 
 type WebMessage = RpcMessage | AuthMessage
@@ -207,18 +209,6 @@ export class WebServerService {
       })
     })
 
-    this.heartbeatTimer = setInterval(() => {
-      for (const client of this.wss?.clients ?? []) {
-        const ws = client as AuthenticatedWebSocket
-        if (ws.isAlive === false) {
-          ws.terminate()
-          continue
-        }
-        ws.isAlive = false
-        ws.ping()
-      }
-    }, 30_000)
-
     return new Promise((resolve, reject) => {
       let settled = false
       this.httpServer!.on('error', (err: NodeJS.ErrnoException) => {
@@ -239,6 +229,18 @@ export class WebServerService {
 
       this.httpServer!.listen(this.port, '0.0.0.0', () => {
         settled = true
+      this.heartbeatTimer = setInterval(() => {
+        for (const client of this.wss?.clients ?? []) {
+          const ws = client as AuthenticatedWebSocket
+          if (ws.isAlive === false) {
+            ws.terminate()
+            continue
+          }
+          ws.isAlive = false
+          ws.ping()
+        }
+      }, 30_000)
+
         const proto = useHttps ? 'https' : 'http'
         console.log(`[WebServer] Listening on ${proto}://0.0.0.0:${this.port}`)
 
@@ -283,7 +285,7 @@ export class WebServerService {
           }
           if (expired) this.persistSessions()
           for (const [ip, entry] of this.rateLimits.entries()) {
-            if (entry.lockedUntil < now && entry.failures === 0) this.rateLimits.delete(ip)
+            if (now - entry.lastAttemptAt > 24 * 60 * 60 * 1000) this.rateLimits.delete(ip)
           }
           for (const [ip, entry] of this.artworkRateLimits.entries()) {
             if (now - entry.windowStart > ARTWORK_RATE_WINDOW_MS * 2) this.artworkRateLimits.delete(ip)
@@ -725,18 +727,24 @@ export class WebServerService {
   private loadPersistedSessions(): void {
     const stored = getDatabase().getSetting('web_sessions')
     if (!stored) return
+    if (!getCredentialEncryptionService().isEncrypted(stored)) throw new Error('Persisted web sessions are not encrypted')
     const plain = getCredentialEncryptionService().decrypt(stored)
     if (!plain) throw new Error('Persisted web sessions cannot be decrypted')
     const sessions = JSON.parse(plain) as Array<[string, Session]>
     const now = Date.now()
     for (const [token, session] of sessions) {
-      if (session.expiresAt > now) this.sessions.set(token, session)
+      if (session.expiresAt > now && session.pinFingerprint === this.getPinFingerprint()) this.sessions.set(token, session)
     }
   }
 
   private persistSessions(): void {
     const serialized = JSON.stringify(Array.from(this.sessions.entries()))
     getDatabase().setSetting('web_sessions', getCredentialEncryptionService().encrypt(serialized))
+  }
+
+  private getPinFingerprint(): string {
+    const encryptedPin = getDatabase().getSetting(SETTING_KEYS.web_access_pin)
+    return crypto.createHash('sha256').update(encryptedPin || '').digest('hex')
   }
 
   private async handleAuth(ws: AuthenticatedWebSocket, msg: AuthMessage): Promise<void> {
@@ -753,7 +761,8 @@ export class WebServerService {
     // Validate PIN (always required) — uses constant-time comparison
     const storedPin = this.getStoredPin()
     if (!storedPin || !timingSafeCompare(msg.pin, storedPin)) {
-      const entry = this.rateLimits.get(ip) || { failures: 0, lockedUntil: 0, lockoutCount: 0 }
+      const entry = this.rateLimits.get(ip) || { failures: 0, lockedUntil: 0, lockoutCount: 0, lastAttemptAt: Date.now() }
+      entry.lastAttemptAt = Date.now()
       entry.failures++
       if (entry.failures >= MAX_AUTH_FAILURES) {
         entry.lockoutCount++
@@ -792,7 +801,7 @@ export class WebServerService {
 
     // Issue IP-bound token
     const token = crypto.randomUUID()
-    this.sessions.set(token, { expiresAt: Date.now() + this.getSessionTimeout(), ip })
+    this.sessions.set(token, { expiresAt: Date.now() + this.getSessionTimeout(), ip, pinFingerprint: this.getPinFingerprint() })
     this.persistSessions()
     ws.sessionToken = token
     ws.send(JSON.stringify({ type: 'auth', success: true, token }))
@@ -912,7 +921,7 @@ export class WebServerService {
   private isValidSession(token: string, clientIp?: string): boolean {
     const session = this.sessions.get(token)
     if (!session) return false
-    if (session.expiresAt < Date.now()) {
+    if (session.expiresAt < Date.now() || session.pinFingerprint !== this.getPinFingerprint()) {
       this.sessions.delete(token)
       this.persistSessions()
       return false
