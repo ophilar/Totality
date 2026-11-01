@@ -92,23 +92,28 @@ export class WishlistCompletionService {
     const completed: CompletionResult[] = []
 
     // Group items by type for batch queries
-    const movieItems = items.filter((i) => i.media_type === 'movie' && i.tmdb_id)
+    const movieItems = items.filter((i) => i.media_type === 'movie' && (i.tmdb_id || (i.title && i.year)))
     const seasonItems = items.filter(
-      (i) => i.media_type === 'season' && i.series_title && i.season_number != null
+      (i) => i.media_type === 'season' && (i.tmdb_id || i.series_title) && i.season_number != null
     )
     const episodeItems = items.filter(
       (i) => i.media_type === 'episode' && i.series_title && i.season_number != null && i.episode_number != null
     )
-    const albumItems = items.filter((i) => i.media_type === 'album' && i.musicbrainz_id)
-    const trackItems = items.filter((i) => i.media_type === 'track' && i.musicbrainz_id)
+    const albumItems = items.filter((i) => i.media_type === 'album' && (i.musicbrainz_id || (i.title && i.artist_name)))
+    const trackItems = items.filter((i) => i.media_type === 'track' && (i.musicbrainz_id || (i.title && i.artist_name)))
 
     // Batch check movies by TMDB ID
     if (movieItems.length > 0) {
-      const tmdbIds = movieItems.map((i) => i.tmdb_id!)
+      const tmdbIds = movieItems.filter(item => item.tmdb_id).map(item => item.tmdb_id!)
       const foundMovies = db.getMediaItemsByTmdbIds(tmdbIds)
 
       for (const item of movieItems) {
-        if (foundMovies.has(item.tmdb_id!)) {
+        const verified = item.tmdb_id
+          ? foundMovies.has(item.tmdb_id)
+          : db.getMediaItems({ type: 'movie', searchQuery: item.title }).filter(
+              movie => movie.title.toLocaleLowerCase() === item.title.toLocaleLowerCase() && movie.year === item.year,
+            ).length === 1
+        if (verified) {
           completed.push({
             id: item.id!,
             title: item.title,
@@ -121,7 +126,9 @@ export class WishlistCompletionService {
 
     // Check seasons by series_title + season_number
     for (const item of seasonItems) {
-      const count = db.getEpisodeCountForSeason(item.series_title!, item.season_number!)
+      const count = item.tmdb_id
+        ? db.getEpisodeCountBySeriesTmdbId(item.tmdb_id, item.season_number!)
+        : db.getEpisodeCountForSeason(item.series_title!, item.season_number!)
       if (count > 0) {
         completed.push({
           id: item.id!,
@@ -147,11 +154,18 @@ export class WishlistCompletionService {
 
     // Batch check albums by MusicBrainz ID
     if (albumItems.length > 0) {
-      const mbIds = albumItems.map((i) => i.musicbrainz_id!)
+      const mbIds = albumItems.filter(item => item.musicbrainz_id).map(item => item.musicbrainz_id!)
       const foundAlbums = db.getMusicAlbumsByMusicbrainzIds(mbIds)
 
       for (const item of albumItems) {
-        if (foundAlbums.has(item.musicbrainz_id!)) {
+        const verified = item.musicbrainz_id
+          ? foundAlbums.has(item.musicbrainz_id)
+          : db.getMusicAlbums({ artistName: item.artist_name!, searchQuery: item.title }).filter(
+              album => album.title.toLocaleLowerCase() === item.title.toLocaleLowerCase() &&
+                album.artist_name.toLocaleLowerCase() === item.artist_name!.toLocaleLowerCase() &&
+                (!item.year || album.year === item.year),
+            ).length === 1
+        if (verified) {
           completed.push({
             id: item.id!,
             title: item.title,
@@ -162,16 +176,19 @@ export class WishlistCompletionService {
       }
     }
 
-    // Check tracks by MusicBrainz ID
+    // Batch MusicBrainz identifiers; require unambiguous identity for tracks without IDs.
+    const trackIds = trackItems.filter(item => item.musicbrainz_id).map(item => item.musicbrainz_id!)
+    const foundTracks = db.getMusicTracksByMusicbrainzIds(trackIds)
     for (const item of trackItems) {
-      const track = db.getMusicTrackByMusicbrainzId(item.musicbrainz_id!)
-      if (track) {
-        completed.push({
-          id: item.id!,
-          title: item.title,
-          reason: 'missing',
-          media_type: item.media_type,
-        })
+      const verified = item.musicbrainz_id
+        ? foundTracks.has(item.musicbrainz_id)
+        : db.getMusicTracks({ searchQuery: item.title }).filter(
+            track => track.title.toLocaleLowerCase() === item.title.toLocaleLowerCase() &&
+              track.artist_name?.toLocaleLowerCase() === item.artist_name!.toLocaleLowerCase() &&
+              (!item.album_title || track.album_name?.toLocaleLowerCase() === item.album_title.toLocaleLowerCase()),
+          ).length === 1
+      if (verified) {
+        completed.push({ id: item.id!, title: item.title, reason: 'missing', media_type: item.media_type })
       }
     }
 

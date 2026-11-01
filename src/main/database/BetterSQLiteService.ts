@@ -1672,15 +1672,15 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   /**
    * Get items that recently received a quality tier upgrade
    */
-  getRecentlyUpgraded(days: number = 30): Array<{
+  getRecentlyUpgraded(days: number = 30, sourceId?: string): Array<{
     id: number; title: string; year: number | null; type: string
-    poster_url: string | null; quality_tier: string
+    poster_url: string | null; quality_tier: string; source_id: string
     previous_quality_tier: string; upgraded_at: string
     series_title: string | null; season_number: number | null; episode_number: number | null
   }> {
     if (!this.db) throw new Error('Database not initialized')
     return this.db.prepare(`
-      SELECT m.id, m.title, m.year, m.type, m.poster_url,
+      SELECT m.id, m.title, m.year, m.type, m.poster_url, m.source_id,
         qs.quality_tier, qs.previous_quality_tier, qs.upgraded_at,
         m.series_title, m.season_number, m.episode_number
       FROM quality_scores qs
@@ -1689,32 +1689,34 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       WHERE qs.upgraded_at IS NOT NULL
         AND qs.upgraded_at >= datetime('now', ?)
         AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
+        AND (? IS NULL OR m.source_id = ?)
       ORDER BY qs.upgraded_at DESC
-      LIMIT 50
-    `).all(`-${days} days`) as Array<{
+      ${sourceId ? '' : 'LIMIT 50'}
+    `).all(`-${days} days`, sourceId ?? null, sourceId ?? null) as Array<{
       id: number; title: string; year: number | null; type: string
-      poster_url: string | null; quality_tier: string
+      poster_url: string | null; quality_tier: string; source_id: string
       previous_quality_tier: string; upgraded_at: string
       series_title: string | null; season_number: number | null; episode_number: number | null
     }>
   }
 
-  getRecentlyUpgradedMusic(days: number = 30): Array<{
-    album_id: number; title: string; artist_name: string
+  getRecentlyUpgradedMusic(days: number = 30, sourceId?: string): Array<{
+    album_id: number; title: string; artist_name: string; source_id: string
     quality_tier: string; previous_quality_tier: string; upgraded_at: string
   }> {
     if (!this.db) throw new Error('Database not initialized')
     return this.db.prepare(`
-      SELECT a.id as album_id, a.title, a.artist_name,
+      SELECT a.id as album_id, a.title, a.artist_name, a.source_id,
         mqs.quality_tier, mqs.previous_quality_tier, mqs.upgraded_at
       FROM music_quality_scores mqs
       JOIN music_albums a ON a.id = mqs.album_id
       WHERE mqs.upgraded_at IS NOT NULL
         AND mqs.upgraded_at >= datetime('now', ?)
+        AND (? IS NULL OR a.source_id = ?)
       ORDER BY mqs.upgraded_at DESC
-      LIMIT 50
-    `).all(`-${days} days`) as Array<{
-      album_id: number; title: string; artist_name: string
+      ${sourceId ? '' : 'LIMIT 50'}
+    `).all(`-${days} days`, sourceId ?? null, sourceId ?? null) as Array<{
+      album_id: number; title: string; artist_name: string; source_id: string
       quality_tier: string; previous_quality_tier: string; upgraded_at: string
     }>
   }
@@ -1727,13 +1729,16 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
    * Get media items with filters
    * By default, only returns items from enabled libraries
    */
-  getMediaItems(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): MediaItem[] {
+  getMediaItems(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }, projection?: 'card'): MediaItem[] {
     if (!this.db) throw new Error('Database not initialized')
 
     const { whereClause, params } = this.buildMediaItemWhere(filters)
 
+    const selectedColumns = projection === 'card'
+      ? 'm.id, m.title, m.year, m.type, m.source_id, m.source_type, m.library_id, m.file_path, m.file_size_bytes, m.resolution, m.video_bitrate_kbps, m.audio_channels, m.poster_url, m.tmdb_id, m.imdb_id'
+      : 'm.*'
     let sql = `
-      SELECT m.*,
+      SELECT ${selectedColumns},
              q.overall_score, q.needs_upgrade,
              q.quality_tier, q.tier_quality, q.tier_score, q.issues,
              q.video_savings_bytes, q.estimated_savings_bytes, q.savings_coverage, q.evidence_status, q.confidence, q.savings_basis
@@ -6600,12 +6605,13 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   /**
    * Get episode count for a TV show by its series-level TMDB ID
    */
-  getEpisodeCountBySeriesTmdbId(seriesTmdbId: string): number {
+  getEpisodeCountBySeriesTmdbId(seriesTmdbId: string, seasonNumber?: number): number {
     if (!this.db) throw new Error('Database not initialized')
     const stmt = this.db.prepare(
-      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_tmdb_id = ?"
+      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_tmdb_id = ?" +
+      (seasonNumber === undefined ? '' : ' AND season_number = ?')
     )
-    return (stmt.get(seriesTmdbId) as { count: number }).count
+    return (stmt.get(...(seasonNumber === undefined ? [seriesTmdbId] : [seriesTmdbId, seasonNumber])) as { count: number }).count
   }
 
   /**
@@ -6648,6 +6654,21 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       for (const row of rows) {
         if (row.musicbrainz_id) result.set(row.musicbrainz_id, row)
       }
+    }
+    return result
+  }
+
+  /**
+   * Resolve wishlist tracks by MusicBrainz IDs with one batched query.
+   */
+  getMusicTracksByMusicbrainzIds(ids: string[]): Map<string, MusicTrack> {
+    if (!this.db) throw new Error('Database not initialized')
+    const result = new Map<string, MusicTrack>()
+    for (let offset = 0; offset < ids.length; offset += 500) {
+      const batch = ids.slice(offset, offset + 500)
+      const placeholders = batch.map(() => '?').join(',')
+      const rows = this.db.prepare(`SELECT * FROM music_tracks WHERE musicbrainz_id IN (${placeholders})`).all(...batch) as MusicTrack[]
+      for (const row of rows) if (row.musicbrainz_id) result.set(row.musicbrainz_id, row)
     }
     return result
   }

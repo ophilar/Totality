@@ -117,6 +117,7 @@ export const RPC_CHANNEL_MAP: Record<string, string> = {
 
   // Database - Media Items
   getMediaItems: IPC_CHANNELS.dbGetMediaItems,
+  getMediaItemsSlim: IPC_CHANNELS.dbGetMediaItemsSlim,
   countMediaItems: IPC_CHANNELS.dbCountMediaItems,
   getOptimizationMetrics: IPC_CHANNELS.dbGetOptimizationMetrics,
   getTVShows: IPC_CHANNELS.dbGetTVShows,
@@ -418,4 +419,6 @@ export const WEB_SENSITIVE_SETTINGS = new Set([
   'web_access_enabled',
   'web_access_port',
   'web_access_session_timeout',
+  'web_access_ip_allowlist',
+  'web_sessions',
 ])

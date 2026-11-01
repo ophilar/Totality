@@ -65,6 +65,13 @@ export function registerDatabaseHandlers() {
     }
   })
 
+  createIpcHandler(IPC_CHANNELS.dbGetMediaItemsSlim, async (filters?: unknown) => {
+    const validFilters = filters !== undefined
+      ? validateInput(MediaItemFiltersSchema, filters, 'db:getMediaItemsSlim')
+      : undefined
+    return db.getMediaItems(validFilters, 'card')
+  })
+
   createIpcHandler(IPC_CHANNELS.dbCountMediaItems, async (filters?: unknown) => {
     try {
       const validFilters = filters !== undefined ? validateInput(MediaItemFiltersSchema, filters, 'db:countMediaItems') : undefined

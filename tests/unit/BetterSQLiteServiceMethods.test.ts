@@ -205,6 +205,28 @@ describe('BetterSQLiteService — Media Items', () => {
     insertSource(service)
   })
 
+  it('projects movie cards without loading deep analysis or changing filters', () => {
+    service.upsertMediaItem(makeMediaItem({ plex_id: 'card-a', title: 'Alpha' }))
+    service.upsertMediaItem(makeMediaItem({ plex_id: 'card-b', title: 'Beta' }))
+    const cards = service.getMediaItems({ type: 'movie', sortBy: 'title', sortOrder: 'asc' }, 'card')
+    expect(cards.map(movie => movie.title)).toEqual(['Alpha', 'Beta'])
+    expect(cards[0]).toMatchObject({ resolution: '1080p', video_bitrate_kbps: 5000, file_path: '/movies/test.mkv' })
+    expect(cards[0]).not.toHaveProperty('deep_analysis')
+    expect(cards[0]).not.toHaveProperty('subtitle_tracks')
+  })
+
+  it('scopes recent quality upgrades to the scanned source', () => {
+    insertSource(service, 'src-2')
+    const primary = service.upsertMediaItem(makeMediaItem({ plex_id: 'quality-a', source_id: 'src-1', file_path: '/movies/a.mkv' }))
+    const secondary = service.upsertMediaItem(makeMediaItem({ plex_id: 'quality-b', source_id: 'src-2', file_path: '/movies/b.mkv' }))
+    for (const id of [primary, secondary]) {
+      service.upsertQualityScore(makeQualityScore(id, 0))
+      ;(service as any).db.prepare("UPDATE quality_scores SET previous_quality_tier = '720p', upgraded_at = datetime('now') WHERE media_item_id = ?").run(id)
+    }
+    expect(service.getRecentlyUpgraded(1, 'src-1').map(item => item.id)).toEqual([primary])
+    expect(service.getRecentlyUpgraded(1, 'src-2').map(item => item.id)).toEqual([secondary])
+  })
+
   it('upsertMediaItem inserts and returns ID', () => {
     const id = service.upsertMediaItem(makeMediaItem())
     expect(id).toBeGreaterThan(0)
@@ -1075,6 +1097,14 @@ describe('BetterSQLiteService — Music', () => {
       album_id: albumId,
     }))
     expect(trackId).toBeGreaterThan(0)
+  })
+
+  it('finds wishlist tracks in one batched MusicBrainz lookup', () => {
+    service.upsertMusicTrack(makeMusicTrack({ provider_id: 'track-1', musicbrainz_id: 'mb-1' }))
+    service.upsertMusicTrack(makeMusicTrack({ provider_id: 'track-2', musicbrainz_id: 'mb-2' }))
+    const matches = service.getMusicTracksByMusicbrainzIds(['mb-2', 'missing', 'mb-1'])
+    expect([...matches.keys()].sort()).toEqual(['mb-1', 'mb-2'])
+    expect(matches.get('mb-1')?.title).toBe('Test Track')
   })
 
   it('getMusicAlbums supports artistId + artistName OR logic', () => {
