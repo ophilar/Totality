@@ -933,13 +933,8 @@ export class PlexProvider implements MediaProvider {
       throw new Error('No server selected')
     }
 
-    try {
-      const url = `${this.selectedServer.uri}/library/metadata/${showKey}/allLeaves`
-      return await this.paginatedPlexFetch<PlexMediaItem>(url)
-    } catch (error) {
-      console.error('Failed to get episodes:', error)
-      return []
-    }
+    const url = `${this.selectedServer.uri}/library/metadata/${showKey}/allLeaves`
+    return this.paginatedPlexFetch<PlexMediaItem>(url)
   }
 
   private async getSeasonMetadata(seasonKey: string): Promise<PlexMediaItem | null> {
