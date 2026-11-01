@@ -1727,13 +1727,16 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
    * Get media items with filters
    * By default, only returns items from enabled libraries
    */
-  getMediaItems(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): MediaItem[] {
+  getMediaItems(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }, projection?: 'card'): MediaItem[] {
     if (!this.db) throw new Error('Database not initialized')
 
     const { whereClause, params } = this.buildMediaItemWhere(filters)
 
+    const selectedColumns = projection === 'card'
+      ? 'm.id, m.title, m.year, m.type, m.source_id, m.source_type, m.library_id, m.file_path, m.file_size_bytes, m.resolution, m.video_bitrate_kbps, m.audio_channels, m.poster_url, m.tmdb_id, m.imdb_id'
+      : 'm.*'
     let sql = `
-      SELECT m.*,
+      SELECT ${selectedColumns},
              q.overall_score, q.needs_upgrade,
              q.quality_tier, q.tier_quality, q.tier_score, q.issues,
              q.video_savings_bytes, q.estimated_savings_bytes, q.savings_coverage, q.evidence_status, q.confidence, q.savings_basis

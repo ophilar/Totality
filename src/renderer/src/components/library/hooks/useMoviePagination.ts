@@ -79,7 +79,7 @@ export function useMoviePagination({
 
   const { items, setItems, totalCount, loading, load, loadMore } = usePagination<MediaItem>({
     pageSize: LIBRARY_PAGE_SIZE,
-    fetchItems: (filters) => window.electronAPI.getMediaItems(filters) as Promise<MediaItem[]>,
+    fetchItems: (filters) => window.electronAPI.getMediaItemsSlim(filters) as Promise<MediaItem[]>,
     fetchCount: (filters) => window.electronAPI.countMediaItems(filters) as Promise<number>,
     buildFilters,
     deps: [activeSourceId, activeLibraryId, tierFilter, qualityFilter, searchQuery],
