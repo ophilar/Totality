@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildLosslessSampleArgs, verifyQsvQualityMode, verifySampleFrameAlignment, type SampleTimingEvidence } from '@main/services/MeasuredOptimizationService'
+import { buildLosslessSampleArgs, buildMeasuredCandidateArgs, verifyQsvQualityMode, verifySampleFrameAlignment, type SampleTimingEvidence } from '@main/services/MeasuredOptimizationService'
 
 describe('buildLosslessSampleArgs', () => {
   it('accurately seeks and encodes the video reference losslessly without copying video packets', () => {
@@ -21,6 +21,16 @@ describe('buildLosslessSampleArgs', () => {
   it('rejects invalid windows instead of silently extracting the wrong segment', () => {
     expect(() => buildLosslessSampleArgs('/tmp/source.mkv', '/tmp/reference.mkv', -1, 4)).toThrow()
     expect(() => buildLosslessSampleArgs('/tmp/source.mkv', '/tmp/reference.mkv', 1, 0)).toThrow()
+  })
+})
+
+describe('buildMeasuredCandidateArgs', () => {
+  it('preserves decoded reference timestamps in the encoder rather than rounding to nominal frame rate', () => {
+    const args = buildMeasuredCandidateArgs(['-i', '<input>', '-fps_mode', 'passthrough', '-c:v', 'libx265', '<output>'], 'reference.mkv', 'candidate.mkv')
+    expect(args).toEqual(['-i', 'reference.mkv', '-fps_mode', 'passthrough', '-c:v', 'libx265', '-enc_time_base:v:0', 'demux', 'candidate.mkv'])
+  })
+  it('rejects malformed candidate commands', () => {
+    expect(() => buildMeasuredCandidateArgs(['-i', '<input>'], 'reference.mkv', 'candidate.mkv')).toThrow('must end with its output path')
   })
 })
 

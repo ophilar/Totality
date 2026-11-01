@@ -122,6 +122,18 @@ export interface MeasurementSourcePreparation {
   }>
 }
 
+/**
+ * Preserve the reference container's frame time base for candidate encoders.
+ * Their default 1/framerate base can round VFR or 24000/1001 PTS onto
+ * duplicate ticks, failing encodes or creating/dropping frames.
+ */
+export function buildMeasuredCandidateArgs(template: string[], inputPath: string, outputPath: string): string[] {
+  const args = template.map(arg => arg === '<input>' ? inputPath : arg === '<output>' ? outputPath : arg)
+  if (args[args.length - 1] !== outputPath) throw new Error('Measured candidate FFmpeg command must end with its output path')
+  args.splice(args.length - 1, 0, '-enc_time_base:v:0', 'demux')
+  return args
+}
+
 export function verifyQsvQualityMode(diagnostics: string, expectedQuality: number): void {
   const rateControl = diagnostics.match(/RateControlMethod:\s*(\w+)/)?.[1]
   if (rateControl !== 'ICQ' && rateControl !== 'LA_ICQ') {
@@ -423,7 +435,7 @@ export class MeasuredOptimizationService {
           if (!sample) {
             await request.onProgress?.(`Encoding sample ${index + 1} of ${starts.length} with ${candidate.encoder} (${candidate.quality})`)
             ownedPaths.add(outputPath)
-            const args = candidate.ffmpegArgs.map(arg => arg === '<input>' ? sourceSamplePaths[index] : arg === '<output>' ? outputPath : arg)
+            const args = buildMeasuredCandidateArgs(candidate.ffmpegArgs, sourceSamplePaths[index], outputPath)
             if (candidate.encoder.startsWith('qsv')) args.unshift('-v', 'verbose')
             const encodingStartedAt = performance.now()
             const diagnostics = await this.processRunner.run(binary, args, request.signal)
