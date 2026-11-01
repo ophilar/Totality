@@ -171,7 +171,11 @@ async function navigate(page, screen, viewport) {
   }
   if (tabs[screen]) {
     if (screen === 'dashboard' && viewport === 'mobile') return false
-    await page.getByRole('tablist', { name: 'Navigation' }).getByRole('tab', { name: tabs[screen], exact: true }).click()
+    const tab = page.getByRole('tablist', { name: 'Navigation' }).getByRole('tab', { name: tabs[screen], exact: true })
+    // Semantic keyboard navigation remains usable when 0.4.2's tablet header
+    // overlaps the tab's pointer target. Pointer obstruction is reported below.
+    await tab.focus()
+    await tab.press('Enter')
   } else if (screen === 'wishlist') {
     if (viewport === 'mobile') {
       await page.getByRole('tablist', { name: 'Navigation' }).getByRole('tab', { name: 'Wishlist' }).click()
@@ -190,6 +194,16 @@ async function navigate(page, screen, viewport) {
     await page.getByText('Regression Atlas', { exact: false }).first().waitFor()
   }
   return true
+}
+async function findObstructedControls(page) {
+  return page.getByRole('tablist', { name: 'Navigation' }).getByRole('tab').evaluateAll(tabs =>
+    tabs.flatMap(tab => {
+      const rect = tab.getBoundingClientRect()
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+      if (hit && tab.contains(hit)) return []
+      return [tab.getAttribute('aria-label') || tab.textContent?.trim() || '(unnamed tab)']
+    }),
+  )
 }
 async function closeScenario(page, screen, viewport) {
   if (screen === 'wishlist' && viewport !== 'mobile') {
@@ -221,7 +235,7 @@ async function shootApp(appRoot, mediaRoot, outputDir, version, seedDb) {
   const dbPath = path.join(instance.userData, 'totality-v2.db')
   if (!existsSync(dbPath)) throw new Error('Expected application database missing: ' + dbPath)
   const pin = String(randomInt(100000, 999999))
-  const results = { version, dbPath, screenshots: {}, interactions: {}, errors: [] }
+  const results = { version, dbPath, screenshots: {}, interactions: {}, pointerObstructions: {}, errors: [] }
   const browser = await chromium.launch({ headless: true })
   try {
     await configureWeb(instance.page, pin)
@@ -247,6 +261,8 @@ async function shootApp(appRoot, mediaRoot, outputDir, version, seedDb) {
           await page.screenshot({ path: file, animations: 'disabled', fullPage: false })
           results.screenshots[key] = path.relative(outputDir, file).replaceAll(path.sep, '/')
           results.interactions[key] = 'passed'
+          const obstructions = await findObstructedControls(page)
+          if (obstructions.length) results.pointerObstructions[key] = obstructions
           await closeScenario(page, screen, viewport)
         } catch (error) {
           results.interactions[key] = 'FAILED: ' + String(error)
