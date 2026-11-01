@@ -71,31 +71,21 @@ export interface OutputQualityVerificationResult {
 
 export const VMAF_MODEL_VERSION = 'vmaf_v0.6.1'
 
-/**
- * Accurate input seeking decodes and discards preroll before encoding the sample.
- * Unlike -c copy, lossless FFV1 materialization has exact decoded video boundaries.
- * Retain non-video streams only for preflight, where the candidate's executable
- * stream mapping and playback validation need them.
- */
-export function buildLosslessSampleArgs(
-  inputPath: string,
-  outputPath: string,
-  startSeconds: number,
-  durationSeconds: number,
-  retainOtherStreams = false,
-): string[] {
-  if (!Number.isFinite(startSeconds) || startSeconds < 0 || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-    throw new Error('A lossless sample requires a valid start time and positive duration')
-  }
-  return [
-    '-y', '-v', 'error', '-ss', String(startSeconds), '-i', PathUtils.sanitizeAbsolutePath(inputPath),
-    '-t', String(durationSeconds),
-    '-map', retainOtherStreams ? '0' : '0:v:0',
-    ...(retainOtherStreams ? ['-c', 'copy'] : ['-an', '-sn', '-dn']),
-    '-c:v:0', 'ffv1', '-vf:v:0', 'setpts=PTS-STARTPTS',
-    '-fps_mode:v:0', 'passthrough', '-enc_time_base:v:0', 'filter',
-    outputPath,
-  ]
+export interface SampleWindow {
+  startSeconds: number
+  durationSeconds: number
+}
+
+export function buildMeasuredCandidateArgs(template: string[], inputPath: string, outputPath: string, window: SampleWindow): string[] {
+  const args = template.map(arg => arg === '<input>' ? PathUtils.sanitizeAbsolutePath(inputPath) : arg === '<output>' ? outputPath : arg)
+  const inputIndex = args.indexOf('-i')
+  args.splice(inputIndex, 0, '-ss', String(window.startSeconds))
+  const trim = `trim=duration=${window.durationSeconds},setpts=PTS-STARTPTS`
+  const filterIndex = args.indexOf('-vf')
+  if (filterIndex >= 0) args[filterIndex + 1] = `${trim},${args[filterIndex + 1]}`
+  else args.splice(args.length - 1, 0, '-vf', trim)
+  args.splice(args.length - 1, 0, '-t', String(window.durationSeconds), '-enc_time_base:v:0', 'demux')
+  return args
 }
 
 export interface SampleTimingEvidence {
@@ -113,25 +103,11 @@ export interface SampleTimingEvidence {
 
 export interface MeasurementSourcePreparation {
   samples: Array<{
-    sourcePath: string
     source: SampleTimingEvidence & { durationSeconds: number }
-    referencePath?: string
     reference: SampleTimingEvidence & { durationSeconds: number }
     sourceSelfVmaf: number
     sourceCambiMean: number
   }>
-}
-
-/**
- * Preserve the reference container's frame time base for candidate encoders.
- * Their default 1/framerate base can round VFR or 24000/1001 PTS onto
- * duplicate ticks, failing encodes or creating/dropping frames.
- */
-export function buildMeasuredCandidateArgs(template: string[], inputPath: string, outputPath: string): string[] {
-  const args = template.map(arg => arg === '<input>' ? inputPath : arg === '<output>' ? outputPath : arg)
-  if (args[args.length - 1] !== outputPath) throw new Error('Measured candidate FFmpeg command must end with its output path')
-  args.splice(args.length - 1, 0, '-enc_time_base:v:0', 'demux')
-  return args
 }
 
 export function verifyQsvQualityMode(diagnostics: string, expectedQuality: number): void {
@@ -228,33 +204,48 @@ export class MeasuredOptimizationService {
     return this.rememberProbe(this.measurementFingerprints, binary, fingerprint)
   }
 
-  private async inspectSample(filePath: string, signal?: AbortSignal): Promise<SampleTimingEvidence & { durationSeconds: number }> {
-    const binary = getMediaFileAnalyzer().getFFprobePath()!
-    const output = await this.processRunner.run(binary, ['-v', 'error', '-select_streams', 'v:0', '-show_frames', '-show_entries', 'frame=best_effort_timestamp_time,duration_time:stream=time_base,width,height,pix_fmt,color_range,color_space,color_transfer,color_primaries', '-of', 'json', filePath], signal)
-    const { frames, streams } = JSON.parse(output) as {
-      frames: Array<{ best_effort_timestamp_time: string; duration_time: string }>
-      streams: Array<{ time_base: string; width?: number; height?: number; pix_fmt?: string; color_range?: string; color_space?: string; color_transfer?: string; color_primaries?: string }>
+  private async inspectWindow(
+    binary: string,
+    filePath: string,
+    window: SampleWindow,
+    signal?: AbortSignal,
+    videoFilter?: string,
+    inputArgs: string[] = [],
+  ): Promise<SampleTimingEvidence & { durationSeconds: number }> {
+    const filter = `trim=duration=${window.durationSeconds},setpts=PTS-STARTPTS,${videoFilter ? `${videoFilter},` : ''}showinfo`
+    const output = await this.processRunner.run(binary, [
+      '-hide_banner', '-nostats', '-v', 'info', ...inputArgs,
+      '-ss', String(window.startSeconds), '-i', PathUtils.sanitizeAbsolutePath(filePath),
+      '-map', '0:v:0', '-vf', filter, '-fps_mode', 'passthrough',
+      '-t', String(window.durationSeconds), '-an', '-sn', '-dn', '-f', 'null', '-',
+    ], signal)
+    const lines = output.split(/\r?\n/).filter(line => /showinfo/.test(line) && /n:\s*\d+\s+pts:/.test(line))
+    const timestamps = lines.map(line => Number(line.match(/\bpts_time:\s*([^\s]+)/)?.[1]))
+    if (timestamps.length < 2 || timestamps.some((timestamp, index) => !Number.isFinite(timestamp) || index > 0 && timestamp <= timestamps[index - 1])) {
+      throw new Error(`Direct-source sample has incomplete or non-monotonic frame timestamps: ${filePath}`)
     }
-    const timestamps = frames.map(frame => Number(frame.best_effort_timestamp_time))
-    const durationSeconds = timestamps[timestamps.length - 1] + Number(frames[frames.length - 1]?.duration_time) - timestamps[0]
-    if (!frames.length || !Number.isFinite(durationSeconds) || durationSeconds <= 0 || timestamps.some((timestamp, index) => !Number.isFinite(timestamp) || index > 0 && timestamp <= timestamps[index - 1])) {
-      throw new Error(`Sample has incomplete or non-monotonic video timestamps: ${filePath}`)
+    const first = lines[0]
+    const size = first.match(/\bs:\s*(\d+)x(\d+)/)
+    const lastDuration = Number(lines[lines.length - 1].match(/\bduration_time:\s*([^\s]+)/)?.[1])
+    const frameDuration = Number.isFinite(lastDuration) && lastDuration > 0
+      ? lastDuration
+      : timestamps[timestamps.length - 1] - timestamps[timestamps.length - 2]
+    const metadata = (key: string): string | undefined => {
+      const value = first.match(new RegExp(`\\b${key}:\\s*([^\\s]+)`))?.[1]
+      return value && value !== 'unknown' ? value : undefined
     }
-    const [numerator, denominator] = streams[0].time_base.split('/').map(Number)
-    const timestampPrecisionSeconds = numerator / denominator
-    if (!Number.isFinite(timestampPrecisionSeconds) || timestampPrecisionSeconds <= 0) throw new Error(`Sample has no valid video time base: ${filePath}`)
     return {
-      frames: frames.length,
-      durationSeconds,
-      timestamps: timestamps.map(timestamp => timestamp - timestamps[0]),
-      timestampPrecisionSeconds,
-      width: streams[0].width,
-      height: streams[0].height,
-      pixelFormat: streams[0].pix_fmt,
-      colorRange: streams[0].color_range,
-      colorSpace: streams[0].color_space,
-      colorTransfer: streams[0].color_transfer,
-      colorPrimaries: streams[0].color_primaries,
+      frames: timestamps.length,
+      durationSeconds: timestamps[timestamps.length - 1] - timestamps[0] + frameDuration,
+      timestamps: timestamps.map(value => value - timestamps[0]),
+      timestampPrecisionSeconds: 1 / 1000000,
+      width: size ? Number(size[1]) : undefined,
+      height: size ? Number(size[2]) : undefined,
+      pixelFormat: metadata('fmt'),
+      colorRange: metadata('color_range'),
+      colorSpace: metadata('color_space'),
+      colorPrimaries: metadata('color_primaries'),
+      colorTransfer: metadata('color_trc'),
     }
   }
 
@@ -264,13 +255,25 @@ export class MeasuredOptimizationService {
     referencePath: string,
     logPath: string,
     expectedFrames: number,
+    window: SampleWindow,
     signal?: AbortSignal,
     frameLimit?: number,
+    distortedStartSeconds?: number,
+    referenceFilter?: string,
+    referenceInputArgs: string[] = [],
   ): Promise<{ vmafScores: number[]; cambiScores: number[] }> {
     const escapedPath = logPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "'\\\\''")
-    const trim = frameLimit === undefined ? '' : `trim=end_frame=${frameLimit},`
-    const graph = `[0:v]${trim}settb=AVTB,setpts=N[d];[1:v]${trim}settb=AVTB,setpts=N[r];[d][r]libvmaf=model=version=${VMAF_MODEL_VERSION}:shortest=1:repeatlast=0:feature=name=cambi:log_fmt=json:log_path='${escapedPath}'`
-    await this.processRunner.run(binary, ['-v', 'error', '-i', distortedPath, '-i', referencePath, '-filter_complex', graph, '-fps_mode', 'passthrough', '-an', '-sn', '-f', 'null', '-'], signal)
+    const prefix = `trim=duration=${window.durationSeconds},setpts=PTS-STARTPTS,`
+    const limit = frameLimit === undefined ? '' : `trim=end_frame=${frameLimit},`
+    const graph = `[0:v]${prefix}${limit}settb=AVTB,setpts=N[d];[1:v]${prefix}${referenceFilter ? `${referenceFilter},` : ''}${limit}settb=AVTB,setpts=N[r];[d][r]libvmaf=model=version=${VMAF_MODEL_VERSION}:shortest=1:repeatlast=0:feature=name=cambi:log_fmt=json:log_path='${escapedPath}'`
+    await this.processRunner.run(binary, [
+      '-v', 'error',
+      ...(distortedStartSeconds === undefined ? [] : ['-ss', String(distortedStartSeconds)]),
+      '-i', PathUtils.sanitizeAbsolutePath(distortedPath),
+      ...referenceInputArgs,
+      '-ss', String(window.startSeconds), '-i', PathUtils.sanitizeAbsolutePath(referencePath),
+      '-filter_complex', graph, '-fps_mode', 'passthrough', '-an', '-sn', '-f', 'null', '-',
+    ], signal)
     const log = JSON.parse(await fs.readFile(logPath, 'utf8')) as { pooled_metrics: { vmaf: { mean: number }; cambi: { mean: number } }; frames: Array<{ metrics: { vmaf: number; cambi: number } }> }
     if (!Number.isFinite(log.pooled_metrics.vmaf.mean) || !Number.isFinite(log.pooled_metrics.cambi.mean)) throw new Error('VMAF/CAMBI measurements are incomplete')
     if (log.frames.length !== expectedFrames) throw new Error(`VMAF scored ${log.frames.length} of ${expectedFrames} source frames`)
@@ -296,36 +299,22 @@ export class MeasuredOptimizationService {
       const cambiScores: number[] = []
       for (const [index, start] of starts.entries()) {
         request.signal?.throwIfAborted()
-        await request.onProgress?.(`Preparing output verification sample ${index + 1} of ${starts.length}`)
-        const sourceSamplePath = path.join(request.outputDirectory, `verify-source-${index}.mkv`)
-        const outputSamplePath = path.join(request.outputDirectory, `verify-output-${index}.mkv`)
-        ownedPaths.push(sourceSamplePath, outputSamplePath)
-        await this.processRunner.run(binary, buildLosslessSampleArgs(request.sourcePath, sourceSamplePath, start, length), request.signal)
-        await this.processRunner.run(binary, buildLosslessSampleArgs(request.outputPath, outputSamplePath, start, length), request.signal)
-        const sourceSample = await this.inspectSample(sourceSamplePath, request.signal)
-        const referencePath = sourceSamplePath
-        if (request.referenceFilter) {
-          const transformedPath = path.join(request.outputDirectory, `verify-reference-${index}.mkv`)
-          ownedPaths.push(transformedPath)
-          await this.processRunner.run(binary, ['-y', '-v', 'error', ...(request.referenceInputArgs ?? []), '-i', sourceSamplePath, '-vf', request.referenceFilter, '-fps_mode', 'passthrough', '-enc_time_base:v:0', 'demux', '-an', '-sn', '-c:v', 'ffv1', transformedPath], request.signal)
-          Object.assign(sourceSample, await this.inspectSample(transformedPath, request.signal))
-        }
-        const referenceFile = request.referenceFilter ? path.join(request.outputDirectory, `verify-reference-${index}.mkv`) : referencePath
-        const outputSample = await this.inspectSample(outputSamplePath, request.signal)
+        const window = { startSeconds: start, durationSeconds: length }
+        await request.onProgress?.(`Checking output quality window ${index + 1} of ${starts.length}`)
+        const sourceSample = await this.inspectWindow(binary, request.sourcePath, window, request.signal, request.referenceFilter, request.referenceInputArgs)
+        const outputSample = await this.inspectWindow(binary, request.outputPath, window, request.signal)
         try {
           verifySampleFrameAlignment(sourceSample, outputSample)
         } catch (error) {
           getLoggingService().error('[MeasuredOptimization]', 'Output quality sample alignment failed', {
-            sampleIndex: index, startSeconds: start, durationSeconds: length,
-            source: sampleTimingSummary(sourceSample), output: sampleTimingSummary(outputSample),
-            reason: getErrorMessage(error),
+            sampleIndex: index, window, source: sampleTimingSummary(sourceSample),
+            output: sampleTimingSummary(outputSample), reason: getErrorMessage(error),
           })
           throw error
         }
-        await request.onProgress?.(`Scoring output verification sample ${index + 1} of ${starts.length}`)
         const logPath = path.join(request.outputDirectory, `verify-output-${index}.json`)
         ownedPaths.push(logPath)
-        const metrics = await this.measureFrameMetrics(binary, outputSamplePath, referenceFile, logPath, sourceSample.frames, request.signal)
+        const metrics = await this.measureFrameMetrics(binary, request.outputPath, request.sourcePath, logPath, sourceSample.frames, window, request.signal, undefined, start, request.referenceFilter, request.referenceInputArgs)
         vmafScores.push(...metrics.vmafScores)
         cambiScores.push(...metrics.cambiScores)
       }
@@ -365,12 +354,10 @@ export class MeasuredOptimizationService {
     const length = Math.min(APP_CONFIG.transcoding.sampleDurationSeconds, durationSeconds / APP_CONFIG.transcoding.samplePositions.length)
     const starts = APP_CONFIG.transcoding.samplePositions.map(position => Math.max(0, Math.min(durationSeconds - length, durationSeconds * position - length / 2)))
     await fs.mkdir(request.outputDirectory, { recursive: true })
-    const sourceSamplePaths: string[] = []
-    const sourceSamples: Awaited<ReturnType<MeasuredOptimizationService['inspectSample']>>[] = []
-    const referenceSamples: Awaited<ReturnType<MeasuredOptimizationService['inspectSample']>>[] = []
+    const sourceSamples: Awaited<ReturnType<MeasuredOptimizationService['inspectWindow']>>[] = []
+    const referenceSamples: Awaited<ReturnType<MeasuredOptimizationService['inspectWindow']>>[] = []
     const sourceSelfVmafs: number[] = []
     const sourceCambiMeans: number[] = []
-    const referencePaths: string[] = []
     const ownedPaths = new Set<string>()
     const retainedPaths = new Set<string>()
     let failure: unknown
@@ -381,45 +368,36 @@ export class MeasuredOptimizationService {
       const reusedSources = Boolean(request.sourcePreparation?.samples.length)
       if (request.sourcePreparation?.samples.length) {
         for (const sample of request.sourcePreparation.samples) {
-          sourceSamplePaths.push(sample.sourcePath)
           sourceSamples.push(sample.source)
           referenceSamples.push(sample.reference)
           sourceSelfVmafs.push(sample.sourceSelfVmaf)
           sourceCambiMeans.push(sample.sourceCambiMean)
-          if (sample.referencePath) referencePaths.push(sample.referencePath)
         }
       } else for (const [index, start] of starts.entries()) {
-        await request.onProgress?.(`Preparing source sample ${index + 1} of ${starts.length}`)
-        const sourceSamplePath = path.join(request.outputDirectory, `source-${index}.mkv`)
-        ownedPaths.add(sourceSamplePath)
-        await this.processRunner.run(binary, buildLosslessSampleArgs(request.inputPath, sourceSamplePath, start, length, true), request.signal)
-        sourceSamplePaths.push(sourceSamplePath)
-        sourceSamples.push(await this.inspectSample(sourceSamplePath, request.signal))
-        referenceSamples.push(sourceSamples[index])
+        const window = { startSeconds: start, durationSeconds: length }
+        await request.onProgress?.(`Inspecting source frames ${index + 1} of ${starts.length}`)
+        const source = await this.inspectWindow(binary, request.inputPath, window, request.signal)
+        const reference = request.referenceFilter
+          ? await this.inspectWindow(binary, request.inputPath, window, request.signal, request.referenceFilter, request.referenceInputArgs)
+          : source
+        if (reference.frames !== source.frames) throw new Error('Reference transform changed the source frame count')
+        sourceSamples.push(source)
+        referenceSamples.push(reference)
         const sourceControlLogPath = path.join(request.outputDirectory, `source-${index}-self-control.json`)
         ownedPaths.add(sourceControlLogPath)
-        await request.onProgress?.(`Checking source reference sample ${index + 1} of ${starts.length}`)
-        const sourceControl = await this.measureFrameMetrics(binary, sourceSamplePath, sourceSamplePath, sourceControlLogPath, sourceSamples[index].frames, request.signal)
-        const sourceSelfVmaf = sourceControl.vmafScores.reduce((sum, score) => sum + score, 0) / sourceControl.vmafScores.length
-        sourceSelfVmafs.push(sourceSelfVmaf)
-        sourceCambiMeans.push(sourceControl.cambiScores.reduce((sum, score) => sum + score, 0) / sourceControl.cambiScores.length)
+        const control = await this.measureFrameMetrics(binary, request.inputPath, request.inputPath, sourceControlLogPath, source.frames, window, request.signal, undefined, start)
+        sourceSelfVmafs.push(control.vmafScores.reduce((sum, score) => sum + score, 0) / control.vmafScores.length)
+        sourceCambiMeans.push(control.cambiScores.reduce((sum, score) => sum + score, 0) / control.cambiScores.length)
         await fs.unlink(sourceControlLogPath)
-        // Materialize target color transforms separately so the candidate encoder
-        // and its reference receive the same source frames with the transform applied once.
-        if (request.referenceFilter) {
-          const referencePath = path.join(request.outputDirectory, `reference-${index}.mkv`)
-          ownedPaths.add(referencePath)
-          await this.processRunner.run(binary, ['-y', '-v', 'error', ...(request.referenceInputArgs ?? []), '-i', sourceSamplePath, '-vf', request.referenceFilter, '-fps_mode', 'passthrough', '-enc_time_base:v:0', 'demux', '-an', '-sn', '-c:v', 'ffv1', referencePath], request.signal)
-          referencePaths.push(referencePath)
-          const referenceSample = await this.inspectSample(referencePath, request.signal)
-          if (referenceSample.frames !== sourceSamples[index].frames) throw new Error('Reference transform changed the source frame count')
-          referenceSamples[index] = referenceSample
-        }
       }
       if (request.sourcePreparation) {
-        request.sourcePreparation.samples = sourceSamples.map((source, index) => ({ sourcePath: sourceSamplePaths[index], source, referencePath: referencePaths[index], reference: referenceSamples[index], sourceSelfVmaf: sourceSelfVmafs[index], sourceCambiMean: sourceCambiMeans[index] }))
+        request.sourcePreparation.samples = sourceSamples.map((source, index) => ({
+          source,
+          reference: referenceSamples[index],
+          sourceSelfVmaf: sourceSelfVmafs[index],
+          sourceCambiMean: sourceCambiMeans[index],
+        }))
         if (!reusedSources) await request.onSourcePrepared?.(request.sourcePreparation)
-        for (const sourcePath of [...sourceSamplePaths, ...referencePaths]) retainedPaths.add(sourcePath)
       }
       getLoggingService().info('[MeasuredOptimization]', `stage=source-preparation directory=${request.outputDirectory} reused=${reusedSources} samples=${sourceSamples.length} durationMs=${Math.round(performance.now() - preparationStartedAt)}`)
       const measured: MeasuredCandidate[] = []
@@ -435,7 +413,7 @@ export class MeasuredOptimizationService {
           if (!sample) {
             await request.onProgress?.(`Encoding sample ${index + 1} of ${starts.length} with ${candidate.encoder} (${candidate.quality})`)
             ownedPaths.add(outputPath)
-            const args = buildMeasuredCandidateArgs(candidate.ffmpegArgs, sourceSamplePaths[index], outputPath)
+            const args = buildMeasuredCandidateArgs(candidate.ffmpegArgs, request.inputPath, outputPath, { startSeconds: starts[index], durationSeconds: length })
             if (candidate.encoder.startsWith('qsv')) args.unshift('-v', 'verbose')
             const encodingStartedAt = performance.now()
             const diagnostics = await this.processRunner.run(binary, args, request.signal)
@@ -454,7 +432,6 @@ export class MeasuredOptimizationService {
               })
               throw error
             }
-            const referencePath = referencePaths[index] ?? sourceSamplePaths[index]
             const logPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}.json`)
             ownedPaths.add(logPath)
             const totalFrames = referenceSamples.reduce((sum, sample) => sum + sample.frames, 0)
@@ -466,7 +443,7 @@ export class MeasuredOptimizationService {
               const screeningLogPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}.screening.json`)
               ownedPaths.add(screeningLogPath)
               const screeningStartedAt = performance.now()
-              const screening = await this.measureFrameMetrics(binary, outputPath, referencePath, screeningLogPath, screeningFrames, request.signal, screeningFrames)
+              const screening = await this.measureFrameMetrics(binary, outputPath, request.inputPath, screeningLogPath, screeningFrames, { startSeconds: starts[index], durationSeconds: length }, request.signal, screeningFrames, undefined, request.referenceFilter, request.referenceInputArgs)
               const reason = getImpossibleQualityReason(request.qualityProfile, [...candidateSamples.flatMap(sample => sample.vmafScores), ...screening.vmafScores], [...candidateSamples.flatMap(sample => sample.cambiScores), ...screening.cambiScores], totalFrames)
               getLoggingService().info('[MeasuredOptimization]', `stage=preliminary-scoring encoder=${candidate.encoder} quality=${candidate.quality} sample=${index} frames=${screeningFrames} durationMs=${Math.round(performance.now() - screeningStartedAt)} rejected=${Boolean(reason)}`)
               await fs.unlink(screeningLogPath)
@@ -477,7 +454,7 @@ export class MeasuredOptimizationService {
             }
             if (!screeningOnly) await request.onProgress?.(`Scoring sample ${index + 1} of ${starts.length} with VMAF and CAMBI`)
             const scoringStartedAt = performance.now()
-            const { vmafScores, cambiScores } = metrics ?? await this.measureFrameMetrics(binary, outputPath, referencePath, logPath, referenceSamples[index].frames, request.signal)
+            const { vmafScores, cambiScores } = metrics ?? await this.measureFrameMetrics(binary, outputPath, request.inputPath, logPath, referenceSamples[index].frames, { startSeconds: starts[index], durationSeconds: length }, request.signal, undefined, undefined, request.referenceFilter, request.referenceInputArgs)
             getLoggingService().info('[MeasuredOptimization]', `stage=scoring encoder=${candidate.encoder} preset=${candidate.preset} quality=${candidate.quality} sample=${index} durationMs=${Math.round(performance.now() - scoringStartedAt)}`)
             sample = {
               encoder: candidate.encoder,
