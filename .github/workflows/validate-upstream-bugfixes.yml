@@ -1,0 +1,35 @@
+name: Validate independent upstream 0.4.3 bugfix branches
+on:
+  push:
+    branches:
+      - automation/upstream-fix-validation-runner
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        branch:
+          - upstream/fix-v043-scan-integrity
+          - upstream/fix-v043-scan-status
+          - upstream/fix-v043-wishlist-identity
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Full tests
+        run: npm run test:run
+      - name: Vite build
+        run: npx vite build
