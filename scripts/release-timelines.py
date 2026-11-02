@@ -86,6 +86,18 @@ s=re.sub(r"canonical.push\(\(row.series_tmdb_id \|\| normalizeMediaTitle\(row.se
 s=re.sub(r"if \(ids\.tvdbId && \(row\.series_tmdb_id \|\| normalizeMediaTitle\(row\.series_title \|\| ''\)\)\?\.startsWith\('tvdb:'\)[^\\n]+", "",s)
 s=re.sub(r"if \(ids\.imdbId && item\.type !== 'movie' && \(row\.series_tmdb_id \|\| normalizeMediaTitle\(row\.series_title \|\| ''\)\)\?\.startsWith\('imdb:'\)[^\\n]+", "",s)
 p.write_text(s)
+# Convert unsupported v0.6-only IDs into conservative v0.4.4 matches.
+p=Path(engine); lines=p.read_text().splitlines(keepends=True)
+invalid=[x for x in lines if "normalizeMediaTitle(row.series_title || '')) !== " in x]
+assert len(invalid)==2,invalid
+lines=[x for x in lines if x not in invalid]
+lines=[
+"      canonical.push(item.type === 'movie' ? row.tmdb_id === String(ids.tmdbId) : row.series_tmdb_id === String(ids.tmdbId))\n"
+if "canonical.push(item.type === 'movie' ? row.tmdb_id" in x else
+"      canonical.push(item.type === 'movie' ? row.imdb_id?.replace(/^tt/, '') === ids.imdbId.replace(/^tt/, '') : false)\n"
+if "canonical.push(item.type === 'movie' ? row.imdb_id" in x else x
+for x in lines]
+p.write_text(''.join(lines))
 # Add startup handlers and channel transport without copying the 0.6 IPC refactor.
 after('src/main/index.ts',"import { registerTaskQueueHandlers } from './ipc/taskQueue'\n",
 "import { registerTimelinesHandlers } from './ipc/timelines'\n")
