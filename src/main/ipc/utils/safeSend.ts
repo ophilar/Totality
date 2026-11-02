@@ -27,7 +27,7 @@ export function safeSend(win: BrowserWindow | null, channel: string, ...args: un
       return true
     }
   } catch (error) {
-    // Silently ignore - window was likely closed during operation
+    console.debug(`[IPC] Failed to send ${channel} to the Electron window`, error)
   }
   // Also broadcast to web clients
   try {
@@ -36,7 +36,9 @@ export function safeSend(win: BrowserWindow | null, channel: string, ...args: un
     if (webServer?.isRunning()) {
       webServer.broadcastEvent(channel, ...args)
     }
-  } catch { /* web server not initialized yet */ }
+  } catch (error) {
+    process.stderr.write(`[IPC] Failed to broadcast ${channel} to web clients: ${error instanceof Error ? error.message : String(error)}\n`)
+  }
 
   return false
 }
