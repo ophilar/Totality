@@ -1,4 +1,4 @@
-name: Rebase Totality 0.5 onto upstream 0.4.3
+name: Validate rebased Totality 0.5 with upstream 0.4.3
 on:
   push:
     branches:
@@ -12,38 +12,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v0.5.0-clean
+          ref: integration/rebase-v05-onto-upstream-v043
           fetch-depth: 0
           persist-credentials: true
-      - name: Rebase preserving 0.5 history
+      - name: Verify rebased ancestry and integration head
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch https://github.com/bbidwell85/Totality.git refs/tags/v0.4.3
-          target="$(git rev-parse FETCH_HEAD^{commit})"
-          test "$target" = b351f160d3d581cd035097050b311c166ec17681
-          test "$(git rev-parse HEAD)" = cc31fb285cafbbc9291d544d8eb60f0736d72472
-          git switch -c integration/rebase-v05-onto-upstream-v043
-          if ! GIT_EDITOR=true git rebase -X theirs --onto "$target" 551adda858fc3c3acadd313b3dba082eb698f677; then
-            echo "::error::Rebase has a conflict; original 0.5 branch remains untouched"
-            git status --short
-            git diff --name-only --diff-filter=U
-            git show --no-patch --format="%h %s" REBASE_HEAD || true
-            exit 1
-          fi
-          git merge-base --is-ancestor "$target" HEAD
-          test "$(git rev-list --count "$target"..HEAD)" -ge 1
-          echo "Rebased head: $(git rev-parse HEAD)"
-          echo "Replayed commits: $(git rev-list --count "$target"..HEAD)"
-          # Restore the exact, already-validated 0.5 snapshot after replaying its history.
-          # An automatic conflict preference cannot be relied upon for combined JSX edits.
-          git restore --source=cc31fb285cafbbc9291d544d8eb60f0736d72472 --staged --worktree .
-          if ! git diff --cached --quiet; then
-            git commit -m "fix(rebase): restore validated 0.5 tree before selective 0.4.3 integration"
-          fi
-          git diff --exit-code cc31fb285cafbbc9291d544d8eb60f0736d72472 HEAD
+          git merge-base --is-ancestor b351f160d3d581cd035097050b311c166ec17681 HEAD
+          test "$(git rev-parse HEAD)" = b81a47f2b065437cfcb20e25d7fedce36cb9e713
+          echo "Rebased, integrated HEAD $(git rev-parse --short HEAD)"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -57,7 +35,4 @@ jobs:
         run: |
           npm run typecheck
           npm run test:run
-      - name: Publish validated integration branch
-        shell: bash
-        run: |
-          git push origin HEAD:refs/heads/integration/rebase-v05-onto-upstream-v043
+          npm run build
