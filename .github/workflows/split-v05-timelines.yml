@@ -1,0 +1,76 @@
+name: Validate linear 0.5 core and extracted Timelines feature
+on:
+  push:
+    branches: [automation/rebase-v05-onto-v043-runner]
+permissions:
+  contents: read
+jobs:
+  split:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: automation/rebase-v05-onto-v043-runner
+          path: tooling
+      - uses: actions/checkout@v4
+        with:
+          ref: v0.5.0-clean
+          fetch-depth: 0
+          path: repo
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: repo/package-lock.json
+      - name: Construct feature-free core and isolated timeline branch
+        shell: bash
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          OLD=fc9b18b425a31475ca082b637e1d62774fc805ab
+          FIXES=8d34523752b6c75ff62270638d13a38a1f5375fc
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          test "$(git rev-parse origin/v0.5.0-clean)" = "$OLD"
+          test "$(git rev-parse origin/upstream/fix-v043-combined)" = "$FIXES"
+          git switch -c core-candidate "$FIXES"
+          git restore --source="$OLD" --staged --worktree .
+          test "$(git write-tree)" = "$(git rev-parse "$OLD^{tree}")"
+          python3 ../tooling/scripts/extract-timelines-feature.py
+          git add -A
+          git diff --cached --check "$OLD" || true
+          git commit -m "feat(v0.5): establish timeline-free 0.5 core" -m "Preserves the validated 0.5 functionality other than the separate Timelines feature; original detailed history preserved under a backup. Parent is the three upstream-only bugfix commits."
+          CORE="$(git rev-parse HEAD)"
+          git diff --name-only "$OLD" "$CORE" | sort | head -80
+          echo "::notice::Core commit $CORE"
+          git switch -c timeline-feature
+          git restore --source="$OLD" --staged --worktree .
+          git commit -m "feat(timelines): add viewing-order recipes, resolution, and Plex playlist integration"
+          test "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse "$OLD^{tree}")"
+          test "$(git rev-parse 'HEAD^')" = "$CORE"
+          echo "::notice::Timeline commit $(git rev-parse HEAD)"
+          git log --format='%h %s' --max-count=5
+          git switch core-candidate
+      - name: Install dependencies
+        working-directory: repo
+        run: npm ci
+      - name: Validate timeline-free core
+        working-directory: repo
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run typecheck
+          npm run test:run
+          npm run renderer:build
+      - name: Validate extracted feature restores original application
+        working-directory: repo
+        shell: bash
+        run: |
+          set -euo pipefail
+          git switch timeline-feature
+          npm run typecheck
+          npm run test:run
+          npm run renderer:build
+          test "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse fc9b18b425a31475ca082b637e1d62774fc805ab^{tree})"
+          echo "Both linear branch heads validated."
