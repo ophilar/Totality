@@ -6,8 +6,11 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
-import logoAnimation from '../../assets/totality_anim.webm'
-import logoImage from '../../assets/logo.png'
+import { useTheme } from '@/contexts/ThemeContext'
+import logoAnimation from '@/assets/totality_anim.webm'
+import logoAnimationBlack from '@/assets/totality_anim_black.webm'
+import logoImage from '@/assets/logo.png'
+import logoBlackImage from '@/assets/logo_black.png'
 
 interface SplashScreenProps {
   onComplete: () => void
@@ -18,6 +21,7 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
   const [fadeOut, setFadeOut] = useState(false)
   const [videoReady, setVideoReady] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const { effectiveIsDark } = useTheme()
 
   // Start video playback after a delay to ensure window is fully visible
   useEffect(() => {
@@ -45,7 +49,7 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
 
   // Handle video error - skip to end
   const handleVideoError = () => {
-    console.warn('Splash video failed to load, skipping')
+    window.electronAPI.log.warn('[SplashScreen]', 'Splash video failed to load, skipping')
     setVideoEnded(true)
     setFadeOut(true)
   }
@@ -62,9 +66,9 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
 
   return (
     <div
-      className="fixed inset-0 z-200 flex items-center justify-center"
+      className="fixed inset-0 z-200 bg-background flex items-center justify-center"
       style={{
-        backgroundColor: '#000',
+        backgroundColor: 'hsl(var(--background))',
         opacity: fadeOut ? 0 : 1,
         transition: 'opacity 600ms ease-out',
       }}
@@ -75,7 +79,7 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
       >
         <video
           ref={videoRef}
-          src={logoAnimation}
+          src={effectiveIsDark ? logoAnimation : logoAnimationBlack}
           muted
           playsInline
           preload="auto"
@@ -87,7 +91,7 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
           }}
         />
         <img
-          src={logoImage}
+          src={effectiveIsDark ? logoImage : logoBlackImage}
           alt="Totality application logo"
           className="absolute inset-0 w-full h-full object-contain"
           style={{

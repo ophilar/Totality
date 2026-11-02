@@ -1,84 +1,78 @@
-/**
- * ProviderFactory
- *
- * Factory for creating MediaProvider instances based on provider type.
- */
+import { MediaProvider, SourceConfig } from '@main/providers/base/MediaProvider'
+import { ProviderType } from '@main/types/database'
+import { PROVIDERS, ProviderMetadata, SUPPORTED_PROVIDERS } from '@main/constants/providers'
+import { PlexProvider } from '@main/providers/plex/PlexProvider'
+import { KodiProvider } from '@main/providers/kodi/KodiProvider'
+import { KodiLocalProvider } from '@main/providers/kodi/KodiLocalProvider'
+import { KodiMySQLProvider } from '@main/providers/kodi/KodiMySQLProvider'
+import { LocalFolderProvider } from '@main/providers/local/LocalFolderProvider'
+import { MediaMonkeyProvider } from '@main/providers/mediamonkey/MediaMonkeyProvider'
 
-import type { MediaProvider, ProviderType, SourceConfig } from './base/MediaProvider'
-import { PlexProvider } from './plex/PlexProvider'
-import { JellyfinProvider } from './jellyfin-emby/JellyfinProvider'
-import { EmbyProvider } from './jellyfin-emby/EmbyProvider'
-import { KodiProvider } from './kodi/KodiProvider'
-import { KodiLocalProvider } from './kodi/KodiLocalProvider'
-import { KodiMySQLProvider } from './kodi/KodiMySQLProvider'
-import { LocalFolderProvider } from './local/LocalFolderProvider'
-import { MediaMonkeyProvider } from './mediamonkey/MediaMonkeyProvider'
+type ProviderConstructor = (config: SourceConfig) => MediaProvider
 
-type ProviderCreator = (config: SourceConfig) => MediaProvider
-
-const providerCreators: Record<ProviderType, ProviderCreator> = {
-  plex: config => new PlexProvider(config),
-  jellyfin: config => new JellyfinProvider(config),
-  emby: config => new EmbyProvider(config),
-  kodi: config => new KodiProvider(config),
-  'kodi-local': config => new KodiLocalProvider(config),
-  'kodi-mysql': config => new KodiMySQLProvider(config),
-  local: config => new LocalFolderProvider(config),
-  mediamonkey: config => new MediaMonkeyProvider(config),
+const PROVIDER_CONSTRUCTORS: Record<ProviderType, ProviderConstructor> = {
+  [ProviderType.Plex]: (config) => new PlexProvider(config),
+  [ProviderType.Jellyfin]: (config) => {
+    const { JellyfinProvider } = require('@main/providers/jellyfin-emby/JellyfinProvider')
+    return new JellyfinProvider(config)
+  },
+  [ProviderType.Emby]: (config) => {
+    const { EmbyProvider } = require('@main/providers/jellyfin-emby/EmbyProvider')
+    return new EmbyProvider(config)
+  },
+  [ProviderType.Kodi]: (config) => new KodiProvider(config),
+  [ProviderType.KodiLocal]: (config) => new KodiLocalProvider(config),
+  [ProviderType.KodiMySQL]: (config) => new KodiMySQLProvider(config),
+  [ProviderType.Local]: (config) => new LocalFolderProvider(config),
+  [ProviderType.MediaMonkey]: (config) => new MediaMonkeyProvider(config),
 }
 
 /**
  * Create a MediaProvider instance based on the provider type
  */
 export function createProvider(type: ProviderType, config: SourceConfig): MediaProvider {
-  const create = providerCreators[type]
-  if (!create) throw new Error(`Unknown provider type: ${type}`)
-  return create(config)
+  const ctor = PROVIDER_CONSTRUCTORS[type]
+  if (!ctor) {
+    throw new Error(`Unknown or unsupported provider type: "${type}"`)
+  }
+  return ctor(config)
+}
+
+/**
+ * Check if a provider type is supported
+ */
+export function isProviderSupported(type: ProviderType): boolean {
+  return type in PROVIDERS && type in PROVIDER_CONSTRUCTORS
 }
 
 /**
  * Get list of all supported provider types
  */
 export function getSupportedProviders(): ProviderType[] {
-  return Object.keys(providerCreators) as ProviderType[]
+  return SUPPORTED_PROVIDERS.map(p => p.type)
 }
 
-export function isProviderSupported(type: string): type is ProviderType {
-  return Object.prototype.hasOwnProperty.call(providerCreators, type)
+/**
+ * Get metadata for a provider type
+ */
+export function getProviderMetadata(type: ProviderType): ProviderMetadata {
+  const metadata = PROVIDERS[type]
+  if (!metadata) {
+    throw new Error(`Unknown provider type: "${type}"`)
+  }
+  return metadata
 }
 
 /**
  * Get display name for a provider type
  */
 export function getProviderDisplayName(type: ProviderType): string {
-  const names: Record<ProviderType, string> = {
-    plex: 'Plex',
-    jellyfin: 'Jellyfin',
-    emby: 'Emby',
-    kodi: 'Kodi',
-    'kodi-local': 'Kodi (Local)',
-    'kodi-mysql': 'Kodi (MySQL)',
-    local: 'Local Folder',
-    mediamonkey: 'MediaMonkey',
-  }
-  return names[type] || type
+  return getProviderMetadata(type).name
 }
 
 /**
  * Get icon name for a provider type (for UI)
  */
 export function getProviderIcon(type: ProviderType): string {
-  const icons: Record<ProviderType, string> = {
-    plex: 'plex',
-    jellyfin: 'jellyfin',
-    emby: 'emby',
-    kodi: 'kodi',
-    'kodi-local': 'kodi',
-    'kodi-mysql': 'kodi',
-    local: 'folder',
-    mediamonkey: 'music',
-  }
-  return icons[type] || 'server'
+  return getProviderMetadata(type).icon
 }
-
-export { PlexProvider }

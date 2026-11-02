@@ -1,4 +1,3 @@
-
 export interface PacketByteRecord {
   streamIndex: number
   bytes: number | null
@@ -128,9 +127,9 @@ class PacketBitrateAccumulator {
     }
   }
 
-  finish(): PacketBitrateMetrics | undefined {
+  finish(): PacketBitrateMetrics {
     if (this.packetCount < 10 || this.totalDuration <= 0 || this.sampleCount === 0) {
-      return undefined
+      throw new Error('Insufficient data for bitrate analysis')
     }
 
     const average = (this.totalBytes * 8) / this.totalDuration / 1000
@@ -176,8 +175,7 @@ export class StreamByteAccumulator {
 
   finishWithBitrate(): { streamBytes: Record<number, number>; bitrate?: PacketBitrateMetrics } {
     const streamBytes = this.finish()
-    const bitrate = this.bitrate?.finish()
-    return { streamBytes, ...(bitrate ? { bitrate } : {}) }
+    return { streamBytes, ...(this.bitrate ? { bitrate: this.bitrate.finish() } : {}) }
   }
 
   private addLine(line: string): void {

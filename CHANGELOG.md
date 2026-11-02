@@ -1,187 +1,48 @@
 # Changelog
 
-All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
+All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
-### [0.4.2](https://github.com/bbidwell85/Totality/compare/v0.4.1...v0.4.2) (2026-10-31)
+## [0.5.0](https://github.com/bbidwell85/totality/compare/v0.4.4...v0.5.0) (2026-08-27)
 
+### Major Capabilities, TRaSH Guides Integration & Pipeline Optimization
 
-### New Feature (Beta)
+* **TRaSH Guides Stream Pruning & Classification:** Direct integration with TRaSH Guides naming conventions, source tier classification, and lossless stream pruning (`-c:v copy`) for audio/subtitle bloat removal at raw I/O speeds.
+* **Granular Chronological Franchise Timelines:** Support for episode-interleaved viewing orders across Star Trek, Star Wars, MCU, DCEU, and Alien/Predator franchises with remote recipe providers and version precedence.
+* **Transcoding Engine Overhaul:** Parallelized show preflight analysis, direct OS process cancellation for FFmpeg (`taskkill`/`SIGKILL`), individual episode task removal, and live UI queue control.
+* **Weighted Efficiency & Quality Scoring Resilience:** Automatic bitrate derivation from container dimensions/duration when metadata is omitted, persistent SSOT language tracking, and batch completeness scoring infill.
+* **Elimination of Global Render Thrashing:** Optimized telemetry subscriptions and source contexts to maintain fluid 60 FPS UI performance during active hardware encoding.
+* **Safety and Observability Contracts:** Timeline-cache migration is non-destructive with diagnostics, lossy output remains quarantined, persisted queue state is authoritative after renderer reconnects, and renderer queue failures are recorded in the application log.
 
-* **Web Access** — Access Totality from your phone or any browser on your network. Includes HTTPS with self-signed certificates, PIN-based authentication, escalating lockout security, IP allowlisting, and WebSocket-based real-time communication. Enable in Settings > General > Web Access.
+## [0.4.4](https://github.com/bbidwell85/totality/compare/v0.4.3...v0.4.4) (2026-05-07)
 
+### LibSQL & Drizzle Hardening
 
-### Bug Fixes
+* **Modernized Persistence:** Successfully migrated from raw SQLite to LibSQL with Drizzle ORM across all 15+ repositories.
+* **100% Test Stability:** Achieved a clean pass for 741/741 tests, resolving intermittent integration test timeouts and re-render loops in `usePaginatedData`.
+* **Sentinel Completeness:** Implemented the `-1` sentinel value for unmatched media items to clearly distinguish between "Incomplete" and "Not Evaluated" in the UI.
+* **Build Integrity:** Resolved all TypeScript and build configuration errors, ensuring reliable production artifact generation.
 
-**Database & Data Integrity**
-* Fixed database constraint violations that could crash scan operations
-* Fixed stale data after source deletion — shared artist completeness records no longer incorrectly removed
-* Fixed person completeness records becoming orphaned on source deletion
-* Fixed sort stability across all paginated queries
+## [0.4.3](https://github.com/bbidwell85/totality/compare/v0.4.0...v0.4.3) (2026-04-11)
 
-**Wishlist & Auto-Completion**
-* Fixed wishlist items not auto-completing for TV shows (TMDB series ID mismatch)
-* Fixed auto-completion not triggering after music scans, series analysis, and quality re-analysis
-* Fixed movie, album, and track completion skipping items without TMDB/MusicBrainz IDs
-* Fixed "Add to Wishlist" failing on web client (Zod validation rejected proxy URLs)
-* Fixed "Mark as Completed" button not working
-* Fixed wishlist badge counting completed items instead of active only
-* Fixed wishlist filter rejecting 'tv' and 'music' filter types
+### Phase 5: Reliability & Optimization
 
-**Scanning & Monitoring**
-* Fixed quality upgrade notifications not firing from live monitoring
-* Fixed monitoring resume race condition with new scan tasks
-* Fixed music library UI not refreshing after quality re-analysis
-* Fixed excessive log noise when Plex server is unreachable
-* Added safety guards to KodiLocal and KodiMySQL providers to prevent data wipe on DB read failure
+* **Intra-Source Deduplication:** New engine and UI for detecting and resolving duplicates within a single provider (TMDB/MusicBrainz IDs). Scoring uses grounded resolution and original language match as primary retention factors.
+* **Gemini-Driven Transcoding:** Orchestration of Handbrake and MKVToolNix via `TranscodingService`. Uses `gemini-3.1-flash-lite` to generate optimal per-video encoding parameters for maximum space savings.
+* **"No Mocks" Test Architecture:** Comprehensive integration testing using real in-memory SQLite and local HTTP servers (`node:http`) for network dependencies.
+* **Strict Data Integrity:** Removed all silent fallbacks in the repository layer. Mandatory media fields now enforce strict database constraints to ensure data consistency.
+* **Protected Libraries:** Implementation of library-level PIN protection (`SHA-256`) for sensitive content, with secure session unlocking in the UI.
+* **NSFW Scrubbing:** Standardized all terminology; "NSFW" references replaced with "sensitive" or "protected" throughout the codebase and UI.
 
-**Memory & Performance**
-* Fixed unbounded memory growth in WebServerService rate limit maps
-* Fixed ReleaseAlertService and LiveMonitoringService startup timer leaks
-* Fixed state updates after component unmount in MediaBrowser
-* Replaced expensive 10,000-track fetch with targeted single-track lookup
-* Fixed Dashboard race condition causing stale data on rapid source switching
-* Fixed release alert duplicate notifications after app restart (IDs now persisted)
-* Added periodic image cache pruning (hourly, was startup-only)
-* Fixed incomplete stats invalidation after exclusion changes
+## [0.4.0](https://github.com/bbidwell85/totality/compare/v0.3.1...v0.4.0) (2026-03-27)
 
-**Mobile & Touch**
-* Fixed iOS standalone app not filling full screen (gap below tab bar)
-* Fixed tab bar background not extending to physical screen bottom
-* Fixed hover effects getting stuck on touch devices after tapping
-* Fixed thumbnail scale-on-hover triggering during touch scroll
-* Fixed detail modal overscroll bounce on iOS
-* Fixed "Add to Wishlist" button too small to tap (28px to 44px touch target)
-* Fixed missing albums grid rendering as single column on mobile
+### Fork-Specific Features
 
-**Image Caching**
-* Web/mobile clients now route TMDB and CoverArtArchive images through the server's 7-day disk cache instead of loading from external CDNs on every session
-
-
-### Optimizations
-
-* WAN image proxy with disk caching, thumbnail sizing, and extended timeout
-* Security hardening with escalating lockouts and IP allowlist
-* Input validation added to notification and mood sync IPC handlers
-* TMDB cache purge on startup to prevent unbounded growth
-* Dashboard data loading with request deduplication to prevent stale overwrites
-
-### [0.4.1](https://github.com/bbidwell85/Totality/compare/v0.4.0...v0.4.1) (2026-10-06)
-
-
-### Features
-
-* add "Reset Library Data" option that preserves settings and exclusions ([4a4c8cf](https://github.com/bbidwell85/Totality/commit/4a4c8cf8f27975aadb6cac836273574c9b171e2a))
-* adopt AnimatedNumber across all views ([5cbb1da](https://github.com/bbidwell85/Totality/commit/5cbb1da3920b8197930c7e0417ed13e8fee3bc2d))
-* animated numbers (odometer style) for Dashboard bento cards ([c9d7497](https://github.com/bbidwell85/Totality/commit/c9d7497e71ffe0be454ec1eb50ea8a00bde2b4d4))
-* improve CSV export — enriched columns, music upgrades, Excel BOM ([22b874d](https://github.com/bbidwell85/Totality/commit/22b874dd4d0342d7bb4371d3cfb585a35af2f915))
-* live data population during scans and completeness analysis ([373ab79](https://github.com/bbidwell85/Totality/commit/373ab79aed6e952d3ac448c46f5acf72f0d78965))
-
-
-### Bug Fixes
-
-* address audit findings — cache purge, error logging, monitoring timing ([51cad3d](https://github.com/bbidwell85/Totality/commit/51cad3db32c62061353278e69c099077e5e0de94))
-* AnimatedNumber now animates on Dashboard data refreshes ([df13f15](https://github.com/bbidwell85/Totality/commit/df13f15fdd85f0ca604fff2eb8ff97e0c51e40b5))
-* clean up WishlistSearch debounce timer on unmount ([51e11fd](https://github.com/bbidwell85/Totality/commit/51e11fde69c6960993833e8e2b191a4293c8e6ca))
-* comprehensive stability audit — 20+ bug fixes, typed DB interface, generic pagination ([19391b3](https://github.com/bbidwell85/Totality/commit/19391b3dcd28087a372bc7dbeea649c413fb5346))
-* Dashboard wishlist counts now update reactively on add/remove ([1c5faac](https://github.com/bbidwell85/Totality/commit/1c5faacf25bc205f13da06cc35e1f7660605103f))
-* Dashboard wishlist counts update when items added/removed ([b2e684f](https://github.com/bbidwell85/Totality/commit/b2e684f0bbccbd191e534c6fb890bbdf4cbc9974))
-* eliminate Dashboard flash on data refresh ([8bae8f4](https://github.com/bbidwell85/Totality/commit/8bae8f4411a1fe6d60923382c5ef081a01dbd12b))
-* emit library:updated after music-scan to refresh UI ([2f9aa44](https://github.com/bbidwell85/Totality/commit/2f9aa4446c904cf484108904dfc38eeaed080d52))
-* Mark as Completed button now works on wishlist items ([55dbefd](https://github.com/bbidwell85/Totality/commit/55dbefdc261e75448a715fffb7ef5f4b2321839f))
-* monitoring resume race condition — cancel pending timer on new task ([2c2abbf](https://github.com/bbidwell85/Totality/commit/2c2abbf99408f5731de91ed70b4399df6c54e8ed))
-* multiple UI/UX improvements across library and dashboard ([63aec74](https://github.com/bbidwell85/Totality/commit/63aec744a1dfcf283fb1456bb851296fe8af692d))
-* multiple wishlist panel bugs ([11d42c7](https://github.com/bbidwell85/Totality/commit/11d42c7c6fb2da80e7e517d4c04945412b368a9e))
-* port exportWorkingCSV to BetterSQLiteService + update CLAUDE.md ([6b45865](https://github.com/bbidwell85/Totality/commit/6b458659db90242fcf61e924789cf84199aa7d0f))
-* reduce log noise when Plex server is unreachable during monitoring ([142aabc](https://github.com/bbidwell85/Totality/commit/142aabc7f942935953e0ee342855b96a6461e2e1))
-* remove auto-navigate to library on scan completion ([e1bd28b](https://github.com/bbidwell85/Totality/commit/e1bd28bdffc1160c7954836d9412b8bbad874ad7))
-* remove duplicate All filter button in wishlist panel ([6a4af42](https://github.com/bbidwell85/Totality/commit/6a4af42a32d02d05c88c5dd0d4eb3c6c8c008739))
-* resolve 3 TypeScript compilation errors blocking build ([2fb81e2](https://github.com/bbidwell85/Totality/commit/2fb81e2a50ce9b02d4fdc3073db5578533fca7ef))
-* two stale data bugs in source deletion cleanup ([57cfcdd](https://github.com/bbidwell85/Totality/commit/57cfcdd6e54eb7ba3b6b12eddaf5a19f99176866))
-* wishlist filter pills now wrap when panel is narrow ([0150a79](https://github.com/bbidwell85/Totality/commit/0150a79a864af3fc2d3a12a946f119488808d9b8))
-
-## [0.4.0](https://github.com/bbidwell85/totality/compare/v0.3.2...v0.4.0) (2026-10-02)
-
-
-### Features
-
-* completeness UX improvements — ignored episode fix, empty season exclusion, collection bulk dismiss, theatrical lag filter ([a960524](https://github.com/bbidwell85/totality/commit/a96052426ee5a90274d3f3661b48b82f36d7cd40))
-* library card two-column layout with wishlist data ([0046ecb](https://github.com/bbidwell85/totality/commit/0046ecb947a2b71a4d3bca5dd2b8f1c7adf3fda4))
-* major feature expansion — watchlist sync, ratings, dashboard redesign, settings reorganization ([24facce](https://github.com/bbidwell85/totality/commit/24faccef9b12710a157fca28581208a7007a87db))
-* major release — dashboard bento redesign, ARR removal, AI improvements, UI overhaul ([9cdba31](https://github.com/bbidwell85/totality/commit/9cdba31b65eb32cf3a1f8a3828f6af4f3b94ff83))
-* Radarr/Sonarr/Lidarr integration + MediaBrowser hook extraction ([0e20b8c](https://github.com/bbidwell85/totality/commit/0e20b8c9ee2d1ad088c98f7df3ac4f873267114a))
-* show episode count per season in TV show season grid ([e6e53be](https://github.com/bbidwell85/totality/commit/e6e53be6871648ee5b29d9e7cb06adddc5f5d96e))
-* UI improvements — queue panel in TopBar, undo on dismiss, inline confirm, filter condensing ([bed80e4](https://github.com/bbidwell85/totality/commit/bed80e43e24501dd81a563223ea4900f6cfc0acd))
-
-
-### Bug Fixes
-
-* make all panels pure overlays — remove push behavior in Library view ([3cf3a4a](https://github.com/bbidwell85/totality/commit/3cf3a4a29290b20c1abe74c9e8dfe7bab041e27a))
-* resolve all 45 npm audit vulnerabilities ([d205882](https://github.com/bbidwell85/totality/commit/d2058822cf4d951ca91c791225fdb25a0676c20f))
-
-### [0.3.2](https://github.com/bbidwell85/totality/compare/v0.3.1...v0.3.2) (2026-04-07)
-
-
-### Features
-
-* add 75% opacity and backdrop blur to Tag Sync panel ([fc2cb93](https://github.com/bbidwell85/totality/commit/fc2cb938d83c68043e1c0eda0168736e5eb82cc1))
-* add genre extraction from Plex and Kodi, generalize tag sync ([0061527](https://github.com/bbidwell85/totality/commit/00615274044c086ac4ca6dbbbf572d1353f8b7d8))
-* add genre write support for MediaMonkey and Kodi ([7499f56](https://github.com/bbidwell85/totality/commit/7499f56fed81f886971886452b4202fd02ffb5c8))
-* add Kodi mood write with safety guards ([ebce11a](https://github.com/bbidwell85/totality/commit/ebce11a26c98fdf36d94277250f927b6523e1d7d))
-* add MediaMonkey provider with mood extraction and FFmpeg co-install ([fc66e2b](https://github.com/bbidwell85/totality/commit/fc66e2b2b81a25589cca01328bd1d2278ab51221))
-* add mood sync comparison UI and Plex mood write ([f807447](https://github.com/bbidwell85/totality/commit/f807447009117256fa39f24494e72b7fa3e37808))
-* add Overwrite/Append mode toggle for mood sync ([95eebb6](https://github.com/bbidwell85/totality/commit/95eebb66e33446e3a69cac95e8362e085ec49f90))
-* add per-track sync animation and failure indicators ([57a0677](https://github.com/bbidwell85/totality/commit/57a0677e506575b8266c1e921cc701f2babc2cd3))
-* add search, selective sync, and source comparison to Mood Sync panel ([7684667](https://github.com/bbidwell85/totality/commit/7684667e749eb322b85e1ff46f017b97be21cb28))
-* auto-completeness after scans, live refresh, UI polish ([bcbb3ea](https://github.com/bbidwell85/totality/commit/bcbb3eaf4d72ea2a30bccde9fc8112cf773ed108))
-* dual-field comparison view with difference highlighting ([b108cad](https://github.com/bbidwell85/totality/commit/b108caddffe400b4a131522e93fee641f46c34de))
-* fetch Plex mood tags during music scan ([1bd10aa](https://github.com/bbidwell85/totality/commit/1bd10aa59e68a9d6772f38bce4a25258f2d30664))
-* generalize sync to support mood and genre fields ([d719d41](https://github.com/bbidwell85/totality/commit/d719d4177f29c33bd83026d8b2ff7e67133ea0fc))
-* move Mood Sync to dedicated panel with TopBar button ([d081681](https://github.com/bbidwell85/totality/commit/d0816817a79dcd9b316423a090c14a306aafe02c))
-* restructure Tag Sync panel into logical steps ([60bd9b4](https://github.com/bbidwell85/totality/commit/60bd9b401540f281e83991296db0dd2a50ae1517))
-* show genre and mood in music track details modal header ([b325ac5](https://github.com/bbidwell85/totality/commit/b325ac59694819bea785af0b8ace1e80584d5db5))
-* support mood sync to read-only targets (MediaMonkey, Kodi Local) ([b00966b](https://github.com/bbidwell85/totality/commit/b00966bcf0f75f503d8914a176375ccea6c3521f))
-* write mood tags to MediaMonkey database with safety guards ([637e3ab](https://github.com/bbidwell85/totality/commit/637e3ab7b8dc514dcf419beec9ee19135a1572d2))
-
-
-### Bug Fixes
-
-* 5 high-priority issues from pre-release audit ([828c9d6](https://github.com/bbidwell85/totality/commit/828c9d6fdde4cf0ed5555a5d2da3ebc7f9e72c68))
-* align MoodSyncPanel with settings tab design patterns ([f363dbc](https://github.com/bbidwell85/totality/commit/f363dbcadf582c4a261c1862208f07fa2ca7384e))
-* ambiguous source_id column in getIncompleteSeries query ([d1163ec](https://github.com/bbidwell85/totality/commit/d1163ec47b6efb39afb38b10d0ff2ec1b51a0e57))
-* audit cleanup — lint warnings, ProviderType parity, queue guard, tag sync fixes ([71a7dbc](https://github.com/bbidwell85/totality/commit/71a7dbc73edc9069e1c93e94d594706e0b9e989c))
-* centralize all deletion cleanup in database methods ([51573fc](https://github.com/bbidwell85/totality/commit/51573fc7b67d220c53751cdfe4e7126a3c698941))
-* change mood sync logging from warn to log level ([4432ec1](https://github.com/bbidwell85/totality/commit/4432ec1449d751c06367ace3121342fbd3e5cf1e))
-* code review cleanup — security, performance, accessibility ([e0c00b4](https://github.com/bbidwell85/totality/commit/e0c00b475c1b4203f7a8ed06422a78304e58aee1))
-* comprehensive data layer audit — 42 findings across 9 categories ([809f53d](https://github.com/bbidwell85/totality/commit/809f53d8208ca0b66cf76e7e292378bc60df0345))
-* comprehensive stale data cleanup after Plex deletions ([a20a246](https://github.com/bbidwell85/totality/commit/a20a2460059cd9ecb729a0c7641392f0932dfed2))
-* dashboard data accuracy — 5 issues from comprehensive audit ([6e31df6](https://github.com/bbidwell85/totality/commit/6e31df672657133eaf2bb58cede4c3099c3763d7))
-* deleted Plex items persisting on dashboard after rescan ([8c95587](https://github.com/bbidwell85/totality/commit/8c95587e32f5e8e8f7c8b30dd8050f37e247e49f))
-* don't recalculate collections from empty join table, refresh dashboard on analysis complete ([18d2733](https://github.com/bbidwell85/totality/commit/18d27332b0fd4a6fc9cf9cf579a66c162798c946))
-* fetch Plex mood tags via per-mood-tag endpoint ([17ea67b](https://github.com/bbidwell85/totality/commit/17ea67b6cb9334242371ecd76bd318c04ae7fa76))
-* filter tag sync panel to only show supported providers ([06bab74](https://github.com/bbidwell85/totality/commit/06bab74bab3d0e5ded89729d3c66d7139ed11e53))
-* increase Tag Sync panel opacity from 75% to 90% ([1bc480f](https://github.com/bbidwell85/totality/commit/1bc480f4a3c5bc221c7fda8cab06ff363688696e))
-* move MoodSyncPanel outside dashboard-only block ([1d03b67](https://github.com/bbidwell85/totality/commit/1d03b672503490c9b7208c3860c80af1df56deab))
-* optimize mood sync — count queries, shared utils, reduced memory ([3f43fb7](https://github.com/bbidwell85/totality/commit/3f43fb7e446d2c27245396a6a24b19cf0118de55))
-* preserve mood data during rescans with COALESCE ([351289d](https://github.com/bbidwell85/totality/commit/351289d5a8638698951b639fd50e570385d54e14))
-* QA architecture — transactions, debounce, safety guards ([e38d6a8](https://github.com/bbidwell85/totality/commit/e38d6a80519fc9b27311d53b203b35e454f8525e))
-* redesign MoodSyncPanel to match WishlistPanel patterns ([3ba3c4d](https://github.com/bbidwell85/totality/commit/3ba3c4dc2d023bc4793e4c967d58d4a501fcb80f))
-* remove broken recalculateCollectionStats, add library:updated listener ([8814974](https://github.com/bbidwell85/totality/commit/8814974c6d8b0760d73ba381b0aa2ca53025c149))
-* replace field tabs with radio buttons, fix genre label text ([d001d61](https://github.com/bbidwell85/totality/commit/d001d619c8c1c4e883020c375bb7960afd41e55c))
-* replace Music icon with Tags icon for Tag Sync panel ([42d4562](https://github.com/bbidwell85/totality/commit/42d45622149a889e3d700951c5fce3399309f39b))
-* resolve FTS tokenizer and orphan index errors in MM5 write ([42ab98e](https://github.com/bbidwell85/totality/commit/42ab98e00e2945be82bf4b823d08cd3db842173e))
-* revert COALESCE on mood upsert — rescans must reflect actual data ([66ee06c](https://github.com/bbidwell85/totality/commit/66ee06cff57a44cc0bd0f6a0790c411a63143c7a))
-* set Tag Sync panel opacity to 90% ([8539973](https://github.com/bbidwell85/totality/commit/8539973e92761600e9e1855fc819400e251c412f))
-* show sync success in panel after Kodi/MediaMonkey writes ([c5b19ab](https://github.com/bbidwell85/totality/commit/c5b19ab9b1ee1785e71d39fe5cbc7cec7a85a6be))
-* split comma-separated moods from MediaMonkey into individual tags ([a9736a1](https://github.com/bbidwell85/totality/commit/a9736a1f08cc30d33e60af55a84a2cec810fbaf1))
-* update album track_count and artist counts on track deletion ([9f80c50](https://github.com/bbidwell85/totality/commit/9f80c5055480cde49d05b717e4ff8f03c25f3258))
-* update collections inline after movie deletion (no TMDB API calls) ([254fa9c](https://github.com/bbidwell85/totality/commit/254fa9c1155ae11a27158eceda5ed5b465450e37))
-* update collections inside deleteMediaItem, not in caller ([7d9618b](https://github.com/bbidwell85/totality/commit/7d9618b12bec70eea726e972bf58be27448e969f))
-* update local DB after mood sync to reflect changes in comparison ([432949d](https://github.com/bbidwell85/totality/commit/432949d59465b07b4caae5266cc6ef28da9bdaa6))
-* update series completeness inline instead of deleting it ([90da795](https://github.com/bbidwell85/totality/commit/90da795898e826d17f629f014fb8be9cdecbc59e))
-* update write log messages from "mood updates" to "tag updates" ([a41cba4](https://github.com/bbidwell85/totality/commit/a41cba42886334da7f8c32265dac3533afdd8583))
-* use bg-card/95 for Tag Sync panel background tint ([8827c9f](https://github.com/bbidwell85/totality/commit/8827c9fb3e3dd6de18c43baddc5f93e650b29af8))
-* use theme card color at 90% opacity for Tag Sync panel ([3a3dc1a](https://github.com/bbidwell85/totality/commit/3a3dc1a1f828d6f5009c932182851c29cd036cc1))
-* validate collection ownership during orphan cleanup ([bea616b](https://github.com/bbidwell85/totality/commit/bea616b0eff5b41df657609357834f61bad65bde))
+* **Tier-Aware Storage Efficiency:** Overhauled the efficiency scoring engine to use grounded, resolution-specific bitrate targets (VMAF 95 grounded) for HEVC and AV1.
+* **Storage Debt Analysis:** Implemented intelligent debt calculation that identifies potential space savings by re-encoding bloated or legacy-codec files to modern standards.
+* **High-Performance Virtualization:** Complete migration to `react-virtuoso` across Movies, TV Shows, and Music views, enabling smooth interaction with libraries of 10,000+ items.
+* **Advanced Metadata:** Added support for `original_language` and best-track `audio_language` detection via TMDB and media probes.
+* **Modernized Core:** Upgraded build pipeline to Vite 8 and TypeScript 5.9.
+* **BetterSQLite3 Architecture:** Full refactor of the database layer using a modular repository pattern for improved reliability and local performance.
 
 ### [0.3.1](https://github.com/bbidwell85/totality/compare/v0.3.0...v0.3.1) (2026-03-26)
 

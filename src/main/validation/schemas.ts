@@ -6,8 +6,7 @@
  */
 
 import { z } from 'zod'
-import { PROVIDER_TYPES, WISHLIST_MEDIA_TYPES, WISHLIST_REASONS, WISHLIST_STATUSES } from '../types/database'
-import { MEDIA_ITEM_SORT_FIELDS, TV_SHOW_SORT_FIELDS } from '../../shared/librarySortFields'
+import { ProviderType, MediaItemType, WishlistMediaType, WishlistReason, WishlistStatus, TaskType, LibraryType } from '@main/types/database'
 
 // ============================================================================
 // COMMON SCHEMAS
@@ -16,22 +15,32 @@ import { MEDIA_ITEM_SORT_FIELDS, TV_SHOW_SORT_FIELDS } from '../../shared/librar
 /**
  * Provider types supported by the application
  */
-export const ProviderTypeSchema = z.enum(PROVIDER_TYPES)
+export const ProviderTypeSchema = z.nativeEnum(ProviderType)
 
 /**
  * Media types
  */
-export const MediaTypeSchema = z.enum(['movie', 'episode'])
+export const MediaTypeSchema = z.nativeEnum(MediaItemType)
 
 /**
  * Quality tier
  */
-export const QualityTierSchema = z.enum(['SD', '720p', '1080p', '4K', 'UNKNOWN'])
+export const QualityTierSchema = z.enum(['SD', '720p', '1080p', '4K'])
 
 /**
  * Tier quality level
  */
-export const TierQualitySchema = z.enum(['LOW', 'MEDIUM', 'HIGH', 'UNKNOWN'])
+export const TierQualitySchema = z.enum(['LOW', 'MEDIUM', 'HIGH'])
+
+export const EvidenceStatusSchema = z.enum(['measured', 'estimated', 'insufficient'])
+export const EvidenceConfidenceSchema = z.enum(['high', 'medium', 'low', 'none'])
+export const SecurityPinSchema = z.string().regex(/^\d{4,8}$/, 'PIN must contain 4 to 8 digits')
+export const SavingsBasisSchema = z.enum([
+  'audio_stream_removal',
+  'audio_transcode_model',
+  'video_sample_encode',
+  'insufficient_data',
+])
 
 /**
  * Positive integer (for IDs)
@@ -64,11 +73,11 @@ export const LibraryIdSchema = z.string().min(1).max(200)
 export const NonEmptyStringSchema = z.string().min(1).max(1000)
 
 /**
- * File/folder path string — must be non-empty, reasonable length, no null bytes
+ * File/folder path string — must be non-empty, reasonable length, no null bytes, and no traversal
  */
 export const FilePathSchema = z.string().min(1).max(2000).refine(
-  (val) => !val.includes('\0'),
-  { message: 'Path must not contain null bytes' }
+  (val) => !val.includes('\0') && !val.includes('..'),
+  { message: 'Path must not contain null bytes or directory traversal sequences (..)' }
 )
 
 /**
@@ -101,9 +110,13 @@ export const BooleanSchema = z.boolean()
 export const TVShowFiltersSchema = z.object({
   sourceId: z.string().optional(),
   libraryId: z.string().optional(),
+  slimDown: z.boolean().optional(),
+  qualityTier: z.string().optional(),
+  tierQuality: z.string().optional(),
+  completenessFilter: z.string().optional(),
   alphabetFilter: z.string().max(1).optional(),
   searchQuery: z.string().max(500).optional(),
-  sortBy: z.enum(TV_SHOW_SORT_FIELDS).optional(),
+  sortBy: z.enum(['title', 'episode_count', 'episodes', 'season_count', 'storage_debt', 'recoverable', 'debt', 'efficiency', 'weighted_efficiency', 'size', 'completeness']).optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
   limit: z.number().int().positive().max(10000).optional(),
   offset: z.number().int().nonnegative().optional(),
@@ -116,15 +129,17 @@ export const MusicFiltersSchema = z.object({
   artistId: z.number().int().positive().optional(),
   artistName: z.string().max(500).optional(),
   albumId: z.number().int().positive().optional(),
-  qualityTier: z.enum(['LOSSY_LOW', 'LOSSY_MID', 'LOSSY_HIGH', 'LOSSLESS', 'HI_RES', 'UNKNOWN']).optional(),
+  qualityTier: z.enum(['LOSSY_LOW', 'LOSSY_MID', 'LOSSY_HIGH', 'LOSSLESS', 'HI_RES', 'all']).or(z.string()).optional(),
+  tierQuality: z.string().optional(),
   needsUpgrade: z.boolean().optional(),
+  slimDown: z.boolean().optional(),
   searchQuery: z.string().max(500).optional(),
   limit: z.number().int().positive().max(10000).optional(),
   offset: z.number().int().nonnegative().optional(),
   sourceId: z.string().optional(),
   sourceType: ProviderTypeSchema.optional(),
   libraryId: z.string().optional(),
-  sortBy: z.enum(['title', 'artist', 'album', 'codec', 'duration', 'added_at', 'name', 'year']).optional(),
+  sortBy: z.enum(['title', 'year', 'storage_debt', 'efficiency', 'size', 'album', 'artist', 'codec', 'duration', 'added_at', 'name', 'album_count', 'track_count', 'recoverable', 'quality']).or(z.string()).optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
   alphabetFilter: z.string().max(1).optional(),
 }).optional()
@@ -132,16 +147,16 @@ export const MusicFiltersSchema = z.object({
 /**
  * Wishlist item media types
  */
-export const WishlistMediaTypeSchema = z.enum(WISHLIST_MEDIA_TYPES)
+export const WishlistMediaTypeSchema = z.nativeEnum(WishlistMediaType)
 
 /**
  * Wishlist filter options
  */
 export const WishlistFiltersSchema = z.object({
   media_type: WishlistMediaTypeSchema.optional(),
-  priority: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]).optional(),
-  reason: z.enum(WISHLIST_REASONS).optional(),
-  status: z.enum(WISHLIST_STATUSES).optional(),
+  priority: z.number().int().min(1).max(5).optional(),
+  reason: z.nativeEnum(WishlistReason).optional(),
+  status: z.nativeEnum(WishlistStatus).optional(),
   searchQuery: z.string().max(500).optional(),
   series_title: z.string().max(500).optional(),
   artist_name: z.string().max(500).optional(),
@@ -163,14 +178,14 @@ export const MonitoringConfigSchema = z.object({
   enabled: z.boolean().optional(),
   startOnLaunch: z.boolean().optional(),
   pauseDuringManualScan: z.boolean().optional(),
-  pollingIntervals: z.record(ProviderTypeSchema, z.number().int().positive().optional()).optional(),
+  pollingIntervals: z.record(ProviderTypeSchema, z.number().int().positive()).optional(),
 }).refine(() => true) // Partial<MonitoringConfig>
 
 /**
  * Task definition for queue
  */
 export const TaskDefinitionSchema = z.object({
-  type: z.enum(['library-scan', 'source-scan', 'series-completeness', 'collection-completeness', 'music-completeness', 'music-scan']),
+  type: z.nativeEnum(TaskType),
   label: z.string().min(1).max(200),
   sourceId: z.string().optional(),
   libraryId: z.string().optional(),
@@ -181,11 +196,10 @@ export const TaskDefinitionSchema = z.object({
  * CSV export options
  */
 export const ExportCSVOptionsSchema = z.object({
-  includeUpgrades: z.boolean(),
-  includeMissingMovies: z.boolean(),
-  includeMissingEpisodes: z.boolean(),
-  includeMissingAlbums: z.boolean(),
-  includeMusicUpgrades: z.boolean().optional(),
+  includeUpgrades: z.boolean().optional().default(true),
+  includeMissingMovies: z.boolean().optional().default(true),
+  includeMissingEpisodes: z.boolean().optional().default(true),
+  includeMissingAlbums: z.boolean().optional().default(true),
 })
 
 /**
@@ -293,7 +307,7 @@ export const KodiMySQLTestConfigSchema = z.object({
 export const LocalFolderConfigSchema = z.object({
   folderPath: FilePathSchema,
   displayName: z.string().min(1).max(100).trim(),
-  mediaType: z.enum(['movies', 'tvshows', 'mixed']),
+  mediaType: z.nativeEnum(LibraryType),
 })
 
 /**
@@ -305,7 +319,7 @@ export const LocalFolderWithLibrariesSchema = z.object({
   libraries: z.array(z.object({
     name: z.string().min(1).max(200),
     path: FilePathSchema,
-    mediaType: z.enum(['movies', 'tvshows', 'music']),
+    mediaType: z.nativeEnum(LibraryType),
     enabled: z.boolean(),
   })).max(50),
 })
@@ -322,20 +336,20 @@ export const MediaItemSchema = z.object({
   source_id: z.string().min(1),
   source_type: ProviderTypeSchema,
   library_id: z.string().min(1),
-  provider_item_id: z.string().min(1),
+  plex_id: z.string().min(1),
   type: MediaTypeSchema,
   title: z.string().min(1).max(500),
-  year: z.number().int().min(1800).max(2100).optional().nullable().transform(value => value ?? undefined),
+  year: z.number().int().min(1800).max(2100).optional().nullable(),
   file_path: z.string().optional().nullable(),
-  file_size_bytes: z.number().int().nonnegative().optional().nullable(),
-  duration_ms: z.number().int().nonnegative().optional().nullable(),
+  file_size: z.number().int().nonnegative().optional().nullable(),
+  duration: z.number().int().nonnegative().optional().nullable(),
   resolution: z.string().max(20).optional().nullable(),
   video_codec: z.string().max(50).optional().nullable(),
-  video_bitrate_kbps: z.number().nonnegative().optional().nullable(),
+  video_bitrate: z.number().nonnegative().optional().nullable(),
   video_frame_rate: z.number().nonnegative().optional().nullable(),
   audio_codec: z.string().max(50).optional().nullable(),
   audio_channels: z.number().int().min(1).max(32).optional().nullable(),
-  audio_bitrate_kbps: z.number().nonnegative().optional().nullable(),
+  audio_bitrate: z.number().nonnegative().optional().nullable(),
   has_object_audio: z.boolean().optional().nullable(),
   hdr_format: z.string().max(50).optional().nullable(),
   container: z.string().max(20).optional().nullable(),
@@ -356,7 +370,7 @@ export const MediaItemSchema = z.object({
   episode_thumb_url: z.string().url().optional().nullable(),
   season_poster_url: z.string().url().optional().nullable(),
   user_fixed_match: z.boolean().optional().nullable(),
-}).transform(({ provider_item_id, ...item }) => ({ ...item, plex_id: provider_item_id }))
+})
 
 /**
  * Quality score for upsert operations
@@ -364,23 +378,23 @@ export const MediaItemSchema = z.object({
 export const QualityScoreSchema = z.object({
   id: z.number().int().positive().optional(),
   media_item_id: z.number().int().positive(),
-  overall_score: z.number().min(0).max(100).nullable(),
+  overall_score: z.number().min(0).max(100).optional().nullable(),
   needs_upgrade: z.boolean(),
   quality_tier: QualityTierSchema,
-  tier_quality: TierQualitySchema,
-  tier_score: z.number().min(0).max(100).nullable(),
-  bitrate_tier_score: z.number().min(0).max(100).nullable(),
-  audio_tier_score: z.number().min(0).max(100).nullable(),
-  resolution_score: z.number().min(0).max(100).nullable(),
-  bitrate_score: z.number().min(0).max(100).nullable(),
-  audio_score: z.number().min(0).max(100).nullable(),
-  is_low_quality: z.boolean(),
-  evidence_status: z.enum(['measured', 'estimated', 'insufficient']).optional(),
-  estimated_savings_bytes: z.number().nonnegative().nullable().optional(),
-  savings_coverage: z.enum(['complete', 'partial', 'insufficient']),
-  confidence: z.enum(['high', 'medium', 'low', 'none']).optional(),
-  savings_basis: z.enum(['audio_stream_removal', 'subtitle_stream_removal', 'audio_stream_removal_and_transcode_model', 'audio_transcode_model', 'video_sample_encode', 'video_bitrate_estimate', 'audio_bitrate_estimate', 'mixed_estimates', 'mixed_measured', 'mixed_measured_and_estimated', 'insufficient_data']).optional(),
-  issues: z.string(),
+  tier_quality: TierQualitySchema.optional(),
+  tier_score: z.number().min(0).max(100).optional().nullable(),
+  bitrate_tier_score: z.number().min(0).max(100).optional().nullable(),
+  audio_tier_score: z.number().min(0).max(100).optional().nullable(),
+  resolution_score: z.number().min(0).max(100).optional().nullable(),
+  bitrate_score: z.number().min(0).max(100).optional().nullable(),
+  audio_score: z.number().min(0).max(100).optional().nullable(),
+  efficiency_score: z.number().min(0).max(100).optional().nullable(),
+  storage_debt_bytes: z.number().min(0).optional().nullable(),
+  evidence_status: EvidenceStatusSchema.optional(),
+  confidence: EvidenceConfidenceSchema.optional(),
+  savings_basis: SavingsBasisSchema.optional(),
+  is_low_quality: z.boolean().optional(),
+  issues: z.string().optional().nullable(),
 })
 
 // ============================================================================
@@ -401,12 +415,15 @@ export const MediaItemFiltersSchema = z.object({
   sourceId: z.string().optional(),
   sourceType: ProviderTypeSchema.optional(),
   libraryId: z.string().optional(),
-  sortBy: z.enum(MEDIA_ITEM_SORT_FIELDS).optional(),
+  sortBy: z.enum(['title', 'year', 'updated_at', 'created_at', 'tier_score', 'overall_score', 'size', 'storage_debt', 'efficiency', 'recoverable', 'completeness', 'weighted_efficiency']).optional(),
+
   sortOrder: z.enum(['asc', 'desc']).optional(),
   includeDisabledLibraries: z.boolean().optional(),
   alphabetFilter: z.string().max(1).optional(),
   qualityTier: z.string().optional(),
   tierQuality: z.string().optional(),
+  efficiencyFilter: z.string().optional(),
+  slimDown: z.boolean().optional(),
 })
 
 // ============================================================================
@@ -420,27 +437,16 @@ export const WishlistItemSchema = z.object({
   id: z.number().int().positive().optional(),
   title: z.string().min(1, 'Title is required').max(500).trim(),
   media_type: WishlistMediaTypeSchema,
-  priority: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]).optional().default(3),
-  reason: z.enum(WISHLIST_REASONS).optional(),
-  status: z.enum(WISHLIST_STATUSES).optional(),
+  priority: z.number().int().min(1).max(5).optional().default(3),
+  reason: z.nativeEnum(WishlistReason).optional(),
   notes: z.string().max(1000).trim().optional().nullable(),
-  year: z.number().int().min(1800).max(2100).optional(),
+  year: z.preprocess((val) => (val === '' || val === null || val === undefined || (typeof val === 'number' && isNaN(val)) ? undefined : val), z.number().int().min(1800).max(2100).optional().nullable()),
   series_title: z.string().max(500).optional().nullable(),
   season_number: z.number().int().min(0).optional().nullable(),
-  episode_number: z.number().int().min(0).optional().nullable(),
-  collection_name: z.string().max(500).optional().nullable(),
   artist_name: z.string().max(500).optional().nullable(),
-  album_title: z.string().max(500).optional().nullable(),
   tmdb_id: z.string().max(20).optional().nullable(),
   imdb_id: z.string().max(20).optional().nullable(),
-  musicbrainz_id: z.string().max(100).optional().nullable(),
   poster_url: z.string().url().optional().nullable(),
-  media_item_id: z.number().int().positive().optional().nullable(),
-  current_quality_tier: z.string().max(10).optional().nullable(),
-  current_quality_level: z.string().max(10).optional().nullable(),
-  current_resolution: z.string().max(20).optional().nullable(),
-  current_video_codec: z.string().max(50).optional().nullable(),
-  current_audio_codec: z.string().max(50).optional().nullable(),
 })
 
 // ============================================================================
@@ -452,12 +458,8 @@ export const WishlistItemSchema = z.object({
  */
 export const SafeUrlSchema = z.string().url().refine(
   (url) => {
-    try {
-      const parsed = new URL(url)
-      return ['http:', 'https:'].includes(parsed.protocol)
-    } catch {
-      return false
-    }
+    const parsed = new URL(url)
+    return ['http:', 'https:'].includes(parsed.protocol)
   },
   { message: 'URL must use http or https protocol' }
 )
@@ -498,11 +500,14 @@ export const LetterOffsetSchema = z.object({
 })
 
 // ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+// ============================================================================
 // TRANSCODING SCHEMAS
 // ============================================================================
 
 export const TranscodeOptionsSchema = z.object({
-  playbackPolicy: z.enum(['allow-transcoding', 'avoid-video-transcoding', 'direct-play']).optional(),
   targetCodec: z.enum(['av1', 'hevc']).optional(),
   outputMode: z.enum(['copy', 'quarantine-replace', 'replace']).optional(),
   tempDirectory: z.string().optional(),
@@ -516,10 +521,9 @@ export const TranscodeOptionsSchema = z.object({
   transcodingEngine: z.literal('ffmpeg').optional(),
   optimizationMode: z.enum(['smart', 'remux_only', 'transcode']).optional(),
   qualityProfile: z.enum(['transparent', 'balanced', 'maximum_savings']).optional(),
-  encoderPolicy: z.enum(['automatic', 'hardware', 'software', 'compare']).optional(),
-  targetProfileId: z.string().min(1).nullable().optional(),
+  encoderPolicy: z.enum(['hardware', 'software', 'compare']).optional(),
+  targetProfileId: z.string().min(1).optional(),
   targetContainer: z.enum(['mkv', 'mp4']).optional(),
-  targetContainerSelection: z.enum(['automatic', 'user-selected']).optional(),
   targetAudioCodec: z.enum(['aac', 'ac3', 'eac3']).optional(),
   targetHdrFormat: z.enum(['SDR', 'HDR10']).optional(),
   streamSelection: z.union([
@@ -567,20 +571,11 @@ export const PreflightShowTranscodeSchema = z.tuple([
   z.object({
     requestId: z.string().min(1).max(100),
     mediaItemId: z.number().int().positive().optional(),
-    seasonNumber: z.number().int().nonnegative().optional(),
-    representativeMediaItemId: z.number().int().positive().optional(),
-    representativeMediaItemIds: z.record(z.string().min(1), z.number().int().positive()).optional(),
-    selectedMediaItemIds: z.array(z.number().int().positive()).min(1).optional(),
     seriesTitle: z.string().min(1).optional(),
     seriesIdentityKey: z.string().min(1).optional(),
     sourceId: z.string().min(1),
     libraryId: z.string().min(1).optional(),
     options: TranscodeOptionsSchema.unwrap()
-  }).refine(request => request.mediaItemId === undefined || request.seasonNumber === undefined, {
-    message: 'An optimization preflight can target an episode or a season, not both.'
-  }).refine(request => request.options.outputMode !== undefined, {
-    message: 'Select output handling before preparing an optimization review.',
-    path: ['options', 'outputMode'],
   })
 ])
 
@@ -610,6 +605,9 @@ function preprocessFilterKeys(input: unknown): unknown {
   if ('search' in clone && !('searchQuery' in clone)) {
     clone.searchQuery = clone.search
     delete clone.search
+  }
+  if (clone.sortBy === 'waste') {
+    clone.sortBy = 'storage_debt'
   }
   return clone
 }
@@ -659,12 +657,13 @@ export const MbSearchTupleSchema = z.tuple([z.string(), z.enum(['artist', 'relea
 export const SeriesAnalyzeAllTupleSchema = z.tuple([z.string().optional(), z.string().optional()])
 export const SeriesGetEpisodesTupleSchema = z.tuple([NonEmptyStringSchema, z.string().optional()])
 export const SeriesGetSeasonDetailsTupleSchema = z.tuple([NonEmptyStringSchema, z.number().int().nonnegative()])
-export const CanonicalSeriesIdentityKeySchema = z.string().min(1).refine(
-  (key) => key.startsWith('tmdb:') || key.startsWith('tvdb:') || key.startsWith('unresolved:'),
-  { message: 'seriesIdentityKey must be a canonical key starting with tmdb:, tvdb:, or unresolved:' }
-)
-export const SeriesFixMatchTupleSchema = z.tuple([CanonicalSeriesIdentityKeySchema, NonEmptyStringSchema, z.string().optional().nullable(), PositiveIntSchema])
-export const SeriesIdentityTupleSchema = z.tuple([NonEmptyStringSchema, SourceIdSchema, NonEmptyStringSchema, LibraryIdSchema])
+export const SeriesGetEpisodeStillTupleSchema = z.tuple([NonEmptyStringSchema, z.number().int().nonnegative(), z.number().int().nonnegative()])
+export const SeriesFixMatchTupleSchema = z.tuple([NonEmptyStringSchema, NonEmptyStringSchema, NonEmptyStringSchema, NonEmptyStringSchema])
 export const JellyfinQcStatusTupleSchema = z.tuple([z.string().url(), z.string()])
 export const JellyfinQcCompleteTupleSchema = z.tuple([z.string().url(), z.string(), NonEmptyStringSchema])
 export const JellyfinAuthCredentialsTupleSchema = z.tuple([z.string().url(), z.string(), z.string(), NonEmptyStringSchema, z.boolean().optional()])
+
+
+
+
+

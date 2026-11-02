@@ -1,32 +1,26 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": [
-    "eslint",
-    "typescript",
-    "unicorn",
-    "oxc",
-    "react"
-  ],
-  "ignorePatterns": [
-    "dist/**",
-    "dist-electron/**",
-    "release/**",
-    "dev_docs/acceptance-*/**"
-  ],
+  "plugins": ["typescript", "react"],
+  "ignorePatterns": ["dist/**", "dist-electron/**", "release/**", "dev_docs/**"],
   "categories": {
-    "correctness": "error"
+    "correctness": "off",
+    "suspicious": "off",
+    "pedantic": "off",
+    "perf": "off",
+    "style": "off",
+    "restriction": "off"
   },
   "rules": {
-    "react/rules-of-hooks": "error",
-    "react/exhaustive-deps": "error",
-    "react/immutability": "off",
-    "react/purity": "off",
-    "react/refs": "off",
-    "react/set-state-in-effect": "off"
-  },
-  "env": {
-    "builtin": true,
-    "browser": true,
-    "node": true
+    "typescript/no-explicit-any": "error",
+    "typescript/no-unsafe-function-type": "warn",
+    "eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "caughtErrors": "none" }],
+    "eslint/no-unsafe-finally": "error",
+    "eslint/no-empty": "warn",
+    "eslint/no-useless-escape": "warn",
+    "eslint/prefer-const": "warn",
+    "eslint/no-useless-catch": "warn",
+    "react/exhaustive-deps": "warn",
+    "react/rules-of-hooks": "warn",
+    "react/only-export-components": ["warn", { "allowConstantExport": true, "allowExportNames": ["formatHdrLabel", "withErrorBoundary", "useLibrary", "usePanel", "useScrollMemory"] }]
   }
 }

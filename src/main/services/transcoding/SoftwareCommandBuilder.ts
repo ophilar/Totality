@@ -1,17 +1,15 @@
-
 import * as os from 'os'
-import type { ITranscodeCommandBuilder, TranscodeOptions } from './types'
-import type { FileAnalysisResult } from '../MediaFileAnalyzer'
+import { ITranscodeCommandBuilder } from './types'
+import { TranscodeOptions } from '../TranscodingService'
+import { FileAnalysisResult } from '../MediaFileAnalyzer'
 import { buildHdrMetadataArgs } from './HdrTranscodingPolicy'
 import { appendStreamMappingArgs } from './StreamSelectionPlan'
 import { applyTargetTranscodePlan } from './TargetTranscodePlan'
 import { APP_CONFIG } from '@main/config'
-import { getEncoderBitDepth } from './EncoderPixelFormat'
 
 export class SoftwareCommandBuilder implements ITranscodeCommandBuilder {
   buildFFmpegArgs(input: string, output: string, options: TranscodeOptions, _analysis: FileAnalysisResult): string[] {
     const hdrArgs = buildHdrMetadataArgs(_analysis, options)
-    const bitDepth = getEncoderBitDepth(_analysis, options)
     const codec = options.targetCodec === 'av1' ? 'libsvtav1' : 'libx265'
     const crf = (options.crf ?? APP_CONFIG.transcoding.defaultSoftwareCrf).toString()
     
@@ -19,7 +17,7 @@ export class SoftwareCommandBuilder implements ITranscodeCommandBuilder {
     const totalCpus = os.cpus()?.length || 4
     const softwareThreads = Math.max(1, totalCpus > 4 ? totalCpus - 2 : totalCpus - 1)
 
-    const sourceBitrate = _analysis?.video?.bitrateKbps || _analysis?.overallBitrateKbps || (_analysis?.durationMs && _analysis?.fileSizeBytes ? Math.round((_analysis.fileSizeBytes * 8) / _analysis.durationMs) : undefined)
+    const sourceBitrate = _analysis?.video?.bitrate || _analysis?.overallBitrate || (_analysis?.duration && _analysis?.fileSize ? Math.round((_analysis.fileSize * 8) / _analysis.duration) : undefined)
 
     const args: string[] = [
       '-y',
@@ -31,21 +29,17 @@ export class SoftwareCommandBuilder implements ITranscodeCommandBuilder {
       '-crf', crf,
       '-preset', options.preset || APP_CONFIG.transcoding.defaultSoftwarePreset,
       ...(sourceBitrate ? ['-maxrate', `${sourceBitrate}k`, '-bufsize', `${sourceBitrate * 2}k`] : []),
-      '-pix_fmt', bitDepth === 10 ? 'yuv420p10le' : 'yuv420p'
+      '-pix_fmt', 'yuv420p10le'
     ]
 
     appendStreamMappingArgs(args, _analysis, options)
     if (options.targetCodec === 'hevc' && hdrArgs.length) {
       const color = (flag: string) => hdrArgs[hdrArgs.indexOf(flag) + 1]
       args.push('-x265-params', `colorprim=${color('-color_primaries')}:transfer=${color('-color_trc')}:colormatrix=${color('-colorspace')}`)
-    } else {
-      args.push(...hdrArgs)
-    }
-    if (!options.targetConversion && output.toLowerCase().endsWith('.mp4')) {
-      args.push('-movflags', '+faststart')
-    }
+    } else args.push(...hdrArgs)
     args.push(output)
     applyTargetTranscodePlan(args, options)
     return args
   }
+
 }

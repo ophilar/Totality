@@ -6,9 +6,9 @@
 
 import { useState, useEffect } from 'react'
 import { Film, Tv, Music, Folder, Server, ChevronRight } from 'lucide-react'
-import { useSources } from '../../contexts/SourceContext'
-import { useLibrarySelection } from '../../hooks/useLibrarySelection'
-import type { MediaLibraryResponse } from '../../../../preload/index'
+import { useSources } from '@/contexts/SourceContext'
+import { LibraryType } from '@main/types/database'
+
 
 interface JellyfinAuthFlowProps {
   onSuccess: () => void
@@ -24,13 +24,20 @@ interface DiscoveredServer {
 
 type Step = 'discover' | 'server-select' | 'auth-method' | 'libraries'
 
+interface MediaLibrary {
+  id: string
+  name: string
+  type: LibraryType
+  itemCount?: number
+}
+
 export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: JellyfinAuthFlowProps) {
   const { getLibraries, refreshSources } = useSources()
 
   const [step, setStep] = useState<Step>('discover')
   const [isDiscovering, setIsDiscovering] = useState(false)
   const [discoveredServers, setDiscoveredServers] = useState<DiscoveredServer[]>([])
-  const [manualUrl, setManualUrl] = useState(isEmby ? 'http://localhost:8920' : 'http://localhost:8096')
+  const [manualUrl, setManualUrl] = useState('')
   const [isTestingUrl, setIsTestingUrl] = useState(false)
   const [selectedServer, setSelectedServer] = useState<{ url: string; name: string } | null>(null)
   const [displayName, setDisplayName] = useState('')
@@ -38,24 +45,17 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
   const [isConnecting, setIsConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sourceId, setSourceId] = useState<string | null>(null)
-  const [libraries, setLibraries] = useState<MediaLibraryResponse[]>([])
-  const { selectedLibraries, setSelectedLibraries, handleToggleLibrary, handleSelectAll, handleDeselectAll } = useLibrarySelection(libraries)
+  const [libraries, setLibraries] = useState<MediaLibrary[]>([])
+  const [selectedLibraries, setSelectedLibraries] = useState<Set<string>>(new Set())
 
   const providerName = isEmby ? 'Emby' : 'Jellyfin'
   // Emby uses green branding, Jellyfin uses purple
   const serverIconColor = isEmby ? 'bg-green-500' : 'bg-purple-500'
 
-  useEffect(() => {
-    // Auto-discover on mount for both Jellyfin and Emby
-    handleDiscover()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEmby])
-
   const handleDiscover = async () => {
     setIsDiscovering(true)
     setError(null)
     try {
-      // Use the appropriate discovery service based on provider type
       const servers = isEmby
         ? await window.electronAPI.embyDiscoverServers()
         : await window.electronAPI.jellyfinDiscoverServers()
@@ -66,11 +66,35 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
         setStep('server-select')
       }
     } catch (err: unknown) {
-      console.error('Discovery failed:', err)
+      setError(err instanceof Error ? err.message : 'Server discovery failed')
     } finally {
       setIsDiscovering(false)
     }
   }
+
+  useEffect(() => {
+    let isMounted = true
+    const discover = async () => {
+      setIsDiscovering(true)
+      setError(null)
+      try {
+        const servers = isEmby
+          ? await window.electronAPI.embyDiscoverServers()
+          : await window.electronAPI.jellyfinDiscoverServers()
+        if (!isMounted) return
+        setDiscoveredServers(servers)
+        if (servers.length === 1) setSelectedServer({ url: servers[0].address, name: servers[0].name })
+      } catch (err: unknown) {
+        if (isMounted) setError(err instanceof Error ? err.message : 'Server discovery failed')
+      } finally {
+        if (isMounted) setIsDiscovering(false)
+      }
+    }
+    void discover()
+    return () => {
+      isMounted = false
+    }
+  }, [isEmby])
 
   const handleTestManualUrl = async () => {
     if (!manualUrl.trim()) {
@@ -143,6 +167,27 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
   }
 
   // Toggle library selection
+  const handleToggleLibrary = (libraryId: string) => {
+    setSelectedLibraries(prev => {
+      const next = new Set(prev)
+      if (next.has(libraryId)) {
+        next.delete(libraryId)
+      } else {
+        next.add(libraryId)
+      }
+      return next
+    })
+  }
+
+  // Select/deselect all libraries
+  const handleSelectAll = () => {
+    setSelectedLibraries(new Set(libraries.map(lib => lib.id)))
+  }
+
+  const handleDeselectAll = () => {
+    setSelectedLibraries(new Set())
+  }
+
   // Complete setup with library selection
   const handleComplete = async () => {
     if (!sourceId) return
@@ -159,7 +204,7 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
         }))
       )
     } catch (err) {
-      console.error('Failed to save library selection:', err)
+      window.electronAPI.log.error('[JellyfinAuthFlow]', 'Failed to save library selection:', err)
     }
 
     // Refresh sources list now that setup is complete
@@ -179,7 +224,7 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
           libraryId: lib.id,
         })
       } catch (err) {
-        console.error('Failed to queue library scan:', err)
+        window.electronAPI.log.error('[JellyfinAuthFlow]', 'Failed to queue library scan:', err)
       }
     }
 

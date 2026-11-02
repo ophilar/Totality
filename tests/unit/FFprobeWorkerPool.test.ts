@@ -1,137 +1,146 @@
 /**
- * FFprobeWorkerPool tests use the real worker thread and worker implementation.
+ * FFprobeWorkerPool Unit Tests
+ *
+ * Tests worker pool lifecycle, queue management, error handling,
+ * and resource cleanup.
  */
 
-import path from 'node:path'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { randomUUID } from 'node:crypto'
-import { build } from 'esbuild'
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { FFprobeWorkerPool } from '../../src/main/services/FFprobeWorkerPool'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { _Worker } from 'worker_threads'
+import * as os from 'os'
+
+// Mock worker_threads
+const mockWorker = {
+  on: vi.fn(),
+  once: vi.fn(),
+  postMessage: vi.fn(),
+  terminate: vi.fn(() => Promise.resolve(0)),
+  removeAllListeners: vi.fn(),
+}
+
+vi.mock('worker_threads', () => ({
+  Worker: class WorkerMock {
+    constructor() {
+      return mockWorker as unknown as WorkerMock
+    }
+  },
+}))
+
+// Import after mocks
+const { FFprobeWorkerPool } = await import('../../src/main/services/FFprobeWorkerPool')
 
 describe('FFprobeWorkerPool', () => {
-  let workerScriptPath: string
-  let workerBuildDirectory: string
-  let unavailableFFprobePath: string
-  let pool: FFprobeWorkerPool
-
-  beforeAll(async () => {
-    workerBuildDirectory = await mkdtemp(path.join(tmpdir(), 'totality-ffprobe-worker-'))
-    workerScriptPath = path.join(workerBuildDirectory, 'ffprobe-worker.cjs')
-    await build({
-      entryPoints: [path.resolve('src/main/workers/ffprobe-worker.ts')],
-      outfile: workerScriptPath,
-      bundle: true,
-      platform: 'node',
-      format: 'cjs',
-    })
-  })
+  let pool: InstanceType<typeof FFprobeWorkerPool>
 
   beforeEach(() => {
-    pool = new FFprobeWorkerPool(workerScriptPath)
-    unavailableFFprobePath = path.join(tmpdir(), `totality-missing-ffprobe-${randomUUID()}`)
+    vi.clearAllMocks()
+    pool = new FFprobeWorkerPool()
+    // Reset the mock worker handlers
+    mockWorker.on.mockReset()
+    mockWorker.once.mockReset()
+    mockWorker.postMessage.mockReset()
+    mockWorker.terminate.mockReset()
+    mockWorker.removeAllListeners.mockReset()
+    mockWorker.terminate.mockResolvedValue(0)
+    mockWorker.once.mockImplementation((event, listener) => {
+      if (event === 'exit') listener(0)
+      return mockWorker
+    })
   })
 
-  afterEach(async () => {
-    const { activeWorkers, queuedTasks } = pool.getStats()
-    if (activeWorkers > 0 || queuedTasks > 0) {
+  describe('initialization', () => {
+    it('should not be initialized by default', () => {
+      const stats = pool.getStats()
+      expect(stats.activeWorkers).toBe(0)
+      expect(stats.queuedTasks).toBe(0)
+    })
+
+    it('should set max workers based on CPU count', () => {
+      const stats = pool.getStats()
+      const _expected = Math.max(1, os.cpus().length - 1)
+      // Note: Config might limit it, but we check logic
+      expect(stats.maxWorkers).toBeGreaterThanOrEqual(1)
+    })
+
+    it('should allow setting max workers', () => {
+      pool.setMaxWorkers(2)
+      expect(pool.getStats().maxWorkers).toBe(2)
+    })
+
+    it('should clamp max workers between 1 and 16', () => {
+      pool.setMaxWorkers(0)
+      expect(pool.getStats().maxWorkers).toBe(1)
+      pool.setMaxWorkers(100)
+      expect(pool.getStats().maxWorkers).toBe(16)
+    })
+
+    it('should initialize with ffprobe path', async () => {
+      await pool.initialize('/path/to/ffprobe')
+      // Second call should be a no-op
+      await pool.initialize('/different/path')
+      // Pool is initialized
+      expect(pool.getStats().maxWorkers).toBeGreaterThan(0)
+    })
+  })
+
+  describe('queue management', () => {
+    it('should throw error for uninitialized pool', async () => {
+      await expect(pool.analyzeFile('/test.mkv')).rejects.toThrow('not initialized')
+    })
+
+    it('should throw error when shutting down', async () => {
+      await pool.initialize('/path/to/ffprobe')
+      // Start shutdown
+      const shutdownPromise = pool.shutdown()
+      await expect(pool.analyzeFile('/test.mkv')).rejects.toThrow('shutting down')
+      await shutdownPromise
+    })
+
+    it('should reject tasks when queue is full', async () => {
+      await pool.initialize('/path/to/ffprobe')
+      pool.setMaxWorkers(1)
+
+      // Represent a full queue without creating thousands of unresolved tasks.
+      const internalPool = pool as unknown as { taskQueue: unknown[] }
+      internalPool.taskQueue = new Array(10000)
+
+      // The next task should reject immediately.
+      await expect(pool.analyzeFile('/test-too-many.mkv')).rejects.toThrow('queue is full')
+      internalPool.taskQueue = []
       await pool.shutdown()
-    }
-  })
-
-  afterAll(async () => {
-    await rm(workerBuildDirectory, { recursive: true })
-  })
-
-  it('starts uninitialized and bounds its worker count by available CPUs', () => {
-    expect(pool.getStats()).toMatchObject({
-      activeWorkers: 0,
-      queuedTasks: 0,
     })
-    expect(pool.getStats().maxWorkers).toBeGreaterThan(0)
-    expect(pool.getStats().maxWorkers).toBeLessThanOrEqual(4)
   })
 
-  it('allows setting worker count within the supported bounds', () => {
-    pool.setMaxWorkers(2)
-    expect(pool.getStats().maxWorkers).toBe(2)
+  describe('shutdown', () => {
+    it('should resolve queued tasks on shutdown', async () => {
+      await pool.initialize('/path/to/ffprobe')
 
-    pool.setMaxWorkers(0)
-    expect(pool.getStats().maxWorkers).toBe(1)
+      // Queue a task (it won't be processed since worker mock doesn't respond)
+      const taskPromise = pool.analyzeFile('/test.mkv')
 
-    pool.setMaxWorkers(100)
-    expect(pool.getStats().maxWorkers).toBe(16)
-  })
-
-  it('initializes once and analyzes a file through the real worker', async () => {
-    await pool.initialize(unavailableFFprobePath)
-    await pool.initialize('/unused/second-ffprobe-path')
-
-    const result = await pool.analyzeFile('/file-that-does-not-exist.mkv')
-
-    expect(result.success).toBe(false)
-    expect(result.filePath).toBe('/file-that-does-not-exist.mkv')
-    expect(result.error).toBeTruthy()
-  })
-
-  it('returns an error when a file is submitted before initialization', async () => {
-    const result = await pool.analyzeFile('/test.mkv')
-    expect(result.success).toBe(false)
-    expect(result.error).toContain('not initialized')
-  })
-
-  it('returns an error when a file is submitted during shutdown', async () => {
-    await pool.initialize(unavailableFFprobePath)
-    const shutdown = pool.shutdown()
-
-    const result = await pool.analyzeFile('/test.mkv')
-    expect(result.success).toBe(false)
-    expect(result.error).toContain('shutting down')
-
-    await shutdown
-  })
-
-  it('rejects work beyond the queue limit and resolves accepted work on shutdown', async () => {
-    pool.setMaxWorkers(1)
-    await pool.initialize(unavailableFFprobePath)
-
-    const tasks = Array.from({ length: 10_002 }, (_, index) =>
-      pool.analyzeFile(`/test-${index}.mkv`)
-    )
-
-    await expect(tasks[10_001]).resolves.toMatchObject({
-      success: false,
-      error: expect.stringContaining('queue is full'),
+      // Shutdown should resolve the queued task with error
+      await pool.shutdown()
+      const result = await taskPromise
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('shutting down')
     })
 
-    await pool.shutdown()
-    const results = await Promise.all(tasks)
-    expect(results).toHaveLength(10_002)
-    expect(results.every(result => !result.success)).toBe(true)
+    it('should reset state after shutdown', async () => {
+      await pool.initialize('/path/to/ffprobe')
+      await pool.shutdown()
+      expect(pool.getStats().activeWorkers).toBe(0)
+      expect(pool.getStats().queuedTasks).toBe(0)
+    })
   })
 
-  it('returns an empty map for an empty batch', async () => {
-    await pool.initialize(unavailableFFprobePath)
-    await expect(pool.analyzeFiles([])).resolves.toEqual(new Map())
-  })
-
-  it('resolves all queued work when workers are shut down', async () => {
-    await pool.initialize(unavailableFFprobePath)
-    const task = pool.analyzeFile('/test.mkv')
-
-    await pool.shutdown()
-
-    const result = await task
-    expect(result.success).toBe(false)
-    expect(result.error).toContain('shutting down')
-  })
-
-  it('resets state after shutdown', async () => {
-    await pool.initialize(unavailableFFprobePath)
-    await pool.shutdown()
-
-    expect(pool.getStats().activeWorkers).toBe(0)
-    expect(pool.getStats().queuedTasks).toBe(0)
+  describe('analyzeFiles batch', () => {
+    it('should return empty map for empty file list', async () => {
+      await pool.initialize('/path/to/ffprobe')
+      const results = await pool.analyzeFiles([])
+      expect(results.size).toBe(0)
+    })
   })
 })
+
+
+

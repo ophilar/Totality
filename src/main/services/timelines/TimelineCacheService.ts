@@ -1,6 +1,6 @@
-
-import { getDatabase } from '../../database/getDatabase'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import type { TimelineDefinition, TimelineRecipeSummary } from './ITimelineRecipeProvider'
+import { getLoggingService } from '@main/services/LoggingService'
 import { isTimelineRecipeSummary, validateTimelineDefinition } from './TimelineValidation'
 
 interface CacheEntry<T> {
@@ -51,7 +51,7 @@ export class TimelineCacheService {
     // 2. Check persistent SQLite cache
     try {
       const db = getDatabase()
-      const raw = db.getSetting(key)
+      const raw = await db.config.getSetting(key)
       if (raw) {
         const parsed: unknown = JSON.parse(raw)
         if (!isCacheEntry(parsed)) {
@@ -97,7 +97,7 @@ export class TimelineCacheService {
     // Update SQLite permanent storage
     try {
       const db = getDatabase()
-      await db.setSetting(key, JSON.stringify(entry))
+      await db.config.setSetting(key, JSON.stringify(entry))
     } catch (err) {
       this.memoryCache.delete(key)
       throw new Error(`Cannot persist timeline '${id}': ${String(err)}`)
@@ -114,7 +114,7 @@ export class TimelineCacheService {
 
     try {
       const db = getDatabase()
-      const raw = db.getSetting(key)
+      const raw = await db.config.getSetting(key)
       if (raw) {
         const parsed: unknown = JSON.parse(raw)
         if (!isCacheEntry(parsed)) return null
@@ -147,7 +147,7 @@ export class TimelineCacheService {
 
     try {
       const db = getDatabase()
-      await db.setSetting(key, JSON.stringify(entry))
+      await db.config.setSetting(key, JSON.stringify(entry))
     } catch (err) {
       this.memoryCache.delete(key)
       throw new Error(`Cannot persist timeline catalog '${manifestKey}': ${String(err)}`)
@@ -160,7 +160,7 @@ export class TimelineCacheService {
       this.memoryCache.delete(key)
       try {
         const db = getDatabase()
-        await db.deleteSetting(key)
+        await db.config.deleteSetting(key)
       } catch (error) {
         throw new Error(`Cannot invalidate timeline cache: ${String(error)}`)
       }
@@ -168,8 +168,10 @@ export class TimelineCacheService {
       this.memoryCache.clear()
       try {
         const db = getDatabase()
-        const settings = { ...db.getSettingsByPrefix('timeline_recipe:'), ...db.getSettingsByPrefix('timeline_manifest:') }
-        for (const key of Object.keys(settings)) await db.deleteSetting(key)
+        const settings = { ...await db.config.getSettingsByPrefix('timeline_recipe:'), ...await db.config.getSettingsByPrefix('timeline_manifest:') }
+        for (const k of Object.keys(settings)) {
+          await db.config.deleteSetting(k)
+        }
       } catch (error) {
         throw new Error(`Cannot invalidate timeline cache: ${String(error)}`)
       }
@@ -177,7 +179,7 @@ export class TimelineCacheService {
   }
 
   private warnRejectedRecipe(id: string, reason: string): void {
-    console.warn('[TimelineCacheService]', `Rejected cached timeline recipe '${id}': ${reason}`)
+    getLoggingService().warn('[TimelineCacheService]', `Rejected cached timeline recipe '${id}': ${reason}`)
   }
 }
 

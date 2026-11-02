@@ -1,9 +1,17 @@
-import { useState, useEffect, useRef, memo } from 'react'
-import { Trash2, Film, Tv, Music, Disc, CheckCircle2, RotateCcw } from 'lucide-react'
-import { StarRating } from './StarRating'
-import { StoreLinksMenu } from './StoreLinksMenu'
-import type { WishlistItem, StoreLink, WishlistPriority } from '../../contexts/WishlistContext'
-import { useWishlist } from '../../contexts/WishlistContext'
+import { useState, useEffect, memo } from 'react'
+import { Trash2, Film, Tv, Music, Disc, CircleFadingArrowUp, CheckCircle2, RotateCcw } from 'lucide-react'
+import { StarRating } from '@/components/wishlist/StarRating'
+import { StoreLinksMenu } from '@/components/wishlist/StoreLinksMenu'
+import type { WishlistItem, StoreLink, WishlistPriority } from '@/contexts/WishlistContext'
+import { useWishlist } from '@/contexts/WishlistContext'
+
+// Quality tier colors
+const qualityTierColors: Record<string, string> = {
+  'SD': 'bg-red-500/20 text-red-400',
+  '720p': 'bg-yellow-500/20 text-yellow-400',
+  '1080p': 'bg-blue-500/20 text-blue-400',
+  '4K': 'bg-green-500/20 text-green-400'
+}
 
 interface WishlistItemCardProps {
   item: WishlistItem
@@ -11,7 +19,6 @@ interface WishlistItemCardProps {
   onUpdatePriority: (id: number, priority: WishlistPriority) => void
   onMarkCompleted: (id: number) => void
   onMarkActive: (id: number) => void
-  isMobile?: boolean
 }
 
 // Media type icons
@@ -23,14 +30,21 @@ const mediaTypeIcons = {
   track: Music
 }
 
+// Placeholder icons by type
+const placeholderIcons: Record<string, string> = {
+  movie: '',
+  episode: '',
+  season: '',
+  album: '',
+  track: ''
+}
 
 export const WishlistItemCard = memo(function WishlistItemCard({
   item,
   onRemove,
   onUpdatePriority,
   onMarkCompleted,
-  onMarkActive,
-  isMobile = false
+  onMarkActive
 }: WishlistItemCardProps) {
   const { getStoreLinks, openStoreLink } = useWishlist()
   const [storeLinks, setStoreLinks] = useState<StoreLink[]>([])
@@ -49,31 +63,19 @@ export const WishlistItemCard = memo(function WishlistItemCard({
       const links = await getStoreLinks(item)
       setStoreLinks(links)
     } catch (err) {
-      console.error('Error loading store links:', err)
+      window.electronAPI.log.error('[WishlistItemCard]', 'Error loading store links:', err)
     } finally {
       setIsLoadingLinks(false)
     }
   }
 
-  const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Clean up delete confirmation timer on unmount
-  useEffect(() => {
-    return () => {
-      if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current)
-    }
-  }, [])
-
   const handleRemove = () => {
     if (showConfirmDelete) {
-      if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current)
       onRemove(item.id)
     } else {
       setShowConfirmDelete(true)
-      deleteTimerRef.current = setTimeout(() => {
-        setShowConfirmDelete(false)
-        deleteTimerRef.current = null
-      }, 3000)
+      // Auto-hide confirm after 3 seconds
+      setTimeout(() => setShowConfirmDelete(false), 3000)
     }
   }
 
@@ -98,8 +100,24 @@ export const WishlistItemCard = memo(function WishlistItemCard({
     return item.subtitle || ''
   }
 
+  // Get current quality display for upgrade items
+  const getQualityDisplay = () => {
+    if (item.reason !== 'upgrade') return null
+
+    const parts: string[] = []
+    if (item.current_resolution) parts.push(item.current_resolution)
+    if (item.current_video_codec) parts.push(item.current_video_codec.toUpperCase())
+    if (item.current_audio_codec) parts.push(item.current_audio_codec.toUpperCase())
+
+    return parts.length > 0 ? parts.join(' / ') : null
+  }
+
   const MediaIcon = mediaTypeIcons[item.media_type]
   const subtitle = getSubtitle()
+  const placeholderIcon = placeholderIcons[item.media_type]
+  const qualityDisplay = getQualityDisplay()
+  const isUpgrade = item.reason === 'upgrade'
+  const tierColorClass = item.current_quality_tier ? qualityTierColors[item.current_quality_tier] || 'bg-muted text-muted-foreground' : ''
   const isMusic = item.media_type === 'album' || item.media_type === 'track'
   const isCompleted = item.status === 'completed'
 
@@ -110,115 +128,12 @@ export const WishlistItemCard = memo(function WishlistItemCard({
     return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
   }
 
-  if (isMobile) {
-    // ── Mobile layout ──
-    // Row 1: poster + title/subtitle + action buttons (vertically centered)
-    // Row 2: star rating (full width below)
-    return (
-      <div className="relative p-3 rounded-lg transition-colors group hover:bg-muted/30">
-        {/* Completed badge */}
-        {isCompleted && (
-          <div className="absolute top-2 right-2 z-10">
-            <CheckCircle2 className="w-5 h-5 text-foreground" />
-          </div>
-        )}
-
-        {/* Main row: poster + info + actions */}
-        <div className="flex items-center gap-3">
-          {/* Poster */}
-          <div className={`w-14 ${isMusic ? 'h-14' : 'h-[84px]'} bg-muted rounded-lg overflow-hidden shrink-0`}>
-            {item.poster_url ? (
-              <img
-                src={item.poster_url}
-                alt={item.title}
-                className="w-full h-full object-cover"
-                loading="lazy"
-                decoding="async"
-                onError={(e) => { e.currentTarget.style.display = 'none' }}
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-muted/50 text-muted-foreground">
-                <MediaIcon className="w-6 h-6" />
-              </div>
-            )}
-          </div>
-
-          {/* Title + subtitle + stars */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <MediaIcon className="w-4 h-4 text-muted-foreground shrink-0" />
-              <h4 className="font-medium text-body truncate">{item.title}</h4>
-            </div>
-            {subtitle && (
-              <p className="text-label text-muted-foreground truncate mt-0.5">{subtitle}</p>
-            )}
-            {!isCompleted && (
-              <div className="mt-1 -ml-1">
-                <StarRating
-                  rating={item.priority}
-                  onChange={(rating) => onUpdatePriority(item.id, rating)}
-                  size="sm"
-                  isMobile
-                />
-              </div>
-            )}
-            {isCompleted && item.completed_at && (
-              <p className="text-caption text-muted-foreground mt-0.5">
-                Completed {getCompletedDate()}
-              </p>
-            )}
-          </div>
-
-          {/* Action buttons — vertically centered with content */}
-          <div className="flex items-center gap-1 shrink-0">
-            {isCompleted ? (
-              <>
-                <button
-                  onClick={() => onMarkActive(item.id)}
-                  className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground transition-colors"
-                  title="Move back to active"
-                >
-                  <RotateCcw className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={handleRemove}
-                  className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors ${showConfirmDelete ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'}`}
-                  title={showConfirmDelete ? 'Click again to confirm' : 'Remove'}
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => onMarkCompleted(item.id)}
-                  className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground transition-colors"
-                  title="Mark as completed"
-                >
-                  <CheckCircle2 className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={handleRemove}
-                  className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors ${showConfirmDelete ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'}`}
-                  title={showConfirmDelete ? 'Click again to confirm' : 'Remove'}
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // ── Desktop layout ──
   return (
-    <div className="relative flex gap-3 p-2 rounded-lg transition-colors group hover:bg-muted/30">
+    <div className="relative flex gap-2 p-2 rounded-lg transition-colors group bg-muted/30 hover:bg-muted/50">
       {/* Completed checkmark - top right */}
       {isCompleted && (
         <div className="absolute top-1.5 right-1.5 z-10">
-          <CheckCircle2 className="w-5 h-5 text-foreground" />
+          <CheckCircle2 className="w-5 h-5 text-green-500" />
         </div>
       )}
 
@@ -229,15 +144,13 @@ export const WishlistItemCard = memo(function WishlistItemCard({
             src={item.poster_url}
             alt={item.title}
             className="w-full h-full object-cover"
-            loading="lazy"
-            decoding="async"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
             }}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-muted/50 text-muted-foreground">
-            <MediaIcon className="w-4 h-4" />
+          <div className="w-full h-full flex items-center justify-center text-xl bg-muted/50">
+            {placeholderIcon}
           </div>
         )}
       </div>
@@ -246,35 +159,60 @@ export const WishlistItemCard = memo(function WishlistItemCard({
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Title row with type icon */}
         <div className="flex items-start gap-1.5">
-          <MediaIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+          <MediaIcon className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5" />
           <div className="min-w-0 flex-1 pr-5">
-            <h4 className="font-medium text-label truncate leading-tight">{item.title}</h4>
+            <div className="flex items-center gap-1.5">
+              <h4 className="font-medium text-sm truncate leading-tight">{item.title}</h4>
+              {isUpgrade && !isCompleted && (
+                <span title="Upgrade">
+                  <CircleFadingArrowUp className="w-3 h-3 text-amber-500 shrink-0" />
+                </span>
+              )}
+            </div>
             {subtitle && (
-              <p className="text-caption text-muted-foreground truncate">{subtitle}</p>
+              <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
             )}
           </div>
         </div>
 
+        {/* Current quality info for upgrade items */}
+        {isUpgrade && item.current_quality_tier && (
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${tierColorClass}`}>
+              {item.current_quality_tier}
+              {item.current_quality_level && ` (${item.current_quality_level})`}
+            </span>
+            {qualityDisplay && (
+              <span className="text-[10px] text-muted-foreground truncate">
+                {qualityDisplay}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Completed items: date on left, actions on right */}
         {isCompleted && (
           <div className="flex items-center justify-between mt-1">
             {item.completed_at && (
-              <span className="text-caption text-muted-foreground">
+              <span className="text-[10px] text-muted-foreground">
                 Completed {getCompletedDate()}
               </span>
             )}
-            <div className="flex items-center gap-2 ml-auto">
+            <div className="flex items-center gap-1 ml-auto">
               <button
                 onClick={() => onMarkActive(item.id)}
-                className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                 title="Move back to active"
               >
                 <RotateCcw className="w-4 h-4" />
               </button>
               <button
                 onClick={handleRemove}
-                className={`p-1.5 rounded-lg transition-colors ${showConfirmDelete ? 'text-destructive' : 'text-muted-foreground hover:text-destructive'}`}
+                className={`p-1.5 rounded-md transition-colors ${
+                  showConfirmDelete
+                    ? 'text-destructive'
+                    : 'text-muted-foreground hover:text-destructive'
+                }`}
                 title={showConfirmDelete ? 'Click again to confirm' : 'Remove from wishlist'}
               >
                 <Trash2 className="w-4 h-4" />
@@ -285,7 +223,7 @@ export const WishlistItemCard = memo(function WishlistItemCard({
 
         {/* Active items: rating and actions */}
         {!isCompleted && (
-          <div className="flex items-center justify-between mt-auto pt-1">
+          <div className="flex items-center justify-between mt-auto pt-1.5">
             <StarRating
               rating={item.priority}
               onChange={(rating) => onUpdatePriority(item.id, rating)}
@@ -296,18 +234,21 @@ export const WishlistItemCard = memo(function WishlistItemCard({
                 storeLinks={storeLinks}
                 onOpenLink={openStoreLink}
                 isLoading={isLoadingLinks}
-                compact
               />
               <button
                 onClick={() => onMarkCompleted(item.id)}
-                className="p-1 rounded-lg transition-colors text-muted-foreground hover:text-foreground"
+                className="p-1.5 rounded-md transition-colors text-muted-foreground hover:text-green-500"
                 title="Mark as completed"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={handleRemove}
-                className={`p-1 rounded-lg transition-colors ${showConfirmDelete ? 'text-destructive' : 'text-muted-foreground hover:text-destructive'}`}
+                className={`p-1.5 rounded-md transition-colors ${
+                  showConfirmDelete
+                    ? 'text-destructive'
+                    : 'text-muted-foreground hover:text-destructive'
+                }`}
                 title={showConfirmDelete ? 'Click again to confirm' : 'Remove from wishlist'}
               >
                 <Trash2 className="w-3.5 h-3.5" />

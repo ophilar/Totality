@@ -12,10 +12,8 @@ import {
   estimateAudioBitrate,
   calculateAudioBitrateFromFile,
   isEstimatedBitrate,
-  scoreVersion,
-} from '../../src/main/providers/utils/ProviderUtils'
-import { normalizeResolution } from '../../src/main/services/MediaNormalizer'
-import type { AudioTrackInfo } from '../../src/main/providers/utils/ProviderUtils'
+} from '@main/providers/utils/ProviderUtils'
+import type { AudioTrackInfo } from '@main/providers/utils/ProviderUtils'
 
 // ============================================================================
 // selectBestAudioTrack
@@ -221,73 +219,6 @@ describe('calculateAudioBitrateFromFile', () => {
 // isEstimatedBitrate
 // ============================================================================
 
-// ============================================================================
-// scoreVersion
-// ============================================================================
-
-describe('scoreVersion', () => {
-  describe('resolution tier ranking', () => {
-    it('ranks 4K > 1080p > 720p > SD', () => {
-      const uhd = scoreVersion({ resolution: '4K' })
-      const fhd = scoreVersion({ resolution: '1080p' })
-      const hd = scoreVersion({ resolution: '720p' })
-      const sd = scoreVersion({ resolution: '480p' })
-
-      expect(uhd).toBeGreaterThan(fhd)
-      expect(fhd).toBeGreaterThan(hd)
-      expect(hd).toBeGreaterThan(sd)
-    })
-
-    it('handles all normalizeResolution output values correctly', () => {
-      // normalizeResolution returns these exact strings — scoreVersion must handle all of them
-      const resolutions = [
-        { w: 3840, h: 2160, expected: '4K' },
-        { w: 1920, h: 1080, expected: '1080p' },
-        { w: 1280, h: 720, expected: '720p' },
-        { w: 720, h: 480, expected: '480p' },
-        { w: 320, h: 240, expected: 'SD' },
-      ]
-
-      const scores = resolutions.map(r => ({
-        label: r.expected,
-        normalized: normalizeResolution(r.w, r.h),
-        score: scoreVersion({ resolution: normalizeResolution(r.w, r.h) }),
-      }))
-
-      // Verify normalizeResolution returns what we expect
-      for (const s of scores) {
-        expect(s.normalized).toBe(s.label)
-      }
-
-      // 4K must score highest tier
-      expect(scores[0].score).toBeGreaterThan(scores[1].score)
-      // 1080p > 720p
-      expect(scores[1].score).toBeGreaterThan(scores[2].score)
-      // 720p > 480p and SD (both tier 1)
-      expect(scores[2].score).toBeGreaterThan(scores[3].score)
-    })
-  })
-
-  describe('tier dominance', () => {
-    it('higher resolution always beats lower resolution regardless of bitrate', () => {
-      const hd720_maxBitrate = scoreVersion({ resolution: '720p' })
-      const fhd1080_minBitrate = scoreVersion({ resolution: '1080p' })
-
-      expect(fhd1080_minBitrate).toBeGreaterThan(hd720_maxBitrate)
-    })
-
-  })
-
-  describe('case insensitivity', () => {
-    it('handles mixed-case resolution strings', () => {
-      const lower = scoreVersion({ resolution: '4k' })
-      const upper = scoreVersion({ resolution: '4K' })
-
-      expect(lower).toBe(upper)
-    })
-  })
-})
-
 describe('isEstimatedBitrate', () => {
   it('should detect known estimated values', () => {
     expect(isEstimatedBitrate(128)).toBe(true)
@@ -303,3 +234,6 @@ describe('isEstimatedBitrate', () => {
     expect(isEstimatedBitrate(7500)).toBe(false)
   })
 })
+
+
+

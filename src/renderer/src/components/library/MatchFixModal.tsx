@@ -1,18 +1,31 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Search, Check, Star, Calendar, User } from 'lucide-react'
-import { Button } from '../ui/Button'
-import { useFocusTrap } from '../../hooks/useFocusTrap'
+import { X, Search, Check, Star, Calendar, Loader2 } from 'lucide-react'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 
-interface TMDBSearchResult {
-  id: number
-  name?: string  // TV show
-  title?: string // Movie
-  first_air_date?: string  // TV show
-  release_date?: string    // Movie
-  overview: string
-  poster_url: string | null
-  vote_average: number
+interface MetadataSearchResult {
+  id: string
+  provider: string
+  title: string
+  year?: number
+  type: 'movie' | 'tv' | 'anime' | 'music' | 'artwork'
+  posterUrl?: string
+  bannerUrl?: string
+  overview?: string
+  score?: number
+  network?: string
+  status?: string
+  country?: string
+  originalLanguage?: string
+  firstAirDate?: string
+  releaseDate?: string
+  externalIds?: {
+    tmdbId?: number | string
+    tvdbId?: number | string
+    imdbId?: string
+    anilistId?: number | string
+    musicBrainzId?: string
+  }
 }
 
 interface MusicBrainzArtistResult {
@@ -33,7 +46,7 @@ interface MusicBrainzReleaseResult {
   score: number
 }
 
-type SearchResult = TMDBSearchResult | MusicBrainzArtistResult | MusicBrainzReleaseResult
+type SearchResult = MetadataSearchResult | MusicBrainzArtistResult | MusicBrainzReleaseResult
 
 interface MatchFixModalProps {
   isOpen: boolean
@@ -44,8 +57,8 @@ interface MatchFixModalProps {
   filePath?: string    // File path for context
   artistName?: string  // For album searches
   sourceId?: string    // For series
-  libraryId?: string   // For series
-  seriesIdentityKey?: string // For series
+  seriesIdentityKey?: string
+  libraryId?: string
   mediaItemId?: number // For movies
   artistId?: number    // For artists
   albumId?: number     // For albums
@@ -61,8 +74,8 @@ export function MatchFixModal({
   filePath,
   artistName,
   sourceId,
-  libraryId,
   seriesIdentityKey,
+  libraryId,
   mediaItemId,
   artistId,
   albumId,
@@ -71,63 +84,145 @@ export function MatchFixModal({
   const [searchQuery, setSearchQuery] = useState(currentTitle)
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
+  const [isCancellingSearch, setIsCancellingSearch] = useState(false)
   const [isFixing, setIsFixing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null)
-  const modalRef = useRef<HTMLDivElement>(null)
+  const [expandedOverviews, setExpandedOverviews] = useState<Record<number, boolean>>({})
+  const modalRef = useRef<HTMLDivElement | null>(null)
+  const activeSearchRequestId = useRef<string | null>(null)
+  const searchCancellationRequested = useRef(false)
 
   // Focus trap
   useFocusTrap(isOpen, modalRef)
 
+  const [includeExpanded, setIncludeExpanded] = useState(false)
+
+  const cancelSearch = useCallback(async () => {
+    const requestId = activeSearchRequestId.current
+    if (!requestId || searchCancellationRequested.current) return
+    searchCancellationRequested.current = true
+    setIsCancellingSearch(true)
+    try {
+      const result = await window.electronAPI.dbCancelOperation(requestId)
+      if (result.status === 'committing') {
+        setError('The search is finishing its current request.')
+      }
+    } catch (error) {
+      searchCancellationRequested.current = false
+      setIsCancellingSearch(false)
+      setError(`Could not cancel the search: ${(error as Error).message}`)
+      window.electronAPI.log.error('[MatchFixModal]', 'Could not cancel metadata search:', error)
+    }
+  }, [])
+
+  const handleClose = useCallback(() => {
+    void cancelSearch()
+    onClose()
+  }, [cancelSearch, onClose])
+
+  useEffect(() => {
+    if (!isOpen) void cancelSearch()
+  }, [isOpen, cancelSearch])
+
+  useEffect(() => () => { void cancelSearch() }, [cancelSearch])
+
   // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSearchQuery(currentTitle)
       setSearchResults([])
       setSelectedResult(null)
       setError(null)
-      if (type === 'series' && (!seriesIdentityKey || !sourceId)) {
-        setError('Series identity key and source ID are required to fix series match.')
+      setIncludeExpanded(false)
+      setExpandedOverviews({})
+
+      async function checkExpandedMatching() {
+        if (type === 'movie' && mediaItemId) {
+          try {
+            const item = (await window.electronAPI.getMediaItem(mediaItemId)) as {
+              source_id?: string
+              library_id?: string
+            } | null
+            if (item?.source_id && item?.library_id) {
+              const libs = await window.electronAPI.sourcesGetLibrariesWithStatus(item.source_id)
+              const lib = libs.find(
+                (l) => l.id === item.library_id
+              ) as { allowExpandedMatching?: boolean } | undefined
+              if (lib?.allowExpandedMatching) {
+                setIncludeExpanded(true)
+              }
+            }
+          } catch (e) {
+            console.error('Failed to check expanded matching status:', e)
+          }
+        }
       }
+      checkExpandedMatching()
     }
-  }, [isOpen, currentTitle, type, seriesIdentityKey, sourceId])
+  }, [isOpen, currentTitle, type, mediaItemId])
 
   const handleSearch = useCallback(async () => {
-    if (!searchQuery.trim()) return
+    if (!searchQuery.trim() || activeSearchRequestId.current) return
+    const requestId = crypto.randomUUID()
+    activeSearchRequestId.current = requestId
+    searchCancellationRequested.current = false
 
+    window.electronAPI.log.info(
+      '[MatchFixModal]',
+      '[MatchFixModal] Searching for:',
+      searchQuery,
+      'type:',
+      type
+    )
     setIsSearching(true)
     setError(null)
     setSearchResults([])
+    setExpandedOverviews({})
 
     try {
-      let results: SearchResult[] = []
+      let results: SearchResult[] | { status: 'cancelled' } = []
 
       switch (type) {
         case 'series':
-          results = await window.electronAPI.seriesSearchTMDB(searchQuery)
-          break
         case 'movie':
-          // Don't filter by year - let users see all results and select the correct one
-          results = await window.electronAPI.movieSearchTMDB(searchQuery)
+          results = await window.electronAPI.mediaSearchMetadata(
+            searchQuery,
+            type === 'movie' ? 'movie' : 'tv',
+            includeExpanded,
+            undefined,
+            requestId,
+          )
           break
         case 'artist':
-          results = await window.electronAPI.musicSearchMusicBrainzArtist(searchQuery) as MusicBrainzArtistResult[]
+          results = await window.electronAPI.mediaSearchMetadata(searchQuery, 'music', undefined, undefined, requestId)
           break
         case 'album':
-          if (artistName) {
-            results = await window.electronAPI.musicSearchMusicBrainzRelease(artistName, searchQuery) as MusicBrainzReleaseResult[]
-          }
+          if (artistName) results = await window.electronAPI.mediaSearchMetadata(searchQuery, 'music', undefined, artistName, requestId)
           break
       }
 
+      if (!Array.isArray(results)) {
+        setError('Search cancelled.')
+        return
+      }
+      window.electronAPI.log.info('[MatchFixModal]', '[MatchFixModal] Got results:', results.length, results)
+      if (searchCancellationRequested.current) return
       setSearchResults(results)
     } catch (err: unknown) {
-      console.error('[MatchFixModal] Search error:', err)
+      if (searchCancellationRequested.current) return
+      window.electronAPI.log.error('[MatchFixModal]', '[MatchFixModal] Search error:', err)
       setError((err as Error).message || 'Search failed')
     } finally {
-      setIsSearching(false)
+      if (activeSearchRequestId.current === requestId) {
+        activeSearchRequestId.current = null
+        setIsSearching(false)
+        setIsCancellingSearch(false)
+        searchCancellationRequested.current = false
+      }
     }
-  }, [searchQuery, type, artistName])
+  }, [searchQuery, type, artistName, includeExpanded])
 
   const handleFixMatch = useCallback(async () => {
     if (!selectedResult) return
@@ -137,22 +232,27 @@ export function MatchFixModal({
 
     try {
       switch (type) {
-        case 'series':
-          if (!seriesIdentityKey || !sourceId) {
-            throw new Error('Series identity key and source ID are required to fix series match')
+        case 'series': {
+          if (!sourceId || !seriesIdentityKey || !libraryId) {
+            throw new Error('TV series scoped identity is required to fix a match')
           }
+          const result = selectedResult as MetadataSearchResult
           await window.electronAPI.seriesFixMatch(
-            seriesIdentityKey,
+            currentTitle,
             sourceId,
-            libraryId || undefined,
-            (selectedResult as TMDBSearchResult).id
+            seriesIdentityKey,
+            libraryId,
+            result.provider,
+            result.id
           )
           break
+        }
         case 'movie':
           if (mediaItemId !== undefined) {
             await window.electronAPI.movieFixMatch(
               mediaItemId,
-              (selectedResult as TMDBSearchResult).id
+              (selectedResult as MetadataSearchResult).provider,
+              (selectedResult as MetadataSearchResult).id
             )
           }
           break
@@ -175,20 +275,28 @@ export function MatchFixModal({
       }
 
       onMatchFixed?.()
-      onClose()
+      handleClose()
     } catch (err: unknown) {
       setError((err as Error).message || 'Failed to fix match')
     } finally {
       setIsFixing(false)
     }
-  }, [selectedResult, type, seriesIdentityKey, sourceId, libraryId, mediaItemId, artistId, albumId, onMatchFixed, onClose])
+  }, [selectedResult, type, currentTitle, sourceId, seriesIdentityKey, libraryId, mediaItemId, artistId, albumId, onMatchFixed, handleClose])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
-      onClose()
+      handleClose()
     } else if (e.key === 'Enter' && !isSearching) {
       handleSearch()
     }
+  }
+
+  const toggleExpandOverview = (index: number, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setExpandedOverviews((prev) => ({
+      ...prev,
+      [index]: !prev[index]
+    }))
   }
 
   const getTypeLabel = () => {
@@ -201,17 +309,20 @@ export function MatchFixModal({
   }
 
   const getResultTitle = (result: SearchResult): string => {
-    if ('name' in result && result.name) return result.name
     if ('title' in result && result.title) return result.title
+    if ('name' in result && result.name) return result.name
     return 'Unknown'
   }
 
   const getResultYear = (result: SearchResult): string | null => {
-    if ('first_air_date' in result && result.first_air_date) {
-      return result.first_air_date.split('-')[0]
+    if ('firstAirDate' in result && result.firstAirDate) {
+      return result.firstAirDate
     }
-    if ('release_date' in result && result.release_date) {
-      return result.release_date.split('-')[0]
+    if ('releaseDate' in result && result.releaseDate) {
+      return result.releaseDate
+    }
+    if ('year' in result && result.year) {
+      return result.year.toString()
     }
     if ('date' in result && result.date) {
       return result.date.split('-')[0]
@@ -220,13 +331,16 @@ export function MatchFixModal({
   }
 
   const getResultScore = (result: SearchResult): number => {
-    if ('vote_average' in result) return result.vote_average
-    if ('score' in result) return result.score / 10 // MusicBrainz score is 0-100
+    if ('score' in result && result.score !== undefined) {
+      // If it's a MetadataSearchResult, score is usually 0-10. If it's MusicBrainz, it's 0-100.
+      if ('provider' in result) return result.score
+      return result.score / 10
+    }
     return 0
   }
 
   const getResultPoster = (result: SearchResult): string | null => {
-    if ('poster_url' in result) return result.poster_url
+    if ('posterUrl' in result) return result.posterUrl || null
     return null
   }
 
@@ -234,7 +348,7 @@ export function MatchFixModal({
     if ('disambiguation' in result && result.disambiguation) {
       return result.disambiguation
     }
-    if ('country' in result && result.country) {
+    if ('country' in result && result.country && !('firstAirDate' in result || 'provider' in result)) {
       return result.country
     }
     if ('artist_credit' in result && result.artist_credit) {
@@ -247,21 +361,23 @@ export function MatchFixModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-200 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto"
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
+      className="fixed inset-0 z-200 flex items-center justify-center bg-black/60"
+      onClick={handleClose}
     >
       <div
         ref={modalRef}
-        className="bg-card rounded-xl shadow-2xl w-full max-w-2xl max-h-[calc(100vh-2rem)] min-h-0 flex flex-col overflow-hidden border border-border"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="match-fix-modal-title"
+        tabIndex={-1}
+        className="bg-card rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
           <div className="min-w-0 flex-1 mr-4">
-            <h2 className="text-title font-semibold">Fix {getTypeLabel()} match</h2>
+            <h2 id="match-fix-modal-title" className="text-lg font-semibold">Fix {getTypeLabel()} Match</h2>
             <p className="text-sm text-muted-foreground">
               Current: <span className="text-foreground">{currentTitle}</span>
             </p>
@@ -272,7 +388,7 @@ export function MatchFixModal({
             )}
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-2 rounded-md hover:bg-muted transition-colors shrink-0"
           >
             <X className="w-5 h-5" />
@@ -293,15 +409,27 @@ export function MatchFixModal({
                 autoFocus
               />
             </div>
-            <Button
+            <button
               onClick={handleSearch}
               disabled={isSearching || !searchQuery.trim()}
-              loading={isSearching}
-              size="sm"
-              icon={<Search className="w-4 h-4" />}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
+              {isSearching ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Search className="w-4 h-4" />
+              )}
               Search
-            </Button>
+            </button>
+            {isSearching && (
+              <button
+                onClick={() => void cancelSearch()}
+                disabled={isCancellingSearch}
+                className="px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted disabled:opacity-50"
+              >
+                {isCancellingSearch ? 'Cancelling…' : 'Cancel search'}
+              </button>
+            )}
           </div>
 
           {error && (
@@ -320,25 +448,34 @@ export function MatchFixModal({
           <div className="space-y-2">
             {searchResults.map((result, index) => {
               const isSelected = selectedResult === result
-              const isArtistType = type === 'artist'
               const title = getResultTitle(result)
-              const year = getResultYear(result)
+              const dateOrYear = getResultYear(result)
               const score = getResultScore(result)
               const poster = getResultPoster(result)
               const subtitle = getResultSubtitle(result)
+              const isMetadataResult = 'provider' in result
+              const metaResult = isMetadataResult ? (result as MetadataSearchResult) : null
 
               return (
-                <button
+                <div
                   key={index}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setSelectedResult(result)}
-                  className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors ${
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setSelectedResult(result)
+                    }
+                  }}
+                  className={`w-full flex items-start gap-3 p-3 rounded-lg text-left transition-colors cursor-pointer ${
                     isSelected
-                      ? 'bg-foreground text-background'
-                      : 'hover:bg-muted/50'
+                      ? 'bg-primary/20 border-2 border-primary'
+                      : 'bg-muted/30 hover:bg-muted/50 border-2 border-transparent'
                   }`}
                 >
                   {/* Poster/Thumbnail */}
-                  <div className={`shrink-0 bg-muted overflow-hidden ${isArtistType ? 'w-12 h-12 rounded-full' : 'w-12 h-16 rounded'}`}>
+                  <div className="w-12 h-16 shrink-0 bg-muted rounded overflow-hidden">
                     {poster ? (
                       <img
                         src={poster}
@@ -346,8 +483,8 @@ export function MatchFixModal({
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                        {isArtistType ? <User className="w-6 h-6" /> : <span className="text-xs">No image</span>}
+                      <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">
+                        No Image
                       </div>
                     )}
                   </div>
@@ -357,35 +494,96 @@ export function MatchFixModal({
                     <div className="flex items-start justify-between gap-2">
                       <div className="font-medium truncate">{title}</div>
                       {isSelected && (
-                        <Check className="w-5 h-5 shrink-0" />
+                        <Check className="w-5 h-5 text-primary shrink-0" />
                       )}
                     </div>
 
-                    <div className={`flex items-center gap-3 mt-1 text-sm ${isSelected ? 'opacity-70' : 'text-muted-foreground'}`}>
-                      {year && (
+                    <div className="flex flex-wrap items-center gap-2 mt-1 text-sm text-muted-foreground">
+                      {dateOrYear && (
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
-                          {year}
+                          {dateOrYear}
                         </span>
                       )}
                       {score > 0 && (
                         <span className="flex items-center gap-1">
-                          <Star className="w-3 h-3" />
+                          <Star className="w-3 h-3 text-yellow-500" />
                           {score.toFixed(1)}
                         </span>
                       )}
+                      {metaResult?.network && (
+                        <span className="px-1.5 py-0.5 rounded bg-secondary text-[10px] font-medium text-secondary-foreground">
+                          {metaResult.network}
+                        </span>
+                      )}
+                      {metaResult?.country && (
+                        <span className="px-1.5 py-0.5 rounded bg-secondary text-[10px] font-medium text-secondary-foreground">
+                          {metaResult.country}
+                        </span>
+                      )}
+                      {metaResult?.status && (
+                        <span className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-medium text-muted-foreground border border-border/40">
+                          {metaResult.status}
+                        </span>
+                      )}
+                      {metaResult?.originalLanguage && (
+                        <span className="px-1.5 py-0.5 rounded bg-secondary/60 text-[10px] uppercase text-muted-foreground">
+                          {metaResult.originalLanguage}
+                        </span>
+                      )}
                       {subtitle && (
-                        <span className="truncate">{subtitle}</span>
+                        <span className="truncate text-xs">{subtitle}</span>
                       )}
                     </div>
 
+                    {metaResult?.externalIds && Object.values(metaResult.externalIds).some(Boolean) && (
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                        {metaResult.externalIds.tmdbId && (
+                          <span className="px-1.5 py-0.5 rounded bg-muted/60 font-mono text-[10px] text-muted-foreground border border-border/30">
+                            TMDB: {metaResult.externalIds.tmdbId}
+                          </span>
+                        )}
+                        {metaResult.externalIds.tvdbId && (
+                          <span className="px-1.5 py-0.5 rounded bg-muted/60 font-mono text-[10px] text-muted-foreground border border-border/30">
+                            TVDB: {metaResult.externalIds.tvdbId}
+                          </span>
+                        )}
+                        {metaResult.externalIds.imdbId && (
+                          <span className="px-1.5 py-0.5 rounded bg-muted/60 font-mono text-[10px] text-muted-foreground border border-border/30">
+                            IMDb: {metaResult.externalIds.imdbId}
+                          </span>
+                        )}
+                        {metaResult.externalIds.anilistId && (
+                          <span className="px-1.5 py-0.5 rounded bg-muted/60 font-mono text-[10px] text-muted-foreground border border-border/30">
+                            AniList: {metaResult.externalIds.anilistId}
+                          </span>
+                        )}
+                        {metaResult.externalIds.musicBrainzId && (
+                          <span className="px-1.5 py-0.5 rounded bg-muted/60 font-mono text-[10px] text-muted-foreground border border-border/30">
+                            MusicBrainz: {metaResult.externalIds.musicBrainzId}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     {'overview' in result && result.overview && (
-                      <p className={`mt-1 text-xs line-clamp-2 ${isSelected ? 'opacity-70' : 'text-muted-foreground'}`}>
-                        {result.overview}
-                      </p>
+                      <div className="mt-1.5">
+                        <p className={`text-xs text-muted-foreground ${expandedOverviews[index] ? '' : 'line-clamp-2'}`}>
+                          {result.overview}
+                        </p>
+                        {result.overview.length > 80 && (
+                          <button
+                            type="button"
+                            onClick={(e) => toggleExpandOverview(index, e)}
+                            className="inline-block text-[10px] text-primary hover:underline mt-0.5 font-medium cursor-pointer"
+                          >
+                            {expandedOverviews[index] ? 'Show less' : 'Show more'}
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
-                </button>
+                </div>
               )
             })}
           </div>
@@ -393,12 +591,24 @@ export function MatchFixModal({
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 p-4 border-t border-border/30">
-          <Button variant="tertiary" size="sm" onClick={onClose}>
+          <button
+            onClick={handleClose}
+            className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-muted transition-colors"
+          >
             Cancel
-          </Button>
-          <Button size="sm" onClick={handleFixMatch} disabled={!selectedResult || isFixing} loading={isFixing} icon={<Check className="w-4 h-4" />}>
-            Apply match
-          </Button>
+          </button>
+          <button
+            onClick={handleFixMatch}
+            disabled={!selectedResult || isFixing}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {isFixing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Check className="w-4 h-4" />
+            )}
+            Apply Match
+          </button>
         </div>
       </div>
     </div>,

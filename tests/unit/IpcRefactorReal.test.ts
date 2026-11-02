@@ -1,0 +1,81 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { describe, it, expect, beforeEach, afterEach, _vi } from 'vitest'
+import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge, createAuthorizedIpcEvent } from '@tests/TestUtils'
+import { ProviderType, TaskType } from '@main/types/database'
+import { getTaskQueueService } from '@main/services/TaskQueueService'
+
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
+
+describe('IPC Refactor Verification (Real Integrated Bridge)', () => {
+  let db: Awaited<ReturnType<typeof setupTestDb>>
+  let handlers: ReturnType<typeof setupRealIntegratedBridge>['handlers']
+
+  beforeEach(async () => {
+    db = await setupTestDb()
+    const bridge = setupRealIntegratedBridge()
+    handlers = bridge.handlers
+  })
+
+  afterEach(async () => {
+    await cleanupTestDb()
+  })
+
+  it('should successfully add and list sources via real IPC handlers', async () => {
+    const addHandler = handlers.get(IPC_CHANNELS.SOURCES.ADD)!
+    const listHandler = handlers.get(IPC_CHANNELS.SOURCES.LIST)!
+    
+    const config = {
+      sourceType: ProviderType.Local,
+      displayName: 'Real IPC Test',
+      connectionConfig: { folderPath: 'C:\\Real\\Path' }
+    }
+
+    const source = await addHandler(createAuthorizedIpcEvent(), config)
+    expect(source).toBeDefined()
+    expect(source.display_name).toBe('Real IPC Test')
+
+    const list = await listHandler(createAuthorizedIpcEvent())
+    expect(list).toHaveLength(1)
+    expect(list[0].source_id).toBe(source.source_id)
+  })
+
+  it('should correctly handle settings via refactored IPC handlers', async () => {
+    const setHandler = handlers.get(IPC_CHANNELS.DATABASE.SET_SETTING)!
+    const getHandler = handlers.get(IPC_CHANNELS.DATABASE.GET_SETTING)!
+    
+    await setHandler(createAuthorizedIpcEvent(), 'test_key', 'test_value')
+    
+    // Check real DB
+    const stored = await db.config.getSetting('test_key')
+    expect(stored).toBe('test_value')
+
+    const fromApi = await getHandler(createAuthorizedIpcEvent(), 'test_key')
+    expect(fromApi).toBe('test_value')
+  })
+
+  it('should reject invalid input via Zod validation in the wrapper', async () => {
+    const addHandler = handlers.get(IPC_CHANNELS.SOURCES.ADD)!
+    
+    const invalidConfig = {
+      sourceType: 'not-a-provider',
+      displayName: 'Fail'
+    }
+
+    // The wrapper should throw because the schema validation fails
+    await expect(addHandler(createAuthorizedIpcEvent(), invalidConfig)).rejects.toThrow()
+  })
+
+  it('should enqueue TaskType.QualityAnalysis when a quality_* setting is modified', async () => {
+    const setHandler = handlers.get(IPC_CHANNELS.DATABASE.SET_SETTING)!
+    const tq = getTaskQueueService()
+    await tq.clearQueue()
+
+    await setHandler(createAuthorizedIpcEvent(), 'quality_target_video_bitrate_1080p', '6000')
+
+    const tasks = tq.getTasks()
+    const qualityTask = tasks.find(t => t.type === TaskType.QualityAnalysis && t.label === 'Recalculate Media Quality (Settings changed)')
+    expect(qualityTask).toBeDefined()
+  })
+})

@@ -1,11 +1,5 @@
-
-import { is, selectAll, selectOne } from 'css-select'
-import { parseDocument } from 'htmlparser2'
-import type { AnyNode, Document, Element } from 'domhandler'
-import { removeElement, textContent } from 'domutils'
-import { getDatabase } from '../../database/getDatabase'
-import { getLoggingService } from '../LoggingService'
-import { fetchWithTimeout } from '../utils/httpClient'
+import { JSDOM } from 'jsdom'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import { validateTimelineDefinition } from './TimelineValidation'
 import type { ITimelineRecipeProvider, TimelineDefinition, TimelineItem, TimelineRecipeSummary, TimelineFetchOptions } from './ITimelineRecipeProvider'
 import { TimelineParserPluginSchema, type TimelineParserGroupDefinition, type TimelineParserListDefinition, type TimelineParserOrder, type TimelineParserPlugin } from './TimelineParserPlugin'
@@ -32,15 +26,6 @@ const BUILT_IN_PLUGINS = [
   TimelineParserPluginSchema.parse(alienPredatorParser),
 ]
 
-function describeErrorCause(error: unknown): string {
-  const causes: string[] = []
-  for (let current: unknown = error; current instanceof Error; current = (current as Error & { cause?: unknown }).cause) {
-    const code = 'code' in current ? ` (${String(current.code)})` : ''
-    causes.push(`${current.name}${code}: ${current.message}`)
-  }
-  return causes.join(' <- ') || String(error)
-}
-
 export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
   constructor(private readonly cacheService: TimelineCacheService = getTimelineCacheService()) {}
 
@@ -65,55 +50,40 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
       if (cached && !options.refresh) return cached
     }
     const fetchUrl = selected.plugin.fetchUrl ?? selected.plugin.sourceUrl
-    let stage = 'requesting source'
-    try {
-      const response = await fetchWithTimeout(fetchUrl, {
-        headers: { Accept: 'text/html,application/xhtml+xml' },
-        signal: options.signal,
-      }, 15000)
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status} ${response.statusText}; content-type=${response.headers.get('content-type') ?? 'missing'}`)
-      }
-      stage = 'reading response body'
-      const responseBody = await response.text()
-      getLoggingService().debug('[TimelineParser]', `Source response: recipe=${selected.plugin.id}:${selected.order.id}, status=${response.status}, contentType=${response.headers.get('content-type') ?? 'missing'}, bodyCharacters=${responseBody.length}`)
-      stage = 'extracting source HTML'
-      const html = selected.plugin.responseHtmlPath
-        ? this.readResponsePath(JSON.parse(responseBody), selected.plugin.responseHtmlPath, selected.plugin.id)
-        : responseBody
-      stage = 'parsing source markup'
-      const document = parseDocument(html)
-      const orderDefinition = selected.order.order
-      const isListOrder = typeof orderDefinition !== 'string' && 'kind' in orderDefinition
-      stage = 'parsing timeline items'
-      const rows = isListOrder
-        ? this.parseListItems(document, selected.plugin, orderDefinition)
-        : this.parseTableItems(document, selected.plugin, orderDefinition)
-
-      stage = 'validating parsed timeline'
-      const definition: TimelineDefinition = {
-        id: `${selected.plugin.id}:${selected.order.id}`,
-        franchise: selected.plugin.franchise,
-        name: selected.order.name,
-        description: `${selected.order.description} Source: ${selected.plugin.attribution}.`,
-        sourceUrl: this.orderSourceUrl(selected.plugin, selected.order),
-        version: isListOrder ? 1 : 2,
-        granularity: isListOrder && orderDefinition.format !== 'star-trek-guide' ? 'series-blocks' : 'episode-interleaved',
-        items: rows,
-      }
-      const validation = validateTimelineDefinition(definition)
-      if (!validation.valid) throw new Error(`Parser '${selected.plugin.id}' produced an invalid timeline: ${validation.reason}.`)
-      if (rows.length === 0) throw new Error(`Parser '${selected.plugin.id}' found no timeline items.`)
-      stage = 'caching parsed timeline'
-      await this.cacheService.setRecipe(definition.id, definition)
-      getLoggingService().debug('[TimelineParser]', `Source parsed: recipe=${definition.id}, itemCount=${rows.length}, order=${selected.order.id}`)
-      return validation.value
-    } catch (error) {
-      if (options.signal?.aborted) throw error
-      const contextualError = new Error(`Timeline ${selected.plugin.id}:${selected.order.id} failed while ${stage}: ${describeErrorCause(error)}`) as Error & { cause?: unknown }
-      contextualError.cause = error
-      throw contextualError
+    const response = await fetch(fetchUrl, {
+      headers: { Accept: 'text/html,application/xhtml+xml' },
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!response.ok) {
+      throw new Error(`Failed to fetch timeline source ${fetchUrl} (${response.status}: ${response.statusText}).`)
     }
+
+    const responseBody = await response.text()
+    const html = selected.plugin.responseHtmlPath
+      ? this.readResponsePath(JSON.parse(responseBody), selected.plugin.responseHtmlPath, selected.plugin.id)
+      : responseBody
+    const document = new JSDOM(html).window.document
+    const orderDefinition = selected.order.order
+    const isListOrder = typeof orderDefinition !== 'string' && 'kind' in orderDefinition
+    const rows = isListOrder
+      ? this.parseListItems(document, selected.plugin, orderDefinition)
+      : this.parseTableItems(document, selected.plugin, orderDefinition)
+
+    const definition: TimelineDefinition = {
+      id: `${selected.plugin.id}:${selected.order.id}`,
+      franchise: selected.plugin.franchise,
+      name: selected.order.name,
+      description: `${selected.order.description} Source: ${selected.plugin.attribution}.`,
+      sourceUrl: this.orderSourceUrl(selected.plugin, selected.order),
+      version: isListOrder ? 1 : 2,
+      granularity: isListOrder && orderDefinition.format !== 'star-trek-guide' ? 'series-blocks' : 'episode-interleaved',
+      items: rows,
+    }
+    const validation = validateTimelineDefinition(definition)
+    if (!validation.valid) throw new Error(`Parser '${selected.plugin.id}' produced an invalid timeline: ${validation.reason}.`)
+    if (rows.length === 0) throw new Error(`Parser '${selected.plugin.id}' found no timeline items.`)
+    await this.cacheService.setRecipe(definition.id, definition)
+    return validation.value
   }
 
   private parseTableItems(
@@ -121,28 +91,14 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
     plugin: TimelineParserPlugin,
     orderDefinition: string | { groupingId: string; placement: 'first' | 'last' }
   ): TimelineItem[] {
-    const candidates = selectAll<AnyNode, Element>(plugin.tableSelector!, document).map((table, index) => {
-      const header = this.directTableRows(table).find(row => is(row, plugin.headerRowSelector!))
-      const headers = this.expandTableCells(header ? this.directTableCells(header) : []).map(cell => this.readCellText(cell))
-      const matches = plugin.requiredHeaders!.filter(name => headers.includes(name))
-      return { table, index, header, headers, matches }
+    const table = [...document.querySelectorAll(plugin.tableSelector!)].find(candidate => {
+      const header = candidate.querySelector(plugin.headerRowSelector!)
+      const names = [...(header?.querySelectorAll('th,td') ?? [])].map(cell => this.readCellText(cell))
+      return plugin.requiredHeaders!.every(name => names.includes(name))
     })
-    const candidate = candidates.find(({ matches }) => matches.length === plugin.requiredHeaders!.length)
-    if (!candidate) {
-      const bestCandidate = candidates.reduce<(typeof candidates)[number] | undefined>(
-        (best, current) => !best || current.matches.length > best.matches.length ? current : best,
-        undefined
-      )
-      const evidence = bestCandidate
-        ? `best table=${bestCandidate.index}, headers=${JSON.stringify(bestCandidate.headers)}, requiredMatches=${bestCandidate.matches.length}/${plugin.requiredHeaders!.length}, rows=${this.directTableRows(bestCandidate.table).length}`
-        : 'no candidate tables found'
-      throw new Error(`Parser '${plugin.id}' found no table matching '${plugin.tableSelector}' and its required headers (${candidates.length} candidates; ${evidence}).`)
-    }
-    const table = candidate.table
-    const headerRow = candidate.header!
-    const tableRows = this.directTableRows(table).filter(row => is(row, plugin.rowSelector!))
-    const headers = this.expandTableCells(this.directTableCells(headerRow))
-      .map(cell => this.readCellText(cell))
+    if (!table) throw new Error(`Parser '${plugin.id}' found no table matching '${plugin.tableSelector}' and its required headers.`)
+    const headerRow = table.querySelector(plugin.headerRowSelector!)!
+    const headers = [...headerRow.querySelectorAll('th,td')].map(cell => this.readCellText(cell))
     const headerIndex = (name: string): number => {
       const index = headers.indexOf(name)
       if (index < 0) throw new Error(`Parser '${plugin.id}' could not find source column '${name}'.`)
@@ -170,18 +126,16 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
     const groupOrders = isGroupedOrder ? this.readGroupOrders(document, plugin.id, grouping!) : undefined
     const tieBreakIndex = isGroupedOrder ? headerIndex(grouping!.tieBreakHeader) : -1
 
-    const contentRows = tableRows.filter(row => !this.isStructuralTableRow(row, headerRow, plugin, headers))
-    let rowsWithTitle = 0
-    const items = contentRows
+    return [...table.querySelectorAll(plugin.rowSelector!)]
+        .filter(row => row !== headerRow)
         .flatMap((row, rowIndex) => {
-        const cells = this.expandTableCells(selectAll<AnyNode, Element>(':scope > th, :scope > td', row), headers.length)
+        const cells = [...row.querySelectorAll(':scope > th, :scope > td')]
         const cell = (field: string): string | undefined => {
         const value = this.readCellText(cells[indexes[field]])
           return value || undefined
         }
         const title = cell('title')
         if (!title) return []
-        rowsWithTitle++
         const columnOrder = orderIndex >= 0 ? Number.parseFloat(this.readCellText(cells[orderIndex]) ?? '') : undefined
         const broadcast = cell('broadcastNumber')
         const seriesTitle = cell('seriesTitle') ?? this.seriesTitle(plugin, title)
@@ -224,65 +178,6 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
           return left.tieBreak! - right.tieBreak!
         })
         .map(({ item }, index) => ({ ...item, order: index + 1 }))
-
-    if (items.length === 0) {
-      throw new Error(`Parser '${plugin.id}' found no timeline items in matched table ${candidate.index} (${tableRows.length} direct rows, ${contentRows.length} non-structural rows, ${rowsWithTitle} rows with a title; headers=${JSON.stringify(headers)}).`)
-    }
-    return items
-  }
-
-  private isStructuralTableRow(
-    row: Element,
-    headerRow: Element,
-    plugin: TimelineParserPlugin,
-    headers: Array<string | undefined>
-  ): boolean {
-    if (row === headerRow) return true
-
-    const cells = this.expandTableCells(selectAll<AnyNode, Element>(':scope > th, :scope > td', row), headers.length)
-    const values = cells.map(cell => this.readCellText(cell)).filter((value): value is string => Boolean(value))
-    if (values.length === 0) return true
-
-    // Repeated table headings are common on long wiki tables and may sit inside tbody.
-    if (cells.length > 0 && cells.every((cell, index) => {
-      const value = this.readCellText(cell)
-      return Boolean(value) && value === headers[index]
-    })) return true
-
-    // A merged heading that spans table columns is a section divider, not an item.
-    const isMergedSectionHeading = cells.some(cell => {
-      const spansColumns = Number.parseInt(cell.attribs.colspan ?? '1', 10) > 1
-      return spansColumns && cells.length === 1
-    })
-    if (isMergedSectionHeading) return true
-
-    // Some source tables repeat just the selected order column as a one-cell label.
-    // Skip it only when that cell is itself one of the declared headers.
-    return values.length === 1 && plugin.requiredHeaders!.includes(values[0])
-  }
-
-  private expandTableCells(cells: Element[], columnCount?: number): Element[] {
-    const expanded = cells.flatMap(cell => Array.from(
-      { length: Number.parseInt(cell.attribs.colspan ?? '1', 10) },
-      () => cell
-    ))
-    return columnCount === undefined ? expanded : expanded.slice(0, columnCount)
-  }
-
-  private directTableCells(row: Element): Element[] {
-    return row.children.filter((child): child is Element => child.type === 'tag' && (child.name === 'th' || child.name === 'td'))
-  }
-
-  private directTableRows(table: Element): Element[] {
-    return table.children.flatMap(child => {
-      if (child.type !== 'tag') return []
-      const element = child as Element
-      if (element.name === 'tr') return [element]
-      if (element.name === 'tbody' || element.name === 'thead' || element.name === 'tfoot') {
-        return element.children.filter((row): row is Element => row.type === 'tag' && row.name === 'tr')
-      }
-      return []
-    })
   }
 
   private parseListItems(
@@ -290,44 +185,38 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
     plugin: TimelineParserPlugin,
     config: TimelineParserListDefinition
   ): TimelineItem[] {
-    const lists = selectAll<AnyNode, Element>(config.listSelector, document)
+    const lists = [...document.querySelectorAll(config.listSelector)]
     if (config.listIndex !== undefined && !lists[config.listIndex]) {
       throw new Error(`Parser '${plugin.id}' found no list ${config.listIndex + 1} matching '${config.listSelector}'.`)
     }
     const selectedLists = config.listIndex === undefined ? lists : [lists[config.listIndex]]
-    const elements = [...new Set(selectedLists.flatMap(list => selectAll<AnyNode, Element>(config.itemSelector, list)))]
+    const elements = [...new Set(selectedLists.flatMap(list => [...list.querySelectorAll(config.itemSelector)]))]
     const items = elements.flatMap((element, elementIndex) => {
       const sourceText = this.readCellText(element)?.replace(/\u00a0/g, ' ').replace(/\*+\s*$/, '').trim() ?? ''
       if (!sourceText) return []
       if (config.excludedText.some(text => sourceText.toLowerCase().startsWith(text.toLowerCase()))) return []
 
       if (config.format === 'star-trek-guide') {
-        const codeElement = selectOne<AnyNode, Element>('.ck-code', element)
-        const titleElement = selectOne<AnyNode, Element>('.ck-t', element)
-        const code = codeElement ? this.readCellText(codeElement) : ''
-        const title = titleElement ? this.readCellText(titleElement) : ''
-        if (!code || !title) throw new Error(`Parser '${plugin.id}' cannot read checklist code and title from source entry '${sourceText}'.`)
-        if (code === 'Film') return [this.listItem(elementIndex + 1, 'movie', title)]
-        const seriesTitle = config.seriesCodes[code]
-        if (!seriesTitle) throw new Error(`Parser '${plugin.id}' has no series mapping for '${code}'.`)
-        const coordinatesElement = selectOne<AnyNode, Element>('.ck-se', element)
-        const coordinates = coordinatesElement ? this.readCellText(coordinatesElement) : ''
-        const episode = coordinates?.match(/^S(\d+)\s*·\s*E(\d+)(?:[–-](?:E)?(\d+))?$/)
-        if (!episode) throw new Error(`Parser '${plugin.id}' cannot parse episode coordinates '${coordinates ?? ''}' for '${title}'.`)
-        const firstEpisode = Number(episode[2])
-        const lastEpisode = Number(episode[3] ?? episode[2])
+        const movie = sourceText.match(/^MOV\s+(.+)$/i)
+        if (movie) return [this.listItem(elementIndex + 1, 'movie', movie[1].trim())]
+        const episode = sourceText.match(/^([A-Z0-9]{2,6})\s+Season\s+(\d+),\s*episodes?\s+(\d+)(?:\s*[-–]\s*(\d+))?\s+-\s+(.+)$/i)
+        if (!episode) throw new Error(`Parser '${plugin.id}' cannot parse source entry '${sourceText}'.`)
+        const seriesTitle = config.seriesCodes[episode[1].toUpperCase()]
+        if (!seriesTitle) throw new Error(`Parser '${plugin.id}' has no series mapping for '${episode[1]}'.`)
+        const firstEpisode = Number(episode[3])
+        const lastEpisode = Number(episode[4] ?? episode[3])
         if (lastEpisode < firstEpisode) throw new Error(`Parser '${plugin.id}' found a reversed episode range in '${sourceText}'.`)
         return Array.from({ length: lastEpisode - firstEpisode + 1 }, (_, index) => this.listItem(
           elementIndex + index + 1,
           'episode',
-          title,
-          { seriesTitle, seasonNumber: Number(episode[1]), episodeNumber: firstEpisode + index }
+          episode[5].trim(),
+          { seriesTitle, seasonNumber: Number(episode[2]), episodeNumber: firstEpisode + index }
         ))
       }
 
       const normalized = sourceText.toLowerCase()
-      const anchor = element.name === 'a' ? element : selectOne<AnyNode, Element>('a', element)
-      const href = anchor?.attribs.href ?? ''
+      const anchor = element.matches('a') ? element : element.querySelector('a')
+      const href = anchor?.getAttribute('href') ?? ''
       const textTypes = [
         ...config.showMarkers.filter(marker => normalized.includes(marker.toLowerCase())).map(() => 'show' as const),
         ...config.movieMarkers.filter(marker => normalized.includes(marker.toLowerCase())).map(() => 'movie' as const),
@@ -409,7 +298,7 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
     const previous = (await this.readPlugins()).find(existing => existing.id === plugin.id)
     const saved = await this.readSavedPlugins()
     const updated = [...saved.filter(existing => existing.id !== plugin.id), plugin]
-      await getDatabase().setSetting(SETTING_KEY, JSON.stringify(updated))
+    await getDatabase().config.setSetting(SETTING_KEY, JSON.stringify(updated))
     for (const order of [...(previous?.orders ?? []), ...plugin.orders]) {
       await this.cacheService.invalidate(`${plugin.id}:${order.id}`)
     }
@@ -419,7 +308,7 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
   async removePlugin(id: string): Promise<TimelineParserPlugin[]> {
     const removed = (await this.readPlugins()).find(plugin => plugin.id === id)
     const plugins = (await this.readSavedPlugins()).filter(plugin => plugin.id !== id)
-      await getDatabase().setSetting(SETTING_KEY, JSON.stringify(plugins))
+    await getDatabase().config.setSetting(SETTING_KEY, JSON.stringify(plugins))
     for (const order of removed?.orders ?? []) await this.cacheService.invalidate(`${id}:${order.id}`)
     return await this.readPlugins()
   }
@@ -467,33 +356,21 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
     pluginId: string,
     config: TimelineParserGroupDefinition
   ): Map<string, number[]> {
-    const candidates = selectAll<AnyNode, Element>(config.groupTableSelector, document).map((table, index) => {
-      const row = this.directTableRows(table).find(candidateRow => is(candidateRow, config.groupHeaderRowSelector))
-      const names = (row ? this.directTableCells(row) : []).map(cell => this.readCellText(cell))
-      return { table, index, names }
+    const table = [...document.querySelectorAll(config.groupTableSelector)].find(candidate => {
+      const row = candidate.querySelector(config.groupHeaderRowSelector)
+      const names = [...(row?.querySelectorAll('th,td') ?? [])].map(cell => this.readCellText(cell))
+      return names.includes(config.groupHeader) && names.includes(config.groupOrderHeader)
     })
-    const candidate = candidates.find(({ names }) => names.includes(config.groupHeader) && names.includes(config.groupOrderHeader))
-    if (!candidate) {
-      const bestCandidate = candidates.reduce<(typeof candidates)[number] | undefined>(
-        (best, current) => !best || current.names.length > best.names.length ? current : best,
-        undefined
-      )
-      const evidence = bestCandidate
-        ? `best table=${bestCandidate.index}, headers=${JSON.stringify(bestCandidate.names)}`
-        : 'no candidate tables found'
-      throw new Error(`Parser '${pluginId}' found no group table matching its configured headers (${candidates.length} candidates; ${evidence}).`)
-    }
-    const table = candidate.table
-    const header = this.directTableRows(table).find(row => is(row, config.groupHeaderRowSelector))!
-    const rows = this.directTableRows(table).filter(row => is(row, config.groupRowSelector))
-    const headers = this.directTableCells(header).map(cell => this.readCellText(cell))
+    if (!table) throw new Error(`Parser '${pluginId}' found no group table matching its configured headers.`)
+    const header = table.querySelector(config.groupHeaderRowSelector)!
+    const headers = [...header.querySelectorAll('th,td')].map(cell => this.readCellText(cell))
     const groupIndex = headers.indexOf(config.groupHeader)
     const orderIndex = headers.indexOf(config.groupOrderHeader)
     if (groupIndex < 0 || orderIndex < 0) throw new Error(`Parser '${pluginId}' group table is missing a configured header.`)
     const groups = new Map<string, number[]>()
-    for (const row of rows) {
+    for (const row of table.querySelectorAll(config.groupRowSelector)) {
       if (row === header) continue
-      const cells = selectAll<AnyNode, Element>(':scope > th, :scope > td', row)
+      const cells = [...row.querySelectorAll(':scope > th, :scope > td')]
       const name = this.normalize(this.readCellText(cells[groupIndex]) ?? '')
       const placements = this.readCellText(cells[orderIndex])?.match(/\d+(?:\.\d+)?/g)?.map(Number) ?? []
       if (name && placements.length) groups.set(name, placements)
@@ -533,9 +410,9 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
 
   private readCellText(cell?: Element): string | undefined {
     if (!cell) return undefined
-    const content = cell.cloneNode(true)
-    selectAll<AnyNode, Element>('sup', content).forEach(removeElement)
-    return textContent(content).replace(/\s+/g, ' ').trim() || undefined
+    const content = cell.cloneNode(true) as Element
+    content.querySelectorAll('sup').forEach(note => note.remove())
+    return content.textContent?.replace(/\s+/g, ' ').trim() || undefined
   }
 
   private orderSourceUrl(plugin: TimelineParserPlugin, order: TimelineParserPlugin['orders'][number]): string {
@@ -564,7 +441,7 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
   }
 
   private async readSavedPlugins(): Promise<TimelineParserPlugin[]> {
-    const raw = getDatabase().getSetting(SETTING_KEY)
+    const raw = await getDatabase().config.getSetting(SETTING_KEY)
     if (!raw) return []
     const values: unknown = JSON.parse(raw)
     if (!Array.isArray(values)) throw new Error(`Setting '${SETTING_KEY}' must contain an array of parser definitions.`)

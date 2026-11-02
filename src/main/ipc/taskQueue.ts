@@ -1,116 +1,74 @@
-import { IPC_CHANNELS } from '../../shared/ipcChannels'
-/**
- * IPC Handlers for Task Queue System
- */
-
-import { getTaskQueueService } from '../services/TaskQueueService'
-import { validateInput, TaskDefinitionSchema, NonEmptyStringSchema } from '../validation/schemas'
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
+import { getTaskQueueService } from '@main/services/TaskQueueService'
+import { TaskDefinitionSchema, NonEmptyStringSchema } from '@main/validation/schemas'
 import { z } from 'zod'
-import { createIpcHandler } from './utils/createHandler'
+import { getLoggingService } from '@main/services/LoggingService'
+import { createIpcHandler, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
 
 export function registerTaskQueueHandlers(): void {
   const service = getTaskQueueService()
 
-  /**
-   * Get current queue state
-   */
-  createIpcHandler(IPC_CHANNELS.taskQueueGetState, async () => {
-    return service.getQueueState()
+  createIpcHandler(IPC_CHANNELS.TASK_QUEUE.GET_STATE, async () => {
+    return await service.getQueueState()
   })
 
-  /**
-   * Add a task to the queue
-   */
-  createIpcHandler(IPC_CHANNELS.taskQueueAddTask, async (definition: unknown) => {
-    const validDefinition = validateInput(TaskDefinitionSchema, definition, 'taskQueue:addTask')
-    console.log('[IPC] taskQueue:addTask called with:', validDefinition)
-    const taskId = service.addTask(validDefinition)
-    console.log('[IPC] taskQueue:addTask returning taskId:', taskId)
-    return { success: true, taskId }
+  createValidatedIpcHandler('taskQueue:addTask', TaskDefinitionSchema, async (definition) => {
+    return { success: true, taskId: await service.addTask(definition) }
   })
 
-  /**
-   * Remove a task from the queue
-   */
-  createIpcHandler(IPC_CHANNELS.taskQueueRemoveTask, async (taskId: unknown) => {
-    const validTaskId = validateInput(NonEmptyStringSchema, taskId, 'taskQueue:removeTask')
-    console.log('[IPC taskQueue:removeTask]', validTaskId)
-    const removed = service.removeTask(validTaskId)
-    return { success: removed }
+  createValidatedIpcHandler('taskQueue:addTasks', z.array(TaskDefinitionSchema), async (definitions) => {
+    return { success: true, taskIds: await service.addTasks(definitions) }
   })
 
-  /**
-   * Reorder the queue
-   */
-  createIpcHandler(IPC_CHANNELS.taskQueueReorderQueue, async (taskIds: unknown) => {
-    const validTaskIds = validateInput(z.array(z.string().min(1)), taskIds, 'taskQueue:reorderQueue')
-    service.reorderQueue(validTaskIds)
+  createValidatedIpcHandler('taskQueue:removeTask', NonEmptyStringSchema, async (taskId) => {
+    return { success: await service.removeTask(taskId) }
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.TASK_QUEUE.CANCEL_TASK, NonEmptyStringSchema, async taskId => ({ success: await service.cancelTask(taskId) }))
+
+  createValidatedIpcHandler('taskQueue:reorderQueue', z.array(z.string().min(1)), async (ids) => {
+    await service.reorderQueue(ids)
     return { success: true }
   })
 
-  /**
-   * Clear all queued tasks
-   */
-  createIpcHandler(IPC_CHANNELS.taskQueueClearQueue, async () => {
-    service.clearQueue()
+  createValidatedIpcHandler('taskQueue:clearQueue', z.object({ batchId: z.string().min(1).optional(), cancelCurrent: z.boolean().optional() }), async ({ batchId, cancelCurrent }) => {
+    await service.clearQueue(batchId, cancelCurrent)
     return { success: true }
   })
 
-  /**
-   * Pause the queue
-   */
-  createIpcHandler(IPC_CHANNELS.taskQueuePause, async () => {
-    console.log('[IPC taskQueue:pause] Queue paused')
-    service.pauseQueue()
+  createIpcHandler(IPC_CHANNELS.TASK_QUEUE.PAUSE, async () => {
+    await service.pauseQueue()
     return { success: true }
   })
 
-  /**
-   * Resume the queue
-   */
-  createIpcHandler(IPC_CHANNELS.taskQueueResume, async () => {
-    console.log('[IPC taskQueue:resume] Queue resumed')
-    service.resumeQueue()
+  createIpcHandler(IPC_CHANNELS.TASK_QUEUE.RESUME, async () => {
+    await service.resumeQueue()
     return { success: true }
   })
 
-  /**
-   * Cancel the current running task
-   */
-  createIpcHandler(IPC_CHANNELS.taskQueueCancelCurrent, async () => {
-    service.cancelCurrentTask()
+  createValidatedIpcHandler('taskQueue:cancelCurrent', z.string().min(1).optional(), async (batchId) => {
+    await service.cancelCurrentTask(batchId)
     return { success: true }
   })
 
-  /**
-   * Get task history
-   */
-  createIpcHandler(IPC_CHANNELS.taskQueueGetTaskHistory, async () => {
-    return service.getTaskHistory()
+  createIpcHandler('taskQueue:getTaskHistory', async () => {
+    return await service.getTaskHistory()
   })
 
-  /**
-   * Get monitoring history
-   */
-  createIpcHandler(IPC_CHANNELS.taskQueueGetMonitoringHistory, async () => {
-    return service.getMonitoringHistory()
+  createIpcHandler('taskQueue:getMonitoringHistory', async () => {
+    return await service.getMonitoringHistory()
   })
 
-  /**
-   * Clear task history
-   */
-  createIpcHandler(IPC_CHANNELS.taskQueueClearTaskHistory, async () => {
-    service.clearTaskHistory()
+  createIpcHandler('taskQueue:clearTaskHistory', async () => {
+    await service.clearTaskHistory()
     return { success: true }
   })
 
-  /**
-   * Clear monitoring history
-   */
-  createIpcHandler(IPC_CHANNELS.taskQueueClearMonitoringHistory, async () => {
-    service.clearMonitoringHistory()
+  createIpcHandler('taskQueue:clearMonitoringHistory', async () => {
+    await service.clearMonitoringHistory()
     return { success: true }
   })
 
-  console.log('[IPC] Task queue handlers registered')
+  getLoggingService().info('[taskQueue]', '[IPC] Task queue handlers registered')
 }
+

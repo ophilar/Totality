@@ -1,118 +1,69 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Cpu, RefreshCw } from 'lucide-react'
+import { Cpu, RefreshCw, AlertTriangle } from 'lucide-react'
 import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
-import { describeDiagnosticError, logOptimizationDiagnostic } from '../library/optimizationDiagnostics'
+import type { GpuInfo } from '@main/services/utils/GpuDetector'
 
 export function TranscodingHardwareCard() {
   const [capabilities, setCapabilities] = useState<TranscodingCapabilities | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [selectingGpu, setSelectingGpu] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let active = true
-    window.electronAPI.getCapabilities()
-      .then(value => {
-        if (!active) return
-        logOptimizationDiagnostic('EncodingCapabilitiesUI', 'info', 'capabilities.loaded', { detectedAt: value.detectedAt, deviceCount: value.encodingMatrix.devices.length })
-        setCapabilities(value)
-      })
-      .catch(reason => {
-        if (!active) return
-        logOptimizationDiagnostic('EncodingCapabilitiesUI', 'error', 'capabilities.load.failed', { error: describeDiagnosticError(reason) })
-        setError(reason instanceof Error ? reason.message : String(reason))
-      })
-      .finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
-  }, [])
-
-  const refresh = async () => {
-    logOptimizationDiagnostic('EncodingCapabilitiesUI', 'info', 'capabilities.refresh.requested')
-    setRefreshing(true)
+  const load = async (refresh = false) => {
     setError(null)
+    refresh ? setRefreshing(true) : setLoading(true)
     try {
-      setCapabilities(await window.electronAPI.refreshCapabilities())
-    } catch (reason) {
-      logOptimizationDiagnostic('EncodingCapabilitiesUI', 'error', 'capabilities.refresh.failed', { error: describeDiagnosticError(reason) })
-      setError(reason instanceof Error ? reason.message : String(reason))
+      const next = refresh
+        ? await window.electronAPI.refreshCapabilities()
+        : await window.electronAPI.getCapabilities()
+      setCapabilities(next)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
+      setLoading(false)
       setRefreshing(false)
     }
   }
 
-  const selectGpu = async (gpuId: string | null) => {
-    logOptimizationDiagnostic('EncodingCapabilitiesUI', 'info', 'hardware.selection.changed', { gpuId })
-    setSelectingGpu(true)
-    setError(null)
+  useEffect(() => { queueMicrotask(() => { void load() }) }, [])
+
+  const selectGpu = async (value: string) => {
     try {
+      const gpuId = (value && value !== 'undefined') ? value : null
       setCapabilities(await window.electronAPI.setSelectedGpu(gpuId))
-    } catch (reason) {
-      logOptimizationDiagnostic('EncodingCapabilitiesUI', 'error', 'hardware.selection.failed', { gpuId, error: describeDiagnosticError(reason) })
-      setError(reason instanceof Error ? reason.message : String(reason))
-    } finally {
-      setSelectingGpu(false)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
     }
   }
 
   return (
-    <section className="rounded-lg border border-border/40 bg-card/30 p-4" aria-labelledby="transcoding-hardware-title">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <Cpu className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
-          <div>
-            <h3 id="transcoding-hardware-title" className="text-sm font-semibold">Video encoding hardware</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Choose a preferred GPU family. FFmpeg selects the physical device.</p>
-          </div>
+    <div className="border border-border/40 rounded-lg overflow-hidden bg-card/30">
+      <div className="flex items-center gap-3 p-4">
+        <Cpu className="w-5 h-5 text-muted-foreground shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-sm">Transcoding hardware</p>
+          <p className="text-xs text-muted-foreground">One verified GPU selection is used throughout the app.</p>
         </div>
-        <button type="button" onClick={() => void refresh()} disabled={loading || refreshing} className="rounded p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-50" aria-label="Refresh hardware capabilities">
-          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+        <button type="button" onClick={() => void load(true)} disabled={loading || refreshing} className="p-2 rounded-md hover:bg-muted disabled:opacity-50" aria-label="Refresh hardware capabilities">
+          <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
         </button>
       </div>
-      {loading ? (
-        <p className="mt-3 text-xs text-muted-foreground">Checking video encoders…</p>
-      ) : capabilities && (
-        <div className="mt-3 space-y-3 border-t border-border/30 pt-3">
-          <label className="block text-xs font-medium text-muted-foreground" htmlFor="transcoding-gpu">Preferred GPU family</label>
-          <select
-            id="transcoding-gpu"
-            value={capabilities.selectedGpuId ?? ''}
-            onChange={event => void selectGpu(event.target.value || null)}
-            disabled={selectingGpu || refreshing}
-            className="w-full rounded-md border border-border/30 bg-background px-3 py-2 text-sm disabled:opacity-50"
-          >
+      <div className="px-4 pb-4 space-y-3 border-t border-border/30 pt-3">
+        {loading ? <p className="text-xs text-muted-foreground">Detecting verified encoders...</p> : capabilities && <>
+          <label className="block text-xs font-medium text-muted-foreground">Selected device</label>
+          <select value={capabilities.selectedGpuId || ''} onChange={(event) => void selectGpu(event.target.value)} className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm">
             <option value="">Software CPU encoding</option>
-            {capabilities.gpus.map(gpu => (
-              <option key={gpu.id} value={gpu.id}>{gpu.name} ({gpu.vendor})</option>
-            ))}
+            {(capabilities.gpus || []).map((gpu: GpuInfo) => <option key={gpu.id} value={gpu.id}>{gpu.name} ({gpu.vendor})</option>)}
           </select>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-xs" aria-label="Encoding capability matrix">
-              <thead>
-                <tr>
-                  <th scope="col" className="border-b border-border/30 px-2 py-2">Codec</th>
-                  {capabilities.encodingMatrix.devices.map(device => (
-                    <th key={device.id} scope="col" className="border-b border-border/30 px-2 py-2">{device.name}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {capabilities.encodingMatrix.codecs.map(row => (
-                  <tr key={row.codec}>
-                    <th scope="row" className="border-b border-border/20 px-2 py-2 font-medium">{row.codec === 'hevc' ? 'H.265 / HEVC' : row.codec === 'h264' ? 'H.264 / AVC' : 'AV1'}</th>
-                    {row.capabilities.map((supported, index) => (
-                      <td key={capabilities.encodingMatrix.devices[index].id} className="border-b border-border/20 px-2 py-2" aria-label={`${row.codec} on ${capabilities.encodingMatrix.devices[index].name}: ${supported ? 'available' : 'unavailable'}`}>
-                        {supported ? 'true' : 'false'}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+            <div><span className="text-muted-foreground">Engines:</span> {capabilities.engines.join(', ') || 'none'}</div>
+            <div><span className="text-muted-foreground">Verified encoders:</span> {capabilities.verifiedEncoders.join(', ') || 'none'}</div>
           </div>
-        </div>
-      )}
-      {error && <p role="alert" className="mt-3 flex items-start gap-2 text-xs text-destructive"><AlertTriangle className="h-4 w-4 shrink-0" />{error}</p>}
-    </section>
+          {capabilities.probeFailures.length > 0 && <div role="status" className="space-y-1 text-xs text-amber-500">{capabilities.probeFailures.map((failure, index) => <p key={`${index}:${failure}`}>{failure}</p>)}</div>}
+          <p className="text-[10px] text-muted-foreground">Snapshot: {new Date(capabilities.detectedAt).toLocaleString()}</p>
+        </>}
+        {error && <div className="flex gap-2 items-start text-xs text-red-400"><AlertTriangle className="w-4 h-4 shrink-0" />{error}</div>}
+      </div>
+    </div>
   )
 }

@@ -8,10 +8,10 @@ import { describe, it, expect } from 'vitest'
 import {
   getErrorMessage,
   isNodeError,
-  isHttpError,
-  HttpError,
+  isAxiosError,
+  getAxiosErrorDetails,
   getErrorCode,
-} from '../../src/main/services/utils/errorUtils'
+} from '@main/services/utils/errorUtils'
 
 // ============================================================================
 // getErrorMessage
@@ -72,44 +72,60 @@ describe('isNodeError', () => {
 })
 
 // ============================================================================
-// isHttpError
+// isAxiosError
 // ============================================================================
 
-describe('isHttpError', () => {
-  it('should return true for HttpError instances', () => {
-    const err = new HttpError(404, 'Not found', 'Not Found')
-    expect(isHttpError(err)).toBe(true)
+describe('isAxiosError', () => {
+  it('should return true for Error with response property', () => {
+    const err = Object.assign(new Error('Request failed'), {
+      response: { status: 404, data: 'Not found' },
+    })
+    expect(isAxiosError(err)).toBe(true)
   })
 
-  it('should return false for plain Error', () => {
-    expect(isHttpError(new Error('network error'))).toBe(false)
+  it('should return false for plain Error without response', () => {
+    expect(isAxiosError(new Error('network error'))).toBe(false)
   })
 
   it('should return false for non-Error objects', () => {
-    expect(isHttpError({ status: 500 })).toBe(false)
-  })
-
-  it('should return false for null', () => {
-    expect(isHttpError(null)).toBe(false)
+    expect(isAxiosError({ response: { status: 500 } })).toBe(false)
   })
 })
 
 // ============================================================================
-// HttpError
+// getAxiosErrorDetails
 // ============================================================================
 
-describe('HttpError', () => {
-  it('should expose status and data properties', () => {
-    const err = new HttpError(403, { error: 'forbidden' }, 'Forbidden')
-    expect(err.status).toBe(403)
-    expect(err.data).toEqual({ error: 'forbidden' })
-    expect(err.message).toBe('Forbidden')
-    expect(err.name).toBe('HttpError')
+describe('getAxiosErrorDetails', () => {
+  it('should extract status, data, and message from axios error', () => {
+    const err = Object.assign(new Error('Request failed'), {
+      response: { status: 403, data: { error: 'forbidden' } },
+    })
+    const details = getAxiosErrorDetails(err)
+    expect(details.status).toBe(403)
+    expect(details.data).toEqual({ error: 'forbidden' })
+    expect(details.message).toBe('Request failed')
   })
 
-  it('should be an instance of Error', () => {
-    const err = new HttpError(500, null, 'Server Error')
-    expect(err).toBeInstanceOf(Error)
+  it('should handle axios error without response', () => {
+    const err = Object.assign(new Error('Network Error'), {
+      response: undefined,
+    })
+    const details = getAxiosErrorDetails(err)
+    expect(details.status).toBeUndefined()
+    expect(details.data).toBeUndefined()
+    expect(details.message).toBe('Network Error')
+  })
+
+  it('should fall back to getErrorMessage for non-axios errors', () => {
+    const details = getAxiosErrorDetails('string error')
+    expect(details.status).toBeUndefined()
+    expect(details.message).toBe('string error')
+  })
+
+  it('should handle null error', () => {
+    const details = getAxiosErrorDetails(null)
+    expect(details.message).toBe('null')
   })
 })
 
@@ -132,3 +148,6 @@ describe('getErrorCode', () => {
     expect(getErrorCode('string')).toBeUndefined()
   })
 })
+
+
+

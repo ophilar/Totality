@@ -6,11 +6,10 @@
  */
 
 import { useState, useEffect } from 'react'
-import { useSources } from '../../contexts/SourceContext'
+import { useSources } from '@/contexts/SourceContext'
 import { Film, Tv, Music, HelpCircle } from 'lucide-react'
-import { Button } from '../ui/Button'
-import { Input } from '../ui/Input'
-import { Select } from '../ui/Input'
+import { LibraryType } from '@main/types/database'
+
 
 interface LocalFolderFlowProps {
   onSuccess: () => void
@@ -20,8 +19,8 @@ interface LocalFolderFlowProps {
 interface DetectedLibrary {
   name: string
   path: string
-  suggestedType: 'movies' | 'tvshows' | 'music' | 'unknown'
-  selectedType: 'movies' | 'tvshows' | 'music'
+  suggestedType: LibraryType
+  selectedType: LibraryType
   enabled: boolean
 }
 
@@ -30,12 +29,12 @@ const MOVIE_PATTERNS = ['movies', 'films', 'movie', 'film']
 const TV_PATTERNS = ['tv shows', 'tv', 'shows', 'series', 'television', 'tvshows']
 const MUSIC_PATTERNS = ['music', 'audio', 'songs', 'albums', 'artists']
 
-function detectMediaType(folderName: string): 'movies' | 'tvshows' | 'music' | 'unknown' {
+function detectMediaType(folderName: string): LibraryType {
   const lower = folderName.toLowerCase()
-  if (MOVIE_PATTERNS.includes(lower)) return 'movies'
-  if (TV_PATTERNS.includes(lower)) return 'tvshows'
-  if (MUSIC_PATTERNS.includes(lower)) return 'music'
-  return 'unknown'
+  if (MOVIE_PATTERNS.includes(lower)) return LibraryType.Movie
+  if (TV_PATTERNS.includes(lower)) return LibraryType.Show
+  if (MUSIC_PATTERNS.includes(lower)) return LibraryType.Music
+  return LibraryType.Unknown
 }
 
 export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
@@ -55,17 +54,8 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
 
   // Check FFprobe availability on mount
   useEffect(() => {
-    checkFFprobe()
+    queueMicrotask(() => { void Promise.resolve().then(() => window.electronAPI.ffprobeIsAvailable()).then(setFfprobeAvailable).catch(() => setFfprobeAvailable(false)) })
   }, [])
-
-  const checkFFprobe = async () => {
-    try {
-      const available = await window.electronAPI.ffprobeIsAvailable()
-      setFfprobeAvailable(available)
-    } catch {
-      setFfprobeAvailable(false)
-    }
-  }
 
   const handleSelectFolder = async () => {
     try {
@@ -83,7 +73,7 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
         // Check if the folder itself is a known media type
         const folderMediaType = detectMediaType(folderName)
 
-        if (folderMediaType !== 'unknown') {
+        if (folderMediaType !== LibraryType.Unknown) {
           // The folder itself is a media library (e.g., "Movies" or "TV Shows")
           setIsSingleLibrary(true)
           setLibraries([{
@@ -124,10 +114,10 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
       const detected: DetectedLibrary[] = result.subfolders.map(sf => ({
         name: sf.name,
         path: sf.path,
-        suggestedType: sf.suggestedType,
-        selectedType: sf.suggestedType === 'unknown' ? 'movies' : sf.suggestedType,
+        suggestedType: sf.suggestedType as LibraryType,
+        selectedType: (sf.suggestedType === LibraryType.Unknown ? LibraryType.Movie : sf.suggestedType) as LibraryType,
         // Auto-enable folders with known types
-        enabled: sf.suggestedType !== 'unknown',
+        enabled: sf.suggestedType !== LibraryType.Unknown,
       }))
 
       setLibraries(detected)
@@ -155,6 +145,7 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
     setError(null)
 
     try {
+      let sourceId: string
       // If single library (folder itself is media type), use simple add
       if (isSingleLibrary && enabledLibraries.length === 1) {
         const lib = enabledLibraries[0]
@@ -163,25 +154,7 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
           displayName: displayName.trim(),
           mediaType: lib.selectedType,
         })
-
-        await refreshSources()
-
-        // Queue library scan
-        const sourceId = result.source_id
-        const sourceLibraries = await window.electronAPI.sourcesGetLibraries(sourceId)
-        for (const srcLib of sourceLibraries) {
-          try {
-            const taskType = srcLib.type === 'music' ? 'music-scan' : 'library-scan'
-            await window.electronAPI.taskQueueAddTask({
-              type: taskType,
-              label: `Scan ${srcLib.name} (${displayName.trim()})`,
-              sourceId,
-              libraryId: srcLib.id,
-            })
-          } catch (err) {
-            console.error('Failed to queue library scan:', err)
-          }
-        }
+        sourceId = result.source_id
       } else {
         // Multiple libraries - use custom library config
         const result = await window.electronAPI.localAddSourceWithLibraries({
@@ -194,25 +167,40 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
             enabled: true,
           })),
         })
+        sourceId = result.source_id
+      }
 
-        await refreshSources()
+      await refreshSources()
 
-        // Queue library scans for selected libraries
-        const sourceId = result.source_id
-        const sourceLibraries = await window.electronAPI.sourcesGetLibraries(sourceId)
+      // Initialize enabled libraries
+      const sourceLibraries = await window.electronAPI.sourcesGetLibraries(sourceId)
 
-        for (const srcLib of sourceLibraries) {
-          try {
-            const taskType = srcLib.type === 'music' ? 'music-scan' : 'library-scan'
-            await window.electronAPI.taskQueueAddTask({
-              type: taskType,
-              label: `Scan ${srcLib.name} (${displayName.trim()})`,
-              sourceId,
-              libraryId: srcLib.id,
-            })
-          } catch (err) {
-            console.error('Failed to queue library scan:', err)
-          }
+      try {
+        await window.electronAPI.sourcesSetLibrariesEnabled(
+          sourceId,
+          sourceLibraries.map(lib => ({
+            id: lib.id,
+            name: lib.name,
+            type: lib.type,
+            enabled: true
+          }))
+        )
+      } catch (err) {
+        window.electronAPI.log.error('[LocalFolderFlow]', 'Failed to set libraries enabled:', err)
+      }
+
+      // Queue library scans for selected libraries
+      for (const srcLib of sourceLibraries) {
+        try {
+          const taskType = srcLib.type === LibraryType.Music ? 'music-scan' : 'library-scan'
+          await window.electronAPI.taskQueueAddTask({
+            type: taskType,
+            label: `Scan ${srcLib.name} (${displayName.trim()})`,
+            sourceId,
+            libraryId: srcLib.id,
+          })
+        } catch (err) {
+          window.electronAPI.log.error('[LocalFolderFlow]', 'Failed to queue library scan:', err)
         }
       }
 
@@ -230,7 +218,7 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
     ))
   }
 
-  const setLibraryType = (index: number, type: 'movies' | 'tvshows' | 'music') => {
+  const setLibraryType = (index: number, type: LibraryType) => {
     setLibraries(prev => prev.map((lib, i) =>
       i === index ? { ...lib, selectedType: type } : lib
     ))
@@ -244,10 +232,10 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
     setLibraries(prev => prev.map(lib => ({ ...lib, enabled: false })))
   }
 
-  const getTypeIcon = (type: 'movies' | 'tvshows' | 'music' | 'unknown') => {
+  const getTypeIcon = (type: LibraryType) => {
     switch (type) {
-      case 'movies': return <Film className="w-4 h-4" />
-      case 'tvshows': return <Tv className="w-4 h-4" />
+      case 'movie': return <Film className="w-4 h-4" />
+      case 'show': return <Tv className="w-4 h-4" />
       case 'music': return <Music className="w-4 h-4" />
       default: return <HelpCircle className="w-4 h-4" />
     }
@@ -259,21 +247,20 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
   return (
     <div className="space-y-3">
       {/* Back button */}
-      <Button
+      <button
         onClick={onBack}
-        variant="tertiary"
-        size="sm"
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
         <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
         </svg>
         Back
-      </Button>
+      </button>
 
       {/* FFprobe warning */}
       {ffprobeAvailable === false && (
         <div className="p-2 rounded bg-amber-500/10 border border-amber-500/20">
-          <p className="text-caption text-amber-500">
+          <p className="text-xs text-amber-500">
             FFprobe is not installed. Quality data will be limited without file analysis.
           </p>
         </div>
@@ -281,38 +268,35 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
 
       {/* Folder selection */}
       <div className="space-y-1">
-        <label className="text-caption text-muted-foreground">Folder</label>
+        <label className="text-xs text-muted-foreground">Folder</label>
         <div className="flex gap-2">
-          <Input
+          <input
             type="text"
             value={folderPath}
             readOnly
             placeholder="Select a folder..."
-            inputSize="sm"
-            className="flex-1"
+            className="flex-1 px-2 py-1.5 text-sm bg-muted border border-border rounded outline-hidden focus:ring-1 focus:ring-primary"
           />
-          <Button
+          <button
             onClick={handleSelectFolder}
             disabled={isDetecting}
-            variant="primary"
-            size="sm"
-            loading={isDetecting}
+            className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
             {isDetecting ? 'Detecting...' : 'Browse'}
-          </Button>
+          </button>
         </div>
       </div>
 
       {/* Display name */}
       {hasLibraries && (
         <div className="space-y-1">
-          <label className="text-caption text-muted-foreground">Display Name</label>
-          <Input
+          <label className="text-xs text-muted-foreground">Display Name</label>
+          <input
             type="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder="My Media Library"
-            inputSize="sm"
+            className="w-full px-2 py-1.5 text-sm bg-muted border border-border rounded outline-hidden focus:ring-1 focus:ring-primary"
           />
         </div>
       )}
@@ -322,19 +306,19 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
         <>
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-label font-medium">Select Libraries</h3>
-              <p className="text-caption text-muted-foreground">
+              <h3 className="text-sm font-medium">Select Libraries</h3>
+              <p className="text-xs text-muted-foreground">
                 Found {libraries.length} subfolders
               </p>
             </div>
-            <div className="flex gap-2 text-caption">
-              <Button variant="tertiary" size="sm" onClick={handleSelectAll}>
-                Select all
-              </Button>
+            <div className="flex gap-2 text-xs">
+              <button onClick={handleSelectAll} className="text-primary hover:underline">
+                Select All
+              </button>
               <span className="text-muted-foreground">|</span>
-              <Button variant="tertiary" size="sm" onClick={handleDeselectAll}>
-                Deselect all
-              </Button>
+              <button onClick={handleDeselectAll} className="text-primary hover:underline">
+                Deselect All
+              </button>
             </div>
           </div>
 
@@ -370,25 +354,25 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
                 </span>
 
                 {/* Name */}
-                <span className={`flex-1 text-label truncate ${lib.enabled ? '' : 'text-muted-foreground'}`}>
+                <span className={`flex-1 text-sm truncate ${lib.enabled ? '' : 'text-muted-foreground'}`}>
                   {lib.name}
                 </span>
 
                 {/* Type selector */}
-                <Select
+                <select
                   value={lib.selectedType}
-                  onChange={(e) => setLibraryType(index, e.target.value as 'movies' | 'tvshows' | 'music')}
-                  inputSize="sm"
+                  onChange={(e) => setLibraryType(index, e.target.value as LibraryType)}
+                  className="text-xs bg-muted border border-border rounded px-2 py-1 outline-hidden focus:ring-1 focus:ring-primary"
                 >
-                  <option value="movies">Movies</option>
-                  <option value="tvshows">TV Shows</option>
+                  <option value="movie">Movies</option>
+                  <option value="show">TV Shows</option>
                   <option value="music">Music</option>
-                </Select>
+                </select>
               </div>
             ))}
           </div>
 
-          <p className="text-caption text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Assign each folder a media type. Only selected folders will be scanned.
           </p>
         </>
@@ -402,20 +386,20 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
               {getTypeIcon(libraries[0].selectedType)}
             </span>
             <div className="flex-1">
-              <p className="text-label font-medium">{libraries[0].name}</p>
-              <p className="text-caption text-muted-foreground">
-                Detected as {libraries[0].selectedType === 'movies' ? 'Movies' : libraries[0].selectedType === 'tvshows' ? 'TV Shows' : 'Music'} library
+              <p className="text-sm font-medium">{libraries[0].name}</p>
+              <p className="text-xs text-muted-foreground">
+                Detected as {libraries[0].selectedType === 'movie' ? 'Movies' : libraries[0].selectedType === 'show' ? 'TV Shows' : 'Music'} library
               </p>
             </div>
-            <Select
+            <select
               value={libraries[0].selectedType}
-              onChange={(e) => setLibraryType(0, e.target.value as 'movies' | 'tvshows' | 'music')}
-              inputSize="sm"
+              onChange={(e) => setLibraryType(0, e.target.value as LibraryType)}
+              className="text-xs bg-muted border border-border rounded px-2 py-1 outline-hidden focus:ring-1 focus:ring-primary"
             >
-              <option value="movies">Movies</option>
-              <option value="tvshows">TV Shows</option>
+              <option value="movie">Movies</option>
+              <option value="show">TV Shows</option>
               <option value="music">Music</option>
-            </Select>
+            </select>
           </div>
         </div>
       )}
@@ -423,7 +407,7 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
       {/* Info box - only show when no folder selected */}
       {!hasLibraries && !error && (
         <div className="p-2 rounded bg-muted/50 border border-border/50">
-          <p className="text-caption text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Select a folder containing your media libraries. Totality will auto-detect subfolders named Movies, TV Shows, Music, etc. and let you choose which to include.
           </p>
         </div>
@@ -432,28 +416,26 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
       {/* Error message */}
       {error && (
         <div className="p-2 rounded bg-destructive/10 border border-destructive/20">
-          <p className="text-caption text-destructive">{error}</p>
+          <p className="text-xs text-destructive">{error}</p>
         </div>
       )}
 
       {/* Add button */}
       {hasLibraries && (
-        <Button
+        <button
           onClick={handleAdd}
           disabled={isAdding || enabledCount === 0}
-          variant="primary"
-          loading={isAdding}
-          className="w-full"
+          className="w-full py-2 text-sm font-medium bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50 transition-colors"
         >
           {isAdding
             ? 'Adding...'
             : enabledCount === 0
               ? 'Select at least one library'
               : isSingleLibrary
-                ? 'Add library'
-                : `Add ${enabledCount} ${enabledCount === 1 ? 'library' : 'libraries'}`
+                ? 'Add Library'
+                : `Add ${enabledCount} ${enabledCount === 1 ? 'Library' : 'Libraries'}`
           }
-        </Button>
+        </button>
       )}
     </div>
   )

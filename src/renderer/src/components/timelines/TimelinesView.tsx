@@ -147,7 +147,6 @@ export function TimelinesView() {
         const options = snapshot?.recipeId === selectedRecipeId && snapshot.refreshToken === recipeRefreshToken ? { snapshotId: snapshot.snapshotId } : { refresh: true }
         const result = await window.electronAPI.timelinesResolveTimeline(selectedRecipeId, resolveSourceId, options, requestId, false)
         if ('cancelled' in result) return
-        if ('error' in result) throw new Error(result.error)
         if (!isMounted) return
         if (result.snapshotId) openedGuide.current = { recipeId: selectedRecipeId, refreshToken: recipeRefreshToken, snapshotId: result.snapshotId }
         setSelectedTimelineResult(result)
@@ -185,7 +184,6 @@ export function TimelinesView() {
     try {
       const result = await window.electronAPI.timelinesResolveTimeline(input, resolveSourceId, { refresh: true }, requestId, true)
       if ('cancelled' in result) return
-      if ('error' in result) throw new Error(result.error)
       if (timelineContextRef.current.recipeId !== submittedContext.recipeId || timelineContextRef.current.sourceId !== submittedContext.sourceId) return
       const timeline = result.timeline
       if (result.snapshotId) openedGuide.current = { recipeId: timeline.id, refreshToken: recipeRefreshToken, snapshotId: result.snapshotId }
@@ -340,7 +338,6 @@ export function TimelinesView() {
     try {
       const result = await window.electronAPI.timelinesResolveTimeline(selectedRecipeId, resolveSourceId, { refresh: true }, requestId, true)
       if ('cancelled' in result) return
-      if ('error' in result) throw new Error(result.error)
       if (timelineContextRef.current.recipeId !== submittedContext.recipeId || timelineContextRef.current.sourceId !== submittedContext.sourceId) return
       setSelectedTimelineResult(result)
       addToast({ type: result.timeline.refreshError ? 'error' : 'success', title: 'Timeline Refresh', message: result.timeline.refreshError || `Loaded ${result.totalCount} items.` })
@@ -426,10 +423,6 @@ export function TimelinesView() {
               const sourceBadge =
                 recipe.id.startsWith('babylon-project:')
                   ? 'The Babylon Project'
-                  : recipe.id.startsWith('tmdb-collection-')
-                  ? 'TMDB Movie Collection'
-                  : recipe.sourceType === 'remote'
-                  ? 'Remote Registry'
                   : recipe.sourceType === 'web'
                   ? 'Web Guide'
                   : recipe.sourceType === 'trakt'
@@ -453,9 +446,7 @@ export function TimelinesView() {
                       <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
                         {recipe.franchise}
                       </span>
-                      <span className="text-[10px] font-medium text-muted-foreground">
-                        {sourceBadge}{recipe.granularity === 'episode-interleaved' ? ' · Episode Timeline' : recipe.granularity === 'series-blocks' ? ' · Series Timeline' : ' · Film Timeline'}
-                      </span>
+                      <span className="text-[10px] font-medium text-muted-foreground">{sourceBadge}</span>
                     </div>
                     <h3 className="text-xs font-semibold text-foreground line-clamp-1">{recipe.name}</h3>
                     {recipe.description && (

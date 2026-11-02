@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { MediaItem } from '../types'
+import type { MediaItem } from '@/components/library/types'
 
 type TierFilter = 'all' | 'SD' | '720p' | '1080p' | '4K'
 type QualityFilter = 'all' | 'low' | 'medium' | 'high'
@@ -11,6 +11,10 @@ interface UseLibraryFiltersReturn {
   setQualityFilter: (filter: QualityFilter) => void
   alphabetFilter: string | null
   setAlphabetFilter: (filter: string | null) => void
+  libraryId: string
+  setLibraryId: (id: string) => void
+  slimDown: boolean
+  setSlimDown: (active: boolean) => void
   debouncedTierFilter: TierFilter
   debouncedQualityFilter: QualityFilter
   filterItem: (item: MediaItem) => boolean
@@ -19,7 +23,7 @@ interface UseLibraryFiltersReturn {
 /**
  * Hook to manage library filter state with debouncing
  *
- * Provides tier (resolution), quality (within tier), and alphabet filters
+ * Provides tier (resolution), quality (within tier), alphabet, and library filters
  * with debounced versions for performance during rapid changes.
  *
  * @param searchQuery Current search query (used in filter logic)
@@ -29,6 +33,8 @@ export function useLibraryFilters(searchQuery: string): UseLibraryFiltersReturn 
   const [tierFilter, setTierFilter] = useState<TierFilter>('all')
   const [qualityFilter, setQualityFilter] = useState<QualityFilter>('all')
   const [alphabetFilter, setAlphabetFilter] = useState<string | null>(null)
+  const [libraryId, setLibraryId] = useState<string>('all')
+  const [slimDown, setSlimDown] = useState<boolean>(false)
 
   // Debounced filter values (faster than search since they're button clicks)
   const [debouncedTierFilter, setDebouncedTierFilter] = useState<TierFilter>('all')
@@ -57,18 +63,28 @@ export function useLibraryFilters(searchQuery: string): UseLibraryFiltersReturn 
         }
       }
 
+      // Library filter
+      if (libraryId !== 'all' && item.library_id !== libraryId) return false
+
       // Tier filter (use debounced value)
       if (debouncedTierFilter !== 'all' && item.quality_tier !== debouncedTierFilter) return false
 
       // Quality filter (use debounced value)
       if (debouncedQualityFilter !== 'all') {
-        const tierQuality = (item.tier_quality || 'UNKNOWN').toLowerCase()
+        const tierQuality = (item.tier_quality || 'MEDIUM').toLowerCase()
         if (tierQuality !== debouncedQualityFilter) return false
+      }
+
+      // Slim Down filter (client-side fallback for dynamically-loaded sets like collections mixed with movies)
+      if (slimDown) {
+        const effScore = item.efficiency_score ?? 100
+        const debt = item.storage_debt_bytes ?? 0
+        if (effScore >= 60 && debt <= 5368709120) return false
       }
 
       return true
     },
-    [searchQuery, debouncedTierFilter, debouncedQualityFilter]
+    [searchQuery, debouncedTierFilter, debouncedQualityFilter, libraryId, slimDown]
   )
 
   return {
@@ -78,6 +94,10 @@ export function useLibraryFilters(searchQuery: string): UseLibraryFiltersReturn 
     setQualityFilter,
     alphabetFilter,
     setAlphabetFilter,
+    libraryId,
+    setLibraryId,
+    slimDown,
+    setSlimDown,
     debouncedTierFilter,
     debouncedQualityFilter,
     filterItem,

@@ -1,19 +1,10 @@
-import type {
-  TranscodeOptions as MainTranscodeOptions,
-  TranscodeProgress as MainTranscodeProgress,
-} from '@main/services/TranscodingService'
-import type { ShowTranscodePreflight, ShowTranscodeRequest } from '@main/services/TranscodingService'
+import type { TranscodeOptions as MainTranscodeOptions } from '@main/services/TranscodingService'
 
 export type TranscodeOptions = MainTranscodeOptions & Required<Pick<MainTranscodeOptions,
-  'useGpu' | 'gpuId' | 'encoder' | 'preset' | 'customArgs' | 'transcodingEngine' | 'targetSize'
+  'targetCodec' | 'outputMode' | 'useGpu' | 'gpuId' | 'encoder' | 'preset' | 'customArgs' | 'transcodingEngine' | 'targetSize'
 >>
 
-export type { PlannedOptimizationOperation, ShowTranscodePreflight, ShowTranscodeRequest, ShowOptimizationDiscovery } from '@main/services/TranscodingService'
-
-export interface SavedShowPreflight {
-  request: ShowTranscodeRequest
-  result: ShowTranscodePreflight
-}
+export type { PlannedOptimizationOperation, ShowTranscodePreflight } from '@main/services/TranscodingService'
 
 export interface TranscodingParams {
   summary: string
@@ -35,14 +26,16 @@ export interface GpuInfo {
 
 export interface PresetTemplate {
   name: string
-  options: unknown
-  error?: string
+  options: TranscodeOptions
 }
 
-export type TranscodeProgress = Pick<MainTranscodeProgress,
-  'percent' | 'fps' | 'speed' | 'eta' | 'error'
-> & {
-  status?: MainTranscodeProgress['status']
+export interface TranscodeProgress {
+  percent: number
+  fps?: number
+  speed?: string
+  eta?: string
+  error?: string
+  status?: 'encoding' | 'initializing' | 'muxing' | 'verifying' | 'complete' | 'failed' | 'cancelled'
   mediaItemId?: number
   logs?: string[]
 }

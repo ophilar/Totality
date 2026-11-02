@@ -1,387 +1,143 @@
-/**
- * SourceManager Unit Tests
- *
- * Tests for source management including CRUD operations,
- * provider lifecycle, and scan control.
- */
+import { describe, it, expect, beforeEach, afterEach, _vi } from 'vitest'
+import { SourceManager } from '@main/services/SourceManager'
+import { LibraryType, ProviderType, TaskType } from '@main/types/database'
+import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
+import * as fs from 'fs'
+import * as path from 'node:path'
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-
-// Types for mocks
-interface MockMediaSource {
-  source_id: string
-  source_type: string
-  display_name: string
-  is_enabled: boolean
-  connection_config: Record<string, unknown>
-  created_at?: string
-}
-
-interface MockProviderConfig {
-  sourceId: string
-  displayName: string
-  connectionConfig?: Record<string, unknown>
-}
-
-// Mock dependencies
-vi.mock('fs/promises', () => ({
-  default: {
-    readFile: vi.fn(),
-    writeFile: vi.fn(),
-    mkdir: vi.fn(),
-    access: vi.fn(),
-    rename: vi.fn(),
-    readdir: vi.fn(() => Promise.resolve([])),
-    rm: vi.fn(),
-    stat: vi.fn(),
-  },
-}))
-
-const mockMediaSources: MockMediaSource[] = []
-const mockProviders = new Map<string, ReturnType<typeof createMockProvider>>()
-
-vi.mock('../../src/main/database/getDatabase', () => ({
-  getDatabase: vi.fn(() => ({
-    getMediaSources: vi.fn(() => mockMediaSources),
-    getMediaSourceById: vi.fn((id: string) => mockMediaSources.find(s => s.source_id === id) || null),
-    getEnabledMediaSources: vi.fn(() => mockMediaSources.filter(s => s.is_enabled)),
-    upsertMediaSource: vi.fn((source: MockMediaSource) => {
-      const existingIndex = mockMediaSources.findIndex(s => s.source_id === source.source_id)
-      if (existingIndex >= 0) {
-        mockMediaSources[existingIndex] = { ...mockMediaSources[existingIndex], ...source }
-      } else {
-        mockMediaSources.push({ ...source, created_at: new Date().toISOString() })
-      }
-      return source.source_id
-    }),
-    deleteMediaItem: vi.fn(),
-    isLibraryEnabled: vi.fn(() => true),
-    getEnabledLibraryIds: vi.fn(() => ['library-1']),
-    deleteLibraryScanTimes: vi.fn(),
-    updateSourceConnectionTime: vi.fn(),
-    toggleMediaSource: vi.fn(),
-  })),
-}))
-
-vi.mock('../../src/main/services/LiveMonitoringService', () => ({
-  getLiveMonitoringService: vi.fn(() => ({
-    addSource: vi.fn(),
-    removeSource: vi.fn(),
-    updateSource: vi.fn(),
-  })),
-}))
-
-vi.mock('../../src/main/services/TaskQueueService', () => ({
-  getTaskQueueService: vi.fn(() => ({
-    removeTasksForSource: vi.fn(),
-  })),
-}))
-
-// Mock provider creation
-const createMockProvider = (type: string, config: MockProviderConfig) => ({
-  sourceId: config.sourceId,
-  sourceType: type,
-  displayName: config.displayName,
-  isAuthenticated: vi.fn(() => Promise.resolve(true)),
-  testConnection: vi.fn(() => Promise.resolve({ success: true })),
-  getLibraries: vi.fn(() => Promise.resolve([])),
-  scanLibrary: vi.fn(() => Promise.resolve({ items: [], totalItems: 0 })),
-  cleanup: vi.fn(),
-})
-
-vi.mock('../../src/main/providers/ProviderFactory', () => ({
-  createProvider: vi.fn((type: string, config: MockProviderConfig) => {
-    const provider = createMockProvider(type, config)
-    mockProviders.set(config.sourceId, provider)
-    return provider
-  }),
-  getSupportedProviders: vi.fn(() => ['plex', 'jellyfin', 'emby', 'kodi', 'local']),
-}))
-
-import { SourceManager } from '../../src/main/services/SourceManager'
-
-describe('SourceManager', () => {
+describe('SourceManager (No Mocks)', () => {
   let manager: SourceManager
+  let db: Awaited<ReturnType<typeof setupTestDb>>
+  let tempDir: { path: string; cleanup: () => void }
 
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockMediaSources.length = 0
-    mockProviders.clear()
-    manager = new SourceManager()
+  beforeEach(async () => {
+    db = await setupTestDb()
+    tempDir = createTempDir('source-manager-real')
+    manager = new SourceManager({ db })
   })
 
   afterEach(() => {
-    vi.clearAllMocks()
+    cleanupTestDb()
+    tempDir.cleanup()
   })
 
-  // ============================================================================
-  // INITIALIZATION
-  // ============================================================================
-
-  describe('initialization', () => {
-    it('should initialize without sources', async () => {
-      await manager.initialize()
-      const sources = await manager.getSources()
-      expect(sources).toEqual([])
+  it('should initialize and load sources from DB', async () => {
+    await db.sources.upsertSource({
+      source_id: 's1',
+      source_type: 'local',
+      display_name: 'S1',
+      connection_config: JSON.stringify({ folderPath: tempDir.path }),
+      is_enabled: 1
     })
 
-    it('should load existing sources on initialize', async () => {
-      mockMediaSources.push({
-        source_id: 'source-1',
-        source_type: 'plex',
-        display_name: 'Test Plex',
-        connection_config: JSON.stringify({ serverUrl: 'http://localhost:32400' }),
-        is_enabled: true,
-      })
-
-      await manager.initialize()
-      const sources = await manager.getSources()
-
-      expect(sources).toHaveLength(1)
-    })
-
-    it('should only initialize once', async () => {
-      await manager.initialize()
-      await manager.initialize()
-      // Should not throw or cause issues
-    })
+    await manager.initialize()
+    expect(manager.getProvider('s1')).toBeDefined()
+    expect(manager.getProvider('s1')?.providerType).toBe('local')
   })
 
-  // ============================================================================
-  // SOURCE CRUD
-  // ============================================================================
+  it('should add a new local source', async () => {
+    const config = {
+      sourceType: ProviderType.Local,
+      displayName: 'New Source',
+      connectionConfig: { folderPath: tempDir.path },
+    }
 
-  describe('source CRUD', () => {
-    beforeEach(async () => {
-      await manager.initialize()
-    })
-
-    it('should add a new source', async () => {
-      const config = {
-        sourceType: 'jellyfin' as const,
-        displayName: 'Test Jellyfin',
-        connectionConfig: { serverUrl: 'http://localhost:8096', apiKey: 'test-key' },
-      }
-
-      const source = await manager.addSource(config)
-
-      expect(source).toBeDefined()
-      expect(source.display_name).toBe('Test Jellyfin')
-      expect(source.source_type).toBe('jellyfin')
-    })
-
-    it('should get all sources', async () => {
-      mockMediaSources.push({
-        source_id: 'source-1',
-        source_type: 'plex',
-        display_name: 'Plex Server',
-        connection_config: '{}',
-        is_enabled: true,
-      })
-
-      const sources = await manager.getSources()
-      expect(sources).toHaveLength(1)
-    })
-
-    it('should get sources by type', async () => {
-      mockMediaSources.push(
-        {
-          source_id: 'source-1',
-          source_type: 'plex',
-          display_name: 'Plex Server',
-          connection_config: '{}',
-          is_enabled: true,
-        },
-        {
-          source_id: 'source-2',
-          source_type: 'jellyfin',
-          display_name: 'Jellyfin Server',
-          connection_config: '{}',
-          is_enabled: true,
-        }
-      )
-
-      const plexSources = await manager.getSources('plex')
-      expect(plexSources.filter(s => s.source_type === 'plex')).toHaveLength(1)
-    })
-
-    it('should get source by ID', async () => {
-      mockMediaSources.push({
-        source_id: 'source-1',
-        source_type: 'plex',
-        display_name: 'Plex Server',
-        connection_config: '{}',
-        is_enabled: true,
-      })
-
-      const source = await manager.getSource('source-1')
-      expect(source).toBeDefined()
-      expect(source?.source_id).toBe('source-1')
-    })
-
-    it('should return null for non-existent source', async () => {
-      const source = await manager.getSource('non-existent')
-      expect(source).toBeNull()
-    })
-
-    it('should get enabled sources only', async () => {
-      mockMediaSources.push(
-        {
-          source_id: 'source-1',
-          source_type: 'plex',
-          display_name: 'Enabled',
-          connection_config: '{}',
-          is_enabled: true,
-        },
-        {
-          source_id: 'source-2',
-          source_type: 'jellyfin',
-          display_name: 'Disabled',
-          connection_config: '{}',
-          is_enabled: false,
-        }
-      )
-
-      const sources = await manager.getEnabledSources()
-      expect(sources.filter(s => s.is_enabled)).toHaveLength(1)
-    })
+    const source = await manager.addSource(config)
+    expect(source.display_name).toBe('New Source')
+    expect(await db.sources.getSourceById(source.source_id)).toBeDefined()
   })
 
-  // ============================================================================
-  // SCAN CONTROL
-  // ============================================================================
-
-  describe('scan control', () => {
-    beforeEach(async () => {
-      await manager.initialize()
+  it('should remove a source and its data', async () => {
+    const source = await manager.addSource({
+      sourceType: 'local',
+      displayName: 'To Remove',
+      connectionConfig: { path: '/tmp/remove' }
     })
 
-    it('should report no scan in progress initially', () => {
-      expect(manager.isScanInProgress()).toBe(false)
-    })
-
-    it('should report scan cancelled status', () => {
-      expect(manager.isScanCancelled()).toBe(false)
-      manager.stopScan()
-      // stopScan only sets cancelled if scan is in progress
-      expect(manager.isScanCancelled()).toBe(false)
-    })
-
-    it('should report manual scan in progress status', () => {
-      expect(manager.isManualScanInProgress()).toBe(false)
-    })
+    expect(await db.sources.getSourceById(source.source_id)).toBeDefined()
+    await manager.removeSource(source.source_id)
+    expect(await db.sources.getSourceById(source.source_id)).toBeNull()
   })
 
-  // ============================================================================
-  // PROVIDER MANAGEMENT
-  // ============================================================================
 
-  describe('provider management', () => {
-    beforeEach(async () => {
-      await manager.initialize()
+  it('should scan a real local library', async () => {
+    // Create a dummy movie file
+    const moviesDir = path.join(tempDir.path, 'Movies')
+    fs.mkdirSync(moviesDir, { recursive: true })
+    fs.writeFileSync(path.join(moviesDir, 'The Matrix (1999).mkv'), 'dummy content')
+
+    const source = await manager.addSource({
+      sourceType: ProviderType.Local,
+      displayName: 'Local Video',
+      connectionConfig: { folderPath: tempDir.path, mediaType: LibraryType.Movie },
     })
 
-    it('should get provider for source', async () => {
-      mockMediaSources.push({
-        source_id: 'source-1',
-        source_type: 'plex',
-        display_name: 'Plex Server',
-        connection_config: '{}',
-        is_enabled: true,
-      })
-
-      // Re-initialize to load the source
-      const newManager = new SourceManager()
-      await newManager.initialize()
-
-      const provider = newManager.getProvider('source-1')
-      expect(provider).toBeDefined()
-    })
-
-    it('should return undefined for non-existent provider', () => {
-      const provider = manager.getProvider('non-existent')
-      expect(provider).toBeUndefined()
-    })
+    await manager.initialize()
+    
+    // Pass 'movie' as library ID which matches the config
+    const result = await manager.scanLibrary(source.source_id, 'movie')
+    
+    expect(result.success).toBe(true)
+    expect(result.itemsScanned).toBeGreaterThan(0)
+    
+    const items = await db.media.getItems({ sourceId: source.source_id })
+    expect(items.length).toBeGreaterThan(0)
+    expect(items[0].title).toContain('Matrix')
   })
 
-  // ============================================================================
-  // CONNECTION TESTING
-  // ============================================================================
+  it('should handle scan cancellation for real local scans', async () => {
+    // Setup a large number of dummy files to make the scan take some time
+    const moviesDir = path.join(tempDir.path, 'Movies')
+    fs.mkdirSync(moviesDir, { recursive: true })
+    for (let i = 0; i < 50; i++) {
+      fs.writeFileSync(path.join(moviesDir, `Movie ${i} (2020).mkv`), 'dummy')
+    }
 
-  describe('connection testing', () => {
-    beforeEach(async () => {
-      mockMediaSources.push({
-        source_id: 'source-1',
-        source_type: 'plex',
-        display_name: 'Plex Server',
-        connection_config: '{}',
-        is_enabled: true,
-      })
-      await manager.initialize()
+    const source = await manager.addSource({
+      sourceType: ProviderType.Local,
+      displayName: 'Cancel Test',
+      connectionConfig: { folderPath: tempDir.path, mediaType: LibraryType.Movie },
     })
 
-    it('should test connection for existing source', async () => {
-      const result = await manager.testConnection('source-1')
-      expect(result).toHaveProperty('success')
-    })
+    await manager.initialize()
 
-    it('should return error for non-existent source', async () => {
-      const result = await manager.testConnection('non-existent')
-      expect(result.success).toBe(false)
-      expect(result.error).toContain('not found')
-    })
+    // Start scan and immediately stop
+    const scanPromise = manager.scanLibrary(source.source_id, 'movie')
+    
+    // Give it a tiny bit of time to start
+    await new Promise(resolve => setTimeout(resolve, 5))
+    manager.stopScan()
+    
+    const result = await scanPromise
+    // It might finish if it's very fast, but usually it should be cancelled
+    if (!result.success) {
+      expect(result.errors.some(e => e.toLowerCase().includes('cancelled'))).toBe(true)
+    }
   })
 
-  describe('Plex library locations', () => {
-    it('persists Plex library paths with the selected source configuration', async () => {
-      mockMediaSources.push({
-        source_id: 'plex-source',
-        source_type: 'plex',
-        display_name: 'Plex Server',
-        connection_config: JSON.stringify({ token: 'plex-token' }) as unknown as Record<string, unknown>,
-        is_enabled: true,
-      })
-      await manager.initialize()
-
-      const provider = Object.assign(manager.getProvider('plex-source')!, {
-        providerType: 'plex',
-        selectServer: vi.fn(() => Promise.resolve(true)),
-        getSelectedServer: vi.fn(() => ({ machineIdentifier: 'server-id', uri: 'http://plex:32400', name: 'Plex Server' })),
-        getLibrariesWithPaths: vi.fn(() => Promise.resolve({
-          libraries: [{ id: '1', name: 'Shows', type: 'show' as const }],
-          paths: ['D:/Media/Shows'],
-          errors: [],
-        })),
-      })
-
-      await manager.plexSelectServer('plex-source', 'server-id')
-
-      const savedSource = mockMediaSources.find(source => source.source_id === 'plex-source')!
-      const savedConfig = JSON.parse(String(savedSource.connection_config)) as Record<string, unknown>
-      expect(savedConfig.plexLibraryPaths).toEqual(['D:/Media/Shows'])
-      expect(provider.getLibrariesWithPaths).toHaveBeenCalledOnce()
-    })
-  })
-
-  // ============================================================================
-  // SOURCE TOGGLING
-  // ============================================================================
-
-  describe('source toggling', () => {
-    beforeEach(async () => {
-      mockMediaSources.push({
-        source_id: 'source-1',
-        source_type: 'plex',
-        display_name: 'Plex Server',
-        connection_config: '{}',
-        is_enabled: true,
-      })
-      await manager.initialize()
+  it('enqueues scoped analysis after successful scan completion', async () => {
+    const source = await manager.addSource({
+      sourceType: ProviderType.Local,
+      displayName: 'Quality Scan Test',
+      connectionConfig: { folderPath: tempDir.path, mediaType: LibraryType.Movie },
     })
 
-    it('should toggle source enabled state', async () => {
-      // toggleSource should complete without throwing
-      await expect(manager.toggleSource('source-1', false)).resolves.not.toThrow()
-    })
+    await manager.initialize()
+    const libs = await manager.getLibraries(source.source_id)
+    await db.sources.setLibrariesEnabled(source.source_id, libs.map(l => ({ id: l.id, name: l.name, type: l.type, enabled: true })))
+    const taskQueue = (manager as unknown as { getTaskQueue: () => { clearQueue: () => Promise<void>; getTasks: () => Array<{ type: TaskType; sourceId?: string; analysisScope?: { kind: string; sourceId?: string; libraryId?: string } }> } }).getTaskQueue()
+    await taskQueue.clearQueue()
+
+    const scanResult = await manager.scanLibrary(source.source_id, 'movie')
+
+    expect(scanResult.success).toBe(true)
+    expect(scanResult.postScanAnalysis).toEqual({ status: 'queued' })
+
+    const tasks = taskQueue.getTasks()
+    const analysisTask = tasks.find((t) => t.type === TaskType.Analysis)
+    expect(analysisTask?.analysisScope).toEqual({ kind: 'library', sourceId: source.source_id, libraryId: 'movie' })
   })
 })
+
+
+

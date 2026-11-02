@@ -4,7 +4,7 @@ import {
   ApplicationShutdownError,
   type ApplicationShutdownOperations,
   type ApplicationShutdownStage,
-} from '../../src/main/services/ApplicationShutdown'
+} from '@main/services/ApplicationShutdown'
 
 const orderedStages: ApplicationShutdownStage[] = [
   'stop-accepting-work',

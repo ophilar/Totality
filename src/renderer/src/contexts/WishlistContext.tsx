@@ -6,26 +6,65 @@
  * Provides access to wishlist items, count, and CRUD operations.
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react'
-import type {
-  WishlistItem as DatabaseWishlistItem,
-  WishlistFilters as DatabaseWishlistFilters,
-  WishlistMediaType,
-  WishlistPriority,
-  WishlistReason,
-  WishlistStatus,
-} from '@main/types/database'
-import type { StoreLink as SearchStoreLink, StoreRegion } from '@main/services/StoreSearchService'
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
 
 // Types for wishlist
-export type { WishlistMediaType, WishlistPriority, WishlistReason, WishlistStatus }
-export type WishlistItem = Omit<DatabaseWishlistItem, 'id'> & { id: number }
-export type WishlistFilters = Pick<DatabaseWishlistFilters,
-  'media_type' | 'priority' | 'reason' | 'status' | 'searchQuery' | 'sortBy' | 'sortOrder'
->
+export type WishlistMediaType = 'movie' | 'episode' | 'season' | 'album' | 'track'
+export type WishlistPriority = 1 | 2 | 3 | 4 | 5
+export type WishlistReason = 'missing' | 'upgrade'
+export type WishlistStatus = 'active' | 'completed'
 
-export type StoreLink = SearchStoreLink
-export type { StoreRegion }
+export interface WishlistItem {
+  id: number
+  media_type: WishlistMediaType
+  title: string
+  subtitle?: string
+  year?: number
+  reason: WishlistReason
+  tmdb_id?: string
+  imdb_id?: string
+  musicbrainz_id?: string
+  series_title?: string
+  season_number?: number
+  episode_number?: number
+  collection_name?: string
+  artist_name?: string
+  album_title?: string
+  poster_url?: string
+  priority: WishlistPriority
+  notes?: string
+  // Status tracking
+  status: WishlistStatus
+  completed_at?: string
+  // Upgrade-specific fields
+  current_quality_tier?: string
+  current_quality_level?: string
+  current_resolution?: string
+  current_video_codec?: string
+  current_audio_codec?: string
+  media_item_id?: number
+  added_at: string
+  updated_at: string
+}
+
+export interface WishlistFilters {
+  media_type?: WishlistMediaType
+  priority?: WishlistPriority
+  reason?: WishlistReason
+  status?: WishlistStatus
+  searchQuery?: string
+  sortBy?: 'added_at' | 'priority' | 'title' | 'year' | 'completed_at'
+  sortOrder?: 'asc' | 'desc'
+}
+
+export interface StoreLink {
+  name: string
+  url: string
+  icon: string
+  category: 'aggregator' | 'digital' | 'physical'
+}
+
+export type StoreRegion = 'us' | 'uk' | 'de' | 'fr' | 'ca' | 'au'
 
 export interface WishlistCounts {
   missing: number
@@ -89,13 +128,10 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
   })
   const [region, setRegionState] = useState<StoreRegion>('us')
 
-  const hasLoadedOnce = useRef(false)
-
   // Define loadWishlist before the effect that uses it
   const loadWishlist = useCallback(async () => {
     try {
-      // Only show loading state on first load — subsequent refreshes update in-place
-      if (!hasLoadedOnce.current) setIsLoading(true)
+      setIsLoading(true)
       setError(null)
       const [itemsResult, countResult, countsResult] = await Promise.all([
         window.electronAPI.wishlistGetAll(filters),
@@ -106,11 +142,10 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
       setCount(countResult)
       setCounts(countsResult)
     } catch (err) {
-      console.error('Error loading wishlist:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error loading wishlist:', err)
       setError('Failed to load wishlist')
     } finally {
       setIsLoading(false)
-      hasLoadedOnce.current = true
     }
   }, [filters])
 
@@ -119,56 +154,35 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
       const storedRegion = await window.electronAPI.wishlistGetRegion()
       setRegionState(storedRegion)
     } catch (err) {
-      console.error('Error loading region:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error loading region:', err)
     }
   }, [])
 
   // Load initial data and reload when filters change
   useEffect(() => {
-    loadWishlist()
+    queueMicrotask(() => { void loadWishlist() })
   }, [loadWishlist])
 
   // Listen for wishlist auto-completion events and refresh
   useEffect(() => {
     const cleanup = window.electronAPI.onWishlistAutoCompleted?.(() => {
-      loadWishlist()
-    })
-    return () => cleanup?.()
-  }, [loadWishlist])
-
-  // Listen for manual wishlist-changed events (e.g., after Trakt/Letterboxd sync)
-  useEffect(() => {
-    const handler = () => loadWishlist()
-    window.addEventListener('wishlist-changed', handler)
-    return () => window.removeEventListener('wishlist-changed', handler)
-  }, [loadWishlist])
-
-  // Listen for IPC wishlist-changed events (e.g., after AI adds items)
-  useEffect(() => {
-    const cleanup = window.electronAPI.onWishlistChanged?.(() => {
-      loadWishlist()
+      void loadWishlist()
     })
     return () => cleanup?.()
   }, [loadWishlist])
 
   // Load region on mount
   useEffect(() => {
-    loadRegion()
+    queueMicrotask(() => { void loadRegion() })
   }, [loadRegion])
-
-  const notifyWishlistChanged = () => window.dispatchEvent(new CustomEvent('wishlist-changed'))
 
   const addItem = useCallback(async (item: Omit<WishlistItem, 'id' | 'added_at' | 'updated_at'>): Promise<number> => {
     try {
-      const result = await window.electronAPI.wishlistAdd(item)
-      // Backend returns { id: -1, duplicate: true } for duplicates, or a number ID
-      const id = typeof result === 'object' && result !== null ? (result as { id: number }).id : result as number
-      if (id === -1) return -1 // Already in wishlist
+      const id = await window.electronAPI.wishlistAdd(item)
       await loadWishlist()
-      notifyWishlistChanged()
       return id
     } catch (err) {
-      console.error('Error adding wishlist item:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error adding wishlist item:', err)
       throw err
     }
   }, [loadWishlist])
@@ -177,9 +191,8 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
     try {
       await window.electronAPI.wishlistUpdate(id, updates)
       await loadWishlist()
-      notifyWishlistChanged()
     } catch (err) {
-      console.error('Error updating wishlist item:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error updating wishlist item:', err)
       throw err
     }
   }, [loadWishlist])
@@ -188,9 +201,8 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
     try {
       await window.electronAPI.wishlistUpdate(id, { status: 'completed' })
       await loadWishlist()
-      notifyWishlistChanged()
     } catch (err) {
-      console.error('Error marking wishlist item as completed:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error marking wishlist item as completed:', err)
       throw err
     }
   }, [loadWishlist])
@@ -199,9 +211,8 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
     try {
       await window.electronAPI.wishlistUpdate(id, { status: 'active' })
       await loadWishlist()
-      notifyWishlistChanged()
     } catch (err) {
-      console.error('Error marking wishlist item as active:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error marking wishlist item as active:', err)
       throw err
     }
   }, [loadWishlist])
@@ -210,9 +221,8 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
     try {
       await window.electronAPI.wishlistRemove(id)
       await loadWishlist()
-      notifyWishlistChanged()
     } catch (err) {
-      console.error('Error removing wishlist item:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error removing wishlist item:', err)
       throw err
     }
   }, [loadWishlist])
@@ -221,7 +231,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
     try {
       return await window.electronAPI.wishlistCheckExists(tmdbId, musicbrainzId, mediaItemId)
     } catch (err) {
-      console.error('Error checking wishlist existence:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error checking wishlist existence:', err)
       return false
     }
   }, [])
@@ -232,7 +242,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
       await loadWishlist()
       return result.added
     } catch (err) {
-      console.error('Error bulk adding wishlist items:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error bulk adding wishlist items:', err)
       throw err
     }
   }, [loadWishlist])
@@ -241,7 +251,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
     try {
       return await window.electronAPI.wishlistGetStoreLinks(item) as StoreLink[]
     } catch (err) {
-      console.error('Error getting store links:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error getting store links:', err)
       return []
     }
   }, [])
@@ -250,7 +260,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
     try {
       await window.electronAPI.wishlistOpenStoreLink(url)
     } catch (err) {
-      console.error('Error opening store link:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error opening store link:', err)
     }
   }, [])
 
@@ -259,7 +269,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
       await window.electronAPI.wishlistSetRegion(newRegion)
       setRegionState(newRegion)
     } catch (err) {
-      console.error('Error setting region:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error setting region:', err)
     }
   }, [])
 
@@ -267,7 +277,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
     try {
       return await window.electronAPI.wishlistExportCsv()
     } catch (err) {
-      console.error('Error exporting wishlist:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error exporting wishlist:', err)
       return { success: false }
     }
   }, [])

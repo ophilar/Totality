@@ -6,23 +6,9 @@
  * placeholder creation, and merge updates.
  */
 
-import { describe, it, expect, vi } from 'vitest'
-
-// Mock MediaNormalizer — normalize functions pass through for simplicity
-vi.mock('../../src/main/services/MediaNormalizer', () => ({
-  normalizeVideoCodec: vi.fn((c: string) => c),
-  normalizeAudioCodec: vi.fn((c: string) => c),
-  normalizeResolution: vi.fn((_w: number, h: number) => h >= 2160 ? '4K' : h >= 1080 ? '1080p' : h >= 720 ? '720p' : 'SD'),
-  normalizeHdrFormat: vi.fn((f: string) => f),
-  normalizeBitrate: vi.fn((b: number) => b),
-  normalizeFrameRate: vi.fn((f: number) => f),
-  normalizeAudioChannels: vi.fn((c: number) => c),
-  normalizeSampleRate: vi.fn((s: number) => s),
-  normalizeContainer: vi.fn((c: string) => c),
-}))
-
-import { MediaConverter } from '../../src/main/services/MediaConverter'
-import type { MediaMetadata } from '../../src/main/providers/base/MediaProvider'
+import { describe, it, expect, _vi } from 'vitest'
+import { MediaConverter } from '@main/services/MediaConverter'
+import type { MediaMetadata } from '@main/providers/base/MediaProvider'
 
 function createMetadata(overrides: Partial<MediaMetadata> = {}): MediaMetadata {
   return {
@@ -60,8 +46,8 @@ describe('MediaConverter.toMediaItem', () => {
     expect(item.source_id).toBe('src-1')
     expect(item.source_type).toBe('plex')
     expect(item.library_id).toBe('lib-1')
-    expect(item.video_codec).toBe('h264')
-    expect(item.video_bitrate_kbps).toBe(10000)
+    expect(item.video_codec).toBe('H.264')
+    expect(item.video_bitrate).toBe(10000)
     expect(item.resolution).toBe('1080p')
   })
 
@@ -115,7 +101,7 @@ describe('MediaConverter.toMediaItem', () => {
       }),
       defaultOptions,
     )
-    expect(item.audio_codec).toBe('truehd')
+    expect(item.audio_codec).toBe('TrueHD')
     expect(item.audio_channels).toBe(8)
     expect(item.has_object_audio).toBe(true)
     expect(item.audio_tracks).toBeDefined()
@@ -128,9 +114,9 @@ describe('MediaConverter.toMediaItem', () => {
       createMetadata({ audioCodec: 'ac3', audioChannels: 6, audioBitrate: 448 }),
       defaultOptions,
     )
-    expect(item.audio_codec).toBe('ac3')
+    expect(item.audio_codec).toBe('AC3')
     expect(item.audio_channels).toBe(6)
-    expect(item.audio_bitrate_kbps).toBe(448)
+    expect(item.audio_bitrate).toBe(448)
   })
 
   it('should handle subtitle tracks', () => {
@@ -188,7 +174,7 @@ describe('MediaConverter.convertAudioTracks', () => {
       { index: 0, codec: 'truehd', channels: 8, bitrate: 5000, language: 'eng', title: 'English', hasObjectAudio: true, isDefault: true },
     ])
     expect(tracks).toHaveLength(1)
-    expect(tracks[0].codec).toBe('truehd')
+    expect(tracks[0].codec).toBe('TrueHD')
     expect(tracks[0].channels).toBe(8)
     expect(tracks[0].hasObjectAudio).toBe(true)
     expect(tracks[0].isDefault).toBe(true)
@@ -197,14 +183,14 @@ describe('MediaConverter.convertAudioTracks', () => {
 
   it('should use array index as fallback when stream index missing', () => {
     const tracks = MediaConverter.convertAudioTracks([
-      { codec: 'aac', channels: 2, bitrate: 128 } as Record<string, unknown>,
+      { codec: 'aac', channels: 2, bitrate: 128 },
     ])
     expect(tracks[0].index).toBe(0)
   })
 
   it('should default to 2 channels when not provided', () => {
     const tracks = MediaConverter.convertAudioTracks([
-      { index: 0, codec: 'aac' } as Record<string, unknown>,
+      { index: 0, codec: 'aac' },
     ])
     expect(tracks[0].channels).toBe(2)
   })
@@ -231,7 +217,7 @@ describe('MediaConverter.convertSubtitleTracks', () => {
 
   it('should default codec to unknown', () => {
     const tracks = MediaConverter.convertSubtitleTracks([
-      { index: 0 } as Record<string, unknown>,
+      { index: 0 },
     ])
     expect(tracks[0].codec).toBe('unknown')
   })
@@ -250,7 +236,7 @@ describe('MediaConverter.selectBestAudioTrack', () => {
       hasObjectAudio: true,
     }))
     expect(result).toBeDefined()
-    expect(result!.codec).toBe('truehd')
+    expect(result!.codec).toBe('TrueHD')
     expect(result!.channels).toBe(8)
     expect(result!.hasObjectAudio).toBe(true)
   })
@@ -284,7 +270,7 @@ describe('MediaConverter.createPlaceholder', () => {
     expect(placeholder.type).toBe('movie')
     expect(placeholder.source_id).toBe('src-1')
     expect(placeholder.resolution).toBe('SD')
-    expect(placeholder.video_bitrate_kbps).toBe(0)
+    expect(placeholder.video_bitrate).toBe(0)
     expect(placeholder.audio_channels).toBe(2)
   })
 })
@@ -296,9 +282,9 @@ describe('MediaConverter.createPlaceholder', () => {
 describe('MediaConverter.mergeUpdates', () => {
   it('should merge updates into existing item', () => {
     const existing = MediaConverter.createPlaceholder('item-1', 'Old Title', 'movie', defaultOptions)
-    const merged = MediaConverter.mergeUpdates(existing, { title: 'New Title', video_bitrate_kbps: 15000 })
+    const merged = MediaConverter.mergeUpdates(existing, { title: 'New Title', video_bitrate: 15000 })
     expect(merged.title).toBe('New Title')
-    expect(merged.video_bitrate_kbps).toBe(15000)
+    expect(merged.video_bitrate).toBe(15000)
     expect(merged.plex_id).toBe('item-1') // unchanged fields preserved
   })
 
@@ -311,3 +297,6 @@ describe('MediaConverter.mergeUpdates', () => {
     expect(typeof merged.updated_at).toBe('string')
   })
 })
+
+
+

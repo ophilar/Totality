@@ -8,8 +8,7 @@
  */
 
 import { Sun, Moon, Monitor } from 'lucide-react'
-import { useTheme, type BaseTheme, type ThemeMode } from '../../../contexts/ThemeContext'
-import { Card } from '../../ui'
+import { useTheme, type BaseTheme, type ThemeMode } from '@/contexts/ThemeContext'
 
 interface ThemeColors {
   background: string
@@ -204,111 +203,6 @@ const THEMES: ThemeConfig[] = [
       text: '#1e1e1e',
     },
   },
-  {
-    id: 'matrix',
-    label: 'Matrix',
-    description: 'Terminal green',
-    lightLabel: 'Construct',
-    lightDescription: 'Digital mint',
-    darkColors: {
-      background: '#0d1610',
-      card: '#152218',
-      accent: '#00ff00',
-      muted: '#182a1e',
-      text: '#d4e6d8',
-    },
-    lightColors: {
-      background: '#d6e8db',
-      card: '#ecf4ee',
-      accent: '#1b9650',
-      muted: '#d0e0d4',
-      text: '#162418',
-    },
-  },
-  {
-    id: 'fury',
-    label: 'Fury',
-    description: 'Desert orange',
-    lightLabel: 'Mirage',
-    lightDescription: 'Sandy warmth',
-    darkColors: {
-      background: '#1e1610',
-      card: '#2c2018',
-      accent: '#e07020',
-      muted: '#32261c',
-      text: '#f2ece5',
-    },
-    lightColors: {
-      background: '#e4d8cc',
-      card: '#f2ece4',
-      accent: '#cc6418',
-      muted: '#dacebe',
-      text: '#2c2018',
-    },
-  },
-  {
-    id: 'gotham',
-    label: 'Gotham',
-    description: 'Amber noir',
-    lightLabel: 'Noir',
-    lightDescription: 'Aged parchment',
-    darkColors: {
-      background: '#181410',
-      card: '#241e16',
-      accent: '#c9a34e',
-      muted: '#2a221a',
-      text: '#f0e8dd',
-    },
-    lightColors: {
-      background: '#e0d6c6',
-      card: '#f0eae0',
-      accent: '#b88c20',
-      muted: '#d8ccba',
-      text: '#241e16',
-    },
-  },
-  {
-    id: 'neon',
-    label: 'Neon',
-    description: 'Cyberpunk pink',
-    lightLabel: 'Pastel',
-    lightDescription: 'Soft lavender',
-    darkColors: {
-      background: '#161620',
-      card: '#1e1e2e',
-      accent: '#e040a0',
-      muted: '#222036',
-      text: '#e8e4f2',
-    },
-    lightColors: {
-      background: '#e2daea',
-      card: '#f0ecf4',
-      accent: '#c82890',
-      muted: '#d8d0e2',
-      text: '#1e1e2e',
-    },
-  },
-  {
-    id: 'whimsy',
-    label: 'Whimsy',
-    description: 'Coral plum',
-    lightLabel: 'Storybook',
-    lightDescription: 'Soft blush',
-    darkColors: {
-      background: '#241618',
-      card: '#302024',
-      accent: '#e06080',
-      muted: '#352428',
-      text: '#f4ece6',
-    },
-    lightColors: {
-      background: '#ecdee0',
-      card: '#f5eeee',
-      accent: '#cc4870',
-      muted: '#e0d4d6',
-      text: '#302024',
-    },
-  },
 ]
 
 const MODE_OPTIONS: { id: ThemeMode; label: string; icon: typeof Sun }[] = [
@@ -383,8 +277,8 @@ export function AppearanceTab() {
     <div className="p-6 space-y-5 overflow-y-auto">
       {/* Mode Toggle */}
       <div className="space-y-2">
-        <h3 className="text-label font-medium text-foreground">Mode</h3>
-        <Card variant="muted" padding="sm">
+        <h3 className="text-sm font-medium text-foreground">Mode</h3>
+        <div className="bg-muted/30 rounded-lg border border-border/40 p-3">
           <div className="flex gap-2">
             {MODE_OPTIONS.map((opt) => {
               const Icon = opt.icon
@@ -393,7 +287,7 @@ export function AppearanceTab() {
                 <button
                   key={opt.id}
                   onClick={() => setMode(opt.id)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-label font-medium transition-colors ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     isActive
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-muted text-muted-foreground hover:bg-muted/80'
@@ -405,13 +299,13 @@ export function AppearanceTab() {
               )
             })}
           </div>
-        </Card>
+        </div>
       </div>
 
       {/* Theme Selection */}
       <div className="space-y-2">
-        <h3 className="text-label font-medium text-foreground">Theme</h3>
-        <Card variant="muted">
+        <h3 className="text-sm font-medium text-foreground">Theme</h3>
+        <div className="bg-muted/30 rounded-lg border border-border/40 p-4">
           <div className="grid grid-cols-3 gap-4">
             {THEMES.filter(t => effectiveIsDark || !t.darkOnly).map((themeConfig) => {
               const isActive = theme === themeConfig.id
@@ -422,12 +316,12 @@ export function AppearanceTab() {
               return (
                 <div key={themeConfig.id} className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between px-0.5">
-                    <span className="text-caption font-medium">{displayLabel}</span>
-                    <span className="text-caption text-muted-foreground">{displayDesc}</span>
+                    <span className="text-xs font-medium">{displayLabel}</span>
+                    <span className="text-[10px] text-muted-foreground">{displayDesc}</span>
                   </div>
                   <button
                     onClick={() => setTheme(themeConfig.id)}
-                    className={`rounded-xl overflow-hidden shadow-md transition-[box-shadow,opacity] ${
+                    className={`rounded-xl overflow-hidden shadow-md transition-all ${
                       isActive
                         ? 'ring-2 ring-primary ring-offset-2 ring-offset-background'
                         : 'hover:opacity-80'
@@ -439,7 +333,7 @@ export function AppearanceTab() {
               )
             })}
           </div>
-        </Card>
+        </div>
       </div>
 
     </div>

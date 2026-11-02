@@ -1,27 +1,22 @@
 import { useState, useMemo, useCallback, memo, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { X, CircleFadingArrowUp, EyeOff } from 'lucide-react'
-import { useFocusTrap } from '../../hooks/useFocusTrap'
-import { MissingItemPopup } from './MissingItemPopup'
-import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
-import { ScopedOptimizationSummary } from './ScopedOptimizationSummary'
-import { calculateOptimizationSummary } from './optimizationSummary'
-import type { MovieCollectionData, MissingMovie } from './types'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
+import { MissingItemPopup } from '@/components/library/MissingItemPopup'
+import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
+import type { MovieCollectionData, MediaItem } from '@/components/library/types'
+import { ScopedOptimizationSummary } from '@/components/library/ScopedOptimizationSummary'
 
-interface OwnedMovie {
-  id: number
+interface MissingMovie {
+  tmdb_id: string
   title: string
   year?: number
-  poster_url?: string
-  tmdb_id?: string
-  needs_upgrade?: boolean
-  tier_quality?: string
-  estimated_savings_bytes?: number | null
+  poster_path?: string
 }
 
 interface CollectionModalProps {
   collection: MovieCollectionData
-  ownedMovies: OwnedMovie[]
+  ownedMovies: MediaItem[]
   onClose: () => void
   onMovieClick: (movieId: number) => void
   onDismissCollectionMovie?: (tmdbId: string, movieTitle: string) => void
@@ -37,7 +32,7 @@ export const CollectionModal = memo(function CollectionModal({
   onDismissAllMissingInCollection,
 }: CollectionModalProps) {
   const [selectedMissing, setSelectedMissing] = useState<MissingMovie | null>(null)
-  const modalRef = useRef<HTMLDivElement>(null)
+  const modalRef = useRef<HTMLDivElement | null>(null)
 
   // Focus trap
   useFocusTrap(true, modalRef)
@@ -55,7 +50,11 @@ export const CollectionModal = memo(function CollectionModal({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
 
-  const missingMovies = useMemo<MissingMovie[]>(() => collection.missing_movies || [], [collection.missing_movies])
+  // Parse missing movies from validated repository data
+  const missingMovies = useMemo<MissingMovie[]>(
+    () => JSON.parse(collection.missing_movies || '[]') as MissingMovie[],
+    [collection.missing_movies]
+  )
 
   // Create a Set for O(1) lookup of missing movie tmdb_ids
   const missingMovieMap = useMemo(() => {
@@ -88,7 +87,7 @@ export const CollectionModal = memo(function CollectionModal({
       title: m.title,
       year: m.year,
       poster_url: m.poster_url,
-      needs_upgrade: m.needs_upgrade
+      needs_upgrade: m.needs_upgrade || m.tier_quality === 'LOW'
     }))
 
     const missing = missingMovies.map(m => ({
@@ -104,11 +103,15 @@ export const CollectionModal = memo(function CollectionModal({
     return [...owned, ...missing].sort((a, b) => (a.year || 0) - (b.year || 0))
   }, [ownedMovies, missingMovies])
 
-  const optimizationSummary = calculateOptimizationSummary(ownedMovies)
+  const collectionOptimizationSummary = useMemo(() => ({
+    totalCount: ownedMovies.length,
+    analyzedCount: ownedMovies.filter(movie => movie.efficiency_score != null).length,
+    recoverableBytes: ownedMovies.reduce((total, movie) => total + (movie.storage_debt_bytes ?? 0), 0),
+  }), [ownedMovies])
 
   return (
     <>
-      {createPortal(<div className="fixed inset-0 z-150 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="collection-modal-title">
+      {createPortal(<div className="fixed inset-0 z-150 flex items-center justify-center p-4">
         {/* Backdrop */}
         <div
           className="absolute inset-0 bg-black/60"
@@ -116,7 +119,7 @@ export const CollectionModal = memo(function CollectionModal({
         />
 
         {/* Modal */}
-        <div ref={modalRef} className="relative bg-card border border-border rounded-xl shadow-xl max-w-4xl w-full max-h-[calc(100vh-2rem)] min-h-0 overflow-hidden flex flex-col">
+        <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="collection-modal-title" tabIndex={-1} className="relative bg-card border border-border rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl shrink-0">
             <div>
@@ -129,9 +132,10 @@ export const CollectionModal = memo(function CollectionModal({
                 </span>
               </p>
               <ScopedOptimizationSummary
-                totalCount={ownedMovies.length}
-                estimatedSavingsBytes={optimizationSummary?.estimatedSavingsBytes}
-                coverage={optimizationSummary?.coverage}
+                totalCount={collectionOptimizationSummary.totalCount}
+                analyzedCount={collectionOptimizationSummary.analyzedCount}
+                recoverableBytes={collectionOptimizationSummary.recoverableBytes}
+                className="mt-2"
               />
             </div>
             <div className="flex items-center gap-1">
@@ -161,7 +165,7 @@ export const CollectionModal = memo(function CollectionModal({
                 <div
                   key={`${movie.type}-${movie.tmdb_id}`}
                   className="cursor-pointer hover-scale"
-                  onClick={() => handleMovieItemClick(movie)}
+                  onClick={() => handleMovieItemClick({ ...movie, id: movie.id || null, tmdb_id: movie.tmdb_id || undefined })}
                 >
                   <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md">
                     {/* Poster */}
@@ -198,7 +202,7 @@ export const CollectionModal = memo(function CollectionModal({
                           <button
                             onClick={() => onDismissCollectionMovie(movie.tmdb_id!, movie.title)}
                             className="w-7 h-7 rounded-full hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                            title="Hide from view"
+                            title="Dismiss"
                           >
                             <EyeOff className="w-4 h-4" />
                           </button>

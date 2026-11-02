@@ -1,68 +1,60 @@
-import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { SETTING_KEYS } from '../../shared/settingKeys'
-import { Sidebar } from './components/layout/Sidebar'
-import { TopBar } from './components/layout/TopBar'
-const MediaBrowser = lazy(() => import('./components/library/MediaBrowser').then(module => ({ default: module.MediaBrowser })))
-const Dashboard = lazy(() => import('./components/dashboard').then(module => ({ default: module.Dashboard })))
-import { WishlistPanel } from './components/wishlist/WishlistPanel'
-import { CompletenessPanel } from './components/library/CompletenessPanel'
-import { ChatPanel } from './components/chat/ChatPanel'
-import { MoodSyncPanel } from './components/mood/MoodSyncPanel'
-import { TaskQueuePanel } from './components/ui/TaskQueuePanel'
-import type { ViewContext } from './hooks/useChat'
-import { SourceProvider, useSources } from './contexts/SourceContext'
-import { WishlistProvider } from './contexts/WishlistContext'
-import { NavigationProvider, useNavigation } from './contexts/NavigationContext'
-import { ToastProvider } from './contexts/ToastContext'
-import { ThemeProvider } from './contexts/ThemeContext'
-const AddSourceModal = lazy(() => import('./components/sources/AddSourceModal').then(module => ({ default: module.AddSourceModal })))
-const AboutModal = lazy(() => import('./components/ui/AboutModal').then(module => ({ default: module.AboutModal })))
-const SettingsPanel = lazy(() => import('./components/settings').then(module => ({ default: module.SettingsPanel })))
-import { SplashScreen } from './components/layout/SplashScreen'
-import { ToastContainer } from './components/ui/Toast'
-import { ErrorBoundary } from './components/ErrorBoundary'
-import { SectionErrorBoundary } from './components/ui/SectionErrorBoundary'
-const TimelinesView = lazy(() => import('./components/timelines/TimelinesView').then(module => ({ default: module.TimelinesView })))
-import type { MediaViewType, SeriesStats, CollectionStats, MusicCompletenessStats, AnalysisProgress, TVOptimizationNavigation } from './components/library/types'
-import { isWebMode, isAuthenticated, authenticate } from './services/webTransport'
-import { useMobileLayout } from './hooks/useMobileLayout'
-import { MobileTabBar, type MobileTab } from './components/mobile/MobileTabBar'
-import { MobileSearchOverlay } from './components/mobile/MobileSearchOverlay'
-import logoImage from './assets/logo.png'
-import { WebLoginScreen } from './components/auth/WebLoginScreen'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { Sidebar } from '@/components/layout/Sidebar'
+import { TopBar } from '@/components/layout/TopBar'
+import { MediaBrowser } from '@/components/library/MediaBrowser'
+import { Dashboard } from '@/components/dashboard/Dashboard'
+import { WishlistPanel } from '@/components/wishlist/WishlistPanel'
+import { CompletenessPanel } from '@/components/library/CompletenessPanel'
+import { ChatPanel } from '@/components/chat/ChatPanel'
+import type { ViewContext } from '@/hooks/useChat'
+import { AIInsightsPanel } from '@/components/library/AIInsightsPanel'
+import { SourceProvider, useSources } from '@/contexts/SourceContext'
+import { WishlistProvider } from '@/contexts/WishlistContext'
+import { NavigationProvider, useNavigation } from '@/contexts/NavigationContext'
+import { ToastProvider } from '@/contexts/ToastContext'
+import { ThemeProvider } from '@/contexts/ThemeContext'
+import { LibraryProvider, useLibrary } from '@/contexts/LibraryContext'
+import { AddSourceModal } from '@/components/sources/AddSourceModal'
+import { AboutModal } from '@/components/ui/AboutModal'
+import { SettingsPanel } from '@/components/settings/SettingsPanel'
+import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard'
+import { SplashScreen } from '@/components/layout/SplashScreen'
+import { ToastContainer } from '@/components/ui/Toast'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { SectionErrorBoundary } from '@/components/ui/SectionErrorBoundary'
+import type { MediaViewType, AnalysisProgress } from '@/components/library/types'
 
-type AppView = 'dashboard' | 'library' | 'timelines'
+type AppView = 'dashboard' | 'library'
 
-function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean; isTablet?: boolean }) {
-  const { isLoading, sources, activeSourceId, hasMovies, hasTV, hasMusic } = useSources()
+import { usePanel } from '@/contexts/PanelContext'
+
+function AppContent() {
+  const { isLoading, activeSourceId, hasMovies, hasTV, hasMusic } = useSources()
   const [showAddSourceModal, setShowAddSourceModal] = useState(false)
   const [showAboutModal, setShowAboutModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined)
+  const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null)
   const [splashComplete, setSplashComplete] = useState(() => sessionStorage.getItem('splashShown') === 'true')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === 'true')
   const [currentView, setCurrentView] = useState<AppView>('dashboard')
-  const [libraryTab, setLibraryTab] = useState<MediaViewType>('movies')
+  const { view: libraryTab, setView: setLibraryTab } = useLibrary()
 
   // Navigation history
-  const { pushNavState, goBack, goForward, canGoBack, canGoForward, navigateTo } = useNavigation()
+  const { pushNavState, goBack, goForward, canGoBack, canGoForward } = useNavigation()
   const isRestoringRef = useRef(false)
 
-  // Panel states - managed at app level for TopBar to control
-  const [showCompletenessPanel, setShowCompletenessPanel] = useState(false)
-  const [showWishlistPanel, setShowWishlistPanel] = useState(false)
-  const [showChatPanel, setShowChatPanel] = useState(false)
-  const [showMoodSyncPanel, setShowMoodSyncPanel] = useState(false)
-  const [showTaskQueuePanel, setShowTaskQueuePanel] = useState(false)
-  const [pendingTVOptimizationAction, setPendingTVOptimizationAction] = useState<TVOptimizationNavigation | null>(null)
-  const [showMobileSearch, setShowMobileSearch] = useState(false)
+  const {
+    showCompletenessPanel,
+    showWishlistPanel,
+    showChatPanel,
+    openAIInsights,
+  } = usePanel()
+
   // Auto-refresh state (passed up from MediaBrowser)
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false)
 
   // Completeness panel state - managed at app level for both Dashboard and Library views
-  const [seriesStats, setSeriesStats] = useState<SeriesStats | null>(null)
-  const [collectionStats, setCollectionStats] = useState<CollectionStats | null>(null)
-  const [musicCompletenessStats, setMusicCompletenessStats] = useState<MusicCompletenessStats | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress | null>(null)
   const [analysisType, setAnalysisType] = useState<'series' | 'collections' | 'music' | null>(null)
@@ -78,95 +70,25 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
     setSplashComplete(true)
   }
 
+  useEffect(() => {
+    window.electronAPI.getSetting('onboarding_completed')
+      .then(value => setOnboardingComplete(value === 'true'))
+      .catch(err => {
+        window.electronAPI.log.error('[App]', 'Failed to load onboarding state:', err)
+        setOnboardingComplete(false)
+      })
+  }, [])
+
   // Signal to main process that we're ready to show content
   useEffect(() => {
-    if (!hasSignaledReady.current && !isLoading) {
+    if (!hasSignaledReady.current && !isLoading && onboardingComplete !== null) {
       hasSignaledReady.current = true
       // Small delay to ensure content is painted
       setTimeout(() => {
         window.electronAPI.appReady()
       }, 50)
     }
-  }, [isLoading])
-
-  // Load completeness stats data
-  const loadCompletenessData = useCallback(async () => {
-    try {
-      const [sStats, cStats] = await Promise.all([
-        window.electronAPI.seriesGetStats(),
-        window.electronAPI.collectionsGetStats()
-      ])
-      setSeriesStats(sStats as SeriesStats)
-      setCollectionStats(cStats as CollectionStats)
-    } catch (err) {
-      console.warn('Failed to load completeness stats:', err)
-    }
-  }, [])
-
-  // Load music completeness stats with real-time EP/Singles filtering
-  const loadMusicCompletenessData = useCallback(async () => {
-    try {
-      const [artistsData, epsVal, singlesVal] = await Promise.all([
-        window.electronAPI.musicGetAllArtistCompleteness(),
-        window.electronAPI.getSetting(SETTING_KEYS.completeness_include_eps),
-        window.electronAPI.getSetting(SETTING_KEYS.completeness_include_singles),
-      ])
-      const artists = artistsData as Array<{
-        completeness_percentage: number
-        total_albums: number
-        owned_albums: number
-        total_eps: number
-        owned_eps: number
-        total_singles: number
-        owned_singles: number
-      }>
-      const epsEnabled = (epsVal as string) !== 'false'
-      const singlesEnabled = (singlesVal as string) !== 'false'
-
-      // Recalculate stats from raw counts using current settings
-      const totalArtists = artists.length
-      let completeArtists = 0
-      let totalMissingAlbums = 0
-      let totalPctSum = 0
-      for (const a of artists) {
-        const totalItems = (a.total_albums || 0) * 3
-          + (epsEnabled ? (a.total_eps || 0) * 2 : 0)
-          + (singlesEnabled ? (a.total_singles || 0) : 0)
-        const ownedItems = (a.owned_albums || 0) * 3
-          + (epsEnabled ? (a.owned_eps || 0) * 2 : 0)
-          + (singlesEnabled ? (a.owned_singles || 0) : 0)
-        const pct = totalItems > 0 ? Math.round((ownedItems / totalItems) * 100) : 100
-        totalPctSum += pct
-        if (pct >= 100) completeArtists++
-
-        const missingAlbumCount = Math.max(0, (a.total_albums || 0) - (a.owned_albums || 0))
-        const missingEpCount = epsEnabled ? Math.max(0, (a.total_eps || 0) - (a.owned_eps || 0)) : 0
-        const missingSingleCount = singlesEnabled ? Math.max(0, (a.total_singles || 0) - (a.owned_singles || 0)) : 0
-        totalMissingAlbums += missingAlbumCount + missingEpCount + missingSingleCount
-      }
-      const incompleteArtists = totalArtists - completeArtists
-      const avgCompleteness = totalArtists > 0
-        ? Math.round(totalPctSum / totalArtists)
-        : 0
-
-      setMusicCompletenessStats({
-        totalArtists,
-        analyzedArtists: totalArtists,
-        completeArtists,
-        incompleteArtists,
-        totalMissingAlbums,
-        averageCompleteness: avgCompleteness
-      })
-    } catch (err) {
-      console.warn('Failed to load music completeness stats:', err)
-    }
-  }, [])
-
-  // Load completeness data on mount and when sources change
-  useEffect(() => {
-    loadCompletenessData()
-    loadMusicCompletenessData()
-  }, [loadCompletenessData, loadMusicCompletenessData])
+  }, [isLoading, onboardingComplete])
 
   // Listen for completeness analysis progress events
   useEffect(() => {
@@ -187,21 +109,12 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
     })
 
     // Listen for task queue updates to detect completion
-    const cleanupTaskQueue = window.electronAPI.onTaskQueueUpdated((state) => {
-      if (!state.currentTask || state.currentTask.status === 'completed') {
+    const cleanupTaskQueue = window.electronAPI.onTaskQueueUpdated((state: unknown) => {
+      const queueState = state as { currentTask: { status: string } | null }
+      if (!queueState.currentTask || queueState.currentTask.status === 'completed') {
         setIsAnalyzing(false)
         setAnalysisProgress(null)
         setAnalysisType(null)
-        // Refresh stats after completion
-        loadCompletenessData()
-        loadMusicCompletenessData()
-      }
-    })
-
-    // Listen for EP/Singles settings changes to refresh music stats
-    const cleanupSettingsChanged = window.electronAPI.onSettingsChanged?.((data) => {
-      if (data.key === 'completeness_include_eps' || data.key === 'completeness_include_singles') {
-        loadMusicCompletenessData()
       }
     })
 
@@ -210,126 +123,43 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
       cleanupCollectionsProgress()
       cleanupMusicProgress()
       cleanupTaskQueue()
-      cleanupSettingsChanged?.()
     }
-  }, [loadCompletenessData, loadMusicCompletenessData])
+  }, [])
 
   // Analysis handlers
-  const handleAnalyzeSeries = async (_libraryId?: string) => {
+  const handleAnalyzeAll = async () => {
+    if (hasTV || hasMovies || hasMusic) await window.electronAPI.mediaAnalyze({ kind: 'all-libraries' })
+  }
+
+  const handleOnboardingComplete = async () => {
     try {
-      const sourceName = activeSourceId
-        ? sources.find(s => s.source_id === activeSourceId)?.display_name
-        : 'All Sources'
-      await window.electronAPI.taskQueueAddTask({
-        type: 'series-completeness',
-        label: `Analyze TV Series (${sourceName || 'All Sources'})`,
-        sourceId: activeSourceId || undefined,
-      })
-    } catch (err) {
-      console.error('Failed to queue series analysis:', err)
+      await window.electronAPI.setSetting('onboarding_completed', 'true')
+      markSplashShown()
+      setOnboardingComplete(true)
+    } catch (error) {
+      window.electronAPI.log.error('[App]', 'Failed to save onboarding state:', error)
     }
   }
 
-  const handleAnalyzeCollections = async (_libraryId?: string) => {
-    try {
-      const sourceName = activeSourceId
-        ? sources.find(s => s.source_id === activeSourceId)?.display_name
-        : 'All Sources'
-      await window.electronAPI.taskQueueAddTask({
-        type: 'collection-completeness',
-        label: `Analyze Collections (${sourceName || 'All Sources'})`,
-        sourceId: activeSourceId || undefined,
-      })
-    } catch (err) {
-      console.error('Failed to queue collections analysis:', err)
-    }
-  }
-
-  const handleAnalyzeMusic = async () => {
-    try {
-      const sourceName = activeSourceId
-        ? sources.find(s => s.source_id === activeSourceId)?.display_name
-        : 'All Sources'
-      await window.electronAPI.taskQueueAddTask({
-        type: 'music-completeness',
-        label: `Analyze Music (${sourceName || 'All Sources'})`,
-        sourceId: activeSourceId || undefined,
-      })
-    } catch (err) {
-      console.error('Failed to queue music analysis:', err)
-    }
-  }
-
-  const handleCancelAnalysis = async () => {
-    try {
-      await window.electronAPI.taskQueueCancelCurrent()
-    } catch (err) {
-      console.error('Failed to cancel analysis:', err)
-    }
-  }
-
-  const handleCompletenessDataRefresh = useCallback(() => {
-    loadCompletenessData()
-    loadMusicCompletenessData()
-  }, [loadCompletenessData, loadMusicCompletenessData])
-
-  const handleAddSourceSuccess = () => {
+  const handleAddSourceSuccess = async () => {
     setShowAddSourceModal(false)
+    if (!onboardingComplete) await handleOnboardingComplete()
   }
 
-  const handleNavigateToLibrary = useCallback((tab?: MediaViewType) => {
+  const handleNavigateToLibrary = (tab?: MediaViewType) => {
     const newTab = tab || libraryTab
     if (!isRestoringRef.current) {
       pushNavState({ view: 'library', tab: newTab })
     }
     if (tab) setLibraryTab(tab)
     setCurrentView('library')
-  }, [libraryTab, pushNavState])
-
-  const handleTVOptimizationActionHandled = useCallback(() => setPendingTVOptimizationAction(null), [])
-
-  useEffect(() => {
-    const openReview = (event: Event) => {
-      const preflightId = (event as CustomEvent<{ preflightId?: string }>).detail?.preflightId
-      if (!preflightId) return
-      setPendingTVOptimizationAction({ kind: 'review', preflightId })
-      handleNavigateToLibrary('tv')
-    }
-    const openMovieReview = (event: Event) => {
-      const detail = (event as CustomEvent<{ preflightId?: string; mediaItemId?: number }>).detail
-      if (!detail?.preflightId || detail.mediaItemId === undefined) return
-      setPendingTVOptimizationAction({ kind: 'review-movie', preflightId: detail.preflightId, mediaItemId: detail.mediaItemId })
-      handleNavigateToLibrary('movies')
-    }
-    const resumePreflight = (event: Event) => {
-      const detail = (event as CustomEvent<{ requestId?: string; entity?: Extract<TVOptimizationNavigation, { kind: 'resume' }>['entity'] }>).detail
-      if (!detail?.requestId || !detail.entity) return
-      setPendingTVOptimizationAction({ kind: 'resume', requestId: detail.requestId, entity: detail.entity })
-      handleNavigateToLibrary('tv')
-    }
-    window.addEventListener('tvOptimization:requestReview', openReview)
-    window.addEventListener('optimization:requestMovieReview', openMovieReview)
-    window.addEventListener('tvOptimization:returnToPreflight', resumePreflight)
-    const openTaskQueue = () => setShowTaskQueuePanel(true)
-    window.addEventListener('taskQueue:open', openTaskQueue)
-    return () => {
-      window.removeEventListener('tvOptimization:requestReview', openReview)
-      window.removeEventListener('optimization:requestMovieReview', openMovieReview)
-      window.removeEventListener('tvOptimization:returnToPreflight', resumePreflight)
-      window.removeEventListener('taskQueue:open', openTaskQueue)
-    }
-  }, [handleNavigateToLibrary])
+  }
 
   const handleNavigateToDashboard = () => {
     if (!isRestoringRef.current) {
       pushNavState({ view: 'dashboard' })
     }
     setCurrentView('dashboard')
-  }
-
-  const handleNavigateToTimelines = () => {
-    if (!isRestoringRef.current) pushNavState({ view: 'timelines' })
-    setCurrentView('timelines')
   }
 
   const handleBack = useCallback(() => {
@@ -342,7 +172,7 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
     }
     window.dispatchEvent(new CustomEvent('navigate-restore', { detail: restored }))
     isRestoringRef.current = false
-  }, [goBack])
+  }, [goBack, setLibraryTab])
 
   const handleForward = useCallback(() => {
     const restored = goForward()
@@ -354,7 +184,7 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
     }
     window.dispatchEvent(new CustomEvent('navigate-restore', { detail: restored }))
     isRestoringRef.current = false
-  }, [goForward])
+  }, [goForward, setLibraryTab])
 
   // Keyboard shortcuts for back/forward
   useEffect(() => {
@@ -378,35 +208,13 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
     setShowSettingsModal(true)
   }
 
-  const closeAllPanels = () => { setShowCompletenessPanel(false); setShowWishlistPanel(false); setShowChatPanel(false); setShowMoodSyncPanel(false); setShowTaskQueuePanel(false) }
-
-  const handleToggleCompleteness = () => {
-    setShowCompletenessPanel(prev => { const v = !prev; if (v) closeAllPanels(); setShowCompletenessPanel(v); return v })
-  }
-
-  const handleToggleWishlist = () => {
-    setShowWishlistPanel(prev => { const v = !prev; if (v) closeAllPanels(); setShowWishlistPanel(v); return v })
-  }
-
-  const handleToggleChat = () => {
-    setShowChatPanel(prev => { const v = !prev; if (v) closeAllPanels(); setShowChatPanel(v); return v })
-  }
-
-  const handleToggleMoodSync = () => {
-    setShowMoodSyncPanel(prev => { const v = !prev; if (v) closeAllPanels(); setShowMoodSyncPanel(v); return v })
-  }
-
-  const handleToggleTaskQueue = () => {
-    setShowTaskQueuePanel(prev => { const v = !prev; if (v) closeAllPanels(); setShowTaskQueuePanel(v); return v })
-  }
-
   const chatViewContext = useMemo((): ViewContext => ({
-    currentView: currentView === 'timelines' ? 'dashboard' : currentView,
+    currentView: currentView as 'dashboard' | 'library',
     libraryTab: currentView === 'library' ? libraryTab as 'movies' | 'tv' | 'music' : undefined,
     activeSourceId: activeSourceId || undefined,
   }), [currentView, libraryTab, activeSourceId])
 
-  if (isLoading) {
+  if (isLoading || onboardingComplete === null) {
     return (
       <div className="h-screen bg-background flex items-center justify-center">
         <div className="text-muted-foreground">Loading...</div>
@@ -414,39 +222,45 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
     )
   }
 
-  const showSplash = !splashComplete && !isWebMode()
+  // Onboarding disabled for now - to re-enable, uncomment the line below
+  // const showOnboarding = sources.length === 0 && !onboardingComplete
+  const showOnboarding = false
+  const showSplash = !splashComplete
+
+  if (showOnboarding) {
+    return (
+      <>
+        <OnboardingWizard
+          onComplete={handleOnboardingComplete}
+          onAddSource={() => setShowAddSourceModal(true)}
+        />
+        {showAddSourceModal && (
+          <AddSourceModal
+            onClose={() => setShowAddSourceModal(false)}
+            onSuccess={handleAddSourceSuccess}
+          />
+        )}
+      </>
+    )
+  }
 
   return (
     <>
       {/* Render main app - it loads behind the splash screen */}
       <div className="relative h-screen overflow-hidden bg-main-gradient text-foreground">
-        {!isMobile && (
-          <Sidebar
-            onOpenAbout={() => setShowAboutModal(true)}
-            onAddSource={() => setShowAddSourceModal(true)}
-            isCollapsed={sidebarCollapsed}
-            onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-          />
-        )}
+        <Sidebar
+          onOpenAbout={() => setShowAboutModal(true)}
+          isCollapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        />
 
-        {/* Global Top Bar — hidden on mobile (bottom tab bar provides navigation) */}
-        {!isMobile && <TopBar
+        {/* Global Top Bar */}
+        <TopBar
           currentView={currentView}
           libraryTab={libraryTab}
           onNavigateHome={handleNavigateToDashboard}
-          onNavigateTimelines={handleNavigateToTimelines}
           onNavigateToLibrary={handleNavigateToLibrary}
           onOpenSettings={() => handleOpenSettings()}
-          onToggleCompleteness={handleToggleCompleteness}
-          onToggleWishlist={handleToggleWishlist}
-          onToggleChat={handleToggleChat}
-          onToggleMoodSync={handleToggleMoodSync}
-          onToggleTaskQueue={handleToggleTaskQueue}
-          showCompletenessPanel={showCompletenessPanel}
-          showWishlistPanel={showWishlistPanel}
-          showChatPanel={showChatPanel}
-          showMoodSyncPanel={showMoodSyncPanel}
-          showTaskQueuePanel={showTaskQueuePanel}
           isAutoRefreshing={isAutoRefreshing}
           hasMovies={hasMovies}
           hasTV={hasTV}
@@ -455,207 +269,85 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
           canGoBack={canGoBack}
           onForward={handleForward}
           canGoForward={canGoForward}
-          isMobile={isMobile}
-        />}
+        />
 
-        <Suspense fallback={<main className="fixed inset-x-0 bottom-0 top-[76px]" aria-busy="true" />}>
-        {currentView === 'timelines' ? (
-          <main className="fixed top-[76px] bottom-0 transition-[left,right] duration-300 ease-out" style={{ left: sidebarCollapsed ? '96px' : '288px', right: '16px' }}>
-            <SectionErrorBoundary section="Timelines">
-              <TimelinesView />
-            </SectionErrorBoundary>
-          </main>
-        ) : currentView === 'dashboard' && !isMobile ? (
-          <SectionErrorBoundary section="Dashboard">
-            <Dashboard
-              onNavigateToLibrary={handleNavigateToLibrary}
-              onAddSource={() => setShowAddSourceModal(true)}
-              sidebarCollapsed={sidebarCollapsed}
-              hasMovies={hasMovies}
-              hasTV={hasTV}
-              hasMusic={hasMusic}
-              isMobile={isMobile}
-            />
-          </SectionErrorBoundary>
-        ) : isMobile && showWishlistPanel ? (
-          <main
-            className="fixed bottom-0 transition-[left,right,top] duration-300 ease-out"
-            style={{
-              top: 'max(env(safe-area-inset-top, 0px), 8px)',
-              left: '8px',
-              right: '8px',
-              bottom: '0px',
-            }}
-          >
-            <div className="absolute inset-0 flex flex-col overflow-hidden">
-              <WishlistPanel
-                isOpen={true}
-                onClose={() => setShowWishlistPanel(false)}
-                isMobile={isMobile}
-                inline={true}
+        <main
+          className="app-main-content fixed top-[88px] bottom-4 transition-[left,right] duration-300 ease-out min-w-0"
+          style={{
+            left: sidebarCollapsed ? '96px' : '288px',
+            right: showCompletenessPanel || showWishlistPanel || showChatPanel ? '352px' : '16px'
+          }}
+        >
+          {currentView === 'dashboard' ? (
+            <SectionErrorBoundary section="Dashboard">
+              <Dashboard
+                onNavigateToLibrary={handleNavigateToLibrary}
+                onAddSource={() => setShowAddSourceModal(true)}
+                sidebarCollapsed={sidebarCollapsed}
+                hasMovies={hasMovies}
+                hasTV={hasTV}
+                hasMusic={hasMusic}
               />
-            </div>
-          </main>
-        ) : (
-          <main
-            className="fixed bottom-0 transition-[left,right,top] duration-300 ease-out"
-            style={{
-              top: isMobile ? 'max(env(safe-area-inset-top, 0px), 8px)' : '76px',
-              left: isMobile ? '8px' : (sidebarCollapsed ? '96px' : '288px'),
-              right: isMobile ? '8px' : '16px',
-              bottom: '0px',
-            }}
-          >
+            </SectionErrorBoundary>
+          ) : (
             <SectionErrorBoundary section="Media Library">
               <MediaBrowser
                 onAddSource={() => setShowAddSourceModal(true)}
                 sidebarCollapsed={sidebarCollapsed}
                 onOpenSettings={handleOpenSettings}
                 hideHeader={true}
-                showCompletenessPanel={showCompletenessPanel}
-                showWishlistPanel={showWishlistPanel}
-                showChatPanel={showChatPanel}
-                onToggleCompleteness={handleToggleCompleteness}
-                onToggleWishlist={handleToggleWishlist}
-                onToggleChat={handleToggleChat}
                 libraryTab={libraryTab}
                 onLibraryTabChange={setLibraryTab}
                 onAutoRefreshChange={setIsAutoRefreshing}
-                pendingTVOptimizationAction={pendingTVOptimizationAction}
-                onTVOptimizationActionHandled={handleTVOptimizationActionHandled}
-                isMobile={isMobile}
-                isTablet={isTablet}
               />
             </SectionErrorBoundary>
-          </main>
-        )}
-        </Suspense>
+          )}
+        </main>
         {showAddSourceModal && (
-          <Suspense fallback={null}>
           <AddSourceModal
             onClose={() => setShowAddSourceModal(false)}
             onSuccess={handleAddSourceSuccess}
           />
-          </Suspense>
         )}
-        {showAboutModal && (
-          <Suspense fallback={null}>
-            <AboutModal isOpen={showAboutModal} onClose={() => setShowAboutModal(false)} />
-          </Suspense>
-        )}
-        {showSettingsModal && (
-          <Suspense fallback={null}>
-            <SettingsPanel
-              isOpen={showSettingsModal}
-              onClose={() => {
-                setShowSettingsModal(false)
-                setSettingsInitialTab(undefined)
-              }}
-              initialTab={settingsInitialTab as 'library' | 'quality' | 'services' | 'appearance' | 'data' | 'update' | 'troubleshoot' | undefined}
-            />
-          </Suspense>
-        )}
+        <AboutModal isOpen={showAboutModal} onClose={() => setShowAboutModal(false)} />
+        <SettingsPanel
+          isOpen={showSettingsModal}
+          onClose={() => {
+            setShowSettingsModal(false)
+            setSettingsInitialTab(undefined)
+          }}
+          initialTab={settingsInitialTab as 'library' | 'quality' | 'services' | 'appearance' | 'data' | 'update' | 'troubleshoot' | undefined}
+        />
         {/* Panels - rendered at App level for Dashboard view */}
         {currentView === 'dashboard' && (
           <>
             <SectionErrorBoundary section="Completeness Panel" compact>
-              <CompletenessPanel
-                isOpen={showCompletenessPanel}
-                onClose={() => setShowCompletenessPanel(false)}
-                seriesStats={seriesStats}
-                collectionStats={collectionStats}
-                musicStats={musicCompletenessStats}
-                onAnalyzeSeries={handleAnalyzeSeries}
-                onAnalyzeCollections={handleAnalyzeCollections}
-                onAnalyzeMusic={handleAnalyzeMusic}
-                onCancel={handleCancelAnalysis}
+            <CompletenessPanel
+                onAnalyzeAll={handleAnalyzeAll}
                 isAnalyzing={isAnalyzing}
                 analysisProgress={analysisProgress}
                 analysisType={analysisType}
-                onDataRefresh={handleCompletenessDataRefresh}
                 hasTV={hasTV}
                 hasMovies={hasMovies}
                 hasMusic={hasMusic}
                 onOpenSettings={handleOpenSettings}
-                libraries={[]}
               />
             </SectionErrorBoundary>
-            {!isMobile && (
-              <SectionErrorBoundary section="Wishlist Panel" compact>
-                <WishlistPanel
-                  isOpen={showWishlistPanel}
-                  onClose={() => setShowWishlistPanel(false)}
-                />
-              </SectionErrorBoundary>
-            )}
+            <SectionErrorBoundary section="Wishlist Panel" compact>
+              <WishlistPanel
+                onOpenAIAdvice={() => openAIInsights('wishlist')}
+              />
+            </SectionErrorBoundary>
           </>
         )}
-        {/* Mood Sync Panel - rendered at App level, available in all views */}
-        <MoodSyncPanel
-          isOpen={showMoodSyncPanel}
-          onClose={() => setShowMoodSyncPanel(false)}
-        />
-        {/* Task Queue Panel */}
-        <TaskQueuePanel
-          isOpen={showTaskQueuePanel}
-          onClose={() => setShowTaskQueuePanel(false)}
-        />
         {/* Chat Panel - rendered at App level, available in all views */}
         <ChatPanel
-          isOpen={showChatPanel}
-          onClose={() => setShowChatPanel(false)}
           onOpenSettings={() => handleOpenSettings('services')}
           viewContext={chatViewContext}
         />
-        {/* Mobile search overlay */}
-        {isMobile && showMobileSearch && (
-          <MobileSearchOverlay
-            onClose={() => setShowMobileSearch(false)}
-            onSelectMovie={(id) => {
-              handleNavigateToLibrary('movies')
-              // Navigate to the movie detail via the NavigationContext
-              navigateTo({ type: 'movie', id })
-            }}
-            onSelectShow={(title) => {
-              handleNavigateToLibrary('tv')
-              navigateTo({ type: 'tv', id: title })
-            }}
-            onSelectEpisode={(id) => {
-              handleNavigateToLibrary('tv')
-              navigateTo({ type: 'episode', id })
-            }}
-            onSelectArtist={(_id, name) => {
-              handleNavigateToLibrary('music')
-              navigateTo({ type: 'artist', id: name })
-            }}
-            onSelectAlbum={(id) => {
-              handleNavigateToLibrary('music')
-              navigateTo({ type: 'album', id })
-            }}
-          />
-        )}
-
-        {/* Mobile bottom tab bar */}
-        {isMobile && (
-          <MobileTabBar
-            activeTab={
-              showWishlistPanel ? 'wishlist' :
-              currentView === 'dashboard' ? 'movies' :
-              libraryTab === 'movies' ? 'movies' :
-              libraryTab === 'tv' ? 'tv' :
-              libraryTab === 'music' ? 'music' : 'movies'
-            }
-            onTabChange={(tab: MobileTab) => {
-              if (tab === 'wishlist') {
-                setShowWishlistPanel(true)
-              } else {
-                setShowWishlistPanel(false)
-                handleNavigateToLibrary(tab === 'tv' ? 'tv' : tab)
-              }
-            }}
-            onSearchOpen={() => setShowMobileSearch(true)}
-          />
-        )}
+        <AIInsightsPanel
+          onOpenSettings={() => handleOpenSettings('services')}
+        />
       </div>
       {/* Splash screen overlays the app and fades out to reveal it */}
       {showSplash && <SplashScreen onComplete={markSplashShown} />}
@@ -665,25 +357,10 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
   )
 }
 
+import { ScrollMemoryProvider } from '@/contexts/ScrollMemoryContext'
+import { PanelProvider } from '@/contexts/PanelContext'
+
 function App() {
-  const [webAuthed, setWebAuthed] = useState(() => !isWebMode() || isAuthenticated())
-  const { isMobile, isTablet } = useMobileLayout()
-
-  // In web mode without auth, show login screen
-  if (isWebMode() && !webAuthed) {
-    return (
-      <ErrorBoundary>
-        <ThemeProvider>
-          <WebLoginScreen
-            onAuthenticated={() => setWebAuthed(true)}
-            authenticate={authenticate}
-            logoSrc={logoImage}
-          />
-        </ThemeProvider>
-      </ErrorBoundary>
-    )
-  }
-
   return (
     <ErrorBoundary>
       <ToastProvider>
@@ -691,7 +368,13 @@ function App() {
           <SourceProvider>
             <WishlistProvider>
               <NavigationProvider>
-                <AppContent isMobile={isMobile} isTablet={isTablet} />
+                <LibraryProvider>
+                  <ScrollMemoryProvider>
+                    <PanelProvider>
+                      <AppContent />
+                    </PanelProvider>
+                  </ScrollMemoryProvider>
+                </LibraryProvider>
               </NavigationProvider>
             </WishlistProvider>
           </SourceProvider>

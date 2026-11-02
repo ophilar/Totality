@@ -8,10 +8,10 @@
  */
 
 import { ipcMain, IpcMainInvokeEvent, app } from 'electron'
-import { getErrorMessage, isNodeError } from '../../services/utils/errorUtils'
-import { getLoggingService } from '../../services/LoggingService'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
+import { getLoggingService } from '@main/services/LoggingService'
 import { z } from 'zod'
-import { validateInput } from '../../validation/schemas'
+import { validateInput } from '@main/validation/schemas'
 
 /**
  * Options for creating an IPC handler
@@ -23,30 +23,11 @@ export interface HandlerOptions {
   onError?: (channel: string, error: unknown) => void
 }
 
-const authenticatedWebRpc = Symbol('authenticated-web-rpc')
-
-export interface AuthenticatedWebRpcEvent {
-  readonly [authenticatedWebRpc]: true
-  sender: {
-    id?: number
-    send: (channel: string, ...args: unknown[]) => void
-    isDestroyed: () => boolean
-  }
-}
-
-export function createAuthenticatedWebRpcEvent(sender: AuthenticatedWebRpcEvent['sender']): AuthenticatedWebRpcEvent {
-  return Object.defineProperty({ sender }, authenticatedWebRpc, { value: true }) as AuthenticatedWebRpcEvent
-}
-
-// Re-export error utilities for consumers
-export { getErrorMessage, isNodeError }
-
 /**
  * Validates that an incoming IPC message originates from an authorized local frame.
  * Enforces fail-closed security: missing events, missing sender frames, or missing URLs are rejected.
  */
-export function validateSenderFrame(event: Pick<IpcMainInvokeEvent, 'senderFrame'> | AuthenticatedWebRpcEvent, channel: string): void {
-  if (event && authenticatedWebRpc in event) return
+export function validateSenderFrame(event: IpcMainInvokeEvent, channel: string): void {
   if (!event || !event.senderFrame) {
     getLoggingService().error('[IPC Security]', `Rejected unauthorized IPC request on ${channel}: missing event or senderFrame`)
     throw new Error(`Unauthorized IPC request on ${channel}: missing sender frame`)
@@ -70,7 +51,7 @@ export function validateSenderFrame(event: Pick<IpcMainInvokeEvent, 'senderFrame
 
 /**
  * Create a type-safe IPC handler with consistent validation and error handling.
- *
+ * 
  * If the schema is a ZodTuple, it validates the entire arguments array.
  * Otherwise, it validates the first argument (args[0]).
  */
@@ -92,7 +73,7 @@ export function createValidatedIpcHandler<TSchema extends z.ZodSchema<unknown>, 
       }
 
       const isTuple = schema instanceof z.ZodTuple
-      const validated = isTuple
+      const validated = isTuple 
         ? validateInput(schema, args, channel)
         : validateInput(schema, args[0], channel)
 
@@ -135,7 +116,7 @@ export function createValidatedIpcHandlerWithEvent<TSchema extends z.ZodSchema<u
       }
 
       const isTuple = schema instanceof z.ZodTuple
-      const validated = isTuple
+      const validated = isTuple 
         ? validateInput(schema, args, channel)
         : validateInput(schema, args[0], channel)
 

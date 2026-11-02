@@ -5,7 +5,7 @@
  * Contains codec detection, hi-res detection, and album statistics calculation.
  */
 
-import type { MusicTrack } from '../../types/database'
+import type { MusicTrack } from '@main/types/database'
 
 /**
  * List of lossless audio codecs
@@ -56,42 +56,6 @@ export function extractMusicBrainzId(
   }
 
   return undefined
-}
-
-/**
- * Guess audio codec from file path extension.
- * Consolidated version used by Kodi and MediaMonkey providers.
- */
-export function guessCodecFromExtension(filePath: string): string {
-  const ext = filePath.split('.').pop()?.toLowerCase() || ''
-  const codecMap: Record<string, string> = {
-    flac: 'flac',
-    mp3: 'mp3',
-    m4a: 'aac',
-    aac: 'aac',
-    ogg: 'vorbis',
-    opus: 'opus',
-    wav: 'pcm',
-    wma: 'wma',
-    ape: 'ape',
-    wv: 'wavpack',
-    aiff: 'aiff',
-    aif: 'aiff',
-    alac: 'alac',
-    dsf: 'dsd',
-    dff: 'dsd',
-  }
-  return codecMap[ext] || 'unknown'
-}
-
-/**
- * Parse Kodi-style mood string (` / ` separated) into JSON array string.
- * Returns undefined if no moods.
- */
-export function parseKodiMoodString(mood?: string | null): string | undefined {
-  if (!mood) return undefined
-  const moods = mood.split(' / ').map(m => m.trim()).filter(Boolean)
-  return moods.length > 0 ? JSON.stringify(moods) : undefined
 }
 
 /**

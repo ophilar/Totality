@@ -1,40 +1,36 @@
-import { IPC_CHANNELS } from '../../shared/ipcChannels'
-/**
- * IPC Handlers for Notifications
- */
-
-import { getDatabase } from '../database/getDatabase'
-import type { GetNotificationsOptions } from '../types/monitoring'
-import { createIpcHandler } from './utils/createHandler'
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getLoggingService } from '@main/services/LoggingService'
+import { createIpcHandler, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
+import { z } from 'zod'
 
 export function registerNotificationHandlers(): void {
-  createIpcHandler(IPC_CHANNELS.notificationsGetAll, async (options?: GetNotificationsOptions) => {
-    const db = getDatabase()
-    return db.getNotifications(options)
+  const db = getDatabase()
+
+  createIpcHandler(IPC_CHANNELS.NOTIFICATIONS.GET_ALL, async (options?: { unreadOnly?: boolean; limit?: number }) => {
+    return await db.notifications.get(options || {})
   })
 
-  createIpcHandler(IPC_CHANNELS.notificationsGetCount, async () => {
-    const db = getDatabase()
-    return db.getNotificationCount()
+  createIpcHandler('notifications:getCount', async () => {
+    return await db.notifications.getUnreadCount()
   })
 
-  createIpcHandler(IPC_CHANNELS.notificationsMarkRead, async (ids: number[]) => {
-    const db = getDatabase()
-    db.markNotificationsRead(ids)
+  createValidatedIpcHandler(IPC_CHANNELS.NOTIFICATIONS.MARK_READ, z.array(z.number()), async (ids) => {
+    await db.notifications.markAsRead(ids)
   })
 
-  createIpcHandler(IPC_CHANNELS.notificationsMarkAllRead, async () => {
-    const db = getDatabase()
-    db.markAllNotificationsRead()
+  createIpcHandler(IPC_CHANNELS.NOTIFICATIONS.MARK_ALL_READ, async () => {
+    await db.notifications.markAllAsRead()
   })
 
-  createIpcHandler(IPC_CHANNELS.notificationsDelete, async (ids: number[]) => {
-    const db = getDatabase()
-    db.deleteNotifications(ids)
+  createValidatedIpcHandler('notifications:delete', z.array(z.number()), async (ids) => {
+    await db.notifications.deleteNotifications(ids)
   })
 
-  createIpcHandler(IPC_CHANNELS.notificationsClear, async () => {
-    const db = getDatabase()
-    db.clearAllNotifications()
+  createIpcHandler('notifications:clear', async () => {
+    await db.notifications.clearAllNotifications()
   })
+
+  getLoggingService().info('[notifications]', 'Notification IPC handlers registered')
 }
+

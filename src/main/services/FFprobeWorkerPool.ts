@@ -1,4 +1,3 @@
-
 /**
  * FFprobe Worker Pool
  *
@@ -9,16 +8,31 @@
 import { Worker } from 'worker_threads'
 import * as os from 'os'
 import * as path from 'node:path'
-import type { FileAnalysisResult } from './MediaFileAnalyzer'
+import { app } from 'electron'
+import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
+import { APP_CONFIG } from '@main/config'
 
 interface WorkerTask {
+  type: 'analyze'
   taskId: string
   filePath: string
+}
+
+interface WorkerCancelTask {
+  type: 'cancel'
+  taskId: string
+}
+
+interface WorkerShutdownTask {
+  type: 'shutdown'
 }
 
 interface WorkerResult {
   taskId: string
   result: FileAnalysisResult
+  cancelled?: boolean
 }
 
 interface QueuedTask {
@@ -26,17 +40,18 @@ interface QueuedTask {
   filePath: string
   resolve: (result: FileAnalysisResult) => void
   reject: (error: Error) => void
+  signal?: AbortSignal
+  abortCleanup?: () => void
 }
 
 interface WorkerInfo {
   worker: Worker
   busy: boolean
   currentTask: QueuedTask | null
-  taskTimeout: NodeJS.Timeout | null
+  lastBusyTime: number
+  exitPromise: Promise<void>
 }
 
-// How long to wait for a single ffprobe analysis before terminating the worker
-const FFPROBE_TASK_TIMEOUT_MS = 30_000
 
 // Singleton instance
 let poolInstance: FFprobeWorkerPool | null = null
@@ -49,7 +64,8 @@ export function getFFprobeWorkerPool(): FFprobeWorkerPool {
 }
 
 export class FFprobeWorkerPool {
-  private static readonly MAX_QUEUE_DEPTH = 10000
+  private static readonly MAX_QUEUE_DEPTH = APP_CONFIG.workers.ffprobe.maxQueueDepth
+  private static readonly IDLE_WORKER_TTL_MS = 30000
   private workers: WorkerInfo[] = []
   private taskQueue: QueuedTask[] = []
   private taskIdCounter = 0
@@ -58,11 +74,20 @@ export class FFprobeWorkerPool {
   private initialized = false
   private workerScriptPath: string
   private isShuttingDown = false
+  private idleReapTimer: NodeJS.Timeout | null = null
 
-  constructor(workerScriptPath = path.join(__dirname, 'ffprobe-worker.cjs')) {
-    // Default to CPU cores - 1, minimum 1, maximum 8
-    this.maxWorkers = Math.min(4, Math.max(1, os.cpus().length - 1))
-    this.workerScriptPath = workerScriptPath
+  constructor() {
+    // Default to CPU cores - 1, minimum 1, maximum configured limit
+    this.maxWorkers = Math.min(APP_CONFIG.workers.ffprobe.defaultWorkersLimit, Math.max(1, os.cpus().length - 1))
+
+    // Determine worker script path based on environment
+    if (app.isPackaged) {
+      // Production: worker is in resources/app.asar/dist-electron/main/
+      this.workerScriptPath = path.join(__dirname, 'ffprobe-worker.cjs')
+    } else {
+      // Development: worker is in dist-electron/main/
+      this.workerScriptPath = path.join(__dirname, 'ffprobe-worker.cjs')
+    }
   }
 
   /**
@@ -75,7 +100,7 @@ export class FFprobeWorkerPool {
 
     this.ffprobePath = ffprobePath
     this.initialized = true
-    console.log(`[FFprobeWorkerPool] Initialized with ${this.maxWorkers} workers`)
+    getLoggingService().info('[FFprobeWorkerPool]', `Initialized with ${this.maxWorkers} workers`)
   }
 
   /**
@@ -83,7 +108,7 @@ export class FFprobeWorkerPool {
    */
   setMaxWorkers(count: number): void {
     this.maxWorkers = Math.min(16, Math.max(1, count))
-    console.log(`[FFprobeWorkerPool] Max workers set to ${this.maxWorkers}`)
+    getLoggingService().info('[FFprobeWorkerPool]', `Max workers set to ${this.maxWorkers}`)
   }
 
   /**
@@ -102,7 +127,8 @@ export class FFprobeWorkerPool {
    */
   async analyzeFiles(
     filePaths: string[],
-    onProgress?: (current: number, total: number, currentFile: string) => void
+    onProgress?: (current: number, total: number, currentFile: string) => void,
+    signal?: AbortSignal
   ): Promise<Map<string, FileAnalysisResult>> {
     if (!this.initialized || !this.ffprobePath) {
       throw new Error('FFprobeWorkerPool not initialized. Call initialize() first.')
@@ -119,7 +145,7 @@ export class FFprobeWorkerPool {
 
     // Create promises for all files
     const promises = filePaths.map(async (filePath) => {
-      const result = await this.analyzeFile(filePath)
+      const result = await this.analyzeFile(filePath, signal)
       results.set(filePath, result)
       completed++
       onProgress?.(completed, total, path.basename(filePath))
@@ -160,44 +186,51 @@ export class FFprobeWorkerPool {
   /**
    * Analyze a single file using a worker
    */
-  async analyzeFile(filePath: string): Promise<FileAnalysisResult> {
+  async analyzeFile(filePath: string, signal?: AbortSignal): Promise<FileAnalysisResult> {
     if (!this.initialized || !this.ffprobePath) {
-      return {
-        success: false,
-        error: 'FFprobeWorkerPool not initialized',
-        filePath,
-        audioTracks: [],
-        subtitleTracks: [],
-      }
+      throw new Error('FFprobeWorkerPool not initialized')
     }
 
     if (this.isShuttingDown) {
-      return {
-        success: false,
-        error: 'Worker pool is shutting down',
-        filePath,
-        audioTracks: [],
-        subtitleTracks: [],
-      }
+      throw new Error('Worker pool is shutting down')
     }
 
     if (this.taskQueue.length >= FFprobeWorkerPool.MAX_QUEUE_DEPTH) {
-      return {
-        success: false,
-        error: 'Analysis queue is full — too many files queued',
-        filePath,
-        audioTracks: [],
-        subtitleTracks: [],
-      }
+      throw new Error('Analysis queue is full — too many files queued')
     }
 
     return new Promise((resolve, reject) => {
       const taskId = `task-${++this.taskIdCounter}`
-      const task: QueuedTask = { taskId, filePath, resolve, reject }
+      const task: QueuedTask = { taskId, filePath, resolve, reject, signal }
+      if (signal) {
+        const cancel = () => this.cancelTask(task)
+        task.abortCleanup = () => signal.removeEventListener('abort', cancel)
+        if (signal.aborted) {
+          cancel()
+          return
+        }
+        signal.addEventListener('abort', cancel, { once: true })
+      }
 
       this.taskQueue.push(task)
       this.processQueue()
     })
+  }
+
+  private cancelTask(task: QueuedTask): void {
+    const queuedIndex = this.taskQueue.indexOf(task)
+    if (queuedIndex !== -1) {
+      this.taskQueue.splice(queuedIndex, 1)
+      task.abortCleanup?.()
+      task.resolve({ success: false, error: 'FFprobe analysis cancelled', filePath: task.filePath, audioTracks: [], subtitleTracks: [] })
+      return
+    }
+
+    const workerInfo = this.workers.find(worker => worker.currentTask === task)
+    if (!workerInfo) return
+    task.abortCleanup?.()
+    task.resolve({ success: false, error: 'FFprobe analysis cancelled', filePath: task.filePath, audioTracks: [], subtitleTracks: [] })
+    workerInfo.worker.postMessage({ type: 'cancel', taskId: task.taskId } satisfies WorkerCancelTask)
   }
 
   /**
@@ -209,13 +242,14 @@ export class FFprobeWorkerPool {
     }
 
     // Find or create an available worker
-    let workerInfo: WorkerInfo | undefined = this.workers.find(w => !w.busy)
+    const workerInfo: WorkerInfo | undefined = this.workers.find(w => !w.busy)
 
     if (!workerInfo && this.workers.length < this.maxWorkers) {
       const newWorker = this.createWorker()
       if (newWorker) {
         this.workers.push(newWorker)
-        workerInfo = newWorker
+        this.processQueue() // Recursively call to assign the task
+        return
       }
     }
 
@@ -237,12 +271,16 @@ export class FFprobeWorkerPool {
           ffprobePath: this.ffprobePath,
         },
       })
+      const exitPromise = new Promise<void>(resolve => {
+        worker.once('exit', () => resolve())
+      })
 
       const workerInfo: WorkerInfo = {
         worker,
         busy: false,
         currentTask: null,
-        taskTimeout: null,
+        lastBusyTime: Date.now(),
+        exitPromise,
       }
 
       worker.on('message', (result: WorkerResult) => {
@@ -250,21 +288,21 @@ export class FFprobeWorkerPool {
       })
 
       worker.on('error', (error) => {
-        console.error('[FFprobeWorkerPool] Worker error:', error)
-        this.handleWorkerError(workerInfo, error as Error)
+        getLoggingService().error('[FFprobeWorkerPool]', '[FFprobeWorkerPool] Worker error:', error)
+        this.handleWorkerError(workerInfo, error)
       })
 
       worker.on('exit', (code) => {
         if (code !== 0 && !this.isShuttingDown) {
-          console.warn(`[FFprobeWorkerPool] Worker exited with code ${code}`)
+          getLoggingService().warn('[FFprobeWorkerPool]', `Worker exited with code ${code}`)
         }
         this.removeWorker(workerInfo)
       })
 
-      console.log(`[FFprobeWorkerPool] Created worker (total: ${this.workers.length + 1})`)
+      getLoggingService().info('[FFprobeWorkerPool]', `Created worker (total: ${this.workers.length + 1})`)
       return workerInfo
     } catch (error) {
-      console.error('[FFprobeWorkerPool] Failed to create worker:', error)
+      getLoggingService().error('[FFprobeWorkerPool]', '[FFprobeWorkerPool] Failed to create worker:', error)
       return null
     }
   }
@@ -276,25 +314,8 @@ export class FFprobeWorkerPool {
     workerInfo.busy = true
     workerInfo.currentTask = task
 
-    // Guard against hung ffprobe processes that never respond
-    workerInfo.taskTimeout = setTimeout(() => {
-      if (workerInfo.currentTask?.taskId !== task.taskId) return
-      console.warn(`[FFprobeWorkerPool] Task timed out after ${FFPROBE_TASK_TIMEOUT_MS}ms: ${task.filePath}`)
-      workerInfo.currentTask = null
-      workerInfo.taskTimeout = null
-      task.resolve({
-        success: false,
-        error: 'FFprobe analysis timed out',
-        filePath: task.filePath,
-        audioTracks: [],
-        subtitleTracks: [],
-      })
-      this.removeWorker(workerInfo)
-      workerInfo.worker.terminate()
-      this.processQueue()
-    }, FFPROBE_TASK_TIMEOUT_MS)
-
     const message: WorkerTask = {
+      type: 'analyze',
       taskId: task.taskId,
       filePath: task.filePath,
     }
@@ -306,35 +327,33 @@ export class FFprobeWorkerPool {
    * Handle worker result
    */
   private handleWorkerResult(workerInfo: WorkerInfo, result: WorkerResult): void {
-    if (workerInfo.taskTimeout) {
-      clearTimeout(workerInfo.taskTimeout)
-      workerInfo.taskTimeout = null
-    }
     const task = workerInfo.currentTask
     if (task && task.taskId === result.taskId) {
-      task.resolve(result.result)
+      task.abortCleanup?.()
+      task.resolve(result.cancelled
+        ? { success: false, error: 'FFprobe analysis cancelled', filePath: task.filePath, audioTracks: [], subtitleTracks: [] }
+        : result.result)
     }
 
     workerInfo.busy = false
     workerInfo.currentTask = null
+    workerInfo.lastBusyTime = Date.now()
 
     // Process next task in queue
     this.processQueue()
+    this.scheduleIdleReap()
   }
 
   /**
    * Handle worker error
    */
-  private handleWorkerError(workerInfo: WorkerInfo, error: Error): void {
-    if (workerInfo.taskTimeout) {
-      clearTimeout(workerInfo.taskTimeout)
-      workerInfo.taskTimeout = null
-    }
+  private handleWorkerError(workerInfo: WorkerInfo, error: unknown): void {
     const task = workerInfo.currentTask
     if (task) {
+      task.abortCleanup?.()
       task.resolve({
         success: false,
-        error: error.message,
+        error: getErrorMessage(error),
         filePath: task.filePath,
         audioTracks: [],
         subtitleTracks: [],
@@ -343,9 +362,35 @@ export class FFprobeWorkerPool {
 
     workerInfo.busy = false
     workerInfo.currentTask = null
+    workerInfo.lastBusyTime = Date.now()
 
     // Try to process next task
     this.processQueue()
+    this.scheduleIdleReap()
+  }
+
+  private scheduleIdleReap(): void {
+    if (this.idleReapTimer || this.isShuttingDown) return
+    this.idleReapTimer = setTimeout(() => {
+      this.idleReapTimer = null
+      this.reapIdleWorkers()
+    }, FFprobeWorkerPool.IDLE_WORKER_TTL_MS)
+  }
+
+  private reapIdleWorkers(): void {
+    if (this.isShuttingDown || this.taskQueue.length > 0) return
+    const now = Date.now()
+    const idleWorkers = this.workers.filter(w => !w.busy && (now - w.lastBusyTime) >= FFprobeWorkerPool.IDLE_WORKER_TTL_MS)
+    
+    for (const workerInfo of idleWorkers) {
+      getLoggingService().info('[FFprobeWorkerPool]', 'Reaping idle worker thread to free system RAM')
+      workerInfo.worker.terminate()
+      this.removeWorker(workerInfo)
+    }
+
+    if (this.workers.some(w => !w.busy)) {
+      this.scheduleIdleReap()
+    }
   }
 
   /**
@@ -371,9 +416,14 @@ export class FFprobeWorkerPool {
    */
   async shutdown(): Promise<void> {
     this.isShuttingDown = true
+    if (this.idleReapTimer) {
+      clearTimeout(this.idleReapTimer)
+      this.idleReapTimer = null
+    }
 
     // Reject all queued tasks
     for (const task of this.taskQueue) {
+      task.abortCleanup?.()
       task.resolve({
         success: false,
         error: 'Worker pool shutting down',
@@ -384,21 +434,22 @@ export class FFprobeWorkerPool {
     }
     this.taskQueue = []
 
-    // Terminate all workers
-    const terminationPromises = this.workers.map(async workerInfo => {
-      if (workerInfo.taskTimeout) {
-        clearTimeout(workerInfo.taskTimeout)
-        workerInfo.taskTimeout = null
+    // Stop active FFprobe processes and let workers exit after they close.
+    const terminationPromises = this.workers.map(workerInfo => {
+      if (workerInfo.currentTask) {
+        workerInfo.currentTask.abortCleanup?.()
+        workerInfo.currentTask.resolve({
+          success: false,
+          error: 'Worker pool shutting down',
+          filePath: workerInfo.currentTask.filePath,
+          audioTracks: [],
+          subtitleTracks: [],
+        })
       }
-      workerInfo.currentTask?.resolve({
-        success: false,
-        error: 'Worker pool shutting down',
-        filePath: workerInfo.currentTask.filePath,
-        audioTracks: [],
-        subtitleTracks: [],
-      })
-      workerInfo.currentTask = null
-      await workerInfo.worker.terminate()
+      return (async () => {
+        workerInfo.worker.postMessage({ type: 'shutdown' } satisfies WorkerShutdownTask)
+        await workerInfo.exitPromise
+      })()
     })
 
     await Promise.all(terminationPromises)
@@ -406,7 +457,7 @@ export class FFprobeWorkerPool {
     this.initialized = false
     this.isShuttingDown = false
 
-    console.log('[FFprobeWorkerPool] Shutdown complete')
+    getLoggingService().info('[FFprobeWorkerPool]', '[FFprobeWorkerPool] Shutdown complete')
   }
 
   /**

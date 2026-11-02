@@ -1,4 +1,3 @@
-
 export interface TimelineItemIdentifiers {
   tmdbId?: number
   tvdbId?: number
@@ -43,12 +42,6 @@ export interface TimelineRecipeSummary {
   sourceType: 'preset' | 'remote' | 'trakt' | 'web' | 'ai'
   sourceUrl?: string
   granularity?: TimelineDefinition['granularity']
-}
-
-export function getTimelineGranularity(timeline: TimelineDefinition): NonNullable<TimelineDefinition['granularity']> {
-  return timeline.granularity ?? (timeline.items.some(item => item.type === 'show')
-    ? 'series-blocks'
-    : timeline.items.some(item => item.type === 'episode') ? 'episode-interleaved' : 'release-order')
 }
 
 export interface TimelineFetchOptions { refresh?: boolean; snapshotId?: string; signal?: AbortSignal }

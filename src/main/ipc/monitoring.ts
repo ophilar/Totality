@@ -1,71 +1,36 @@
-import { IPC_CHANNELS } from '../../shared/ipcChannels'
-/**
- * IPC Handlers for Live Monitoring System
- */
-
-import { getLiveMonitoringService } from '../services/LiveMonitoringService'
-import { validateInput, MonitoringConfigSchema, SourceIdSchema } from '../validation/schemas'
-import { createIpcHandler } from './utils/createHandler'
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
+import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
+import { MonitoringConfigSchema, SourceIdSchema } from '@main/validation/schemas'
+import { getLoggingService } from '@main/services/LoggingService'
+import { createIpcHandler, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
 
 export function registerMonitoringHandlers(): void {
   const service = getLiveMonitoringService()
 
-  /**
-   * Get monitoring configuration
-   */
-  createIpcHandler(IPC_CHANNELS.monitoringGetConfig, async () => {
-    return service.getConfig()
-  })
+  createIpcHandler(IPC_CHANNELS.MONITORING.GET_CONFIG, async () => service.getConfig())
 
-  /**
-   * Update monitoring configuration
-   */
-  createIpcHandler(IPC_CHANNELS.monitoringSetConfig, async (config: unknown) => {
-    const validConfig = validateInput(MonitoringConfigSchema, config, 'monitoring:setConfig')
-    await service.setConfig(validConfig)
+  createValidatedIpcHandler(IPC_CHANNELS.MONITORING.SET_CONFIG, MonitoringConfigSchema, async (config) => {
+    await service.setConfig(config)
     return { success: true }
   })
 
-  /**
-   * Start live monitoring
-   */
-  createIpcHandler(IPC_CHANNELS.monitoringStart, async () => {
-    console.log('[IPC monitoring:start] Live monitoring started')
-    service.start()
+  createIpcHandler(IPC_CHANNELS.MONITORING.START, async () => {
+    await service.start()
     return { success: true }
   })
 
-  /**
-   * Stop live monitoring
-   */
-  createIpcHandler(IPC_CHANNELS.monitoringStop, async () => {
-    console.log('[IPC monitoring:stop] Live monitoring stopped')
-    service.stop()
+  createIpcHandler(IPC_CHANNELS.MONITORING.STOP, async () => {
+    await service.stop()
     return { success: true }
   })
 
-  /**
-   * Check if monitoring is currently active
-   */
-  createIpcHandler(IPC_CHANNELS.monitoringIsActive, async () => {
-    return service.isMonitoringActive()
+  createIpcHandler(IPC_CHANNELS.MONITORING.IS_ACTIVE, async () => service.isMonitoringActive())
+  createIpcHandler(IPC_CHANNELS.MONITORING.GET_STATUS, async () => service.getStatus())
+
+  createValidatedIpcHandler(IPC_CHANNELS.MONITORING.FORCE_CHECK, SourceIdSchema, async (sourceId) => {
+    return await service.forceCheck(sourceId)
   })
 
-  /**
-   * Get monitoring status (for debug panel)
-   */
-  createIpcHandler(IPC_CHANNELS.monitoringGetStatus, async () => {
-    return service.getStatus()
-  })
-
-  /**
-   * Force check a specific source immediately
-   */
-  createIpcHandler(IPC_CHANNELS.monitoringForceCheck, async (sourceId: unknown) => {
-    const validSourceId = validateInput(SourceIdSchema, sourceId, 'monitoring:forceCheck')
-    console.log('[IPC monitoring:forceCheck] Manual check for source:', validSourceId)
-    return service.forceCheck(validSourceId)
-  })
-
-  console.log('[IPC] Monitoring handlers registered')
+  getLoggingService().info('[monitoring]', '[IPC] Monitoring handlers registered')
 }
+

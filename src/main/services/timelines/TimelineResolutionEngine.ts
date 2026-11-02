@@ -1,9 +1,20 @@
+import type { LibSQLDatabase } from 'drizzle-orm/libsql'
+import { eq } from 'drizzle-orm'
+import * as schema from '@main/database/drizzleSchema'
+import type { MissingEpisode } from '@main/types/database'
+import type { TimelineDefinition, TimelineItem, TimelineItemIdentifiers } from './ITimelineRecipeProvider'
 
-import type { MediaItem, SeriesCompleteness, MissingEpisode } from '../../types/database'
-import type { TimelineDefinition, TimelineItem } from './ITimelineRecipeProvider'
-
-export interface ResolvedTimelineItem extends TimelineItem {
+export interface ResolvedTimelineItem {
   order: number
+  type: 'movie' | 'episode' | 'show'
+  title: string
+  seriesTitle?: string
+  seasonNumber?: number
+  episodeNumber?: number
+  deliberateRepeat?: boolean
+  airDate?: string
+  timelineEra?: string
+  identifiers: TimelineItemIdentifiers
   status: 'matched' | 'missing' | 'ambiguous'
   reason?: string
   matchedMediaItem?: {
@@ -30,8 +41,6 @@ export interface ResolvedTimelineResult {
   completionPercentage: number
   items: ResolvedTimelineItem[]
 }
-
-export type TimelineResolutionOperationResult = ResolvedTimelineResult | { cancelled: true } | { error: string }
 
 /**
  * Universal media title cleaner applying standard media catalog normalization:
@@ -67,46 +76,25 @@ export function normalizeMediaTitle(str: string): string {
     .trim()
 }
 
+type LocalItem = typeof schema.mediaItems.$inferSelect
+
 export class TimelineResolutionEngine {
-  constructor(
-    private readonly loadLibrary: (sourceId: string) => MediaItem[],
-    private readonly loadCompleteness?: (sourceId: string) => SeriesCompleteness[]
-  ) {}
+  constructor(private readonly db: LibSQLDatabase<typeof schema>) {}
 
   async resolveTimeline(timeline: TimelineDefinition, sourceId?: string, signal?: AbortSignal): Promise<ResolvedTimelineResult> {
-    const local = sourceId ? this.loadLibrary(sourceId) : []
+    const local = sourceId ? await this.db.select().from(schema.mediaItems).where(eq(schema.mediaItems.sourceId, sourceId)) : []
     signal?.throwIfAborted()
-    const completeness = (sourceId && this.loadCompleteness) ? this.loadCompleteness(sourceId) : []
+    const completeness = sourceId ? await this.db.select().from(schema.seriesCompleteness).where(eq(schema.seriesCompleteness.sourceId, sourceId)) : []
     signal?.throwIfAborted()
     const items: ResolvedTimelineItem[] = []
-
-    const append = (item: TimelineItem, candidates: MediaItem[]) => {
+    const append = (item: TimelineItem, candidates: LocalItem[]) => {
       const match = candidates.length === 1 ? candidates[0] : undefined
-      items.push({
-        ...item,
-        order: items.length + 1,
+      items.push({ ...item, order: items.length + 1,
         status: candidates.length > 1 ? 'ambiguous' : match ? 'matched' : 'missing',
-        reason: !sourceId
-          ? 'Select a media source to resolve local availability.'
-          : candidates.length > 1
-          ? 'Multiple local editions or series match; choose an unambiguous library identity.'
-          : undefined,
-        matchedMediaItem: match?.id == null
-          ? undefined
-          : {
-              id: match.id,
-              plexId: match.plex_id,
-              sourceId: match.source_id ?? sourceId!,
-              sourceType: match.source_type ?? 'plex',
-              title: match.title,
-              filePath: match.file_path,
-              resolution: match.resolution,
-              videoCodec: match.video_codec,
-              duration: match.duration_ms,
-            },
+        reason: !sourceId ? 'Select a media source to resolve local availability.' : candidates.length > 1 ? 'Multiple local editions or series match; choose an unambiguous library identity.' : undefined,
+        matchedMediaItem: match ? { id: match.id, plexId: match.plexId, sourceId: match.sourceId, sourceType: match.sourceType, title: match.title, filePath: match.filePath, resolution: match.resolution, videoCodec: match.videoCodec, duration: match.duration } : undefined,
       })
     }
-
     for (const [index, item] of timeline.items.entries()) {
       if (index % 128 === 0) {
         await new Promise<void>(resolve => setImmediate(resolve))
@@ -120,128 +108,61 @@ export class TimelineResolutionEngine {
         append(item, local.filter(row => this.matches(item, row)))
         continue
       }
-
       const range = item.title.match(/seasons?\s+(\d+)(?:\s*[-–—]\s*(\d+))?/i)
       const inRange = (season: number) => !range || (season >= Number(range[1]) && season <= Number(range[2] ?? range[1]))
-      const episodes = local.filter(row => this.matches(item, row) && row.season_number !== null && row.episode_number !== null && inRange(row.season_number!))
-      const identityKeys = new Set(episodes.map(row => `${row.library_id}:${row.series_identity_key}`))
-      if (identityKeys.size > 1) {
-        append(item, episodes)
-        continue
-      }
-
+      const episodes = local.filter(row => this.matches(item, row) && row.seasonNumber !== null && row.episodeNumber !== null && inRange(row.seasonNumber))
+      const identityKeys = new Set(episodes.map(row => `${row.libraryId}:${row.seriesIdentityKey}`))
+      if (identityKeys.size > 1) { append(item, episodes); continue }
       const missing = completeness.filter(row => {
-        if (episodes.length) return row.series_identity_key === episodes[0].series_identity_key && row.library_id === episodes[0].library_id
-        return item.identifiers.tmdbId
-          ? row.tmdb_id === String(item.identifiers.tmdbId)
-          : normalizeMediaTitle(row.series_title) === normalizeMediaTitle(item.seriesTitle || item.title.replace(/\s*\(?seasons?\s+\d+(?:\s*[-–—]\s*\d+)?\)?/i, ''))
-      }).flatMap(row => {
-        if (row.missing_episodes == null) return []
-        let parsed: unknown = row.missing_episodes
-        if (typeof parsed === 'string') {
-          try {
-            parsed = JSON.parse(parsed)
-          } catch (cause) {
-            const error = new Error(`Invalid missing episode data for series "${row.series_title}"`)
-            ;(error as Error & { cause?: unknown }).cause = cause
-            throw error
-          }
-        }
-        if (!Array.isArray(parsed)) throw new Error(`Invalid missing episode data for series "${row.series_title}": expected an array`)
-        return parsed as MissingEpisode[]
-      }).filter(ep => inRange(ep.season_number))
-
+        if (episodes.length) return row.seriesIdentityKey === episodes[0].seriesIdentityKey && row.libraryId === episodes[0].libraryId
+        return item.identifiers.tmdbId ? row.tmdbId === String(item.identifiers.tmdbId) : item.identifiers.tvdbId ? row.tvdbId === String(item.identifiers.tvdbId) : normalizeMediaTitle(row.seriesTitle) === normalizeMediaTitle(item.seriesTitle || item.title.replace(/\s*\(?seasons?\s+\d+(?:\s*[-–—]\s*\d+)?\)?/i, ''))
+      }).flatMap(row => JSON.parse(row.missingEpisodes) as MissingEpisode[]).filter(ep => inRange(ep.season_number))
       const coordinates = new Map<string, { season: number; episode: number; title: string }>()
-      for (const ep of episodes) {
-        coordinates.set(`${ep.season_number}:${ep.episode_number}`, { season: ep.season_number!, episode: ep.episode_number!, title: ep.title })
-      }
+      for (const ep of episodes) coordinates.set(`${ep.seasonNumber}:${ep.episodeNumber}`, { season: ep.seasonNumber!, episode: ep.episodeNumber!, title: ep.title })
       for (const ep of missing) {
         const key = `${ep.season_number}:${ep.episode_number}`
-        if (!coordinates.has(key)) {
-          coordinates.set(key, { season: ep.season_number, episode: ep.episode_number, title: ep.title || `${item.seriesTitle || item.title} S${ep.season_number}E${ep.episode_number}` })
-        }
+        if (!coordinates.has(key)) coordinates.set(key, { season: ep.season_number, episode: ep.episode_number, title: ep.title || `${item.seriesTitle || item.title} S${ep.season_number}E${ep.episode_number}` })
       }
-
-      if (!coordinates.size) {
-        append(item, [])
-        continue
-      }
-
+      if (!coordinates.size) { append(item, []); continue }
       for (const ep of [...coordinates.values()].sort((a, b) => a.season - b.season || a.episode - b.episode)) {
-        append(
-          {
-            ...item,
-            type: 'episode',
-            title: ep.title,
-            seriesTitle: item.seriesTitle || episodes[0]?.series_title || item.title,
-            seasonNumber: ep.season,
-            episodeNumber: ep.episode,
-          },
-          episodes.filter(row => row.season_number === ep.season && row.episode_number === ep.episode)
-        )
+        append({ ...item, type: 'episode', title: ep.title, seriesTitle: item.seriesTitle || episodes[0]?.seriesTitle || item.title, seasonNumber: ep.season, episodeNumber: ep.episode }, episodes.filter(row => row.seasonNumber === ep.season && row.episodeNumber === ep.episode))
       }
     }
-
     const seenEpisodes = new Set<string>()
     for (const item of items) {
       signal?.throwIfAborted()
       if (item.type !== 'episode') continue
-      const identity = JSON.stringify([
-        item.identifiers.tmdbId,
-        item.identifiers.tvdbId,
-        item.identifiers.imdbId,
-        normalizeMediaTitle(item.seriesTitle || ''),
-        item.seasonNumber,
-        item.episodeNumber,
-      ])
+      const identity = JSON.stringify([item.identifiers.tmdbId, item.identifiers.tvdbId, item.identifiers.imdbId, normalizeMediaTitle(item.seriesTitle || ''), item.seasonNumber, item.episodeNumber])
       if (seenEpisodes.has(identity) && !item.deliberateRepeat) {
         item.status = 'ambiguous'
         item.reason = 'Repeated episode identity requires explicit deliberateRepeat in the guide.'
       }
       seenEpisodes.add(identity)
     }
-
     const matchedCount = items.filter(item => item.status === 'matched').length
     signal?.throwIfAborted()
     const ambiguousCount = items.filter(item => item.status === 'ambiguous').length
-    return {
-      timeline,
-      sourceId,
-      items,
-      totalCount: items.length,
-      matchedCount,
-      ambiguousCount,
-      missingCount: items.filter(item => item.status === 'missing').length,
-      completionPercentage: items.length ? Math.round((matchedCount / items.length) * 100) : 0,
-    }
+    return { timeline, sourceId, items, totalCount: items.length, matchedCount, ambiguousCount, missingCount: items.filter(item => item.status === 'missing').length, completionPercentage: items.length ? Math.round(matchedCount / items.length * 100) : 0 }
   }
 
-  private matches(item: TimelineItem, row: MediaItem): boolean {
+  private matches(item: TimelineItem, row: LocalItem): boolean {
     if (row.type !== (item.type === 'movie' ? 'movie' : 'episode')) return false
-    if (item.type === 'episode' && (row.season_number !== item.seasonNumber || row.episode_number !== item.episodeNumber)) return false
+    if (item.type === 'episode' && (row.seasonNumber !== item.seasonNumber || row.episodeNumber !== item.episodeNumber)) return false
     const ids = item.identifiers
     const canonical: boolean[] = []
-    if (ids.tmdbId) {
-      canonical.push(item.type === 'movie' ? row.tmdb_id === String(ids.tmdbId) : row.series_tmdb_id === String(ids.tmdbId) || row.series_identity_key === `tmdb:${ids.tmdbId}`)
-    }
-    if (ids.tvdbId) {
-      canonical.push(row.series_identity_key === `tvdb:${ids.tvdbId}`)
-    }
-    if (ids.imdbId) {
-      canonical.push(item.type === 'movie' ? row.imdb_id?.replace(/^tt/, '') === ids.imdbId.replace(/^tt/, '') : row.series_identity_key === `imdb:${ids.imdbId}`)
-    }
+    if (ids.tmdbId) canonical.push(item.type === 'movie' ? row.tmdbId === String(ids.tmdbId) : row.seriesTmdbId === String(ids.tmdbId) || row.seriesIdentityKey === `tmdb:${ids.tmdbId}`)
+    if (ids.tvdbId) canonical.push(row.seriesIdentityKey === `tvdb:${ids.tvdbId}`)
+    if (ids.imdbId) canonical.push(item.type === 'movie' ? row.imdbId?.replace(/^tt/, '') === ids.imdbId.replace(/^tt/, '') : row.seriesIdentityKey === `imdb:${ids.imdbId}`)
     if (canonical.length) {
-      if (ids.tmdbId && row.tmdb_id && item.type === 'movie' && row.tmdb_id !== String(ids.tmdbId)) return false
-      if (ids.tmdbId && item.type !== 'movie' && row.series_tmdb_id && row.series_tmdb_id !== String(ids.tmdbId)) return false
-      if (ids.tvdbId && row.series_identity_key?.startsWith('tvdb:') && row.series_identity_key !== `tvdb:${ids.tvdbId}`) return false
-      if (ids.imdbId && item.type === 'movie' && row.imdb_id && row.imdb_id.replace(/^tt/, '') !== ids.imdbId.replace(/^tt/, '')) return false
-      if (ids.imdbId && item.type !== 'movie' && row.series_identity_key?.startsWith('imdb:') && row.series_identity_key !== `imdb:${ids.imdbId}`) return false
+      if (ids.tmdbId && row.tmdbId && item.type === 'movie' && row.tmdbId !== String(ids.tmdbId)) return false
+      if (ids.tmdbId && item.type !== 'movie' && row.seriesTmdbId && row.seriesTmdbId !== String(ids.tmdbId)) return false
+      if (ids.tvdbId && row.seriesIdentityKey?.startsWith('tvdb:') && row.seriesIdentityKey !== `tvdb:${ids.tvdbId}`) return false
+      if (ids.imdbId && item.type === 'movie' && row.imdbId && row.imdbId.replace(/^tt/, '') !== ids.imdbId.replace(/^tt/, '')) return false
+      if (ids.imdbId && item.type !== 'movie' && row.seriesIdentityKey?.startsWith('imdb:') && row.seriesIdentityKey !== `imdb:${ids.imdbId}`) return false
       return canonical.some(Boolean)
     }
-    if (item.type === 'movie') {
-      return normalizeMediaTitle(row.title) === normalizeMediaTitle(item.title) && (!item.airDate || row.year === Number(item.airDate.slice(0, 4)))
-    }
+    if (item.type === 'movie') return normalizeMediaTitle(row.title) === normalizeMediaTitle(item.title) && (!item.airDate || row.year === Number(item.airDate.slice(0, 4)))
     const series = item.seriesTitle || (item.type === 'show' ? item.title.replace(/\s*\(?seasons?\s+\d+(?:\s*[-–—]\s*\d+)?\)?/i, '') : '')
-    return Boolean(series && row.series_title && normalizeMediaTitle(row.series_title) === normalizeMediaTitle(series))
+    return Boolean(series && row.seriesTitle && normalizeMediaTitle(row.seriesTitle) === normalizeMediaTitle(series))
   }
 }

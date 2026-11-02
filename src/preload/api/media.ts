@@ -1,0 +1,422 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
+import { ipcRenderer } from 'electron'
+import type { MediaItem, MediaItemFilters, TVShowSummary, TVShowFilters, MusicArtist, MusicAlbum, MusicTrack, LibraryStats, DashboardDataSection, DashboardSummary, SeriesCompleteness, OptimizationMetricsSummary } from '@main/types/database'
+import type { GlobalSearchResults } from '@shared/globalSearch'
+import type { TMDBValidationState } from '@main/services/TMDBService'
+import type { SavedServiceHealthSnapshot, SavedServiceId } from '@shared/serviceHealth'
+
+export const mediaApi: MediaAPI = {
+  tmdbGetValidationState: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.TMDB_VALIDATION_STATE),
+  onTmdbValidationChanged: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: TMDBValidationState) => callback(state)
+    ipcRenderer.on(IPC_CHANNELS.DATABASE.TMDB_VALIDATION_CHANGED, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.DATABASE.TMDB_VALIDATION_CHANGED, listener)
+  },
+  tmdbTestApiKey: (apiKey: string, requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.TMDB_TEST_API_KEY, { apiKey, requestId }),
+  tmdbCancelApiKeyTest: (requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.CANCEL_OPERATION, requestId),
+  getSavedServiceHealth: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_STATE),
+  refreshSavedServiceHealth: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_REFRESH),
+  onSavedServiceHealthChanged: (callback: (snapshot: SavedServiceHealthSnapshot) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, snapshot: SavedServiceHealthSnapshot) => callback(snapshot)
+    ipcRenderer.on(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_CHANGED, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_CHANGED, listener)
+  },
+  retrySavedServiceHealth: (service: SavedServiceId) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_RETRY, service),
+  // Quality Analysis
+  qualityGetDistribution: () => ipcRenderer.invoke('quality:getDistribution'),
+  qualityGetRecommendedFormat: (mediaItemId: number) =>
+    ipcRenderer.invoke('quality:getRecommendedFormat', mediaItemId),
+  onQualityAnalysisProgress: (callback: (progress: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
+    ipcRenderer.on('quality:analysisProgress', handler)
+    return () => ipcRenderer.removeListener('quality:analysisProgress', handler)
+  },
+
+  // Database - Media Items
+  getMediaItems: (filters?: MediaItemFilters) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_LIST, filters),
+  countMediaItems: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_COUNT, filters),
+  getMediaOptimizationSummary: (filters?: MediaItemFilters) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_OPTIMIZATION_SUMMARY, filters),
+  mediaList: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_LIST, filters),
+  mediaCount: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_COUNT, filters),
+  getTVShows: (filters?: TVShowFilters) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.TVSHOWS_LIST, filters),
+  countTVShows: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.TVSHOWS_COUNT, filters),
+  getLibraryOverview: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_LIBRARY_OVERVIEW, sourceId),
+  tvShowList: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.TVSHOWS_LIST, filters),
+  tvShowCount: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.TVSHOWS_COUNT, filters),
+  countTVEpisodes: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.TV_EPISODES_COUNT, filters),
+  getLetterOffset: (params: { table: 'movies' | 'tvshows' | 'artists' | 'albums'; letter: string; sourceId?: string; libraryId?: string }) =>
+    ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_LETTER_OFFSET, params),
+  getMediaItem: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_GET_ITEM, id),
+  upsertMediaItem: (item: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_UPSERT, item),
+  deleteMediaItem: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_DELETE, id),
+  getMediaItemVersions: (mediaItemId: number) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_GET_VERSIONS, mediaItemId),
+
+  // Database - Quality Scores
+  getQualityScores: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_QUALITY_SCORES),
+  getQualityScoreByMediaId: (mediaItemId: number) =>
+    ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_QUALITY_SCORE_BY_MEDIA_ID, mediaItemId),
+  upsertQualityScore: (score: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.UPSERT_QUALITY_SCORE, score),
+
+  // Database - Settings
+  getSetting: (key: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_SETTING, key),
+  setSetting: (key: string, value: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.SET_SETTING, key, value),
+  getAllSettings: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_ALL_SETTINGS),
+
+  // Library Protection
+  dbSetLibraryProtected: (sourceId: string, libraryId: string, isProtected: boolean) => 
+    ipcRenderer.invoke(IPC_CHANNELS.DATABASE.SET_LIBRARY_PROTECTED, sourceId, libraryId, isProtected),
+  dbSetLibraryAllowExpandedMatching: (sourceId: string, libraryId: string, allowExpandedMatching: boolean) => 
+    ipcRenderer.invoke(IPC_CHANNELS.DATABASE.SET_LIBRARY_ALLOW_EXPANDED_MATCHING, sourceId, libraryId, allowExpandedMatching),
+  dbVerifyPin: (pin: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.VERIFY_PIN, pin),
+  dbSetPin: (pin: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.SET_PIN, pin),
+  dbHasPin: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.HAS_PIN),
+
+  // NFS Mount Mappings (for Kodi)
+  getNfsMappings: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS.GET_NFS_MAPPINGS),
+  setNfsMappings: (mappings: Record<string, string>) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS.SET_NFS_MAPPINGS, mappings),
+  testNfsMapping: (nfsPath: string, localPath: string) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS.TEST_NFS_MAPPING, nfsPath, localPath),
+
+  // Settings Change Events
+  onSettingsChanged: (callback: (data: { key: string; hasValue: boolean }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { key: string; hasValue: boolean }) => callback(data)
+    ipcRenderer.on('settings:changed', handler)
+    return () => ipcRenderer.removeListener('settings:changed', handler)
+  },
+
+  // Database - Data Management
+  dbGetPath: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_PATH),
+  dbExport: (requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.EXPORT, requestId),
+  dbExportCSV: (options: {
+    includeUpgrades: boolean
+    includeMissingMovies: boolean
+    includeMissingEpisodes: boolean
+    includeMissingAlbums: boolean
+  }, requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.EXPORT_CSV, options, requestId),
+  dbImport: (requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.IMPORT, requestId),
+  dbCancelOperation: (requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.CANCEL_OPERATION, requestId),
+  dbReset: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.RESET),
+  dbOpenFolder: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.OPEN_FOLDER),
+
+  // Series Completeness
+  seriesAnalyzeByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) =>
+    ipcRenderer.invoke('series:analyzeByIdentity', seriesTitle, sourceId, seriesIdentityKey, libraryId),
+  seriesGetAll: (sourceId?: string) => ipcRenderer.invoke('series:getAll', sourceId),
+  seriesGetIncomplete: (sourceId?: string) => ipcRenderer.invoke('series:getIncomplete', sourceId),
+  seriesGetStats: () => ipcRenderer.invoke('series:getStats'),
+  seriesGetEpisodesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) =>
+    ipcRenderer.invoke('series:getEpisodesByIdentity', seriesTitle, sourceId, seriesIdentityKey, libraryId),
+  seriesGetAudioLanguagesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) =>
+    ipcRenderer.invoke('series:getAudioLanguagesByIdentity', seriesTitle, sourceId, seriesIdentityKey, libraryId),
+  mediaGetFileAudioLanguages: (mediaItemId: number) => ipcRenderer.invoke('media:getFileAudioLanguages', mediaItemId),
+  seriesDelete: (id: number) => ipcRenderer.invoke('series:delete', id),
+  seriesGetSeasonDetails: (tmdbId: string, seasonNumber: number) =>
+    ipcRenderer.invoke('series:getSeasonDetails', tmdbId, seasonNumber),
+  seriesGetSeasonPoster: (tmdbId: string, seasonNumber: number) =>
+    ipcRenderer.invoke('series:getSeasonPoster', tmdbId, seasonNumber),
+  seriesGetEpisodeStill: (tmdbId: string, seasonNumber: number, episodeNumber: number) =>
+    ipcRenderer.invoke('series:getEpisodeStill', tmdbId, seasonNumber, episodeNumber),
+  seriesCancelAnalysis: () => ipcRenderer.invoke('series:cancelAnalysis'),
+  onSeriesProgress: (callback: (progress: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
+    ipcRenderer.on('series:progress', handler)
+    return () => ipcRenderer.removeListener('series:progress', handler)
+  },
+
+  // Series Match Fixing
+  seriesSearchTMDB: (query: string) => ipcRenderer.invoke('series:searchTMDB', query),
+  seriesFixMatch: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string, providerId: string, externalId: string) =>
+    ipcRenderer.invoke('series:fixMatch', seriesTitle, sourceId, seriesIdentityKey, libraryId, providerId, externalId),
+
+  // Movie Match Fixing
+  movieSearchTMDB: (query: string, year?: number, includeAdult?: boolean) => ipcRenderer.invoke(IPC_CHANNELS.MOVIE.SEARCH_TMDB, query, year, includeAdult),
+  mediaSearchMetadata: (query: string, type: 'movie' | 'tv' | 'anime' | 'music' | 'artwork' | undefined, includeAdult: boolean | undefined, artistName: string | undefined, requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.MEDIA.SEARCH_METADATA, query, type, includeAdult, artistName, requestId),
+  movieFixMatch: (mediaItemId: number, providerId: string, externalId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MOVIE.FIX_MATCH, mediaItemId, providerId, externalId),
+
+  // TMDB Metadata
+  tmdbGetTVShowDetails: (tmdbId: string) => ipcRenderer.invoke('tmdb:getTVShowDetails', tmdbId),
+  tmdbGetMovieDetails: (tmdbId: string) => ipcRenderer.invoke('tmdb:getMovieDetails', tmdbId),
+
+  // Movie Collections
+  collectionsAnalyzeAll: (sourceId?: string, libraryId?: string) => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS.ANALYZE_ALL, sourceId, libraryId),
+  collectionsGetAll: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS.GET_ALL, sourceId),
+  collectionsGetIncomplete: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS.GET_INCOMPLETE, sourceId),
+  collectionsGetStats: () => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS.GET_STATS),
+  collectionsDelete: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS.DELETE, id),
+  collectionsCancelAnalysis: () => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS.CANCEL_ANALYSIS),
+  onCollectionsProgress: (callback: (progress: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
+    ipcRenderer.on('collections:progress', handler)
+    return () => ipcRenderer.removeListener('collections:progress', handler)
+  },
+
+  // Database - Statistics
+  getLibraryStats: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_LIBRARY_STATS, sourceId),
+  getDashboardSummary: (request: { sourceId?: string; sections: DashboardDataSection[] }) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_DASHBOARD_SUMMARY, request),
+
+  // Database - Global Search
+  mediaSearch: (query: string) => ipcRenderer.invoke(IPC_CHANNELS.MEDIA.SEARCH, query),
+
+  // Database - Exclusions
+  addExclusion: (exclusionType: string, referenceId?: number, referenceKey?: string, parentKey?: string, title?: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.DATABASE.ADD_EXCLUSION, exclusionType, referenceId, referenceKey, parentKey, title),
+  batchAddExclusions: (exclusions: unknown[]) =>
+    ipcRenderer.invoke(IPC_CHANNELS.DATABASE.BATCH_ADD_EXCLUSIONS, exclusions),
+  removeExclusion: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.REMOVE_EXCLUSION, id),
+  getExclusions: (exclusionType?: string, parentKey?: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_EXCLUSIONS, exclusionType, parentKey),
+  mediaDeepAnalyze: (options: { filePath: string; scanBitrate?: boolean; detectVolume?: boolean; requestId?: string }) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MEDIA.DEEP_ANALYZE, options),
+  mediaAnalyze: (scope: import('@shared/analysisScope').AnalysisScope) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MEDIA.ANALYZE, scope),
+  getMediaOptimizationAdvice: (mediaId: number) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MEDIA.GET_OPTIMIZATION_ADVICE, mediaId),
+  mediaCancelDeepAnalyze: (requestId: string) => ipcRenderer.invoke('media:cancelDeepAnalyze', requestId),
+  mediaCompareProvider: (mediaItemId: number) => ipcRenderer.invoke('media:compareProvider', mediaItemId),
+}
+
+export interface MediaDeepAnalysisResult {
+  success: boolean
+  error?: string
+  audioTracks?: Array<{ index: number; peakVolumeDB?: number; meanVolumeDB?: number }>
+  deepAnalysis?: {
+    peakBitrate?: number
+    avgBitrate?: number
+    bitrateVariance?: number
+    isVariableBitrate?: boolean
+    scanDurationMs?: number
+  }
+}
+
+export interface MediaAPI {
+  tmdbGetValidationState: () => Promise<TMDBValidationState>
+  onTmdbValidationChanged: (callback: (state: TMDBValidationState) => void) => () => void
+  tmdbTestApiKey: (apiKey: string, requestId: string) => Promise<'valid' | 'invalid-credential' | 'unavailable'>
+  tmdbCancelApiKeyTest: (requestId: string) => Promise<{ success: boolean }>
+  getSavedServiceHealth: () => Promise<SavedServiceHealthSnapshot>
+  refreshSavedServiceHealth: () => Promise<SavedServiceHealthSnapshot>
+  onSavedServiceHealthChanged: (callback: (snapshot: SavedServiceHealthSnapshot) => void) => () => void
+  retrySavedServiceHealth: (service: SavedServiceId) => Promise<SavedServiceHealthSnapshot>
+  // Quality Analysis
+  qualityGetDistribution: () => Promise<{
+    byTier: {
+      [tier: string]: { low: number; medium: number; high: number }
+    }
+    byQuality: {
+      low: number
+      medium: number
+      high: number
+    }
+  }>
+  qualityGetRecommendedFormat: (mediaItemId: number) => Promise<string>
+  onQualityAnalysisProgress: (callback: (progress: unknown) => void) => () => void
+
+  // Database - Media Items
+  getMediaItems: (filters?: MediaItemFilters) => Promise<MediaItem[]>
+  countMediaItems: (filters?: unknown) => Promise<number>
+  getMediaOptimizationSummary: (filters?: MediaItemFilters) => Promise<OptimizationMetricsSummary>
+  mediaList: (filters?: unknown) => Promise<unknown[]>
+  mediaCount: (filters?: unknown) => Promise<number>
+  getTVShows: (filters?: TVShowFilters) => Promise<TVShowSummary[]>
+  countTVShows: (filters?: unknown) => Promise<number>
+  getLibraryOverview: (sourceId?: string) => Promise<{
+    movies: { items: MediaItem[], total: number }
+    tvShows: { items: TVShowSummary[], total: number }
+    music: { 
+      artists: { items: MusicArtist[], total: number },
+      albums: { items: MusicAlbum[], total: number },
+      tracks: { items: MusicTrack[], total: number }
+    }
+    stats: LibraryStats
+  }>
+  tvShowList: (filters?: unknown) => Promise<unknown[]>
+  tvShowCount: (filters?: unknown) => Promise<number>
+  countTVEpisodes: (filters?: unknown) => Promise<number>
+  getLetterOffset: (params: { table: 'movies' | 'tvshows' | 'artists' | 'albums'; letter: string; sourceId?: string; libraryId?: string }) => Promise<number>
+  getMediaItem: (id: number) => Promise<unknown | null>
+  upsertMediaItem: (item: unknown) => Promise<number>
+  deleteMediaItem: (id: number) => Promise<boolean>
+  getMediaItemVersions: (mediaItemId: number) => Promise<unknown[]>
+
+  // Database - Quality Scores
+  getQualityScores: () => Promise<unknown[]>
+  getQualityScoreByMediaId: (mediaItemId: number) => Promise<unknown | null>
+  upsertQualityScore: (score: unknown) => Promise<number>
+
+  // Database - Settings
+  getSetting: (key: string) => Promise<string | null>
+  setSetting: (key: string, value: string) => Promise<boolean>
+  getAllSettings: () => Promise<Record<string, string>>
+
+  // Library Protection
+  dbSetLibraryProtected: (sourceId: string, libraryId: string, isProtected: boolean) => Promise<boolean>
+  dbSetLibraryAllowExpandedMatching: (sourceId: string, libraryId: string, allowExpandedMatching: boolean) => Promise<boolean>
+  dbVerifyPin: (pin: string) => Promise<boolean>
+  dbSetPin: (pin: string) => Promise<boolean>
+  dbHasPin: () => Promise<boolean>
+
+  // NFS Mount Mappings (for Kodi)
+  getNfsMappings: () => Promise<Record<string, string>>
+  setNfsMappings: (mappings: Record<string, string>) => Promise<boolean>
+  testNfsMapping: (nfsPath: string, localPath: string) => Promise<{
+    success: boolean
+    error?: string
+    folderCount?: number
+    fileCount?: number
+    message?: string
+  }>
+
+  // Settings Change Events
+  onSettingsChanged: (callback: (data: { key: string; hasValue: boolean }) => void) => () => void
+
+  // Database - Data Management
+  dbGetPath: () => Promise<string>
+  dbExport: (requestId: string) => Promise<{ success: boolean; path?: string; cancelled?: boolean }>
+  dbExportCSV: (options: {
+    includeUpgrades: boolean
+    includeMissingMovies: boolean
+    includeMissingEpisodes: boolean
+    includeMissingAlbums: boolean
+  }, requestId: string) => Promise<{ success: boolean; path?: string; cancelled?: boolean }>
+  dbImport: (requestId: string) => Promise<{ success: boolean; imported?: number; errors?: string[]; cancelled?: boolean }>
+  dbCancelOperation: (requestId: string) => Promise<{ status: 'cancelling' | 'committing' | 'missing' }>
+  dbReset: () => Promise<{ success: boolean }>
+  dbOpenFolder: () => Promise<{ success: boolean }>
+
+  // Series Completeness
+  seriesAnalyzeByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<SeriesCompleteness | null>
+  seriesGetAll: (sourceId?: string) => Promise<unknown[]>
+  seriesGetIncomplete: (sourceId?: string) => Promise<unknown[]>
+  seriesGetStats: () => Promise<{
+    totalSeries: number
+    completeSeries: number
+    incompleteSeries: number
+    totalMissingEpisodes: number
+    averageCompleteness: number
+  }>
+  seriesGetEpisodesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<MediaItem[]>
+  seriesGetAudioLanguagesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<string[]>
+  mediaGetFileAudioLanguages: (mediaItemId: number) => Promise<string[]>
+  seriesDelete: (id: number) => Promise<boolean>
+  seriesGetSeasonDetails: (tmdbId: string, seasonNumber: number) => Promise<{
+    overview: string | null
+    episodeCount: number
+    airDate: string | null
+    name: string | null
+  } | null>
+  seriesGetSeasonPoster: (tmdbId: string, seasonNumber: number) => Promise<string | null>
+  seriesGetEpisodeStill: (tmdbId: string, seasonNumber: number, episodeNumber: number) => Promise<string | null>
+  seriesCancelAnalysis: () => Promise<{ success: boolean }>
+  onSeriesProgress: (callback: (progress: unknown) => void) => () => void
+
+  // Series Match Fixing
+  seriesSearchTMDB: (query: string) => Promise<Array<{
+    id: number
+    name: string
+    first_air_date: string
+    overview: string
+    poster_url: string | null
+    vote_average: number
+  }>>
+  seriesFixMatch: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string, providerId: string, externalId: string) => Promise<{
+    success: boolean
+    updatedEpisodes: number
+    completeness: unknown
+  }>
+
+  // Movie Match Fixing
+  movieSearchTMDB: (query: string, year?: number, includeAdult?: boolean) => Promise<Array<{
+    id: number
+    title: string
+    release_date: string
+    overview: string
+    poster_url: string | null
+    vote_average: number
+  }>>
+  mediaSearchMetadata: (query: string, type: 'movie' | 'tv' | 'anime' | 'music' | 'artwork' | undefined, includeAdult: boolean | undefined, artistName: string | undefined, requestId: string) => Promise<Array<{
+    id: string
+    provider: string
+    title: string
+    year?: number
+    type: 'movie' | 'tv' | 'anime' | 'music' | 'artwork'
+    posterUrl?: string
+    bannerUrl?: string
+    overview?: string
+    score?: number
+    network?: string
+    status?: string
+    country?: string
+    originalLanguage?: string
+    firstAirDate?: string
+    releaseDate?: string
+    externalIds?: {
+      imdbId?: string
+      tvdbId?: string
+      tmdbId?: string
+      anilistId?: string
+      musicBrainzId?: string
+    }
+  }> | { status: 'cancelled' }>
+  movieFixMatch: (mediaItemId: number, providerId: string, externalId: string) => Promise<{
+    success: boolean
+    tmdbId: number
+    posterUrl?: string
+    title: string
+  }>
+
+  // TMDB Metadata
+  tmdbGetTVShowDetails: (tmdbId: string) => Promise<{ overview: string | null } | null>
+  tmdbGetMovieDetails: (tmdbId: string) => Promise<{
+    overview: string | null
+    releaseDate: string | null
+    runtime: number | null
+  } | null>
+
+  // Movie Collections
+  collectionsAnalyzeAll: (sourceId?: string, libraryId?: string) => Promise<{ success: boolean; completed: boolean; analyzed: number }>
+  collectionsGetAll: (sourceId?: string) => Promise<unknown[]>
+  collectionsGetIncomplete: (sourceId?: string) => Promise<unknown[]>
+  collectionsGetStats: () => Promise<{
+    total: number
+    complete: number
+    incomplete: number
+    totalMissing: number
+    avgCompleteness: number
+  }>
+  collectionsDelete: (id: number) => Promise<boolean>
+  collectionsCancelAnalysis: () => Promise<{ success: boolean }>
+  onCollectionsProgress: (callback: (progress: unknown) => void) => () => void
+
+  // Database - Statistics
+  getLibraryStats: (sourceId?: string) => Promise<{
+    totalItems: number
+    totalMovies: number
+    totalEpisodes: number
+    totalShows: number
+    lowQualityCount: number
+    needsUpgradeCount: number
+    averageQualityScore: number
+    movieNeedsUpgradeCount: number
+    movieAverageQualityScore: number
+    tvNeedsUpgradeCount: number
+    tvAverageQualityScore: number
+  }>
+  getDashboardSummary: (request: { sourceId?: string; sections: DashboardDataSection[] }) => Promise<DashboardSummary>
+
+  // Database - Global Search
+  mediaSearch: (query: string) => Promise<GlobalSearchResults>
+
+  // Deep Analysis
+  mediaDeepAnalyze: (options: { filePath: string; scanBitrate?: boolean; detectVolume?: boolean; requestId?: string }) => Promise<MediaDeepAnalysisResult>
+  mediaAnalyze: (scope: import('@shared/analysisScope').AnalysisScope) => Promise<{ taskId: string; scope: import('@shared/analysisScope').AnalysisScope }>
+  getMediaOptimizationAdvice: (mediaId: number) => Promise<{ action: string; decisionStatus: string }>
+  mediaCancelDeepAnalyze: (requestId: string) => Promise<{ success: boolean }>
+  mediaCompareProvider: (mediaItemId: number) => Promise<{ providerType: string; differences: Array<{ field: string; local: unknown; provider: unknown }> }>
+  addExclusion: (exclusionType: string, referenceId?: number, referenceKey?: string, parentKey?: string, title?: string) => Promise<number>
+  batchAddExclusions: (exclusions: unknown[]) => Promise<void>
+  removeExclusion: (id: number) => Promise<void>
+  getExclusions: (exclusionType?: string, parentKey?: string) => Promise<Array<{
+    id: number; exclusion_type: string; reference_id: number | null; reference_key: string | null
+    parent_key: string | null; title: string | null; created_at: string
+  }>>
+}

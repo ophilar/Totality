@@ -1,0 +1,4796 @@
+{
+  "id": "star-wars-canon",
+  "franchise": "Star Wars Canon",
+  "name": "Star Wars (Canon Chronological Order)",
+  "description": "Official Lucasfilm canon chronological order with fully interleaved Clone Wars episodes, animated series, live-action series, and theatrical films.",
+  "sourceUrl": "https://www.starwars.com/news/star-wars-movies-and-series-guide",
+  "version": 2,
+  "items": [
+    {
+      "type": "movie",
+      "title": "Star Wars: Episode I - The Phantom Menace",
+      "airDate": "1999-05-19",
+      "timelineEra": "32 BBY",
+      "identifiers": {
+        "tmdbId": 1893,
+        "imdbId": "tt0120915"
+      },
+      "order": 1
+    },
+    {
+      "type": "movie",
+      "title": "Star Wars: Episode II - Attack of the Clones",
+      "airDate": "2002-05-16",
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 1894,
+        "imdbId": "tt0121765"
+      },
+      "order": 2
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E16 - Cat and Mouse",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 16,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 3
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E16 - Hidden Enemy",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 16,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 4
+    },
+    {
+      "type": "movie",
+      "title": "Star Wars: The Clone Wars",
+      "airDate": "2008-08-15",
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 12180,
+        "imdbId": "tt1185834"
+      },
+      "order": 5
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E01 - Clone Cadets",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 1,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 6
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E03 - Supply Lines",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 3,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 7
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E01",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 1,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 8
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E02",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 2,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 9
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E03",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 3,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 10
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E04",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 4,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 11
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E05",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 5,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 12
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E06",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 6,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 13
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E07",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 7,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 14
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E08",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 8,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 15
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E09",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 9,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 16
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E10",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 10,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 17
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E11",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 11,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 18
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E12",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 12,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 19
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E13",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 13,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 20
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E14",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 14,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 21
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E15",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 15,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 22
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E17",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 17,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 23
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E18",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 18,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 24
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E19",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 19,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 25
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E20",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 20,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 26
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S01E21",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 1,
+      "episodeNumber": 21,
+      "timelineEra": "22 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 27
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E01",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 1,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 28
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E02",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 2,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 29
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E03",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 3,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 30
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E17",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 17,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 31
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E18",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 18,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 32
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E19",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 19,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 33
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E04",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 4,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 34
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E05",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 5,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 35
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E06",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 6,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 36
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E07",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 7,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 37
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E08",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 8,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 38
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E09",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 9,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 39
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E10",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 10,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 40
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E11",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 11,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 41
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E12",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 12,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 42
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E13",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 13,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 43
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E14",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 14,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 44
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E20",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 20,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 45
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E21",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 21,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 46
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S02E22",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 2,
+      "episodeNumber": 22,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 47
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E05",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 5,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 48
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E06",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 6,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 49
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E07",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 7,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 50
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E02 - ARC Troopers",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 2,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 51
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E04 - Sphere of Influence",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 4,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 52
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E08",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 8,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 53
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E09",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 9,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 54
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E10",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 10,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 55
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E11",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 11,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 56
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E12",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 12,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 57
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E13",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 13,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 58
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E14",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 14,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 59
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E15",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 15,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 60
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E16",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 16,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 61
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E17",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 17,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 62
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E18",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 18,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 63
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E19",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 19,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 64
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E20",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 20,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 65
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E21",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 21,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 66
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S03E22",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 3,
+      "episodeNumber": 22,
+      "timelineEra": "21 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 67
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E01",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 1,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 68
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E02",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 2,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 69
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E03",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 3,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 70
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E04",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 4,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 71
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E05",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 5,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 72
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E06",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 6,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 73
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E07",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 7,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 74
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E08",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 8,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 75
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E09",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 9,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 76
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E10",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 10,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 77
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E11",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 11,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 78
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E12",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 12,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 79
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E13",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 13,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 80
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E14",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 14,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 81
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E15",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 15,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 82
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E16",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 16,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 83
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E17",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 17,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 84
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E18",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 18,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 85
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E19",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 19,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 86
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E20",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 20,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 87
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E21",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 21,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 88
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S04E22",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 4,
+      "episodeNumber": 22,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 89
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E02",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 2,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 90
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E03",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 3,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 91
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E04",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 4,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 92
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E05",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 5,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 93
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E06",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 6,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 94
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E07",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 7,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 95
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E08",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 8,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 96
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E09",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 9,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 97
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E10",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 10,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 98
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E11",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 11,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 99
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E12",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 12,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 100
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E13",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 13,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 101
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E01 - Revival",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 1,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 102
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E14",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 14,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 103
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E15",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 15,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 104
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E16",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 16,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 105
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E17",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 17,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 106
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E18",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 18,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 107
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E19",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 19,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 108
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S05E20",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 5,
+      "episodeNumber": 20,
+      "timelineEra": "20 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 109
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S06E01",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 6,
+      "episodeNumber": 1,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 110
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S06E02",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 6,
+      "episodeNumber": 2,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 111
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S06E03",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 6,
+      "episodeNumber": 3,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 112
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S06E04",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 6,
+      "episodeNumber": 4,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 113
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S06E05",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 6,
+      "episodeNumber": 5,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 114
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S06E06",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 6,
+      "episodeNumber": 6,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 115
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S06E07",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 6,
+      "episodeNumber": 7,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 116
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S06E08",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 6,
+      "episodeNumber": 8,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 117
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S06E09",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 6,
+      "episodeNumber": 9,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 118
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S06E10",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 6,
+      "episodeNumber": 10,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 119
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S06E11",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 6,
+      "episodeNumber": 11,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 120
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S06E12",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 6,
+      "episodeNumber": 12,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 121
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S06E13",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 6,
+      "episodeNumber": 13,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 122
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S07E05",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 7,
+      "episodeNumber": 5,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 123
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S07E06",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 7,
+      "episodeNumber": 6,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 124
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S07E07",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 7,
+      "episodeNumber": 7,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 125
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S07E08",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 7,
+      "episodeNumber": 8,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 126
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S07E01",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 7,
+      "episodeNumber": 1,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 127
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S07E02",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 7,
+      "episodeNumber": 2,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 128
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S07E03",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 7,
+      "episodeNumber": 3,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 129
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S07E04",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 7,
+      "episodeNumber": 4,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 130
+    },
+    {
+      "type": "movie",
+      "title": "Star Wars: Episode III - Revenge of the Sith",
+      "airDate": "2005-05-19",
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 1895,
+        "imdbId": "tt0121766"
+      },
+      "order": 131
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S07E09",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 7,
+      "episodeNumber": 9,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 132
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S07E10",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 7,
+      "episodeNumber": 10,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 133
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S07E11",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 7,
+      "episodeNumber": 11,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 134
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Clone Wars S07E12",
+      "seriesTitle": "Star Wars: The Clone Wars",
+      "seasonNumber": 7,
+      "episodeNumber": 12,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 4194,
+        "tvdbId": 83268
+      },
+      "order": 135
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S01E01",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 1,
+      "episodeNumber": 1,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 136
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S01E02",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 1,
+      "episodeNumber": 2,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 137
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S01E03",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 1,
+      "episodeNumber": 3,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 138
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S01E04",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 1,
+      "episodeNumber": 4,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 139
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S01E05",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 1,
+      "episodeNumber": 5,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 140
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S01E06",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 1,
+      "episodeNumber": 6,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 141
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S01E07",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 1,
+      "episodeNumber": 7,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 142
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S01E08",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 1,
+      "episodeNumber": 8,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 143
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S01E09",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 1,
+      "episodeNumber": 9,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 144
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S01E10",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 1,
+      "episodeNumber": 10,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 145
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S01E11",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 1,
+      "episodeNumber": 11,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 146
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S01E12",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 1,
+      "episodeNumber": 12,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 147
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S01E13",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 1,
+      "episodeNumber": 13,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 148
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S01E14",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 1,
+      "episodeNumber": 14,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 149
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S01E15",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 1,
+      "episodeNumber": 15,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 150
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S01E16",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 1,
+      "episodeNumber": 16,
+      "timelineEra": "19 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 151
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S02E01",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 2,
+      "episodeNumber": 1,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 152
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S02E02",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 2,
+      "episodeNumber": 2,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 153
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S02E03",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 2,
+      "episodeNumber": 3,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 154
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S02E04",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 2,
+      "episodeNumber": 4,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 155
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S02E05",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 2,
+      "episodeNumber": 5,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 156
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S02E06",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 2,
+      "episodeNumber": 6,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 157
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S02E07",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 2,
+      "episodeNumber": 7,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 158
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S02E08",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 2,
+      "episodeNumber": 8,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 159
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S02E09",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 2,
+      "episodeNumber": 9,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 160
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S02E10",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 2,
+      "episodeNumber": 10,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 161
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S02E11",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 2,
+      "episodeNumber": 11,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 162
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S02E12",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 2,
+      "episodeNumber": 12,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 163
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S02E13",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 2,
+      "episodeNumber": 13,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 164
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S02E14",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 2,
+      "episodeNumber": 14,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 165
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S02E15",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 2,
+      "episodeNumber": 15,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 166
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S02E16",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 2,
+      "episodeNumber": 16,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 167
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S03E01",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 3,
+      "episodeNumber": 1,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 168
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S03E02",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 3,
+      "episodeNumber": 2,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 169
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S03E03",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 3,
+      "episodeNumber": 3,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 170
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S03E04",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 3,
+      "episodeNumber": 4,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 171
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S03E05",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 3,
+      "episodeNumber": 5,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 172
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S03E06",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 3,
+      "episodeNumber": 6,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 173
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S03E07",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 3,
+      "episodeNumber": 7,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 174
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S03E08",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 3,
+      "episodeNumber": 8,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 175
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S03E09",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 3,
+      "episodeNumber": 9,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 176
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S03E10",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 3,
+      "episodeNumber": 10,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 177
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S03E11",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 3,
+      "episodeNumber": 11,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 178
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S03E12",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 3,
+      "episodeNumber": 12,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 179
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S03E13",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 3,
+      "episodeNumber": 13,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 180
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S03E14",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 3,
+      "episodeNumber": 14,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 181
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars: The Bad Batch S03E15",
+      "seriesTitle": "Star Wars: The Bad Batch",
+      "seasonNumber": 3,
+      "episodeNumber": 15,
+      "timelineEra": "18 BBY",
+      "identifiers": {
+        "tmdbId": 105971,
+        "tvdbId": 385376
+      },
+      "order": 182
+    },
+    {
+      "type": "movie",
+      "title": "Solo: A Star Wars Story",
+      "airDate": "2018-05-25",
+      "timelineEra": "10 BBY",
+      "identifiers": {
+        "tmdbId": 348350,
+        "imdbId": "tt3778644"
+      },
+      "order": 183
+    },
+    {
+      "type": "episode",
+      "title": "Obi-Wan Kenobi S01E01",
+      "seriesTitle": "Obi-Wan Kenobi",
+      "seasonNumber": 1,
+      "episodeNumber": 1,
+      "timelineEra": "9 BBY",
+      "identifiers": {
+        "tmdbId": 92783,
+        "tvdbId": 382322
+      },
+      "order": 184
+    },
+    {
+      "type": "episode",
+      "title": "Obi-Wan Kenobi S01E02",
+      "seriesTitle": "Obi-Wan Kenobi",
+      "seasonNumber": 1,
+      "episodeNumber": 2,
+      "timelineEra": "9 BBY",
+      "identifiers": {
+        "tmdbId": 92783,
+        "tvdbId": 382322
+      },
+      "order": 185
+    },
+    {
+      "type": "episode",
+      "title": "Obi-Wan Kenobi S01E03",
+      "seriesTitle": "Obi-Wan Kenobi",
+      "seasonNumber": 1,
+      "episodeNumber": 3,
+      "timelineEra": "9 BBY",
+      "identifiers": {
+        "tmdbId": 92783,
+        "tvdbId": 382322
+      },
+      "order": 186
+    },
+    {
+      "type": "episode",
+      "title": "Obi-Wan Kenobi S01E04",
+      "seriesTitle": "Obi-Wan Kenobi",
+      "seasonNumber": 1,
+      "episodeNumber": 4,
+      "timelineEra": "9 BBY",
+      "identifiers": {
+        "tmdbId": 92783,
+        "tvdbId": 382322
+      },
+      "order": 187
+    },
+    {
+      "type": "episode",
+      "title": "Obi-Wan Kenobi S01E05",
+      "seriesTitle": "Obi-Wan Kenobi",
+      "seasonNumber": 1,
+      "episodeNumber": 5,
+      "timelineEra": "9 BBY",
+      "identifiers": {
+        "tmdbId": 92783,
+        "tvdbId": 382322
+      },
+      "order": 188
+    },
+    {
+      "type": "episode",
+      "title": "Obi-Wan Kenobi S01E06",
+      "seriesTitle": "Obi-Wan Kenobi",
+      "seasonNumber": 1,
+      "episodeNumber": 6,
+      "timelineEra": "9 BBY",
+      "identifiers": {
+        "tmdbId": 92783,
+        "tvdbId": 382322
+      },
+      "order": 189
+    },
+    {
+      "type": "episode",
+      "title": "Andor S01E01",
+      "seriesTitle": "Andor",
+      "seasonNumber": 1,
+      "episodeNumber": 1,
+      "timelineEra": "5 BBY",
+      "identifiers": {
+        "tmdbId": 83867,
+        "tvdbId": 385375
+      },
+      "order": 190
+    },
+    {
+      "type": "episode",
+      "title": "Andor S01E02",
+      "seriesTitle": "Andor",
+      "seasonNumber": 1,
+      "episodeNumber": 2,
+      "timelineEra": "5 BBY",
+      "identifiers": {
+        "tmdbId": 83867,
+        "tvdbId": 385375
+      },
+      "order": 191
+    },
+    {
+      "type": "episode",
+      "title": "Andor S01E03",
+      "seriesTitle": "Andor",
+      "seasonNumber": 1,
+      "episodeNumber": 3,
+      "timelineEra": "5 BBY",
+      "identifiers": {
+        "tmdbId": 83867,
+        "tvdbId": 385375
+      },
+      "order": 192
+    },
+    {
+      "type": "episode",
+      "title": "Andor S01E04",
+      "seriesTitle": "Andor",
+      "seasonNumber": 1,
+      "episodeNumber": 4,
+      "timelineEra": "5 BBY",
+      "identifiers": {
+        "tmdbId": 83867,
+        "tvdbId": 385375
+      },
+      "order": 193
+    },
+    {
+      "type": "episode",
+      "title": "Andor S01E05",
+      "seriesTitle": "Andor",
+      "seasonNumber": 1,
+      "episodeNumber": 5,
+      "timelineEra": "5 BBY",
+      "identifiers": {
+        "tmdbId": 83867,
+        "tvdbId": 385375
+      },
+      "order": 194
+    },
+    {
+      "type": "episode",
+      "title": "Andor S01E06",
+      "seriesTitle": "Andor",
+      "seasonNumber": 1,
+      "episodeNumber": 6,
+      "timelineEra": "5 BBY",
+      "identifiers": {
+        "tmdbId": 83867,
+        "tvdbId": 385375
+      },
+      "order": 195
+    },
+    {
+      "type": "episode",
+      "title": "Andor S01E07",
+      "seriesTitle": "Andor",
+      "seasonNumber": 1,
+      "episodeNumber": 7,
+      "timelineEra": "5 BBY",
+      "identifiers": {
+        "tmdbId": 83867,
+        "tvdbId": 385375
+      },
+      "order": 196
+    },
+    {
+      "type": "episode",
+      "title": "Andor S01E08",
+      "seriesTitle": "Andor",
+      "seasonNumber": 1,
+      "episodeNumber": 8,
+      "timelineEra": "5 BBY",
+      "identifiers": {
+        "tmdbId": 83867,
+        "tvdbId": 385375
+      },
+      "order": 197
+    },
+    {
+      "type": "episode",
+      "title": "Andor S01E09",
+      "seriesTitle": "Andor",
+      "seasonNumber": 1,
+      "episodeNumber": 9,
+      "timelineEra": "5 BBY",
+      "identifiers": {
+        "tmdbId": 83867,
+        "tvdbId": 385375
+      },
+      "order": 198
+    },
+    {
+      "type": "episode",
+      "title": "Andor S01E10",
+      "seriesTitle": "Andor",
+      "seasonNumber": 1,
+      "episodeNumber": 10,
+      "timelineEra": "5 BBY",
+      "identifiers": {
+        "tmdbId": 83867,
+        "tvdbId": 385375
+      },
+      "order": 199
+    },
+    {
+      "type": "episode",
+      "title": "Andor S01E11",
+      "seriesTitle": "Andor",
+      "seasonNumber": 1,
+      "episodeNumber": 11,
+      "timelineEra": "5 BBY",
+      "identifiers": {
+        "tmdbId": 83867,
+        "tvdbId": 385375
+      },
+      "order": 200
+    },
+    {
+      "type": "episode",
+      "title": "Andor S01E12",
+      "seriesTitle": "Andor",
+      "seasonNumber": 1,
+      "episodeNumber": 12,
+      "timelineEra": "5 BBY",
+      "identifiers": {
+        "tmdbId": 83867,
+        "tvdbId": 385375
+      },
+      "order": 201
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S01E01",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 1,
+      "episodeNumber": 1,
+      "timelineEra": "5\u00e2\u20ac\u201c4 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 202
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S01E02",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 1,
+      "episodeNumber": 2,
+      "timelineEra": "5\u00e2\u20ac\u201c4 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 203
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S01E03",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 1,
+      "episodeNumber": 3,
+      "timelineEra": "5\u00e2\u20ac\u201c4 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 204
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S01E04",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 1,
+      "episodeNumber": 4,
+      "timelineEra": "5\u00e2\u20ac\u201c4 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 205
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S01E05",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 1,
+      "episodeNumber": 5,
+      "timelineEra": "5\u00e2\u20ac\u201c4 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 206
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S01E06",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 1,
+      "episodeNumber": 6,
+      "timelineEra": "5\u00e2\u20ac\u201c4 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 207
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S01E07",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 1,
+      "episodeNumber": 7,
+      "timelineEra": "5\u00e2\u20ac\u201c4 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 208
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S01E08",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 1,
+      "episodeNumber": 8,
+      "timelineEra": "5\u00e2\u20ac\u201c4 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 209
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S01E09",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 1,
+      "episodeNumber": 9,
+      "timelineEra": "5\u00e2\u20ac\u201c4 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 210
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S01E10",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 1,
+      "episodeNumber": 10,
+      "timelineEra": "5\u00e2\u20ac\u201c4 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 211
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S01E11",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 1,
+      "episodeNumber": 11,
+      "timelineEra": "5\u00e2\u20ac\u201c4 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 212
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S01E12",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 1,
+      "episodeNumber": 12,
+      "timelineEra": "5\u00e2\u20ac\u201c4 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 213
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S01E13",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 1,
+      "episodeNumber": 13,
+      "timelineEra": "5\u00e2\u20ac\u201c4 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 214
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S01E14",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 1,
+      "episodeNumber": 14,
+      "timelineEra": "5\u00e2\u20ac\u201c4 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 215
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S01E15",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 1,
+      "episodeNumber": 15,
+      "timelineEra": "5\u00e2\u20ac\u201c4 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 216
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E01",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 1,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 217
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E02",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 2,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 218
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E03",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 3,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 219
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E04",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 4,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 220
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E05",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 5,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 221
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E06",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 6,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 222
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E07",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 7,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 223
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E08",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 8,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 224
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E09",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 9,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 225
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E10",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 10,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 226
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E11",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 11,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 227
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E12",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 12,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 228
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E13",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 13,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 229
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E14",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 14,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 230
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E15",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 15,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 231
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E16",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 16,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 232
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E17",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 17,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 233
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E18",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 18,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 234
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E19",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 19,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 235
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E20",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 20,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 236
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E21",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 21,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 237
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S02E22",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 2,
+      "episodeNumber": 22,
+      "timelineEra": "4\u00e2\u20ac\u201c3 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 238
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E01",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 1,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 239
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E02",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 2,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 240
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E03",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 3,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 241
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E04",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 4,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 242
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E05",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 5,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 243
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E06",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 6,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 244
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E07",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 7,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 245
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E08",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 8,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 246
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E09",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 9,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 247
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E10",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 10,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 248
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E11",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 11,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 249
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E12",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 12,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 250
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E13",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 13,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 251
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E14",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 14,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 252
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E15",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 15,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 253
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E16",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 16,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 254
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E17",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 17,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 255
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E18",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 18,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 256
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E19",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 19,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 257
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E20",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 20,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 258
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E21",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 21,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 259
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S03E22",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 3,
+      "episodeNumber": 22,
+      "timelineEra": "2\u00e2\u20ac\u201c1 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 260
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S04E01",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 4,
+      "episodeNumber": 1,
+      "timelineEra": "1\u00e2\u20ac\u201c0 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 261
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S04E02",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 4,
+      "episodeNumber": 2,
+      "timelineEra": "1\u00e2\u20ac\u201c0 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 262
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S04E03",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 4,
+      "episodeNumber": 3,
+      "timelineEra": "1\u00e2\u20ac\u201c0 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 263
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S04E04",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 4,
+      "episodeNumber": 4,
+      "timelineEra": "1\u00e2\u20ac\u201c0 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 264
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S04E05",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 4,
+      "episodeNumber": 5,
+      "timelineEra": "1\u00e2\u20ac\u201c0 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 265
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S04E06",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 4,
+      "episodeNumber": 6,
+      "timelineEra": "1\u00e2\u20ac\u201c0 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 266
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S04E07",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 4,
+      "episodeNumber": 7,
+      "timelineEra": "1\u00e2\u20ac\u201c0 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 267
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S04E08",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 4,
+      "episodeNumber": 8,
+      "timelineEra": "1\u00e2\u20ac\u201c0 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 268
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S04E09",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 4,
+      "episodeNumber": 9,
+      "timelineEra": "1\u00e2\u20ac\u201c0 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 269
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S04E10",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 4,
+      "episodeNumber": 10,
+      "timelineEra": "1\u00e2\u20ac\u201c0 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 270
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S04E11",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 4,
+      "episodeNumber": 11,
+      "timelineEra": "1\u00e2\u20ac\u201c0 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 271
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S04E12",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 4,
+      "episodeNumber": 12,
+      "timelineEra": "1\u00e2\u20ac\u201c0 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 272
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S04E13",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 4,
+      "episodeNumber": 13,
+      "timelineEra": "1\u00e2\u20ac\u201c0 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 273
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S04E14",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 4,
+      "episodeNumber": 14,
+      "timelineEra": "1\u00e2\u20ac\u201c0 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 274
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S04E15",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 4,
+      "episodeNumber": 15,
+      "timelineEra": "1\u00e2\u20ac\u201c0 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 275
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Rebels S04E16",
+      "seriesTitle": "Star Wars Rebels",
+      "seasonNumber": 4,
+      "episodeNumber": 16,
+      "timelineEra": "1\u00e2\u20ac\u201c0 BBY",
+      "identifiers": {
+        "tmdbId": 60554,
+        "tvdbId": 283468
+      },
+      "order": 276
+    },
+    {
+      "type": "movie",
+      "title": "Rogue One: A Star Wars Story",
+      "airDate": "2016-12-16",
+      "timelineEra": "0 BBY",
+      "identifiers": {
+        "tmdbId": 330459,
+        "imdbId": "tt3748528"
+      },
+      "order": 277
+    },
+    {
+      "type": "movie",
+      "title": "Star Wars: Episode IV - A New Hope",
+      "airDate": "1977-05-25",
+      "timelineEra": "0 BBY / 0 ABY",
+      "identifiers": {
+        "tmdbId": 11,
+        "imdbId": "tt0076759"
+      },
+      "order": 278
+    },
+    {
+      "type": "movie",
+      "title": "Star Wars: Episode V - The Empire Strikes Back",
+      "airDate": "1980-05-21",
+      "timelineEra": "3 ABY",
+      "identifiers": {
+        "tmdbId": 1891,
+        "imdbId": "tt0080684"
+      },
+      "order": 279
+    },
+    {
+      "type": "movie",
+      "title": "Star Wars: Episode VI - Return of the Jedi",
+      "airDate": "1983-05-25",
+      "timelineEra": "4 ABY",
+      "identifiers": {
+        "tmdbId": 1892,
+        "imdbId": "tt0086190"
+      },
+      "order": 280
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S01E01",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 1,
+      "episodeNumber": 1,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 281
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S01E02",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 1,
+      "episodeNumber": 2,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 282
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S01E03",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 1,
+      "episodeNumber": 3,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 283
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S01E04",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 1,
+      "episodeNumber": 4,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 284
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S01E05",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 1,
+      "episodeNumber": 5,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 285
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S01E06",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 1,
+      "episodeNumber": 6,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 286
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S01E07",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 1,
+      "episodeNumber": 7,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 287
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S01E08",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 1,
+      "episodeNumber": 8,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 288
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S02E01",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 2,
+      "episodeNumber": 1,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 289
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S02E02",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 2,
+      "episodeNumber": 2,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 290
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S02E03",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 2,
+      "episodeNumber": 3,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 291
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S02E04",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 2,
+      "episodeNumber": 4,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 292
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S02E05",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 2,
+      "episodeNumber": 5,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 293
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S02E06",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 2,
+      "episodeNumber": 6,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 294
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S02E07",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 2,
+      "episodeNumber": 7,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 295
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S02E08",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 2,
+      "episodeNumber": 8,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 296
+    },
+    {
+      "type": "episode",
+      "title": "The Book of Boba Fett S01E01",
+      "seriesTitle": "The Book of Boba Fett",
+      "seasonNumber": 1,
+      "episodeNumber": 1,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 115036,
+        "tvdbId": 393636
+      },
+      "order": 297
+    },
+    {
+      "type": "episode",
+      "title": "The Book of Boba Fett S01E02",
+      "seriesTitle": "The Book of Boba Fett",
+      "seasonNumber": 1,
+      "episodeNumber": 2,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 115036,
+        "tvdbId": 393636
+      },
+      "order": 298
+    },
+    {
+      "type": "episode",
+      "title": "The Book of Boba Fett S01E03",
+      "seriesTitle": "The Book of Boba Fett",
+      "seasonNumber": 1,
+      "episodeNumber": 3,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 115036,
+        "tvdbId": 393636
+      },
+      "order": 299
+    },
+    {
+      "type": "episode",
+      "title": "The Book of Boba Fett S01E04",
+      "seriesTitle": "The Book of Boba Fett",
+      "seasonNumber": 1,
+      "episodeNumber": 4,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 115036,
+        "tvdbId": 393636
+      },
+      "order": 300
+    },
+    {
+      "type": "episode",
+      "title": "The Book of Boba Fett S01E05",
+      "seriesTitle": "The Book of Boba Fett",
+      "seasonNumber": 1,
+      "episodeNumber": 5,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 115036,
+        "tvdbId": 393636
+      },
+      "order": 301
+    },
+    {
+      "type": "episode",
+      "title": "The Book of Boba Fett S01E06",
+      "seriesTitle": "The Book of Boba Fett",
+      "seasonNumber": 1,
+      "episodeNumber": 6,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 115036,
+        "tvdbId": 393636
+      },
+      "order": 302
+    },
+    {
+      "type": "episode",
+      "title": "The Book of Boba Fett S01E07",
+      "seriesTitle": "The Book of Boba Fett",
+      "seasonNumber": 1,
+      "episodeNumber": 7,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 115036,
+        "tvdbId": 393636
+      },
+      "order": 303
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S03E01",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 3,
+      "episodeNumber": 1,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 304
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S03E02",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 3,
+      "episodeNumber": 2,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 305
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S03E03",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 3,
+      "episodeNumber": 3,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 306
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S03E04",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 3,
+      "episodeNumber": 4,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 307
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S03E05",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 3,
+      "episodeNumber": 5,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 308
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S03E06",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 3,
+      "episodeNumber": 6,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 309
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S03E07",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 3,
+      "episodeNumber": 7,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 310
+    },
+    {
+      "type": "episode",
+      "title": "The Mandalorian S03E08",
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 3,
+      "episodeNumber": 8,
+      "timelineEra": "9 ABY",
+      "identifiers": {
+        "tmdbId": 82856,
+        "tvdbId": 361753
+      },
+      "order": 311
+    },
+    {
+      "type": "episode",
+      "title": "Ahsoka S01E01",
+      "seriesTitle": "Ahsoka",
+      "seasonNumber": 1,
+      "episodeNumber": 1,
+      "timelineEra": "9\u00e2\u20ac\u201c10 ABY",
+      "identifiers": {
+        "tmdbId": 114461,
+        "tvdbId": 393635
+      },
+      "order": 312
+    },
+    {
+      "type": "episode",
+      "title": "Ahsoka S01E02",
+      "seriesTitle": "Ahsoka",
+      "seasonNumber": 1,
+      "episodeNumber": 2,
+      "timelineEra": "9\u00e2\u20ac\u201c10 ABY",
+      "identifiers": {
+        "tmdbId": 114461,
+        "tvdbId": 393635
+      },
+      "order": 313
+    },
+    {
+      "type": "episode",
+      "title": "Ahsoka S01E03",
+      "seriesTitle": "Ahsoka",
+      "seasonNumber": 1,
+      "episodeNumber": 3,
+      "timelineEra": "9\u00e2\u20ac\u201c10 ABY",
+      "identifiers": {
+        "tmdbId": 114461,
+        "tvdbId": 393635
+      },
+      "order": 314
+    },
+    {
+      "type": "episode",
+      "title": "Ahsoka S01E04",
+      "seriesTitle": "Ahsoka",
+      "seasonNumber": 1,
+      "episodeNumber": 4,
+      "timelineEra": "9\u00e2\u20ac\u201c10 ABY",
+      "identifiers": {
+        "tmdbId": 114461,
+        "tvdbId": 393635
+      },
+      "order": 315
+    },
+    {
+      "type": "episode",
+      "title": "Ahsoka S01E05",
+      "seriesTitle": "Ahsoka",
+      "seasonNumber": 1,
+      "episodeNumber": 5,
+      "timelineEra": "9\u00e2\u20ac\u201c10 ABY",
+      "identifiers": {
+        "tmdbId": 114461,
+        "tvdbId": 393635
+      },
+      "order": 316
+    },
+    {
+      "type": "episode",
+      "title": "Ahsoka S01E06",
+      "seriesTitle": "Ahsoka",
+      "seasonNumber": 1,
+      "episodeNumber": 6,
+      "timelineEra": "9\u00e2\u20ac\u201c10 ABY",
+      "identifiers": {
+        "tmdbId": 114461,
+        "tvdbId": 393635
+      },
+      "order": 317
+    },
+    {
+      "type": "episode",
+      "title": "Ahsoka S01E07",
+      "seriesTitle": "Ahsoka",
+      "seasonNumber": 1,
+      "episodeNumber": 7,
+      "timelineEra": "9\u00e2\u20ac\u201c10 ABY",
+      "identifiers": {
+        "tmdbId": 114461,
+        "tvdbId": 393635
+      },
+      "order": 318
+    },
+    {
+      "type": "episode",
+      "title": "Ahsoka S01E08",
+      "seriesTitle": "Ahsoka",
+      "seasonNumber": 1,
+      "episodeNumber": 8,
+      "timelineEra": "9\u00e2\u20ac\u201c10 ABY",
+      "identifiers": {
+        "tmdbId": 114461,
+        "tvdbId": 393635
+      },
+      "order": 319
+    },
+    {
+      "type": "episode",
+      "title": "Skeleton Crew S01E01",
+      "seriesTitle": "Skeleton Crew",
+      "seasonNumber": 1,
+      "episodeNumber": 1,
+      "timelineEra": "9\u00e2\u20ac\u201c10 ABY",
+      "identifiers": {
+        "tmdbId": 202879,
+        "tvdbId": 420456
+      },
+      "order": 320
+    },
+    {
+      "type": "episode",
+      "title": "Skeleton Crew S01E02",
+      "seriesTitle": "Skeleton Crew",
+      "seasonNumber": 1,
+      "episodeNumber": 2,
+      "timelineEra": "9\u00e2\u20ac\u201c10 ABY",
+      "identifiers": {
+        "tmdbId": 202879,
+        "tvdbId": 420456
+      },
+      "order": 321
+    },
+    {
+      "type": "episode",
+      "title": "Skeleton Crew S01E03",
+      "seriesTitle": "Skeleton Crew",
+      "seasonNumber": 1,
+      "episodeNumber": 3,
+      "timelineEra": "9\u00e2\u20ac\u201c10 ABY",
+      "identifiers": {
+        "tmdbId": 202879,
+        "tvdbId": 420456
+      },
+      "order": 322
+    },
+    {
+      "type": "episode",
+      "title": "Skeleton Crew S01E04",
+      "seriesTitle": "Skeleton Crew",
+      "seasonNumber": 1,
+      "episodeNumber": 4,
+      "timelineEra": "9\u00e2\u20ac\u201c10 ABY",
+      "identifiers": {
+        "tmdbId": 202879,
+        "tvdbId": 420456
+      },
+      "order": 323
+    },
+    {
+      "type": "episode",
+      "title": "Skeleton Crew S01E05",
+      "seriesTitle": "Skeleton Crew",
+      "seasonNumber": 1,
+      "episodeNumber": 5,
+      "timelineEra": "9\u00e2\u20ac\u201c10 ABY",
+      "identifiers": {
+        "tmdbId": 202879,
+        "tvdbId": 420456
+      },
+      "order": 324
+    },
+    {
+      "type": "episode",
+      "title": "Skeleton Crew S01E06",
+      "seriesTitle": "Skeleton Crew",
+      "seasonNumber": 1,
+      "episodeNumber": 6,
+      "timelineEra": "9\u00e2\u20ac\u201c10 ABY",
+      "identifiers": {
+        "tmdbId": 202879,
+        "tvdbId": 420456
+      },
+      "order": 325
+    },
+    {
+      "type": "episode",
+      "title": "Skeleton Crew S01E07",
+      "seriesTitle": "Skeleton Crew",
+      "seasonNumber": 1,
+      "episodeNumber": 7,
+      "timelineEra": "9\u00e2\u20ac\u201c10 ABY",
+      "identifiers": {
+        "tmdbId": 202879,
+        "tvdbId": 420456
+      },
+      "order": 326
+    },
+    {
+      "type": "episode",
+      "title": "Skeleton Crew S01E08",
+      "seriesTitle": "Skeleton Crew",
+      "seasonNumber": 1,
+      "episodeNumber": 8,
+      "timelineEra": "9\u00e2\u20ac\u201c10 ABY",
+      "identifiers": {
+        "tmdbId": 202879,
+        "tvdbId": 420456
+      },
+      "order": 327
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E01",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 1,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 328
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E02",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 2,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 329
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E03",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 3,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 330
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E04",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 4,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 331
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E05",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 5,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 332
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E06",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 6,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 333
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E07",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 7,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 334
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E08",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 8,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 335
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E09",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 9,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 336
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E10",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 10,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 337
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E11",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 11,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 338
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E12",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 12,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 339
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E13",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 13,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 340
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E14",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 14,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 341
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E15",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 15,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 342
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E16",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 16,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 343
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E17",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 17,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 344
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E18",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 18,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 345
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E19",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 19,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 346
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E20",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 20,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 347
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S01E21",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 1,
+      "episodeNumber": 21,
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 348
+    },
+    {
+      "type": "movie",
+      "title": "Star Wars: Episode VII - The Force Awakens",
+      "airDate": "2015-12-18",
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 140607,
+        "imdbId": "tt2488496"
+      },
+      "order": 349
+    },
+    {
+      "type": "movie",
+      "title": "Star Wars: Episode VIII - The Last Jedi",
+      "airDate": "2017-12-15",
+      "timelineEra": "34 ABY",
+      "identifiers": {
+        "tmdbId": 181808,
+        "imdbId": "tt2527336"
+      },
+      "order": 350
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E01",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 1,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 351
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E02",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 2,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 352
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E03",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 3,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 353
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E04",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 4,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 354
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E05",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 5,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 355
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E06",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 6,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 356
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E07",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 7,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 357
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E08",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 8,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 358
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E09",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 9,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 359
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E10",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 10,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 360
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E11",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 11,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 361
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E12",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 12,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 362
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E13",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 13,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 363
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E14",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 14,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 364
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E15",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 15,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 365
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E16",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 16,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 366
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E17",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 17,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 367
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E18",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 18,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 368
+    },
+    {
+      "type": "episode",
+      "title": "Star Wars Resistance S02E19",
+      "seriesTitle": "Star Wars Resistance",
+      "seasonNumber": 2,
+      "episodeNumber": 19,
+      "timelineEra": "34\u00e2\u20ac\u201c35 ABY",
+      "identifiers": {
+        "tmdbId": 82491,
+        "tvdbId": 350567
+      },
+      "order": 369
+    },
+    {
+      "type": "movie",
+      "title": "Star Wars: Episode IX - The Rise of Skywalker",
+      "airDate": "2019-12-20",
+      "timelineEra": "35 ABY",
+      "identifiers": {
+        "tmdbId": 181812,
+        "imdbId": "tt2527338"
+      },
+      "order": 370
+    }
+  ]
+}

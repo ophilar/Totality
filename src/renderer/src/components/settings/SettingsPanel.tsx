@@ -1,21 +1,22 @@
 import { useState, useCallback, useId, useRef, useEffect } from 'react'
-import { X, Settings, Sliders, Wrench, Palette, Database, Bug, Library, Radio, Monitor } from 'lucide-react'
-import { useFocusTrap } from '../../hooks/useFocusTrap'
-import { GeneralTab } from './tabs/GeneralTab'
-import { QualitySettingsTab } from './tabs/QualitySettingsTab'
-import { ServicesTab } from './tabs/ServicesTab'
-import { AppearanceTab } from './tabs/AppearanceTab'
-import { DataManagementTab } from './tabs/DataManagementTab'
-import { TroubleshootTab } from './tabs/TroubleshootTab'
-import { MonitoringTab } from './tabs/MonitoringTab'
-import { LibrarySettingsTab } from './tabs/LibrarySettingsTab'
-import { PlaybackTargetProfilesTab } from './tabs/PlaybackTargetProfilesTab'
-type TabId = 'general' | 'services' | 'library' | 'quality' | 'playback' | 'appearance' | 'monitoring' | 'data' | 'troubleshoot'
+import { X, Settings, Sliders, Wrench, Palette, Database, Bug, ArrowUpCircle, Library, Monitor } from 'lucide-react'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
+import { GeneralTab } from '@/components/settings/tabs/GeneralTab'
+import { QualitySettingsTab } from '@/components/settings/tabs/QualitySettingsTab'
+import { ServicesTab } from '@/components/settings/tabs/ServicesTab'
+import { AppearanceTab } from '@/components/settings/tabs/AppearanceTab'
+import { DataManagementTab } from '@/components/settings/tabs/DataManagementTab'
+import { TroubleshootTab } from '@/components/settings/tabs/TroubleshootTab'
+import { UpdateTab } from '@/components/settings/tabs/UpdateTab'
+import { LibrarySettingsTab } from '@/components/settings/tabs/LibrarySettingsTab'
+import { PlaybackTargetProfilesTab } from '@/components/settings/tabs/PlaybackTargetProfilesTab'
+
+type TabId = 'general' | 'library' | 'quality' | 'services' | 'appearance' | 'data' | 'update' | 'troubleshoot' | 'playback'
 
 interface SettingsPanelProps {
   isOpen: boolean
   onClose: () => void
-  initialTab?: TabId | string
+  initialTab?: TabId
 }
 
 interface Tab {
@@ -26,39 +27,45 @@ interface Tab {
 
 const TABS: Tab[] = [
   { id: 'general', label: 'General', icon: Settings },
-  { id: 'services', label: 'Services', icon: Wrench },
   { id: 'library', label: 'Library', icon: Library },
-  { id: 'playback', label: 'Playback Targets', icon: Monitor },
+  { id: 'playback', label: 'Playback targets', icon: Monitor },
   { id: 'quality', label: 'Quality', icon: Sliders },
+  { id: 'services', label: 'Services', icon: Wrench },
   { id: 'appearance', label: 'Appearance', icon: Palette },
-  { id: 'monitoring', label: 'Monitoring', icon: Radio },
   { id: 'data', label: 'Data', icon: Database },
+  { id: 'update', label: 'Update', icon: ArrowUpCircle },
   { id: 'troubleshoot', label: 'Troubleshoot', icon: Bug },
 ]
 
 export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProps) {
-  const [activeTab, setActiveTab] = useState<TabId>((initialTab as TabId) || 'general')
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab || 'general')
   const [playbackHasUnsavedChanges, setPlaybackHasUnsavedChanges] = useState(false)
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen)
+
+  // Adjust state when modal opens (React 19 recommended pattern instead of useEffect)
+  if (isOpen && !prevIsOpen) {
+    setPrevIsOpen(true)
+    setActiveTab(initialTab || 'general')
+  } else if (!isOpen && prevIsOpen) {
+    setPrevIsOpen(false)
+  }
+
   const titleId = useId()
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const tabListRef = useRef<HTMLDivElement>(null)
-  const modalRef = useRef<HTMLDivElement>(null)
+  const modalRef = useRef<HTMLDivElement | null>(null)
 
   // Focus trap
   useFocusTrap(isOpen, modalRef, false)
 
-  // Focus close button when modal opens, and set initial tab
+  // Focus close button when modal opens
   useEffect(() => {
     if (isOpen) {
-      // Map legacy tab IDs to new ones
-      let tab = (initialTab as TabId) || 'general'
-      if (tab === 'update' as string) tab = 'general'
-      setActiveTab(tab)
       setTimeout(() => {
         closeButtonRef.current?.focus()
       }, 100)
     }
-  }, [isOpen, initialTab])
+  }, [isOpen])
 
   // Handle Escape key to close modal
   const requestClose = useCallback(() => {
@@ -125,20 +132,20 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
     switch (currentTab) {
       case 'general':
         return <GeneralTab />
-      case 'services':
-        return <ServicesTab />
       case 'library':
         return <LibrarySettingsTab />
       case 'playback':
         return <PlaybackTargetProfilesTab onDirtyChange={setPlaybackHasUnsavedChanges} />
       case 'quality':
         return <QualitySettingsTab />
+      case 'services':
+        return <ServicesTab />
       case 'appearance':
         return <AppearanceTab />
-      case 'monitoring':
-        return <MonitoringTab />
       case 'data':
         return <DataManagementTab />
+      case 'update':
+        return <UpdateTab />
       case 'troubleshoot':
         return <TroubleshootTab />
       default:
@@ -148,7 +155,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 flex items-center justify-center z-150 p-4 overflow-y-auto"
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-[150]"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -157,32 +164,31 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
     >
       <div
         ref={modalRef}
-        className="bg-card border border-border/30 rounded-2xl w-[min(64rem,calc(100vw-2rem))] min-w-[min(45rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] h-[min(680px,calc(100vh-2rem))] min-h-[min(28rem,calc(100vh-2rem))] max-h-[calc(100vh-2rem)] resize flex flex-col shadow-xl overflow-hidden"
+        className="bg-card border border-border/30 rounded-2xl w-full max-w-4xl h-[100dvh] sm:h-[680px] flex flex-col shadow-xl mx-0 sm:mx-4 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-2xl shrink-0">
-          <h2 id={titleId} className="text-lg font-semibold">Settings</h2>
-          <button
-            ref={closeButtonRef}
-            onClick={requestClose}
-            className="p-2 rounded-md hover:bg-muted transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary"
-            aria-label="Close settings"
-          >
-            <X className="w-5 h-5" aria-hidden="true" />
-          </button>
-        </div>
-
         {/* Content area with tabs */}
         <div className="flex flex-1 min-h-0 overflow-hidden">
           {/* Tab navigation (left side) */}
           <div
             ref={tabListRef}
-            className="w-44 border-r border-border/30 p-2 pt-3 flex flex-col gap-1 bg-sidebar-gradient"
+            className="w-full sm:w-44 shrink-0 border-b sm:border-b-0 sm:border-r border-border/30 p-2 flex sm:flex-col gap-1 overflow-x-auto bg-sidebar-gradient rounded-tl-2xl"
             role="tablist"
             aria-label="Settings categories"
             aria-orientation="vertical"
           >
+            {/* Sidebar header with title and close button */}
+            <div className="flex items-center justify-between px-3 py-2.5 mb-1 min-w-[130px]">
+              <h2 id={titleId} className="text-lg font-semibold">Settings</h2>
+              <button
+                ref={closeButtonRef}
+                  onClick={requestClose}
+                className="p-1.5 rounded-md hover:bg-muted transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary"
+                aria-label="Close settings"
+              >
+                <X className="w-4 h-4" aria-hidden="true" />
+              </button>
+            </div>
             {TABS.map((tab, index) => {
               const Icon = tab.icon
               const isActive = currentTab === tab.id
@@ -194,9 +200,9 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
                   aria-controls={`tabpanel-${tab.id}`}
                   id={`tab-${tab.id}`}
                   tabIndex={isActive ? 0 : -1}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => requestTabChange(tab.id)}
                   onKeyDown={(e) => handleTabKeyDown(e, index)}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-left focus:outline-hidden focus:ring-2 focus:ring-primary ${
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-left whitespace-nowrap focus:outline-hidden focus:ring-2 focus:ring-primary ${
                     isActive
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'

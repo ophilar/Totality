@@ -1,305 +1,92 @@
-import { IPC_CHANNELS } from '../../shared/ipcChannels'
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
+import { getLoggingService } from '@main/services/LoggingService'
 import { shell, dialog, BrowserWindow } from 'electron'
 import { promises as fs } from 'fs'
-import { getDatabase } from '../database/getDatabase'
-import { safeSend } from './utils/safeSend'
-import { getStoreSearchService } from '../services/StoreSearchService'
-import { getTMDBService } from '../services/TMDBService'
-import type { WishlistItem } from '../types/database'
-import type { StoreRegion } from '../services/StoreSearchService'
-import { validateInput, PositiveIntSchema, WishlistItemSchema, WishlistFiltersSchema, SafeUrlSchema, StoreRegionSchema } from '../validation/schemas'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getStoreSearchService } from '@main/services/StoreSearchService'
+import { getTMDBService } from '@main/services/TMDBService'
+import type { WishlistItem, WishlistFilters } from '@main/types/database'
+import type { StoreRegion } from '@main/services/StoreSearchService'
+import { PositiveIntSchema, WishlistItemSchema, WishlistFiltersSchema, SafeUrlSchema, StoreRegionSchema } from '@main/validation/schemas'
 import { z } from 'zod'
-import { createIpcHandler, createIpcHandlerWithEvent } from './utils/createHandler'
+import { createIpcHandler, createIpcHandlerWithEvent, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
 
+import { registerListHandlers } from '@main/ipc/utils/genericHandlers'
 
-/**
- * Register all wishlist-related IPC handlers
- */
 export function registerWishlistHandlers() {
   const db = getDatabase()
   const storeService = getStoreSearchService()
 
-  // ============================================================================
-  // WISHLIST CRUD
-  // ============================================================================
+  registerListHandlers('wishlist', (f) => db.wishlist.getItems(f as unknown as WishlistFilters), () => db.wishlist.getCount(), WishlistFiltersSchema)
 
-  /**
-   * Add an item to the wishlist
-   */
-  createIpcHandler(IPC_CHANNELS.wishlistAdd, async (item: unknown) => {
-    try {
-      const validItem = validateInput(WishlistItemSchema, item, 'wishlist:add')
-      console.log('[IPC wishlist:add]', validItem.media_type, `"${validItem.title}"`)
+  createValidatedIpcHandler(IPC_CHANNELS.WISHLIST.ADD, WishlistItemSchema, async (item) => {
+    if (item.tmdb_id && !item.poster_url) {
+      try {
+        const tmdb = getTMDBService()
+        const details = item.media_type === 'movie' ? await tmdb.getMovieDetails(item.tmdb_id) : await tmdb.getTVShowDetails(item.tmdb_id)
+        item.poster_url = tmdb.buildImageUrl(details.poster_path, 'w300') ?? undefined
+      } catch { /* ignore */ }
+    }
+    return await db.wishlist.add(item as unknown as Omit<WishlistItem, 'id' | 'updated_at' | 'added_at'>)
+  })
 
-      // Auto-fetch poster from TMDB if tmdb_id is provided but poster_url is missing
-      if (validItem.tmdb_id && !validItem.poster_url) {
+  createValidatedIpcHandler(IPC_CHANNELS.WISHLIST.UPDATE, z.tuple([PositiveIntSchema, WishlistItemSchema.partial()]), async (id, updates) => {
+    await db.wishlist.update(id, updates as unknown as Partial<WishlistItem>)
+    return { success: true }
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.WISHLIST.REMOVE, PositiveIntSchema, async (id) => {
+    await db.wishlist.delete(id)
+    return { success: true }
+  })
+
+  createValidatedIpcHandler('wishlist:getById', PositiveIntSchema, async (id) => db.wishlist.getWishlistItemById(id))
+
+  createIpcHandler(IPC_CHANNELS.WISHLIST.CHECK_EXISTS, async (tmdbId?: string, musicbrainzId?: string, mediaItemId?: number) => {
+    return await db.wishlist.exists(tmdbId, musicbrainzId, mediaItemId)
+  })
+
+  createIpcHandler(IPC_CHANNELS.WISHLIST.GET_COUNTS_BY_REASON, async () => db.wishlist.getCountsByReason())
+
+  createValidatedIpcHandler(IPC_CHANNELS.WISHLIST.ADD_BULK, z.array(WishlistItemSchema), async (items) => {
+    const tmdb = getTMDBService()
+    for (const item of items) {
+      if (item.tmdb_id && !item.poster_url) {
         try {
-          const tmdb = getTMDBService()
-          if (validItem.media_type === 'movie') {
-            const details = await tmdb.getMovieDetails(validItem.tmdb_id)
-            validItem.poster_url = tmdb.buildImageUrl(details.poster_path, 'w300') ?? undefined
-          } else if (['season', 'episode'].includes(validItem.media_type)) {
-            const details = await tmdb.getTVShowDetails(validItem.tmdb_id)
-            validItem.poster_url = tmdb.buildImageUrl(details.poster_path, 'w300') ?? undefined
-          }
-        } catch (error) {
-          console.warn(`[wishlist:add] Could not fetch poster for "${validItem.title}":`, error)
-        }
+          const d = item.media_type === 'movie' ? await tmdb.getMovieDetails(item.tmdb_id) : await tmdb.getTVShowDetails(item.tmdb_id)
+          item.poster_url = tmdb.buildImageUrl(d.poster_path, 'w300') ?? undefined
+        } catch { /* ignore */ }
       }
-
-      const id = await db.addWishlistItem(validItem)
-      if (id === -1) {
-        return { id: -1, duplicate: true }
-      }
-      safeSend(BrowserWindow.getAllWindows()[0] || null, IPC_CHANNELS.wishlistChanged)
-      return id
-    } catch (error) {
-      console.error('Error adding wishlist item:', error)
-      throw error
     }
+    return { success: true, added: await db.wishlist.addMany(items as unknown as Array<Omit<WishlistItem, 'id' | 'updated_at' | 'added_at'>>) }
   })
 
-  /**
-   * Update a wishlist item
-   */
-  createIpcHandler(IPC_CHANNELS.wishlistUpdate, async (id: unknown, updates: unknown) => {
-    try {
-      const validId = validateInput(PositiveIntSchema, id, 'wishlist:update')
-      const validUpdates = validateInput(WishlistItemSchema.partial(), updates, 'wishlist:update')
-      console.log('[IPC wishlist:update] id:', validId)
-      await db.updateWishlistItem(validId, validUpdates)
-      safeSend(BrowserWindow.getAllWindows()[0] || null, IPC_CHANNELS.wishlistChanged)
-      return { success: true }
-    } catch (error) {
-      console.error('Error updating wishlist item:', error)
-      throw error
-    }
+  createValidatedIpcHandler(IPC_CHANNELS.WISHLIST.GET_STORE_LINKS, WishlistItemSchema, async (item) => storeService.getStoreLinks(item as unknown as WishlistItem))
+
+  createValidatedIpcHandler(IPC_CHANNELS.WISHLIST.OPEN_STORE_LINK, SafeUrlSchema, async (url) => {
+    await shell.openExternal(url)
+    return { success: true }
   })
 
-  /**
-   * Remove an item from the wishlist
-   */
-  createIpcHandler(IPC_CHANNELS.wishlistRemove, async (id: unknown) => {
-    try {
-      const validId = validateInput(PositiveIntSchema, id, 'wishlist:remove')
-      console.log('[IPC wishlist:remove] id:', validId)
-      await db.removeWishlistItem(validId)
-      safeSend(BrowserWindow.getAllWindows()[0] || null, IPC_CHANNELS.wishlistChanged)
-      return { success: true }
-    } catch (error) {
-      console.error('Error removing wishlist item:', error)
-      throw error
-    }
+  createValidatedIpcHandler(IPC_CHANNELS.WISHLIST.SET_REGION, StoreRegionSchema, async (region) => {
+    storeService.setRegion(region as StoreRegion)
+    await db.config.setSetting('store_region', region)
+    return { success: true }
   })
 
-  /**
-   * Get all wishlist items with optional filters
-   */
-  createIpcHandler(IPC_CHANNELS.wishlistGetAll, async (filters?: unknown) => {
-    try {
-      const validFilters = validateInput(WishlistFiltersSchema, filters, 'wishlist:getAll')
-      return db.getWishlistItems(validFilters)
-    } catch (error) {
-      console.error('Error getting wishlist items:', error)
-      throw error
-    }
+  createIpcHandler(IPC_CHANNELS.WISHLIST.GET_REGION, async () => (await db.config.getSetting('store_region')) || 'us')
+
+  createIpcHandlerWithEvent(IPC_CHANNELS.WISHLIST.EXPORT_CSV, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('No window')
+    const res = await dialog.showSaveDialog(win, { title: 'Export Wishlist', defaultPath: `Totality Wishlist - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).replace(',', '')}.csv`, filters: [{ name: 'CSV Files', extensions: ['csv'] }, { name: 'All Files', extensions: ['*'] }] })
+    if (res.canceled || !res.filePath) return { success: false, cancelled: true }
+    const items = await db.wishlist.getItems({ sortBy: 'priority', sortOrder: 'desc' })
+    await fs.writeFile(res.filePath, generateWishlistCsv(items), 'utf-8')
+    return { success: true, path: res.filePath, count: items.length }
   })
 
-  /**
-   * Get a single wishlist item by ID
-   */
-  createIpcHandler(IPC_CHANNELS.wishlistGetById, async (id: unknown) => {
-    try {
-      const validId = validateInput(PositiveIntSchema, id, 'wishlist:getById')
-      return db.getWishlistItemById(validId)
-    } catch (error) {
-      console.error('Error getting wishlist item:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Get the total count of wishlist items
-   */
-  createIpcHandler(IPC_CHANNELS.wishlistGetCount, async () => {
-    try {
-      return db.getWishlistCount()
-    } catch (error) {
-      console.error('Error getting wishlist count:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Check if an item already exists in the wishlist
-   */
-  createIpcHandler(IPC_CHANNELS.wishlistCheckExists, async (tmdbId?: unknown, musicbrainzId?: unknown, mediaItemId?: unknown) => {
-    try {
-      const validTmdbId = tmdbId !== undefined ? validateInput(z.string().max(20), tmdbId, 'wishlist:checkExists') : undefined
-      const validMusicbrainzId = musicbrainzId !== undefined ? validateInput(z.string().max(100), musicbrainzId, 'wishlist:checkExists') : undefined
-      const validMediaItemId = mediaItemId !== undefined ? validateInput(PositiveIntSchema, mediaItemId, 'wishlist:checkExists') : undefined
-      return db.wishlistItemExists(validTmdbId, validMusicbrainzId, validMediaItemId)
-    } catch (error) {
-      console.error('Error checking wishlist existence:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Get wishlist counts by reason (missing vs upgrade)
-   */
-  createIpcHandler(IPC_CHANNELS.wishlistGetCountsByReason, async () => {
-    try {
-      return db.getWishlistCountsByReason()
-    } catch (error) {
-      console.error('Error getting wishlist counts by reason:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Add multiple items to the wishlist (bulk operation)
-   */
-  createIpcHandler(IPC_CHANNELS.wishlistAddBulk, async (items: unknown) => {
-    try {
-      const validItems = validateInput(z.array(WishlistItemSchema), items, 'wishlist:addBulk')
-      console.log('[IPC wishlist:addBulk]', validItems.length, 'items')
-
-      // Auto-fetch posters from TMDB for items missing poster_url
-      const tmdb = getTMDBService()
-      for (const item of validItems) {
-        if (item.tmdb_id && !item.poster_url) {
-          try {
-            if (item.media_type === 'movie') {
-              const details = await tmdb.getMovieDetails(item.tmdb_id)
-              item.poster_url = tmdb.buildImageUrl(details.poster_path, 'w300') ?? undefined
-            } else if (['season', 'episode'].includes(item.media_type)) {
-              const details = await tmdb.getTVShowDetails(item.tmdb_id)
-              item.poster_url = tmdb.buildImageUrl(details.poster_path, 'w300') ?? undefined
-            }
-          } catch (error) {
-            console.warn(`[wishlist:addBulk] Could not fetch poster for "${item.title}":`, error)
-          }
-        }
-      }
-
-      const added = await db.addWishlistItemsBulk(validItems)
-      if (added > 0) safeSend(BrowserWindow.getAllWindows()[0] || null, IPC_CHANNELS.wishlistChanged)
-      return { success: true, added }
-    } catch (error) {
-      console.error('Error bulk adding wishlist items:', error)
-      throw error
-    }
-  })
-
-  // ============================================================================
-  // STORE SEARCH
-  // ============================================================================
-
-  /**
-   * Get store search links for a wishlist item
-   */
-  createIpcHandler(IPC_CHANNELS.wishlistGetStoreLinks, async (item: unknown) => {
-    try {
-      const validItem = validateInput(WishlistItemSchema, item, 'wishlist:getStoreLinks')
-      return storeService.getStoreLinks(validItem as WishlistItem)
-    } catch (error) {
-      console.error('Error getting store links:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Open a store link in the default browser
-   * SECURITY: Only allows https:// and http:// URLs to prevent malicious schemes
-   */
-  createIpcHandler(IPC_CHANNELS.wishlistOpenStoreLink, async (url: unknown) => {
-    try {
-      const validUrl = validateInput(SafeUrlSchema, url, 'wishlist:openStoreLink')
-
-      await shell.openExternal(validUrl)
-      return { success: true }
-    } catch (error) {
-      console.error('Error opening store link:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Set the store region preference
-   */
-  createIpcHandler(IPC_CHANNELS.wishlistSetRegion, async (region: unknown) => {
-    try {
-      const validRegion = validateInput(StoreRegionSchema, region, 'wishlist:setRegion')
-      storeService.setRegion(validRegion as StoreRegion)
-      // Save to settings
-      await db.setSetting('store_region', validRegion)
-      return { success: true }
-    } catch (error) {
-      console.error('Error setting store region:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Get the current store region
-   */
-  createIpcHandler(IPC_CHANNELS.wishlistGetRegion, async () => {
-    try {
-      const region = db.getSetting('store_region')
-      return region || 'us'
-    } catch (error) {
-      console.error('Error getting store region:', error)
-      return 'us'
-    }
-  })
-
-  // ============================================================================
-  // EXPORT
-  // ============================================================================
-
-  /**
-   * Export wishlist to CSV file
-   */
-  createIpcHandlerWithEvent(IPC_CHANNELS.wishlistExportCsv, async (event) => {
-    try {
-      const win = BrowserWindow.fromWebContents(event.sender)
-      if (!win) throw new Error('No window found')
-
-      // Show save dialog
-      const result = await dialog.showSaveDialog(win, {
-        title: 'Export Wishlist',
-        defaultPath: `Totality Wishlist - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).replace(',', '')}.csv`,
-        filters: [
-          { name: 'CSV Files', extensions: ['csv'] },
-          { name: 'All Files', extensions: ['*'] }
-        ]
-      })
-
-      if (result.canceled || !result.filePath) {
-        return { success: false, cancelled: true }
-      }
-
-      // Get all items sorted for export
-      const items = db.getWishlistItems({
-        sortBy: 'priority',
-        sortOrder: 'desc'
-      })
-
-      // Generate CSV content
-      const csvContent = generateWishlistCsv(items)
-
-      // Write file
-      await fs.writeFile(result.filePath, csvContent, 'utf-8')
-
-      return { success: true, path: result.filePath, count: items.length }
-    } catch (error) {
-      console.error('Error exporting wishlist:', error)
-      throw error
-    }
-  })
-
-  console.log('Wishlist IPC handlers registered')
+  getLoggingService().info('[wishlist]', 'Wishlist IPC handlers registered')
 }
 
 /**
@@ -311,10 +98,13 @@ function generateWishlistCsv(items: WishlistItem[]): string {
   const numColumns = 10
   const emptyRow = ','.repeat(numColumns - 1)
 
-  // Escape CSV field (handle commas, quotes, newlines)
+  // Escape CSV field (handle commas, quotes, newlines, and formula injection)
   const escapeField = (value: string | number | null | undefined): string => {
     if (value === null || value === undefined) return ''
-    const str = String(value)
+    let str = String(value)
+    if (str.startsWith('=') || str.startsWith('+') || str.startsWith('-') || str.startsWith('@')) {
+      str = `'${str}`
+    }
     if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
       return `"${str.replace(/"/g, '""')}"`
     }
@@ -503,3 +293,4 @@ function generateWishlistCsv(items: WishlistItem[]): string {
 
   return BOM + rows.join('\r\n')
 }
+

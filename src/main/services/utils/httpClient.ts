@@ -1,4 +1,3 @@
-
 /**
  * httpClient — lightweight fetch wrapper replacing axios
  *
@@ -11,8 +10,7 @@ export class HttpError extends Error {
   constructor(
     public readonly status: number,
     public readonly data: unknown,
-    message: string,
-    public readonly headers?: Headers
+    message: string
   ) {
     super(message)
     this.name = 'HttpError'
@@ -52,9 +50,24 @@ export async function fetchWithTimeout(
   options: RequestInit = {},
   timeoutMs = 30_000
 ): Promise<Response> {
-  const timeoutSignal = AbortSignal.timeout(timeoutMs)
-  const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal
-  return fetch(url, { ...options, signal })
+  const controller = new AbortController()
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
+  const abortFromCaller = () => controller.abort(options.signal?.reason)
+  if (options.signal?.aborted) abortFromCaller()
+  else options.signal?.addEventListener('abort', abortFromCaller, { once: true })
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } catch (error) {
+    if (timedOut) throw new Error(`Request timed out after ${timeoutMs}ms`)
+    throw error
+  } finally {
+    clearTimeout(timer)
+    options.signal?.removeEventListener('abort', abortFromCaller)
+  }
 }
 
 export interface FetchJSONOptions extends RequestInit {
@@ -69,26 +82,6 @@ export interface FetchJSONOptions extends RequestInit {
   allowStatuses?: number[]
 }
 
-export async function fetchResponse(
-  url: string,
-  options: FetchJSONOptions = {}
-): Promise<Response> {
-  const { params, timeoutMs = 30_000, allowStatuses, ...init } = options
-  const response = await fetchWithTimeout(buildUrl(url, params), init, timeoutMs)
-
-  if (!response.ok && !allowStatuses?.includes(response.status)) {
-    let data: unknown = null
-    try {
-      data = await response.json()
-    } catch {
-      data = await response.text().catch(() => null)
-    }
-    throw new HttpError(response.status, data, `HTTP ${response.status}: ${response.statusText}`, response.headers)
-  }
-
-  return response
-}
-
 /**
  * Fetch a URL and return the parsed JSON body.
  * Throws HttpError (with status + data) on non-ok responses,
@@ -98,7 +91,20 @@ export async function fetchJSON<T>(
   url: string,
   options: FetchJSONOptions = {}
 ): Promise<T> {
-  const response = await fetchResponse(url, options)
+  const { params, timeoutMs = 30_000, allowStatuses, ...init } = options
+  const finalUrl = buildUrl(url, params)
+  const response = await fetchWithTimeout(finalUrl, init, timeoutMs)
+
+  if (!response.ok && !allowStatuses?.includes(response.status)) {
+    let data: unknown
+    try {
+      data = await response.json()
+    } catch {
+      data = await response.text().catch(() => null)
+    }
+    throw new HttpError(response.status, data, `HTTP ${response.status}: ${response.statusText}`)
+  }
+
   if (response.status === 204) return null as T
   return response.json() as Promise<T>
 }
@@ -107,5 +113,5 @@ export async function fetchJSON<T>(
  * Build a Basic Auth header value from username + password.
  */
 export function basicAuthHeader(username: string, password: string): string {
-  return `Basic ${btoa(`${username}:${password}`)}`
+  return `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
 }

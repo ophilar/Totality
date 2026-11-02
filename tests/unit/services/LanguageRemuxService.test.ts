@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LanguageRemuxService } from '../../../src/main/services/LanguageRemuxService'
+import { LanguageRemuxService } from '@main/services/LanguageRemuxService'
 
 describe('LanguageRemuxService', () => {
   it('verifies retained audio streams by stable source signatures, not output indexes', async () => {
@@ -116,3 +116,4 @@ describe('LanguageRemuxService', () => {
     }
   })
 })
+

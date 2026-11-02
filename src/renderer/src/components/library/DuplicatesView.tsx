@@ -52,9 +52,9 @@ export function DuplicatesView() {
     const value = (item: MediaItem): string | number => {
       switch (comparisonSort.key) {
         case 'codec': return item.video_codec || ''
-        case 'bitrate': return item.video_bitrate_kbps || 0
+        case 'bitrate': return item.video_bitrate || 0
         case 'audio': return `${item.audio_codec || ''} ${item.audio_channels || 0}`
-        case 'size': return item.file_size_bytes || 0
+        case 'size': return item.file_size || 0
         case 'path': return item.file_path || ''
         default: return item.resolution || ''
       }
@@ -104,7 +104,7 @@ export function DuplicatesView() {
 
             // Fetch full media item records
             const items = await Promise.all(
-              itemIds.map((id) => window.electronAPI.getMediaItemById(id) as Promise<MediaItem | null>)
+              itemIds.map((id) => window.electronAPI.getMediaItem(id))
             )
             const validItems = items.filter((i): i is MediaItem => !!i)
 
@@ -124,7 +124,7 @@ export function DuplicatesView() {
         }
       } catch (err) {
         if (isMounted) {
-          console.error('[DuplicatesView] Failed to load duplicates:', err)
+          window.electronAPI.log.error('[DuplicatesView]', 'Failed to load duplicates:', err)
           addToast({ title: 'Error', message: 'Error loading duplicates', type: 'error' })
         }
       } finally {
@@ -161,7 +161,6 @@ export function DuplicatesView() {
       })
       setReloadTick((prev) => prev + 1)
     } catch (err) {
-      console.error('Duplicate scan failed:', err)
       addToast({ title: 'Scan Failed', message: 'Failed to scan for duplicates', type: 'error' })
     } finally {
       scanRequestIdRef.current = null
@@ -409,7 +408,7 @@ export function DuplicatesView() {
                                   </td>
                                   <td className="py-3">
                                     <div className="font-medium">
-                                      {(item.video_bitrate_kbps! / 1000).toFixed(1)} Mbps
+                                      {(item.video_bitrate! / 1000).toFixed(1)} Mbps
                                     </div>
                                   </td>
                                   <td className="py-3">
@@ -423,7 +422,7 @@ export function DuplicatesView() {
                                   </td>
                                   <td className="py-3">
                                     <div className="font-medium">
-                                      {formatSize(item.file_size_bytes || 0)}
+                                      {formatSize(item.file_size || 0)}
                                     </div>
                                   </td>
                                   <td className="py-3 max-w-xs">

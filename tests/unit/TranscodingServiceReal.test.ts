@@ -1,0 +1,82 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { _getTranscodingService, TranscodingService, resetTranscodingServiceForTesting } from '@main/services/TranscodingService'
+import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
+import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge, createAuthorizedIpcEvent } from '@tests/TestUtils'
+import { registerTranscodingHandlers } from '@main/ipc/transcoding'
+import fs from 'node:fs'
+import path from 'node:path'
+
+describe('TranscodingService (No Mocks)', () => {
+  let db: Awaited<ReturnType<typeof setupTestDb>>
+  let service: TranscodingService
+  let handlers: Map<string, (...args: unknown[]) => unknown>
+
+  beforeEach(async () => {
+    // Manually mock window for the bridge
+    Object.assign(globalThis, { window: {} })
+    
+    resetTranscodingServiceForTesting()
+
+    db = await setupTestDb()
+    
+    service = new TranscodingService()
+  })
+
+  afterEach(() => {
+    cleanupTestDb()
+    vi.restoreAllMocks()
+  })
+
+  it('should check tool availability', async () => {
+    const availability = await service.checkAvailability()
+    expect(availability.ffmpeg).toBe(true)
+
+  })
+
+  it('should generate transcoding parameters through the production advisor port', async () => {
+    const filePath = '/path/to/video.mkv'
+    
+    vi.spyOn(getMediaFileAnalyzer(), 'analyzeFile').mockResolvedValue({
+      success: true,
+      filePath,
+      video: { index: 0, codec: 'h264', width: 1920, height: 1080, bitrate: 10000 },
+      audioTracks: [{ index: 0, codec: 'ac3', channels: 6, bitrate: 640, isDefault: true, hasObjectAudio: false }],
+      subtitleTracks: []
+    })
+
+    const params = await service.getTranscodeParameters(filePath, { targetCodec: 'av1', encoder: 'svt_av1', crf: 25, preset: 'fast', qualityProfile: 'balanced', encoderPolicy: 'software' })
+    expect(params.summary).toBe('Explicit measured transcoding parameters')
+  })
+
+  describe('Transcoding IPC Integration', () => {
+    beforeEach(() => {
+      const bridge = setupRealIntegratedBridge()
+      handlers = bridge.handlers
+      registerTranscodingHandlers()
+    })
+
+    it('should correctly expose availability via IPC', async () => {
+      const handler = handlers.get('transcoding:checkAvailability')!
+      const availability = await handler(createAuthorizedIpcEvent())
+      expect(availability.ffmpeg).toBe(true)
+    })
+
+    it('should generate parameters via IPC call', async () => {
+      const handler = handlers.get('transcoding:getParameters')!
+      const filePath = path.join(process.cwd(), 'tests/tmp/transcoding-real-video.mkv')
+      fs.writeFileSync(filePath, 'fixture')
+      await db.sources.upsertSource({ source_id: 'src1', source_type: 'local', display_name: 'Test source', connection_config: JSON.stringify({ folderPath: path.dirname(filePath) }), is_enabled: 1 })
+      await db.media.upsertItem({ id: 1, source_id: 'src1', plex_id: 'p2', title: 'Video', type: 'movie', file_path: filePath, file_size: 7 })
+      
+      const persistedItem = await db.media.getItemById(1)
+      const authorizedPath = persistedItem?.file_path
+      vi.spyOn(getMediaFileAnalyzer(), 'analyzeFile').mockResolvedValue({
+        success: true, filePath: authorizedPath!,
+        video: { index: 0, codec: 'h264', width: 1920, height: 1080, bitrate: 5000 },
+        audioTracks: [], subtitleTracks: []
+      })
+
+      await expect(handler(createAuthorizedIpcEvent(), 1, { targetCodec: 'av1' })).rejects.toThrow('Quality profile must be explicitly selected')
+    })
+  })
+})

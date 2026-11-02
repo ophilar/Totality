@@ -10,7 +10,6 @@ export interface PlexServer {
   address: string
   uri: string
   localAddresses?: string
-  connectionType: 'local' | 'remote' | 'relay'
   owned: boolean
   accessToken: string
 }
@@ -31,11 +30,6 @@ export interface PlexLibrary {
   contentChangedAt: number
   hidden: number
   count?: number  // Number of items in the library (optional)
-  Location?: PlexLibraryLocation[]
-}
-
-export interface PlexLibraryLocation {
-  path: string
 }
 
 export interface PlexMediaItem {
@@ -59,8 +53,6 @@ export interface PlexMediaItem {
   originallyAvailableAt?: string
   addedAt: number
   updatedAt: number
-  viewCount?: number
-  lastViewedAt?: number
 
   // Video/Audio stream info
   Media?: PlexMedia[]
@@ -270,6 +262,7 @@ export interface PlexMusicArtist {
   // Artist metadata
   Country?: { tag: string }[]
   Genre?: { tag: string }[]
+  Mood?: { tag: string }[]
 
   // External IDs
   Guid?: PlexGuid[]
@@ -301,6 +294,7 @@ export interface PlexMusicAlbum {
   // Album metadata
   studio?: string // Record label
   Genre?: { tag: string }[]
+  Mood?: { tag: string }[]
 
   // External IDs
   Guid?: PlexGuid[]
@@ -331,11 +325,11 @@ export interface PlexMusicTrack {
   grandparentTitle?: string // Artist name
   grandparentThumb?: string
 
+  // Metadata
+  Mood?: { tag: string }[]
+
   // External IDs
   Guid?: PlexGuid[]
-
-  // Mood tags
-  Mood?: { tag: string }[]
 
   // Audio stream info
   Media?: PlexMusicMedia[]

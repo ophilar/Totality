@@ -6,55 +6,35 @@
  */
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
+import { TMDBService } from '@main/services/TMDBService'
+import { _getDatabase, _resetBetterSQLiteServiceForTesting } from '@main/database/BetterSQLiteService'
 
 // Mock fetch globally
 const mockFetch = vi.fn()
 global.fetch = mockFetch
 
-// Mock DatabaseService - return API key by default
-const mockGetSetting = vi.fn((key: string) => {
-  if (key === 'tmdb_api_key') return 'test-api-key-12345'
-  return null
-})
-
-vi.mock('../../src/main/database/getDatabase', () => ({
-  getDatabase: vi.fn(() => ({
-    getSetting: mockGetSetting,
-  })),
-}))
-
-// Mock RateLimiter
-vi.mock('../../src/main/services/utils/RateLimiter', () => ({
-  RateLimiters: {
-    createTMDBLimiter: vi.fn(() => ({
-      waitForSlot: vi.fn(() => Promise.resolve()),
-      pauseFor: vi.fn(),
-      recordError: vi.fn(),
-      recordSuccess: vi.fn(),
-    })),
-  },
-  SlidingWindowRateLimiter: vi.fn(),
-}))
-
-import { TMDBService } from '../../src/main/services/TMDBService'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 describe('TMDBService', () => {
   let service: TMDBService
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     vi.clearAllMocks()
     mockFetch.mockReset()
-    // Reset the mock to return API key
-    mockGetSetting.mockImplementation((key: string) => {
-      if (key === 'tmdb_api_key') return 'test-api-key-12345'
-      return null
-    })
+    
+    db = await setupTestDb()
+    process.env.NODE_ENV = 'test'
+    
+    // Set default API key in real DB
+    await db.config.setSetting('tmdb_api_key', 'test-api-key-12345')
+    
     service = new TMDBService()
     await service.initialize()
   })
 
   afterEach(() => {
-    vi.clearAllMocks()
+    cleanupTestDb()
   })
 
   // ============================================================================
@@ -70,7 +50,8 @@ describe('TMDBService', () => {
 
     it('should throw error when API key is not configured', async () => {
       // Create a new service with no API key
-      mockGetSetting.mockReturnValue(null)
+      await db.config.deleteSetting('tmdb_api_key')
+      
       const serviceWithoutKey = new TMDBService()
       await serviceWithoutKey.initialize()
 
@@ -94,6 +75,7 @@ describe('TMDBService', () => {
         release_date: '1999-10-15',
         belongs_to_collection: null,
         poster_path: '/pB8BM7pdSp6B6Ih7QZ4DrQ3PmJK.jpg',
+        original_language: 'en',
       }
 
       mockFetch.mockResolvedValueOnce({
@@ -104,6 +86,7 @@ describe('TMDBService', () => {
       const result = await service.getMovieDetails('550')
 
       expect(result).toEqual(mockMovie)
+      expect(result.original_language).toBe('en')
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('/movie/550'),
         expect.any(Object)
@@ -246,9 +229,9 @@ describe('TMDBService', () => {
     it('should fetch collection details', async () => {
       const mockCollection = {
         id: 10,
-        name: 'Star Wars Collection',
+        name: 'Example Galaxy Collection',
         parts: [
-          { id: 11, title: 'Star Wars' },
+          { id: 11, title: 'Example Galaxy' },
           { id: 1891, title: 'The Empire Strikes Back' },
         ],
         poster_path: '/something.jpg',
@@ -261,7 +244,7 @@ describe('TMDBService', () => {
 
       const result = await service.getCollectionDetails('10')
 
-      expect(result.name).toBe('Star Wars Collection')
+      expect(result.name).toBe('Example Galaxy Collection')
       expect(result.parts).toHaveLength(2)
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('/collection/10'),
@@ -409,3 +392,6 @@ describe('TMDBService', () => {
     })
   })
 })
+
+
+

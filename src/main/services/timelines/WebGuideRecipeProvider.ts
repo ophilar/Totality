@@ -1,7 +1,6 @@
-
 import type { ITimelineRecipeProvider, TimelineDefinition, TimelineRecipeSummary, TimelineFetchOptions } from './ITimelineRecipeProvider'
 import { getTimelineCacheService, TimelineCacheService } from './TimelineCacheService'
-import { getGeminiService, GeminiService } from '../GeminiService'
+import { getGeminiService, GeminiService } from '@main/services/GeminiService'
 import { validateTimelineDefinition } from './TimelineValidation'
 
 export class WebGuideRecipeProvider implements ITimelineRecipeProvider {

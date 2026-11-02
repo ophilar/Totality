@@ -1,0 +1,328 @@
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
+import * as fs from 'fs'
+import * as path from 'node:path'
+import { LocalFolderProvider } from '@main/providers/local/LocalFolderProvider'
+import { LibraryType } from '@main/types/database'
+import { setupTestDb, cleanupTestDb, createTempDir, LocalIntegratedApiServer } from '@tests/TestUtils'
+import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
+import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
+import { PathUtils } from '@main/services/utils/PathUtils'
+import { getTMDBService } from '@main/services/TMDBService'
+import { getMusicBrainzService } from '@main/services/MusicBrainzService'
+
+describe('LocalFolderProvider Integration (Real FS)', () => {
+  let db: Awaited<ReturnType<typeof setupTestDb>>
+  let provider: LocalFolderProvider
+  let tempDir: { path: string; cleanup: () => void }
+  let server: LocalIntegratedApiServer
+  const sourceId = 'test-local'
+
+  beforeEach(async () => {
+    db = await setupTestDb()
+    tempDir = createTempDir('local-provider-test')
+    
+    // Start local integrated mock API server
+    server = new LocalIntegratedApiServer()
+    await server.start()
+
+    // Configure base URLs in database settings to point to the local server
+    await db.config.setSetting('tmdb_base_url', `${server.url}/tmdb/`)
+    await db.config.setSetting('musicbrainz_base_url', `${server.url}/musicbrainz/`)
+
+    // Initialize real TMDB and MusicBrainz services with the new settings
+    const tmdb = getTMDBService()
+    await tmdb.initialize()
+    const mb = getMusicBrainzService()
+    await mb.initialize()
+
+    // Setup mock handlers on the local server
+    server.setHandler('/tmdb/search/movie', (req, _body) => {
+      const url = new URL(req.url!, 'http://localhost')
+      const query = url.searchParams.get('query') || ''
+      const id = query.includes('Stay') ? 111 : query.includes('Delete') ? 222 : 123
+      return {
+        status: 200,
+        body: {
+          results: [{ id, title: query, release_date: '2020-01-01', poster_path: '/poster.jpg', backdrop_path: '/backdrop.jpg' }]
+        }
+      }
+    })
+
+    server.setHandler('/tmdb/search/tv', (req, _body) => {
+      const url = new URL(req.url!, 'http://localhost')
+      const query = url.searchParams.get('query') || ''
+      return {
+        status: 200,
+        body: {
+          results: [{ id: 1234, name: query, poster_path: '/tv-poster.jpg' }]
+        }
+      }
+    })
+
+    server.setResponse('/tmdb/tv/1234/season/1', {
+      poster_path: '/season-poster.jpg'
+    })
+
+    server.setResponse('/tmdb/tv/1234/season/1/episode/1', {
+      still_path: '/episode-still.jpg'
+    })
+
+    server.setResponse('/tmdb/movie/123', {
+      id: 123,
+      title: 'Test Movie'
+    })
+
+    server.setHandler('/musicbrainz/artist', (_req, _body) => {
+      return {
+        status: 200,
+        body: {
+          artists: [{ name: 'Test Artist', id: 'artist-id', 'sort-name': 'Test Artist' }]
+        }
+      }
+    })
+    
+    // Setup real analyzer but mock ffprobe call
+    const analyzer = getMediaFileAnalyzer()
+    vi.spyOn(analyzer as unknown as { runFFprobe: (...args: never[]) => Promise<unknown> }, 'runFFprobe').mockImplementation(async (_filePath: string) => {
+      return {
+        format: { format_name: 'matroska', size: '1000', duration: '7200' },
+        streams: [
+          { codec_type: 'video', codec_name: 'h264', width: 1920, height: 1080, avg_frame_rate: '24/1' },
+          { codec_type: 'audio', codec_name: 'aac', channels: 2 }
+        ]
+      }
+    })
+    vi.spyOn(analyzer, 'isAvailable').mockResolvedValue(true)
+    vi.spyOn(analyzer, 'analyzeFilesParallel').mockImplementation(async (filePaths, onProgress) => {
+      const results = new Map()
+      for (let i = 0; i < filePaths.length; i++) {
+        const filePath = filePaths[i]
+        onProgress?.(i + 1, filePaths.length, path.basename(filePath))
+        results.set(filePath, await analyzer.analyzeFile(filePath))
+      }
+      return results
+    })
+
+    // Correctly initialize with SourceConfig object
+    provider = new LocalFolderProvider({
+      sourceId,
+      sourceType: 'local',
+      displayName: 'Local Movies',
+      connectionConfig: { folderPath: tempDir.path }
+    })
+
+    // Setup source in DB
+    await db.sources.upsertSource({
+      source_id: sourceId,
+      source_type: 'local',
+      display_name: 'Local Movies',
+      connection_config: '{}',
+      is_enabled: 1,
+    })
+    
+    // Enable library
+    await db.sources.setLibrariesEnabled(sourceId, [{ id: 'movie', name: 'Movies', type: LibraryType.Movie, enabled: true }])
+    
+    // Set TMDB key so lookup logic proceeds
+    await db.config.setSetting('tmdb_api_key', 'fake-key')
+  })
+
+  afterEach(async () => {
+    await server.stop()
+    tempDir.cleanup()
+    cleanupTestDb()
+  })
+
+  it('should detect and save a movie from a real file', async () => {
+    const movieFile = path.join(tempDir.path, 'Movie (2020).mkv')
+    fs.writeFileSync(movieFile, 'fake video content')
+
+    const result = await provider.scanLibrary('movie')
+    
+    if (result.errors.length > 0) {
+      console.error('Scan Errors:', result.errors)
+    }
+    
+    expect(result.success).toBe(true)
+    expect(result.itemsAdded + result.itemsUpdated).toBe(1)
+
+    const items = await db.media.getItems({ sourceId })
+    expect(items).toHaveLength(1)
+
+    expect(items[0].year).toBe(2020)
+    expect(items[0].file_path).toBe(PathUtils.toDatabasePath(movieFile))
+    expect(items[0].resolution).toBe('1080p') // From real MediaNormalizer
+  })
+
+  it('should merge new versions during incremental scan', async () => {
+    const file1 = path.join(tempDir.path, 'Movie (2020) - 1080p.mkv')
+    fs.writeFileSync(file1, 'content 1')
+
+    // 1. Initial scan
+    await provider.scanLibrary('movie')
+    const items1 = await db.media.getItems({ sourceId })
+    expect(items1).toHaveLength(1)
+    expect(items1[0].version_count).toBe(1)
+
+    // 2. Add second version
+    const file2 = path.join(tempDir.path, 'Movie (2020) - 4K.mkv')
+    fs.writeFileSync(file2, 'content 2')
+    
+    // Simulate incremental scan
+    const result = await provider.scanLibrary('movie', { sinceTimestamp: new Date(Date.now() - 10000) })
+    
+    if (result.errors.length > 0) {
+      console.error('Incremental Scan Errors:', result.errors)
+    }
+
+    expect(result.itemsUpdated).toBe(1)
+    
+    const items2 = await db.media.getItems({ sourceId })
+    expect(items2).toHaveLength(1)
+    expect(items2[0].version_count).toBe(2)
+    
+    const versions = await db.media.getItemVersions(items2[0].id)
+    expect(versions).toHaveLength(2)
+  })
+
+  it('should reconcile deletions', async () => {
+    const file1 = path.join(tempDir.path, 'To Stay (2020).mkv')
+    const file2 = path.join(tempDir.path, 'To Delete (2020).mkv')
+    fs.writeFileSync(file1, 'stay')
+    fs.writeFileSync(file2, 'delete')
+
+    // Initial scan
+    const res1 = await provider.scanLibrary('movie')
+    expect(res1.itemsAdded + res1.itemsUpdated).toBe(2)
+    expect(await db.media.getItems({ sourceId })).toHaveLength(2)
+
+    // Delete file2 and rescan
+    fs.unlinkSync(file2)
+    
+    const result = await provider.scanLibrary('movie')
+    expect(result.itemsRemoved).toBe(1)
+    
+    const items = await db.media.getItems({ sourceId })
+    expect(items).toHaveLength(1)
+    expect(items[0].file_path).toBe(PathUtils.toDatabasePath(file1))
+  })
+
+  it('should scan music library', async () => {
+    // Setup music folder structure: Artist/Album/Track.mp3
+    const artistDir = path.join(tempDir.path, 'Music', 'Test Artist')
+    const albumDir = path.join(artistDir, 'Test Album')
+    fs.mkdirSync(albumDir, { recursive: true })
+    
+    const trackFile = path.join(albumDir, '01 - Test Track.mp3')
+    fs.writeFileSync(trackFile, 'mp3 content')
+
+    // Update source config to support music library
+    await db.sources.setLibrariesEnabled(sourceId, [
+      { id: 'movie', name: 'Movies', type: LibraryType.Movie, enabled: true },
+      { id: 'music', name: 'Music', type: LibraryType.Music, enabled: true }
+    ])
+
+    const result = await provider.scanLibrary('music')
+    expect(result.success).toBe(true)
+    
+    const tracks = await db.music.getMusicTracks({ sourceId })
+    expect(tracks).toHaveLength(1)
+    expect(tracks[0].title).toBe('Test Track')
+    expect(tracks[0].artist_name).toBe('Test Artist')
+    expect(tracks[0].album_name).toBe('Test Album')
+  })
+
+  it('should scan tv show library', async () => {
+    // Setup TV folder structure: Show/Season X/Episode.mkv
+    const showDir = path.join(tempDir.path, 'TV', 'Test Show')
+    const seasonDir = path.join(showDir, 'Season 1')
+    fs.mkdirSync(seasonDir, { recursive: true })
+    
+    const epFile = path.join(seasonDir, 'Test Show - S01E01.mkv')
+    fs.writeFileSync(epFile, 'video content')
+
+    // Update source config
+    await db.sources.setLibrariesEnabled(sourceId, [
+      { id: 'show', name: 'TV Shows', type: LibraryType.Show, enabled: true }
+    ])
+
+    const result = await provider.scanLibrary('show')
+    expect(result.success).toBe(true)
+    
+    const items = await db.media.getItems({ sourceId, type: 'episode' })
+    expect(items).toHaveLength(1)
+    expect(items[0].series_title).toBe('Test Show')
+    expect(items[0].season_number).toBe(1)
+    expect(items[0].episode_number).toBe(1)
+  })
+
+  it('should skip extras/featurettes', async () => {
+    const movieFile = path.join(tempDir.path, 'Movie (2020).mkv')
+    const extrasFile = path.join(tempDir.path, 'Movie-trailer.mkv')
+    fs.writeFileSync(movieFile, 'movie')
+    fs.writeFileSync(extrasFile, 'trailer')
+
+    const result = await provider.scanLibrary('movie')
+    expect(result.itemsAdded + result.itemsUpdated).toBe(1)
+    
+    const items = await db.media.getItems({ sourceId })
+    expect(items).toHaveLength(1)
+    expect(items[0].file_path).toBe(PathUtils.toDatabasePath(movieFile))
+  })
+
+  it('should skip short files (samples)', async () => {
+    // Mock MediaFileAnalyzer to return short duration for one file
+    const { getMediaFileAnalyzer } = await import('../../src/main/services/MediaFileAnalyzer')
+    const analyzer = getMediaFileAnalyzer()
+    
+    vi.spyOn(analyzer, 'analyzeFilesParallel').mockResolvedValue(new Map([
+      [path.join(tempDir.path, 'Short.mkv'), { success: true, duration: 30_000, video: { width: 1920, height: 1080, codec: 'h264' } } as FileAnalysisResult],
+      [path.join(tempDir.path, 'Long.mkv'), { success: true, duration: 7_200_000, video: { width: 1920, height: 1080, codec: 'h264' } } as FileAnalysisResult]
+    ]))
+
+    fs.writeFileSync(path.join(tempDir.path, 'Short.mkv'), 'short')
+    fs.writeFileSync(path.join(tempDir.path, 'Long.mkv'), 'long')
+
+    const result = await provider.scanLibrary('movie')
+    expect(result.itemsAdded + result.itemsUpdated).toBe(1)
+    
+    const items = await db.media.getItems({ sourceId })
+    expect(items).toHaveLength(1)
+    expect(items[0].file_path).toContain('Long.mkv')
+  })
+
+  it('should support targeted music scan using bulk upsert', async () => {
+    const artistDir = path.join(tempDir.path, 'Music', 'Target Artist')
+    const albumDir = path.join(artistDir, 'Target Album')
+    fs.mkdirSync(albumDir, { recursive: true })
+
+    const track1 = path.join(albumDir, '01 - Track One.mp3')
+    const track2 = path.join(albumDir, '02 - Track Two.mp3')
+    fs.writeFileSync(track1, 'mp3 content 1')
+    fs.writeFileSync(track2, 'mp3 content 2')
+
+    await db.sources.setLibrariesEnabled(sourceId, [
+      { id: 'music', name: 'Music', type: LibraryType.Music, enabled: true }
+    ])
+
+    const bulkUpsertSpy = vi.spyOn(db.music, 'bulkUpsertTracks').mockRejectedValueOnce(new Error('database write failed'))
+    const failedResult = await provider.scanLibrary('music', { targetFiles: [track1, track2] })
+    expect(failedResult.success).toBe(false)
+    expect(failedResult.itemsScanned).toBe(0)
+    expect(failedResult.itemsAdded).toBe(0)
+    expect(failedResult.itemsUpdated).toBe(0)
+    expect(failedResult.errors).toContain('database write failed')
+    bulkUpsertSpy.mockRestore()
+
+    const result = await provider.scanLibrary('music', { targetFiles: [track1, track2] })
+    expect(result.success).toBe(true)
+    expect(result.itemsScanned).toBe(2)
+    expect(result.itemsAdded).toBe(2)
+
+    const tracks = await db.music.getMusicTracks({ sourceId })
+    expect(tracks).toHaveLength(2)
+  })
+})
+
+
+

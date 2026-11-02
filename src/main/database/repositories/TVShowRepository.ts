@@ -1,0 +1,899 @@
+import { eq, and, sql, asc, desc, like } from 'drizzle-orm'
+import type { AnyColumn, SQL } from 'drizzle-orm'
+import type { TVShowSummary, TVShowFilters, SeriesCompleteness, MediaItem, OptimizationMetricsSummary, CalculationStatus } from '@main/types/database'
+import { BaseRepository } from '@main/database/repositories/BaseRepository'
+import { toSnakeCaseMediaItem } from '@main/database/utils/mappers'
+
+import { drizzle, LibSQLDatabase } from 'drizzle-orm/libsql'
+import type { Client, Transaction } from '@libsql/client'
+import * as schema from '@main/database/drizzleSchema'
+import { getMediaMatchStatus } from '@main/services/SeriesIdentityService'
+import { IdentityRepository } from '@main/database/repositories/IdentityRepository'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
+
+export class TVShowRepository extends BaseRepository<typeof schema.seriesCompleteness> {
+  private readonly identities: IdentityRepository
+  constructor(db: Client, drizzle: LibSQLDatabase<typeof schema>) {
+    super(db, 'series_completeness', drizzle, schema.seriesCompleteness)
+    this.identities = new IdentityRepository(db)
+  }
+
+  override setTransactionContext(db: Client | Transaction | null, drizzle: LibSQLDatabase<typeof schema> | null): void {
+    super.setTransactionContext(db, drizzle)
+    this.identities.setTransactionContext(db)
+  }
+
+  async getSummaries(filters?: TVShowFilters & { completenessFilter?: string }): Promise<TVShowSummary[]> {
+    const conditions = this.buildFilterConditions(filters)
+
+    const episodeAggregates = this.drizzle.select({
+      seriesTitle: schema.mediaItems.seriesTitle,
+      seriesIdentityKey: schema.mediaItems.seriesIdentityKey,
+      sourceId: schema.mediaItems.sourceId,
+      libraryId: schema.mediaItems.libraryId,
+      totalSize: sql<number>`SUM(COALESCE(${schema.mediaItems.fileSize}, 0))`.as('aggregate_total_size'),
+      storageDebtBytes: sql<number | null>`CASE WHEN COUNT(${schema.mediaItems.id}) > 0 AND COUNT(CASE WHEN ${schema.qualityScores.storageDebtBytes} IS NOT NULL THEN 1 END) = COUNT(${schema.mediaItems.id}) THEN SUM(${schema.qualityScores.storageDebtBytes}) ELSE NULL END`.as('aggregate_storage_debt_bytes'),
+      weightedEfficiency: sql<number | null>`SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL THEN ${schema.qualityScores.efficiencyScore} * COALESCE(${schema.mediaItems.fileSize}, 1) ELSE 0 END) / NULLIF(SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL THEN COALESCE(${schema.mediaItems.fileSize}, 1) ELSE 0 END), 0)`.as('aggregate_efficiency'),
+      ownedCount: sql<number>`COUNT(${schema.mediaItems.id})`.as('aggregate_owned_count'),
+      seasonCount: sql<number>`COUNT(DISTINCT CASE WHEN ${schema.mediaItems.seasonNumber} > 0 THEN ${schema.mediaItems.seasonNumber} END)`.as('aggregate_season_count'),
+      regularEpisodeCount: sql<number>`COUNT(DISTINCT CASE WHEN ${schema.mediaItems.seasonNumber} > 0 AND ${schema.mediaItems.episodeNumber} IS NOT NULL THEN ${schema.mediaItems.seasonNumber} || ':' || ${schema.mediaItems.episodeNumber} END)`.as('aggregate_regular_episode_count'),
+      specialEpisodeCount: sql<number>`COUNT(CASE WHEN ${schema.mediaItems.seasonNumber} = 0 THEN 1 END)`.as('aggregate_special_episode_count'),
+      scoredCount: sql<number>`COUNT(${schema.qualityScores.efficiencyScore})`.as('aggregate_scored_count'),
+      measuredDebtCount: sql<number>`COUNT(CASE WHEN ${schema.qualityScores.evidenceStatus} = 'measured' AND ${schema.qualityScores.storageDebtBytes} IS NOT NULL THEN 1 END)`.as('aggregate_measured_debt_count')
+    }).from(schema.mediaItems).leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+      .where(eq(schema.mediaItems.type, 'episode'))
+      .groupBy(schema.mediaItems.seriesTitle, schema.mediaItems.seriesIdentityKey, schema.mediaItems.sourceId, schema.mediaItems.libraryId)
+      .as('episode_aggregates')
+
+    const sortMap: Record<string, AnyColumn | SQL | SQL.Aliased> = {
+      'title': schema.seriesCompleteness.seriesTitle,
+      'completeness': schema.seriesCompleteness.completenessPercentage,
+      'episode_count': schema.seriesCompleteness.totalEpisodes,
+      'episodes': schema.seriesCompleteness.totalEpisodes,
+      'season_count': schema.seriesCompleteness.totalSeasons,
+      'storage_debt': sql`COALESCE(${episodeAggregates.storageDebtBytes}, ${schema.seriesCompleteness.storageDebtBytes})`,
+      'storage_debt_bytes': sql`COALESCE(${episodeAggregates.storageDebtBytes}, ${schema.seriesCompleteness.storageDebtBytes})`,
+      'recoverable': sql`COALESCE(${episodeAggregates.storageDebtBytes}, ${schema.seriesCompleteness.storageDebtBytes})`,
+      'recoverable_waste_bytes': sql`COALESCE(${episodeAggregates.storageDebtBytes}, ${schema.seriesCompleteness.storageDebtBytes})`,
+      'debt': sql`COALESCE(${episodeAggregates.storageDebtBytes}, ${schema.seriesCompleteness.storageDebtBytes})`,
+      'waste': sql`COALESCE(${episodeAggregates.storageDebtBytes}, ${schema.seriesCompleteness.storageDebtBytes})`,
+      'efficiency': sql`COALESCE(${episodeAggregates.weightedEfficiency}, ${schema.seriesCompleteness.efficiencyScore})`,
+      'efficiency_score': sql`COALESCE(${episodeAggregates.weightedEfficiency}, ${schema.seriesCompleteness.efficiencyScore})`,
+      'weighted_efficiency': sql`COALESCE(${episodeAggregates.weightedEfficiency}, ${schema.seriesCompleteness.efficiencyScore})`,
+      'size': sql`COALESCE(${episodeAggregates.totalSize}, ${schema.seriesCompleteness.totalSize})`,
+    }
+    const sortCol = sortMap[filters?.sortBy || 'title'] || schema.seriesCompleteness.seriesTitle
+    const sortOrder = filters?.sortOrder === 'desc' ? desc(sortCol) : asc(sortCol)
+
+    const query = this.drizzle.select({
+      id: schema.seriesCompleteness.id,
+      series_title: schema.seriesCompleteness.seriesTitle,
+      series_identity_key: schema.seriesCompleteness.seriesIdentityKey,
+      source_id: schema.seriesCompleteness.sourceId,
+      library_id: schema.seriesCompleteness.libraryId,
+      total_seasons: schema.seriesCompleteness.totalSeasons,
+      total_episodes: schema.seriesCompleteness.totalEpisodes,
+      owned_seasons: schema.seriesCompleteness.ownedSeasons,
+      owned_episodes: schema.seriesCompleteness.ownedEpisodes,
+      missing_seasons: schema.seriesCompleteness.missingSeasons,
+      missing_episodes: schema.seriesCompleteness.missingEpisodes,
+      completeness_percentage: schema.seriesCompleteness.completenessPercentage,
+      tmdb_id: schema.seriesCompleteness.tmdbId,
+      tvdb_id: schema.seriesCompleteness.tvdbId,
+      poster_url: schema.seriesCompleteness.posterUrl,
+      backdrop_url: schema.seriesCompleteness.backdropUrl,
+      status: schema.seriesCompleteness.status,
+      user_fixed_match: schema.seriesCompleteness.userFixedMatch,
+      efficiency_score: schema.seriesCompleteness.efficiencyScore,
+      storage_debt_bytes: schema.seriesCompleteness.storageDebtBytes,
+      evidence_status: schema.seriesCompleteness.evidenceStatus,
+      confidence: schema.seriesCompleteness.confidence,
+      savings_basis: schema.seriesCompleteness.savingsBasis,
+      total_size: schema.seriesCompleteness.totalSize,
+      current_episodes: schema.seriesCompleteness.ownedEpisodes,
+      aggregate_total_size: episodeAggregates.totalSize,
+      aggregate_storage_debt_bytes: episodeAggregates.storageDebtBytes,
+      aggregate_efficiency: episodeAggregates.weightedEfficiency,
+      aggregate_owned_count: episodeAggregates.ownedCount,
+      aggregate_season_count: episodeAggregates.seasonCount,
+      aggregate_regular_episode_count: episodeAggregates.regularEpisodeCount,
+      aggregate_special_episode_count: episodeAggregates.specialEpisodeCount,
+      aggregate_scored_count: episodeAggregates.scoredCount,
+      aggregate_measured_debt_count: episodeAggregates.measuredDebtCount
+    })
+    .from(schema.seriesCompleteness)
+    .leftJoin(episodeAggregates, sql`
+      ${episodeAggregates.sourceId} IS ${schema.seriesCompleteness.sourceId}
+      AND ${episodeAggregates.libraryId} IS ${schema.seriesCompleteness.libraryId}
+      AND ${episodeAggregates.seriesIdentityKey} = ${schema.seriesCompleteness.seriesIdentityKey}
+    `)
+
+    if (conditions.length > 0) query.where(and(...conditions))
+    query.orderBy(sortOrder, asc(schema.seriesCompleteness.id))
+    if (filters?.limit) query.limit(filters.limit)
+    if (filters?.offset) query.offset(filters.offset)
+
+    const rows = await query.all()
+    const summaries: TVShowSummary[] = []
+
+    const seriesWithIds = rows
+      .filter((r) => r.id && (r.tmdb_id || r.tvdb_id))
+      .map((row) => ({
+        entityId: row.id!,
+        identities: [
+          row.tmdb_id ? { provider: 'tmdb', externalId: String(row.tmdb_id) } : null,
+          row.tvdb_id ? { provider: 'tvdb', externalId: String(row.tvdb_id) } : null,
+        ].filter((value): value is { provider: string; externalId: string } => value !== null),
+      }))
+    const conflictMap = await this.identities.getBatchConflictingEntityIds('series', seriesWithIds)
+
+    const seriesTitles = rows
+      .map((r) => r.series_title)
+      .filter(Boolean)
+
+    const aggregatedScoresMap = new Map<string, {
+      totalSize: number
+      storageDebtBytes: number | null
+      weightedEfficiency: number | null
+      scoredCount: number
+      ownedCount: number
+      seasonCount: number
+      regularEpisodeCount: number
+      specialEpisodeCount: number
+      evidenceStatus: 'measured' | 'estimated' | undefined
+    }>()
+
+    if (seriesTitles.length > 0) {
+      const aggregateConditions: SQL[] = [
+        eq(schema.mediaItems.type, 'episode'),
+        sql`${schema.mediaItems.seriesTitle} IN (${sql.join(seriesTitles.map(t => sql`${t}`), sql`, `)})`
+      ]
+      if (filters?.sourceId) aggregateConditions.push(eq(schema.mediaItems.sourceId, filters.sourceId))
+      if (filters?.libraryId) aggregateConditions.push(eq(schema.mediaItems.libraryId, filters.libraryId))
+
+      const aggRows = await this.drizzle.select({
+        seriesTitle: schema.mediaItems.seriesTitle,
+        seriesIdentityKey: schema.mediaItems.seriesIdentityKey,
+        sourceId: schema.mediaItems.sourceId,
+        libraryId: schema.mediaItems.libraryId,
+        totalSize: sql<number>`SUM(COALESCE(${schema.mediaItems.fileSize}, 0))`,
+        storageDebtBytes: sql<number | null>`SUM(CASE WHEN ${schema.qualityScores.storageDebtBytes} IS NOT NULL THEN ${schema.qualityScores.storageDebtBytes} ELSE NULL END)`,
+        measuredDebtCount: sql<number>`COUNT(CASE WHEN ${schema.qualityScores.storageDebtBytes} IS NOT NULL THEN 1 END)`,
+        genuinelyMeasuredDebtCount: sql<number>`COUNT(CASE WHEN ${schema.qualityScores.evidenceStatus} = 'measured' AND ${schema.qualityScores.storageDebtBytes} IS NOT NULL THEN 1 END)`,
+        scoredCount: sql<number>`COUNT(${schema.qualityScores.efficiencyScore})`,
+        ownedCount: sql<number>`COUNT(${schema.mediaItems.id})`,
+        seasonCount: sql<number>`COUNT(DISTINCT CASE WHEN ${schema.mediaItems.seasonNumber} IS NOT NULL AND ${schema.mediaItems.seasonNumber} > 0 THEN ${schema.mediaItems.seasonNumber} END)`,
+        regularEpisodeCount: sql<number>`COUNT(DISTINCT CASE WHEN ${schema.mediaItems.seasonNumber} > 0 AND ${schema.mediaItems.episodeNumber} IS NOT NULL THEN ${schema.mediaItems.seasonNumber} || ':' || ${schema.mediaItems.episodeNumber} END)`,
+        specialEpisodeCount: sql<number>`COUNT(CASE WHEN ${schema.mediaItems.seasonNumber} = 0 THEN 1 END)`,
+        weightedEfficiency: sql<number>`SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL THEN ${schema.qualityScores.efficiencyScore} * COALESCE(${schema.mediaItems.fileSize}, 1) ELSE 0 END) / NULLIF(SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL THEN COALESCE(${schema.mediaItems.fileSize}, 1) ELSE 0 END), 0)`
+      })
+      .from(schema.mediaItems)
+      .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+      .where(and(...aggregateConditions))
+      .groupBy(schema.mediaItems.seriesIdentityKey, schema.mediaItems.seriesTitle, schema.mediaItems.sourceId, schema.mediaItems.libraryId)
+      .all()
+
+      for (const agg of aggRows) {
+        if (!agg.seriesIdentityKey) throw new Error(`Episode aggregate for "${agg.seriesTitle ?? 'unknown'}" is missing series identity`)
+        const ownedCount = Number(agg.ownedCount) || 0
+        const measuredDebtCount = Number(agg.measuredDebtCount) || 0
+        aggregatedScoresMap.set(`${agg.seriesIdentityKey}:${agg.sourceId}:${agg.libraryId}`, {
+          totalSize: Number(agg.totalSize) || 0,
+          storageDebtBytes: measuredDebtCount === ownedCount && agg.storageDebtBytes !== null
+            ? Number(agg.storageDebtBytes)
+            : null,
+          weightedEfficiency: agg.weightedEfficiency != null ? Math.round(Number(agg.weightedEfficiency)) : null,
+          scoredCount: Number(agg.scoredCount) || 0,
+          ownedCount,
+          seasonCount: Number(agg.seasonCount) || 0,
+          regularEpisodeCount: Number(agg.regularEpisodeCount) || 0,
+          specialEpisodeCount: Number(agg.specialEpisodeCount) || 0,
+          evidenceStatus: measuredDebtCount === ownedCount && Number(agg.storageDebtBytes) >= 0
+            ? (Number(agg.genuinelyMeasuredDebtCount) === ownedCount ? 'measured' as const : 'estimated' as const)
+            : undefined
+        })
+      }
+    }
+
+    for (const row of rows) {
+      if (!row.series_identity_key) throw new Error(`TV series "${row.series_title}" is missing series identity`)
+      const canonicalIds = [row.tmdb_id, row.tvdb_id].filter((value): value is string => Boolean(value))
+      const conflictingEntityIds = row.id ? (conflictMap.get(row.id) || []) : []
+      const aggregate = aggregatedScoresMap.get(`${row.series_identity_key}:${row.source_id}:${row.library_id}`)
+        ?? (row.aggregate_owned_count != null ? {
+          totalSize: Number(row.aggregate_total_size) || 0,
+          storageDebtBytes: row.aggregate_storage_debt_bytes == null ? null : Number(row.aggregate_storage_debt_bytes),
+          weightedEfficiency: row.aggregate_efficiency == null ? null : Math.round(Number(row.aggregate_efficiency)),
+          scoredCount: Number(row.aggregate_scored_count) || 0,
+          ownedCount: Number(row.aggregate_owned_count) || 0,
+          seasonCount: Number(row.aggregate_season_count) || 0,
+          regularEpisodeCount: Number(row.aggregate_regular_episode_count) || 0,
+          specialEpisodeCount: Number(row.aggregate_special_episode_count) || 0,
+          evidenceStatus: undefined,
+        } : undefined)
+      const hasEpisodeAggregate = aggregate !== undefined && aggregate.ownedCount > 0
+
+      const totalSize = hasEpisodeAggregate ? aggregate.totalSize : (row.total_size ?? 0)
+      const totalRecoverable = hasEpisodeAggregate
+        ? (aggregate.storageDebtBytes ?? undefined)
+        : (row.evidence_status === 'measured' && row.storage_debt_bytes != null ? row.storage_debt_bytes : undefined)
+      const weightedEfficiency = hasEpisodeAggregate
+        ? aggregate.weightedEfficiency
+        : (row.efficiency_score ?? null)
+      const aggregateEvidenceStatus = hasEpisodeAggregate ? aggregate.evidenceStatus : row.evidence_status as TVShowSummary['evidence_status']
+      const ownedCount = hasEpisodeAggregate ? aggregate.ownedCount : (row.owned_episodes || 0)
+      const totalCount = row.total_episodes || ownedCount
+      const scoredCount = hasEpisodeAggregate
+        ? aggregate.scoredCount
+        : (row.efficiency_score != null ? ownedCount : 0)
+      const unscoredCount = Math.max(0, totalCount - scoredCount)
+      const seasonCount = (row.total_seasons && row.total_seasons > 0)
+        ? row.total_seasons
+        : ((row.owned_seasons && row.owned_seasons > 0)
+          ? row.owned_seasons
+          : (hasEpisodeAggregate ? aggregate.seasonCount : 0))
+      const ownedSeasons = (row.owned_seasons && row.owned_seasons > 0)
+        ? row.owned_seasons
+        : (hasEpisodeAggregate ? aggregate.seasonCount : 0)
+
+      summaries.push({
+        ...row,
+        evidence_status: aggregateEvidenceStatus,
+        confidence: row.confidence as TVShowSummary['confidence'],
+        savings_basis: row.savings_basis as TVShowSummary['savings_basis'],
+        poster_url: row.poster_url ?? undefined,
+        episode_count: totalCount,
+        season_count: seasonCount,
+        total_seasons: seasonCount,
+        total_episodes: totalCount,
+        owned_seasons: ownedSeasons,
+        owned_episodes: ownedCount,
+        owned_regular_seasons: hasEpisodeAggregate ? aggregate.seasonCount : row.owned_seasons,
+        total_regular_seasons: row.total_seasons > 0 ? row.total_seasons : null,
+        owned_regular_episodes: hasEpisodeAggregate ? aggregate.regularEpisodeCount : row.owned_episodes,
+        total_regular_episodes: row.total_episodes > 0 ? row.total_episodes : null,
+        special_episode_count: hasEpisodeAggregate ? aggregate.specialEpisodeCount : 0,
+        match_status: getMediaMatchStatus({ locked: row.user_fixed_match === 1, canonicalIds, conflictingEntityIds }),
+        total_size: totalSize,
+        total_recoverable_bytes: totalRecoverable,
+        weighted_efficiency: weightedEfficiency,
+        scored_episode_count: scoredCount,
+        unscored_episode_count: unscoredCount,
+        recommended_action: totalRecoverable === undefined
+          ? undefined
+          : totalRecoverable > 0
+            ? 'review-required'
+            : 'no-optimization'
+      })
+    }
+    return summaries
+  }
+
+  async getOptimizationMetricsSummary(
+    filters?: TVShowFilters & { completenessFilter?: string }
+  ): Promise<OptimizationMetricsSummary> {
+    const summaries = await this.getSummaries(filters)
+    const totalCount = summaries.length
+    if (totalCount === 0) {
+      return {
+        status: 'unknown',
+        calculationStatus: 'unavailable',
+        knownCount: 0,
+        totalCount: 0,
+        efficiency: null,
+        overallEfficiencyScore: null,
+        recoverableBytes: null,
+        recoverableWasteBytes: null,
+        wasteBytes: null,
+        totalStorageDebtBytes: null,
+        savingsBasis: null,
+        evidenceStatus: 'insufficient',
+        confidence: 'low',
+        confidenceScore: 0,
+      }
+    }
+
+    let knownCount = 0
+    let weightedEfficiencySum = 0
+    let weightedSizeSum = 0
+    let totalStorageDebtBytes = 0
+    let hasAnyDebt = false
+    let unweightedEfficiencySum = 0
+
+    for (const s of summaries) {
+      if (s.weighted_efficiency != null) {
+        knownCount++
+        unweightedEfficiencySum += s.weighted_efficiency
+        if (s.total_size != null && s.total_size > 0) {
+          weightedEfficiencySum += s.weighted_efficiency * s.total_size
+          weightedSizeSum += s.total_size
+        }
+      }
+      if (s.total_recoverable_bytes != null) {
+        totalStorageDebtBytes += s.total_recoverable_bytes
+        hasAnyDebt = true
+      }
+    }
+
+    let status: CalculationStatus = 'unknown'
+    let calculationStatus: CalculationStatus = 'unavailable'
+    if (totalCount > 0 && knownCount === totalCount) {
+      status = 'complete'
+      calculationStatus = 'measured'
+    } else if (knownCount > 0) {
+      status = 'partial'
+      calculationStatus = 'estimated'
+    }
+
+    const overallEfficiencyScore = knownCount > 0
+      ? Math.round(weightedSizeSum > 0 ? weightedEfficiencySum / weightedSizeSum : unweightedEfficiencySum / knownCount)
+      : null
+
+    const recoverableWasteBytes = hasAnyDebt ? totalStorageDebtBytes : null
+    const confidenceScore = totalCount > 0 ? Math.round((knownCount / totalCount) * 100) : 0
+
+    return {
+      status,
+      calculationStatus,
+      knownCount,
+      totalCount,
+      efficiency: overallEfficiencyScore,
+      overallEfficiencyScore,
+      recoverableBytes: recoverableWasteBytes,
+      recoverableWasteBytes,
+      wasteBytes: recoverableWasteBytes,
+      totalStorageDebtBytes: recoverableWasteBytes,
+      savingsBasis: hasAnyDebt ? 'measured' : null,
+      evidenceStatus: hasAnyDebt ? 'measured' : 'insufficient',
+      confidence: confidenceScore >= 80 ? 'high' : confidenceScore >= 40 ? 'medium' : 'low',
+      confidenceScore,
+    }
+  }
+
+  async count(filters?: TVShowFilters & { completenessFilter?: string }): Promise<number> {
+    const conditions = this.buildFilterConditions(filters)
+    const query = this.drizzle.select({ count: sql<number>`count(*)` }).from(schema.seriesCompleteness)
+    if (conditions.length > 0) query.where(and(...conditions))
+    const res = await query.get()
+    return res?.count || 0
+  }
+
+  private buildFilterConditions(filters?: TVShowFilters & { completenessFilter?: string }): SQL[] {
+    const conditions: SQL[] = []
+    if (filters?.sourceId) conditions.push(eq(schema.seriesCompleteness.sourceId, filters.sourceId))
+    if (filters?.libraryId) conditions.push(eq(schema.seriesCompleteness.libraryId, filters.libraryId))
+    if (filters?.searchQuery) conditions.push(like(schema.seriesCompleteness.seriesTitle, `%${filters.searchQuery}%`))
+
+    if (filters?.alphabetFilter) {
+      conditions.push(this.buildAlphabetFilter(schema.seriesCompleteness.seriesTitle, filters.alphabetFilter))
+    }
+
+    if (filters?.completenessFilter) {
+      if (filters.completenessFilter === 'complete') conditions.push(sql`completeness_percentage >= 100`)
+      else if (filters.completenessFilter === 'incomplete') conditions.push(sql`completeness_percentage < 100`)
+    }
+
+    if (filters?.slimDown) {
+      conditions.push(sql`(${schema.seriesCompleteness.efficiencyScore} < 60 OR ${schema.seriesCompleteness.storageDebtBytes} > 5368709120)`)
+    }
+
+    if (filters?.qualityTier && filters.qualityTier !== 'all') {
+      conditions.push(
+        sql`EXISTS (SELECT 1 FROM media_items m JOIN quality_scores q ON m.id = q.media_item_id WHERE m.type = 'episode' AND m.source_id = series_completeness.source_id AND COALESCE(m.library_id, '') = COALESCE(series_completeness.library_id, '') AND m.series_identity_key = series_completeness.series_identity_key AND (UPPER(q.quality_tier) = UPPER(${filters.qualityTier}) OR UPPER(m.resolution) = UPPER(${filters.qualityTier})))`
+      )
+    }
+
+    if (filters?.tierQuality && filters.tierQuality !== 'all') {
+      conditions.push(
+        sql`EXISTS (SELECT 1 FROM media_items m JOIN quality_scores q ON m.id = q.media_item_id WHERE m.type = 'episode' AND m.source_id = series_completeness.source_id AND COALESCE(m.library_id, '') = COALESCE(series_completeness.library_id, '') AND m.series_identity_key = series_completeness.series_identity_key AND UPPER(q.tier_quality) = UPPER(${filters.tierQuality}))`
+      )
+    }
+
+    return conditions
+  }
+
+  async getEpisodes(_seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string): Promise<MediaItem[]> {
+    if (!seriesIdentityKey) throw new Error('TV series identity is required')
+    if (!sourceId) throw new Error('TV series source is required')
+    if (!libraryId) throw new Error('TV series library is required')
+
+    const conditions = [
+      eq(schema.mediaItems.type, 'episode'),
+      eq(schema.mediaItems.seriesIdentityKey, seriesIdentityKey),
+      eq(schema.mediaItems.sourceId, sourceId),
+      eq(schema.mediaItems.libraryId, libraryId),
+    ]
+
+    const rows = await this.drizzle.select({
+      item: schema.mediaItems,
+      quality: schema.qualityScores
+    })
+    .from(schema.mediaItems)
+    .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+    .where(and(...conditions))
+    .orderBy(asc(schema.mediaItems.seasonNumber), asc(schema.mediaItems.episodeNumber))
+    .all()
+
+    return rows.map(r => toSnakeCaseMediaItem(r))
+  }
+
+  async getCompletenessByTitle(title: string, sourceId?: string, libraryId?: string): Promise<SeriesCompleteness | null> {
+    const conditions = [eq(schema.seriesCompleteness.seriesTitle, title)]
+    if (sourceId) conditions.push(eq(schema.seriesCompleteness.sourceId, sourceId))
+    if (libraryId) conditions.push(eq(schema.seriesCompleteness.libraryId, libraryId))
+
+    const row = await this.drizzle.select().from(schema.seriesCompleteness).where(and(...conditions)).get()
+    return row ? this.mapDrizzleToCompleteness(row) : null
+  }
+
+  async upsertCompleteness(data: SeriesCompleteness): Promise<number> {
+    if (!data.series_identity_key) throw new Error('TV series identity is required')
+    if (!data.source_id) throw new Error('TV series source is required')
+    if (!data.library_id) throw new Error('TV series library is required')
+
+    const record = {
+      seriesTitle: data.series_title,
+      seriesIdentityKey: data.series_identity_key,
+      sourceId: data.source_id,
+      libraryId: data.library_id,
+      totalSeasons: data.total_seasons,
+      totalEpisodes: data.total_episodes,
+      ownedSeasons: data.owned_seasons,
+      ownedEpisodes: data.owned_episodes,
+      missingSeasons: data.missing_seasons || '[]',
+      missingEpisodes: data.missing_episodes || '[]',
+      completenessPercentage: data.completeness_percentage,
+      tmdbId: data.tmdb_id ?? null,
+      tvdbId: data.tvdb_id ?? null,
+      posterUrl: data.poster_url ?? null,
+      backdropUrl: data.backdrop_url ?? null,
+      status: data.status ?? null,
+      userFixedMatch: data.user_fixed_match ? 1 : 0,
+      efficiencyScore: data.efficiency_score ?? null,
+      storageDebtBytes: data.storage_debt_bytes ?? null,
+      evidenceStatus: data.evidence_status,
+      confidence: data.confidence,
+      savingsBasis: data.savings_basis,
+      totalSize: data.total_size ?? null,
+    }
+
+    const existingConditions = [
+      eq(schema.seriesCompleteness.sourceId, record.sourceId),
+      eq(schema.seriesCompleteness.libraryId, record.libraryId),
+      sql`(${schema.seriesCompleteness.seriesIdentityKey} = ${record.seriesIdentityKey}
+           OR (${record.tmdbId} IS NOT NULL AND ${record.tmdbId} <> '' AND ${schema.seriesCompleteness.tmdbId} = ${record.tmdbId})
+           OR (${record.tvdbId} IS NOT NULL AND ${record.tvdbId} <> '' AND ${schema.seriesCompleteness.tvdbId} = ${record.tvdbId}))`
+    ]
+    const existing = await this.drizzle.select().from(schema.seriesCompleteness).where(and(...existingConditions)).get()
+
+    let id: number
+    if (existing) {
+      id = existing.id
+      await this.drizzle.update(schema.seriesCompleteness).set({
+        ...record,
+        seriesTitle: existing.userFixedMatch === 1 ? existing.seriesTitle : record.seriesTitle,
+        tmdbId: existing.userFixedMatch === 1 ? existing.tmdbId : record.tmdbId,
+        tvdbId: existing.userFixedMatch === 1 ? existing.tvdbId : record.tvdbId,
+        posterUrl: existing.userFixedMatch === 1 ? existing.posterUrl : (record.posterUrl || existing.posterUrl),
+        userFixedMatch: existing.userFixedMatch === 1 ? 1 : record.userFixedMatch,
+        updatedAt: sql`datetime('now')`
+      }).where(eq(schema.seriesCompleteness.id, existing.id))
+    } else {
+      id = await this.upsertWithProviderId(
+        schema.seriesCompleteness,
+        record,
+        [schema.seriesCompleteness.seriesIdentityKey, schema.seriesCompleteness.sourceId, schema.seriesCompleteness.libraryId],
+        {
+          ...record,
+          seriesTitle: sql`CASE WHEN user_fixed_match = 1 THEN series_title ELSE excluded.series_title END`,
+          tmdbId: sql`CASE WHEN user_fixed_match = 1 THEN tmdb_id ELSE excluded.tmdb_id END`,
+          tvdbId: sql`CASE WHEN user_fixed_match = 1 THEN tvdb_id ELSE excluded.tvdb_id END`,
+          posterUrl: sql`CASE WHEN user_fixed_match = 1 THEN poster_url ELSE COALESCE(excluded.poster_url, series_completeness.poster_url) END`,
+          userFixedMatch: sql`CASE WHEN user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END`,
+        }
+      )
+    }
+
+    return id
+  }
+
+  async clearTmdbId(id: number): Promise<void> {
+    await this.drizzle.update(schema.seriesCompleteness).set({
+      tmdbId: null,
+      updatedAt: sql`datetime('now')`
+    }).where(eq(schema.seriesCompleteness.id, id))
+  }
+
+  async getAllCompleteness(sourceId?: string, libraryId?: string): Promise<SeriesCompleteness[]> {
+    const conditions = []
+    if (sourceId) conditions.push(eq(schema.seriesCompleteness.sourceId, sourceId))
+    if (libraryId) conditions.push(eq(schema.seriesCompleteness.libraryId, libraryId))
+
+    const rows = await this.drizzle.select()
+      .from(schema.seriesCompleteness)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(asc(schema.seriesCompleteness.seriesTitle))
+      .all()
+
+    return rows.map(r => this.mapDrizzleToCompleteness(r))
+  }
+
+  async getIncomplete(sourceId?: string): Promise<SeriesCompleteness[]> {
+    const conditions = [sql`completeness_percentage < 100`]
+    if (sourceId) conditions.push(eq(schema.seriesCompleteness.sourceId, sourceId))
+
+    const rows = await this.drizzle.select()
+      .from(schema.seriesCompleteness)
+      .where(and(...conditions))
+      .orderBy(asc(schema.seriesCompleteness.completenessPercentage))
+      .all()
+
+    return rows.map(r => this.mapDrizzleToCompleteness(r))
+  }
+
+  async updateEpisodeMetadata(
+    id: number,
+    metadata: {
+      title?: string
+      year?: number
+      summary?: string
+      posterUrl?: string
+      episodeThumbUrl?: string
+      seasonPosterUrl?: string
+      seriesTmdbId?: string | null
+      seriesIdentityKey?: string | null
+      tmdbId?: string | null
+      imdbId?: string | null
+      originalLanguage?: string
+    }
+  ): Promise<void> {
+    const data: Record<string, unknown> = { updatedAt: sql`(datetime('now'))` }
+    if (metadata.title !== undefined) data.title = metadata.title
+    if (metadata.year !== undefined) data.year = metadata.year
+    if (metadata.summary !== undefined) data.summary = metadata.summary
+    if (metadata.posterUrl !== undefined) data.posterUrl = metadata.posterUrl
+    if (metadata.episodeThumbUrl !== undefined) data.episodeThumbUrl = metadata.episodeThumbUrl
+    if (metadata.seasonPosterUrl !== undefined) data.seasonPosterUrl = metadata.seasonPosterUrl
+    if (metadata.seriesTmdbId !== undefined) data.seriesTmdbId = metadata.seriesTmdbId
+    if (metadata.seriesIdentityKey !== undefined) data.seriesIdentityKey = metadata.seriesIdentityKey
+    if (metadata.tmdbId !== undefined) data.tmdbId = metadata.tmdbId
+    if (metadata.imdbId !== undefined) data.imdbId = metadata.imdbId
+    if (metadata.originalLanguage !== undefined) data.originalLanguage = metadata.originalLanguage
+
+    await this.drizzle.update(schema.mediaItems).set(data).where(eq(schema.mediaItems.id, id))
+  }
+
+  async updateBatchEpisodeMetadata(
+    updates: Array<{
+      id: number
+      metadata: {
+        title?: string
+        year?: number
+        summary?: string
+        posterUrl?: string
+        episodeThumbUrl?: string
+        seasonPosterUrl?: string
+        seriesTmdbId?: string
+        seriesIdentityKey?: string
+        tmdbId?: string
+        imdbId?: string
+        originalLanguage?: string
+      }
+    }>
+  ): Promise<void> {
+    for (const update of updates) {
+      await this.updateEpisodeMetadata(update.id, update.metadata)
+    }
+  }
+
+  async deleteCompleteness(id: number): Promise<void> {
+    await this.drizzle.delete(schema.seriesCompleteness).where(eq(schema.seriesCompleteness.id, id))
+  }
+
+  async reconcileOrphanedCompleteness(sourceId: string, libraryId: string, seriesIdentityKey?: string): Promise<{ removed: number; preservedLocked: number }> {
+    if (!sourceId.trim() || !libraryId.trim()) throw new Error('Source and library are required to reconcile TV summaries')
+    if (!seriesIdentityKey) {
+      const unresolvedEpisodes = await this.db.execute({
+        sql: `SELECT COUNT(*) AS count FROM media_items
+              WHERE type = 'episode' AND source_id = ? AND library_id = ?
+                AND (series_identity_key IS NULL OR TRIM(series_identity_key) = '')`,
+        args: [sourceId, libraryId],
+      })
+      const unresolvedCount = Number(unresolvedEpisodes.rows[0]?.count ?? 0)
+      if (unresolvedCount > 0) throw new Error(`Cannot reconcile TV summaries while ${unresolvedCount} scoped episodes have no series identity`)
+    }
+    const episodeRows = await this.db.execute({
+      sql: `SELECT DISTINCT series_identity_key FROM media_items
+            WHERE type = 'episode' AND source_id = ? AND library_id = ? AND series_identity_key IS NOT NULL`,
+      args: [sourceId, libraryId],
+    })
+    const currentIdentities = new Set(episodeRows.rows.map(row => String(row.series_identity_key)))
+    const summaries = (await this.getAllCompleteness(sourceId, libraryId))
+      .filter(summary => !seriesIdentityKey || summary.series_identity_key === seriesIdentityKey)
+    let removed = 0
+    let preservedLocked = 0
+
+    for (const summary of summaries) {
+      if (!summary.series_identity_key) throw new Error(`TV summary ${summary.id} has no series identity`)
+      if (currentIdentities.has(summary.series_identity_key)) continue
+      const identities = summary.id ? await this.identities.getIdentities('series', summary.id) : []
+      if (summary.user_fixed_match || identities.some(identity => identity.locked)) {
+        preservedLocked++
+        continue
+      }
+      if (!summary.id) throw new Error(`Orphan TV summary "${summary.series_title}" has no row ID`)
+      await this.identities.deleteUnlockedEntityRecords('series', summary.id)
+      await this.deleteCompleteness(summary.id)
+      removed++
+    }
+
+    return { removed, preservedLocked }
+  }
+
+  async mergeDuplicateShows(sourceId?: string, libraryId?: string): Promise<number> {
+    return (await this.mergeDuplicateShowsWithOutcome(sourceId, libraryId)).merged
+  }
+
+  async mergeDuplicateShowsWithOutcome(
+    sourceId?: string,
+    libraryId?: string,
+    seriesIdentityKey?: string,
+  ): Promise<{ merged: number; preservedLocked: number; ambiguous: number }> {
+    if (!this.hasTransactionContext) {
+      const transaction = await this.db.transaction('write')
+      this.setTransactionContext(transaction, drizzle(transaction as unknown as Client, { schema }))
+      try {
+        const result = await this.mergeDuplicateShowsWithOutcome(sourceId, libraryId, seriesIdentityKey)
+        await transaction.commit()
+        return result
+      } catch (error) {
+        await transaction.rollback()
+        throw error
+      } finally {
+        this.setTransactionContext(null, null)
+      }
+    }
+    const logging = getLoggingService()
+    let mergedCount = 0
+    let preservedLocked = 0
+    let ambiguous = 0
+
+    const conditions = []
+    if (sourceId) conditions.push(eq(schema.seriesCompleteness.sourceId, sourceId))
+    if (libraryId) conditions.push(eq(schema.seriesCompleteness.libraryId, libraryId))
+
+    const rows = await this.drizzle.select()
+      .from(schema.seriesCompleteness)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .all()
+
+    if (!rows || rows.length <= 1) return { merged: 0, preservedLocked: 0, ambiguous: 0 }
+
+    const scopedGroups = new Map<string, typeof rows>()
+    for (const row of rows) {
+      const scope = `${row.sourceId || ''}:::${row.libraryId || ''}`
+      if (!scopedGroups.has(scope)) scopedGroups.set(scope, [])
+      scopedGroups.get(scope)!.push(row)
+    }
+
+    for (const [scope, scopeRows] of scopedGroups.entries()) {
+      const [scopeSourceId, scopeLibraryId] = scope.split(':::')
+      type ScopedRow = (typeof scopeRows)[number]
+      const rowIdentities = new Map<number, { tmdb: Set<string>; tvdb: Set<string> }>()
+      for (const row of scopeRows) {
+        const linked = row.id ? await this.identities.getIdentities('series', row.id) : []
+        const tmdb = new Set(linked.filter(record => record.provider.toLowerCase() === 'tmdb').map(record => record.externalId.trim()).filter(Boolean))
+        const tvdb = new Set(linked.filter(record => record.provider.toLowerCase() === 'tvdb').map(record => record.externalId.trim()).filter(Boolean))
+        if (row.tmdbId?.trim()) tmdb.add(row.tmdbId.trim())
+        if (row.tvdbId?.trim()) tvdb.add(row.tvdbId.trim())
+        if (row.seriesIdentityKey?.startsWith('tmdb:')) tmdb.add(row.seriesIdentityKey.slice(5))
+        if (row.seriesIdentityKey?.startsWith('tvdb:')) tvdb.add(row.seriesIdentityKey.slice(5))
+        rowIdentities.set(row.id, { tmdb, tvdb })
+      }
+      const stableIdentity = (row: ScopedRow): string | null => {
+        const ids = rowIdentities.get(row.id)
+        if (!ids || ids.tmdb.size > 1 || ids.tvdb.size > 1) return null
+        const tmdbId = [...ids.tmdb][0]
+        if (tmdbId) return `tmdb:${tmdbId}`
+        const tvdbId = [...ids.tvdb][0]
+        if (tvdbId) return `tvdb:${tvdbId}`
+        const scopedUnresolvedPrefix = `unresolved:${scopeSourceId}:${scopeLibraryId}:`
+        return row.seriesIdentityKey?.startsWith(scopedUnresolvedPrefix) ? row.seriesIdentityKey : null
+      }
+      ambiguous += scopeRows.filter(row => {
+        const ids = rowIdentities.get(row.id)
+        return Boolean(ids && (ids.tmdb.size > 1 || ids.tvdb.size > 1))
+      }).length
+      const seedIdentity = seriesIdentityKey
+        ? scopeRows.find(row => row.seriesIdentityKey === seriesIdentityKey)
+        : undefined
+      const targetIdentity = seedIdentity ? stableIdentity(seedIdentity) : undefined
+      if (seriesIdentityKey && !targetIdentity) continue
+
+      const groupedRows = new Map<string, typeof rows>()
+      for (const row of scopeRows) {
+        const identity = stableIdentity(row)
+        if (!identity || (targetIdentity && identity !== targetIdentity)) continue
+        const group = groupedRows.get(identity) ?? []
+        group.push(row)
+        groupedRows.set(identity, group)
+      }
+
+      const clusters = [...groupedRows.entries()]
+        .filter(([, group]) => group.length > 1)
+        .map(([identity, group]) => ({ identity, rows: group }))
+
+      for (const { identity, rows: cluster } of clusters) {
+        const tmdbIds = new Set(cluster.flatMap(row => [...(rowIdentities.get(row.id)?.tmdb ?? [])]))
+        const tvdbIds = new Set(cluster.flatMap(row => [...(rowIdentities.get(row.id)?.tvdb ?? [])]))
+        if (tmdbIds.size > 1 || tvdbIds.size > 1) {
+          ambiguous++
+          continue
+        }
+        const lockedRows = []
+        for (const row of cluster) {
+          const identities = row.id ? await this.identities.getIdentities('series', row.id) : []
+          if (row.userFixedMatch || identities.some(record => record.locked)) lockedRows.push(row)
+        }
+        if (lockedRows.length) {
+          preservedLocked += lockedRows.length
+          continue
+        }
+
+        cluster.sort((x, y) => {
+          const xEpisodes = x.ownedEpisodes || 0
+          const yEpisodes = y.ownedEpisodes || 0
+          if (xEpisodes !== yEpisodes) return yEpisodes - xEpisodes
+
+          return x.id - y.id
+        })
+
+        const primary = cluster[0]
+        const secondaryRows = cluster.slice(1)
+        const secondaryIds = secondaryRows.map(r => r.id)
+
+        const mergedTmdbId = identity.startsWith('tmdb:') ? identity.slice(5) : primary.tmdbId || cluster.find(r => r.tmdbId)?.tmdbId || null
+        const mergedTvdbId = identity.startsWith('tvdb:') ? identity.slice(5) : primary.tvdbId || cluster.find(r => r.tvdbId)?.tvdbId || null
+        const mergedPosterUrl = primary.posterUrl ?? cluster.find(r => r.posterUrl)?.posterUrl ?? null
+        const mergedBackdropUrl = primary.backdropUrl ?? cluster.find(r => r.backdropUrl)?.backdropUrl ?? null
+        const mergedStatus = primary.status ?? cluster.find(r => r.status)?.status ?? null
+        const canonicalKey = identity
+        try {
+          for (const sec of secondaryRows) {
+            const secondaryIdentityKey = sec.seriesIdentityKey
+            if (!secondaryIdentityKey) throw new Error(`TV summary ${sec.id} has no persisted identity key`)
+            await this.db.execute({
+              sql: `UPDATE media_items
+                    SET series_identity_key = ?, series_title = ?, series_tmdb_id = COALESCE(?, series_tmdb_id)
+                    WHERE type = 'episode' AND source_id = ? AND library_id = ? AND series_identity_key = ?`,
+              args: [canonicalKey, primary.seriesTitle, mergedTmdbId, scopeSourceId, scopeLibraryId, secondaryIdentityKey]
+            })
+          }
+          const primaryIdentityKey = primary.seriesIdentityKey
+          if (!primaryIdentityKey) throw new Error(`TV summary ${primary.id} has no persisted identity key`)
+          await this.db.execute({
+            sql: `UPDATE media_items
+                  SET series_identity_key = ?, series_title = ?, series_tmdb_id = COALESCE(?, series_tmdb_id)
+                  WHERE type = 'episode' AND source_id = ? AND library_id = ? AND series_identity_key = ?`,
+            args: [canonicalKey, primary.seriesTitle, mergedTmdbId, scopeSourceId, scopeLibraryId, primaryIdentityKey]
+          })
+
+          for (const secId of secondaryIds) {
+            await this.db.execute({
+              sql: `UPDATE OR IGNORE media_identities SET entity_id = ? WHERE entity_type = 'series' AND entity_id = ?`,
+              args: [primary.id, secId]
+            })
+            await this.db.execute({
+              sql: `DELETE FROM media_identities WHERE entity_type = 'series' AND entity_id = ?`,
+              args: [secId]
+            })
+            await this.db.execute({
+              sql: `UPDATE OR IGNORE media_aliases SET entity_id = ? WHERE entity_type = 'series' AND entity_id = ?`,
+              args: [primary.id, secId]
+            })
+            await this.db.execute({
+              sql: `DELETE FROM media_aliases WHERE entity_type = 'series' AND entity_id = ?`,
+              args: [secId]
+            })
+          }
+
+          const epStatsRes = await this.db.execute({
+            sql: `SELECT
+                    COUNT(DISTINCT season_number) as owned_seasons,
+                    COUNT(*) as owned_episodes,
+                    SUM(file_size) as total_size
+                  FROM media_items
+                  WHERE type = 'episode' AND source_id = ? AND library_id = ?
+                    AND series_identity_key = ?`,
+            args: [scopeSourceId, scopeLibraryId, canonicalKey]
+          })
+          const epStats = epStatsRes.rows[0] as unknown as {
+            owned_seasons: number
+            owned_episodes: number
+            total_size: number | null
+          }
+
+          const totalEpisodes = Math.max(...cluster.map(row => row.totalEpisodes || 0), Number(epStats?.owned_episodes || 0))
+          const totalSeasons = Math.max(...cluster.map(row => row.totalSeasons || 0), Number(epStats?.owned_seasons || 0))
+          const ownedEpisodes = Number(epStats?.owned_episodes || primary.ownedEpisodes || 0)
+          const ownedSeasons = Number(epStats?.owned_seasons || primary.ownedSeasons || 0)
+          const completenessPct = primary.completenessPercentage == null
+            ? null
+            : totalEpisodes > 0
+              ? (ownedEpisodes / totalEpisodes) * 100
+              : primary.completenessPercentage
+
+          for (const secId of secondaryIds) {
+            await this.db.execute({
+              sql: `DELETE FROM series_completeness WHERE id = ? AND source_id = ? AND library_id = ?`,
+              args: [secId, scopeSourceId, scopeLibraryId]
+            })
+          }
+
+          await this.db.execute({
+            sql: `UPDATE series_completeness
+                  SET series_identity_key = ?, tmdb_id = ?, tvdb_id = ?,
+                      poster_url = ?, backdrop_url = ?, status = ?,
+                      total_seasons = ?, total_episodes = ?, owned_seasons = ?, owned_episodes = ?,
+                      completeness_percentage = ?, total_size = ?, updated_at = datetime('now')
+                  WHERE id = ?`,
+            args: [
+              canonicalKey,
+              mergedTmdbId,
+              mergedTvdbId,
+              mergedPosterUrl,
+              mergedBackdropUrl,
+              mergedStatus,
+              totalSeasons,
+              totalEpisodes,
+              ownedSeasons,
+              ownedEpisodes,
+              completenessPct,
+              epStats?.total_size !== null && epStats?.total_size !== undefined ? Math.round(Number(epStats.total_size)) : primary.totalSize,
+              primary.id
+            ]
+          })
+
+          mergedCount++
+          logging.info('[TVShowRepository]', `Merged ${cluster.length} duplicate TV show records with verified ${identity} identity into canonical ID ${primary.id}`)
+        } catch (err) {
+          logging.error('[TVShowRepository]', `Failed to merge duplicate cluster for "${primary.seriesTitle}": ${getErrorMessage(err)}`)
+          throw err
+        }
+      }
+    }
+
+    return { merged: mergedCount, preservedLocked, ambiguous }
+  }
+
+  private mapDrizzleToCompleteness(r: typeof schema.seriesCompleteness.$inferSelect): SeriesCompleteness {
+    return {
+      id: r.id,
+      series_title: r.seriesTitle,
+      series_identity_key: r.seriesIdentityKey ?? undefined,
+      source_id: r.sourceId,
+      library_id: r.libraryId,
+      total_seasons: r.totalSeasons,
+      total_episodes: r.totalEpisodes,
+      owned_seasons: r.ownedSeasons,
+      owned_episodes: r.ownedEpisodes,
+      missing_seasons: r.missingSeasons,
+      missing_episodes: r.missingEpisodes,
+      completeness_percentage: r.completenessPercentage,
+      tmdb_id: r.tmdbId || undefined,
+      tvdb_id: r.tvdbId || undefined,
+      poster_url: r.posterUrl || undefined,
+      backdrop_url: r.backdropUrl || undefined,
+      status: r.status || undefined,
+      efficiency_score: r.efficiencyScore,
+      storage_debt_bytes: r.storageDebtBytes,
+      evidence_status: r.evidenceStatus as SeriesCompleteness['evidence_status'],
+      confidence: r.confidence as SeriesCompleteness['confidence'],
+      savings_basis: r.savingsBasis as SeriesCompleteness['savings_basis'],
+      total_size: r.totalSize ?? undefined,
+      created_at: r.createdAt,
+      updated_at: r.updatedAt
+    }
+  }
+}

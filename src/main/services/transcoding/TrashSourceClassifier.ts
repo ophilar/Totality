@@ -1,4 +1,3 @@
-
 export type MediaSourceTier = 'Remux' | 'BluRay' | 'WEB-DL' | 'WEBRip' | 'HDTV' | 'SDTV' | 'Unknown'
 
 const PATTERNS = {
@@ -10,16 +9,22 @@ const PATTERNS = {
   sdtv: /\b(dvd|dvdrip|sdtv)\b/i
 }
 
+const LEGACY_HIGH_BITRATE_CODECS = /^(h\.?264|x264|avc1?|vc-?1|mpeg-?2(video)?)$/i
+
 export class TrashSourceClassifier {
   /**
    * Classifies a media file into a standardized TRaSH Guides media source tier.
-   * Classifies explicit release tags in the media filename; stream bitrate cannot establish source provenance.
+   * Priority: Filename release tags -> Stream characteristics heuristic -> Unknown
    */
-  static classify(filePath: string | null | undefined): MediaSourceTier {
+  static classify(
+    filePath: string | null | undefined,
+    videoBitrateKbps?: number | null,
+    codec?: string | null
+  ): MediaSourceTier {
     if (filePath) {
-      const fileName = filePath.split(/[\\/]/).pop() ?? filePath
-      const normalizedName = fileName.replace(/[._]/g, ' ')
-      const targets = [fileName, normalizedName]
+      // Normalize delimiters (e.g. underscores to spaces) for reliable word-boundary matching
+      const normalizedPath = filePath.replace(/[._]/g, ' ')
+      const targets = [filePath, normalizedPath]
 
       for (const target of targets) {
         if (PATTERNS.remux.test(target)) {
@@ -56,6 +61,20 @@ export class TrashSourceClassifier {
           return 'SDTV'
         }
       }
+    }
+
+    // Stream characteristics heuristic
+    if (videoBitrateKbps !== null && videoBitrateKbps !== undefined && videoBitrateKbps > 0) {
+      const normalizedCodec = codec?.trim()
+      if (videoBitrateKbps > 25000 && normalizedCodec && LEGACY_HIGH_BITRATE_CODECS.test(normalizedCodec)) {
+        return 'Remux'
+      }
+
+      if (videoBitrateKbps > 14000) {
+        return 'BluRay'
+      }
+
+      return 'WEB-DL'
     }
 
     return 'Unknown'

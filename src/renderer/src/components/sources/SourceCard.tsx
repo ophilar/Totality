@@ -4,35 +4,26 @@
  * Displays a single media source with its status and actions.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Server, HardDrive, Film, Tv, Music, Folder } from 'lucide-react'
-import { useSources, type ProviderType } from '../../contexts/SourceContext'
-import { formatRelativeTime } from '../../utils/dateUtils'
-import { providerColors } from '../library/mediaUtils'
-import type { MediaSourceResponse, MediaLibraryResponse } from '../../../../preload/index'
+import { useSources } from '@/contexts/SourceContext'
+import { LibraryType, ProviderType } from '@main/types/database'
+import { PROVIDERS } from '@main/constants/providers'
+import type { MediaSourceResponse, MediaLibraryResponse } from '@preload/api/types'
 
-// Extended library type with enabled status and upgrade target
+// Extended library type with enabled status
 interface LibraryWithStatus extends MediaLibraryResponse {
   isEnabled: boolean
   lastScanAt: string | null
   itemsScanned: number
-  upgradeMinTier: string | null
 }
-
-const UPGRADE_TIER_OPTIONS = [
-  { value: '', label: 'Default (low quality)' },
-  { value: '720p', label: 'Below 720p' },
-  { value: '1080p', label: 'Below 1080p' },
-  { value: '4K', label: 'Below 4K' },
-]
 
 // Helper to parse connection config and get server URL
 function getServerUrl(source: MediaSourceResponse): string | null {
   try {
     const config = JSON.parse(source.connection_config)
     return config.serverUrl || null
-  } catch (error) {
-    console.error(`[SourceCard] Invalid connection configuration for source ${source.id}:`, error)
+  } catch {
     return null
   }
 }
@@ -116,6 +107,9 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
     testConnection,
     scanProgress,
     isScanning,
+    refreshLibraryTypes,
+    connectionErrors,
+    connectionChecking,
   } = useSources()
 
   const [libraries, setLibraries] = useState<LibraryWithStatus[]>([])
@@ -124,8 +118,6 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
   const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'connected' | 'error'>('unknown')
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const confirmDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // FFprobe state (for kodi-local sources)
   const [ffprobeAvailable, setFfprobeAvailable] = useState<boolean | null>(null)
@@ -133,14 +125,15 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
   const [ffprobeEnabled, setFfprobeEnabled] = useState(false)
   const [ffprobeLoading, setFfprobeLoading] = useState(false)
   const [ffprobeError, setFfprobeError] = useState<string | null>(null)
-  const [ffprobeCanInstall, setFfprobeCanInstall] = useState(false)
-  const [ffprobeInstalling, setFfprobeInstalling] = useState(false)
-  const [ffprobeInstallProgress, setFfprobeInstallProgress] = useState<{ stage: string; percent: number } | null>(null)
-  const isKodiLocal = source.source_type === 'kodi-local'
-
   const providerType = source.source_type as ProviderType
-  const color = providerColors[providerType] || 'bg-gray-500'
+  const providerMetadata = PROVIDERS[providerType]
+  const color = providerMetadata?.color || 'bg-gray-500'
   const progress = scanProgress.get(source.source_id)
+
+  const isKodiLocal = providerType === ProviderType.KodiLocal
+
+  // Format provider name
+  const formattedProviderName = providerMetadata?.name || (source.source_type.charAt(0).toUpperCase() + source.source_type.slice(1))
 
   // Load libraries when expanded
   const handleExpand = async () => {
@@ -161,25 +154,12 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
           setConnectionError(result.error)
         }
       } catch (err: unknown) {
-        console.error('Failed to load libraries:', err)
+        window.electronAPI.log.error('[SourceCard]', 'Failed to load libraries:', err)
         setConnectionStatus('error')
         setConnectionError(err instanceof Error ? err.message : 'Failed to connect to server')
       } finally {
         setIsLoadingLibraries(false)
       }
-    }
-  }
-
-  // Change per-library upgrade target tier
-  const handleSetUpgradeTier = async (libraryId: string, minTier: string) => {
-    const tierValue = minTier === '' ? null : minTier
-    try {
-      await window.electronAPI.sourcesSetLibraryUpgradeTier(source.source_id, libraryId, tierValue)
-      setLibraries(prev => prev.map(lib =>
-        lib.id === libraryId ? { ...lib, upgradeMinTier: tierValue } : lib
-      ))
-    } catch (err) {
-      console.error('Failed to set library upgrade tier:', err)
     }
   }
 
@@ -192,27 +172,25 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
       setLibraries(prev => prev.map(lib =>
         lib.id === libraryId ? { ...lib, isEnabled: !currentEnabled } : lib
       ))
+      await refreshLibraryTypes()
     } catch (err) {
-      console.error('Failed to toggle library:', err)
+      window.electronAPI.log.error('[SourceCard]', 'Failed to toggle library:', err)
     } finally {
       setIsTogglingLibrary(null)
     }
   }
 
-  // Handle delete with 2-click confirm
+  // Handle delete
   const handleDelete = async () => {
-    if (!confirmDelete) {
-      setConfirmDelete(true)
-      confirmDeleteTimerRef.current = setTimeout(() => setConfirmDelete(false), 3000)
+    if (!confirm(`Are you sure you want to remove "${source.display_name}"? This will also delete all scanned media items from this source.`)) {
       return
     }
-    if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current)
-    setConfirmDelete(false)
+
     setIsDeleting(true)
     try {
       await removeSource(source.source_id)
     } catch (err) {
-      console.error('Failed to remove source:', err)
+      window.electronAPI.log.error('[SourceCard]', 'Failed to remove source:', err)
     } finally {
       setIsDeleting(false)
     }
@@ -223,7 +201,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
     try {
       await toggleSource(source.source_id, !source.is_enabled)
     } catch (err) {
-      console.error('Failed to toggle source:', err)
+      window.electronAPI.log.error('[SourceCard]', 'Failed to toggle source:', err)
     }
   }
 
@@ -233,10 +211,10 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
       // Find the library to get its name and type
       const library = libraries.find(l => l.id === libraryId)
       const libraryName = library?.name || libraryId
-      const libraryType = library?.type || 'unknown'
+      const libraryType = library?.type || LibraryType.Unknown
 
       // Add to task queue
-      const taskType = libraryType === 'music' ? 'music-scan' : 'library-scan'
+      const taskType = libraryType === LibraryType.Music ? 'music-scan' : 'library-scan'
       await window.electronAPI.taskQueueAddTask({
         type: taskType,
         label: `Scan ${libraryName} (${source.display_name})`,
@@ -245,7 +223,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
       })
       onScan?.()
     } catch (err) {
-      console.error('Failed to queue library scan:', err)
+      window.electronAPI.log.error('[SourceCard]', 'Failed to queue library scan:', err)
     }
   }
 
@@ -261,62 +239,22 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
         setFfprobeError(status.reason)
       }
 
-      // Also check if it's currently enabled
       if (status.available) {
         const enabled = await window.electronAPI.ffprobeIsEnabled(source.source_id)
         setFfprobeEnabled(enabled)
-      } else {
-        // Check if we can auto-install
-        const canInstall = await window.electronAPI.ffprobeCanInstall()
-        setFfprobeCanInstall(canInstall)
       }
     } catch (err: unknown) {
-      console.error('Failed to load FFprobe status:', err)
+      window.electronAPI.log.error('[SourceCard]', 'Failed to load FFprobe status:', err)
       setFfprobeError(err instanceof Error ? err.message : 'Failed to check FFprobe status')
     } finally {
       setFfprobeLoading(false)
     }
   }, [source.source_id])
 
-  // Handle FFprobe installation
-  const handleInstallFFprobe = async () => {
-    setFfprobeInstalling(true)
-    setFfprobeInstallProgress({ stage: 'Starting...', percent: 0 })
-
-    // Listen for progress updates
-    const unsubscribe = window.electronAPI.onFFprobeInstallProgress((progress) => {
-      setFfprobeInstallProgress(progress)
-    })
-
-    try {
-      const result = await window.electronAPI.ffprobeInstall()
-
-      if (result.success) {
-        // Reload status to reflect the new installation
-        setFfprobeAvailable(true)
-        setFfprobeInstallProgress({ stage: 'Complete!', percent: 100 })
-        // Get the version
-        const version = await window.electronAPI.ffprobeGetVersion()
-        setFfprobeVersion(version)
-        setFfprobeError(null)
-      } else {
-        setFfprobeError(result.error || 'Installation failed')
-        setFfprobeInstallProgress(null)
-      }
-    } catch (err: unknown) {
-      console.error('Failed to install FFprobe:', err)
-      setFfprobeError(err instanceof Error ? err.message : 'Installation failed')
-      setFfprobeInstallProgress(null)
-    } finally {
-      unsubscribe()
-      setFfprobeInstalling(false)
-    }
-  }
-
   // Load FFprobe status when expanded (for kodi-local sources)
   useEffect(() => {
     if (expanded && isKodiLocal && ffprobeAvailable === null) {
-      loadFFprobeStatus()
+      queueMicrotask(() => { void loadFFprobeStatus() })
     }
   }, [expanded, isKodiLocal, ffprobeAvailable, loadFFprobeStatus])
 
@@ -328,8 +266,24 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
       await window.electronAPI.ffprobeSetEnabled(source.source_id, newValue)
       setFfprobeEnabled(newValue)
     } catch (err: unknown) {
-      console.error('Failed to toggle FFprobe:', err)
+      window.electronAPI.log.error('[SourceCard]', 'Failed to toggle FFprobe:', err)
     }
+  }
+
+  // Format last scan time
+  const formatLastScan = (dateStr?: string) => {
+    if (!dateStr) return 'Never'
+    const date = new Date(dateStr)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMins / 60)
+    const diffDays = Math.floor(diffHours / 24)
+
+    if (diffMins < 1) return 'Just now'
+    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffHours < 24) return `${diffHours}h ago`
+    return `${diffDays}d ago`
   }
 
   return (
@@ -341,8 +295,10 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
       >
         {/* Provider icon */}
         <div className={`w-8 h-8 ${color} rounded-md flex items-center justify-center text-white`}>
-          {source.source_type === 'local' ? (
+          {providerMetadata?.icon === 'folder' ? (
             <HardDrive className="w-4 h-4" />
+          ) : providerMetadata?.icon === 'music' ? (
+            <Music className="w-4 h-4" />
           ) : (
             <Server className="w-4 h-4" />
           )}
@@ -352,6 +308,9 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-medium truncate">{source.display_name}</span>
+            {connectionChecking.has(source.source_id) && (
+              <span className="text-xs text-muted-foreground">Checking connection…</span>
+            )}
             {connectionStatus === 'connected' && (
               <span className="w-2 h-2 bg-green-500 rounded-full" title="Connected" />
             )}
@@ -360,9 +319,10 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
             )}
           </div>
           <div className="text-xs text-muted-foreground">
-            {source.source_type.charAt(0).toUpperCase() + source.source_type.slice(1)} •{' '}
-            Last scan: {formatRelativeTime(source.last_scan_at) ?? 'Never'}
+            {formattedProviderName} •{' '}
+            Last scan: {formatLastScan(source.last_scan_at)}
           </div>
+          {source.is_enabled && connectionErrors.get(source.source_id) && <p className="truncate text-xs text-destructive" title={connectionErrors.get(source.source_id)}>Connection: {connectionErrors.get(source.source_id)}</p>}
         </div>
 
         {/* Toggle switch */}
@@ -490,30 +450,14 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
                       <span className="text-xs text-muted-foreground">({lib.itemCount} items)</span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    {/* Per-library upgrade target (video/TV only) */}
-                    {lib.type !== 'music' && (
-                      <select
-                        value={lib.upgradeMinTier ?? ''}
-                        onChange={e => handleSetUpgradeTier(lib.id, e.target.value)}
-                        disabled={!lib.isEnabled}
-                        className="text-xs bg-background border border-border rounded px-1.5 py-0.5 text-muted-foreground hover:text-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Flag for upgrade if below this tier"
-                      >
-                        {UPGRADE_TIER_OPTIONS.map(o => (
-                          <option key={o.value} value={o.value}>{o.label}</option>
-                        ))}
-                      </select>
-                    )}
-                    <button
-                      onClick={() => handleScanLibrary(lib.id)}
-                      disabled={isScanning || !lib.isEnabled}
-                      className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-                      title={!lib.isEnabled ? 'Enable library to scan' : 'Scan library'}
-                    >
-                      Scan
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => handleScanLibrary(lib.id)}
+                    disabled={isScanning || !lib.isEnabled}
+                    className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={!lib.isEnabled ? 'Enable library to scan' : 'Scan library'}
+                  >
+                    Scan
+                  </button>
                 </div>
               ))}
             </div>
@@ -528,26 +472,6 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
 
               {ffprobeLoading ? (
                 <div className="text-sm text-muted-foreground">Checking FFprobe availability...</div>
-              ) : ffprobeInstalling ? (
-                <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <svg className="w-5 h-5 text-primary animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                      <span className="text-sm font-medium">{ffprobeInstallProgress?.stage || 'Installing...'}</span>
-                    </div>
-                    {ffprobeInstallProgress && (
-                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-primary transition-all duration-300"
-                          style={{ width: `${ffprobeInstallProgress.percent}%` }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
               ) : !ffprobeAvailable ? (
                 <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
                   <div className="flex items-start gap-2">
@@ -557,48 +481,15 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-amber-500">FFprobe Not Available</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        FFprobe enables accurate file analysis for bitrate, audio tracks, and HDR data. Without it, quality data is estimated from Kodi's metadata.
+                        Totality uses the system FFprobe executable from PATH. Install or update FFmpeg through your operating system, then restart Totality.
                       </p>
-
-                      {ffprobeCanInstall ? (
-                        <div className="mt-3 space-y-2">
-                          <div className="flex items-center gap-3">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleInstallFFprobe()
-                              }}
-                              className="px-3 py-1.5 text-xs font-medium rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-                            >
-                              Install FFprobe
-                            </button>
-                            <span className="text-xs text-muted-foreground">~30-80 MB download</span>
-                          </div>
-                          {ffprobeError && (
-                            <p className="text-xs text-destructive">
-                              Installation failed: {ffprobeError}
-                            </p>
-                          )}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground mt-2">
-                          <span className="font-medium">Manual installation:</span>
-                          {' '}
-                          <a
-                            href="https://ffmpeg.org/download.html"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            ffmpeg.org/download.html
-                          </a>
-                        </p>
+                      {ffprobeError && (
+                        <p className="text-xs text-destructive mt-2">{ffprobeError}</p>
                       )}
                     </div>
                   </div>
                 </div>
-              ) : ffprobeAvailable ? (
+              ) : (
                 <div className="p-3 rounded-lg bg-muted/50">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
@@ -640,7 +531,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
                     </div>
                   )}
                 </div>
-              ) : null}
+              )}
             </div>
           )}
 
@@ -649,13 +540,9 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
             <button
               onClick={handleDelete}
               disabled={isDeleting}
-              className={`text-xs px-3 py-1.5 rounded border disabled:opacity-50 transition-colors ${
-                confirmDelete
-                  ? 'border-destructive bg-destructive text-destructive-foreground'
-                  : 'border-destructive text-destructive hover:bg-destructive/10'
-              }`}
+              className="text-xs px-3 py-1.5 rounded border border-destructive text-destructive hover:bg-destructive/10 disabled:opacity-50"
             >
-              {isDeleting ? 'Removing...' : confirmDelete ? 'Click again to confirm' : 'Remove'}
+              {isDeleting ? 'Removing...' : 'Remove'}
             </button>
           </div>
         </div>

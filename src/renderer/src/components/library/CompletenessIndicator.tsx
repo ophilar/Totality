@@ -1,6 +1,8 @@
+import { Link2Off } from 'lucide-react'
+
 interface CompletenessIndicatorProps {
   type: 'series' | 'collection'
-  percentage: number
+  percentage: number | null | undefined
   owned: number
   total: number
   className?: string
@@ -16,6 +18,20 @@ export function CompletenessIndicator({
   // Don't show badge for complete items
   if (percentage === 100) return null
 
+  // Handle unmatched/no-data state
+  if (percentage == null) {
+    return (
+      <div className={`absolute top-2 right-2 ${className}`}>
+        <div
+          className="bg-muted text-muted-foreground p-1.5 rounded shadow-md border border-border flex items-center justify-center"
+          title="Unmatched: No completeness data available"
+        >
+          <Link2Off className="w-3.5 h-3.5" />
+        </div>
+      </div>
+    )
+  }
+
   // Display format differs by type
   const displayText = type === 'series'
     ? `${Math.round(percentage)}%`
@@ -24,7 +40,7 @@ export function CompletenessIndicator({
   return (
     <div className={`absolute top-2 right-2 ${className}`}>
       <div
-        className="bg-foreground text-background text-caption font-semibold px-2 py-1 rounded shadow-md border border-border"
+        className="bg-foreground text-background text-xs font-bold px-2 py-1 rounded shadow-md border border-border"
         title={type === 'series'
           ? `${owned} of ${total} episodes owned`
           : `${owned} of ${total} movies in collection`

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseFfmpegFilterNames, requireFfmpegFilters } from '../../../src/main/services/transcoding/FfmpegFilterCapabilities'
+import { parseFfmpegFilterNames, requireFfmpegFilters } from '@main/services/transcoding/FfmpegFilterCapabilities'
 
 describe('FFmpeg filter capabilities', () => {
   it('parses available filter names from FFmpeg output', () => {

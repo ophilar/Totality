@@ -1,0 +1,88 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+
+describe('Database Export/Import Transactional Integrity', () => {
+  let db: Awaited<ReturnType<typeof setupTestDb>>
+
+  beforeEach(async () => {
+    db = await setupTestDb()
+  })
+
+  afterEach(() => {
+    cleanupTestDb()
+  })
+
+  it('releases the ORM on close and reopens the same persisted database', async () => {
+    await db.config.setSetting('lifecycle', 'retained')
+    const databasePath = db.getDbPath()
+    const previousOrm = db.drizzle
+    db.close()
+    expect(() => db.drizzle).toThrow('Database not initialized')
+    await db.initialize(databasePath)
+    expect(db.drizzle).not.toBe(previousOrm)
+    expect(await db.config.getSetting('lifecycle')).toBe('retained')
+  })
+
+  it('exports and imports data atomically without data loss', async () => {
+    await db.config.setSetting('test_key_1', 'value_1')
+    await db.config.setSetting('test_key_2', 'value_2')
+
+    const exported = await db.exportData()
+    expect(exported.settings).toBeDefined()
+    expect(exported.settings?.some((r) => r.key === 'test_key_1' && r.value === 'value_1')).toBe(true)
+
+    await db.config.setSetting('test_key_1', 'overwritten')
+    const result = await db.importData(exported)
+    expect(result.imported).toBeGreaterThan(0)
+    expect(result.errors).toBe(0)
+
+    expect(await db.config.getSetting('test_key_1')).toBe('value_1')
+  })
+
+  it('rolls back completely if an import error occurs (all-or-nothing)', async () => {
+    await db.config.setSetting('stable_key', 'initial_value')
+
+    const invalidExportData = {
+      _meta: [{ version: 1, exported_at: new Date().toISOString() }],
+      settings: [
+        { key: 'new_key_1', value: 'val1', updated_at: new Date().toISOString() }
+      ],
+      media_items: [
+        // Malformed row that violates NOT NULL constraint (e.g. missing title and required fields)
+        { plex_id: 'invalid-item', file_path: null }
+      ]
+    }
+
+    await expect(db.importData(invalidExportData)).rejects.toThrow()
+
+    // Verify transaction rollback - new_key_1 must NOT have been persisted
+    expect(await db.config.getSetting('new_key_1')).toBeNull()
+    expect(await db.config.getSetting('stable_key')).toBe('initial_value')
+  })
+
+  it('rejects an import cancelled before its transaction begins without changing records', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const data = {
+      _meta: [{ version: 1, exported_at: new Date().toISOString() }],
+      settings: [{ key: 'cancelled_import', value: 'must-not-commit' }],
+    }
+
+    await expect(db.importData(data, controller.signal)).rejects.toThrow('aborted')
+    expect(await db.config.getSetting('cancelled_import')).toBeNull()
+  })
+
+  it('finishes the import once the commit boundary has been entered', async () => {
+    let commitStarted = false
+    const data = {
+      _meta: [{ version: 1, exported_at: new Date().toISOString() }],
+      settings: [{ key: 'committed_import', value: 'persisted' }],
+    }
+
+    const result = await db.importData(data, undefined, () => { commitStarted = true })
+
+    expect(commitStarted).toBe(true)
+    expect(result.imported).toBe(1)
+    expect(await db.config.getSetting('committed_import')).toBe('persisted')
+  })
+})

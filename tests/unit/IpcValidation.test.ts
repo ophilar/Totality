@@ -7,6 +7,8 @@
  */
 
 import { describe, it, expect } from 'vitest'
+import { validateSenderFrame } from '@main/ipc/utils/createHandler'
+import type { IpcMainInvokeEvent } from 'electron'
 import {
   validateInput,
   safeValidateInput,
@@ -32,7 +34,8 @@ import {
   TaskDefinitionSchema,
   AddExclusionSchema,
   MonitoringConfigSchema,
-} from '../../src/main/validation/schemas'
+  SetSelectedGpuSchema,
+} from '@main/validation/schemas'
 
 describe('IPC Validation Schemas', () => {
   // ==========================================================================
@@ -314,7 +317,7 @@ describe('IPC Validation Schemas', () => {
       const result = validateInput(LocalFolderConfigSchema, {
         folderPath: '/media/movies',
         displayName: 'Movies',
-        mediaType: 'movies',
+        mediaType: 'movie',
       }, 'test')
       expect(result.folderPath).toBe('/media/movies')
     })
@@ -323,7 +326,7 @@ describe('IPC Validation Schemas', () => {
       expect(() => validateInput(LocalFolderConfigSchema, {
         folderPath: '/media/\0/evil',
         displayName: 'Test',
-        mediaType: 'movies',
+        mediaType: 'movie',
       }, 'test')).toThrow('null bytes')
     })
 
@@ -344,7 +347,7 @@ describe('IPC Validation Schemas', () => {
         libraries: [{
           name: 'Movies',
           path: '/media/movies',
-          mediaType: 'movies',
+          mediaType: 'movie',
           enabled: true,
         }],
       }, 'test')
@@ -358,7 +361,7 @@ describe('IPC Validation Schemas', () => {
         libraries: [{
           name: 'Evil',
           path: '/media/\0/evil',
-          mediaType: 'movies',
+          mediaType: 'movie',
           enabled: true,
         }],
       }, 'test')).toThrow('null bytes')
@@ -368,7 +371,7 @@ describe('IPC Validation Schemas', () => {
       const libraries = Array(51).fill({
         name: 'Lib',
         path: '/media/lib',
-        mediaType: 'movies',
+        mediaType: 'movie',
         enabled: true,
       })
       expect(() => validateInput(LocalFolderWithLibrariesSchema, {
@@ -392,6 +395,13 @@ describe('IPC Validation Schemas', () => {
         limit: 20,
       }, 'test')
       expect(result?.searchQuery).toBe('breaking')
+    })
+
+    it('accepts recoverable and debt as valid sortBy options', () => {
+      for (const sortBy of ['recoverable', 'debt', 'completeness', 'episodes', 'storage_debt', 'efficiency', 'size']) {
+        const result = validateInput(TVShowFiltersSchema, { sortBy }, 'test')
+        expect(result?.sortBy).toBe(sortBy)
+      }
     })
 
     it('accepts undefined (optional schema)', () => {
@@ -508,6 +518,18 @@ describe('IPC Validation Schemas', () => {
     })
   })
 
+  describe('SetSelectedGpuSchema', () => {
+    it('accepts valid gpu id string and null', () => {
+      expect(validateInput(SetSelectedGpuSchema, 'gpu_0000:01:00.0', 'test')).toBe('gpu_0000:01:00.0')
+      expect(validateInput(SetSelectedGpuSchema, null, 'test')).toBeNull()
+    })
+
+    it('rejects empty strings or invalid types', () => {
+      expect(() => validateInput(SetSelectedGpuSchema, '', 'test')).toThrow('Validation failed')
+      expect(() => validateInput(SetSelectedGpuSchema, 123, 'test')).toThrow('Validation failed')
+    })
+  })
+
   // ==========================================================================
   // ERROR MESSAGE FORMAT
   // ==========================================================================
@@ -542,6 +564,48 @@ describe('IPC Validation Schemas', () => {
       expect(safeValidateInput(PositiveIntSchema, 'bad')).toBeNull()
       expect(safeValidateInput(PositiveIntSchema, -1)).toBeNull()
       expect(safeValidateInput(PositiveIntSchema, null)).toBeNull()
+    })
+  })
+
+  describe('validateSenderFrame security', () => {
+    it('accepts authorized local file frame URLs', () => {
+      const mockEvent = {
+        senderFrame: { url: 'file:///C:/Users/app/index.html' }
+      } as unknown as IpcMainInvokeEvent
+
+      expect(() => validateSenderFrame(mockEvent, 'test:channel')).not.toThrow()
+    })
+
+    it('accepts localhost and local-artwork frame URLs', () => {
+      const localhostEvent = {
+        senderFrame: { url: 'http://localhost:5173/index.html' }
+      } as unknown as IpcMainInvokeEvent
+      expect(() => validateSenderFrame(localhostEvent, 'test:channel')).not.toThrow()
+
+      const artworkEvent = {
+        senderFrame: { url: 'local-artwork://artwork/123.jpg' }
+      } as unknown as IpcMainInvokeEvent
+      expect(() => validateSenderFrame(artworkEvent, 'test:channel')).not.toThrow()
+    })
+
+    it('rejects calls with untrusted remote origin URLs', () => {
+      const mockEvent = {
+        senderFrame: { url: 'https://evil.attacker.com/exploit.html' }
+      } as unknown as IpcMainInvokeEvent
+
+      expect(() => validateSenderFrame(mockEvent, 'test:channel')).toThrow(
+        'Unauthorized IPC sender frame for test:channel: https://evil.attacker.com/exploit.html'
+      )
+    })
+
+    it('rejects calls with malformed or non-allowed protocols', () => {
+      const mockEvent = {
+        senderFrame: { url: 'javascript:alert(1)' }
+      } as unknown as IpcMainInvokeEvent
+
+      expect(() => validateSenderFrame(mockEvent, 'test:channel')).toThrow(
+        'Unauthorized IPC sender frame for test:channel: javascript:alert(1)'
+      )
     })
   })
 })

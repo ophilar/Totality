@@ -1,0 +1,140 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { describe, it, expect, beforeEach, afterEach, _vi } from 'vitest'
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
+import { SettingsPanel } from '@/components/settings/SettingsPanel'
+import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
+import { ToastProvider } from '@/contexts/ToastContext'
+import { LibraryProvider } from '@/contexts/LibraryContext'
+import { SourceProvider } from '@/contexts/SourceContext'
+import React from 'react'
+
+describe('Settings Rendering (Integrated Stack)', () => {
+  let db: Awaited<ReturnType<typeof setupTestDb>>
+
+
+  beforeEach(async () => {
+    // Explicitly define window for happy-dom if it's not correctly propagated
+    if (typeof window === 'undefined') {
+        Object.assign(globalThis, { window: globalThis })
+    }
+
+    db = await setupTestDb()
+    const bridge = setupRealIntegratedBridge()
+    
+    // Ensure both window and global have the API
+    Object.assign(window, { electronAPI: bridge.api })
+    Object.assign(globalThis, { electronAPI: bridge.api })
+
+  })
+
+  afterEach(async () => {
+    await cleanupTestDb()
+  })
+
+  const renderSettings = async () => {
+    let result: ReturnType<typeof render> | undefined
+    await act(async () => {
+        result = render(
+            <ToastProvider>
+                <LibraryProvider>
+                <SourceProvider>
+                    <SettingsPanel isOpen={true} onClose={() => {}} />
+                </SourceProvider>
+                </LibraryProvider>
+            </ToastProvider>
+        )
+    })
+    return result
+  }
+
+  it('should render the Settings title and tabs', async () => {
+    await renderSettings()
+    
+    expect(screen.getByText('Settings')).toBeTruthy()
+    expect(screen.getByText('General')).toBeTruthy()
+    expect(screen.getByText('Quality')).toBeTruthy()
+  })
+
+  it('should load real settings from the database', async () => {
+    // Set a specific setting in the real DB
+    await db.config.setSetting('app_theme', 'dark')
+    
+    await renderSettings()
+    
+    await waitFor(() => {
+        expect(screen.getByText(/General/)).toBeTruthy()
+    })
+  })
+
+  it('should switch tabs when clicked', async () => {
+    await renderSettings()
+    
+    const qualityTab = screen.getByText('Quality')
+    await act(async () => {
+        fireEvent.click(qualityTab)
+    })
+    
+    await waitFor(() => {
+        expect(screen.getByText(/FFmpeg encoding guidance/i)).toBeTruthy()
+    })
+  })
+  
+  it('should update real database when settings are changed', async () => {
+    await renderSettings()
+    
+    // Expand the "Window Behavior" card first if it's not expanded by default
+    // In our GeneralTab, expandedCards starts empty.
+    const windowBehavior = screen.getByText(/Window Behavior/i)
+    await act(async () => {
+        fireEvent.click(windowBehavior)
+    })
+
+    await waitFor(() => {
+        expect(screen.getByText(/Minimize to tray on close/i)).toBeTruthy()
+    })
+    
+    // Find the toggle (it's a button with role switch)
+    const toggle = screen.getByRole('switch', { name: /Minimize to tray on close/i })
+    const initialState = toggle.getAttribute('aria-checked') === 'true'
+    
+    await act(async () => {
+        fireEvent.click(toggle)
+    })
+    
+    await waitFor(async () => {
+        const updatedSetting = await db.config.getSetting('minimize_to_tray')
+        expect(updatedSetting).toBe(!initialState ? 'true' : 'false')
+    })
+  })
+
+  it('should render and save Subtitle Stream Preferences in General Tab', async () => {
+    await renderSettings()
+
+    // Expand Subtitle Stream Preferences card
+    const subtitleCard = screen.getByText(/Subtitle Stream Preferences/i)
+    await act(async () => {
+      fireEvent.click(subtitleCard)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText(/Global Subtitle Language Whitelist/i)).toBeTruthy()
+    })
+
+    // Find input and preset buttons
+    const input = screen.getByPlaceholderText(/e\.g\. eng, heb, spa/i) as HTMLInputElement
+    expect(input).toBeTruthy()
+
+    // Click Japanese quick add preset
+    const jpnBtn = screen.getByRole('button', { name: /^jpn \+/i })
+    await act(async () => {
+      fireEvent.click(jpnBtn)
+    })
+
+    await waitFor(async () => {
+      const updated = await db.config.getSetting('subtitle_preferred_languages')
+      expect(updated).toContain('jpn')
+    })
+  })
+})

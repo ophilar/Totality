@@ -1,3 +1,5 @@
+import { TECHNICAL_TOKENS } from './TokenConstants'
+
 /**
  * VersionNaming - Smart version name extraction via filename diffing
  *
@@ -8,39 +10,17 @@
 
 // Minimum fields needed from a version object
 interface VersionInput {
-  file_path: string
-  edition?: string
-  label?: string
-  resolution: string
-  hdr_format?: string
-  source_type?: string
-  video_codec?: string
-  video_bitrate_kbps?: number
+  file_path: string | null | undefined
+  edition?: string | null | undefined
+  label?: string | null | undefined
+  resolution: string | null | undefined
+  hdr_format?: string | null | undefined
+  source_type?: string | null | undefined
+  video_codec?: string | null | undefined
 }
 
 // Plex {edition-X} tag format
 const EDITION_TAG_REGEX = /\{edition-([^}]+)\}/i
-
-// Technical tokens that should NOT be treated as edition names
-const TECHNICAL_TOKENS = new Set([
-  // Resolutions
-  '480p', '576p', '720p', '1080p', '1080i', '2160p', '4k', 'uhd', 'sd',
-  // Sources
-  'bluray', 'blu-ray', 'bdrip', 'brrip', 'remux', 'web-dl', 'webdl',
-  'webrip', 'web', 'hdtv', 'pdtv', 'dvdrip', 'dvd', 'dvd-r',
-  // Video codecs
-  'x264', 'x265', 'h264', 'h265', 'h.264', 'h.265', 'hevc', 'avc',
-  'av1', 'vp9', 'xvid', 'divx', 'mpeg-2', 'mpeg2', 'vc-1', 'vc1',
-  // Audio codecs
-  'dts', 'dts-hd', 'dts-hdma', 'dtsx', 'dts-x', 'dts:x',
-  'truehd', 'atmos', 'dd+', 'ddp', 'dd', 'eac3', 'e-ac-3', 'ac3', 'ac-3',
-  'aac', 'flac', 'lpcm', 'mp3', 'pcm', 'opus',
-  // HDR
-  'hdr', 'hdr10', 'hdr10+', 'hdr10plus', 'dv', 'hlg', 'sdr',
-  // Other technical
-  'proper', 'repack', 'internal', '10bit', '10-bit', '8bit', '8-bit',
-  'hybrid', '5.1', '7.1', '2.0',
-])
 
 // Multi-word technical phrases to strip before word-level filtering
 const TECHNICAL_PHRASES = [
@@ -167,18 +147,25 @@ function cleanEdges(text: string): string {
  * Only sets edition when a meaningful non-technical difference is found.
  */
 export function extractVersionNames<T extends VersionInput>(versions: T[]): T[] {
-  // Phase 1: Extract {edition-X} Plex tags from filenames (works for any count)
+  if (versions.length <= 1) return versions
+
+  // Skip names extraction if paths are excessively long to mitigate ReDoS risks
+  for (const v of versions) {
+    if (v.file_path && v.file_path.length > 500) {
+      return versions
+    }
+  }
+
+  // Phase 1: Extract {edition-X} Plex tags from filenames
   for (const v of versions) {
     if (v.edition) continue // Already has edition from FileNameParser or API
 
-    const basename = getBasename(v.file_path)
+    const basename = getBasename(v.file_path || '')
     const tagMatch = basename.match(EDITION_TAG_REGEX)
     if (tagMatch) {
       v.edition = tagMatch[1].trim()
     }
   }
-
-  if (versions.length <= 1) return versions
 
   // Phase 2: For versions still missing edition, diff the filenames
   const needsDiff = versions.filter(v => !v.edition)
@@ -186,7 +173,7 @@ export function extractVersionNames<T extends VersionInput>(versions: T[]): T[] 
   if (needsDiff.length >= 2) {
     // Get normalized basenames without extension
     const basenames = needsDiff.map(v => {
-      const base = getBasename(v.file_path)
+      const base = getBasename(v.file_path || '')
       const noExt = stripExtension(base)
       return normalize(noExt)
     })
@@ -230,26 +217,14 @@ export function extractVersionNames<T extends VersionInput>(versions: T[]): T[] 
     v.label = parts.join(' ')
   }
 
-  // Phase 4: Deduplicate labels — append codec, then bitrate if still colliding
-  const countLabels = (vs: T[]) => {
-    const counts = new Map<string, number>()
-    for (const v of vs) counts.set(v.label || '', (counts.get(v.label || '') || 0) + 1)
-    return counts
+  // Phase 4: Deduplicate labels by appending video codec when collisions exist
+  const labelCounts = new Map<string, number>()
+  for (const v of versions) {
+    labelCounts.set(v.label || '', (labelCounts.get(v.label || '') || 0) + 1)
   }
-
-  // Round 1: append codec
-  const labelCounts = countLabels(versions)
   for (const v of versions) {
     if ((labelCounts.get(v.label || '') || 0) > 1 && v.video_codec) {
-      v.label = `${v.label} (${v.video_codec})`
-    }
-  }
-
-  // Round 2: if still colliding, append bitrate
-  const labelCounts2 = countLabels(versions)
-  for (const v of versions) {
-    if ((labelCounts2.get(v.label || '') || 0) > 1 && v.video_bitrate_kbps) {
-      v.label = `${v.label} ${Math.round(v.video_bitrate_kbps / 1000)}Mbps`
+      v.label = `${v.label} ${v.video_codec}`
     }
   }
 

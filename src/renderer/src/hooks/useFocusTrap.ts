@@ -10,6 +10,8 @@ const FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(', ')
 
+const activeTraps: HTMLElement[] = []
+
 /**
  * Hook to trap focus within a container element.
  * When active, Tab/Shift+Tab will cycle through focusable elements
@@ -44,15 +46,21 @@ export function useFocusTrap(
         })
     }
 
-    // Auto-focus first element if requested
+    activeTraps.push(container)
+    let focusTimer: ReturnType<typeof setTimeout> | undefined
+
+    // Auto-focus the intended input, or the first control, when the overlay opens.
     if (autoFocusFirst) {
-      const focusableElements = getFocusableElements()
-      const initialFocus = focusableElements.find(el => el.hasAttribute('autofocus')) ?? focusableElements[0] ?? container
-      initialFocus.focus()
+      focusTimer = setTimeout(() => {
+        if (activeTraps[activeTraps.length - 1] !== container) return
+        const target = container.querySelector<HTMLElement>('[autofocus]') ?? getFocusableElements()[0] ?? container
+        target.focus()
+      }, 0)
     }
 
     // Handle Tab key to trap focus
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (activeTraps[activeTraps.length - 1] !== container) return
       if (e.key !== 'Tab') return
 
       const focusableElements = getFocusableElements()
@@ -78,6 +86,7 @@ export function useFocusTrap(
 
     // Handle focus leaving the container
     const handleFocusOut = (e: FocusEvent) => {
+      if (activeTraps[activeTraps.length - 1] !== container) return
       if (!container.contains(e.relatedTarget as Node)) {
         // Focus is leaving the container, bring it back
         const focusableElements = getFocusableElements()
@@ -92,8 +101,11 @@ export function useFocusTrap(
     container.addEventListener('focusout', handleFocusOut)
 
     return () => {
+      if (focusTimer) clearTimeout(focusTimer)
       container.removeEventListener('keydown', handleKeyDown)
       container.removeEventListener('focusout', handleFocusOut)
+      const trapIndex = activeTraps.lastIndexOf(container)
+      if (trapIndex >= 0) activeTraps.splice(trapIndex, 1)
 
       // Restore focus to previous element when trap is deactivated
       if (previousActiveElement.current && document.body.contains(previousActiveElement.current)) {

@@ -1,0 +1,316 @@
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Bot, X, Sparkles, BarChart3, ArrowUpCircle, Library, Star, Loader2, AlertCircle, Clock } from 'lucide-react'
+import { SimpleMarkdown } from '@/components/ui/SimpleMarkdown'
+
+type ReportType = 'quality' | 'upgrades' | 'completeness' | 'wishlist'
+
+import { usePanel } from '@/contexts/PanelContext'
+
+interface AIInsightsPanelProps {
+  isOpen?: boolean
+  onClose?: () => void
+  onOpenSettings?: () => void
+  initialReport?: ReportType
+}
+
+const REPORT_OPTIONS: { type: ReportType; label: string; description: string; icon: typeof BarChart3 }[] = [
+  { type: 'quality', label: 'Quality Report', description: 'Overall library quality health assessment', icon: BarChart3 },
+  { type: 'upgrades', label: 'Upgrade Priorities', description: 'Ranked list of items most worth upgrading', icon: ArrowUpCircle },
+  { type: 'completeness', label: 'Completeness Insights', description: 'Collection gaps and what to acquire next', icon: Library },
+  { type: 'wishlist', label: 'Wishlist Advice', description: 'Shopping strategy for your wishlist items', icon: Star },
+]
+
+export function AIInsightsPanel({ isOpen: propIsOpen, onClose: propOnClose, onOpenSettings, initialReport: propInitialReport }: AIInsightsPanelProps) {
+  const { showAIInsights, closeAIInsights, aiInsightsInitialReport } = usePanel()
+  const isOpen = propIsOpen !== undefined ? propIsOpen : showAIInsights
+  const onClose = propOnClose !== undefined ? propOnClose : closeAIInsights
+  const initialReport = propInitialReport !== undefined ? propInitialReport : aiInsightsInitialReport as ReportType | undefined
+  const [isConfigured, setIsConfigured] = useState<boolean | null>(null)
+  const [selectedReport, setSelectedReport] = useState<ReportType | null>(null)
+  const [reportContent, setReportContent] = useState('')
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [rateLimited, setRateLimited] = useState<{ limited: boolean; retryAfterSeconds: number }>({ limited: false, retryAfterSeconds: 0 })
+  const contentRef = useRef<HTMLDivElement>(null)
+  const requestIdRef = useRef(0)
+  const activeRequestId = useRef<string | null>(null)
+  const closePanel = useCallback(() => {
+    onClose()
+  }, [onClose])
+
+  const generateReport = useCallback(async (type: ReportType) => {
+    setSelectedReport(type)
+    setReportContent('')
+    setError(null)
+    setIsGenerating(true)
+
+    const requestId = `analysis-${++requestIdRef.current}`
+    activeRequestId.current = requestId
+
+    try {
+      const apiMethods: Record<ReportType, (params: { requestId: string }) => Promise<unknown>> = {
+        quality: window.electronAPI.aiQualityReport,
+        upgrades: window.electronAPI.aiUpgradePriorities,
+        completeness: window.electronAPI.aiCompletenessInsights,
+        wishlist: window.electronAPI.aiWishlistAdvice,
+      }
+      const apiMethod = apiMethods[type]
+
+      const response = await apiMethod({ requestId }) as { text?: string; cancelled?: boolean; error?: string; rateLimited?: boolean; retryAfterSeconds?: number }
+      if (response.cancelled) {
+        setIsGenerating(false)
+        activeRequestId.current = null
+      } else if (response.error) {
+        setIsGenerating(false)
+        activeRequestId.current = null
+        setError(response.error)
+        if (response.rateLimited && response.retryAfterSeconds) {
+          setRateLimited({ limited: true, retryAfterSeconds: response.retryAfterSeconds })
+        }
+      } else if (response.text) {
+        setReportContent(response.text)
+        setIsGenerating(false)
+        activeRequestId.current = null
+      }
+    } catch (err: unknown) {
+      const errorObj = err as { error?: string; rateLimited?: boolean; retryAfterSeconds?: number }
+      if (errorObj.rateLimited && errorObj.retryAfterSeconds) {
+        setRateLimited({ limited: true, retryAfterSeconds: errorObj.retryAfterSeconds })
+        setError(`Rate limit reached. Try again in ${errorObj.retryAfterSeconds}s`)
+      } else {
+        setError(errorObj.error || 'Failed to generate report')
+      }
+      setIsGenerating(false)
+      activeRequestId.current = null
+    }
+  }, [])
+
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen)
+
+  // Adjust state when panel opens/closes (React 19 recommended pattern instead of useEffect)
+  if (isOpen !== prevIsOpen) {
+    setPrevIsOpen(isOpen)
+  }
+
+  // Check if AI is configured and auto-start if initialReport specified
+  useEffect(() => {
+    if (isOpen) {
+      window.electronAPI.aiIsConfigured().then((configured) => {
+        setIsConfigured(configured)
+        if (configured && initialReport && !selectedReport && !isGenerating) {
+          generateReport(initialReport)
+        }
+      }).catch(() => setIsConfigured(false))
+    }
+  }, [isOpen, initialReport, selectedReport, isGenerating, generateReport])
+
+  // Listen for settings changes
+  useEffect(() => {
+    const cleanup = window.electronAPI.onSettingsChanged((data) => {
+      if (data.key === 'gemini_api_key' || data.key === 'ai_enabled') {
+        window.electronAPI.aiIsConfigured().then(setIsConfigured).catch(() => setIsConfigured(false))
+      }
+    })
+    return cleanup
+  }, [])
+
+  // Listen for streaming deltas
+  useEffect(() => {
+    if (!isOpen) return
+    const cleanupDelta = window.electronAPI.onAiAnalysisStreamDelta((data) => {
+      if (data.requestId === activeRequestId.current) {
+        setReportContent((prev) => prev + data.delta)
+      }
+    })
+    const cleanupComplete = window.electronAPI.onAiAnalysisStreamComplete((data) => {
+      if (data.requestId === activeRequestId.current) {
+        setIsGenerating(false)
+        activeRequestId.current = null
+      }
+    })
+    const requestId = activeRequestId.current
+    if (requestId) {
+      void window.electronAPI.operationsGetResult(requestId).then((result) => {
+        if (activeRequestId.current === requestId && typeof result === 'object' && result && 'text' in result && typeof result.text === 'string') {
+          setReportContent(result.text)
+        }
+      }).catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+    }
+    return () => {
+      cleanupDelta()
+      cleanupComplete()
+    }
+  }, [isOpen])
+
+  // Auto-scroll while streaming
+  useEffect(() => {
+    if (isGenerating && contentRef.current) {
+      contentRef.current.scrollTop = contentRef.current.scrollHeight
+    }
+  }, [reportContent, isGenerating])
+
+  // Rate limit countdown
+  useEffect(() => {
+    if (!rateLimited.limited) return
+    const interval = setInterval(() => {
+      setRateLimited((prev) => {
+        const remaining = prev.retryAfterSeconds - 1
+        if (remaining <= 0) return { limited: false, retryAfterSeconds: 0 }
+        return { limited: true, retryAfterSeconds: remaining }
+      })
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [rateLimited.limited])
+
+  const handleBack = () => {
+    setSelectedReport(null)
+    setReportContent('')
+    setError(null)
+  }
+
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 z-150 flex items-center justify-center">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/60" onClick={closePanel} />
+
+      {/* Modal */}
+      <div className="relative w-full max-w-2xl max-h-[80vh] mx-4 bg-sidebar-gradient rounded-xl shadow-2xl flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border/30">
+          <div className="flex items-center gap-2.5">
+            <Sparkles className="w-5 h-5 text-primary" />
+            <h2 className="text-base font-semibold">AI Insights</h2>
+            {selectedReport && (
+              <span className="text-xs text-muted-foreground">
+                — {REPORT_OPTIONS.find((r) => r.type === selectedReport)?.label}
+              </span>
+            )}
+          </div>
+          <button
+            onClick={closePanel}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            title="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Not configured */}
+        {isConfigured === false && (
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+            <Bot className="w-12 h-12 text-muted-foreground/30 mb-4" />
+            <p className="text-sm font-medium mb-1">Gemini AI not configured</p>
+            <p className="text-xs text-muted-foreground mb-4">
+              Get a free Gemini API key from Google AI Studio in Settings &gt; Services.
+            </p>
+            {onOpenSettings && (
+              <button
+                onClick={onOpenSettings}
+                className="flex items-center gap-2 px-4 py-2 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+              >
+                Open Settings
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Report selection */}
+        {isConfigured !== false && !selectedReport && (
+          <div className="flex-1 p-5 space-y-3">
+            <p className="text-xs text-muted-foreground mb-1">
+              Generate AI-powered reports about your media library. Select a report type below.
+            </p>
+            <p className="text-[10px] text-muted-foreground/50 mb-4">
+              Reports send library data to Google Gemini using your API key.
+            </p>
+            {REPORT_OPTIONS.map((option) => {
+              const Icon = option.icon
+              return (
+                <button
+                  key={option.type}
+                  onClick={() => generateReport(option.type)}
+                  disabled={rateLimited.limited}
+                  className="w-full flex items-center gap-4 p-4 bg-muted/30 hover:bg-muted/50 rounded-xl transition-colors text-left disabled:opacity-50"
+                >
+                  <div className="shrink-0 w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <Icon className="w-5 h-5 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium">{option.label}</div>
+                    <div className="text-xs text-muted-foreground">{option.description}</div>
+                  </div>
+                </button>
+              )
+            })}
+
+            {rateLimited.limited && (
+              <div className="flex items-center gap-2 px-3 py-2 text-xs bg-amber-500/10 text-amber-400 rounded-lg">
+                <Clock className="w-3.5 h-3.5 shrink-0" />
+                <span>Available again in {rateLimited.retryAfterSeconds}s</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Report content */}
+        {isConfigured !== false && selectedReport && (
+          <>
+            <div ref={contentRef} className="flex-1 overflow-y-auto p-5">
+              {isGenerating && !reportContent && (
+                <div className="flex items-center justify-center gap-3 py-12 text-muted-foreground">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm">Analyzing your library...</span>
+                </div>
+              )}
+
+              {reportContent && (
+                <div className="prose prose-sm prose-invert max-w-none wrap-break-word whitespace-pre-wrap [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                  <SimpleMarkdown text={reportContent} />
+                </div>
+              )}
+
+              {isGenerating && reportContent && (
+                <div className="flex items-center gap-2 mt-3 text-muted-foreground">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span className="text-xs">Generating...</span>
+                </div>
+              )}
+
+              {isGenerating && <button type="button" onClick={() => window.dispatchEvent(new Event('operations:openActivity'))} className="mt-3 text-xs text-primary hover:underline">Manage this report in Activity</button>}
+
+              {error && (
+                <div className="flex items-center gap-2 px-3 py-2 mt-3 text-xs bg-destructive/10 text-destructive rounded-lg">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-border/30 flex items-center justify-between">
+              <button
+                onClick={handleBack}
+                disabled={isGenerating}
+                className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted/50 transition-colors disabled:opacity-50"
+              >
+                Back to reports
+              </button>
+              {!isGenerating && reportContent && (
+                <button
+                  onClick={() => generateReport(selectedReport)}
+                  disabled={rateLimited.limited}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  Regenerate
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}

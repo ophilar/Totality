@@ -4,132 +4,211 @@
  * Features:
  * - Minimize to tray on close
  * - Start minimized to tray
- * - Auto-update settings
+ * - Live monitoring configuration (enable, polling intervals, behavior)
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { Loader2, Monitor, ArrowUpCircle, RefreshCw, Download, Globe, Copy, Check, Eye, EyeOff, Languages } from 'lucide-react'
-import { Toggle } from '../../ui/Toggle'
-import { SETTING_KEYS } from '../../../../../shared/settingKeys'
-import { isSameLanguage, LANGUAGE_OPTIONS, parseLanguageWhitelist } from '../../library/mediaUtils'
+import { Loader2, Monitor, Radio, ChevronDown, CheckCircle, Circle, Languages, HardDrive, FolderOpen, Zap, ShieldCheck, Copy } from 'lucide-react'
 
-interface UpdateState {
-  status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
-  version?: string
-  releaseNotes?: string
-  downloadProgress?: {
-    percent: number
-    bytesPerSecond: number
-    transferred: number
-    total: number
-  }
-  error?: string
-  lastChecked?: string
+// Collapsible settings card matching Library/Services tab pattern
+function SettingsCard({ title, description, icon, status, statusText, expanded, onToggle, children }: {
+  title: string
+  description: string
+  icon: React.ReactNode
+  status: 'configured' | 'partial' | 'not-configured'
+  statusText: string
+  expanded: boolean
+  onToggle: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <div className="border border-border/40 rounded-lg overflow-hidden bg-card/30">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 p-4 hover:bg-muted/30 transition-colors text-left"
+      >
+        <div className="shrink-0">
+          {status === 'configured' ? (
+            <CheckCircle className="w-5 h-5 text-green-500" />
+          ) : status === 'partial' ? (
+            <CheckCircle className="w-5 h-5 text-amber-500" />
+          ) : (
+            <Circle className="w-5 h-5 text-muted-foreground/50" />
+          )}
+        </div>
+        <div className="shrink-0 text-muted-foreground">{icon}</div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-sm">{title}</span>
+            <span className="text-xs text-muted-foreground">{statusText}</span>
+          </div>
+          <p className="text-xs text-muted-foreground truncate">{description}</p>
+        </div>
+        <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4 pt-2 border-t border-border/30 bg-muted/10">{children}</div>
+      )}
+    </div>
+  )
+}
+
+interface MonitoringConfig {
+  enabled: boolean
+  startOnLaunch: boolean
+  pauseDuringManualScan: boolean
+  pollingIntervals: Record<string, number>
+}
+
+interface MediaSource {
+  source_id: string
+  source_type: string
+  display_name: string
+  is_enabled: boolean
+}
+
+import { ProviderType } from '@main/types/database'
+import { PROVIDERS } from '@main/constants/providers'
+
+const MONITORING_PROVIDERS: Array<{
+  key: string
+  name: string
+  method: 'polling' | 'file-watching'
+}> = [
+  { key: ProviderType.Plex, name: PROVIDERS[ProviderType.Plex].name, method: 'polling' },
+  { key: ProviderType.Jellyfin, name: PROVIDERS[ProviderType.Jellyfin].name, method: 'polling' },
+  { key: ProviderType.Emby, name: PROVIDERS[ProviderType.Emby].name, method: 'polling' },
+  { key: ProviderType.Kodi, name: PROVIDERS[ProviderType.Kodi].name, method: 'polling' },
+  { key: ProviderType.Local, name: PROVIDERS[ProviderType.Local].name, method: 'file-watching' },
+]
+
+const INTERVAL_OPTIONS = [
+  { label: '1 min', value: 60000 },
+  { label: '2 min', value: 120000 },
+  { label: '5 min', value: 300000 },
+  { label: '10 min', value: 600000 },
+  { label: '15 min', value: 900000 },
+  { label: '30 min', value: 1800000 },
+]
+
+function Toggle({
+  checked,
+  onChange,
+  disabled = false,
+}: {
+  checked: boolean
+  onChange: (checked: boolean) => void
+  disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => !disabled && onChange(!checked)}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background ${
+        disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+      } ${checked ? 'bg-primary' : 'bg-muted'}`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-background shadow-md ring-1 ring-border/50 transition-transform ${
+          checked ? 'translate-x-6' : 'translate-x-1'
+        }`}
+      />
+    </button>
+  )
 }
 
 export function GeneralTab() {
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
+  const toggleCard = (id: string) => setExpandedCards(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
   const [isLoading, setIsLoading] = useState(true)
   const [minimizeToTray, setMinimizeToTray] = useState(false)
   const [startMinimized, setStartMinimized] = useState(false)
-  const [subtitlePreferredLanguages, setSubtitlePreferredLanguages] = useState('')
-  const [isSavingSubtitleLanguages, setIsSavingSubtitleLanguages] = useState(false)
-  const [subtitleLanguageSaveError, setSubtitleLanguageSaveError] = useState<string | null>(null)
-  const [subtitleLanguagesSaved, setSubtitleLanguagesSaved] = useState(false)
-
-  // Auto-update state
-  const [appVersion, setAppVersion] = useState('')
-  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(true)
-  const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' })
-  const [isChecking, setIsChecking] = useState(false)
-
-  // Web access state
-  const [webEnabled, setWebEnabled] = useState(false)
-  const [webPort, setWebPort] = useState('9470')
-  const [webPin, setWebPin] = useState('')
-  const [showPin, setShowPin] = useState(false)
-  const [webRunning, setWebRunning] = useState(false)
-  const [webUrl, setWebUrl] = useState<string | null>(null)
-  const [webClients, setWebClients] = useState(0)
-  const [webAccessError, setWebAccessError] = useState<string | null>(null)
-  const [urlCopied, setUrlCopied] = useState(false)
-  const [webSessionTimeout, setWebSessionTimeout] = useState('86400000')
-  const [webIpAllowlist, setWebIpAllowlist] = useState('')
-
-  const toggleSubtitleLanguage = (languageCode: string) => {
-    const selectedLanguages = parseLanguageWhitelist(subtitlePreferredLanguages)
-    const isSelected = selectedLanguages.some(language => isSameLanguage(language, languageCode))
-    const updatedLanguages = isSelected
-      ? selectedLanguages.filter(language => !isSameLanguage(language, languageCode))
-      : [...selectedLanguages, languageCode]
-    setSubtitlePreferredLanguages(updatedLanguages.join(', '))
-    setSubtitleLanguagesSaved(false)
-    setSubtitleLanguageSaveError(null)
-  }
-
-  const loadWebStatus = useCallback(async () => {
-    try {
-      const status = await window.electronAPI.webAccessGetStatus()
-      setWebRunning(status.running)
-      setWebUrl(status.localUrl)
-      setWebClients(status.connectedClients)
-    } catch (error) {
-      setWebAccessError(error instanceof Error ? error.message : String(error))
-    }
-  }, [])
+  const [subtitlePreferredLanguages, setSubtitlePreferredLanguages] = useState('eng, heb, spa')
+  const [isSavingSubtitles, setIsSavingSubtitles] = useState(false)
+  const [subtitleSaved, setSubtitleSaved] = useState(false)
+  const [transcodingTempDir, setTranscodingTempDir] = useState('')
+  const [transcodingDefaultOutputMode, setTranscodingDefaultOutputMode] = useState<'replace' | 'quarantine-replace' | 'copy'>('quarantine-replace')
+  const [isSavingTranscodeSettings, setIsSavingTranscodeSettings] = useState(false)
+  const [transcodeSettingsSaved, setTranscodeSettingsSaved] = useState(false)
+  // Monitoring state
+  const [monitoringConfig, setMonitoringConfig] = useState<MonitoringConfig>({
+    enabled: false,
+    startOnLaunch: true,
+    pauseDuringManualScan: true,
+    pollingIntervals: {
+      plex: 300000,
+      jellyfin: 300000,
+      emby: 300000,
+      kodi: 300000,
+    },
+  })
+  const [configuredProviders, setConfiguredProviders] = useState<Set<string>>(new Set())
+  const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [trayVal, startVal, version, uState, uSetting, weVal, wpVal, wpinVal, wtVal, subtitleLanguages, ipAllowlist] = await Promise.all([
+        const [trayVal, startVal, mConfig, sources, subLangs, tempDirVal, outputModeVal] = await Promise.all([
           window.electronAPI.getSetting('minimize_to_tray'),
           window.electronAPI.getSetting('start_minimized_to_tray'),
-          window.electronAPI.getAppVersion(),
-          window.electronAPI.autoUpdateGetState(),
-          window.electronAPI.getSetting('auto_update_enabled'),
-          window.electronAPI.getSetting(SETTING_KEYS.web_access_enabled),
-          window.electronAPI.getSetting(SETTING_KEYS.web_access_port),
-          window.electronAPI.getSetting(SETTING_KEYS.web_access_pin),
-          window.electronAPI.getSetting(SETTING_KEYS.web_access_session_timeout),
-          window.electronAPI.getSetting(SETTING_KEYS.subtitle_preferred_languages),
-          window.electronAPI.getSetting(SETTING_KEYS.web_access_ip_allowlist),
+          window.electronAPI.monitoringGetConfig(),
+          window.electronAPI.sourcesList(),
+          window.electronAPI.getSetting('subtitle_preferred_languages'),
+          window.electronAPI.getSetting('transcoding_temp_directory'),
+          window.electronAPI.getSetting('transcoding_default_output_mode'),
         ])
         setMinimizeToTray(trayVal === 'true')
         setStartMinimized(startVal === 'true')
-        setAppVersion(version)
-        setUpdateState(uState)
-        setAutoUpdateEnabled(uSetting !== 'false')
-        setWebEnabled(weVal === 'true')
-        if (wpVal) setWebPort(wpVal)
-        if (wpinVal) setWebPin(wpinVal)
-        if (weVal === 'true' && !wpinVal?.trim()) {
-          setWebAccessError('Web access is enabled, but a PIN is required before the server can start.')
+        setMonitoringConfig(mConfig)
+        if (subLangs && typeof subLangs === 'string') {
+          setSubtitlePreferredLanguages(subLangs)
         }
-        if (wtVal) setWebSessionTimeout(wtVal)
-        setSubtitlePreferredLanguages(subtitleLanguages || '')
-        setWebIpAllowlist(ipAllowlist || '')
-        await loadWebStatus()
+        if (tempDirVal && typeof tempDirVal === 'string') {
+          setTranscodingTempDir(tempDirVal)
+        }
+        if (outputModeVal && (outputModeVal === 'replace' || outputModeVal === 'quarantine-replace' || outputModeVal === 'copy')) {
+          setTranscodingDefaultOutputMode(outputModeVal)
+        }
+
+        const providerTypes = new Set<string>()
+        ;(sources as MediaSource[]).forEach((source) => {
+          if (source.is_enabled) {
+            const type = source.source_type.startsWith('kodi') ? 'kodi' : source.source_type
+            providerTypes.add(type)
+          }
+        })
+        setConfiguredProviders(providerTypes)
       } catch (error) {
-        console.error('Failed to load general settings:', error)
+        window.electronAPI.log.error('[GeneralTab]', 'Failed to load general settings:', error)
       } finally {
         setIsLoading(false)
       }
     }
     load()
-  }, [loadWebStatus])
-
-  // Listen for update state changes
-  useEffect(() => {
-    const cleanup = window.electronAPI.onAutoUpdateStateChanged((state: UpdateState) => {
-      setUpdateState(state)
-    })
-    return cleanup
   }, [])
 
-  const handleCheckForUpdates = async () => {
-    setIsChecking(true)
-    await window.electronAPI.autoUpdateCheckForUpdates()
-    setTimeout(() => setIsChecking(false), 1000)
-  }
+  const saveMonitoringConfig = useCallback(
+    async (config: Partial<MonitoringConfig>) => {
+      setIsSaving(true)
+      try {
+        await window.electronAPI.monitoringSetConfig(config)
+        setMonitoringConfig((prev) => ({ ...prev, ...config }))
+      } catch (error) {
+        window.electronAPI.log.error('[GeneralTab]', 'Failed to save monitoring config:', error)
+      } finally {
+        setIsSaving(false)
+      }
+    },
+    []
+  )
 
   if (isLoading) {
     return (
@@ -139,22 +218,23 @@ export function GeneralTab() {
     )
   }
 
-  const { status, version: newVersion, releaseNotes, downloadProgress, lastChecked } = updateState
-  const selectedSubtitleLanguages = parseLanguageWhitelist(subtitlePreferredLanguages)
-
   return (
     <div className="p-6 space-y-5 overflow-y-auto">
       {/* Window Behavior */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 mb-1">
-          <Monitor className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-sm font-medium text-foreground">Window Behavior</h3>
-        </div>
-        <div className="bg-muted/30 rounded-lg border border-border/40 divide-y divide-border/30">
-          <div className="flex items-center justify-between px-4 py-3">
+      <SettingsCard
+        title="Window Behavior"
+        description="System tray and startup options"
+        icon={<Monitor className="w-5 h-5" />}
+        status="configured"
+        statusText={minimizeToTray ? 'Tray enabled' : 'Default'}
+        expanded={expandedCards.has('window')}
+        onToggle={() => toggleCard('window')}
+      >
+        <div className="space-y-3">
+          <label className="flex items-center justify-between cursor-pointer">
             <div>
-              <p className="text-sm text-foreground">Minimize to tray on close</p>
-              <p className="text-xs text-muted-foreground">Hide to system tray instead of quitting</p>
+              <p className="text-sm font-medium text-foreground">Minimize to tray on close</p>
+              <p className="text-xs text-muted-foreground">Closing the window hides the app to the system tray instead of quitting</p>
             </div>
             <Toggle
               checked={minimizeToTray}
@@ -167,11 +247,12 @@ export function GeneralTab() {
                 }
               }}
             />
-          </div>
+          </label>
+
           {minimizeToTray && (
-            <div className="flex items-center justify-between px-4 py-3">
+            <label className="flex items-center justify-between cursor-pointer pl-4 border-l-2 border-border/40">
               <div>
-                <p className="text-sm text-foreground">Start minimized to tray</p>
+                <p className="text-sm font-medium text-foreground">Start minimized to tray</p>
                 <p className="text-xs text-muted-foreground">Launch the app hidden in the system tray</p>
               </div>
               <Toggle
@@ -181,339 +262,315 @@ export function GeneralTab() {
                   await window.electronAPI.setSetting('start_minimized_to_tray', String(checked))
                 }}
               />
-            </div>
+            </label>
           )}
         </div>
-      </div>
+      </SettingsCard>
+
+      {/* Live Monitoring */}
+      <SettingsCard
+        title="Live Monitoring"
+        description="Automatic change detection for media sources"
+        icon={<Radio className="w-5 h-5" />}
+        status={monitoringConfig.enabled ? 'configured' : 'not-configured'}
+        statusText={monitoringConfig.enabled ? 'Active' : 'Disabled'}
+        expanded={expandedCards.has('monitoring')}
+        onToggle={() => toggleCard('monitoring')}
+      >
+        <div className="space-y-4">
+          {/* Enable toggle */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Enable monitoring</p>
+              <p className="text-xs text-muted-foreground">
+                {monitoringConfig.enabled
+                  ? 'Automatically detecting new content'
+                  : 'Enable to detect new content automatically'}
+              </p>
+            </div>
+            <Toggle
+              checked={monitoringConfig.enabled}
+              onChange={(enabled) => saveMonitoringConfig({ enabled })}
+              disabled={isSaving}
+            />
+          </div>
+
+          {/* Source Detection */}
+          <div
+            className={`space-y-2 transition-opacity ${!monitoringConfig.enabled ? 'opacity-50 pointer-events-none' : ''}`}
+          >
+            <p className="text-xs font-medium text-foreground">Source Detection</p>
+            <div className="bg-background/50 rounded-lg divide-y divide-border/30">
+              {MONITORING_PROVIDERS.map((provider) => {
+                const isConfigured = configuredProviders.has(provider.key)
+                return (
+                  <div
+                    key={provider.key}
+                    className={`flex items-center justify-between px-4 py-2.5 ${
+                      !isConfigured ? 'opacity-40' : ''
+                    }`}
+                  >
+                    <span className="text-sm text-foreground">{provider.name}</span>
+                    {provider.method === 'polling' ? (
+                      <select
+                        value={monitoringConfig.pollingIntervals[provider.key] || 300000}
+                        onChange={(e) => {
+                          const newIntervals = {
+                            ...monitoringConfig.pollingIntervals,
+                            [provider.key]: parseInt(e.target.value, 10),
+                          }
+                          saveMonitoringConfig({ pollingIntervals: newIntervals })
+                        }}
+                        disabled={isSaving || !monitoringConfig.enabled || !isConfigured}
+                        className="bg-background text-foreground text-sm rounded-md px-3 py-2 border border-border/30 focus:outline-hidden focus:ring-2 focus:ring-primary min-w-[90px] disabled:opacity-50"
+                      >
+                        {INTERVAL_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="bg-background text-foreground text-sm rounded-md px-3 py-2 border border-border/30 min-w-[90px] text-center">
+                        File Watching
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Behavior */}
+          <div
+            className={`space-y-2 transition-opacity ${!monitoringConfig.enabled ? 'opacity-50 pointer-events-none' : ''}`}
+          >
+            <p className="text-xs font-medium text-foreground">Behavior</p>
+            <div className="bg-background/50 rounded-lg divide-y divide-border/30">
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-sm text-foreground">Start on app launch</span>
+                <Toggle
+                  checked={monitoringConfig.startOnLaunch}
+                  onChange={(startOnLaunch) => saveMonitoringConfig({ startOnLaunch })}
+                  disabled={isSaving || !monitoringConfig.enabled}
+                />
+              </div>
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-sm text-foreground">Pause during manual scans</span>
+                <Toggle
+                  checked={monitoringConfig.pauseDuringManualScan}
+                  onChange={(pauseDuringManualScan) =>
+                    saveMonitoringConfig({ pauseDuringManualScan })
+                  }
+                  disabled={isSaving || !monitoringConfig.enabled}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </SettingsCard>
 
       {/* Subtitle Stream Preferences */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 mb-1">
-          <Languages className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-sm font-medium text-foreground">Subtitle languages</h3>
-        </div>
-        <div className="bg-muted/30 rounded-lg border border-border/40 p-4 space-y-3">
-          <label className="block text-sm font-medium text-foreground" htmlFor="subtitle-preferred-languages">
-            Keep subtitles in these languages
-          </label>
-          <p className="text-xs text-muted-foreground">Enter language codes separated by commas or spaces. Leave blank to keep all subtitles.</p>
-          <div className="flex gap-2">
-            <input
-              id="subtitle-preferred-languages"
-              type="text"
-              value={subtitlePreferredLanguages}
-              onChange={event => {
-                setSubtitlePreferredLanguages(event.target.value)
-                setSubtitleLanguagesSaved(false)
-                setSubtitleLanguageSaveError(null)
-              }}
-              placeholder="eng, heb, spa"
-              className="flex-1 bg-background text-foreground text-sm rounded-md px-3 py-2 border border-border/40 focus:outline-hidden focus:ring-2 focus:ring-primary font-mono"
-            />
-            <button
-              type="button"
-              onClick={async () => {
-                setIsSavingSubtitleLanguages(true)
-                setSubtitleLanguageSaveError(null)
-                try {
-                  await window.electronAPI.setSetting(SETTING_KEYS.subtitle_preferred_languages, subtitlePreferredLanguages)
-                  setSubtitleLanguagesSaved(true)
-                } catch (error) {
-                  setSubtitleLanguageSaveError(error instanceof Error ? error.message : String(error))
-                } finally {
-                  setIsSavingSubtitleLanguages(false)
-                }
-              }}
-              disabled={isSavingSubtitleLanguages}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-xs font-bold hover:bg-primary/90 transition-colors disabled:opacity-50 shrink-0"
-            >
-              {isSavingSubtitleLanguages ? 'Saving...' : subtitleLanguagesSaved ? 'Saved' : 'Save'}
-            </button>
-          </div>
-          {subtitleLanguageSaveError && <p role="alert" className="text-xs text-destructive">Could not save subtitle preferences: {subtitleLanguageSaveError}</p>}
-          <details className="rounded-md border border-border/40 p-3">
-            <summary className="cursor-pointer text-sm font-medium text-foreground">Quick add or remove a language</summary>
-            <div className="mt-3 flex flex-wrap gap-2" aria-label="Subtitle language choices">
-              {LANGUAGE_OPTIONS.map(({ code, code3, label }) => {
-                const isSelected = selectedSubtitleLanguages.some(language => isSameLanguage(language, code))
+      <SettingsCard
+        title="Subtitle Stream Preferences"
+        description="Default language whitelist for stream remuxing and transcoding"
+        icon={<Languages className="w-5 h-5" />}
+        status="configured"
+        statusText={subtitlePreferredLanguages.trim() ? `${subtitlePreferredLanguages.split(',').filter(Boolean).length} languages` : 'None'}
+        expanded={expandedCards.has('subtitles')}
+        onToggle={() => toggleCard('subtitles')}
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Global Subtitle Language Whitelist
+            </label>
+            <p className="text-xs text-muted-foreground mb-3">
+              Specify ISO-639 language codes (e.g. <code>eng, heb, spa, jpn</code>) to preserve during lossless stream copy or transcoding. Non-whitelisted subtitles are pruned to eliminate container bloat.
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={subtitlePreferredLanguages}
+                onChange={(e) => {
+                  setSubtitlePreferredLanguages(e.target.value)
+                  setSubtitleSaved(false)
+                }}
+                placeholder="e.g. eng, heb, spa, jpn"
+                className="flex-1 bg-background text-foreground text-sm rounded-md px-3 py-2 border border-border/40 focus:outline-hidden focus:ring-2 focus:ring-primary font-mono"
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsSavingSubtitles(true)
+                  try {
+                    await window.electronAPI.setSetting('subtitle_preferred_languages', subtitlePreferredLanguages)
+                    setSubtitleSaved(true)
+                    setTimeout(() => setSubtitleSaved(false), 2000)
+                  } finally {
+                    setIsSavingSubtitles(false)
+                  }
+                }}
+                disabled={isSavingSubtitles}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-xs font-bold hover:bg-primary/90 transition-colors disabled:opacity-50 shrink-0 cursor-pointer"
+              >
+                {isSavingSubtitles ? 'Saving...' : subtitleSaved ? 'Saved!' : 'Save'}
+              </button>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className="font-semibold">Quick Add / Toggle:</span>
+              {['eng', 'heb', 'spa', 'fre', 'ger', 'ita', 'jpn', 'kor', 'zho', 'und'].map((code) => {
+                const currentList = subtitlePreferredLanguages.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+                const isAdded = currentList.includes(code)
                 return (
                   <button
                     key={code}
                     type="button"
-                    aria-pressed={isSelected}
-                    onClick={() => toggleSubtitleLanguage(code3)}
-                    className={`rounded-md border px-2.5 py-1.5 text-xs transition-colors ${isSelected
-                      ? 'border-primary bg-primary/15 text-foreground'
-                      : 'border-border/50 bg-background text-muted-foreground hover:bg-muted'
+                    onClick={async () => {
+                      let updated: string
+                      if (isAdded) {
+                        updated = currentList.filter(c => c !== code).join(', ')
+                      } else {
+                        updated = [...currentList, code].join(', ')
+                      }
+                      setSubtitlePreferredLanguages(updated)
+                      setSubtitleSaved(false)
+                      await window.electronAPI.setSetting('subtitle_preferred_languages', updated)
+                    }}
+                    className={`px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                      isAdded
+                        ? 'bg-primary/20 border-primary text-primary font-semibold'
+                        : 'bg-background/80 border-border/50 text-muted-foreground hover:bg-muted'
                     }`}
                   >
-                    {label.replace(`(${code})`, `(${code3})`)}{isSelected ? ' ✓' : ' +'}
+                    {code} {isAdded ? '✓' : '+'}
                   </button>
                 )
               })}
             </div>
-          </details>
-        </div>
-      </div>
-
-      {/* Updates */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 mb-1">
-          <ArrowUpCircle className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-sm font-medium text-foreground">Updates</h3>
-        </div>
-        <div className="bg-muted/30 rounded-lg border border-border/40 p-4 space-y-3">
-          <div className="flex items-center gap-3">
-            <div className="flex-1">
-              <p className="text-sm font-medium">Totality v{appVersion}</p>
-              {(status === 'idle' || status === 'not-available') && lastChecked && (
-                <p className="text-xs text-muted-foreground">Up to date · Last checked {new Date(lastChecked).toLocaleString()}</p>
-              )}
-              {(status === 'idle' || status === 'not-available') && !lastChecked && (
-                <p className="text-xs text-muted-foreground">Up to date</p>
-              )}
-              {status === 'checking' && <p className="text-xs text-muted-foreground">Checking for updates...</p>}
-              {status === 'available' && <p className="text-xs text-primary">Version {newVersion} available</p>}
-              {status === 'downloading' && downloadProgress && (
-                <p className="text-xs text-muted-foreground">Downloading... {Math.round(downloadProgress.percent)}%</p>
-              )}
-              {status === 'downloaded' && <p className="text-xs text-green-500">Version {newVersion} ready to install</p>}
-              {status === 'error' && <p className="text-xs text-destructive">Update check failed</p>}
-            </div>
-            <button
-              onClick={status === 'downloaded' ? () => window.electronAPI.autoUpdateInstallUpdate() : status === 'available' ? () => window.electronAPI.autoUpdateDownloadUpdate() : handleCheckForUpdates}
-              disabled={isChecking || status === 'checking' || status === 'downloading'}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
-            >
-              {(isChecking || status === 'checking') ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> :
-               status === 'downloaded' ? <ArrowUpCircle className="w-3.5 h-3.5" /> :
-               status === 'available' ? <Download className="w-3.5 h-3.5" /> :
-               <RefreshCw className="w-3.5 h-3.5" />}
-              {(isChecking || status === 'checking') ? 'Checking...' :
-               status === 'downloaded' ? 'Install' :
-               status === 'available' ? 'Download' :
-               'Check for Updates'}
-            </button>
-          </div>
-          {status === 'downloading' && downloadProgress && (
-            <div className="w-full bg-muted rounded-full h-1.5">
-              <div className="bg-primary h-1.5 rounded-full transition-all" style={{ width: `${downloadProgress.percent}%` }} />
-            </div>
-          )}
-          {/* Release notes */}
-          {releaseNotes && (status === 'available' || status === 'downloaded' || status === 'downloading') && (
-            <div className="border-t border-border/30 pt-3 mt-1">
-              <p className="text-xs font-medium text-foreground mb-2">What's new in v{newVersion}</p>
-              <div className="text-xs text-muted-foreground space-y-1 max-h-40 overflow-y-auto pr-1">
-                {releaseNotes.split('\n').filter(line => line.trim()).map((line, i) => {
-                  const trimmed = line.replace(/^#+\s*/, '').replace(/^\*\s*/, '').replace(/^-\s*/, '').trim()
-                  if (!trimmed) return null
-                  // Section headers (lines that were ## or ### in markdown)
-                  if (line.trim().startsWith('#')) {
-                    return <p key={i} className="font-medium text-foreground mt-2 first:mt-0">{trimmed}</p>
-                  }
-                  // Bullet items
-                  if (line.trim().startsWith('*') || line.trim().startsWith('-')) {
-                    return <p key={i} className="pl-3 relative before:content-['·'] before:absolute before:left-0 before:text-muted-foreground/50">{trimmed}</p>
-                  }
-                  // Plain text
-                  return <p key={i}>{trimmed}</p>
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-        <div className="bg-muted/30 rounded-lg border border-border/40">
-          <div className="flex items-center justify-between px-4 py-3">
-            <div>
-              <p className="text-sm text-foreground">Check for updates automatically</p>
-              <p className="text-xs text-muted-foreground">Periodically checks GitHub for new releases</p>
-            </div>
-            <Toggle
-              checked={autoUpdateEnabled}
-              onChange={async (checked) => {
-                setAutoUpdateEnabled(checked)
-                await window.electronAPI.setSetting('auto_update_enabled', checked ? 'true' : 'false')
-              }}
-            />
           </div>
         </div>
-      </div>
+      </SettingsCard>
 
-      {/* Web Access */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 mb-1">
-          <Globe className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-sm font-medium text-foreground">Web Access</h3>
-        </div>
-        <div className="bg-muted/30 rounded-lg border border-border/40 divide-y divide-border/30">
-          <div className="flex items-center justify-between px-4 py-3">
-            <div>
-              <p className="text-sm text-foreground">Enable web access</p>
-              <p className="text-xs text-muted-foreground">Access Totality from a browser on your network</p>
-            </div>
-            <Toggle
-              checked={webEnabled}
-              onChange={async (checked) => {
-                setWebAccessError(null)
-                try {
-                  await window.electronAPI.setSetting(SETTING_KEYS.web_access_enabled, String(checked))
-                  setWebEnabled(checked)
-                  if (checked && !webPin.trim()) {
-                    setWebAccessError('Set a PIN before the web server can start.')
-                    return
+      {/* Transcoding Cache & Output Handling */}
+      <SettingsCard
+        title="Transcoding Cache & Output Handling"
+        description="Dedicated temporary transcode drive and default file replacement strategy"
+        icon={<HardDrive className="w-5 h-5" />}
+        status="configured"
+        statusText={transcodingTempDir ? 'Custom cache path' : 'Default source drive'}
+        expanded={expandedCards.has('transcode-cache')}
+        onToggle={() => toggleCard('transcode-cache')}
+      >
+        <div className="space-y-4 pt-2">
+          {/* Dedicated Temp Directory */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <FolderOpen className="w-4 h-4 text-primary" />
+              Dedicated Transcoding Cache Directory (Fast SSD / NVMe)
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Directory or dedicated drive used to write temporary encode files. Leave blank to write alongside source media files.
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={transcodingTempDir}
+                onChange={(e) => {
+                  setTranscodingTempDir(e.target.value)
+                  setTranscodeSettingsSaved(false)
+                }}
+                placeholder="e.g. D:\transcode_cache or /tmp/transcode"
+                className="flex-1 bg-background text-foreground text-sm rounded-md px-3 py-2 border border-border/40 focus:outline-hidden focus:ring-2 focus:ring-primary font-mono"
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsSavingTranscodeSettings(true)
+                  try {
+                    await window.electronAPI.setSetting('transcoding_temp_directory', transcodingTempDir.trim())
+                    await window.electronAPI.setSetting('transcoding_default_output_mode', transcodingDefaultOutputMode)
+                    setTranscodeSettingsSaved(true)
+                    setTimeout(() => setTranscodeSettingsSaved(false), 2000)
+                  } finally {
+                    setIsSavingTranscodeSettings(false)
                   }
-                  if (checked) await window.electronAPI.webAccessStart()
-                  else await window.electronAPI.webAccessStop()
-                  await loadWebStatus()
-                } catch (error) {
-                  setWebAccessError(error instanceof Error ? error.message : String(error))
-                }
-              }}
-            />
+                }}
+                disabled={isSavingTranscodeSettings}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-xs font-bold hover:bg-primary/90 transition-colors disabled:opacity-50 shrink-0 cursor-pointer"
+              >
+                {isSavingTranscodeSettings ? 'Saving...' : transcodeSettingsSaved ? 'Saved!' : 'Save Settings'}
+              </button>
+            </div>
           </div>
-          {webAccessError && <p role="alert" className="px-4 py-2 text-xs text-destructive">{webAccessError}</p>}
 
-          {webEnabled && (
-            <>
-              {/* Status */}
-              {webRunning && webUrl && (
-                <div className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-green-500" />
-                    <span className="text-xs text-muted-foreground">
-                      Available at{' '}
-                      <span className="font-mono text-foreground">{webUrl}</span>
-                    </span>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(webUrl)
-                        setUrlCopied(true)
-                        setTimeout(() => setUrlCopied(false), 2000)
-                      }}
-                      className="ml-1 p-0.5 text-muted-foreground hover:text-foreground transition-colors"
-                      title="Copy URL"
-                    >
-                      {urlCopied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
-                    </button>
-                    {webClients > 0 && (
-                      <span className="text-xs text-muted-foreground ml-auto">
-                        {webClients} client{webClients !== 1 ? 's' : ''} connected
-                      </span>
-                    )}
-                  </div>
+          {/* Default Output Mode */}
+          <div className="space-y-2 pt-2 border-t border-border/20">
+            <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <Zap className="w-4 h-4 text-primary" />
+              Default Output & Verification Mode
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <button
+                type="button"
+                onClick={async () => {
+                  setTranscodingDefaultOutputMode('replace')
+                  await window.electronAPI.setSetting('transcoding_default_output_mode', 'replace')
+                }}
+                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                  transcodingDefaultOutputMode === 'replace'
+                    ? 'border-primary bg-primary/10 shadow-sm ring-1 ring-primary'
+                    : 'border-border bg-card/60 hover:bg-card'
+                }`}
+              >
+                <div className="flex items-center gap-1 font-bold text-xs mb-1">
+                  <Zap className="w-3.5 h-3.5 text-primary" />
+                  <span>Direct Replace</span>
                 </div>
-              )}
+                <p className="text-[11px] text-muted-foreground">In-place replacement with zero residual storage footprint.</p>
+              </button>
 
-              {/* Port */}
-              <div className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <p className="text-sm text-foreground">Port</p>
-                  <p className="text-xs text-muted-foreground">Restart required after changing</p>
+              <button
+                type="button"
+                onClick={async () => {
+                  setTranscodingDefaultOutputMode('quarantine-replace')
+                  await window.electronAPI.setSetting('transcoding_default_output_mode', 'quarantine-replace')
+                }}
+                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                  transcodingDefaultOutputMode === 'quarantine-replace'
+                    ? 'border-primary bg-primary/10 shadow-sm ring-1 ring-primary'
+                    : 'border-border bg-card/60 hover:bg-card'
+                }`}
+              >
+                <div className="flex items-center gap-1 font-bold text-xs mb-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Quarantine & Replace</span>
                 </div>
-                <input
-                  type="number"
-                  value={webPort}
-                  onChange={(e) => setWebPort(e.target.value)}
-                  onBlur={async () => {
-                    const port = parseInt(webPort, 10)
-                    if (port > 0 && port < 65536) {
-                      await window.electronAPI.setSetting(SETTING_KEYS.web_access_port, String(port))
-                    }
-                  }}
-                  className="w-24 px-2 py-1 text-sm text-right bg-muted/50 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
-                  min={1}
-                  max={65535}
-                />
-              </div>
+                <p className="text-[11px] text-muted-foreground">Replaces original and retains timestamped backup.</p>
+              </button>
 
-              {/* PIN */}
-              <div className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <p className="text-sm text-foreground">PIN</p>
-                  <p className="text-xs text-muted-foreground">Required whenever web access is enabled.</p>
+              <button
+                type="button"
+                onClick={async () => {
+                  setTranscodingDefaultOutputMode('copy')
+                  await window.electronAPI.setSetting('transcoding_default_output_mode', 'copy')
+                }}
+                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                  transcodingDefaultOutputMode === 'copy'
+                    ? 'border-primary bg-primary/10 shadow-sm ring-1 ring-primary'
+                    : 'border-border bg-card/60 hover:bg-card'
+                }`}
+              >
+                <div className="flex items-center gap-1 font-bold text-xs mb-1">
+                  <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span>Create Sibling Copy</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <input
-                    type={showPin ? 'text' : 'password'}
-                    value={webPin}
-                    onChange={(e) => setWebPin(e.target.value)}
-                    onBlur={async () => {
-                      setWebAccessError(null)
-                      if (webEnabled && !webPin.trim()) {
-                        setWebAccessError('A PIN is required while web access is enabled.')
-                        return
-                      }
-                      try {
-                        await window.electronAPI.setSetting(SETTING_KEYS.web_access_pin, webPin)
-                        if (webEnabled && !webRunning) {
-                          await window.electronAPI.webAccessStart()
-                          await loadWebStatus()
-                        }
-                      } catch (error) {
-                        setWebAccessError(error instanceof Error ? error.message : String(error))
-                      }
-                    }}
-                    placeholder={webEnabled ? 'Required' : 'No PIN'}
-                    className="w-28 px-2 py-1 text-sm bg-muted/50 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
-                    autoComplete="off"
-                  />
-                  <button
-                    onClick={() => setShowPin(!showPin)}
-                    className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {showPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between px-4 py-3 gap-4">
-                <div>
-                  <p className="text-sm text-foreground">Allowed IP addresses</p>
-                  <p className="text-xs text-muted-foreground">Comma-separated addresses; empty permits any client. Restart web access to apply.</p>
-                </div>
-                <input
-                  type="text"
-                  value={webIpAllowlist}
-                  onChange={(e) => setWebIpAllowlist(e.target.value)}
-                  onBlur={async () => {
-                    try {
-                      await window.electronAPI.setSetting(SETTING_KEYS.web_access_ip_allowlist, webIpAllowlist.trim())
-                    } catch (error) {
-                      setWebAccessError(error instanceof Error ? error.message : String(error))
-                    }
-                  }}
-                  placeholder="192.168.1.10, 192.168.1.11"
-                  aria-label="Allowed web client IP addresses"
-                  className="min-w-0 w-64 px-2 py-1 text-sm bg-muted/50 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              </div>
-
-              {/* Session timeout */}
-              <div className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <p className="text-sm text-foreground">Session timeout</p>
-                  <p className="text-xs text-muted-foreground">How long before requiring PIN again</p>
-                </div>
-                <select
-                  value={webSessionTimeout}
-                  onChange={async (e) => {
-                    setWebSessionTimeout(e.target.value)
-                    await window.electronAPI.setSetting(SETTING_KEYS.web_access_session_timeout, e.target.value)
-                  }}
-                  className="px-2 py-1 text-sm bg-muted/50 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
-                >
-                  <option value="3600000">1 hour</option>
-                  <option value="28800000">8 hours</option>
-                  <option value="86400000">24 hours</option>
-                  <option value="604800000">7 days</option>
-                </select>
-              </div>
-            </>
-          )}
+                <p className="text-[11px] text-muted-foreground">Preserves original intact and outputs an optimized sister file.</p>
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-
+      </SettingsCard>
     </div>
   )
 }

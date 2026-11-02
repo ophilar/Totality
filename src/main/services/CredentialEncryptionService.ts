@@ -1,4 +1,3 @@
-
 /**
  * CredentialEncryptionService
  *
@@ -13,6 +12,7 @@
  */
 
 import { safeStorage } from 'electron'
+import { getLoggingService } from '@main/services/LoggingService'
 
 // Fields that should be encrypted in connection configs
 const SENSITIVE_CONFIG_FIELDS = [
@@ -20,6 +20,7 @@ const SENSITIVE_CONFIG_FIELDS = [
   'accessToken',
   'apiKey',
   'password',
+  'Pw',
   'secret',
 ]
 
@@ -29,7 +30,6 @@ const SENSITIVE_SETTINGS_KEYS = [
   'tmdb_api_key',
   'musicbrainz_api_token',
   'gemini_api_key',
-  'web_access_pin',
 ]
 
 // Prefix to identify encrypted values
@@ -53,9 +53,9 @@ export class CredentialEncryptionService {
     // Check if safeStorage is available on this platform
     this.isAvailable = safeStorage.isEncryptionAvailable()
     if (!this.isAvailable) {
-      console.warn('[CredentialEncryption] OS credential encryption is unavailable; credential writes will be rejected')
+      getLoggingService().warn('[CredentialEncryptionService]', '[CredentialEncryption] safeStorage not available - credentials will be stored in plain text')
     } else {
-      console.log('[CredentialEncryption] Encryption available using OS secure storage')
+      getLoggingService().info('[CredentialEncryptionService]', '[CredentialEncryption] Encryption available using OS secure storage')
     }
   }
 
@@ -71,17 +71,16 @@ export class CredentialEncryptionService {
    * Returns the encrypted value prefixed with 'ENC:' for identification
    */
   encrypt(value: string): string {
-    if (!value) {
+    if (!this.isAvailable || !value) {
       return value
     }
-    if (!this.isAvailable) throw new Error('OS credential encryption is unavailable; refusing to store a credential as plaintext')
 
     try {
       const encrypted = safeStorage.encryptString(value)
       // Convert to base64 for storage
       return ENCRYPTED_PREFIX + encrypted.toString('base64')
     } catch (error) {
-      console.error('[CredentialEncryption] Failed to encrypt value:', error)
+      getLoggingService().error('[CredentialEncryptionService]', '[CredentialEncryption] Failed to encrypt value:', error)
       throw new Error(
         `[CredentialEncryption] Encryption failed — refusing to store credential as plaintext: ${error instanceof Error ? error.message : String(error)}`
       )
@@ -93,7 +92,7 @@ export class CredentialEncryptionService {
    * Only decrypts values that have the 'ENC:' prefix
    */
   decrypt(value: string): string {
-    if (!value) {
+    if (!this.isAvailable || !value) {
       return value
     }
 
@@ -101,14 +100,13 @@ export class CredentialEncryptionService {
     if (!value.startsWith(ENCRYPTED_PREFIX)) {
       return value
     }
-    if (!this.isAvailable) throw new Error('OS credential encryption is unavailable; this credential cannot be decrypted')
 
     try {
       const encryptedBase64 = value.slice(ENCRYPTED_PREFIX.length)
       const encryptedBuffer = Buffer.from(encryptedBase64, 'base64')
       return safeStorage.decryptString(encryptedBuffer)
     } catch (error) {
-      console.error('[CredentialEncryption] Failed to decrypt value — credential must be re-entered:', error)
+      getLoggingService().error('[CredentialEncryption]', 'Failed to decrypt value — credential must be re-entered:', error)
       // Track that a decryption failure occurred so callers can notify the user
       this.lastDecryptionFailed = true
       // Return empty string on failure to force re-authentication,
@@ -129,7 +127,7 @@ export class CredentialEncryptionService {
    * Returns a new object with sensitive fields encrypted
    */
   encryptConnectionConfig(config: Record<string, unknown>): Record<string, unknown> {
-    if (!config) {
+    if (!this.isAvailable || !config) {
       return config
     }
 
@@ -178,7 +176,7 @@ export class CredentialEncryptionService {
    * Encrypt a setting value if it's a sensitive key
    */
   encryptSetting(key: string, value: string): string {
-    if (!this.isSensitiveSetting(key)) {
+    if (!this.isAvailable || !this.isSensitiveSetting(key)) {
       return value
     }
 
@@ -206,26 +204,37 @@ export class CredentialEncryptionService {
    * Call this during app initialization to encrypt any existing unencrypted credentials
    */
   async migrateCredentials(
-    getMediaSources: () => Array<{ source_id: string; connection_config: string }>,
+    getMediaSources: () => Promise<Array<{ source_id: string; connection_config: string }>> | Array<{ source_id: string; connection_config: string }>,
     updateMediaSource: (sourceId: string, connectionConfig: string) => Promise<void>,
-    getSettings: () => Record<string, string>,
+    getSettings: () => Promise<Record<string, string>> | Record<string, string>,
     setSetting: (key: string, value: string) => Promise<void>
   ): Promise<{ sourcesEncrypted: number; settingsEncrypted: number }> {
     let sourcesEncrypted = 0
     let settingsEncrypted = 0
 
     if (!this.isAvailable) {
-      console.log('[CredentialEncryption] Skipping migration - encryption not available')
+      getLoggingService().info('[CredentialEncryptionService]', '[CredentialEncryption] Skipping migration - encryption not available')
       return { sourcesEncrypted, settingsEncrypted }
     }
 
-    console.log('[CredentialEncryption] Starting credential migration...')
+    getLoggingService().info('[CredentialEncryptionService]', '[CredentialEncryption] Starting credential migration...')
 
     // Migrate media source credentials
-    const sources = getMediaSources()
+    const sources = await getMediaSources()
     for (const source of sources) {
       try {
-        const config = JSON.parse(source.connection_config)
+        let config: Record<string, unknown>
+        try {
+          config = JSON.parse(source.connection_config) as Record<string, unknown>
+        } catch (parseError) {
+          getLoggingService().error('[CredentialEncryption]', `Failed to parse config for source ${source.source_id}:`, parseError)
+          continue
+        }
+
+        if (!config || typeof config !== 'object') {
+          continue
+        }
+
         let needsUpdate = false
 
         // Check if any sensitive field is unencrypted
@@ -240,15 +249,15 @@ export class CredentialEncryptionService {
           const encrypted = this.encryptConnectionConfig(config)
           await updateMediaSource(source.source_id, JSON.stringify(encrypted))
           sourcesEncrypted++
-          console.log(`[CredentialEncryption] Encrypted credentials for source: ${source.source_id}`)
+          getLoggingService().info('[CredentialEncryption]', `Encrypted credentials for source: ${source.source_id}`)
         }
       } catch (error) {
-        console.error(`[CredentialEncryption] Failed to migrate source ${source.source_id}:`, error)
+        getLoggingService().error('[CredentialEncryption]', `Failed to migrate source ${source.source_id}:`, error)
       }
     }
 
     // Migrate sensitive settings
-    const settings = getSettings()
+    const settings = await getSettings()
     for (const key of SENSITIVE_SETTINGS_KEYS) {
       const value = settings[key]
       if (value && !this.isEncrypted(value)) {
@@ -256,14 +265,14 @@ export class CredentialEncryptionService {
           const encrypted = this.encrypt(value)
           await setSetting(key, encrypted)
           settingsEncrypted++
-          console.log(`[CredentialEncryption] Encrypted setting: ${key}`)
+          getLoggingService().info('[CredentialEncryption]', `Encrypted setting: ${key}`)
         } catch (error) {
-          console.error(`[CredentialEncryption] Failed to migrate setting ${key}:`, error)
+          getLoggingService().error('[CredentialEncryption]', `Failed to migrate setting ${key}:`, error)
         }
       }
     }
 
-    console.log(`[CredentialEncryption] Migration complete: ${sourcesEncrypted} sources, ${settingsEncrypted} settings encrypted`)
+    getLoggingService().info('[CredentialEncryption]', `Migration complete: ${sourcesEncrypted} sources, ${settingsEncrypted} settings encrypted`)
     return { sourcesEncrypted, settingsEncrypted }
   }
 }

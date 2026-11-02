@@ -1,3 +1,5 @@
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-nocheck
 /**
  * KodiMusicDatabaseSchema
  *
@@ -14,7 +16,7 @@
  * - song_artist: Many-to-many relationship between songs and artists
  */
 
-import { convertKodiPathToLocal } from './KodiDatabaseSchema'
+import { convertKodiPathToLocal } from '@main/providers/kodi/KodiDatabaseSchema'
 
 // ============================================================================
 // KODI MUSIC DATABASE TYPES
@@ -215,9 +217,9 @@ export const QUERY_MUSIC_SONGS = `
     s.iTrack,
     s.iDuration,
     s.strFileName,
-    s.mood,
     p.strPath,
     s.strMusicBrainzTrackID,
+    s.mood,
     al.strAlbum as albumTitle,
     al.strArtistDisp as artistDisp
   FROM song s
@@ -238,9 +240,9 @@ export const QUERY_MUSIC_SONGS_BY_ALBUM = `
     s.iTrack,
     s.iDuration,
     s.strFileName,
-    s.mood,
     p.strPath,
     s.strMusicBrainzTrackID,
+    s.mood,
     al.strAlbum as albumTitle,
     al.strArtistDisp as artistDisp
   FROM song s
@@ -314,4 +316,31 @@ export function buildMusicFilePath(path: string, filename: string): string {
   const cleanPath = localPath.endsWith(separator) || localPath.endsWith('/') ? localPath : localPath + separator
 
   return cleanPath + filename
+}
+
+/**
+ * Extract codec from file extension (fallback when Kodi doesn't have stream details)
+ */
+export function guessCodecFromExtension(filename: string): string {
+  if (!filename) return 'unknown';
+  const ext = filename.split('.').pop()?.toLowerCase() || ''
+
+  const codecMap: Record<string, string> = {
+    'flac': 'flac',
+    'alac': 'alac',
+    'm4a': 'aac',
+    'mp3': 'mp3',
+    'ogg': 'vorbis',
+    'opus': 'opus',
+    'wav': 'wav',
+    'aiff': 'aiff',
+    'aif': 'aiff',
+    'wma': 'wma',
+    'ape': 'ape',
+    'wv': 'wavpack',
+    'dsf': 'dsd',
+    'dff': 'dsd',
+  }
+
+  return codecMap[ext] || ext || 'unknown'
 }

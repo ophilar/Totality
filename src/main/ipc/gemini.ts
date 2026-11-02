@@ -1,14 +1,14 @@
-import { IPC_CHANNELS } from '../../shared/ipcChannels'
-import { BrowserWindow } from 'electron'
-import { safeSend } from './utils/safeSend'
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
+import { BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
-import { getGeminiService, RateLimitError } from '../services/GeminiService'
-import { LIBRARY_TOOLS, executeTool, type ActionableItem } from '../services/GeminiTools'
-import { LIBRARY_CHAT_SYSTEM_PROMPT } from '../services/ai-system-prompts'
-import { getGeminiAnalysisService } from '../services/GeminiAnalysisService'
-import { validateInput, AiSendMessageSchema, AiStreamMessageSchema, AiTestApiKeySchema } from '../validation/schemas'
-import { createIpcHandler, createIpcHandlerWithEvent } from './utils/createHandler'
-
+import { getGeminiService, RateLimitError } from '@main/services/GeminiService'
+import { LIBRARY_TOOLS, executeTool } from '@main/services/GeminiTools'
+import { getGeminiAnalysisService } from '@main/services/GeminiAnalysisService'
+import { AiSendMessageSchema, AiStreamMessageSchema, AiTestApiKeySchema } from '@main/validation/schemas'
+import { getLoggingService } from '@main/services/LoggingService'
+import { APP_CONFIG } from '@main/config'
+import { createIpcHandler, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
+import { operationRequestRegistry } from '@main/ipc/utils/OperationRequestRegistry'
 
 const AiChatMessageSchema = z.object({
   messages: z.array(z.object({
@@ -19,360 +19,162 @@ const AiChatMessageSchema = z.object({
   viewContext: z.object({
     currentView: z.enum(['dashboard', 'library']),
     libraryTab: z.enum(['movies', 'tv', 'music']).optional(),
-    selectedItem: z.object({
-      title: z.string(),
-      type: z.string().optional(),
-      id: z.number().optional(),
-    }).optional(),
+    selectedItem: z.object({ title: z.string(), type: z.string().optional(), id: z.number().optional() }).optional(),
     activeSourceId: z.string().optional(),
     activeFilters: z.string().optional(),
   }).optional(),
 })
 
-/**
- * Format errors for IPC responses, with special handling for rate limits
- */
-function formatError(error: unknown): { error: string; rateLimited?: boolean; retryAfterSeconds?: number } {
-  if (error instanceof RateLimitError) {
-    return {
-      error: error.message,
-      rateLimited: true,
-      retryAfterSeconds: error.retryAfterSeconds,
-    }
-  }
+const QualityExplanationSchema = z.object({
+  title: z.string(), resolution: z.string().optional(), videoCodec: z.string().optional(), videoBitrate: z.number().optional(),
+  audioCodec: z.string().optional(), audioChannels: z.number().optional(), hdrFormat: z.string().optional(),
+  qualityTier: z.string().optional(), tierQuality: z.string().optional(), tierScore: z.number().optional()
+})
+
+function formatError(error: unknown) {
+  if (error instanceof RateLimitError) return { error: error.message, rateLimited: true, retryAfterSeconds: error.retryAfterSeconds }
   return { error: error instanceof Error ? error.message : String(error) }
 }
 
-/**
- * Register all Gemini AI IPC handlers
- */
+const wrapAi = <TArgs extends unknown[], TResult>(handler: (...args: TArgs) => Promise<TResult>) => async (...args: TArgs): Promise<TResult | { error: string; rateLimited: boolean; retryAfterSeconds?: number }> => {
+  try {
+    return await handler(...args)
+  } catch (e) {
+    const formatted = formatError(e)
+    if ('rateLimited' in formatted && formatted.rateLimited) {
+      return formatted
+    }
+    throw formatted
+  }
+}
+
 export function registerGeminiHandlers() {
-  createIpcHandler(IPC_CHANNELS.aiIsConfigured, async () => {
-    return getGeminiService().isConfigured()
+  const service = getGeminiService()
+  createIpcHandler(IPC_CHANNELS.AI.IS_CONFIGURED, async () => service.isConfigured())
+  createIpcHandler(IPC_CHANNELS.AI.GET_RATE_LIMIT_INFO, async () => service.getRateLimitInfo())
+  createIpcHandler(IPC_CHANNELS.AI.GET_AVAILABLE_MODELS, async () => service.listModels())
+  createIpcHandler(IPC_CHANNELS.AI.VALIDATION_STATE, async () => service.getValidationState())
+
+  createValidatedIpcHandler(IPC_CHANNELS.AI.TEST_API_KEY, AiTestApiKeySchema, async (apiKey) => {
+    try { return await service.testApiKey(apiKey) }
+    catch (e) { return { success: false, error: e instanceof Error ? e.message : 'Unknown error' } }
   })
 
-  createIpcHandler(IPC_CHANNELS.aiGetRateLimitInfo, async () => {
-    return getGeminiService().getRateLimitInfo()
-  })
+  createValidatedIpcHandler(IPC_CHANNELS.AI.SEND_MESSAGE, AiSendMessageSchema, wrapAi(async params => service.sendMessage(params)))
 
-  createIpcHandler(IPC_CHANNELS.aiTestApiKey, async (apiKey: unknown) => {
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.AI.STREAM_MESSAGE, AiStreamMessageSchema, wrapAi(async (event: IpcMainInvokeEvent, params) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const res = await service.streamMessage(params, (delta) => win?.webContents.send('ai:streamDelta', { requestId: params.requestId, delta }))
+    win?.webContents.send('ai:streamComplete', { requestId: params.requestId, usage: res.usage })
+    return res
+  }))
+
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.AI.CHAT_MESSAGE, AiChatMessageSchema, async (event: IpcMainInvokeEvent, params) => {
+    const operation = operationRequestRegistry.register(event.sender, params.requestId)
     try {
-      const validKey = validateInput(AiTestApiKeySchema, apiKey, 'ai:testApiKey')
-      return await getGeminiService().testApiKey(validKey)
-    } catch (error) {
-      console.error('Error testing Gemini API key:', error)
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.aiSendMessage, async (params: unknown) => {
-    try {
-      const validated = validateInput(AiSendMessageSchema, params, 'ai:sendMessage')
-      return await getGeminiService().sendMessage(validated)
-    } catch (error) {
-      console.error('Error in ai:sendMessage:', error)
-      const formatted = formatError(error)
-      if (formatted.rateLimited) return formatted
-      throw formatted
-    }
-  })
-
-  createIpcHandlerWithEvent(IPC_CHANNELS.aiStreamMessage, async (event, params: unknown) => {
-    try {
-      const validated = validateInput(AiStreamMessageSchema, params, 'ai:streamMessage')
       const win = BrowserWindow.fromWebContents(event.sender)
-
-      const result = await getGeminiService().streamMessage(
-        {
-          messages: validated.messages,
-          system: validated.system,
-          maxTokens: validated.maxTokens,
-        },
-        (delta) => {
-          safeSend(win,IPC_CHANNELS.aiStreamDelta, {
-            requestId: validated.requestId,
-            delta,
-          })
-        },
-      )
-
-      safeSend(win,IPC_CHANNELS.aiStreamComplete, {
-        requestId: validated.requestId,
-        usage: result.usage,
-      })
-
-      return result
-    } catch (error) {
-      console.error('Error in ai:streamMessage:', error)
-      const formatted = formatError(error)
-      if (formatted.rateLimited) return formatted
-      throw formatted
-    }
-  })
-
-  /**
-   * Chat message handler with tool use.
-   */
-  createIpcHandlerWithEvent(IPC_CHANNELS.aiChatMessage, async (event, params: unknown) => {
-    try {
-      const validated = validateInput(AiChatMessageSchema, params, 'ai:chatMessage')
-      console.log('[IPC ai:chatMessage] Chat message received, history length:', validated.messages.length)
-      const win = BrowserWindow.fromWebContents(event.sender)
-      const actionableItems: ActionableItem[] = []
-
-      // Inject view context into the last user message if provided
-      const messages = validated.messages.map((m, i) => {
-        if (validated.viewContext && i === validated.messages.length - 1 && m.role === 'user') {
-          const ctx = validated.viewContext
-          const parts: string[] = []
-          if (ctx.currentView === 'dashboard') parts.push('Viewing: Dashboard')
-          else if (ctx.libraryTab) parts.push(`Viewing: ${ctx.libraryTab} library`)
+      const messages = params.messages.map((m, i) => {
+        if (params.viewContext && i === params.messages.length - 1 && m.role === 'user') {
+          const ctx = params.viewContext
+          const parts = [ctx.currentView === 'dashboard' ? 'Viewing: Dashboard' : `Viewing: ${ctx.libraryTab} library`]
           if (ctx.selectedItem) parts.push(`Selected: "${ctx.selectedItem.title}"`)
           if (ctx.activeFilters) parts.push(`Filters: ${ctx.activeFilters}`)
-          if (parts.length > 0) {
-            return { ...m, content: `[${parts.join(' | ')}]\n${m.content}` }
-          }
+          return { ...m, content: `[${parts.join(' | ')}]\n${m.content}` }
         }
         return m
       })
 
-      const result = await getGeminiService().sendMessageWithTools({
-        messages,
-        system: LIBRARY_CHAT_SYSTEM_PROMPT,
-        tools: LIBRARY_TOOLS,
-        maxTokens: 4096,
+      const res = await service.sendMessageWithTools({
+        messages, system: APP_CONFIG.ai.libraryChat, tools: LIBRARY_TOOLS, maxTokens: 4096,
+        signal: operation.signal,
         executeTool: async (name, input) => {
-          safeSend(win, IPC_CHANNELS.aiToolUse, {
-            requestId: validated.requestId,
-            toolName: name,
-            input,
-          })
-          return await executeTool(name, input, actionableItems)
-        },
+          operation.signal.throwIfAborted()
+          win?.webContents.send('ai:toolUse', { requestId: params.requestId, toolName: name, input })
+          if (!input || typeof input !== 'object' || Array.isArray(input)) {
+            throw new Error(`Tool ${name} requires an object input`)
+          }
+          const result = await executeTool(name, input as Record<string, unknown>)
+          operation.signal.throwIfAborted()
+          return result
+        }
       })
 
-      // Stream the final response word-by-word for perceived responsiveness
-      if (win && result.text) {
-        const words = result.text.split(/(\s+)/)
-        const chunkSize = 3 // Send ~3 tokens at a time
+      if (win && res.text) {
+        const words = res.text.split(/(\s+)/), chunkSize = 3
         for (let i = 0; i < words.length; i += chunkSize) {
-          const chunk = words.slice(i, i + chunkSize).join('')
-          if (!safeSend(win, IPC_CHANNELS.aiChatStreamDelta, {
-            requestId: validated.requestId,
-            delta: chunk,
-          })) break // Window was closed, stop streaming
-          // Small delay between chunks for streaming effect
-          if (i + chunkSize < words.length) {
-            await new Promise((r) => setTimeout(r, 15))
-          }
+          operation.signal.throwIfAborted()
+          win.webContents.send('ai:chatStreamDelta', { requestId: params.requestId, delta: words.slice(i, i + chunkSize).join('') })
+          if (i + chunkSize < words.length) await new Promise<void>((resolve, reject) => {
+            const onAbort = () => {
+              clearTimeout(timer)
+              reject(operation.signal.reason)
+            }
+            const timer = setTimeout(() => {
+              operation.signal.removeEventListener('abort', onAbort)
+              resolve()
+            }, 15)
+            operation.signal.addEventListener('abort', onAbort, { once: true })
+            if (operation.signal.aborted) onAbort()
+          })
         }
-        safeSend(win, IPC_CHANNELS.aiChatStreamComplete, {
-          requestId: validated.requestId,
-        })
+        win.webContents.send('ai:chatStreamComplete', { requestId: params.requestId })
       }
+      return { ...res, requestId: params.requestId }
+    } catch (e) {
+      const fe = formatError(e)
+      if ('rateLimited' in fe && fe.rateLimited) return fe
+      throw fe
+    } finally {
+      operation.dispose()
+    }
+  })
 
-      return {
-        text: result.text,
-        actionableItems: actionableItems.length > 0 ? actionableItems : undefined,
-        usage: result.usage,
-        requestId: validated.requestId,
+  type ReportMethod = 'generateQualityReport' | 'generateUpgradePriorities' | 'generateCompletenessInsights' | 'generateWishlistAdvice'
+  const registerReport = (channel: string, method: ReportMethod, label: string) => {
+    createValidatedIpcHandlerWithEvent(channel, z.object({ requestId: z.string() }), async (event: IpcMainInvokeEvent, { requestId }) => {
+      const operation = operationRequestRegistry.register(event.sender, requestId, { kind: 'ai-report', label })
+      operation.update({ phase: 'Preparing library report' })
+      const win = BrowserWindow.fromWebContents(event.sender)
+      let accumulatedText = ''
+      try {
+        operation.update({ phase: 'Generating report' })
+        const res = await getGeminiAnalysisService()[method]((delta: string) => {
+          accumulatedText += delta
+          operation.setResult({ text: accumulatedText })
+          win?.webContents.send('ai:analysisStreamDelta', { requestId, delta })
+        }, operation.signal)
+        operation.signal.throwIfAborted()
+        win?.webContents.send('ai:analysisStreamComplete', { requestId })
+        operation.complete('completed', `${label} is ready.`, { text: res.text })
+        return { text: res.text, requestId }
+      } catch (error) {
+        if (operation.signal.aborted) {
+          operation.complete('cancelled', `${label} cancelled.`, accumulatedText ? { text: accumulatedText } : undefined)
+          return { cancelled: true as const, requestId }
+        }
+        const formatted = formatError(error)
+        operation.complete('failed', formatted.error)
+        if ('rateLimited' in formatted) return formatted
+        throw formatted
+      } finally {
+        operation.dispose()
       }
-    } catch (error) {
-      console.error('Error in ai:chatMessage:', error)
-      const formatted = formatError(error)
-      if (formatted.rateLimited) {
-        console.log('[IPC ai:chatMessage] Rate limited, retry after', formatted.retryAfterSeconds, 'seconds')
-        return formatted
-      }
-      throw formatted
-    }
-  })
+    })
+  }
 
-  /**
-   * Analysis report handlers — stream AI-generated reports to the renderer.
-   */
+  registerReport(IPC_CHANNELS.AI.QUALITY_REPORT, 'generateQualityReport', 'AI quality report')
+  registerReport(IPC_CHANNELS.AI.UPGRADE_PRIORITIES, 'generateUpgradePriorities', 'AI upgrade priorities')
+  registerReport(IPC_CHANNELS.AI.COMPLETENESS_INSIGHTS, 'generateCompletenessInsights', 'AI completeness insights')
+  registerReport(IPC_CHANNELS.AI.WISHLIST_ADVICE, 'generateWishlistAdvice', 'AI wishlist advice')
 
-  createIpcHandlerWithEvent(IPC_CHANNELS.aiQualityReport, async (event, params: unknown) => {
-    try {
-      const { requestId } = validateInput(
-        z.object({ requestId: z.string().min(1).max(100) }),
-        params,
-        'ai:qualityReport',
-      )
-      const win = BrowserWindow.fromWebContents(event.sender)
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.AI.COMPRESSION_ADVICE, z.object({ mediaId: z.number(), requestId: z.string() }), wrapAi(async (event: IpcMainInvokeEvent, { mediaId, requestId }) => {
+    const res = await getGeminiAnalysisService().getCompressionAdvice(mediaId)
+    BrowserWindow.fromWebContents(event.sender)?.webContents.send('ai:analysisStreamComplete', { requestId })
+    return { text: res.text, requestId }
+  }))
 
-      console.log('[IPC ai:qualityReport] Generating quality report')
-      const result = await getGeminiAnalysisService().generateQualityReport(
-        (delta) => {
-          safeSend(win,IPC_CHANNELS.aiAnalysisStreamDelta, { requestId, delta })
-        },
-      )
+  createValidatedIpcHandler(IPC_CHANNELS.AI.EXPLAIN_QUALITY, QualityExplanationSchema, wrapAi(async p => ({ text: await service.explainQualityScore(p) })))
 
-      safeSend(win,IPC_CHANNELS.aiAnalysisStreamComplete, { requestId })
-      return { text: result.text, requestId }
-    } catch (error) {
-      console.error('Error in ai:qualityReport:', error)
-      const formatted = formatError(error)
-      if (formatted.rateLimited) return formatted
-      throw formatted
-    }
-  })
-
-  createIpcHandlerWithEvent(IPC_CHANNELS.aiUpgradePriorities, async (event, params: unknown) => {
-    try {
-      const { requestId } = validateInput(
-        z.object({ requestId: z.string().min(1).max(100) }),
-        params,
-        'ai:upgradePriorities',
-      )
-      const win = BrowserWindow.fromWebContents(event.sender)
-
-      console.log('[IPC ai:upgradePriorities] Generating upgrade priorities report')
-      const result = await getGeminiAnalysisService().generateUpgradePriorities(
-        (delta) => {
-          safeSend(win,IPC_CHANNELS.aiAnalysisStreamDelta, { requestId, delta })
-        },
-      )
-
-      safeSend(win,IPC_CHANNELS.aiAnalysisStreamComplete, { requestId })
-      return { text: result.text, requestId }
-    } catch (error) {
-      console.error('Error in ai:upgradePriorities:', error)
-      const formatted = formatError(error)
-      if (formatted.rateLimited) return formatted
-      throw formatted
-    }
-  })
-
-  createIpcHandlerWithEvent(IPC_CHANNELS.aiCompletenessInsights, async (event, params: unknown) => {
-    try {
-      const { requestId } = validateInput(
-        z.object({ requestId: z.string().min(1).max(100) }),
-        params,
-        'ai:completenessInsights',
-      )
-      const win = BrowserWindow.fromWebContents(event.sender)
-
-      console.log('[IPC ai:completenessInsights] Generating completeness report')
-      const result = await getGeminiAnalysisService().generateCompletenessInsights(
-        (delta) => {
-          safeSend(win,IPC_CHANNELS.aiAnalysisStreamDelta, { requestId, delta })
-        },
-      )
-
-      safeSend(win,IPC_CHANNELS.aiAnalysisStreamComplete, { requestId })
-      return { text: result.text, requestId }
-    } catch (error) {
-      console.error('Error in ai:completenessInsights:', error)
-      const formatted = formatError(error)
-      if (formatted.rateLimited) return formatted
-      throw formatted
-    }
-  })
-
-  createIpcHandlerWithEvent(IPC_CHANNELS.aiWishlistAdvice, async (event, params: unknown) => {
-    try {
-      const { requestId } = validateInput(
-        z.object({ requestId: z.string().min(1).max(100) }),
-        params,
-        'ai:wishlistAdvice',
-      )
-      const win = BrowserWindow.fromWebContents(event.sender)
-
-      console.log('[IPC ai:wishlistAdvice] Generating wishlist advice report')
-      const result = await getGeminiAnalysisService().generateWishlistAdvice(
-        (delta) => {
-          safeSend(win,IPC_CHANNELS.aiAnalysisStreamDelta, { requestId, delta })
-        },
-      )
-
-      safeSend(win,IPC_CHANNELS.aiAnalysisStreamComplete, { requestId })
-      return { text: result.text, requestId }
-    } catch (error) {
-      console.error('Error in ai:wishlistAdvice:', error)
-      const formatted = formatError(error)
-      if (formatted.rateLimited) return formatted
-      throw formatted
-    }
-  })
-
-  createIpcHandlerWithEvent(IPC_CHANNELS.aiStorageOptimization, async (event, params: unknown) => {
-    try {
-      const { requestId } = validateInput(
-        z.object({ requestId: z.string().min(1).max(100) }),
-        params,
-        'ai:storageOptimization',
-      )
-      const win = BrowserWindow.fromWebContents(event.sender)
-
-      console.log('[IPC ai:storageOptimization] Generating storage optimization report')
-      const result = await getGeminiAnalysisService().generateStorageOptimization(
-        (delta) => {
-          safeSend(win,IPC_CHANNELS.aiAnalysisStreamDelta, { requestId, delta })
-        },
-      )
-
-      safeSend(win,IPC_CHANNELS.aiAnalysisStreamComplete, { requestId })
-      return { text: result.text, requestId }
-    } catch (error) {
-      console.error('Error in ai:storageOptimization:', error)
-      const formatted = formatError(error)
-      if (formatted.rateLimited) return formatted
-      throw formatted
-    }
-  })
-
-  createIpcHandlerWithEvent(IPC_CHANNELS.aiMusicQualityReport, async (event, params: unknown) => {
-    try {
-      const { requestId } = validateInput(
-        z.object({ requestId: z.string().min(1).max(100) }),
-        params,
-        'ai:musicQualityReport',
-      )
-      const win = BrowserWindow.fromWebContents(event.sender)
-
-      console.log('[IPC ai:musicQualityReport] Generating music quality report')
-      const result = await getGeminiAnalysisService().generateMusicQualityReport(
-        (delta) => {
-          safeSend(win,IPC_CHANNELS.aiAnalysisStreamDelta, { requestId, delta })
-        },
-      )
-
-      safeSend(win,IPC_CHANNELS.aiAnalysisStreamComplete, { requestId })
-      return { text: result.text, requestId }
-    } catch (error) {
-      console.error('Error in ai:musicQualityReport:', error)
-      const formatted = formatError(error)
-      if (formatted.rateLimited) return formatted
-      throw formatted
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.aiExplainQuality, async (params: unknown) => {
-    try {
-      const validated = validateInput(
-        z.object({
-          title: z.string().min(1).max(500),
-          resolution: z.string().optional(),
-          videoCodec: z.string().optional(),
-          videoBitrate: z.number().optional(),
-          audioCodec: z.string().optional(),
-          audioChannels: z.number().optional(),
-          hdrFormat: z.string().optional(),
-          qualityTier: z.string().optional(),
-          tierQuality: z.string().optional(),
-          tierScore: z.number().optional(),
-        }),
-        params,
-        'ai:explainQuality',
-      )
-      const explanation = await getGeminiService().explainQualityScore(validated)
-      return { text: explanation }
-    } catch (error) {
-      console.error('Error in ai:explainQuality:', error)
-      const formatted = formatError(error)
-      if (formatted.rateLimited) return formatted
-      throw formatted
-    }
-  })
+  getLoggingService().info('[gemini]', 'Gemini AI IPC handlers registered')
 }
+

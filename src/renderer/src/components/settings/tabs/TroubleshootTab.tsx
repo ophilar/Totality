@@ -1,18 +1,9 @@
 /**
  * TroubleshootTab - Live log viewer and export functionality
- *
- * Features:
- * - Real-time log display with virtualization for performance
- * - Filter by log level
- * - Auto-scroll (disables on manual scroll up, "Jump to latest" to re-enable)
- * - Export logs to file
- * - Multi-select with shift-click range and copy to clipboard
- * - Clear logs
- * - Details panel for selected log
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { List, useListRef } from 'react-window'
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import {
   Loader2,
   Download,
@@ -32,7 +23,6 @@ import {
   CheckCircle,
   Circle,
 } from 'lucide-react'
-import { Toggle } from '../../ui/Toggle'
 
 interface LogEntry {
   id: string
@@ -45,31 +35,56 @@ interface LogEntry {
 
 type LogFilter = 'all' | 'verbose' | 'debug' | 'info' | 'warn' | 'error'
 
-const LOG_ROW_HEIGHT = 28
+function Toggle({
+  checked,
+  onChange,
+  disabled = false,
+}: {
+  checked: boolean
+  onChange: (checked: boolean) => void
+  disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => !disabled && onChange(!checked)}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background ${
+        disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+      } ${checked ? 'bg-primary' : 'bg-muted'}`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-background shadow-md ring-1 ring-border/50 transition-transform ${
+          checked ? 'translate-x-6' : 'translate-x-1'
+        }`}
+      />
+    </button>
+  )
+}
 
 export function TroubleshootTab() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [isExporting, setIsExporting] = useState(false)
+  const [isExporting, setIsLoadingExport] = useState(false)
   const [filter, setFilter] = useState<LogFilter>('all')
   const [searchText, setSearchText] = useState('')
   const [autoScroll, setAutoScroll] = useState(true)
   const [detailLogId, setDetailLogId] = useState<string | null>(null)
-  const [listHeight, setListHeight] = useState(300)
   const [verboseEnabled, setVerboseEnabled] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [copyFeedback, setCopyFeedback] = useState(false)
   const [fileLoggingExpanded, setFileLoggingExpanded] = useState(false)
   const [fileLoggingSettings, setFileLoggingSettings] = useState<{
     enabled: boolean
+    minLevel: string
     retentionDays: number
-  }>({ enabled: true, retentionDays: 7 })
+  }>({ enabled: true, minLevel: 'info', retentionDays: 7 })
+  
   const lastClickedIndex = useRef<number | null>(null)
-  const listRef = useListRef(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const virtuosoRef = useRef<VirtuosoHandle>(null)
   const logViewerRef = useRef<HTMLDivElement>(null)
-  const lastScrollOffset = useRef(0)
-  const isAutoScrolling = useRef(false)
 
   // Compute filtered logs early so effects can use it
   const filteredLogs = useMemo(() => {
@@ -90,7 +105,19 @@ export function TroubleshootTab() {
 
   // Load initial logs
   useEffect(() => {
-    loadLogs()
+    queueMicrotask(() => {
+      void Promise.all([
+        window.electronAPI.getLogs(2000),
+        window.electronAPI.isVerboseLogging(),
+        window.electronAPI.getFileLoggingSettings(),
+      ]).then(([entries, isVerbose, fileSettings]) => {
+        setLogs(entries)
+        setVerboseEnabled(isVerbose)
+        setFileLoggingSettings(fileSettings)
+      }).catch(error => {
+        window.electronAPI.log.error('[TroubleshootTab]', 'Failed to load logs:', error)
+      }).finally(() => setIsLoading(false))
+    })
   }, [])
 
   // Subscribe to new logs
@@ -101,73 +128,58 @@ export function TroubleshootTab() {
     return () => cleanup?.()
   }, [])
 
-  // Auto-scroll to bottom when new logs arrive
-  useEffect(() => {
-    if (autoScroll && listRef.current && filteredLogs.length > 0) {
-      isAutoScrolling.current = true
-      listRef.current.scrollToRow({ index: filteredLogs.length - 1, align: 'end' })
-      // Reset flag after scroll completes
-      setTimeout(() => {
-        isAutoScrolling.current = false
-      }, 50)
-    }
-  }, [filteredLogs.length, autoScroll, listRef])
-
-  // Handle scroll events to detect manual scrolling
-  const handleScroll = useCallback(
-    ({ scrollOffset }: { scrollOffset: number }) => {
-      // If this is a programmatic scroll, ignore it
-      if (isAutoScrolling.current) {
-        lastScrollOffset.current = scrollOffset
-        return
-      }
-
-      // If user scrolled up, disable auto-scroll
-      if (scrollOffset < lastScrollOffset.current) {
-        setAutoScroll(false)
-      }
-
-      lastScrollOffset.current = scrollOffset
-    },
-    []
-  )
-
   // Jump to latest and re-enable auto-scroll
   const jumpToLatest = useCallback(() => {
     setAutoScroll(true)
-    if (listRef.current && filteredLogs.length > 0) {
-      listRef.current.scrollToRow({ index: filteredLogs.length - 1, align: 'end' })
+    if (filteredLogs.length > 0) {
+      virtuosoRef.current?.scrollToIndex({ index: filteredLogs.length - 1, align: 'end', behavior: 'smooth' })
     }
-  }, [filteredLogs.length, listRef])
+  }, [filteredLogs.length])
 
-  // Measure container height with ResizeObserver
-  useEffect(() => {
-    if (isLoading) return
+  // Row renderer
+  const renderRow = (index: number) => {
+    const entry = filteredLogs[index]
+    if (!entry) return null
 
-    const container = containerRef.current
-    if (!container) return
+    const isDetailTarget = entry.id === detailLogId
+    const isChecked = selectedIds.has(entry.id)
 
-    const updateHeight = () => {
-      const height = container.clientHeight
-      if (height > 0) {
-        setListHeight(height)
-      }
-    }
-
-    // Delay initial measurement to ensure flex layout has resolved
-    requestAnimationFrame(updateHeight)
-
-    // Watch for resize
-    const observer = new ResizeObserver(updateHeight)
-    observer.observe(container)
-
-    return () => observer.disconnect()
-  }, [isLoading])
+    return (
+      <div className="px-2 py-0.5 h-[28px]">
+        <div
+          className={`rounded h-full flex items-center gap-2 px-2 ${
+            entry.details ? 'cursor-pointer hover:bg-white/5' : ''
+          } ${isDetailTarget ? 'ring-1 ring-primary' : ''} ${isChecked ? 'bg-primary/10' : ''}`}
+          onClick={() => entry.details && setDetailLogId(isDetailTarget ? null : entry.id)}
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              handleToggleSelect(index, e.shiftKey)
+            }}
+            className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors shrink-0 ${
+              isChecked ? 'bg-primary border-primary' : 'border-muted-foreground hover:border-primary/50'
+            }`}
+          >
+            {isChecked && (
+              <svg className="w-2.5 h-2.5 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </button>
+          {getLevelIcon(entry.level)}
+          <span className="text-muted-foreground shrink-0 text-xs">{formatTime(entry.timestamp)}</span>
+          <span className="text-primary/70 shrink-0 text-xs max-w-[100px] truncate">{entry.source}</span>
+          <span className="text-foreground flex-1 truncate text-xs">{entry.message}</span>
+          {entry.details && <span className="text-muted-foreground text-[10px] shrink-0">{isDetailTarget ? '▼' : '▶'}</span>}
+        </div>
+      </div>
+    )
+  }
 
   // Keyboard shortcuts for selection
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Only handle when log viewer area is focused or contains focus
       if (!logViewerRef.current?.contains(document.activeElement) && document.activeElement !== logViewerRef.current) return
 
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
@@ -190,23 +202,6 @@ export function TroubleshootTab() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [filteredLogs, selectedIds.size, detailLogId])
 
-  const loadLogs = async () => {
-    try {
-      const [entries, isVerbose, fileSettings] = await Promise.all([
-        window.electronAPI.getLogs(2000),
-        window.electronAPI.isVerboseLogging(),
-        window.electronAPI.getFileLoggingSettings(),
-      ])
-      setLogs(entries)
-      setVerboseEnabled(isVerbose)
-      setFileLoggingSettings(fileSettings)
-    } catch (error) {
-      console.error('Failed to load logs:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   const handleClear = async () => {
     await window.electronAPI.clearLogs()
     setLogs([])
@@ -215,13 +210,13 @@ export function TroubleshootTab() {
   }
 
   const handleExport = async () => {
-    setIsExporting(true)
+    setIsLoadingExport(true)
     try {
       await window.electronAPI.exportLogs()
     } catch (error) {
-      console.error('Failed to export logs:', error)
+      window.electronAPI.log.error('[TroubleshootTab]', 'Failed to export logs:', error)
     } finally {
-      setIsExporting(false)
+      setIsLoadingExport(false)
     }
   }
 
@@ -231,7 +226,7 @@ export function TroubleshootTab() {
     await window.electronAPI.setVerboseLogging(newValue)
   }
 
-  const handleFileLoggingSetting = async (update: { enabled?: boolean; retentionDays?: number }) => {
+  const handleFileLoggingSetting = async (update: { enabled?: boolean; minLevel?: string; retentionDays?: number }) => {
     const newSettings = { ...fileLoggingSettings, ...update }
     setFileLoggingSettings(newSettings)
     await window.electronAPI.setFileLoggingSettings(update)
@@ -329,60 +324,6 @@ export function TroubleshootTab() {
       second: '2-digit',
     })
   }, [])
-
-  // Row renderer for virtualized list
-  const LogRow = useCallback(
-    ({ index, style }: { index: number; style: React.CSSProperties }) => {
-      const entry = filteredLogs[index]
-      if (!entry) return null
-
-      const isDetailTarget = entry.id === detailLogId
-      const isChecked = selectedIds.has(entry.id)
-
-      return (
-        <div style={style} className="px-2 py-0.5">
-          <div
-            className={`rounded h-full flex items-center gap-2 px-2 ${
-              entry.details ? 'cursor-pointer hover:bg-white/5' : ''
-            } ${isDetailTarget ? 'ring-1 ring-primary' : ''} ${isChecked ? 'bg-primary/10' : ''}`}
-            onClick={() => entry.details && setDetailLogId(isDetailTarget ? null : entry.id)}
-          >
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                handleToggleSelect(index, e.shiftKey)
-              }}
-              className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors shrink-0 ${
-                isChecked
-                  ? 'bg-primary border-primary'
-                  : 'border-muted-foreground hover:border-primary/50'
-              }`}
-            >
-              {isChecked && (
-                <svg className="w-2.5 h-2.5 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                </svg>
-              )}
-            </button>
-            {getLevelIcon(entry.level)}
-            <span className="text-muted-foreground shrink-0 text-xs">
-              {formatTime(entry.timestamp)}
-            </span>
-            <span className="text-primary/70 shrink-0 text-xs max-w-[100px] truncate">
-              {entry.source}
-            </span>
-            <span className="text-foreground flex-1 truncate text-xs">{entry.message}</span>
-            {entry.details && (
-              <span className="text-muted-foreground text-[10px] shrink-0">
-                {isDetailTarget ? '▼' : '▶'}
-              </span>
-            )}
-          </div>
-        </div>
-      )
-    },
-    [filteredLogs, detailLogId, selectedIds, getLevelIcon, formatTime, handleToggleSelect]
-  )
 
   if (isLoading) {
     return (
@@ -502,19 +443,15 @@ export function TroubleshootTab() {
           </div>
         ) : (
           <>
-            {/* Virtualized log list - absolute positioning to fill parent */}
-            <div ref={containerRef} className="absolute inset-0 overflow-hidden">
-              <List<object>
-                listRef={listRef}
-                style={{ height: listHeight, width: '100%' }}
-                rowCount={filteredLogs.length}
-                rowHeight={LOG_ROW_HEIGHT}
-                className="scrollbar-visible"
-                onScroll={event => handleScroll({ scrollOffset: event.currentTarget.scrollTop })}
-                rowProps={{}}
-                rowComponent={LogRow}
-              />
-            </div>
+            {/* Virtualized log list */}
+            <Virtuoso
+              ref={virtuosoRef}
+              data={filteredLogs}
+              itemContent={renderRow}
+              followOutput={autoScroll ? 'smooth' : false}
+              atBottomStateChange={(atBottom) => setAutoScroll(atBottom)}
+              className="scrollbar-visible h-full w-full"
+            />
 
             {/* Jump to latest button - overlay */}
             {!autoScroll && filteredLogs.length > 0 && (
@@ -569,7 +506,7 @@ export function TroubleshootTab() {
               <div className="flex items-center gap-2">
                 <span className="font-medium text-sm">File Logging</span>
                 <span className="text-xs text-muted-foreground">
-                  {fileLoggingSettings.enabled ? `All levels · ${fileLoggingSettings.retentionDays} day retention` : 'Disabled'}
+                  {fileLoggingSettings.enabled ? `${fileLoggingSettings.minLevel} level · ${fileLoggingSettings.retentionDays} day retention` : 'Disabled'}
                 </span>
               </div>
               <p className="text-xs text-muted-foreground truncate">Save logs to disk with automatic daily rotation</p>
@@ -586,6 +523,21 @@ export function TroubleshootTab() {
         {fileLoggingExpanded && (
           <div className="px-4 pb-4 pt-2 border-t border-border/30 bg-muted/10 space-y-3">
             <div className="bg-background/50 rounded-lg divide-y divide-border/30">
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-sm text-foreground">Minimum level</span>
+                <select
+                  value={fileLoggingSettings.minLevel}
+                  onChange={(e) => handleFileLoggingSetting({ minLevel: e.target.value })}
+                  disabled={!fileLoggingSettings.enabled}
+                  className="bg-background text-foreground text-sm rounded-md px-3 py-2 border border-border/30 focus:outline-hidden focus:ring-2 focus:ring-primary disabled:opacity-50"
+                >
+                  <option value="verbose">Verbose</option>
+                  <option value="debug">Debug</option>
+                  <option value="info">Info</option>
+                  <option value="warn">Warn</option>
+                  <option value="error">Error</option>
+                </select>
+              </div>
               <div className="flex items-center justify-between px-4 py-3">
                 <span className="text-sm text-foreground">Retention period</span>
                 <select

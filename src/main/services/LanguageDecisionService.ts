@@ -1,4 +1,4 @@
-
+import { getLoggingService } from '@main/services/LoggingService'
 
 export type LanguageDecisionStatus = 'approved' | 'review-required'
 export type AudioTrackAction = 'retain' | 'remove' | 'review-required'
@@ -10,7 +10,6 @@ export interface AudioTrackForDecision {
   isCommentary?: boolean
   isAudioDescription?: boolean
   isAccessibility?: boolean
-  hasObjectAudio?: boolean
   reliableTag?: boolean
   disposition?: {
     default?: number
@@ -53,7 +52,7 @@ export interface LanguageDecision {
   reason: string
 }
 
-import { formatLanguage, isSameLanguage, normalizeLanguage } from '@main/constants/languages'
+import { normalizeLanguage } from '@main/constants/languages'
 import {
   isAudioDescriptionTrack,
   isAccessibilityTrack,
@@ -61,11 +60,7 @@ import {
   isProtectedAudioTrack
 } from '@main/services/utils/audioTrackUtils'
 
-// ISO 639 und is a missing value, not positive evidence of a language.
-const normalize = (value?: string | null): string | null => {
-  const code = normalizeLanguage(value)
-  return code === 'und' ? null : code
-}
+const normalize = normalizeLanguage
 
 export class LanguageDecisionService {
   /**
@@ -127,15 +122,17 @@ export class LanguageDecisionService {
 
     if (!normOrig) {
       const rationale = 'Original language metadata is unknown'
+      getLoggingService().debug('[LanguageDecision]', `Track ${stream.index ?? '?'}: original language metadata is unknown`)
       return { action: 'review-required', decision: 'review-required', rationale, reason: rationale, originalLanguage: normOrig, streamLanguage: normLang }
     }
 
     if (!normLang) {
       const rationale = 'Missing or unreliable language tag requires review'
+      getLoggingService().debug('[LanguageDecision]', `Track ${stream.index ?? '?'}: missing or unreliable language tag "${rawLanguage ?? ''}"`)
       return { action: 'review-required', decision: 'review-required', rationale, reason: rationale, originalLanguage: normOrig, streamLanguage: normLang }
     }
 
-    if (isSameLanguage(normLang, normOrig)) {
+    if (normLang === normOrig) {
       const rationale = `Matches original language (${originalLanguage || normOrig})`
       return { action: 'retain', decision: 'retain', rationale, reason: rationale, originalLanguage: normOrig, streamLanguage: normLang }
     }
@@ -146,71 +143,31 @@ export class LanguageDecisionService {
 
   decide(originalLanguage: string | null | undefined, tracks: AudioTrackForDecision[], metadataAgreesWithTags = true): LanguageDecision {
     const original = normalize(originalLanguage)
-    const taggedTracks = tracks.map(track => ({
-      track,
-      language: normalize(track.language ?? track.tags?.language),
-    }))
-    const evidenceSources = [
-      ...(original ? ['original-language-metadata'] : []),
-      ...taggedTracks.filter(({ language }) => Boolean(language))
-        .map(({ track }) => `${track.reliableTag ? 'embedded-audio-tag' : 'unverified-audio-tag'}:${track.index}`),
-    ]
-    const reviewAll = (reason: string): LanguageDecision => ({
-      originalLanguage: original,
-      evidenceSources,
-      confidence: 'none',
-      status: 'review-required',
-      retainedTrackIndexes: tracks.filter(isProtectedAudioTrack).map(track => track.index),
-      removableTrackIndexes: [],
-      reviewRequiredTrackIndexes: tracks.filter(track => !isProtectedAudioTrack(track)).map(track => track.index),
-      reason,
-    })
+    const evidenceSources = original ? ['matched-original-language-metadata'] : []
+    const retained: number[] = [], removable: number[] = [], review: number[] = []
     if (!original) {
-      const known = taggedTracks
-        .filter(({ language }) => Boolean(language))
-        .map(({ track, language }) => `${formatLanguage(language)} (stream ${track.index}${track.reliableTag ? '' : ', not yet matched to a probed stream'})`)
-      return reviewAll(known.length
-        ? `Audio track languages are identified: ${known.join(', ')}. Original-language metadata is unknown; cannot identify dubs safely`
-        : 'Original-language metadata and audio track languages are unknown')
+      getLoggingService().debug('[LanguageDecision]', 'Original language metadata is unknown for audio decision')
+      return { originalLanguage: original, evidenceSources, confidence: 'none', status: 'review-required', retainedTrackIndexes: [], removableTrackIndexes: [], reviewRequiredTrackIndexes: tracks.map(t => t.index), reason: 'Original language metadata is unknown' }
     }
     if (!metadataAgreesWithTags) {
-      return reviewAll('Original-language metadata conflicts with embedded audio evidence')
+      getLoggingService().warn('[LanguageDecision]', `Original language metadata (${original}) conflicts with embedded audio evidence`)
+      return { originalLanguage: original, evidenceSources, confidence: 'none', status: 'review-required', retainedTrackIndexes: [], removableTrackIndexes: [], reviewRequiredTrackIndexes: tracks.map(t => t.index), reason: 'Original language metadata conflicts with embedded audio evidence' }
     }
-    // Do not remove a dub based only on a title-level original-language guess.
-    // Object-audio tracks may be the primary soundtrack and must remain valid.
-    const primaryMatch = taggedTracks.some(({ track, language }) =>
-      track.reliableTag && isSameLanguage(language, original) &&
-      !isCommentaryTrack(track) && !isAudioDescriptionTrack(track) && !isAccessibilityTrack(track))
-    if (tracks.length > 0 && !primaryMatch) {
-      return reviewAll('No reliable primary audio stream matches the original language; removing other tracks could eliminate the soundtrack')
-    }
-    const retained: number[] = []
-    const removable: number[] = []
-    const review: number[] = []
-    for (const { track, language } of taggedTracks) {
-      if (isProtectedAudioTrack(track)) {
-        retained.push(track.index)
-      } else if (!track.reliableTag || !language) {
+    for (const track of tracks) {
+      const language = normalize(track.language)
+      const protectedTrack = isProtectedAudioTrack(track)
+      if (track.reliableTag) evidenceSources.push(`embedded-audio-tag:${track.index}`)
+      if (!track.reliableTag || !language) {
+        getLoggingService().warn('[LanguageDecision]', `Audio track ${track.index} has unknown or missing language tag`)
         review.push(track.index)
-      } else if (isSameLanguage(language, original)) {
+      } else if (language === original || protectedTrack) {
         retained.push(track.index)
       } else {
         removable.push(track.index)
       }
     }
     const status = review.length ? 'review-required' : 'approved'
-    return {
-      originalLanguage: original,
-      evidenceSources,
-      confidence: status === 'approved' ? 'high' : 'none',
-      status,
-      retainedTrackIndexes: retained,
-      removableTrackIndexes: removable,
-      reviewRequiredTrackIndexes: review,
-      reason: status === 'approved'
-        ? 'Original-language track confirmed and embedded audio languages identified'
-        : 'One or more audio tracks have unknown or unreliable language metadata',
-    }
+    return { originalLanguage: original, evidenceSources: [...new Set(evidenceSources)], confidence: status === 'approved' ? 'high' : 'none', status, retainedTrackIndexes: retained, removableTrackIndexes: removable, reviewRequiredTrackIndexes: review, reason: status === 'approved' ? 'Metadata and reliable embedded audio tags agree' : 'One or more audio tracks have unknown or unreliable language evidence' }
   }
 }
 

@@ -1,48 +1,47 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { Bot, X, Send, Trash2, AlertCircle, Settings } from 'lucide-react'
-import { useChat, type ViewContext } from '../../hooks/useChat'
-import { ChatMessage } from './ChatMessage'
+import { Bot, X, Send, Square, Trash2, AlertCircle, Settings } from 'lucide-react'
+import { useChat, type ViewContext } from '@/hooks/useChat'
+import { ChatMessage } from '@/components/chat/ChatMessage'
+
+import { usePanel } from '@/contexts/PanelContext'
 
 interface ChatPanelProps {
-  isOpen: boolean
-  onClose: () => void
+  isOpen?: boolean
+  onClose?: () => void
   onOpenSettings?: () => void
   viewContext?: ViewContext
 }
 
-export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: ChatPanelProps) {
-  const { messages, isLoading, activeTools, rateLimit, error, sendMessage, clearHistory } = useChat(viewContext)
+export function ChatPanel({ isOpen: propIsOpen, onClose: propOnClose, onOpenSettings, viewContext }: ChatPanelProps) {
+  const { showChatPanel, setShowChatPanel } = usePanel()
+  const isOpen = propIsOpen !== undefined ? propIsOpen : showChatPanel
+  const onClose = propOnClose !== undefined ? propOnClose : () => setShowChatPanel(false)
+  const { messages, isLoading, isCancelling, activeTools, rateLimit, error, sendMessage, cancelMessage, clearHistory } = useChat(viewContext)
   const [input, setInput] = useState('')
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null)
-  const [configurationError, setConfigurationError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  const checkAIConfiguration = useCallback(async () => {
-    try {
-      setIsConfigured(await window.electronAPI.aiIsConfigured())
-      setConfigurationError(null)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      console.error('[ChatPanel] Failed to check AI configuration:', error)
-      setConfigurationError(message)
-      setIsConfigured(null)
-    }
-  }, [])
-
   useEffect(() => {
-    if (isOpen) void checkAIConfiguration()
-  }, [isOpen, checkAIConfiguration])
+    if (!isOpen && isLoading) void cancelMessage()
+  }, [isOpen, isLoading, cancelMessage])
+
+  // Check if AI is configured
+  useEffect(() => {
+    if (isOpen) {
+      window.electronAPI.aiIsConfigured().then(setIsConfigured).catch(() => setIsConfigured(false))
+    }
+  }, [isOpen])
 
   // Listen for settings changes to re-check configuration
   useEffect(() => {
     const cleanup = window.electronAPI.onSettingsChanged((data) => {
       if (data.key === 'gemini_api_key' || data.key === 'ai_enabled') {
-        void checkAIConfiguration()
+        window.electronAPI.aiIsConfigured().then(setIsConfigured).catch(() => setIsConfigured(false))
       }
     })
     return cleanup
-  }, [checkAIConfiguration])
+  }, [])
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -78,7 +77,7 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
         case 'movies':
           return [
             'What 4K upgrades am I missing?',
-            'Which Marvel movies am I missing?',
+            'Which example movies am I missing?',
             'Find me some great sci-fi I don\'t have',
           ]
         case 'tv':
@@ -103,16 +102,9 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
   }, [viewContext?.currentView, viewContext?.libraryTab])
 
   return (
-    <>
-    <div
-      className={`fixed inset-0 bg-black/40 z-[45] transition-opacity duration-300 ${
-        isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-      }`}
-      onClick={onClose}
-    />
     <aside
-      className={`fixed top-[76px] bottom-4 left-4 sm:left-auto right-4 w-auto sm:w-80 max-w-[calc(100vw-2rem)] bg-sidebar-gradient rounded-2xl shadow-xl z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
-        isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+className={`app-side-panel fixed top-[88px] bottom-4 right-4 w-80 bg-sidebar-gradient rounded-2xl shadow-xl z-40 flex flex-col overflow-hidden transition-[transform,opacity] duration-300 ease-out will-change-[transform,opacity] ${
+        isOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'
       }`}
       role="complementary"
       aria-label="AI Chat"
@@ -120,14 +112,14 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
         <div className="flex items-center gap-2">
-          <Bot className="w-4 h-4 text-muted-foreground" />
+          <Bot className="w-4 h-4 text-primary" />
           <h2 className="text-sm font-semibold">AI Assistant</h2>
         </div>
         <div className="flex items-center gap-1">
           {messages.length > 0 && (
             <button
               onClick={clearHistory}
-              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 focus:outline-hidden focus:ring-2 focus:ring-primary transition-colors"
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
               title="Clear chat history"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -135,7 +127,7 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
           )}
           <button
             onClick={onClose}
-            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 focus:outline-hidden focus:ring-2 focus:ring-primary transition-colors"
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
             title="Close chat"
           >
             <X className="w-3.5 h-3.5" />
@@ -144,22 +136,9 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
       </div>
 
       {/* Not configured state */}
-      {configurationError && (
-        <div role="alert" className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-          <AlertCircle className="w-8 h-8 text-destructive mb-3" />
-          <p className="text-sm font-medium mb-1">Could not check AI configuration</p>
-          <p className="text-xs text-muted-foreground mb-4">{configurationError}</p>
-          <button
-            onClick={() => void checkAIConfiguration()}
-            className="px-3 py-2 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-          >
-            Try again
-          </button>
-        </div>
-      )}
-      {isConfigured === false && !configurationError && (
+      {isConfigured === false && (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-          <Bot className="w-8 h-8 text-muted-foreground mb-3" />
+          <Bot className="w-10 h-10 text-muted-foreground mb-3" />
           <p className="text-sm font-medium mb-1">Gemini AI not configured</p>
           <p className="text-xs text-muted-foreground mb-4">
             Get a free Gemini API key from Google AI Studio in Settings &gt; Services.
@@ -177,7 +156,7 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
       )}
 
       {/* Messages area */}
-      {isConfigured !== false && !configurationError && (
+      {isConfigured !== false && (
         <>
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
             {messages.length === 0 && !isLoading && (
@@ -230,6 +209,7 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
 
           {/* Input area */}
           <div className="px-3 pb-3 pt-2 border-t border-border/30">
+            {isCancelling && <p className="mb-2 text-xs text-muted-foreground" role="status">Cancelling…</p>}
             <div className="flex gap-2">
               <textarea
                 ref={inputRef}
@@ -248,18 +228,17 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
                 }}
               />
               <button
-                onClick={handleSubmit}
-                disabled={!input.trim() || isLoading || rateLimit.limited}
+                onClick={isLoading ? cancelMessage : handleSubmit}
+                disabled={(!input.trim() && !isLoading) || rateLimit.limited}
                 className="shrink-0 p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
-                title="Send message"
+                title={isCancelling ? 'Cancelling response' : isLoading ? 'Cancel response' : 'Send message'}
               >
-                <Send className="w-4 h-4" />
+                {isLoading ? <Square className="w-4 h-4" /> : <Send className="w-4 h-4" />}
               </button>
             </div>
           </div>
         </>
       )}
     </aside>
-    </>
   )
 }

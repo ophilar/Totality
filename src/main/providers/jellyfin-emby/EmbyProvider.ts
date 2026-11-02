@@ -10,14 +10,16 @@
  * - Some API response format differences in newer versions
  */
 
-import { JellyfinEmbyBase } from './JellyfinEmbyBase'
-import type { SourceConfig } from '../base/MediaProvider'
+import { JellyfinEmbyBase } from '@main/providers/jellyfin-emby/JellyfinEmbyBase'
+import type { SourceConfig } from '@main/providers/base/MediaProvider'
+import { ProviderType } from '@main/types/database'
+import { app } from 'electron'
 
 export class EmbyProvider extends JellyfinEmbyBase {
-  readonly providerType = 'emby' as const
+  readonly providerType = ProviderType.Emby
   protected authHeaderName = 'X-Emby-Authorization'
   protected clientName = 'Totality'
-  protected clientVersion = '1.0.0'
+  protected clientVersion = app.getVersion()
 
   constructor(config: SourceConfig) {
     super(config)
@@ -32,8 +34,9 @@ export class EmbyProvider extends JellyfinEmbyBase {
       `Version="${this.clientVersion}"`,
     ]
 
-    if (this.accessToken) {
-      parts.push(`Token="${this.accessToken}"`)
+    const token = this.client.getAccessToken()
+    if (token) {
+      parts.push(`Token="${token}"`)
     }
 
     return parts.join(', ')

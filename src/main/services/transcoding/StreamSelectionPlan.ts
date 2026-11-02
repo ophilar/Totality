@@ -1,8 +1,5 @@
-
 import type { FileAnalysisResult } from '../MediaFileAnalyzer'
-import type { TranscodeOptions } from './types'
-import { normalizeLanguage } from '../../constants/languages'
-import { isProtectedAudioTrack, isCommentaryTrack, isAudioDescriptionTrack, isAccessibilityTrack } from '../utils/audioTrackUtils'
+import type { TranscodeOptions } from '../TranscodingService'
 
 export type DefaultSubtitleSelection = 'preserve' | 'none' | number
 
@@ -10,27 +7,6 @@ export interface StreamSelectionPlan {
   audioStreamIndexes: number[]
   subtitleStreamIndexes: number[]
   defaultSubtitle: DefaultSubtitleSelection
-}
-
-/** Read-only review projection of the stream mappings used by FFmpeg. */
-export interface PlannedAudioStream {
-  index: number
-  action: 'keep' | 'remove' | 'convert'
-  targetCodec?: string
-}
-
-export function getPlannedAudioStreams(
-  analysis: Pick<FileAnalysisResult, 'audioTracks'>,
-  plan: Pick<StreamSelectionPlan, 'audioStreamIndexes'>,
-  conversions: readonly { sourceIndex: number; codec: string }[] = [],
-): PlannedAudioStream[] {
-  const retained = new Set(plan.audioStreamIndexes)
-  const converted = new Map(conversions.map(({ sourceIndex, codec }) => [sourceIndex, codec]))
-  return analysis.audioTracks.map(({ index }) => {
-    if (!retained.has(index)) return { index, action: 'remove' }
-    const targetCodec = converted.get(index)
-    return targetCodec ? { index, action: 'convert', targetCodec } : { index, action: 'keep' }
-  })
 }
 
 export interface SubtitleSelectionPolicy {
@@ -62,22 +38,22 @@ export type StreamSelectionPolicy =
       defaultSubtitle?: 'preserve' | 'none' | SubtitleSelectionPolicy
     }
 
+import { normalizeLanguage } from '@main/constants/languages'
+import { isProtectedAudioTrack } from '@main/services/utils/audioTrackUtils'
+export { normalizeLanguage }
+
 function resolvePolicyIndexes(analysis: FileAnalysisResult, policy: StreamSelectionPolicy): number[] {
   if (policy.audio === 'all') return analysis.audioTracks.map(track => track.index)
   if (policy.audio === 'explicit') return policy.audioIndexes
   const original = normalizeLanguage(policy.originalLanguage)
-  if (!original || original === 'und') throw new Error('A known original language is required for original-and-protected audio policy')
+  if (!original) throw new Error('Original language is required for original-and-protected audio policy')
   const result = analysis.audioTracks.filter(track => {
     const protectedTrack = isProtectedAudioTrack(track)
     const language = normalizeLanguage(track.language)
-    if ((!language || language === 'und') && !protectedTrack) throw new Error(`Audio stream ${track.index} has no reliable language tag`)
+    if (!language && !protectedTrack) throw new Error(`Audio stream ${track.index} has no reliable language tag`)
     return protectedTrack || language === original
   }).map(track => track.index)
-  const originalTracks = analysis.audioTracks.filter(track => normalizeLanguage(track.language) === original)
-  if (originalTracks.length === 0) throw new Error(`No audio stream matches original language ${policy.originalLanguage}`)
-  if (!originalTracks.some(track => !isCommentaryTrack(track) && !isAudioDescriptionTrack(track) && !isAccessibilityTrack(track))) {
-    throw new Error(`No primary audio stream matches original language ${policy.originalLanguage}`)
-  }
+  if (result.length === 0) throw new Error(`No audio stream matches original language ${policy.originalLanguage}`)
   return result
 }
 
@@ -112,31 +88,31 @@ function selectIndexes(
   return selected
 }
 
-export function selectSubtitleStreamIndexes(
-  subtitleTracks: ReadonlyArray<{ index: number; language?: string; isForced?: boolean }>,
-  languageWhitelist: readonly string[],
-): number[] {
-  const normalizedWhitelist = new Set(languageWhitelist.map(normalizeLanguage).filter((language): language is string => Boolean(language)))
-  return subtitleTracks
-    .filter(track => track.isForced || (track.language && normalizedWhitelist.has(normalizeLanguage(track.language) ?? '')))
-    .map(track => track.index)
-}
-
 export function buildStreamSelectionPlan(analysis: FileAnalysisResult, options: TranscodeOptions): StreamSelectionPlan {
-  const policy = options.streamSelection as StreamSelectionPolicy | undefined
-  const policyAudio = policy ? resolvePolicyIndexes(analysis, policy) : undefined
+  const policyAudio = options.streamSelection ? resolvePolicyIndexes(analysis, options.streamSelection) : undefined
   const audioStreamIndexes = selectIndexes(analysis.audioTracks, policyAudio, 'Audio')
 
   let subtitleCandidates: number[] | undefined = undefined
   if (
-    policy?.subtitleLanguageWhitelist &&
-    policy.subtitleLanguageWhitelist.length > 0
+    options.streamSelection?.subtitleLanguageWhitelist &&
+    options.streamSelection.subtitleLanguageWhitelist.length > 0
   ) {
-    subtitleCandidates = selectSubtitleStreamIndexes(analysis.subtitleTracks, policy.subtitleLanguageWhitelist)
+    const normalizedWhitelist = new Set(
+      options.streamSelection.subtitleLanguageWhitelist
+        .map(lang => normalizeLanguage(lang))
+        .filter((l): l is string => Boolean(l))
+    )
+    subtitleCandidates = analysis.subtitleTracks
+      .filter(track => {
+        const trackLang = normalizeLanguage(track.language)
+        const matchesWhitelist = Boolean(trackLang && normalizedWhitelist.has(trackLang))
+        return matchesWhitelist || track.isForced === true
+      })
+      .map(track => track.index)
   }
 
   const subtitleStreamIndexes = selectIndexes(analysis.subtitleTracks, subtitleCandidates, 'Subtitle')
-  const requestedDefault: number | null | 'preserve' | 'none' | undefined = policy ? resolvePolicySubtitle(policy, analysis, subtitleStreamIndexes) : undefined
+  const requestedDefault: number | null | 'preserve' | 'none' | undefined = options.streamSelection ? resolvePolicySubtitle(options.streamSelection, analysis, subtitleStreamIndexes) : undefined
   if (typeof requestedDefault === 'number' && !subtitleStreamIndexes.includes(requestedDefault)) {
     throw new Error(`Subtitle stream ${requestedDefault} is not selected`)
   }
@@ -156,10 +132,6 @@ export function appendStreamMappingArgs(args: string[], analysis: FileAnalysisRe
   for (const index of plan.subtitleStreamIndexes) args.push('-map', `0:${index}`)
   if (plan.audioStreamIndexes.length > 0) args.push('-c:a', 'copy')
   if (plan.subtitleStreamIndexes.length > 0) args.push('-c:s', 'copy')
-  for (const [outputIndex, sourceIndex] of plan.audioStreamIndexes.entries()) {
-    const conversion = options.audioConversions?.find(item => item.sourceIndex === sourceIndex)
-    if (conversion) args.push(`-c:a:${outputIndex}`, conversion.codec, `-b:a:${outputIndex}`, `${conversion.bitrateKbps}k`)
-  }
   args.push('-map', '0:t?', '-map_chapters', '0', '-map_metadata', '0')
 
   if (plan.defaultSubtitle !== 'preserve') {

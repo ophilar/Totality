@@ -1,4 +1,3 @@
-
 /**
  * Retry with Exponential Backoff
  *
@@ -23,9 +22,10 @@ export interface RetryOptions {
   minRetryDelay?: number
   /** Optional callback when a retry occurs */
   onRetry?: (attempt: number, error: Error, delay: number) => void
+  signal?: AbortSignal
 }
 
-const DEFAULT_OPTIONS: Required<Omit<RetryOptions, 'onRetry'>> = {
+const DEFAULT_OPTIONS: Required<Omit<RetryOptions, 'onRetry' | 'signal'>> = {
   maxRetries: 3,
   initialDelay: 1000,
   maxDelay: 30000,
@@ -97,8 +97,13 @@ function calculateDelay(
 /**
  * Sleep for a given number of milliseconds
  */
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted()
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve() }, ms)
+    const abort = () => { clearTimeout(timer); reject(signal?.reason) }
+    signal?.addEventListener('abort', abort, { once: true })
+  })
 }
 
 /**
@@ -112,7 +117,7 @@ function sleep(ms: number): Promise<void> {
  *     maxRetries: 3,
  *     initialDelay: 1000,
  *     onRetry: (attempt, error, delay) => {
- *       console.log(`Retry ${attempt} after ${delay}ms: ${error.message}`)
+ *       getLoggingService().info('[retryWithBackoff]', `Retry ${attempt} after ${delay}ms: ${error.message}`)
  *     }
  *   }
  * )
@@ -126,10 +131,12 @@ export async function retryWithBackoff<T>(
   let lastError: Error = new Error('Unknown error')
 
   for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
+    options.signal?.throwIfAborted()
     try {
       return await fn()
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error))
+      if (options.signal?.aborted) throw options.signal.reason
 
       // Don't retry if we've exhausted attempts
       if (attempt >= config.maxRetries) {
@@ -159,7 +166,7 @@ export async function retryWithBackoff<T>(
       }
 
       // Wait before retrying
-      await sleep(delay)
+      await sleep(delay, options.signal)
     }
   }
 
@@ -174,7 +181,7 @@ export async function retryWithBackoff<T>(
  * ```typescript
  * const fetchWithRetry = createRetryFetch({
  *   maxRetries: 3,
- *   onRetry: (attempt, error, delay) => console.log(`Retry ${attempt}...`)
+ *   onRetry: (attempt, error, delay) => getLoggingService().info('[retryWithBackoff]', `Retry ${attempt}...`)
  * })
  *
  * const response = await fetchWithRetry('https://api.example.com/data')

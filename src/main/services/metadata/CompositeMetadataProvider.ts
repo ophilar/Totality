@@ -1,0 +1,188 @@
+import { IMetadataProvider, MetadataSearchQuery, MetadataSearchResult, MediaMetadataDetails, MetadataType } from './IMetadataProvider'
+import { getLoggingService } from '../LoggingService'
+import { normalizeTitleForMatching, scoreTitleMatch } from './TitleMatching'
+
+/**
+ * Composite Metadata Provider that aggregates multiple providers and executes multi-provider result fusion.
+ * Follows the Composite & Strategy design patterns (SOLID Principles).
+ */
+export class CompositeMetadataProvider implements IMetadataProvider {
+  readonly providerId = 'composite'
+  readonly providerName = 'Composite Provider Aggregator'
+  
+  private providers: IMetadataProvider[] = []
+
+  constructor(initialProviders: IMetadataProvider[] = [], private readonly providerSettings?: () => Promise<{ enabled?: string[]; order?: string[] } | null>) {
+    this.providers = [...initialProviders]
+  }
+
+  get supportedTypes(): MetadataType[] {
+    const typesSet = new Set<MetadataType>()
+    for (const provider of this.providers) {
+      provider.supportedTypes.forEach(t => typesSet.add(t))
+    }
+    return Array.from(typesSet)
+  }
+
+  public registerProvider(provider: IMetadataProvider): void {
+    if (!this.providers.some(p => p.providerId === provider.providerId)) {
+      this.providers.push(provider)
+    }
+  }
+
+  public getProviders(): IMetadataProvider[] {
+    return [...this.providers]
+  }
+
+  private identityKey(candidate: MetadataSearchResult): string {
+    const ids = candidate.externalIds || {}
+    const identity = ids.tmdbId ? `tmdb:${ids.tmdbId}` : ids.tvdbId ? `tvdb:${ids.tvdbId}` : ids.imdbId ? `imdb:${ids.imdbId}` : ids.musicBrainzId ? `mb:${ids.musicBrainzId}` : ids.anilistId ? `anilist:${ids.anilistId}` : null
+    return identity || `${normalizeTitleForMatching(candidate.title)}_${candidate.year || 'unknown'}_${candidate.type}`
+  }
+
+  async search(query: MetadataSearchQuery, signal?: AbortSignal): Promise<MetadataSearchResult[]> {
+    return this.searchAndFuse(query, signal)
+  }
+
+  async searchAndFuse(query: MetadataSearchQuery, signal?: AbortSignal): Promise<MetadataSearchResult[]> {
+    signal?.throwIfAborted()
+    const settings = await this.providerSettings?.().catch(() => null)
+    signal?.throwIfAborted()
+    const enabled = settings?.enabled
+    const order = settings?.order
+    const orderIndex = new Map((order || []).map((id, index) => [id, index]))
+    const matchingProviders = this.providers
+      .filter(p => p.supportedTypes.includes(query.type) && (!enabled || enabled.includes(p.providerId)))
+      .sort((a, b) => (orderIndex.get(a.providerId) ?? Number.MAX_SAFE_INTEGER) - (orderIndex.get(b.providerId) ?? Number.MAX_SAFE_INTEGER))
+    const results = await Promise.allSettled(
+      matchingProviders.map(async p => {
+        signal?.throwIfAborted()
+        try {
+          return signal ? await p.search(query, signal) : await p.search(query)
+        } catch (err) {
+          if (signal?.aborted) throw err
+          getLoggingService().error('[CompositeMetadataProvider]', `Provider ${p.providerId} search failed:`, err)
+          return []
+        }
+      })
+    )
+
+    const allCandidates: MetadataSearchResult[] = []
+    for (const res of results) {
+      signal?.throwIfAborted()
+      if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+        allCandidates.push(...res.value)
+      } else if (res.status === 'rejected') {
+        getLoggingService().error('[CompositeMetadataProvider]', 'Provider search rejected:', res.reason)
+      }
+    }
+
+    for (const candidate of allCandidates) {
+      const titleScores = [candidate.title, ...(candidate.alternateTitles || [])]
+        .map(title => scoreTitleMatch(title, query.title, candidate.year, query.year))
+      candidate.score = Math.max(...titleScores, 0)
+    }
+    
+    const fusedMap = new Map<string, MetadataSearchResult>()
+    
+    for (const candidate of allCandidates) {
+      const candidateIds = Object.values(candidate.externalIds || {}).filter(Boolean)
+      const sharedKey = Array.from(fusedMap.entries()).find(([, existing]) => {
+        const existingIds = Object.values(existing.externalIds || {}).filter(Boolean)
+        return candidateIds.some(id => existingIds.includes(id))
+      })?.[0]
+      const key = sharedKey || this.identityKey(candidate)
+      if (!fusedMap.has(key)) {
+        fusedMap.set(key, { ...candidate })
+      } else {
+        const existing = fusedMap.get(key)!
+        existing.overview = existing.overview || candidate.overview
+        existing.posterUrl = existing.posterUrl || candidate.posterUrl
+        existing.bannerUrl = existing.bannerUrl || candidate.bannerUrl
+        existing.imdbRating = existing.imdbRating ?? candidate.imdbRating
+        existing.imdbVotes = existing.imdbVotes ?? candidate.imdbVotes
+        existing.network = existing.network || candidate.network
+        existing.status = existing.status || candidate.status
+        existing.country = existing.country || candidate.country
+        existing.originalLanguage = existing.originalLanguage || candidate.originalLanguage
+        existing.firstAirDate = existing.firstAirDate || candidate.firstAirDate
+        existing.releaseDate = existing.releaseDate || candidate.releaseDate
+        existing.externalIds = { ...candidate.externalIds, ...existing.externalIds }
+        existing.alternateTitles = Array.from(new Set([...(existing.alternateTitles || []), ...(candidate.alternateTitles || [])]))
+        if ((candidate.score || 0) > (existing.score || 0)) {
+          existing.score = candidate.score
+        }
+      }
+    }
+
+    const finalResults = Array.from(fusedMap.values())
+    finalResults.sort((a, b) => (b.score || 0) - (a.score || 0))
+
+    return finalResults
+  }
+
+  async findByExternalId(externalId: string, source: 'imdb_id' | 'tvdb_id', type: MetadataType): Promise<MediaMetadataDetails | null> {
+    const matchingProviders = this.providers.filter(p => p.supportedTypes.includes(type) && typeof p.findByExternalId === 'function')
+    const results = await Promise.allSettled(
+      matchingProviders.map(async p => {
+        try {
+          return await p.findByExternalId!(externalId, source, type)
+        } catch (err) {
+          getLoggingService().error('[CompositeMetadataProvider]', `Provider ${p.providerId} findByExternalId failed:`, err)
+          return null
+        }
+      })
+    )
+
+    for (const res of results) {
+      if (res.status === 'fulfilled' && res.value) {
+        return res.value
+      }
+    }
+
+    return null
+  }
+
+  async getDetails(externalId: string, type: MetadataType): Promise<MediaMetadataDetails | null> {
+    const matchingProviders = this.providers.filter(p => p.supportedTypes.includes(type))
+    const results = await Promise.allSettled(
+      matchingProviders.map(async p => {
+        try {
+          return await p.getDetails(externalId, type)
+        } catch (err) {
+          getLoggingService().error('[CompositeMetadataProvider]', `Provider ${p.providerId} getDetails failed:`, err)
+          return null
+        }
+      })
+    )
+
+    let primaryDetails: MediaMetadataDetails | null = null
+
+    for (const res of results) {
+      if (res.status === 'fulfilled' && res.value) {
+        const details = res.value
+        if (!primaryDetails) {
+          primaryDetails = { ...details }
+        } else {
+          primaryDetails.imdbRating = primaryDetails.imdbRating ?? details.imdbRating
+          primaryDetails.imdbVotes = primaryDetails.imdbVotes ?? details.imdbVotes
+          primaryDetails.contentRating = primaryDetails.contentRating ?? details.contentRating
+          primaryDetails.awards = primaryDetails.awards ?? details.awards
+          primaryDetails.network = primaryDetails.network || details.network
+          primaryDetails.status = primaryDetails.status || details.status
+          primaryDetails.country = primaryDetails.country || details.country
+          primaryDetails.originalLanguage = primaryDetails.originalLanguage || details.originalLanguage
+          primaryDetails.firstAirDate = primaryDetails.firstAirDate || details.firstAirDate
+          primaryDetails.releaseDate = primaryDetails.releaseDate || details.releaseDate
+          primaryDetails.overview = primaryDetails.overview || details.overview
+          primaryDetails.posterUrl = primaryDetails.posterUrl || details.posterUrl
+          primaryDetails.externalIds = { ...details.externalIds, ...primaryDetails.externalIds }
+          primaryDetails.alternateTitles = Array.from(new Set([...(primaryDetails.alternateTitles || []), ...(details.alternateTitles || [])]))
+        }
+      }
+    }
+
+    return primaryDetails
+  }
+}
+

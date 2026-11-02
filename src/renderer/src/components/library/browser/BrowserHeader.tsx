@@ -1,0 +1,155 @@
+
+
+import { Film, Tv, Music, Layers, Heart, Library, Star, Settings, Home, RefreshCw } from 'lucide-react'
+import logoImage from '@/assets/totality_header_logo.png'
+import { ScanningStatus } from '@/components/library/browser/ScanningStatus'
+import type { MediaViewType } from '@/components/library/types'
+
+interface BrowserHeaderProps {
+  view: MediaViewType
+  setView: (view: MediaViewType) => void
+  hasMovies: boolean
+  hasTV: boolean
+  hasMusic: boolean
+  wishlistCount: number
+  isAutoRefreshing: boolean
+  tmdbApiKeySet: boolean
+  themeAccentColor: string
+  showCompletenessPanel: boolean
+  setShowCompletenessPanel: (val: boolean) => void
+  showWishlistPanel: boolean
+  setShowWishlistPanel: (val: boolean) => void
+  onOpenSettings: () => void
+  onNavigateHome?: () => void
+  onLibraryTabChange?: (tab: MediaViewType) => void
+  
+}
+
+export const BrowserHeader: React.FC<BrowserHeaderProps> = ({
+  view,
+  setView,
+  hasMovies,
+  hasTV,
+  hasMusic,
+  wishlistCount,
+  isAutoRefreshing,
+  tmdbApiKeySet,
+  themeAccentColor,
+  showCompletenessPanel,
+  setShowCompletenessPanel,
+  showWishlistPanel,
+  setShowWishlistPanel,
+  onOpenSettings,
+  onNavigateHome,
+  onLibraryTabChange,
+}) => {
+  const handleTabClick = (tab: MediaViewType) => {
+    setView(tab)
+    onLibraryTabChange?.(tab)
+  }
+
+  return (
+    <header className="dark fixed top-2 sm:top-4 left-2 sm:left-4 right-2 sm:right-4 z-100 bg-black rounded-2xl shadow-xl px-2 sm:px-4 py-2 sm:py-3">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 basis-full lg:basis-auto lg:flex-1 min-w-0">
+          <img src={logoImage} alt="Totality" className="h-10 shrink-0" />
+          <ScanningStatus />
+        </div>
+
+        <nav className="order-3 lg:order-none basis-full lg:basis-auto shrink-0 flex gap-1 overflow-x-auto pb-0.5" aria-label="Library navigation">
+          {onNavigateHome && (
+            <button onClick={onNavigateHome} className="px-3 py-2 rounded-md text-sm font-medium transition-colors bg-card text-muted-foreground hover:bg-muted">
+              <Home className="w-4 h-4" />
+            </button>
+          )}
+          {onNavigateHome && <div className="w-px bg-border/50 mx-1" />}
+
+          <button
+            onClick={() => handleTabClick('movies')}
+            disabled={!hasMovies}
+            aria-current={view === 'movies' ? 'page' : undefined}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${view === 'movies' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'} disabled:opacity-40`}
+          >
+            <Film className="w-4 h-4" />
+            <span>Movies</span>
+          </button>
+
+          <button
+            onClick={() => handleTabClick('tv')}
+            disabled={!hasTV}
+            aria-current={view === 'tv' ? 'page' : undefined}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${view === 'tv' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'} disabled:opacity-40`}
+          >
+            <Tv className="w-4 h-4" />
+            <span>TV Shows</span>
+          </button>
+
+          <button
+            onClick={() => handleTabClick('music')}
+            disabled={!hasMusic}
+            aria-current={view === 'music' ? 'page' : undefined}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${view === 'music' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'} disabled:opacity-40`}
+          >
+            <Music className="w-4 h-4" />
+            <span>Music</span>
+          </button>
+
+          <button
+            onClick={() => handleTabClick('duplicates')}
+            aria-current={view === 'duplicates' ? 'page' : undefined}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${view === 'duplicates' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+          >
+            <Layers className="w-4 h-4" />
+            <span>Duplicates</span>
+          </button>
+
+          <button
+            onClick={() => handleTabClick('wishlist')}
+            aria-current={view === 'wishlist' ? 'page' : undefined}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${view === 'wishlist' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+          >
+            <Heart className="w-4 h-4" />
+            <span>Wishlist</span>
+          </button>
+
+          {isAutoRefreshing && (
+            <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground">
+              <RefreshCw className="w-3 h-3 animate-spin" />
+              <span>Syncing</span>
+            </div>
+          )}
+        </nav>
+
+        <div className="flex items-center justify-end lg:flex-1 gap-1 sm:gap-2 ml-auto">
+          <button
+            onClick={() => {
+              const newState = !showCompletenessPanel
+              if (newState) setShowWishlistPanel(false)
+              setShowCompletenessPanel(newState)
+            }}
+            className={`p-2.5 rounded-md transition-colors flex items-center gap-1 shrink-0 ${showCompletenessPanel ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+          >
+            <Library className="w-4 h-4" />
+            {!tmdbApiKeySet && <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: themeAccentColor }} />}
+          </button>
+          
+          <button
+            onClick={() => {
+              const newState = !showWishlistPanel
+              if (newState) setShowCompletenessPanel(false)
+              setShowWishlistPanel(newState)
+            }}
+            className={`p-2.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 ${showWishlistPanel ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+          >
+            <Star className="w-4 h-4" />
+            {wishlistCount > 0 && <span className="text-xs font-medium" style={showWishlistPanel ? undefined : { color: themeAccentColor }}>{wishlistCount}</span>}
+          </button>
+
+          <button onClick={onOpenSettings} className="p-2.5 rounded-md transition-colors shrink-0 bg-card text-muted-foreground hover:bg-muted">
+            <Settings className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </header>
+  )
+}

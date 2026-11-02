@@ -1,0 +1,167 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { render, screen, act, fireEvent } from '@testing-library/react'
+import { TVShowsView } from '@/components/library/TVShowsView'
+import { getTVShowIdentityKey } from '@/components/library/tv/showIdentity'
+import { SourceProvider } from '@/contexts/SourceContext'
+import { LibraryProvider } from '@/contexts/LibraryContext'
+import { ToastProvider } from '@/contexts/ToastContext'
+import { ScrollMemoryProvider } from '@/contexts/ScrollMemoryContext'
+
+import React from 'react'
+import type { TVShowSummary } from '@/components/library/types'
+
+describe('TVShowsView Rendering (Mocked Bridge)', () => {
+  let mockConfig: Record<string, string | undefined> = {}
+  beforeEach(async () => {
+    mockConfig = {}
+
+    Object.assign(window, { electronAPI: {
+      sourcesList: () => Promise.resolve([]),
+      getSetting: (key: string) => Promise.resolve(mockConfig[key]),
+      setSetting: (key: string, value: string) => {
+        mockConfig[key] = value
+        return Promise.resolve(true)
+      },
+      log: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} },
+      onSourcesScanProgress: () => () => {},
+      onSourcesScanCompleted: () => () => {},
+      onScanCompleted: () => () => {},
+      onSettingsChanged: () => () => {}
+    }})
+  })
+
+  afterEach(() => {})
+
+  const defaultProps: Parameters<typeof TVShowsView>[0] = {
+    shows: [],
+    totalShowCount: 0,
+    showsLoading: false,
+    onLoadMoreShows: () => {},
+    selectedShow: null,
+    selectedShowData: null,
+    selectedShowLoading: false,
+    onSelectShow: () => {},
+    onSelectEpisode: () => {},
+    filterItem: () => true,
+    gridScale: 5,
+    viewType: 'grid',
+    seriesCompleteness: new Map(),
+    onMissingItemClick: () => {},
+    showSourceBadge: true,
+    onAnalyzeSeries: () => {},
+    sortBy: 'title',
+    sortOrder: 'asc',
+    onSortChange: () => {},
+    slimDown: false,
+    onDismissUpgrade: () => {}
+  }
+
+  const wrap = (view: ReactNode) => (
+    <ToastProvider>
+      <LibraryProvider>
+        <SourceProvider>
+          <ScrollMemoryProvider>
+            {view}
+          </ScrollMemoryProvider>
+        </SourceProvider>
+      </LibraryProvider>
+    </ToastProvider>
+  )
+
+  it('should render the TV Shows view header with one Total Debt sort column', async () => {
+    await act(async () => {
+      render(wrap(<TVShowsView {...defaultProps} totalShowCount={0} />))
+    })
+
+    expect(screen.getByText(/TV Shows/)).toBeTruthy()
+    expect(screen.getByText('Total Debt')).toBeTruthy()
+    expect(screen.getByText(/No TV shows found/)).toBeTruthy()
+  })
+
+  it('should render show cards when data is present', async () => {
+    const shows = [
+      { series_title: 'Test Show', series_identity_key: 'tmdb:999', library_id: 'lib-1', season_count: 1, episode_count: 10, source_id: 's1', source_type: 'local' }
+    ]
+
+    await act(async () => {
+      render(wrap(<TVShowsView {...defaultProps} shows={shows as TVShowSummary[]} totalShowCount={1} />))
+    })
+
+    expect(screen.getByText('Test Show')).toBeTruthy()
+    expect(screen.getByText(/1 Season • 10 Episodes/)).toBeTruthy()
+  })
+
+  it('looks up completeness by stable show identity', async () => {
+    const show = {
+      series_title: 'Unanalyzed Show',
+      series_identity_key: 'tmdb:55',
+      library_id: 'tv',
+      season_count: 1,
+      episode_count: 5,
+      source_id: 's1',
+      source_type: 'local'
+    } as TVShowSummary
+
+    const seriesCompleteness = new Map([
+      [getTVShowIdentityKey(show), { series_title: show.series_title, series_identity_key: show.series_identity_key ?? undefined, source_id: 's1', library_id: 'tv', efficiency_score: null, completeness_percentage: 50, owned_episodes: 5, total_episodes: 10, total_seasons: 1, owned_seasons: 1, missing_seasons: '[]', missing_episodes: '[]' }]
+    ])
+
+    await act(async () => {
+      render(wrap(
+        <TVShowsView
+          {...defaultProps}
+          shows={[show]}
+          totalShowCount={1}
+          seriesCompleteness={seriesCompleteness}
+          isAnalyzing={true}
+        />
+      ))
+    })
+
+    expect(screen.getByText('Unanalyzed Show')).toBeTruthy()
+    expect(screen.getByText('Analyzing')).toBeTruthy()
+  })
+
+  it('selects the exact identity when two shows share a title', async () => {
+    const first = { series_title: 'Shared Title', series_identity_key: 'tmdb:101', source_id: 's1', library_id: 'tv', source_type: 'local', season_count: 1, episode_count: 1 } as TVShowSummary
+    const second = { series_title: 'Shared Title', series_identity_key: 'tmdb:202', source_id: 's1', library_id: 'tv', source_type: 'local', season_count: 1, episode_count: 1 } as TVShowSummary
+    const onSelectShow = vi.fn()
+
+    await act(async () => {
+      render(wrap(<TVShowsView {...defaultProps} shows={[first, second]} totalShowCount={2} onSelectShow={onSelectShow} />))
+    })
+
+    const titles = screen.getAllByText('Shared Title')
+    fireEvent.click(titles[1])
+    expect(onSelectShow).toHaveBeenCalledWith(second)
+  })
+
+  it('displays the persisted show optimization summary without legacy duplicate actions', async () => {
+    const show = {
+      series_title: 'Shared Title',
+      series_identity_key: 'tmdb:202',
+      source_id: 's1',
+      library_id: 'tv',
+      source_type: 'local',
+      season_count: 1,
+      episode_count: 1,
+      total_size: 1_000_000_000,
+    } as TVShowSummary
+
+    let container!: HTMLElement
+    await act(async () => {
+      const rendered = render(wrap(<TVShowsView {...defaultProps} shows={[show]} totalShowCount={1} />))
+      container = rendered.container
+    })
+
+    const menuButton = container.querySelector('button.w-7.h-7')
+    expect(menuButton).toBeTruthy()
+    fireEvent.click(menuButton!)
+    expect(screen.getByText('0/1 analyzed')).toBeTruthy()
+    expect(screen.getByText('1 not analyzed')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Dry-run optimization' })).toBeNull()
+  })
+})

@@ -1,9 +1,8 @@
-export type IdentityLike = {
-  series_identity_key?: string
-  series_title?: string
-  source_id?: string
-  library_id?: string
-}
+import type { SeriesCompletenessData, TVShowSummary } from '@/components/library/types'
+
+type TVShowIdentityLike = Pick<TVShowSummary, 'series_identity_key' | 'source_id' | 'library_id'>
+type SeriesIdentityLike = Pick<SeriesCompletenessData, 'series_identity_key' | 'source_id' | 'library_id'>
+type IdentityLike = TVShowIdentityLike | SeriesIdentityLike
 
 export interface TVShowIdentity {
   seriesIdentityKey: string
@@ -14,10 +13,12 @@ export interface TVShowIdentity {
 
 export function getTVShowIdentity(show: IdentityLike): TVShowIdentity {
   const seriesIdentityKey = show.series_identity_key?.trim()
-  const sourceId = show.source_id?.trim() || 'default'
-  const libraryId = show.library_id?.trim() || 'default'
+  const sourceId = show.source_id?.trim()
+  const libraryId = show.library_id?.trim()
 
-  if (!seriesIdentityKey) throw new Error('TV series identity key is missing')
+  if (!seriesIdentityKey) throw new Error('TV series identity is missing')
+  if (!sourceId) throw new Error('TV series source is missing')
+  if (!libraryId) throw new Error('TV series library is missing')
 
   return {
     seriesIdentityKey,

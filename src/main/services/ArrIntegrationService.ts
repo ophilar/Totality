@@ -1,0 +1,103 @@
+import { setTimeout as delay } from 'node:timers/promises'
+
+export type ArrKind = 'sonarr' | 'radarr'
+
+export interface ArrConfig { baseUrl: string; apiKey: string; timeoutMs?: number }
+export interface ArrLanguageProfile { id: number; name: string; cutoff?: unknown; languages?: unknown[]; items?: unknown[] }
+export interface ArrManagedState { id: number; path?: string; profileId?: number; qualityProfileId?: number; monitored?: boolean; hasFile?: boolean }
+
+export class ArrIntegrationService {
+  private readonly baseUrl: string
+  private readonly timeoutMs: number
+
+  constructor(private readonly config: ArrConfig) {
+    this.baseUrl = config.baseUrl.replace(/\/$/, '')
+    this.timeoutMs = config.timeoutMs || 10000
+  }
+
+  private async request<T>(path: string, init?: RequestInit, signal?: AbortSignal): Promise<T> {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs)
+    try {
+      const requestSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal
+      const response = await fetch(`${this.baseUrl}${path}`, {
+        ...init,
+        signal: requestSignal,
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Api-Key': this.config.apiKey, ...(init?.headers || {}) }
+      })
+      if (!response.ok) throw new Error(`*arr request failed (${response.status})`)
+      return await response.json() as T
+    } finally { clearTimeout(timeout) }
+  }
+
+  async testConnection(signal?: AbortSignal): Promise<{ success: boolean; version?: string; error?: string }> {
+    try {
+      const status = await this.request<{ version?: string }>('/api/v3/system/status', undefined, signal)
+      return { success: true, version: status.version }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Connection failed' }
+    }
+  }
+
+  async searchMovie(movieId: number): Promise<Record<string, unknown>> {
+    return this.request('/api/v3/command', { method: 'POST', body: JSON.stringify({ name: 'MovieSearch', movieIds: [movieId] }) })
+  }
+
+  async lookupMovieByTmdbId(tmdbId: number): Promise<Record<string, unknown>[]> {
+    return this.request(`/api/v3/movie/lookup?term=${encodeURIComponent(`tmdb:${tmdbId}`)}`)
+  }
+
+  async lookupSeriesByTvdbId(tvdbId: number): Promise<Record<string, unknown>[]> {
+    return this.request(`/api/v3/series/lookup?term=${encodeURIComponent(`tvdb:${tvdbId}`)}`)
+  }
+
+  async findManagedMovieByTmdbId(tmdbId: number): Promise<Record<string, unknown> | null> {
+    const movies = await this.request<Record<string, unknown>[]>(`/api/v3/movie?tmdbId=${encodeURIComponent(tmdbId)}`)
+    return movies[0] || null
+  }
+
+  async findManagedSeriesByTvdbId(tvdbId: number): Promise<Record<string, unknown> | null> {
+    const series = await this.request<Record<string, unknown>[]>(`/api/v3/series?tvdbId=${encodeURIComponent(tvdbId)}`)
+    return series[0] || null
+  }
+
+  async searchSeries(seriesId: number, seasonNumber?: number, episodeIds?: number[]): Promise<Record<string, unknown>> {
+    const body = seasonNumber !== undefined
+      ? { name: 'SeasonSearch', seriesId, seasonNumber }
+      : episodeIds?.length ? { name: 'EpisodeSearch', episodeIds } : { name: 'SeriesSearch', seriesId }
+    return this.request('/api/v3/command', { method: 'POST', body: JSON.stringify(body) })
+  }
+
+  async getLanguageProfiles(): Promise<ArrLanguageProfile[]> {
+    return this.request<ArrLanguageProfile[]>('/api/v3/languageprofile')
+  }
+
+  async getManagedSeriesState(seriesId: number): Promise<ArrManagedState> {
+    return this.request<ArrManagedState>(`/api/v3/series/${encodeURIComponent(seriesId)}`)
+  }
+
+  async canPursueUpgrade(seriesId: number): Promise<{ eligible: boolean; reason?: string; state: ArrManagedState }> {
+    const state = await this.getManagedSeriesState(seriesId)
+    if (!state.monitored) return { eligible: false, reason: 'Managed series is not monitored', state }
+    if (!state.profileId && !state.qualityProfileId) return { eligible: false, reason: 'Managed series has no configured quality/language profile', state }
+    return { eligible: true, state }
+  }
+
+  async getCommand(commandId: number, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    return this.request(`/api/v3/command/${commandId}`, undefined, signal)
+  }
+
+  async waitForCommand(commandId: number, options: { pollIntervalMs?: number; timeoutMs?: number } = {}, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    const pollIntervalMs = options.pollIntervalMs ?? 2000
+    const timeoutMs = options.timeoutMs ?? 120000
+    const deadline = Date.now() + timeoutMs
+    const terminal = new Set(['completed', 'failed', 'aborted'])
+    while (Date.now() <= deadline) {
+      signal?.throwIfAborted()
+      const command = await this.getCommand(commandId, signal)
+      if (terminal.has(String(command.status).toLowerCase())) return command
+      await delay(pollIntervalMs, undefined, { signal })
+    }
+    throw new Error('*arr command polling timed out')
+  }
+}

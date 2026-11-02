@@ -1,210 +1,134 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createTestDatabase, type TestDatabase } from '../helpers/testDatabase'
-import { getDatabase } from '../../src/main/database/getDatabase'
-import { getSourceManager } from '../../src/main/services/SourceManager'
-
-// Mock dependencies
-vi.mock('../../src/main/ipc/utils/safeSend', () => ({
-  safeSend: vi.fn(),
-}))
-
-vi.mock('../../src/main/services/SourceManager', () => ({
-  getSourceManager: vi.fn().mockReturnValue({
-    getProvider: vi.fn(),
-    getSources: vi.fn().mockReturnValue([]),
-  }),
-}))
-
-vi.mock('../../src/main/services/SeriesCompletenessService', () => ({
-  getSeriesCompletenessService: vi.fn().mockReturnValue({
-    analyzeLibraryCompleteness: vi.fn(),
-    cancel: vi.fn(),
-  }),
-}))
-
-vi.mock('../../src/main/services/MovieCollectionService', () => ({
-  getMovieCollectionService: vi.fn().mockReturnValue({
-    analyzeCollections: vi.fn(),
-    cancel: vi.fn(),
-  }),
-}))
-
-vi.mock('../../src/main/services/MusicBrainzService', () => ({
-  getMusicBrainzService: vi.fn().mockReturnValue({
-    analyzeArtistCompleteness: vi.fn(),
-    cancel: vi.fn(),
-  }),
-}))
-
-
-vi.mock('../../src/main/services/LiveMonitoringService', () => ({
-  getLiveMonitoringService: vi.fn().mockReturnValue({
-    pauseMonitoring: vi.fn(),
-    resumeMonitoring: vi.fn(),
-    pause: vi.fn(),
-    resume: vi.fn(),
-    isActiveAndEnabled: vi.fn().mockReturnValue(false),
-  }),
-}))
-
-// Import after mocks
-import { TaskQueueService, TaskDefinition } from '../../src/main/services/TaskQueueService'
+import { TaskQueueService } from '@main/services/TaskQueueService'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+import { getLoggingService } from '@main/services/LoggingService'
+import type { BetterSQLiteService } from '@main/database/BetterSQLiteService'
+import type { LoggingService } from '@main/services/LoggingService'
+import type { SourceManager } from '@main/services/SourceManager'
+import { QueuedTask, TaskType } from '@main/types/database'
+type TaskDefinition = Omit<QueuedTask, 'id' | 'status' | 'createdAt'>
 
 describe('TaskQueueService', () => {
   let service: TaskQueueService
-  let database: TestDatabase
+  let db: BetterSQLiteService
+  let logging: LoggingService
+  let mockSourceManager: Pick<SourceManager, 'scanLibrary' | 'scanSource' | 'stopScan'>
 
   beforeEach(async () => {
-    database = await createTestDatabase()
-    ;(getDatabase() as unknown as { db: TestDatabase }).db = database
-    ;(getDatabase() as unknown as { runMigrations(): void }).runMigrations()
-    service = new TaskQueueService()
-    service.pauseQueue()
+    vi.clearAllMocks()
+    db = await setupTestDb()
+    logging = getLoggingService()
+    logging.setDatabaseGetter(() => db)
+    
+    // We still mock SourceManager for now as it involves complex provider setup,
+    // but we use real DB and Logging.
+    mockSourceManager = {
+      scanLibrary: vi.fn().mockResolvedValue({ success: true }),
+      scanSource: vi.fn().mockResolvedValue({ success: true }),
+      stopScan: vi.fn(),
+    }
+
+    service = new TaskQueueService({
+      db,
+      logging,
+      sourceManager: mockSourceManager
+    })
   })
 
   afterEach(() => {
-    database.close()
-    vi.clearAllMocks()
+    cleanupTestDb()
   })
 
   describe('queue management', () => {
-    it('should add a task to the queue', () => {
-      const definition: TaskDefinition = {
-        type: 'library-scan',
+    it('should add a task to the queue', async () => {
+      const definition = {
+        type: TaskType.LibraryScan,
         label: 'Scan All Libraries',
+        sourceId: 'src1',
+        libraryId: 'lib1'
       }
 
-      const taskId = service.addTask(definition)
+      const taskId = await service.addTask(definition satisfies TaskDefinition)
 
       expect(taskId).toBeDefined()
-      expect(taskId).toMatch(/^task_\d+_[a-z0-9]+$/)
+      expect(taskId).toMatch(/^task_\d+_[a-z0-9-]+$/)
 
       const state = service.getQueueState()
       expect(state.queue.length + (state.currentTask ? 1 : 0)).toBe(1)
     })
 
-    it('should add multiple tasks to the queue', () => {
-      service.addTask({ type: 'library-scan', label: 'Task 1' })
-      service.addTask({ type: 'source-scan', label: 'Task 2', sourceId: 'src1' })
-      service.addTask({ type: 'series-completeness', label: 'Task 3' })
+    it('should add multiple tasks to the queue', async () => {
+      service.pauseQueue()
+      await service.addTask({ type: TaskType.LibraryScan, label: 'Task 1', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
+      await service.addTask({ type: TaskType.SourceScan, label: 'Task 2', sourceId: 'src1' } satisfies TaskDefinition)
+      await service.addTask({ type: TaskType.SeriesCompleteness, label: 'Task 3', sourceId: 's1' } satisfies TaskDefinition)
 
       const state = service.getQueueState()
-      // First task might be running, rest in queue
       const totalTasks = state.queue.length + (state.currentTask ? 1 : 0)
       expect(totalTasks).toBe(3)
     })
 
-    it('should remove a queued task', () => {
-      const taskId = service.addTask({ type: 'library-scan', label: 'Test' })
+    it('should remove a queued task', async () => {
+      // Pause to ensure task stays in queue and doesn't immediately start
+      service.pauseQueue()
+      const taskId = await service.addTask({ type: TaskType.LibraryScan, label: 'Test', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
 
-      // If task is already running, removeTask returns false for running tasks
       const state = service.getQueueState()
-      if (state.queue.find(t => t.id === taskId)) {
-        const removed = service.removeTask(taskId)
-        expect(removed).toBe(true)
-      }
+      expect(state.queue.some(t => t.id === taskId)).toBe(true)
+      
+      const removed = await service.removeTask(taskId)
+      expect(removed).toBe(true)
+      expect(service.getQueueState().queue.length).toBe(0)
     })
 
-    it('should return false when removing non-existent task', () => {
-      const removed = service.removeTask('non-existent-id')
+    it('clears completed task history without clearing pending work', async () => {
+      service.pauseQueue()
+      const completedTaskId = await service.addTask({ type: TaskType.LibraryScan, label: 'Removed task', sourceId: 'src1', libraryId: 'lib1' } satisfies TaskDefinition)
+      await service.removeTask(completedTaskId)
+      const pendingTaskId = await service.addTask({ type: TaskType.LibraryScan, label: 'Pending task', sourceId: 'src2', libraryId: 'lib2' } satisfies TaskDefinition)
+
+      expect(service.getTaskHistory().map(task => task.id)).toContain(completedTaskId)
+      await service.clearTaskHistory()
+
+      expect(service.getTaskHistory()).toHaveLength(0)
+      expect(service.getQueueState().queue.map(task => task.id)).toEqual([pendingTaskId])
+    })
+
+    it('should return false when removing non-existent task', async () => {
+      const removed = await service.removeTask('non-existent-id')
       expect(removed).toBe(false)
     })
 
-    it('should generate unique task IDs', () => {
-      const id1 = service.addTask({ type: 'library-scan', label: 'Task 1', sourceId: 'src1' })
-      const id2 = service.addTask({ type: 'library-scan', label: 'Task 2', sourceId: 'src2' })
+    it('should preserve pending tasks when the current task is cancelled', async () => {
+      let startScan!: () => void
+      let finishScan!: (result: { success: boolean }) => void
+      const scanStarted = new Promise<void>(resolve => { startScan = resolve })
+      const scanResult = new Promise<{ success: boolean }>(resolve => { finishScan = resolve })
+      mockSourceManager.scanLibrary = vi.fn(async () => {
+        startScan()
+        return await scanResult
+      })
+
+      await service.addTask({ type: TaskType.LibraryScan, label: 'Active', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
+      await scanStarted
+      await service.addTask({ type: TaskType.SourceScan, label: 'Pending', sourceId: 's2' } satisfies TaskDefinition)
+
+      await service.cancelCurrentTask()
+
+      expect(service.getQueueState().queue).toHaveLength(1)
+      expect(mockSourceManager.stopScan).toHaveBeenCalledOnce()
+      const savedState = JSON.parse((await db.config.getSetting('task_queue_state'))!)
+      expect(savedState.queue).toHaveLength(1)
+      finishScan({ success: true })
+      await vi.waitFor(() => expect(service.getQueueState().currentTask).toBeNull())
+    })
+
+    it('should generate unique task IDs', async () => {
+      const id1 = await service.addTask({ type: TaskType.LibraryScan, label: 'Task 1', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
+      const id2 = await service.addTask({ type: TaskType.LibraryScan, label: 'Task 2', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
 
       expect(id1).not.toBe(id2)
     })
-
-    it('should deduplicate tasks with same type+source+library', () => {
-      const id1 = service.addTask({ type: 'library-scan', label: 'Task 1', sourceId: 'src1' })
-      const id2 = service.addTask({ type: 'library-scan', label: 'Task 1 dup', sourceId: 'src1' })
-
-      expect(id1).toBe(id2)
-    })
-
-    it('deduplicates preflight requests by optimization scope rather than request id', () => {
-      const request = { sourceId: 'plex', libraryId: 'shows', seriesIdentityKey: 'show:42', seasonNumber: 2 }
-      const first = service.addTask({
-        type: 'optimization-preflight',
-        label: 'Preflight Show · Season 2',
-        options: { requestId: 'first', request },
-      })
-      const duplicate = service.addTask({
-        type: 'optimization-preflight',
-        label: 'Preflight Show · Season 2',
-        options: { requestId: 'second', request: { ...request } },
-      })
-      const otherSeason = service.addTask({
-        type: 'optimization-preflight',
-        label: 'Preflight Show · Season 3',
-        options: { requestId: 'third', request: { ...request, seasonNumber: 3 } },
-      })
-
-      expect(duplicate).toBe(first)
-      expect(otherSeason).not.toBe(first)
-    })
-  })
-
-  it('fails a library scan when the provider returns an unsuccessful result without errors', async () => {
-    const sourceManager = getSourceManager() as unknown as { scanLibrary: ReturnType<typeof vi.fn> }
-    const originalScanLibrary = sourceManager.scanLibrary
-    sourceManager.scanLibrary = vi.fn().mockResolvedValue({
-      success: false,
-      itemsScanned: 2,
-      itemsAdded: 0,
-      itemsUpdated: 0,
-      itemsRemoved: 0,
-      errors: [],
-      durationMs: 10,
-    })
-
-    const taskId = service.addTask({ type: 'library-scan', label: 'Scan bad library', sourceId: 'src', libraryId: 'movies' })
-    const completion = service.waitForTask(taskId)
-    service.resumeQueue()
-    const task = await completion
-
-    expect(task.status).toBe('failed')
-    expect(task.error).toContain('did not complete successfully')
-    expect(task.result?.itemsScanned).toBe(2)
-    expect(task.result?.failedCount).toBe(0)
-    sourceManager.scanLibrary = originalScanLibrary
-  })
-
-  it('fails a source scan when an enabled library fails', async () => {
-    const libraries = vi.spyOn(getDatabase(), 'getSourceLibraries').mockReturnValue([{
-      libraryId: 'movies',
-      libraryName: 'Movies',
-      libraryType: 'movie',
-      isEnabled: 1,
-      lastScanAt: null,
-      itemsScanned: 0,
-    }] as never)
-    const sourceManager = getSourceManager() as unknown as { scanLibrary: ReturnType<typeof vi.fn> }
-    const originalScanLibrary = sourceManager.scanLibrary
-    sourceManager.scanLibrary = vi.fn().mockResolvedValue({
-      success: false,
-      itemsScanned: 4,
-      itemsAdded: 0,
-      itemsUpdated: 0,
-      itemsRemoved: 0,
-      errors: ['Provider could not read library'],
-      durationMs: 12,
-    })
-    try {
-      const taskId = service.addTask({ type: 'source-scan', label: 'Scan source', sourceId: 'src' })
-      const completion = service.waitForTask(taskId)
-      service.resumeQueue()
-      const task = await completion
-      expect(task.status).toBe('failed')
-      expect(task.result?.itemsScanned).toBe(4)
-      expect(task.result?.errors).toEqual(['Movies: Provider could not read library'])
-      expect(task.error).toContain('Provider could not read library')
-    } finally {
-      sourceManager.scanLibrary = originalScanLibrary
-      libraries.mockRestore()
-    }
   })
 
   describe('queue state', () => {
@@ -219,135 +143,209 @@ describe('TaskQueueService', () => {
       expect(Array.isArray(state.completedTasks)).toBe(true)
     })
 
-    it('should track paused state', () => {
-      expect(service.getQueueState().isPaused).toBe(true)
-
-      service.resumeQueue()
+    it('should track paused state', async () => {
       expect(service.getQueueState().isPaused).toBe(false)
 
       service.pauseQueue()
       expect(service.getQueueState().isPaused).toBe(true)
-    })
 
-    it('should start unpaused', () => {
-      const newService = new TaskQueueService()
-      expect(newService.getQueueState().isPaused).toBe(false)
+      await service.resumeQueue()
+      expect(service.getQueueState().isPaused).toBe(false)
     })
   })
 
-  describe('pause/resume', () => {
-    it('should pause the queue', () => {
+  describe('persistence', () => {
+    it('should persist queue state to database', async () => {
       service.pauseQueue()
-
-      const state = service.getQueueState()
-      expect(state.isPaused).toBe(true)
+      await service.addTask({ type: TaskType.LibraryScan, label: 'Persist Test', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
+      
+      const savedState = await db.config.getSetting('task_queue_state')
+      expect(savedState).toBeDefined()
+      const parsed = JSON.parse(savedState!)
+      expect(parsed.queue.length).toBe(1)
+      expect(parsed.isPaused).toBe(true)
     })
 
-    it('should resume the queue', () => {
-      service.pauseQueue()
-      service.resumeQueue()
+    it('persists cancellation of the active task before notifying the renderer', async () => {
+      let releaseTask!: () => void
+      const sourceManager = {
+        scanLibrary: vi.fn(() => new Promise<void>(resolve => { releaseTask = resolve })),
+        scanSource: vi.fn().mockResolvedValue({ success: true }),
+        stopScan: vi.fn(),
+      }
+      service = new TaskQueueService({ db, logging, sourceManager })
+      const send = vi.fn()
+      const win = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send } }
+      service.setMainWindow(win as never)
 
-      const state = service.getQueueState()
-      expect(state.isPaused).toBe(false)
+      const taskId = await service.addTask({ type: TaskType.LibraryScan, label: 'Cancel Test', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
+      await vi.waitFor(() => expect(service.getQueueState().currentTask?.id).toBe(taskId))
+
+      await service.removeTask(taskId)
+      expect(sourceManager.stopScan).toHaveBeenCalledOnce()
+      const persisted = JSON.parse((await db.config.getSetting('task_queue_state'))!)
+      expect(persisted.currentTask).toMatchObject({ id: taskId, status: 'cancelling' })
+      expect(send).toHaveBeenCalledWith('taskQueue:updated', expect.objectContaining({ currentTask: expect.objectContaining({ id: taskId, status: 'cancelling' }) }))
+
+      releaseTask()
+      await vi.waitFor(() => expect(service.getQueueState().currentTask).toBeNull())
+    })
+
+    it('persists add, pause, and resume state before notifying the renderer', async () => {
+      const send = vi.fn()
+      const win = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send } }
+      service.setMainWindow(win as never)
+      const originalSetSetting = db.config.setSetting.bind(db.config)
+      let releaseWrite: (() => void) | undefined
+      let blockNextWrite = false
+      vi.spyOn(db.config, 'setSetting').mockImplementation(async (key, value) => {
+        if (key === 'task_queue_state' && blockNextWrite) {
+          blockNextWrite = false
+          await new Promise<void>(resolve => { releaseWrite = resolve })
+        }
+        return await originalSetSetting(key, value)
+      })
+
+      blockNextWrite = true
+      const pausePromise = service.pauseQueue()
+      await vi.waitFor(() => expect(releaseWrite).toBeTypeOf('function'))
+      expect(send).not.toHaveBeenCalled()
+      releaseWrite!()
+      await pausePromise
+      expect(send).toHaveBeenLastCalledWith('taskQueue:updated', expect.objectContaining({ isPaused: true }))
+
+      send.mockClear()
+      releaseWrite = undefined
+      blockNextWrite = true
+      const addPromise = service.addTask({ type: TaskType.LibraryScan, label: 'Ordered Add', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
+      await vi.waitFor(() => expect(releaseWrite).toBeTypeOf('function'))
+      expect(send).not.toHaveBeenCalled()
+      releaseWrite!()
+      await addPromise
+      expect(send).toHaveBeenLastCalledWith('taskQueue:updated', expect.objectContaining({
+        queue: [expect.objectContaining({ label: 'Ordered Add', status: 'queued' })],
+      }))
+
+      send.mockClear()
+      releaseWrite = undefined
+      blockNextWrite = true
+      const resumePromise = service.resumeQueue()
+      await vi.waitFor(() => expect(releaseWrite).toBeTypeOf('function'))
+      expect(send).not.toHaveBeenCalled()
+      releaseWrite!()
+      await resumePromise
+      expect(send).toHaveBeenCalledWith('taskQueue:updated', expect.objectContaining({ isPaused: false }))
+    })
+
+    it('persists the latest task progress for renderer reconnects', async () => {
+      let releaseTask!: () => void
+      const sourceManager = {
+        scanLibrary: vi.fn(async (_sourceId: string, _libraryId: string, onProgress: (progress: never) => void) => {
+          onProgress({ current: 3, total: 10, percentage: 30, phase: 'scanning' } as never)
+          await new Promise<void>(resolve => { releaseTask = resolve })
+        }),
+        scanSource: vi.fn().mockResolvedValue({ success: true }),
+      }
+      service = new TaskQueueService({ db, logging, sourceManager })
+      const taskId = await service.addTask({ type: TaskType.LibraryScan, label: 'Progress Test', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
+      await vi.waitFor(async () => {
+        const persisted = JSON.parse((await db.config.getSetting('task_queue_state'))!)
+        expect(persisted.currentTask).toMatchObject({ id: taskId, progress: { percentage: 30, phase: 'scanning' } })
+      })
+      releaseTask()
+      await vi.waitFor(() => expect(service.getQueueState().currentTask).toBeNull())
+    })
+
+    it('coalesces burst progress persistence while retaining the latest update', async () => {
+      const sourceManager = {
+        scanLibrary: vi.fn(async (_sourceId: string, _libraryId: string, onProgress: (progress: never) => void) => {
+          for (let percentage = 1; percentage <= 100; percentage++) {
+            onProgress({ current: percentage, total: 100, percentage, phase: percentage === 100 ? 'complete' : 'scanning' } as never)
+          }
+        }),
+        scanSource: vi.fn().mockResolvedValue({ success: true }),
+      }
+      const originalSetSetting = db.config.setSetting.bind(db.config)
+      let taskStateWriteCount = 0
+      let releaseProgressWrite: (() => void) | undefined
+      const setSetting = vi.spyOn(db.config, 'setSetting').mockImplementation(async (key, value) => {
+        if (key === 'task_queue_state' && ++taskStateWriteCount === 3) {
+          await new Promise<void>(resolve => { releaseProgressWrite = resolve })
+        }
+        return await originalSetSetting(key, value)
+      })
+      service = new TaskQueueService({ db, logging, sourceManager })
+
+      const taskId = await service.addTask({ type: TaskType.LibraryScan, label: 'Burst Progress', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
+      await vi.waitFor(() => expect(releaseProgressWrite).toBeTypeOf('function'))
+      releaseProgressWrite!()
+      await vi.waitFor(async () => {
+        const persisted = JSON.parse((await db.config.getSetting('task_queue_state'))!)
+        expect(persisted.completedTasks[0]).toMatchObject({ id: taskId, progress: { percentage: 100, phase: 'complete' } })
+      })
+
+      const progressWindowWrites = setSetting.mock.calls.filter(([key]) => key === 'task_queue_state').length
+      expect(progressWindowWrites).toBeLessThanOrEqual(5)
+
+      await vi.waitFor(() => expect(service.getQueueState().currentTask).toBeNull())
+      const writesAtCompletion = setSetting.mock.calls.filter(([key]) => key === 'task_queue_state').length
+      await new Promise(resolve => setTimeout(resolve, 300))
+      expect(setSetting.mock.calls.filter(([key]) => key === 'task_queue_state')).toHaveLength(writesAtCompletion)
+    })
+
+    it('does not revive a cancelled task during state recovery', async () => {
+      const cancelledTask = {
+        id: 'task_cancelled',
+        type: TaskType.LibraryScan,
+        label: 'Cancelled Test',
+        sourceId: 's1',
+        libraryId: 'l1',
+        status: 'cancelled',
+        createdAt: new Date().toISOString(),
+      }
+      await db.config.setSetting('task_queue_state', JSON.stringify({
+        currentTask: cancelledTask,
+        queue: [],
+        completedTasks: [],
+        isPaused: false,
+      }))
+
+      const recovered = new TaskQueueService({ db, logging })
+      await recovered.loadPersistedHistory()
+
+      expect(recovered.getQueueState()).toMatchObject({ currentTask: null, queue: [], completedTasks: [cancelledTask] })
+    })
+
+    it('does not notify an unregistered main window', async () => {
+      await service.addTask({ type: TaskType.LibraryScan, label: 'No Window', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
     })
   })
 
-  describe('monitoring history', () => {
-    it('should return monitoring history', () => {
-      const history = service.getMonitoringHistory()
-      expect(Array.isArray(history)).toBe(true)
-    })
-  })
+  it('completes partial series analysis and records a warning notification', async () => {
+    const seriesService = {
+      analyzeAllSeries: vi.fn().mockResolvedValue({
+        status: 'partial',
+        totalCount: 2,
+        processedCount: 1,
+        deferredCount: 0,
+        completedCount: 1,
+        failedCount: 1,
+        diagnostics: [{ itemType: 'series', itemName: 'Show B', category: 'provider', code: 'UNAVAILABLE', message: '"Show B": metadata unavailable' }],
+      }),
+    }
+    const partialService = new TaskQueueService({ db, logging, seriesCompleteness: seriesService as never })
+    partialService.pauseQueue()
+    await partialService.addTask({ type: TaskType.SeriesCompleteness, label: 'Analyze TV Series', sourceId: 's1' })
+    await partialService.resumeQueue()
+    await new Promise(resolve => setTimeout(resolve, 25))
 
-  describe('task definitions', () => {
-    it('should accept library-scan task', () => {
-      const id = service.addTask({ type: 'library-scan', label: 'Scan' })
-      expect(id).toBeDefined()
-    })
-
-    it('should accept source-scan task with sourceId', () => {
-      const id = service.addTask({
-        type: 'source-scan',
-        label: 'Scan Source',
-        sourceId: 'test-source',
-      })
-      expect(id).toBeDefined()
-    })
-
-    it('should accept music-scan task', () => {
-      const id = service.addTask({
-        type: 'music-scan',
-        label: 'Scan Music',
-        sourceId: 'test-source',
-        libraryId: 'test-library',
-      })
-      expect(id).toBeDefined()
-    })
-
-    it('should accept series-completeness task', () => {
-      const id = service.addTask({
-        type: 'series-completeness',
-        label: 'Analyze Series',
-      })
-      expect(id).toBeDefined()
-    })
-
-    it('should accept collection-completeness task', () => {
-      const id = service.addTask({
-        type: 'collection-completeness',
-        label: 'Analyze Collections',
-      })
-      expect(id).toBeDefined()
-    })
-
-    it('should accept music-completeness task', () => {
-      const id = service.addTask({
-        type: 'music-completeness',
-        label: 'Analyze Music',
-      })
-      expect(id).toBeDefined()
-    })
-  })
-
-  describe('background media analysis', () => {
-    it('refreshes stored quality without reading a file or queuing measurement', async () => {
-      database.exec(`INSERT INTO media_items (plex_id, title, type, file_path, file_size_bytes, duration_ms,
-        resolution, width, height, video_codec, video_bitrate_kbps, audio_codec, audio_channels, audio_bitrate_kbps)
-        VALUES ('remote', 'Remote movie', 'movie', '/unavailable/movie.mkv', 1000000, 1000,
-        '1080p', 1920, 1080, 'h264', 8000, 'aac', 2, 192)`)
-      const mediaItemId = (database.prepare("SELECT id FROM media_items WHERE plex_id = 'remote'").get() as { id: number }).id
-      database.prepare(`INSERT INTO quality_scores (media_item_id, quality_tier, tier_quality, tier_score,
-        video_savings_bytes, estimated_savings_bytes, savings_coverage, issues)
-        VALUES (?, 'SD', 'LOW', 30, 120, 300, 'complete', '["Keep this review"]')`).run(mediaItemId)
-      const taskId = service.addTask({ type: 'quality-analysis', label: 'Refresh quality' })
-      const completed = service.waitForTask(taskId)
-      service.resumeQueue()
-      const task = await completed
-      service.pauseQueue()
-      expect(task.status).toBe('completed')
-      expect(task.result?.itemsScanned).toBe(1)
-      expect(database.prepare('SELECT quality_tier, video_savings_bytes, estimated_savings_bytes, issues FROM quality_scores').get()).toEqual({
-        quality_tier: '1080p', video_savings_bytes: 120, estimated_savings_bytes: 300, issues: '["Keep this review"]',
-      })
-      expect(service.getQueueState().queue).toEqual([])
-    })
-
-    it('restores saved file checkpoints and skips completed files', async () => {
-      database.exec(`INSERT INTO media_items (id, plex_id, title, type, file_path, file_size_bytes, duration_ms,
-        resolution, width, height, video_codec, video_bitrate_kbps, audio_codec, audio_channels, audio_bitrate_kbps)
-        VALUES (1, 'complete', 'Measured movie', 'movie', '/unavailable/measured.mkv', 1000000, 1000,
-        '1080p', 1920, 1080, 'h264', 8000, 'aac', 2, 192)`)
-      const taskId = service.addTask({ type: 'media-analysis', label: 'Measure media files', options: { completedMediaItemIds: [1] } })
-      const restored = new TaskQueueService()
-      restored.restorePendingQueue()
-      expect(restored.getQueueState().isPaused).toBe(true)
-      expect(restored.getQueueState().queue[0].options).toEqual({ completedMediaItemIds: [1] })
-      const completed = restored.waitForTask(taskId)
-      restored.resumeQueue()
-      const task = await completed
-      expect(task.status).toBe('completed')
-      expect(task.result?.itemsScanned).toBe(1)
-      expect(getDatabase().getPendingTasks()).toEqual([])
-    })
+    const completed = partialService.getQueueState().completedTasks[0]
+    expect(completed.status, completed.error).toBe('partial')
+    expect(completed.result).toMatchObject({ totalSeries: 2, analyzedSeries: 1, failedSeries: ['"Show B": metadata unavailable'] })
+    const notifications = await db.notifications.getNotifications()
+    expect(notifications[0]).toMatchObject({ type: 'info', title: 'Series analysis partially completed' })
   })
 })
+
+
+

@@ -1,0 +1,38 @@
+minimum_pre_commit_version: "3.5.0"
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-merge-conflict
+        stages: [pre-commit]
+      - id: check-yaml
+        stages: [pre-commit]
+      - id: check-json
+        stages: [pre-commit]
+      - id: end-of-file-fixer
+        stages: [pre-commit]
+      - id: trailing-whitespace
+        stages: [pre-commit]
+
+  - repo: local
+    hooks:
+      - id: eslint
+        name: ESLint changed JS/TS files
+        entry: npx --no-install eslint
+        language: system
+        files: \.[cm]?[jt]sx?$
+        stages: [pre-commit]
+      - id: prettier
+        name: Prettier changed source files
+        entry: npx --no-install prettier --check
+        language: system
+        files: ^src/.*\.(ts|tsx|css|md)$
+        stages: [pre-commit]
+      - id: tests
+        name: Typecheck and unit tests
+        entry: npm run test:run
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

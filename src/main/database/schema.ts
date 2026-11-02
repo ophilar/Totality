@@ -1,9 +1,11 @@
+import { APP_CONFIG } from '@main/config'
+
 // Database schema as a TypeScript constant
 // This ensures it's bundled correctly by Vite
 
-import { PROVIDER_TYPES } from '../types/database'
-
-export const PROVIDER_TYPES_SQL = PROVIDER_TYPES.map(provider => `'${provider}'`).join(', ')
+const INITIAL_SETTINGS_SQL = APP_CONFIG.initialSettings
+  .map(([key, value]) => `  ('${key}', '${value}')`)
+  .join(',\n')
 
 export const DATABASE_SCHEMA = `
 -- Totality Database Schema
@@ -13,19 +15,19 @@ export const DATABASE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS media_sources (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   source_id TEXT NOT NULL UNIQUE,
-  source_type TEXT NOT NULL CHECK(source_type IN (${PROVIDER_TYPES_SQL})),
+  source_type TEXT NOT NULL CHECK(source_type IN ('plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey')),
   display_name TEXT NOT NULL,
 
   -- Connection details (JSON for flexibility)
   connection_config TEXT NOT NULL DEFAULT '{}',
 
   -- Status
-  is_enabled INTEGER NOT NULL DEFAULT 1,
+  is_enabled INTEGER NOT NULL,
   last_connected_at TEXT,
   last_scan_at TEXT,
 
   -- Timestamps
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -35,7 +37,7 @@ CREATE TABLE IF NOT EXISTS media_items (
 
   -- Source tracking (for multi-provider support)
   source_id TEXT NOT NULL DEFAULT 'legacy',
-  source_type TEXT NOT NULL DEFAULT 'plex' CHECK(source_type IN (${PROVIDER_TYPES_SQL})),
+  source_type TEXT NOT NULL DEFAULT 'plex' CHECK(source_type IN ('plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local')),
   library_id TEXT, -- Library ID within the source (e.g., Plex library key)
 
   -- Provider item ID (was plex_id, now generic)
@@ -52,20 +54,20 @@ CREATE TABLE IF NOT EXISTS media_items (
 
   -- File information
   file_path TEXT NOT NULL,
-  file_size_bytes INTEGER NOT NULL,
-  duration_ms INTEGER NOT NULL,
+  file_size INTEGER NOT NULL,
+  duration INTEGER NOT NULL,
 
   -- Video quality
   resolution TEXT NOT NULL,
   width INTEGER NOT NULL,
   height INTEGER NOT NULL,
   video_codec TEXT NOT NULL,
-  video_bitrate_kbps INTEGER NOT NULL,
+  video_bitrate INTEGER NOT NULL,
 
   -- Audio quality
   audio_codec TEXT NOT NULL,
   audio_channels INTEGER NOT NULL,
-  audio_bitrate_kbps INTEGER NOT NULL,
+  audio_bitrate INTEGER NOT NULL,
 
   -- Enhanced video quality metadata
   video_frame_rate REAL,
@@ -74,16 +76,18 @@ CREATE TABLE IF NOT EXISTS media_items (
   color_space TEXT,
   video_profile TEXT,
   video_level INTEGER,
-  -- 0 means Dolby Vision was probed and absent; NULL means not probed.
-  dolby_vision_profile INTEGER,
 
   -- Enhanced audio quality metadata
   audio_profile TEXT,
   audio_sample_rate INTEGER,
-  has_object_audio INTEGER DEFAULT 0,
+  has_object_audio INTEGER,
 
   -- All audio tracks (JSON array)
   audio_tracks TEXT,
+
+  -- Deep FFmpeg/FFprobe analysis (JSON) and measurement timestamp
+  deep_analysis TEXT,
+  deep_analysis_at TEXT,
 
   -- All subtitle tracks (JSON array)
   subtitle_tracks TEXT,
@@ -91,32 +95,37 @@ CREATE TABLE IF NOT EXISTS media_items (
   -- Container metadata
   container TEXT,
 
+  -- Version count (for multi-version items)
+  version_count INTEGER NOT NULL DEFAULT 1,
+
   -- File modification tracking (for skip-unchanged optimization)
   file_mtime INTEGER,
-
-  -- Deep FFprobe/FFmpeg analysis (JSON) and measurement timestamp
-  deep_analysis TEXT,
-  deep_analysis_at TEXT,
 
   -- Metadata
   imdb_id TEXT,
   tmdb_id TEXT,
   series_tmdb_id TEXT,
-  original_language TEXT,
+  original_language TEXT, -- From TMDB
+  audio_language TEXT,    -- From file metadata (best track)
   poster_url TEXT,
   episode_thumb_url TEXT,
   season_poster_url TEXT,
   summary TEXT,
 
-  -- Ratings
-  tmdb_rating REAL,
+  -- User selection tracking
+  user_fixed_match INTEGER,
 
-  -- Watch history
-  play_count INTEGER NOT NULL DEFAULT 0,
-  last_watched_at TEXT,
+  -- Quality scores (denormalized for fast access)
+  quality_tier TEXT,
+  tier_quality TEXT,
+  tier_score INTEGER,
+  bitrate_tier_score INTEGER,
+  audio_tier_score INTEGER,
+  efficiency_score INTEGER,
+  storage_debt_bytes INTEGER,
 
   -- Timestamps
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -132,20 +141,20 @@ CREATE TABLE IF NOT EXISTS media_item_versions (
 
   -- File information
   file_path TEXT NOT NULL,
-  file_size_bytes INTEGER NOT NULL,
-  duration_ms INTEGER NOT NULL,
+  file_size INTEGER NOT NULL,
+  duration INTEGER NOT NULL,
 
   -- Video quality
   resolution TEXT NOT NULL,
   width INTEGER NOT NULL,
   height INTEGER NOT NULL,
   video_codec TEXT NOT NULL,
-  video_bitrate_kbps INTEGER NOT NULL,
+  video_bitrate INTEGER NOT NULL,
 
   -- Audio quality (best audio track)
   audio_codec TEXT NOT NULL,
   audio_channels INTEGER NOT NULL,
-  audio_bitrate_kbps INTEGER NOT NULL,
+  audio_bitrate INTEGER NOT NULL,
 
   -- Enhanced video quality metadata
   video_frame_rate REAL,
@@ -158,7 +167,7 @@ CREATE TABLE IF NOT EXISTS media_item_versions (
   -- Enhanced audio quality metadata
   audio_profile TEXT,
   audio_sample_rate INTEGER,
-  has_object_audio INTEGER DEFAULT 0,
+  has_object_audio INTEGER,
 
   -- All tracks (JSON arrays)
   audio_tracks TEXT,
@@ -171,14 +180,22 @@ CREATE TABLE IF NOT EXISTS media_item_versions (
   -- Quality scores (denormalized for fast access)
   quality_tier TEXT,
   tier_quality TEXT,
-  tier_score INTEGER DEFAULT 0,
+  original_language TEXT,
+  audio_language TEXT,
 
   -- Best version flag (only one per media_item should be 1)
-  is_best INTEGER NOT NULL DEFAULT 0,
+  is_best INTEGER NOT NULL,
+
+  -- Efficiency metrics
+  efficiency_score INTEGER,
+  storage_debt_bytes INTEGER,
+  tier_score INTEGER,
+  bitrate_tier_score INTEGER,
+  audio_tier_score INTEGER,
 
   -- Timestamps
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
 
   FOREIGN KEY (media_item_id) REFERENCES media_items(id) ON DELETE CASCADE
 );
@@ -190,16 +207,10 @@ CREATE TABLE IF NOT EXISTS quality_scores (
 
   -- Tier-based scoring
   quality_tier TEXT NOT NULL DEFAULT 'SD',
-  tier_quality TEXT NOT NULL DEFAULT 'UNKNOWN',
+  tier_quality TEXT NOT NULL DEFAULT 'MEDIUM',
   tier_score INTEGER,
   bitrate_tier_score INTEGER,
   audio_tier_score INTEGER,
-  video_savings_bytes INTEGER,
-  savings_coverage TEXT,
-  evidence_status TEXT,
-  estimated_savings_bytes INTEGER,
-  confidence TEXT,
-  savings_basis TEXT,
 
   -- Legacy scores (0-100 scale) - kept for backward compatibility
   overall_score INTEGER,
@@ -207,19 +218,23 @@ CREATE TABLE IF NOT EXISTS quality_scores (
   bitrate_score INTEGER,
   audio_score INTEGER,
 
+  -- Efficiency metrics
+  efficiency_score INTEGER,
+  storage_debt_bytes INTEGER,
+  estimated_savings_bytes INTEGER,
+  evidence_status TEXT CHECK(evidence_status IN ('measured', 'estimated', 'insufficient')),
+  confidence TEXT CHECK(confidence IN ('high', 'medium', 'low', 'none')),
+  savings_basis TEXT CHECK(savings_basis IN ('audio_stream_removal', 'audio_transcode_model', 'video_sample_encode', 'insufficient_data', 'video_bitrate_estimate', 'audio_bitrate_estimate', 'mixed_estimates', 'mixed_measured_and_estimated')),
+
   -- Quality flags
-  is_low_quality INTEGER NOT NULL DEFAULT 0,
-  needs_upgrade INTEGER NOT NULL DEFAULT 0,
+  is_low_quality INTEGER NOT NULL,
+  needs_upgrade INTEGER NOT NULL,
 
   -- Analysis details (JSON)
   issues TEXT NOT NULL DEFAULT '[]',
 
-  -- Upgrade tracking
-  previous_quality_tier TEXT,
-  upgraded_at TEXT,
-
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
 
   FOREIGN KEY (media_item_id) REFERENCES media_items(id) ON DELETE CASCADE
 );
@@ -236,8 +251,8 @@ CREATE TABLE IF NOT EXISTS settings (
 -- TV series completeness tracking
 CREATE TABLE IF NOT EXISTS series_completeness (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  series_identity_key TEXT,
   series_title TEXT NOT NULL,
+  series_identity_key TEXT,
 
   -- Source/library scoping
   source_id TEXT NOT NULL DEFAULT '',
@@ -252,16 +267,25 @@ CREATE TABLE IF NOT EXISTS series_completeness (
   missing_seasons TEXT NOT NULL DEFAULT '[]',
   missing_episodes TEXT NOT NULL DEFAULT '[]',
 
-  completeness_percentage REAL NOT NULL,
+  completeness_percentage REAL,
 
-  -- External metadata
+  -- TMDB metadata
   tmdb_id TEXT,
   tvdb_id TEXT,
   poster_url TEXT,
   backdrop_url TEXT,
   status TEXT,
+  user_fixed_match INTEGER,
 
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  -- Efficiency metrics
+  efficiency_score INTEGER,
+  storage_debt_bytes INTEGER,
+  evidence_status TEXT CHECK(evidence_status IN ('measured', 'estimated', 'insufficient')),
+  confidence TEXT CHECK(confidence IN ('high', 'medium', 'low', 'none')),
+  savings_basis TEXT CHECK(savings_basis IN ('audio_stream_removal', 'audio_transcode_model', 'video_sample_encode', 'insufficient_data')),
+  total_size INTEGER,
+
+  created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -287,7 +311,7 @@ CREATE TABLE IF NOT EXISTS movie_collections (
   poster_url TEXT,
   backdrop_url TEXT,
 
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -297,7 +321,7 @@ CREATE TABLE IF NOT EXISTS media_item_collections (
   media_item_id INTEGER NOT NULL,
   collection_id INTEGER NOT NULL,
 
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
 
   FOREIGN KEY (media_item_id) REFERENCES media_items(id) ON DELETE CASCADE,
   FOREIGN KEY (collection_id) REFERENCES movie_collections(id) ON DELETE CASCADE,
@@ -314,7 +338,7 @@ CREATE TABLE IF NOT EXISTS music_artists (
 
   -- Source tracking
   source_id TEXT NOT NULL,
-  source_type TEXT NOT NULL CHECK(source_type IN (${PROVIDER_TYPES_SQL})),
+  source_type TEXT NOT NULL CHECK(source_type IN ('plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey')),
   library_id TEXT, -- Library ID within the source
 
   -- Provider item ID
@@ -326,6 +350,7 @@ CREATE TABLE IF NOT EXISTS music_artists (
   -- Metadata
   musicbrainz_id TEXT,
   genres TEXT, -- JSON array
+  mood TEXT, -- JSON array
   country TEXT,
   biography TEXT,
 
@@ -333,12 +358,15 @@ CREATE TABLE IF NOT EXISTS music_artists (
   thumb_url TEXT,
   art_url TEXT,
 
+  -- User tracking
+  user_fixed_match INTEGER,
+
   -- Stats (cached)
-  album_count INTEGER DEFAULT 0,
-  track_count INTEGER DEFAULT 0,
+  album_count INTEGER,
+  track_count INTEGER,
 
   -- Timestamps
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -348,7 +376,7 @@ CREATE TABLE IF NOT EXISTS music_albums (
 
   -- Source tracking
   source_id TEXT NOT NULL,
-  source_type TEXT NOT NULL CHECK(source_type IN (${PROVIDER_TYPES_SQL})),
+  source_type TEXT NOT NULL CHECK(source_type IN ('plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey')),
   library_id TEXT, -- Library ID within the source
 
   -- Provider item ID
@@ -366,13 +394,14 @@ CREATE TABLE IF NOT EXISTS music_albums (
   musicbrainz_id TEXT,
   musicbrainz_release_group_id TEXT,
   genres TEXT, -- JSON array
+  mood TEXT, -- JSON array
   studio TEXT, -- Record label
 
   -- Album type
   album_type TEXT, -- 'album', 'ep', 'single', 'compilation', 'live', 'soundtrack'
 
   -- Quality info (aggregate of tracks)
-  track_count INTEGER DEFAULT 0,
+  track_count INTEGER,
   total_duration INTEGER DEFAULT 0, -- Total duration in ms
   total_size INTEGER DEFAULT 0, -- Total file size in bytes
 
@@ -389,11 +418,14 @@ CREATE TABLE IF NOT EXISTS music_albums (
   thumb_url TEXT,
   art_url TEXT,
 
+  -- User tracking
+  user_fixed_match INTEGER,
+
   -- Timestamps
   release_date TEXT,
   added_at TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
 
   FOREIGN KEY (artist_id) REFERENCES music_artists(id) ON DELETE SET NULL
 );
@@ -404,7 +436,7 @@ CREATE TABLE IF NOT EXISTS music_tracks (
 
   -- Source tracking
   source_id TEXT NOT NULL,
-  source_type TEXT NOT NULL CHECK(source_type IN (${PROVIDER_TYPES_SQL})),
+  source_type TEXT NOT NULL CHECK(source_type IN ('plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey')),
   library_id TEXT, -- Library ID within the source
 
   -- Provider item ID
@@ -420,7 +452,7 @@ CREATE TABLE IF NOT EXISTS music_tracks (
 
   -- Track info
   track_number INTEGER,
-  disc_number INTEGER DEFAULT 1,
+  disc_number INTEGER,
   duration INTEGER, -- Duration in ms
 
   -- File information
@@ -437,18 +469,18 @@ CREATE TABLE IF NOT EXISTS music_tracks (
   channels INTEGER DEFAULT 2,
 
   -- Quality flags
-  is_lossless INTEGER DEFAULT 0,
+  is_lossless INTEGER,
   is_hi_res INTEGER DEFAULT 0, -- > 44.1kHz or > 16-bit
 
   -- Metadata
   musicbrainz_id TEXT,
   genres TEXT, -- JSON array
-  mood TEXT, -- JSON array of mood strings
+  mood TEXT, -- JSON array
 
   -- Timestamps
   added_at TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
 
   FOREIGN KEY (album_id) REFERENCES music_albums(id) ON DELETE SET NULL,
   FOREIGN KEY (artist_id) REFERENCES music_artists(id) ON DELETE SET NULL
@@ -462,24 +494,27 @@ CREATE TABLE IF NOT EXISTS music_quality_scores (
   -- Quality tier: 'LOSSY_LOW', 'LOSSY_MID', 'LOSSY_HIGH', 'LOSSLESS', 'HI_RES'
   quality_tier TEXT NOT NULL DEFAULT 'LOSSY_MID',
   tier_quality TEXT NOT NULL DEFAULT 'MEDIUM', -- 'LOW', 'MEDIUM', 'HIGH' within tier
-  tier_score INTEGER NOT NULL DEFAULT 0, -- 0-100 score within tier
+  tier_score INTEGER, -- 0-100 score within tier
 
   -- Component scores
-  codec_score INTEGER NOT NULL DEFAULT 0,
-  bitrate_score INTEGER NOT NULL DEFAULT 0,
+  codec_score INTEGER,
+  bitrate_score INTEGER,
+
+  -- Efficiency metrics
+  efficiency_score INTEGER,
+  storage_debt_bytes INTEGER,
+  evidence_status TEXT CHECK(evidence_status IN ('measured', 'estimated', 'insufficient')),
+  confidence TEXT CHECK(confidence IN ('high', 'medium', 'low', 'none')),
+  savings_basis TEXT CHECK(savings_basis IN ('audio_stream_removal', 'audio_transcode_model', 'video_sample_encode', 'insufficient_data')),
 
   -- Quality flags
-  needs_upgrade INTEGER NOT NULL DEFAULT 0,
+  needs_upgrade INTEGER NOT NULL,
 
   -- Analysis details (JSON)
   issues TEXT NOT NULL DEFAULT '[]',
 
-  -- Upgrade tracking
-  previous_quality_tier TEXT,
-  upgraded_at TEXT,
-
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
 
   FOREIGN KEY (album_id) REFERENCES music_albums(id) ON DELETE CASCADE
 );
@@ -487,25 +522,28 @@ CREATE TABLE IF NOT EXISTS music_quality_scores (
 -- Artist discography completeness (MusicBrainz integration)
 CREATE TABLE IF NOT EXISTS artist_completeness (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  artist_name TEXT NOT NULL UNIQUE,
+  artist_name TEXT NOT NULL,
+  artist_id INTEGER,
+  source_id TEXT,
 
   -- MusicBrainz data
   musicbrainz_id TEXT,
+  library_id TEXT NOT NULL DEFAULT '',
 
   -- Completeness stats
-  total_albums INTEGER NOT NULL DEFAULT 0,
-  owned_albums INTEGER NOT NULL DEFAULT 0,
-  total_singles INTEGER NOT NULL DEFAULT 0,
-  owned_singles INTEGER NOT NULL DEFAULT 0,
-  total_eps INTEGER NOT NULL DEFAULT 0,
-  owned_eps INTEGER NOT NULL DEFAULT 0,
+  total_albums INTEGER NOT NULL,
+  owned_albums INTEGER NOT NULL,
+  total_singles INTEGER NOT NULL,
+  owned_singles INTEGER NOT NULL,
+  total_eps INTEGER NOT NULL,
+  owned_eps INTEGER NOT NULL,
 
   -- Missing items (JSON arrays)
   missing_albums TEXT NOT NULL DEFAULT '[]',
   missing_singles TEXT NOT NULL DEFAULT '[]',
   missing_eps TEXT NOT NULL DEFAULT '[]',
 
-  completeness_percentage REAL NOT NULL DEFAULT 0,
+  completeness_percentage REAL NOT NULL,
 
   -- Metadata from MusicBrainz
   country TEXT,
@@ -515,10 +553,15 @@ CREATE TABLE IF NOT EXISTS artist_completeness (
   -- Artwork
   thumb_url TEXT,
 
+  -- Efficiency metrics
+  efficiency_score INTEGER,
+  storage_debt_bytes INTEGER,
+  total_size INTEGER,
+
   -- Last sync
   last_sync_at TEXT,
 
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -534,19 +577,24 @@ CREATE TABLE IF NOT EXISTS album_completeness (
   musicbrainz_release_group_id TEXT,
 
   -- Track counts
-  total_tracks INTEGER NOT NULL DEFAULT 0,
-  owned_tracks INTEGER NOT NULL DEFAULT 0,
+  total_tracks INTEGER NOT NULL,
+  owned_tracks INTEGER NOT NULL,
 
   -- Missing tracks (JSON array)
   missing_tracks TEXT NOT NULL DEFAULT '[]',
 
-  completeness_percentage REAL NOT NULL DEFAULT 0,
+  completeness_percentage REAL NOT NULL,
+
+  -- Efficiency metrics
+  efficiency_score INTEGER,
+  storage_debt_bytes INTEGER,
+  total_size INTEGER,
 
   -- Last sync
   last_sync_at TEXT,
 
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
 
   FOREIGN KEY (album_id) REFERENCES music_albums(id) ON DELETE CASCADE
 );
@@ -603,7 +651,7 @@ CREATE TABLE IF NOT EXISTS wishlist_items (
   media_item_id INTEGER,      -- Reference to owned media_items.id
 
   -- Timestamps
-  added_at TEXT NOT NULL DEFAULT (datetime('now')),
+  added_at TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -614,14 +662,35 @@ CREATE TABLE IF NOT EXISTS library_scans (
   library_id TEXT NOT NULL,
   library_name TEXT NOT NULL,
   library_type TEXT NOT NULL,
-  last_scan_at TEXT NOT NULL,
-  items_scanned INTEGER DEFAULT 0,
-  is_enabled INTEGER NOT NULL DEFAULT 1,
+  last_scan_at TEXT,
+  items_scanned INTEGER,
+  is_enabled INTEGER NOT NULL,
+  is_protected INTEGER NOT NULL,
 
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
 
   UNIQUE(source_id, library_id)
+);
+
+-- Media item duplicates (flagged by user or detected during rematching)
+CREATE TABLE IF NOT EXISTS media_item_duplicates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id TEXT NOT NULL,
+  external_id TEXT NOT NULL, -- TMDB ID or MusicBrainz ID
+  external_type TEXT NOT NULL CHECK(external_type IN ('tmdb_movie', 'tmdb_series', 'musicbrainz_artist', 'musicbrainz_album')),
+  
+  -- The media item IDs that are duplicates (JSON array)
+  media_item_ids TEXT NOT NULL,
+  
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'resolved', 'ignored')),
+  resolution_strategy TEXT,
+  resolved_at TEXT,
+  
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  
+  UNIQUE(source_id, external_id, external_type)
 );
 
 -- Notifications for live monitoring system
@@ -630,33 +699,14 @@ CREATE TABLE IF NOT EXISTS notifications (
   type TEXT NOT NULL CHECK(type IN ('source_change', 'scan_complete', 'error', 'info')),
   title TEXT NOT NULL,
   message TEXT NOT NULL,
+  reference_id TEXT,
   source_id TEXT,
   source_name TEXT,
-  item_count INTEGER DEFAULT 0,
+  item_count INTEGER,
   metadata TEXT DEFAULT '{}',
-  is_read INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  is_read INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
   read_at TEXT
-);
-
--- ============================================================================
--- PERSON FILMOGRAPHY COMPLETENESS
--- ============================================================================
-
-CREATE TABLE IF NOT EXISTS person_completeness (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  person_type TEXT NOT NULL CHECK(person_type IN ('director', 'actor', 'writer', 'composer', 'cinematographer', 'editor')),
-  person_name TEXT NOT NULL,
-  tmdb_person_id INTEGER NOT NULL,
-  total_movies INTEGER NOT NULL DEFAULT 0,
-  owned_movies INTEGER NOT NULL DEFAULT 0,
-  missing_movies TEXT NOT NULL DEFAULT '[]',
-  owned_movie_ids TEXT NOT NULL DEFAULT '[]',
-  completeness_percentage REAL NOT NULL DEFAULT 0,
-  profile_url TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(person_type, tmdb_person_id)
 );
 
 -- ============================================================================
@@ -669,8 +719,7 @@ CREATE TABLE IF NOT EXISTS exclusions (
     'media_upgrade',
     'collection_movie',
     'series_episode',
-    'artist_album',
-    'person_movie'
+    'artist_album'
   )),
   reference_id INTEGER,
   reference_key TEXT,
@@ -686,19 +735,6 @@ CREATE INDEX IF NOT EXISTS idx_exclusions_type_key ON exclusions(exclusion_type,
 -- TASK QUEUE HISTORY
 -- ============================================================================
 
--- Pending queue snapshot: written on shutdown, read and cleared on next startup
-CREATE TABLE IF NOT EXISTS pending_tasks (
-  position   INTEGER PRIMARY KEY,  -- preserves original queue order
-  task_id    TEXT    NOT NULL,
-  type       TEXT    NOT NULL,
-  label      TEXT    NOT NULL,
-  source_id  TEXT,
-  library_id TEXT,
-  artist_id  INTEGER,
-  created_at TEXT    NOT NULL,
-  payload_json TEXT
-);
-
 CREATE TABLE IF NOT EXISTS task_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id TEXT NOT NULL,
@@ -706,7 +742,7 @@ CREATE TABLE IF NOT EXISTS task_history (
   label TEXT NOT NULL,
   source_id TEXT,
   library_id TEXT,
-  status TEXT NOT NULL CHECK(status IN ('completed', 'partial', 'failed', 'cancelled', 'interrupted')),
+  status TEXT NOT NULL CHECK(status IN ('completed', 'failed', 'cancelled', 'interrupted')),
   error TEXT,
   result TEXT,
   created_at TEXT NOT NULL,
@@ -726,6 +762,32 @@ CREATE TABLE IF NOT EXISTS activity_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_task_history_status ON task_history(status);
+
+CREATE TABLE IF NOT EXISTS media_optimization_jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  media_item_id INTEGER NOT NULL REFERENCES media_items(id) ON DELETE CASCADE,
+  operation_kind TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('planned', 'running', 'verified', 'promoted', 'failed')),
+  source_path TEXT NOT NULL,
+  source_size INTEGER NOT NULL,
+  source_mtime_ms INTEGER NOT NULL,
+  source_sha256 TEXT NOT NULL,
+  decision_snapshot TEXT NOT NULL,
+  stream_signatures TEXT NOT NULL,
+  quarantine_path TEXT,
+  error TEXT,
+  predicted_output_bytes INTEGER,
+  actual_output_bytes INTEGER,
+  bytes_saved INTEGER,
+  source_duration_ms INTEGER,
+  output_duration_ms INTEGER,
+  encoder_profile TEXT,
+  source_analysis TEXT,
+  output_analysis TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_media_optimization_jobs_item ON media_optimization_jobs(media_item_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_task_history_recorded ON task_history(recorded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_task_history_source ON task_history(source_id);
 CREATE INDEX IF NOT EXISTS idx_activity_log_type ON activity_log(entry_type);
@@ -758,6 +820,8 @@ CREATE INDEX IF NOT EXISTS idx_series_completeness_tmdb_id ON series_completenes
 CREATE INDEX IF NOT EXISTS idx_series_completeness_title ON series_completeness(series_title);
 CREATE INDEX IF NOT EXISTS idx_series_completeness_library ON series_completeness(source_id, library_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_unique ON series_completeness(series_identity_key, source_id, library_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_tvdb ON series_completeness(source_id, library_id, tvdb_id) WHERE tvdb_id IS NOT NULL AND tvdb_id != '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_tmdb ON series_completeness(source_id, library_id, tmdb_id) WHERE tmdb_id IS NOT NULL AND tmdb_id != '';
 CREATE INDEX IF NOT EXISTS idx_series_completeness_title_pct ON series_completeness(series_title, completeness_percentage);
 CREATE INDEX IF NOT EXISTS idx_series_completeness_incomplete ON series_completeness(completeness_percentage) WHERE tmdb_id IS NOT NULL AND completeness_percentage < 100;
 CREATE INDEX IF NOT EXISTS idx_movie_collections_tmdb_id ON movie_collections(tmdb_collection_id);
@@ -794,6 +858,7 @@ CREATE INDEX IF NOT EXISTS idx_music_quality_scores_tier ON music_quality_scores
 CREATE INDEX IF NOT EXISTS idx_music_quality_scores_upgrade ON music_quality_scores(needs_upgrade);
 
 CREATE INDEX IF NOT EXISTS idx_artist_completeness_name ON artist_completeness(artist_name);
+CREATE INDEX IF NOT EXISTS idx_artist_completeness_library ON artist_completeness(library_id);
 CREATE INDEX IF NOT EXISTS idx_artist_completeness_musicbrainz ON artist_completeness(musicbrainz_id);
 
 CREATE INDEX IF NOT EXISTS idx_album_completeness_album ON album_completeness(album_id);
@@ -813,70 +878,6 @@ CREATE INDEX IF NOT EXISTS idx_wishlist_items_tmdb ON wishlist_items(tmdb_id);
 CREATE INDEX IF NOT EXISTS idx_wishlist_items_musicbrainz ON wishlist_items(musicbrainz_id);
 CREATE INDEX IF NOT EXISTS idx_wishlist_items_reason ON wishlist_items(reason);
 CREATE INDEX IF NOT EXISTS idx_wishlist_items_media_item ON wishlist_items(media_item_id);
-
--- ============================================================================
--- TMDB API CACHE (persisted across restarts to avoid cold-start re-fetching)
--- ============================================================================
-
-CREATE TABLE IF NOT EXISTS tmdb_cache (
-  cache_key TEXT PRIMARY KEY,
-  data      TEXT    NOT NULL,       -- JSON-serialised TMDB response
-  cached_at INTEGER NOT NULL        -- Unix timestamp (ms) when stored
-);
-
-CREATE INDEX IF NOT EXISTS idx_tmdb_cache_expires ON tmdb_cache(cached_at);
-
--- ============================================================================
--- MEDIA ITEM DUPLICATES
--- ============================================================================
-
-CREATE TABLE IF NOT EXISTS media_item_duplicates (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  source_id TEXT NOT NULL,
-  external_id TEXT NOT NULL,
-  external_type TEXT NOT NULL CHECK(external_type IN ('tmdb_movie', 'tmdb_series', 'musicbrainz_artist', 'musicbrainz_album')),
-  media_item_ids TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'resolved', 'ignored')),
-  resolution_strategy TEXT,
-  resolved_at TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(source_id, external_id, external_type)
-);
-
-CREATE INDEX IF NOT EXISTS idx_media_item_duplicates_status ON media_item_duplicates(status);
-CREATE INDEX IF NOT EXISTS idx_media_item_duplicates_source ON media_item_duplicates(source_id);
-
--- ============================================================================
--- MEDIA OPTIMIZATION JOBS
--- ============================================================================
-
-CREATE TABLE IF NOT EXISTS media_optimization_jobs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  media_item_id INTEGER NOT NULL REFERENCES media_items(id) ON DELETE CASCADE,
-  operation_kind TEXT NOT NULL,
-  status TEXT NOT NULL CHECK(status IN ('planned', 'running', 'verified', 'promoted', 'failed')),
-  source_path TEXT NOT NULL,
-  source_size INTEGER NOT NULL,
-  source_mtime_ms INTEGER NOT NULL,
-  source_sha256 TEXT NOT NULL,
-  decision_snapshot TEXT NOT NULL,
-  stream_signatures TEXT NOT NULL,
-  quarantine_path TEXT,
-  error TEXT,
-  predicted_output_bytes INTEGER,
-  actual_output_bytes INTEGER,
-  bytes_saved INTEGER,
-  source_duration_ms INTEGER,
-  output_duration_ms INTEGER,
-  encoder_profile TEXT,
-  source_analysis TEXT,
-  output_analysis TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_media_optimization_jobs_item ON media_optimization_jobs(media_item_id, updated_at DESC);
 
 -- Create triggers for automatic updated_at timestamps
 CREATE TRIGGER IF NOT EXISTS update_media_items_timestamp
@@ -973,40 +974,33 @@ END;
 
 -- Insert default settings
 INSERT OR IGNORE INTO settings (key, value) VALUES
-  ('plex_token', ''),
-  ('plex_server_url', ''),
-  ('last_scan_time', ''),
-  ('quality_threshold_resolution', '720'),
-  ('quality_threshold_bitrate_sd', '2000'),
-  ('quality_threshold_bitrate_720p', '5000'),
-  ('quality_threshold_bitrate_1080p', '10000'),
-  ('quality_threshold_audio', '192'),
-  ('theme', 'dark'),
-  ('theme_mode', 'dark'),
-  ('tmdb_api_key', ''),
+${INITIAL_SETTINGS_SQL};
 
-  -- Audio bitrate thresholds (kbps) - MEDIUM and HIGH thresholds per tier
-  ('quality_audio_sd_medium', '128'),
-  ('quality_audio_sd_high', '192'),
-  ('quality_audio_720p_medium', '192'),
-  ('quality_audio_720p_high', '320'),
-  ('quality_audio_1080p_medium', '256'),
-  ('quality_audio_1080p_high', '640'),
-  ('quality_audio_4k_medium', '320'),
-  ('quality_audio_4k_high', '1000'),
+CREATE TABLE IF NOT EXISTS media_identities (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'series', 'artist', 'album')),
+  entity_id INTEGER NOT NULL,
+  provider TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  is_locked INTEGER NOT NULL DEFAULT 0,
+  lock_source TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(entity_type, entity_id, provider, external_id)
+);
 
-  -- Music quality thresholds
-  ('quality_music_low_bitrate', '192'),
-  ('quality_music_high_bitrate', '256'),
-  ('quality_music_hires_samplerate', '44100'),
-  ('quality_music_hires_bitdepth', '16'),
+CREATE TABLE IF NOT EXISTS media_aliases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'series', 'artist', 'album')),
+  entity_id INTEGER NOT NULL,
+  alias TEXT NOT NULL,
+  normalized_alias TEXT NOT NULL,
+  provider TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(entity_type, entity_id, normalized_alias)
+);
 
-  -- Window behavior
-  ('minimize_to_tray', 'false'),
-  ('start_minimized_to_tray', 'false'),
-
-  -- File logging
-  ('file_logging_enabled', 'true'),
-  ('file_logging_min_level', 'info'),
-  ('log_retention_days', '7');
+CREATE INDEX IF NOT EXISTS idx_media_identities_external ON media_identities(provider, external_id);
+CREATE INDEX IF NOT EXISTS idx_media_identities_entity ON media_identities(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_media_aliases_entity ON media_aliases(entity_type, entity_id);
 `

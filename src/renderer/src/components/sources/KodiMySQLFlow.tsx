@@ -7,13 +7,20 @@
 
 import { useState } from 'react'
 import { Film, Tv, Music, Folder, Database, Server, AlertCircle, CheckCircle } from 'lucide-react'
-import { useSources } from '../../contexts/SourceContext'
-import { useLibrarySelection } from '../../hooks/useLibrarySelection'
-import type { MediaLibraryResponse } from '../../../../preload/index'
+import { useSources } from '@/contexts/SourceContext'
+import { LibraryType } from '@main/types/database'
+
 
 interface KodiMySQLFlowProps {
   onSuccess: () => void
   onBack: () => void
+}
+
+interface MediaLibrary {
+  id: string
+  name: string
+  type: LibraryType
+  itemCount?: number
 }
 
 type Step = 'connect' | 'libraries'
@@ -50,8 +57,8 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
 
   // Library selection state
   const [sourceId, setSourceId] = useState<string | null>(null)
-  const [libraries, setLibraries] = useState<MediaLibraryResponse[]>([])
-  const { selectedLibraries, setSelectedLibraries, handleToggleLibrary, handleSelectAll, handleDeselectAll } = useLibrarySelection(libraries)
+  const [libraries, setLibraries] = useState<MediaLibrary[]>([])
+  const [selectedLibraries, setSelectedLibraries] = useState<Set<string>>(new Set())
 
   // Test connection
   const handleTestConnection = async () => {
@@ -132,6 +139,27 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
   }
 
   // Toggle library selection
+  const handleToggleLibrary = (libraryId: string) => {
+    setSelectedLibraries(prev => {
+      const next = new Set(prev)
+      if (next.has(libraryId)) {
+        next.delete(libraryId)
+      } else {
+        next.add(libraryId)
+      }
+      return next
+    })
+  }
+
+  // Select/deselect all libraries
+  const handleSelectAll = () => {
+    setSelectedLibraries(new Set(libraries.map(lib => lib.id)))
+  }
+
+  const handleDeselectAll = () => {
+    setSelectedLibraries(new Set())
+  }
+
   // Complete setup with library selection
   const handleComplete = async () => {
     if (!sourceId) return
@@ -148,7 +176,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
         }))
       )
     } catch (err) {
-      console.error('Failed to save library selection:', err)
+      window.electronAPI.log.error('[KodiMySQLFlow]', 'Failed to save library selection:', err)
     }
 
     // Refresh sources list now that setup is complete
@@ -168,7 +196,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
           libraryId: lib.id,
         })
       } catch (err) {
-        console.error('Failed to queue library scan:', err)
+        window.electronAPI.log.error('[KodiMySQLFlow]', 'Failed to queue library scan:', err)
       }
     }
 

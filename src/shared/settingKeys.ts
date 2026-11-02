@@ -8,11 +8,11 @@ export const SETTING_KEYS = {
   completeness_include_singles: 'completeness_include_singles',
   exclude_empty_seasons: 'exclude_empty_seasons',
   collection_theatrical_lag_days: 'collection_theatrical_lag_days',
-  auto_dismiss_rules: 'auto_dismiss_rules',
 
   // API keys & services
   tmdb_api_key: 'tmdb_api_key',
   gemini_api_key: 'gemini_api_key',
+  gemini_model: 'gemini_model',
   ai_enabled: 'ai_enabled',
   musicbrainz_api_token: 'musicbrainz_api_token',
   musicbrainz_name_correction: 'musicbrainz_name_correction',
@@ -25,11 +25,9 @@ export const SETTING_KEYS = {
   dashboard_collection_sort: 'dashboard_collection_sort',
   dashboard_series_sort: 'dashboard_series_sort',
   dashboard_artist_sort: 'dashboard_artist_sort',
-  dashboard_person_sort: 'dashboard_person_sort',
-  optimization_quality_preferences: 'optimization_quality_preferences',
-  task_queue_paused_on_shutdown: 'task_queue_paused_on_shutdown',
 
   // Quality settings
+  quality_video_weight: 'quality_video_weight',
   quality_video_sd_medium: 'quality_video_sd_medium',
   quality_video_sd_high: 'quality_video_sd_high',
   quality_video_720p_medium: 'quality_video_720p_medium',
@@ -38,11 +36,6 @@ export const SETTING_KEYS = {
   quality_video_1080p_high: 'quality_video_1080p_high',
   quality_video_4k_medium: 'quality_video_4k_medium',
   quality_video_4k_high: 'quality_video_4k_high',
-  quality_video_weight: 'quality_video_weight',
-  quality_codec_h264: 'quality_codec_h264',
-  quality_codec_h265: 'quality_codec_h265',
-  quality_codec_av1: 'quality_codec_av1',
-  quality_codec_vp9: 'quality_codec_vp9',
   quality_audio_sd_medium: 'quality_audio_sd_medium',
   quality_audio_sd_high: 'quality_audio_sd_high',
   quality_audio_720p_medium: 'quality_audio_720p_medium',
@@ -55,9 +48,10 @@ export const SETTING_KEYS = {
   quality_music_high_bitrate: 'quality_music_high_bitrate',
   quality_music_hires_samplerate: 'quality_music_hires_samplerate',
   quality_music_hires_bitdepth: 'quality_music_hires_bitdepth',
-  subtitle_preferred_languages: 'subtitle_preferred_languages',
-  optimization_default_target_profile_id: 'optimization_default_target_profile_id',
-  transcoding_default_output_mode: 'transcoding_default_output_mode',
+  quality_codec_h264: 'quality_codec_h264',
+  quality_codec_h265: 'quality_codec_h265',
+  quality_codec_av1: 'quality_codec_av1',
+  quality_codec_vp9: 'quality_codec_vp9',
 
   // FFprobe settings
   ffprobe_enabled: 'ffprobe_enabled',
@@ -84,26 +78,11 @@ export const SETTING_KEYS = {
   nfs_mount_mappings: 'nfs_mount_mappings',
   last_scan_time: 'last_scan_time',
 
-  // Sync settings (Trakt)
-  trakt_username: 'trakt_username',
-
-  // Release alerts
-  release_alerts_enabled: 'release_alerts_enabled',
-  release_alert_days_ahead: 'release_alert_days_ahead',
-
   // Logging settings
   verbose_logging_enabled: 'verbose_logging_enabled',
   file_logging_enabled: 'file_logging_enabled',
   file_logging_min_level: 'file_logging_min_level',
   log_retention_days: 'log_retention_days',
-
-  // Web access
-  web_access_enabled: 'web_access_enabled',
-  web_access_port: 'web_access_port',
-  web_access_pin: 'web_access_pin',
-  web_access_session_timeout: 'web_access_session_timeout',
-  web_access_https: 'web_access_https',
-  web_access_ip_allowlist: 'web_access_ip_allowlist',
 } as const
 
 export type SettingKey = typeof SETTING_KEYS[keyof typeof SETTING_KEYS]

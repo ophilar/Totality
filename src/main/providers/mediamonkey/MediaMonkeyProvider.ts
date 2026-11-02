@@ -1,116 +1,74 @@
 /**
- * MediaMonkeyProvider
- *
- * Implements the MediaProvider interface for MediaMonkey by reading its local SQLite database.
- * Supports both MM4 (MM.DB) and MM5 (MM5.DB).
- *
- * Key differences from KodiLocalProvider:
- * - Custom IUNICODE collation must be registered
- * - Mood data comes from both Songs.Mood column and Lists/ListsSongs junction table
- * - Music-only provider (no video library support)
- * - Artists derived from Songs.AlbumArtist (no separate artist table in MM4)
+ * MediaMonkey 5 Provider
+ * 
+ * Implements the MediaProvider interface for MediaMonkey 5.
+ * Connects directly to the MM5 SQLite database (mm5.db).
  */
 
-import { getErrorMessage } from '../../services/utils/errorUtils'
-import type { Database } from 'sql.js'
-import * as fs from 'fs'
-import * as path from 'node:path'
-import { app } from 'electron'
-import { getDatabase } from '../../database/getDatabase'
-import { getMediaFileAnalyzer } from '../../services/MediaFileAnalyzer'
-import { getMediaMonkeyDiscoveryService } from '../../services/MediaMonkeyDiscoveryService'
-import type {
-  MediaProvider,
+import { DatabaseSync } from 'node:sqlite'
+import fs from 'node:fs'
+import {
+  BaseMediaProvider,
   ProviderCredentials,
   AuthResult,
-  ConnectionTestResult,
   MediaLibrary,
   MediaMetadata,
   ScanResult,
   ScanOptions,
   SourceConfig,
-  ProviderType,
-} from '../base/MediaProvider'
-import type { MusicArtist, MusicAlbum, MusicTrack, AlbumType } from '../../types/database'
-import {
-  QUERY_MM_ARTISTS,
-  QUERY_MM_ALBUMS_BY_ARTIST,
-  QUERY_MM_SONGS_BY_ALBUM,
-  QUERY_MM_SONG_COUNT,
-  QUERY_MM_ALL_MOODS,
-  QUERY_MM_ALBUM_COVERS,
-  QUERY_MM_UPDATE_SONG_MOOD,
-  QUERY_MM_DELETE_SONG_MOODS,
-  QUERY_MM_FIND_MOOD,
-  QUERY_MM_INSERT_MOOD,
-  QUERY_MM_INSERT_SONG_MOOD,
-  QUERY_MM_UPDATE_SONG_GENRE,
-  QUERY_MM_DELETE_SONG_GENRES,
-  QUERY_MM_FIND_GENRE,
-  QUERY_MM_INSERT_GENRE,
-  QUERY_MM_INSERT_SONG_GENRE,
-  type MMDbSong,
-  type MMDbAlbum,
-  type MMDbMoodEntry,
-  type MMDbCover,
-} from './MediaMonkeyDatabaseSchema'
+} from '@main/providers/base/MediaProvider'
+import { LibraryType, ProviderType } from '@main/types/database'
+import type { ConnectionTestResult } from '@main/types/ipc'
+import type { MusicArtist, MusicAlbum, MusicTrack } from '@main/types/database'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import {
   isLosslessCodec,
   isHiRes,
   calculateAlbumStats,
-  guessCodecFromExtension,
-} from '../base/MusicScannerUtils'
+} from '@main/providers/base/MusicScannerUtils'
 
-export class MediaMonkeyProvider implements MediaProvider {
-  readonly providerType: ProviderType = 'mediamonkey'
-  readonly sourceId: string
+export interface MediaMonkeyConfig {
+  databasePath: string
+}
 
-  private db: Database | null = null
+interface MediaMonkeyArtistRow { ID: number; Artist: string; SortArtist?: string }
+interface MediaMonkeyAlbumRow { ID: number; Album: string; IDArtist: number; AlbumArtist?: string; ReleaseYear?: number; SortAlbum?: string }
+interface MediaMonkeySongRow { ID: number; SongTitle: string; IDAlbum: number; IDArtist: number; Artist: string; Album: string; TrackNumber?: number; DiscNumber?: number; SongLength?: number; SongPath?: string; FileLength?: number; Bitrate?: number; SampleRate?: number; Channels?: number; AudioCodec?: string; DateAdded?: string | number; MusicBrainzTrackID?: string; MusicBrainzArtistID?: string; MusicBrainzAlbumID?: string; Mood?: string }
+
+export class MediaMonkeyProvider extends BaseMediaProvider {
+  readonly providerType: ProviderType = 'mediamonkey' as ProviderType
+
   private databasePath: string = ''
-  private mmVersion: 4 | 5 = 4
-
-  getDatabasePath(): string { return this.databasePath }
+  private db: DatabaseSync | null = null
   private musicScanCancelled = false
 
   constructor(config: SourceConfig) {
-    this.sourceId = config.sourceId || `mediamonkey_${Date.now()}`
-    if (config.connectionConfig?.mediamonkeyDatabasePath) {
-      this.databasePath = config.connectionConfig.mediamonkeyDatabasePath
-    }
-    if (config.connectionConfig?.mediamonkeyVersion) {
-      this.mmVersion = config.connectionConfig.mediamonkeyVersion
+    super(config)
+
+    if (config.connectionConfig) {
+      const cc = config.connectionConfig as MediaMonkeyConfig
+      this.databasePath = cc.databasePath || ''
     }
   }
 
+  // ============================================================================
+  // AUTHENTICATION & CONNECTION
+  // ============================================================================
+
   async authenticate(credentials: ProviderCredentials): Promise<AuthResult> {
-    try {
-      const dbPath = credentials.mediamonkeyDatabasePath
-      if (!dbPath) {
-        return { success: false, error: 'Database path is required' }
-      }
-
-      const discovery = getMediaMonkeyDiscoveryService()
-      const validation = discovery.validateDatabasePath(dbPath)
-      if (!validation.valid) {
-        return { success: false, error: validation.error }
-      }
-
-      this.databasePath = dbPath
-      if (credentials.mediamonkeyVersion) {
-        this.mmVersion = credentials.mediamonkeyVersion
-      }
-
-      // Try opening the database to verify it's valid
-      await this.openDatabase()
-      this.closeDatabase()
-
-      return {
-        success: true,
-        serverName: `MediaMonkey ${this.mmVersion}`,
-      }
-    } catch (error) {
-      return { success: false, error: getErrorMessage(error) }
+    const config = credentials as unknown as MediaMonkeyConfig
+    if (!config.databasePath) {
+      return { success: false, error: 'Database path is required' }
     }
+
+    if (!fs.existsSync(config.databasePath)) {
+      return { success: false, error: `Database file not found: ${config.databasePath}` }
+    }
+
+    this.databasePath = config.databasePath
+    return { success: true }
   }
 
   async isAuthenticated(): Promise<boolean> {
@@ -118,732 +76,239 @@ export class MediaMonkeyProvider implements MediaProvider {
   }
 
   async disconnect(): Promise<void> {
-    this.closeDatabase()
+    if (this.db) {
+      // node:sqlite doesn't have a close() yet in some versions, 
+      // but nulling it out allows GC.
+      this.db = null
+    }
   }
 
   async testConnection(): Promise<ConnectionTestResult> {
+    let testDb: DatabaseSync | null = null
     try {
-      await this.openDatabase()
-      const count = this.query<{ count: number }>(QUERY_MM_SONG_COUNT)
-      this.closeDatabase()
+      if (!this.databasePath) {
+        return { success: false, error: 'Database path not configured' }
+      }
 
-      return {
-        success: true,
-        serverName: `MediaMonkey ${this.mmVersion} — ${count[0]?.count || 0} tracks`,
+      if (!fs.existsSync(this.databasePath)) {
+        return { success: false, error: `File not found: ${this.databasePath}` }
       }
-    } catch (error) {
+
+      testDb = new DatabaseSync(this.databasePath, { readOnly: true })
+      testDb.prepare('SELECT 1 FROM Songs LIMIT 1').get()
+      
       return {
-        success: false,
-        error: `Failed to connect: ${getErrorMessage(error)}`,
+        success: true
       }
+    } catch (error: unknown) {
+      return { success: false, error: `Failed to open MediaMonkey database: ${error instanceof Error ? error.message : String(error)}` }
+    } finally {
+      testDb?.close()
     }
   }
+
+  // ============================================================================
+  // LIBRARY OPERATIONS
+  // ============================================================================
 
   async getLibraries(): Promise<MediaLibrary[]> {
-    return [{
-      id: 'music',
-      name: 'Music',
-      type: 'music',
-    }]
+    // MediaMonkey 5 usually has "Collections", but we'll return a standard Music library for now
+    return [
+      {
+        id: 'mm5-music',
+        name: 'MediaMonkey Music',
+        type: LibraryType.Music,
+        itemCount: 0 // Will be populated by scan
+      }
+    ]
   }
 
-  async scanLibrary(libraryId: string, options?: ScanOptions): Promise<ScanResult> {
-    if (libraryId === 'music') {
-      return this.scanMusicLibrary(options?.onProgress as ((progress: { current: number; total: number; phase: string; currentItem?: string; percentage: number }) => void) | undefined)
-    }
-    return {
+  async scanLibrary(libraryId: string, _options?: ScanOptions): Promise<ScanResult> {
+    const startTime = Date.now()
+    const result: ScanResult = {
       success: false,
       itemsScanned: 0,
       itemsAdded: 0,
       itemsUpdated: 0,
       itemsRemoved: 0,
-      errors: [`Unknown library: ${libraryId}`],
-      durationMs: 0,
+      errors: [],
+      durationMs: 0
+    }
+
+    try {
+      if (!this.databasePath) throw new Error('Database path not configured')
+      
+      this.db = new DatabaseSync(this.databasePath, { readOnly: true })
+      const db = getDatabase()
+      const musicRepo = db.music
+
+      getLoggingService().info('[MediaMonkeyProvider]', `Starting scan of MediaMonkey database: ${this.databasePath}`)
+
+      // 1. Get all Artists
+      const artists = this.db.prepare(`
+        SELECT ID, Artist, SortArtist
+        FROM Artists
+        WHERE Artist != ''
+      `).all() as unknown as MediaMonkeyArtistRow[]
+
+      // 2. Get all Albums
+      const albums = this.db.prepare(`
+        SELECT ID, Album, IDArtist, AlbumArtist, ReleaseYear, SortAlbum
+        FROM Albums
+        WHERE Album != ''
+      `).all() as unknown as MediaMonkeyAlbumRow[]
+
+      // 3. Get all Songs
+      const songs = this.db.prepare(`
+        SELECT 
+          ID, SongTitle, IDAlbum, IDArtist, Artist, Album, 
+          TrackNumber, DiscNumber, SongLength, SongPath, FileLength,
+          Bitrate, SampleRate, Channels, AudioCodec, DateAdded,
+          MusicBrainzTrackID, MusicBrainzArtistID, MusicBrainzAlbumID,
+          Mood
+        FROM Songs
+      `).all() as unknown as MediaMonkeySongRow[]
+
+      result.itemsScanned = songs.length
+
+      const artistIdMap = new Map<number, number>() // MM5 Artist ID -> Totality Music Artist ID
+        const albumIdMap = new Map<number, number>()  // MM5 Album ID -> Totality Music Album ID
+        const albumTracksMap = new Map<number, MusicTrack[]>() // MM5 Album ID -> Totality MusicTrack[]
+
+        // Process Artists
+        for (const artist of artists) {
+          const totalityArtist: MusicArtist = {
+            source_id: this.sourceId,
+            source_type: this.providerType,
+            library_id: libraryId,
+            provider_id: `artist_${artist.ID}`,
+            name: artist.Artist,
+            sort_name: artist.SortArtist || undefined,
+          }
+          const id = await musicRepo.upsertArtist(totalityArtist)
+          artistIdMap.set(artist.ID, id)
+        }
+
+        // Process Albums
+        for (const album of albums) {
+          const totalityAlbum: MusicAlbum = {
+            source_id: this.sourceId,
+            source_type: this.providerType,
+            library_id: libraryId,
+            provider_id: `album_${album.ID}`,
+            artist_id: artistIdMap.get(album.IDArtist),
+            artist_name: album.AlbumArtist || 'Unknown Artist',
+            title: album.Album,
+            sort_title: album.SortAlbum || undefined,
+            year: album.ReleaseYear || undefined,
+          }
+          const id = await musicRepo.upsertAlbum(totalityAlbum)
+          albumIdMap.set(album.ID, id)
+        }
+
+        // Process Songs in chunks
+        const CHUNK_SIZE = 500
+        for (let i = 0; i < songs.length; i += CHUNK_SIZE) {
+          if (this.musicScanCancelled) break
+          const chunk = songs.slice(i, i + CHUNK_SIZE)
+          const trackDataList: MusicTrack[] = []
+
+          for (const song of chunk) {
+            const audioCodec = (song.AudioCodec || '').toLowerCase()
+
+            // Parse Mood (MM5 usually uses semicolon or null)
+            const moods = song.Mood ? song.Mood.split(';').map((m: string) => m.trim()).filter(Boolean) : []
+
+            const totalityTrack: MusicTrack = {
+              source_id: this.sourceId,
+              source_type: this.providerType,
+              library_id: libraryId,
+              provider_id: `track_${song.ID}`,
+              album_id: albumIdMap.get(song.IDAlbum),
+              artist_id: artistIdMap.get(song.IDArtist),
+              album_name: song.Album,
+              artist_name: song.Artist,
+              title: song.SongTitle,
+              track_number: song.TrackNumber,
+              disc_number: song.DiscNumber || 1,
+              duration: song.SongLength,
+              file_path: song.SongPath,
+              file_size: song.FileLength,
+              audio_codec: audioCodec,
+              audio_bitrate: song.Bitrate ? song.Bitrate / 1000 : undefined, // MM5 usually in bps
+              sample_rate: song.SampleRate,
+              channels: song.Channels,
+              is_lossless: isLosslessCodec(audioCodec),
+              is_hi_res: isHiRes(song.SampleRate, 0, isLosslessCodec(audioCodec)),
+              musicbrainz_id: song.MusicBrainzTrackID,
+              mood: JSON.stringify(moods),
+              added_at: song.DateAdded ? new Date(typeof song.DateAdded === 'number' ? song.DateAdded * 1000 : song.DateAdded).toISOString() : undefined
+            }
+
+            trackDataList.push(totalityTrack)
+
+            // Add to tracks map for album stat calculation
+            if (song.IDAlbum) {
+              if (!albumTracksMap.has(song.IDAlbum)) albumTracksMap.set(song.IDAlbum, [])
+              albumTracksMap.get(song.IDAlbum)!.push(totalityTrack)
+            }
+          }
+
+          await musicRepo.bulkUpsertTracks(trackDataList)
+          if (i + CHUNK_SIZE < songs.length) await new Promise(r => setTimeout(r, 0))
+        }
+
+        // 4. Update stats for artists and albums
+        // Update album totals using calculateAlbumStats
+        for (const [mm5AlbumId, tracks] of albumTracksMap.entries()) {
+          const stats = calculateAlbumStats(tracks)
+          const totalityAlbumId = albumIdMap.get(mm5AlbumId)
+          if (totalityAlbumId) {
+            // Find the original album data from our local albums array to avoid another DB hit
+            const originalAlbum = albums.find(a => a.ID === mm5AlbumId)
+            if (originalAlbum) {
+              await musicRepo.upsertAlbum({
+                source_id: this.sourceId,
+                source_type: this.providerType,
+                library_id: libraryId,
+                provider_id: `album_${mm5AlbumId}`,
+                artist_id: artistIdMap.get(originalAlbum.IDArtist),
+                artist_name: originalAlbum.AlbumArtist || 'Unknown Artist',
+                title: originalAlbum.Album,
+                sort_title: originalAlbum.SortAlbum || undefined,
+                year: originalAlbum.ReleaseYear || undefined,
+                track_count: tracks.length,
+                total_duration: stats.totalDuration,
+                total_size: stats.totalSize,
+                best_audio_codec: stats.bestCodec,
+                best_audio_bitrate: stats.bestBitrate,
+                best_sample_rate: stats.bestSampleRate,
+                best_bit_depth: stats.bestBitDepth,
+                avg_audio_bitrate: stats.avgBitrate
+              })
+            }
+          }
+        }
+
+        // Bulk update all artist counts for this source
+        await musicRepo.updateAllMusicArtistCounts(this.sourceId)
+
+        result.success = true
+      result.durationMs = Date.now() - startTime
+      return result
+    } catch (error: unknown) {
+      getLoggingService().error('[MediaMonkeyProvider]', 'Scan failed:', error)
+      result.errors.push(getErrorMessage(error))
+      result.durationMs = Date.now() - startTime
+      return result
     }
   }
 
   async getItemMetadata(_itemId: string): Promise<MediaMetadata> {
-    throw new Error('getItemMetadata not supported for MediaMonkey music provider')
+    throw new Error('getItemMetadata not implemented for MediaMonkey (Music only)')
   }
 
-  // Cancel ongoing scan
-  cancelScan(): void {
+  cancelMusicScan(): void {
     this.musicScanCancelled = true
-  }
-
-  // ============================================================================
-  // PRIVATE: Database Operations
-  // ============================================================================
-
-  private async openDatabase(): Promise<void> {
-    if (this.db) return
-
-    const initSqlJs = (await import('sql.js')).default
-    const SQL = await initSqlJs()
-
-    const buffer = fs.readFileSync(this.databasePath)
-    this.db = new SQL.Database(buffer)
-
-    // MediaMonkey columns are defined with COLLATE IUNICODE which sql.js doesn't support.
-    // Replace all IUNICODE references with NOCASE, then export and reimport to force
-    // sql.js to reparse the modified schema (in-memory modification alone isn't enough).
-    this.db.run('PRAGMA writable_schema = ON')
-    this.db.run(
-      "UPDATE sqlite_master SET sql = replace(sql, 'IUNICODE', 'NOCASE') WHERE sql LIKE '%IUNICODE%'"
-    )
-    this.db.run('PRAGMA writable_schema = OFF')
-    const fixedBuffer = this.db.export()
-    this.db.close()
-    this.db = new SQL.Database(fixedBuffer)
-  }
-
-  private closeDatabase(): void {
-    if (this.db) {
-      this.db.close()
-      this.db = null
-    }
-  }
-
-  private query<T>(sql: string, params?: (string | number | null)[]): T[] {
-    if (!this.db) throw new Error('Database not open')
-
-    const stmt = this.db.prepare(sql)
-    if (params) {
-      stmt.bind(params)
-    }
-
-    const results: T[] = []
-    while (stmt.step()) {
-      results.push(stmt.getAsObject() as T)
-    }
-    stmt.free()
-    return results
-  }
-
-  // ============================================================================
-  // PRIVATE: Music Scanning
-  // ============================================================================
-
-  private async scanMusicLibrary(
-    onProgress?: (progress: { current: number; total: number; phase: string; currentItem?: string; percentage: number }) => void
-  ): Promise<ScanResult> {
-    this.musicScanCancelled = false
-    const startTime = Date.now()
-    const result: ScanResult = {
-      success: true,
-      itemsScanned: 0,
-      itemsAdded: 0,
-      itemsUpdated: 0,
-      itemsRemoved: 0,
-      errors: [],
-      durationMs: 0,
-    }
-
-    try {
-      await this.openDatabase()
-      const db = getDatabase()
-
-      // Get total count for progress
-      const countResult = this.query<{ count: number }>(QUERY_MM_SONG_COUNT)
-      const totalTracks = countResult[0]?.count || 0
-
-      onProgress?.({ current: 0, total: totalTracks, phase: 'Loading metadata...', percentage: 0 })
-
-      // Batch-load all mood data from junction table
-      const moodMap = this.loadAllMoods()
-      console.log(`[MediaMonkeyProvider] Loaded ${moodMap.size} songs with junction table moods`)
-
-      // Batch-load album cover art paths (external file covers)
-      const coverMap = this.loadAlbumCovers()
-
-      // Get all artists
-      const artists = this.query<{ Artist: string }>(QUERY_MM_ARTISTS)
-
-      onProgress?.({ current: 0, total: totalTracks, phase: `Scanning ${artists.length} artists...`, percentage: 0 })
-
-      let processedTracks = 0
-
-      db.startBatch()
-
-      for (const artistRow of artists) {
-        if (this.musicScanCancelled) {
-          result.cancelled = true
-          break
-        }
-
-        const artistName = artistRow.Artist
-
-        // Upsert artist
-        const artistData: MusicArtist = {
-          source_id: this.sourceId,
-          source_type: 'mediamonkey',
-          provider_id: `artist:${artistName}`,
-          name: artistName,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }
-        const artistId = await db.upsertMusicArtist(artistData)
-
-        // Get albums for this artist
-        const albums = this.query<MMDbAlbum>(QUERY_MM_ALBUMS_BY_ARTIST, [artistName])
-
-        for (const album of albums) {
-          if (this.musicScanCancelled) break
-
-          // Get tracks for this album
-          const songs = this.query<MMDbSong>(QUERY_MM_SONGS_BY_ALBUM, [album.ID])
-
-          // Resolve album cover from the first song's external cover file
-          let albumThumbUrl: string | undefined
-          if (songs.length > 0) {
-            const firstSong = songs[0]
-            const coverPath = coverMap.get(firstSong.ID)
-            if (coverPath && firstSong.SongPath) {
-              const songDir = path.dirname(firstSong.SongPath)
-              const fullCoverPath = path.join(songDir, coverPath)
-              if (fs.existsSync(fullCoverPath)) {
-                albumThumbUrl = `local-artwork://file?path=${encodeURIComponent(fullCoverPath)}`
-              }
-            }
-          }
-
-          // Upsert album
-          const albumType: AlbumType = 'album'
-          const albumData: MusicAlbum = {
-            source_id: this.sourceId,
-            source_type: 'mediamonkey',
-            provider_id: `album:${album.ID}`,
-            artist_id: artistId,
-            artist_name: artistName,
-            title: album.Album,
-            year: album.Year || undefined,
-            album_type: albumType,
-            thumb_url: albumThumbUrl,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          }
-          const albumId = await db.upsertMusicAlbum(albumData)
-          const trackDataList: MusicTrack[] = []
-
-          for (const song of songs) {
-            if (this.musicScanCancelled) break
-
-            const trackData = this.convertToMusicTrack(song, albumId, artistId, moodMap)
-            await db.upsertMusicTrack(trackData)
-            trackDataList.push(trackData)
-            result.itemsScanned++
-            processedTracks++
-
-            if (processedTracks % 50 === 0) {
-              onProgress?.({
-                current: processedTracks,
-                total: totalTracks,
-                phase: `Scanning: ${artistName} - ${album.Album}`,
-                currentItem: song.SongTitle,
-                percentage: Math.round((processedTracks / totalTracks) * 100),
-              })
-            }
-          }
-
-          // Update album stats
-          if (trackDataList.length > 0) {
-            const stats = calculateAlbumStats(trackDataList)
-            albumData.track_count = stats.trackCount
-            albumData.total_duration = stats.totalDuration
-            albumData.id = albumId
-            await db.upsertMusicAlbum(albumData)
-          }
-        }
-      }
-
-      await db.endBatch()
-
-      this.closeDatabase()
-
-      // Phase 2: Extract album artwork (after DB batch to avoid locking)
-      try {
-        await this.resolveAlbumArtwork(db, onProgress, processedTracks, totalTracks)
-      } catch (artworkError) {
-        console.error('[MediaMonkeyProvider] Artwork resolution failed:', getErrorMessage(artworkError))
-      }
-
-      result.durationMs = Date.now() - startTime
-      console.log(`[MediaMonkeyProvider] Scan complete: ${result.itemsScanned} tracks in ${result.durationMs}ms`)
-    } catch (error) {
-      result.success = false
-      result.errors.push(getErrorMessage(error))
-      this.closeDatabase()
-    }
-
-    result.durationMs = Date.now() - startTime
-    return result
-  }
-
-  /**
-   * Batch-load all mood entries from the Lists/ListsSongs junction table.
-   * Returns a Map<songId, string[]> for efficient lookup during scan.
-   */
-  private loadAllMoods(): Map<number, string[]> {
-    const moodMap = new Map<number, string[]>()
-
-    try {
-      const moods = this.query<MMDbMoodEntry>(QUERY_MM_ALL_MOODS)
-      for (const entry of moods) {
-        const existing = moodMap.get(entry.IDSong) || []
-        existing.push(entry.MoodName)
-        moodMap.set(entry.IDSong, existing)
-      }
-    } catch (e) {
-      // Lists/ListsSongs tables may not exist in all MM versions — fall back to Songs.Mood column
-      console.log('[MediaMonkeyProvider] Could not load mood junction table, falling back to Songs.Mood column:', getErrorMessage(e))
-    }
-
-    return moodMap
-  }
-
-  /**
-   * Batch-load album cover art paths (external file covers only).
-   * Returns a Map<songId, coverFileName> for resolving full paths during scan.
-   */
-  private loadAlbumCovers(): Map<number, string> {
-    const coverMap = new Map<number, string>()
-
-    try {
-      const covers = this.query<MMDbCover>(QUERY_MM_ALBUM_COVERS)
-      for (const entry of covers) {
-        // Only keep first cover per song (CoverOrder=0 in query)
-        if (!coverMap.has(entry.IDSong)) {
-          coverMap.set(entry.IDSong, entry.CoverPath)
-        }
-      }
-    } catch {
-      console.log('[MediaMonkeyProvider] Could not load album covers')
-    }
-
-    return coverMap
-  }
-
-  /**
-   * Convert a MediaMonkey song record to a MusicTrack
-   */
-  private convertToMusicTrack(
-    song: MMDbSong,
-    albumId: number,
-    artistId: number,
-    moodMap: Map<number, string[]>
-  ): MusicTrack {
-    const audioCodec = guessCodecFromExtension(song.SongPath)
-    const lossless = isLosslessCodec(audioCodec)
-    const hiRes = isHiRes(song.SamplingFrequency, song.BPS, lossless)
-
-    // Merge mood from junction table and Songs.Mood column
-    // Junction table: MediaMonkey stores comma-separated moods as single entries — split on commas
-    // Songs.Mood column: semicolon-delimited (both natively and after tag sync writes) — split on semicolons only
-    // Splitting column on commas would destroy mood values containing commas (e.g., "R&B, Soul")
-    // Case-insensitive dedup: prefer column values (which have the synced casing after tag sync)
-    const junctionMoods = (moodMap.get(song.ID) || []).flatMap(m => m.split(',').map(v => v.trim()).filter(Boolean))
-    const columnMood = song.Mood ? song.Mood.split(';').map(m => m.trim()).filter(Boolean) : []
-    const seenMoods = new Map<string, string>()
-    for (const m of columnMood) seenMoods.set(m.toLowerCase(), m)
-    for (const m of junctionMoods) {
-      if (!seenMoods.has(m.toLowerCase())) seenMoods.set(m.toLowerCase(), m)
-    }
-    const allMoods = [...seenMoods.values()]
-
-    return {
-      source_id: this.sourceId,
-      source_type: 'mediamonkey',
-      library_id: 'music',
-      provider_id: String(song.ID),
-      album_id: albumId,
-      artist_id: artistId,
-      album_name: song.Album || undefined,
-      artist_name: song.AlbumArtist || song.Artist || 'Unknown Artist',
-      title: song.SongTitle,
-      track_number: parseInt(String(song.TrackNumber)) || undefined,
-      disc_number: parseInt(String(song.DiscNumber)) || 1,
-      duration: song.SongLength || undefined,
-      file_path: song.SongPath || undefined,
-      file_size: song.FileLength || undefined,
-      audio_codec: audioCodec,
-      audio_bitrate: song.Bitrate || undefined,
-      sample_rate: song.SamplingFrequency || undefined,
-      bit_depth: song.BPS || undefined,
-      channels: song.Stereo || undefined,
-      is_lossless: lossless,
-      is_hi_res: hiRes,
-      genres: song.Genre ? JSON.stringify(song.Genre.split(';').map(g => g.trim()).filter(Boolean)) : undefined,
-      mood: allMoods.length > 0 ? JSON.stringify(allMoods) : undefined,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-  }
-
-  // ============================================================================
-  // PRIVATE: Artwork Resolution
-  // ============================================================================
-
-  /**
-   * Resolve album artwork for all albums from this source.
-   * Priority: external cover file → folder artwork → embedded extraction via FFprobe
-   */
-  private async resolveAlbumArtwork(
-    db: ReturnType<typeof getDatabase>,
-    onProgress?: (progress: { current: number; total: number; phase: string; currentItem?: string; percentage: number }) => void,
-    _processedTracks?: number,
-    _totalTracks?: number,
-  ): Promise<void> {
-    const fileAnalyzer = getMediaFileAnalyzer()
-    const ffmpegAvailable = await fileAnalyzer.isFFmpegAvailable()
-
-    const albums = db.getMusicAlbums({ sourceId: this.sourceId })
-    if (!albums || albums.length === 0) return
-
-    console.log(`[MediaMonkeyProvider] Resolving artwork for ${albums.length} albums (FFmpeg: ${ffmpegAvailable ? 'available' : 'not found — embedded extraction disabled'})...`)
-    let resolved = 0
-
-    for (let i = 0; i < albums.length; i++) {
-      const album = albums[i]
-      if (album.thumb_url) continue // Already has artwork
-
-      onProgress?.({
-        current: i,
-        total: albums.length,
-        phase: `Resolving artwork: ${album.title}`,
-        percentage: Math.round((i / albums.length) * 100),
-      })
-
-      // Get a track from this album to find the file path
-      const tracks = db.getMusicTracks({ albumId: album.id, limit: 1 })
-      if (!tracks || tracks.length === 0 || !tracks[0].file_path) continue
-
-      const trackFilePath = tracks[0].file_path
-      const songDir = path.dirname(trackFilePath)
-      let artworkUrl: string | null = null
-
-      // Priority 1: Folder artwork (cover.jpg, folder.jpg, etc.)
-      if (!artworkUrl) {
-        const folderArt = this.findFolderArtwork(songDir)
-        if (folderArt) {
-          artworkUrl = `local-artwork://file?path=${encodeURIComponent(folderArt)}`
-        }
-      }
-
-      // Priority 2: Extract embedded artwork via FFmpeg (if available)
-      if (!artworkUrl && album.id && ffmpegAvailable) {
-        artworkUrl = await this.extractAlbumArtwork(trackFilePath, album.id, fileAnalyzer)
-      }
-
-      if (artworkUrl) {
-        await db.updateMusicAlbumArtwork(album.id!, artworkUrl)
-        resolved++
-      }
-    }
-
-    console.log(`[MediaMonkeyProvider] Resolved artwork for ${resolved}/${albums.length} albums`)
-  }
-
-  /**
-   * Find folder artwork (cover.jpg, folder.jpg, etc.) in an album directory
-   */
-  private findFolderArtwork(folderPath: string): string | null {
-    const artworkFilenames = [
-      'cover.jpg', 'cover.jpeg', 'cover.png',
-      'folder.jpg', 'folder.jpeg', 'folder.png',
-      'front.jpg', 'front.jpeg', 'front.png',
-      'album.jpg', 'album.jpeg', 'album.png',
-      'albumart.jpg', 'albumart.jpeg', 'albumart.png',
-      'artwork.jpg', 'artwork.jpeg', 'artwork.png',
-    ]
-
-    try {
-      const files = fs.readdirSync(folderPath)
-      const lowerFiles = files.map(f => f.toLowerCase())
-
-      for (const artworkName of artworkFilenames) {
-        const index = lowerFiles.indexOf(artworkName)
-        if (index !== -1) {
-          return path.join(folderPath, files[index])
-        }
-      }
-      return null
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.warn(`[MediaMonkeyProvider] Failed to find artwork in "${folderPath}":`, error)
-      }
-      return null
-    }
-  }
-
-  /**
-   * Extract embedded artwork from an audio file via FFmpeg
-   */
-  private async extractAlbumArtwork(
-    audioFilePath: string,
-    albumId: number,
-    fileAnalyzer: ReturnType<typeof getMediaFileAnalyzer>
-  ): Promise<string | null> {
-    try {
-      const userDataPath = app.getPath('userData')
-      const artworkDir = path.join(userDataPath, 'artwork', 'albums')
-
-      if (!fs.existsSync(artworkDir)) {
-        fs.mkdirSync(artworkDir, { recursive: true })
-      }
-
-      const outputPath = path.join(artworkDir, `${albumId}.jpg`)
-      const artworkUrl = `local-artwork://albums/${albumId}.jpg`
-
-      // Skip if already extracted
-      if (fs.existsSync(outputPath)) {
-        return artworkUrl
-      }
-
-      const success = await fileAnalyzer.extractArtwork(audioFilePath, outputPath)
-      if (success) {
-        return artworkUrl
-      }
-
-      return null
-    } catch (error) {
-      console.warn(`[MediaMonkeyProvider] Failed to extract artwork from "${audioFilePath}":`, error)
-      return null
-    }
-  }
-
-  // ============================================================================
-  // WRITE: Mood Sync to MediaMonkey Database
-  // ============================================================================
-
-  /**
-   * Write moods to the MediaMonkey database for a batch of tracks.
-   * Safety requirements:
-   * - MediaMonkey must NOT be running (concurrent writes corrupt the DB)
-   * - A backup of the database is created before writing
-   *
-   * For mood: Updates Songs.Mood + Lists/ListsSongs (IDListType=2)
-   * For genre: Updates Songs.Genre + Genres/GenresSongs
-   */
-  async writeMoods(
-    trackUpdates: Array<{ songId: number; moods: string[] }>,
-    onProgress?: (current: number, total: number, trackName: string) => void,
-    field: 'mood' | 'genre' = 'mood'
-  ): Promise<{ written: number; failed: number; errors: string[] }> {
-    const result = { written: 0, failed: 0, errors: [] as string[] }
-
-    // Safety check: MediaMonkey must not be running
-    const discovery = getMediaMonkeyDiscoveryService()
-    const isRunning = await discovery.isMediaMonkeyRunning()
-    if (isRunning) {
-      return {
-        ...result,
-        errors: ['MediaMonkey is currently running. Close MediaMonkey before syncing moods to its database.'],
-      }
-    }
-
-    // Validate database path
-    if (!this.databasePath || !fs.existsSync(this.databasePath)) {
-      return { ...result, errors: ['MediaMonkey database file not found'] }
-    }
-
-    // Create backup before writing
-    const backupPath = this.databasePath + '.backup'
-    try {
-      fs.copyFileSync(this.databasePath, backupPath)
-      console.warn(`[MediaMonkeyProvider] Backup created: ${backupPath}`)
-    } catch (backupError) {
-      return { ...result, errors: [`Failed to create backup: ${getErrorMessage(backupError)}`] }
-    }
-
-    try {
-      // Open database for writing via sql.js
-      console.log('[MediaMonkeyProvider] Opening database for write...')
-      const initSqlJs = (await import('sql.js')).default
-      const SQL = await initSqlJs()
-      const buffer = fs.readFileSync(this.databasePath)
-      const writeDb = new SQL.Database(buffer)
-      console.log('[MediaMonkeyProvider] Applying IUNICODE fix...')
-
-      // Fix schema so sql.js can open: replace IUNICODE collation, disable FTS 'mm' tokenizer
-      writeDb.run('PRAGMA writable_schema = ON')
-      // Save original schema SQL for all tables we'll modify
-      const originalSchemas = writeDb.exec(
-        "SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL"
-      )
-      // Replace IUNICODE with NOCASE (built-in)
-      writeDb.run("UPDATE sqlite_master SET sql = replace(sql, 'IUNICODE', 'NOCASE') WHERE sql LIKE '%IUNICODE%'")
-      // Neutralize FTS tables with custom tokenizers AND ALL related objects
-      // (tables, indexes, triggers — anything referencing SongsText or custom tokenizers)
-      writeDb.run("DELETE FROM sqlite_master WHERE name LIKE '%SongsText%'")
-      writeDb.run("DELETE FROM sqlite_master WHERE sql LIKE '%SongsText%'")
-      writeDb.run("DELETE FROM sqlite_master WHERE sql LIKE '%tokenize%mm%'")
-      writeDb.run('PRAGMA writable_schema = OFF')
-      const fixedBuffer = writeDb.export()
-      writeDb.close()
-      const db = new SQL.Database(fixedBuffer)
-      console.log('[MediaMonkeyProvider] Database ready for writing')
-
-      // Prepare statements based on field type
-      const stmtUpdateColumn = db.prepare(field === 'genre' ? QUERY_MM_UPDATE_SONG_GENRE : QUERY_MM_UPDATE_SONG_MOOD)
-      const stmtDeleteLinks = db.prepare(field === 'genre' ? QUERY_MM_DELETE_SONG_GENRES : QUERY_MM_DELETE_SONG_MOODS)
-      const stmtFindTag = db.prepare(field === 'genre' ? QUERY_MM_FIND_GENRE : QUERY_MM_FIND_MOOD)
-      const stmtInsertTag = db.prepare(field === 'genre' ? QUERY_MM_INSERT_GENRE : QUERY_MM_INSERT_MOOD)
-      const stmtInsertLink = db.prepare(field === 'genre' ? QUERY_MM_INSERT_SONG_GENRE : QUERY_MM_INSERT_SONG_MOOD)
-
-      // Cache mood name → Lists.ID to avoid repeated lookups
-      const moodIdCache = new Map<string, number>()
-
-      db.run('BEGIN TRANSACTION')
-
-      try {
-        for (let i = 0; i < trackUpdates.length; i++) {
-          const { songId, moods } = trackUpdates[i]
-
-          onProgress?.(i, trackUpdates.length, `Song ID ${songId}`)
-
-          // 1. Update Songs.Mood column (semicolon-separated, matching MM format)
-          const moodStr = moods.join('; ')
-          stmtUpdateColumn.bind([moodStr, songId])
-          stmtUpdateColumn.step()
-          stmtUpdateColumn.reset()
-
-          // 2. Clear existing mood links for this song
-          stmtDeleteLinks.bind([songId])
-          stmtDeleteLinks.step()
-          stmtDeleteLinks.reset()
-
-          // 3. For each mood, find or create the Lists entry and link it
-          for (const mood of moods) {
-            const trimmed = mood.trim()
-            if (!trimmed) continue
-
-            let moodListId = moodIdCache.get(trimmed.toLowerCase())
-
-            if (moodListId === undefined) {
-              // Find existing mood in Lists table
-              stmtFindTag.bind([trimmed])
-              if (stmtFindTag.step()) {
-                moodListId = stmtFindTag.get()[0] as number
-              }
-              stmtFindTag.reset()
-
-              if (moodListId === undefined) {
-                // Create new mood entry
-                stmtInsertTag.bind([trimmed])
-                stmtInsertTag.step()
-                stmtInsertTag.reset()
-                const newId = db.exec('SELECT last_insert_rowid()')
-                moodListId = newId[0].values[0][0] as number
-              }
-
-              moodIdCache.set(trimmed.toLowerCase(), moodListId)
-            }
-
-            // Link song to mood
-            stmtInsertLink.bind([songId, moodListId])
-            stmtInsertLink.step()
-            stmtInsertLink.reset()
-          }
-
-          result.written++
-        }
-
-        // Free prepared statements before commit
-        stmtUpdateColumn.free()
-        stmtDeleteLinks.free()
-        stmtFindTag.free()
-        stmtInsertTag.free()
-        stmtInsertLink.free()
-
-        db.run('COMMIT')
-        console.warn(`[MediaMonkeyProvider] Transaction committed: ${result.written} tracks`)
-
-        // Restore ALL original schema SQL (FTS tables, IUNICODE collation, everything)
-        db.run('PRAGMA writable_schema = ON')
-        if (originalSchemas.length > 0) {
-          const restoreStmt = db.prepare("UPDATE sqlite_master SET sql = ? WHERE name = ?")
-          for (const row of originalSchemas[0].values) {
-            const [name, sql] = row as [string, string]
-            if (sql) {
-              restoreStmt.bind([sql, name])
-              restoreStmt.step()
-              restoreStmt.reset()
-            }
-          }
-          restoreStmt.free()
-        }
-        db.run('PRAGMA writable_schema = OFF')
-
-        const finalBuffer = db.export()
-        console.log('[MediaMonkeyProvider] Writing database to disk...')
-        fs.writeFileSync(this.databasePath, Buffer.from(finalBuffer))
-        console.log(`[MediaMonkeyProvider] Wrote ${result.written} tag updates to ${path.basename(this.databasePath)}`)
-
-        // Verify: re-read the DB and check that moods actually persisted
-        try {
-          const verifyBuffer = fs.readFileSync(this.databasePath)
-          const verifyDb = new SQL.Database(verifyBuffer)
-          verifyDb.run('PRAGMA writable_schema = ON')
-          verifyDb.run("UPDATE sqlite_master SET sql = replace(sql, 'IUNICODE', 'NOCASE') WHERE sql LIKE '%IUNICODE%'")
-          verifyDb.run('PRAGMA writable_schema = OFF')
-          const vBuf = verifyDb.export()
-          verifyDb.close()
-          const vDb = new SQL.Database(vBuf)
-
-          let verified = 0
-          let mismatches = 0
-          for (const { songId, moods } of trackUpdates) {
-            const row = vDb.exec(`SELECT Mood FROM Songs WHERE ID = ${songId}`)
-            const savedMood = row.length > 0 && row[0].values.length > 0 ? String(row[0].values[0][0]) : ''
-            const expected = moods.join('; ')
-            if (savedMood === expected) {
-              verified++
-            } else {
-              mismatches++
-              console.warn(`[MediaMonkeyProvider] VERIFY MISMATCH song ${songId}: expected="${expected}", got="${savedMood}"`)
-            }
-          }
-          vDb.close()
-          console.log(`[MediaMonkeyProvider] Verification: ${verified} OK, ${mismatches} mismatches`)
-        } catch (verifyErr) {
-          console.warn(`[MediaMonkeyProvider] Verification failed: ${getErrorMessage(verifyErr)}`)
-        }
-
-      } catch (txError) {
-        console.warn(`[MediaMonkeyProvider] Transaction error: ${getErrorMessage(txError)}`)
-        try {
-          db.run('ROLLBACK')
-        } catch (rollbackError) {
-          console.error('[MediaMonkeyProvider] Transaction rollback failed:', getErrorMessage(rollbackError))
-        }
-        throw txError
-      } finally {
-        db.close()
-      }
-
-      // Clean up backup on success
-      try {
-        fs.unlinkSync(backupPath)
-      } catch (error) {
-        console.warn(`[MediaMonkeyProvider] Could not remove successful-write backup ${backupPath}:`, error)
-      }
-
-    } catch (error) {
-      console.warn(`[MediaMonkeyProvider] Write failed: ${getErrorMessage(error)}`)
-      result.errors.push(`Database write failed: ${getErrorMessage(error)}. Backup available at ${backupPath}`)
-      // Restore from backup on failure
-      try {
-        if (fs.existsSync(backupPath)) {
-          fs.copyFileSync(backupPath, this.databasePath)
-          console.warn('[MediaMonkeyProvider] Restored database from backup after write failure')
-        }
-      } catch (restoreError) {
-        const message = `Database restoration failed: ${getErrorMessage(restoreError)}. Backup remains at ${backupPath}`
-        result.errors.push(message)
-        console.error(`[MediaMonkeyProvider] ${message}`)
-      }
-    }
-
-    return result
   }
 }

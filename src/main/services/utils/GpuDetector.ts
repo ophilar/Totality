@@ -1,8 +1,5 @@
-
 import { exec } from 'child_process'
 import { promisify } from 'util'
-import * as fs from 'node:fs/promises'
-import * as path from 'node:path'
 
 const execAsync = promisify(exec)
 
@@ -10,15 +7,7 @@ export interface GpuInfo {
   id: string
   name: string
   vendor: 'NVIDIA' | 'Intel' | 'AMD' | 'Apple' | 'Unknown'
-  driverVersion?: string
-  encoderDeviceSelector?: GpuEncoderDeviceSelector
-  renderDevicePath?: string
 }
-
-export type GpuEncoderDeviceSelector =
-  | { kind: 'directx'; index: number }
-  | { kind: 'nvenc'; index: number }
-  | { kind: 'drm'; path: string }
 
 export class GpuDetector {
   static async detectGpus(_options: { refresh?: boolean } = {}): Promise<GpuInfo[]> {
@@ -27,8 +16,8 @@ export class GpuDetector {
     
     try {
       if (platform === 'win32') {
-        const { stdout } = await execAsync('powershell.exe -NoProfile -NonInteractive -Command "Get-CimInstance Win32_VideoController | Select-Object Name,PNPDeviceID,DriverVersion | ConvertTo-Json -Compress"')
-        const parsed = JSON.parse(stdout) as Array<{ Name?: string; PNPDeviceID?: string; DriverVersion?: string }> | { Name?: string; PNPDeviceID?: string; DriverVersion?: string }
+        const { stdout } = await execAsync('powershell.exe -NoProfile -NonInteractive -Command "Get-CimInstance Win32_VideoController | Select-Object Name,PNPDeviceID | ConvertTo-Json -Compress"')
+        const parsed = JSON.parse(stdout) as Array<{ Name?: string; PNPDeviceID?: string }> | { Name?: string; PNPDeviceID?: string }
         const devices = Array.isArray(parsed) ? parsed : [parsed]
         devices.filter(device => device.Name).forEach((device, idx) => {
           const name = device.Name!.trim()
@@ -36,8 +25,7 @@ export class GpuDetector {
           gpus.push({
             id: `win-${identity.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
             name,
-            vendor: GpuDetector.parseVendor(name),
-            driverVersion: device.DriverVersion?.trim()
+            vendor: GpuDetector.parseVendor(name)
           })
         })
       } else if (platform === 'darwin') {
@@ -54,20 +42,16 @@ export class GpuDetector {
           })
         }
       } else {
-        const { stdout } = await execAsync('lspci -D')
-        const pciDevices = stdout.split('\n').filter(line => line.includes('VGA') || line.includes('3D') || line.includes('Display'))
-        if (pciDevices.length) {
-          const renderDevices = await GpuDetector.detectRenderDevices()
-          for (const line of pciDevices) {
-            const device = line.match(/^([\da-f:.]+)\s+.*?:\s+(.+)$/i)
-            if (!device) throw new Error(`Could not parse PCI GPU identity from: ${line}`)
-            const [, address, name] = device
-            const renderDevicePath = renderDevices.get(address.toLowerCase())
+        const { stdout } = await execAsync('lspci')
+        const lines = stdout.split('\n')
+        for (const line of lines) {
+          if (line.includes('VGA') || line.includes('3D') || line.includes('Display')) {
+            const address = line.split(' ')[0]
+            const name = line.slice(line.indexOf(':') + 1).trim()
             gpus.push({
               id: `linux-${address.toLowerCase()}`,
               name,
-              vendor: GpuDetector.parseVendor(name),
-              renderDevicePath
+              vendor: GpuDetector.parseVendor(name)
             })
           }
         }
@@ -81,17 +65,6 @@ export class GpuDetector {
 
   static clearCache(): void {
     // Compatibility no-op. Snapshot ownership belongs to TranscodingService.
-  }
-
-  private static async detectRenderDevices(): Promise<Map<string, string>> {
-    const renderDirectory = '/sys/class/drm'
-    const entries = await fs.readdir(renderDirectory)
-    const devices = new Map<string, string>()
-    for (const entry of entries.filter(name => /^renderD\d+$/.test(name))) {
-      const devicePath = await fs.realpath(path.join(renderDirectory, entry, 'device'))
-      devices.set(path.basename(devicePath).toLowerCase(), path.join('/dev/dri', entry))
-    }
-    return devices
   }
 
   private static parseVendor(name: string): 'NVIDIA' | 'Intel' | 'AMD' | 'Apple' | 'Unknown' {

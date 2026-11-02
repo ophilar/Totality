@@ -1,42 +1,52 @@
-import { IPC_CHANNELS } from '../../shared/ipcChannels'
-/**
- * IPC Handlers for Auto Update System
- */
-
-import { getAutoUpdateService } from '../services/AutoUpdateService'
-import { createIpcHandler, createSyncHandler } from './utils/createHandler'
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
+import { getAutoUpdateService } from '@main/services/AutoUpdateService'
+import { getLoggingService } from '@main/services/LoggingService'
+import { createIpcHandler, createSyncHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
+import { operationRequestRegistry } from '@main/ipc/utils/OperationRequestRegistry'
+import { z } from 'zod'
 
 export function registerAutoUpdateHandlers(): void {
   const service = getAutoUpdateService()
 
-  /**
-   * Get current update state
-   */
-  createSyncHandler(IPC_CHANNELS.autoUpdateGetState, () => service.getState())
+  createSyncHandler(IPC_CHANNELS.AUTO_UPDATE.GET_STATE, () => {
+    return service.getState()
+  })
 
-  /**
-   * Manually check for updates
-   */
-  createIpcHandler(IPC_CHANNELS.autoUpdateCheckForUpdates, async () => {
+  createIpcHandler(IPC_CHANNELS.AUTO_UPDATE.CHECK_FOR_UPDATES, async () => {
     await service.checkForUpdates()
     return { success: true }
   })
 
-  /**
-   * Download the available update
-   */
-  createIpcHandler(IPC_CHANNELS.autoUpdateDownloadUpdate, async () => {
-    await service.downloadUpdate()
-    return { success: true }
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.AUTO_UPDATE.DOWNLOAD_UPDATE, z.tuple([z.string().min(1).max(100)]), async (event, requestId) => {
+    const operation = operationRequestRegistry.register(event.sender, requestId, {
+      kind: 'update-download',
+      label: 'Update download',
+      context: service.getState().version ? `Version ${service.getState().version}` : undefined,
+    })
+    try {
+      await service.downloadUpdate(operation.signal, progress => operation.update({
+        phase: 'Downloading update',
+        progress: { percentage: progress.percent, currentItem: `${Math.round(progress.bytesPerSecond / 1024)} KB/s` },
+      }))
+      operation.complete('completed', 'Update download finished.')
+      return { success: true as const }
+    } catch (error) {
+      if (operation.signal.aborted) {
+        operation.complete('cancelled', 'Update download cancelled.')
+        return { cancelled: true as const }
+      }
+      operation.complete('failed', error instanceof Error ? error.message : 'Update download failed.')
+      throw error
+    } finally {
+      operation.dispose()
+    }
   })
 
-  /**
-   * Quit and install the downloaded update
-   */
-  createIpcHandler(IPC_CHANNELS.autoUpdateInstallUpdate, async () => {
+  createIpcHandler(IPC_CHANNELS.AUTO_UPDATE.INSTALL_UPDATE, async () => {
     await service.installUpdate()
     return { success: true }
   })
 
-  console.log('[IPC] Auto-update handlers registered')
+  getLoggingService().info('[autoUpdate]', '[IPC] Auto-update handlers registered')
 }
+

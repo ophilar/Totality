@@ -1,0 +1,78 @@
+export type MetadataType = 'movie' | 'tv' | 'anime' | 'music' | 'artwork'
+
+export interface MetadataSearchQuery {
+  title: string
+  year?: number
+  type: MetadataType
+  externalId?: string
+  externalIds?: { imdb_id?: string; tvdb_id?: string; tmdb_id?: string; anilist_id?: string; musicbrainz_id?: string }
+  seasonNumber?: number
+  episodeNumber?: number
+  artistName?: string
+  includeExpanded?: boolean
+  /** @deprecated Use includeExpanded in new callers. */
+  includeAdult?: boolean
+}
+
+export interface MetadataSearchResult {
+  id: string
+  provider: string
+  title: string
+  year?: number
+  type: MetadataType
+  posterUrl?: string
+  bannerUrl?: string
+  overview?: string
+  imdbRating?: number
+  imdbVotes?: string
+  score?: number
+  network?: string
+  status?: string
+  country?: string
+  originalLanguage?: string
+  firstAirDate?: string
+  releaseDate?: string
+  externalIds?: {
+    imdbId?: string
+    tvdbId?: string
+    tmdbId?: string
+    anilistId?: string
+    musicBrainzId?: string
+  }
+  alternateTitles?: string[]
+}
+
+export interface MediaMetadataDetails extends MetadataSearchResult {
+  genres?: string[]
+  totalSeasons?: number
+  totalEpisodes?: number
+  collectionId?: string
+  collectionName?: string
+  contentRating?: string
+  imdbRating?: number
+  imdbVotes?: string
+  awards?: string
+  externalIds?: {
+    imdbId?: string
+    tvdbId?: string
+    tmdbId?: string
+    anilistId?: string
+    musicBrainzId?: string
+  }
+  raw?: Record<string, unknown>
+}
+
+/**
+ * Strategy interface for media metadata providers.
+ * Follows SOLID principles (Single Responsibility & Open/Closed Principle).
+ */
+export interface IMetadataProvider {
+  readonly providerId: string
+  readonly providerName: string
+  readonly supportedTypes: MetadataType[]
+
+  search(query: MetadataSearchQuery, signal?: AbortSignal): Promise<MetadataSearchResult[]>
+  searchAndFuse?(query: MetadataSearchQuery): Promise<MetadataSearchResult[]>
+  getDetails(externalId: string, type: MetadataType): Promise<MediaMetadataDetails | null>
+  findByExternalId?(externalId: string, source: 'imdb_id' | 'tvdb_id', type: MetadataType): Promise<MediaMetadataDetails | null>
+}

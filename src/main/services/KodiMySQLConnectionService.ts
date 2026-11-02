@@ -1,5 +1,3 @@
-
-import { getErrorMessage } from './utils/errorUtils'
 /**
  * KodiMySQLConnectionService
  *
@@ -10,17 +8,19 @@ import { getErrorMessage } from './utils/errorUtils'
  * features will be unavailable but the app will still function normally.
  */
 
+import { getLoggingService } from '@main/services/LoggingService'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
+
 // Dynamic import for optional mysql2 dependency
 let mysql: typeof import('mysql2/promise') | null = null
 let mysqlAvailable = false
 
 // Try to load mysql2 - it's optional
 try {
-   
   mysql = require('mysql2/promise')
   mysqlAvailable = true
-} catch {
-  console.log('[KodiMySQLConnectionService] mysql2 not installed - Kodi MySQL features unavailable')
+} catch (error) {
+  // mysql2 not available
 }
 
 // Type definitions (used even when mysql2 is not available)
@@ -175,15 +175,12 @@ class KodiMySQLConnectionService {
       }
     } catch (error: unknown) {
       if (connection) {
-        try {
-          await connection.end()
-        } catch {
-          // Ignore close errors
-        }
+        await connection.end()
       }
 
       // Sanitize error message (don't expose passwords)
       let errorMessage = getErrorMessage(error) || 'Connection failed'
+      getLoggingService().error('[KodiMySQL]', `Connection failed: ${errorMessage}`)
       if (errorMessage.includes('Access denied')) {
         errorMessage = 'Access denied - check username and password'
       } else if (errorMessage.includes('ECONNREFUSED')) {
@@ -208,17 +205,31 @@ class KodiMySQLConnectionService {
   ): Promise<DetectedDatabases> {
     const dbPrefix = prefix || 'kodi_'
 
+    // Validate database prefix strictly to prevent SQL injection
+    if (!/^[a-zA-Z0-9_]+$/.test(dbPrefix)) {
+      throw new Error(`Invalid database prefix: ${dbPrefix}`)
+    }
+
+    // Use an explicit LIKE escape character so matching does not depend on SQL mode.
+    const escapedPrefix = dbPrefix.replace(/[!_%]/g, '!$&')
+
     // Query for video databases
     const [videoRows] = await connection.query(
-      `SHOW DATABASES LIKE '${dbPrefix}video%'`
+      "SHOW DATABASES WHERE `Database` LIKE ? ESCAPE '!'",
+      [`${escapedPrefix}video%`]
     )
-    const videoDatabases = (videoRows as Array<Record<string, string>>).map(row => Object.values(row)[0])
+    const videoDatabases = (videoRows as Array<Record<string, string>>).map(
+      (row) => Object.values(row)[0]
+    )
 
     // Query for music databases
     const [musicRows] = await connection.query(
-      `SHOW DATABASES LIKE '${dbPrefix}music%'`
+      "SHOW DATABASES WHERE `Database` LIKE ? ESCAPE '!'",
+      [`${escapedPrefix}music%`]
     )
-    const musicDatabases = (musicRows as Array<Record<string, string>>).map(row => Object.values(row)[0])
+    const musicDatabases = (musicRows as Array<Record<string, string>>).map(
+      (row) => Object.values(row)[0]
+    )
 
     // Find highest version for each type
     const videoDb = this.findHighestVersion(videoDatabases, `${dbPrefix}video`)
@@ -249,15 +260,15 @@ class KodiMySQLConnectionService {
   /**
    * Execute a query on a specific database
    */
-  async query<T>(
-    pool: Pool,
-    database: string,
-    sql: string,
-    params?: unknown[]
-  ): Promise<T[]> {
+  async query<T>(pool: Pool, database: string, sql: string, params?: unknown[]): Promise<T[]> {
     const connection = await pool.getConnection()
 
     try {
+      // Validate database identifier strictly to prevent SQL injection
+      if (!/^[a-zA-Z0-9_]+$/.test(database)) {
+        throw new Error(`Invalid database name: ${database}`)
+      }
+
       // Switch to the target database
       await connection.query(`USE \`${database}\``)
 

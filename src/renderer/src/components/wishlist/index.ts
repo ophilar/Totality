@@ -1,6 +1,0 @@
-export { WishlistPanel } from './WishlistPanel'
-export { WishlistItemCard } from './WishlistItemCard'
-export { WishlistEmptyState } from './WishlistEmptyState'
-export { AddToWishlistButton } from './AddToWishlistButton'
-export { StarRating } from './StarRating'
-export { StoreLinksMenu } from './StoreLinksMenu'

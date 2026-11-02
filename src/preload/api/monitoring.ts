@@ -1,0 +1,285 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
+import { ipcRenderer } from 'electron'
+
+export const monitoringApi = {
+  // ============================================================================
+  // LIVE MONITORING
+  // ============================================================================
+
+  // Monitoring Control
+  monitoringGetConfig: () => ipcRenderer.invoke(IPC_CHANNELS.MONITORING.GET_CONFIG),
+  monitoringSetConfig: (config: {
+    enabled?: boolean
+    startOnLaunch?: boolean
+    pauseDuringManualScan?: boolean
+    pollingIntervals?: Record<string, number>
+  }) => ipcRenderer.invoke(IPC_CHANNELS.MONITORING.SET_CONFIG, config),
+  monitoringStart: () => ipcRenderer.invoke(IPC_CHANNELS.MONITORING.START),
+  monitoringStop: () => ipcRenderer.invoke(IPC_CHANNELS.MONITORING.STOP),
+  monitoringIsActive: () => ipcRenderer.invoke(IPC_CHANNELS.MONITORING.IS_ACTIVE),
+  monitoringForceCheck: (sourceId: string) => ipcRenderer.invoke(IPC_CHANNELS.MONITORING.FORCE_CHECK, sourceId),
+
+  // Monitoring Events
+  onMonitoringStatusChanged: (callback: (status: { isActive: boolean; lastCheck?: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: { isActive: boolean; lastCheck?: string }) => callback(status)
+    ipcRenderer.on('monitoring:statusChanged', handler)
+    return () => ipcRenderer.removeListener('monitoring:statusChanged', handler)
+  },
+  onMonitoringSourceChecked: (callback: (data: { sourceId: string; hasChanges: boolean }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { sourceId: string; hasChanges: boolean }) => callback(data)
+    ipcRenderer.on('monitoring:sourceChecked', handler)
+    return () => ipcRenderer.removeListener('monitoring:sourceChecked', handler)
+  },
+  onMonitoringStatus: (callback: (status: { isActive: boolean }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: { isActive: boolean }) => callback(status)
+    ipcRenderer.on('monitoring:status', handler)
+    return () => ipcRenderer.removeListener('monitoring:status', handler)
+  },
+  onMonitoringEvent: (callback: (event: { type: string; message: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { type: string; message: string }) => callback(data)
+    ipcRenderer.on('monitoring:event', handler)
+    return () => ipcRenderer.removeListener('monitoring:event', handler)
+  },
+  getMonitoringStatus: () => ipcRenderer.invoke(IPC_CHANNELS.MONITORING.GET_STATUS),
+
+  // ============================================================================
+  // TASK QUEUE
+  // ============================================================================
+
+  // Queue State
+  taskQueueGetState: () => ipcRenderer.invoke(IPC_CHANNELS.TASK_QUEUE.GET_STATE),
+
+  // Task Management
+  taskQueueAddTask: (definition: {
+    type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan' | 'quality-analysis' | 'transcode'
+    label: string
+    sourceId?: string
+    libraryId?: string
+    artistId?: number
+    mediaItemId?: number
+    options?: unknown
+  }) => ipcRenderer.invoke('taskQueue:addTask', definition),
+  taskQueueAddTasks: (definitions: Array<{
+    type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan' | 'quality-analysis' | 'transcode'
+    label: string
+    sourceId?: string
+    libraryId?: string
+    artistId?: number
+    mediaItemId?: number
+    options?: unknown
+  }>) => ipcRenderer.invoke('taskQueue:addTasks', definitions),
+  taskQueueRemoveTask: (taskId: string) => ipcRenderer.invoke('taskQueue:removeTask', taskId),
+  taskQueueReorderQueue: (taskIds: string[]) => ipcRenderer.invoke('taskQueue:reorderQueue', taskIds),
+  taskQueueClearQueue: (batchId?: string, cancelCurrent?: boolean) => ipcRenderer.invoke('taskQueue:clearQueue', { batchId, cancelCurrent }),
+
+  // Queue Control
+  taskQueuePause: () => ipcRenderer.invoke(IPC_CHANNELS.TASK_QUEUE.PAUSE),
+  taskQueueResume: () => ipcRenderer.invoke(IPC_CHANNELS.TASK_QUEUE.RESUME),
+  taskQueueCancelCurrent: (batchId?: string) => ipcRenderer.invoke('taskQueue:cancelCurrent', batchId),
+  taskQueueCancelTask: (taskId: string) => ipcRenderer.invoke(IPC_CHANNELS.TASK_QUEUE.CANCEL_TASK, taskId),
+
+  // History
+  taskQueueGetTaskHistory: () => ipcRenderer.invoke('taskQueue:getTaskHistory'),
+  taskQueueGetMonitoringHistory: () => ipcRenderer.invoke('taskQueue:getMonitoringHistory'),
+  taskQueueClearTaskHistory: () => ipcRenderer.invoke('taskQueue:clearTaskHistory'),
+  taskQueueClearMonitoringHistory: () => ipcRenderer.invoke('taskQueue:clearMonitoringHistory'),
+
+  // Task Queue Events
+  onTaskQueueUpdated: (callback: (state: import('@main/types/database').TaskQueueState) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: import('@main/types/database').TaskQueueState) => callback(state)
+    ipcRenderer.on('taskQueue:updated', handler)
+    return () => ipcRenderer.removeListener('taskQueue:updated', handler)
+  },
+  onTaskQueueTaskComplete: (callback: (task: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, task: unknown) => callback(task)
+    ipcRenderer.on('taskQueue:taskComplete', handler)
+    return () => ipcRenderer.removeListener('taskQueue:taskComplete', handler)
+  },
+  onScanCompleted: (callback: (data: {
+    sourceId?: string
+    libraryId?: string
+    libraryName: string
+    itemsAdded: number
+    itemsUpdated: number
+    itemsScanned: number
+    isFirstScan: boolean
+  }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: {
+      sourceId?: string
+      libraryId?: string
+      libraryName: string
+      itemsAdded: number
+      itemsUpdated: number
+      itemsScanned: number
+      isFirstScan: boolean
+    }) => callback(data)
+    ipcRenderer.on('scan:completed', handler)
+    return () => ipcRenderer.removeListener('scan:completed', handler)
+  },
+  onTaskQueueHistoryUpdated: (callback: (history: { taskHistory: unknown[]; monitoringHistory: unknown[] }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, history: { taskHistory: unknown[]; monitoringHistory: unknown[] }) => callback(history)
+    ipcRenderer.on('taskQueue:historyUpdated', handler)
+    return () => ipcRenderer.removeListener('taskQueue:historyUpdated', handler)
+  },
+  onWishlistAutoCompleted: (callback: (items: Array<{ id: number; title: string; reason: string; media_type: string }>) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, items: Array<{ id: number; title: string; reason: string; media_type: string }>) => callback(items)
+    ipcRenderer.on('wishlist:autoCompleted', handler)
+    return () => ipcRenderer.removeListener('wishlist:autoCompleted', handler)
+  },
+  onLibraryUpdated: (callback: (event: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: unknown) => callback(data)
+    ipcRenderer.on('library:updated', handler)
+    return () => ipcRenderer.removeListener('library:updated', handler)
+  },
+}
+
+export interface MonitoringAPI {
+  // ============================================================================
+  // LIVE MONITORING
+  // ============================================================================
+
+  // Monitoring Control
+  monitoringGetConfig: () => Promise<{
+    enabled: boolean
+    startOnLaunch: boolean
+    pauseDuringManualScan: boolean
+    pollingIntervals: Record<string, number>
+  }>
+  monitoringSetConfig: (config: {
+    enabled?: boolean
+    startOnLaunch?: boolean
+    pauseDuringManualScan?: boolean
+    pollingIntervals?: Record<string, number>
+  }) => Promise<{ success: boolean }>
+  monitoringStart: () => Promise<{ success: boolean }>
+  monitoringStop: () => Promise<{ success: boolean }>
+  monitoringIsActive: () => Promise<boolean>
+  monitoringForceCheck: (sourceId: string) => Promise<Array<{
+    sourceId: string
+    sourceName: string
+    sourceType: string
+    libraryId: string
+    libraryName: string
+    changeType: 'added' | 'updated' | 'removed'
+    itemCount: number
+    items: Array<{
+      id: string
+      title: string
+      type: 'movie' | 'episode' | 'album' | 'track' | 'artist'
+      year?: number
+      posterUrl?: string
+      seriesTitle?: string
+      artistName?: string
+    }>
+    detectedAt: string
+  }>>
+
+  // Monitoring Events
+  onMonitoringStatusChanged: (callback: (status: { isActive: boolean; lastCheck?: string }) => void) => () => void
+  onMonitoringSourceChecked: (callback: (data: { sourceId: string; hasChanges: boolean }) => void) => () => void
+  onMonitoringStatus: (callback: (status: { isActive: boolean }) => void) => () => void
+  onMonitoringEvent: (callback: (event: { type: string; message: string }) => void) => () => void
+  getMonitoringStatus: () => Promise<{ isActive: boolean }>
+
+  // ============================================================================
+  // TASK QUEUE
+  // ============================================================================
+
+  // Queue State
+  taskQueueGetState: () => Promise<import('@main/types/database').TaskQueueState>
+
+  // Task Management
+  taskQueueAddTask: (definition: {
+    type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan' | 'quality-analysis' | 'transcode'
+    label: string
+    sourceId?: string
+    libraryId?: string
+    artistId?: number
+    mediaItemId?: number
+    options?: unknown
+  }) => Promise<{ success: boolean; taskId: string }>
+  taskQueueAddTasks: (definitions: Array<{
+    type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan' | 'quality-analysis' | 'transcode'
+    label: string
+    sourceId?: string
+    libraryId?: string
+    artistId?: number
+    mediaItemId?: number
+    options?: unknown
+  }>) => Promise<{ success: boolean; taskIds: string[] }>
+  taskQueueRemoveTask: (taskId: string) => Promise<{ success: boolean }>
+  taskQueueReorderQueue: (taskIds: string[]) => Promise<{ success: boolean }>
+  taskQueueClearQueue: (batchId?: string, cancelCurrent?: boolean) => Promise<{ success: boolean }>
+
+  // Queue Control
+  taskQueuePause: () => Promise<{ success: boolean }>
+  taskQueueResume: () => Promise<{ success: boolean }>
+  taskQueueCancelCurrent: (batchId?: string) => Promise<{ success: boolean }>
+    taskQueueCancelTask: (taskId: string) => Promise<{ success: boolean }> | undefined
+
+  // History
+  taskQueueGetTaskHistory: () => Promise<Array<{
+    id: string
+    timestamp: string
+    type: 'task-complete' | 'task-failed' | 'task-cancelled' | 'monitoring'
+    message: string
+    taskId?: string
+    taskType?: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan'
+  }>>
+  taskQueueGetMonitoringHistory: () => Promise<Array<{
+    id: string
+    timestamp: string
+    type: 'task-complete' | 'task-failed' | 'task-cancelled' | 'monitoring'
+    message: string
+    taskId?: string
+    taskType?: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan'
+  }>>
+  taskQueueClearTaskHistory: () => Promise<{ success: boolean }>
+  taskQueueClearMonitoringHistory: () => Promise<{ success: boolean }>
+
+  // Task Queue Events
+  onTaskQueueUpdated: (callback: (state: import('@main/types/database').TaskQueueState) => void) => () => void
+  onTaskQueueTaskComplete: (callback: (task: {
+    id: string
+    type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan' | 'quality-analysis'
+    label: string
+    status: 'completed' | 'failed' | 'cancelled'
+    completedAt: string
+    error?: string
+    result?: {
+      itemsScanned?: number
+      itemsAdded?: number
+      itemsUpdated?: number
+      itemsRemoved?: number
+    }
+  }) => void) => () => void
+  onScanCompleted: (callback: (data: {
+    sourceId?: string
+    libraryId?: string
+    libraryName: string
+    itemsAdded: number
+    itemsUpdated: number
+    itemsScanned: number
+    isFirstScan: boolean
+  }) => void) => () => void
+  onTaskQueueHistoryUpdated: (callback: (history: {
+    taskHistory: Array<{
+      id: string
+      timestamp: string
+      type: 'task-complete' | 'task-failed' | 'task-cancelled' | 'monitoring'
+      message: string
+      taskId?: string
+      taskType?: string
+    }>
+    monitoringHistory: Array<{
+      id: string
+      timestamp: string
+      type: 'task-complete' | 'task-failed' | 'task-cancelled' | 'monitoring'
+      message: string
+      taskId?: string
+      taskType?: string
+    }>
+  }) => void) => () => void
+  onWishlistAutoCompleted: (callback: (items: Array<{ id: number; title: string; reason: string; media_type: string }>) => void) => () => void
+  onLibraryUpdated: (callback: () => void) => () => void
+}

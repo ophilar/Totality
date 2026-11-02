@@ -1,4 +1,4 @@
-import { useState, useEffect, useId, useRef } from 'react'
+import { useState, useEffect, useId, useCallback, useRef } from 'react'
 import {
   Eye,
   EyeOff,
@@ -7,7 +7,6 @@ import {
   CheckCircle,
   XCircle,
   Trash2,
-  Download,
   RefreshCw,
   Plus,
   ChevronDown,
@@ -16,9 +15,12 @@ import {
   Network,
   Circle,
   Bot,
+  Music,
 } from 'lucide-react'
-import { TranscodingHardwareCard } from '../TranscodingHardwareCard'
-import { Toggle } from '../../ui/Toggle'
+import { TranscodingHardwareCard } from '@/components/settings/TranscodingHardwareCard'
+import { useToast } from '@/contexts/ToastContext'
+import type { SavedServiceHealthSnapshot, SavedServiceId } from '@shared/serviceHealth'
+
 
 interface ServiceCardProps {
   title: string
@@ -34,6 +36,26 @@ interface ServiceCardProps {
     onToggle: () => void
     id: string
   }
+}
+
+function savedHealthText(snapshot: SavedServiceHealthSnapshot | null, service: SavedServiceId): string {
+  const health = snapshot?.[service]
+  if (!health || health.status === 'not-configured') return 'Not configured'
+  if (health.status === 'checking') return 'Checking saved configuration…'
+  const status = health.status === 'valid' ? 'Available' : health.status.replace(/-/g, ' ')
+  const testedAt = health.testedAt ? ` · Checked ${new Date(health.testedAt).toLocaleTimeString()}` : ''
+  return `${status}${testedAt}${health.message ? ` · ${health.message}` : ''}`
+}
+
+function savedHealthLabel(snapshot: SavedServiceHealthSnapshot | null, service: SavedServiceId, configured: boolean): string {
+  if (!configured) return 'Not configured'
+  const status = snapshot?.[service].status
+  if (!status || status === 'not-configured') return 'Saved · not tested'
+  if (status === 'checking') return 'Checking'
+  if (status === 'valid') return 'Available'
+  if (status === 'invalid-credential') return 'Invalid credentials'
+  if (status === 'permission-denied') return 'Permission denied'
+  return status.replace(/-/g, ' ')
 }
 
 function ServiceCard({
@@ -57,9 +79,9 @@ function ServiceCard({
           {/* Status indicator */}
           <div className="shrink-0">
             {status === 'configured' ? (
-              <CheckCircle className="w-5 h-5 text-primary" />
+              <CheckCircle className="w-5 h-5 text-green-500" />
             ) : status === 'partial' ? (
-              <CheckCircle className="w-5 h-5 text-muted-foreground" />
+              <CheckCircle className="w-5 h-5 text-amber-500" />
             ) : (
               <Circle className="w-5 h-5 text-muted-foreground/50" />
             )}
@@ -81,9 +103,21 @@ function ServiceCard({
 
         {/* Enable toggle */}
         {enableToggle && (
-          <div onClick={(e) => e.stopPropagation()}>
-            <Toggle checked={enableToggle.enabled} onChange={() => enableToggle.onToggle()} />
-          </div>
+          <button
+            id={enableToggle.id}
+            role="switch"
+            aria-checked={enableToggle.enabled}
+            onClick={(e) => { e.stopPropagation(); enableToggle.onToggle() }}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background ${
+              enableToggle.enabled ? 'bg-primary' : 'bg-muted-foreground/30'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-background shadow-md ring-1 ring-border/50 transition duration-200 ease-in-out ${
+                enableToggle.enabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
         )}
 
         {/* Expand indicator */}
@@ -105,31 +139,92 @@ function ServiceCard({
 }
 
 export function ServicesTab() {
+  const { addToast } = useToast()
   // Expanded state
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
 
   // TMDB state
   const [tmdbApiKey, setTmdbApiKey] = useState('')
   const [showTmdbKey, setShowTmdbKey] = useState(false)
-  const [tmdbStatus, setTmdbStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>('idle')
+  const [tmdbStatus, setTmdbStatus] = useState<'idle' | 'saved-unverified' | 'testing' | 'valid' | 'invalid' | 'unavailable' | 'timed-out' | 'cancelled'>('idle')
   const [originalTmdb, setOriginalTmdb] = useState('')
+  const tmdbTestRequestId = useRef<string | null>(null)
+  const [tmdbTestedAt, setTmdbTestedAt] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (tmdbApiKey !== originalTmdb) return
+    let active = true
+    let revision = -1
+    const apply = (state: Awaited<ReturnType<typeof window.electronAPI.tmdbGetValidationState>>) => {
+      if (!active || state.revision < revision || tmdbTestRequestId.current) return
+      revision = state.revision
+      setTmdbStatus(state.status)
+      setTmdbTestedAt(state.testedAt)
+    }
+    const unsubscribe = window.electronAPI.onTmdbValidationChanged(apply)
+    void window.electronAPI.tmdbGetValidationState().then(apply).catch(error => {
+      if (active) addToast({ type: 'error', title: 'Unable to load TMDB validation status', message: String(error) })
+    })
+    return () => { active = false; unsubscribe() }
+  }, [tmdbApiKey, originalTmdb, addToast])
+
+  // MusicBrainz state
+  const [musicbrainzBaseUrl, setMusicbrainzBaseUrl] = useState('')
+  const [musicbrainzStatus, setMusicbrainzStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>('idle')
+  const [originalMusicbrainzBaseUrl, setOriginalMusicbrainzBaseUrl] = useState('')
+
+  // OMDb state
+  const [omdbApiKey, setOmdbApiKey] = useState('')
+  const [showOmdbKey, setShowOmdbKey] = useState(false)
+  const [omdbStatus, setOmdbStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>('idle')
+  const [originalOmdb, setOriginalOmdb] = useState('')
+
+  // TVDB state
+  const [tvdbApiKey, setTvdbApiKey] = useState('')
+  const [tvdbPin, setTvdbPin] = useState('')
+  const [showTvdbKey, setShowTvdbKey] = useState(false)
+  const [showTvdbPin, setShowTvdbPin] = useState(false)
+  const [tvdbStatus, setTvdbStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>('idle')
+  const [originalTvdbApiKey, setOriginalTvdbApiKey] = useState('')
+  const [originalTvdbPin, setOriginalTvdbPin] = useState('')
+
+  const [sonarrUrl, setSonarrUrl] = useState('')
+  const [sonarrKey, setSonarrKey] = useState('')
+  const [radarrUrl, setRadarrUrl] = useState('')
+  const [radarrKey, setRadarrKey] = useState('')
+  const [originalSonarrUrl, setOriginalSonarrUrl] = useState('')
+  const [originalSonarrKey, setOriginalSonarrKey] = useState('')
+  const [originalRadarrUrl, setOriginalRadarrUrl] = useState('')
+  const [originalRadarrKey, setOriginalRadarrKey] = useState('')
+  const [savedProviderHealth, setSavedProviderHealth] = useState<SavedServiceHealthSnapshot | null>(null)
+  const arrStatus = savedProviderHealth?.sonarr.status === 'checking' || savedProviderHealth?.radarr.status === 'checking'
+    ? 'testing'
+    : [savedProviderHealth?.sonarr.status, savedProviderHealth?.radarr.status].some(status => status && !['not-configured', 'valid'].includes(status))
+      ? 'invalid'
+      : [savedProviderHealth?.sonarr.status, savedProviderHealth?.radarr.status].some(status => status === 'valid')
+        ? 'valid'
+        : 'idle'
+  const [metadataProviderPreferences, setMetadataProviderPreferences] = useState('{"enabled":["tmdb","anilist","omdb","tvmaze","tvdb","musicbrainz"],"order":["tmdb","anilist","omdb","tvmaze","tvdb","musicbrainz"]}')
+  const [originalMetadataProviderPreferences, setOriginalMetadataProviderPreferences] = useState('')
+  const metadataProviders = ['tmdb', 'anilist', 'omdb', 'tvmaze', 'tvdb', 'musicbrainz']
+  const metadataProviderLabels: Record<string, string> = { tmdb: 'TMDB', anilist: 'AniList', omdb: 'OMDb', tvmaze: 'TVmaze', tvdb: 'TVDB', musicbrainz: 'MusicBrainz' }
+  const readProviderPreferences = () => {
+    try {
+      const parsed = JSON.parse(metadataProviderPreferences)
+      return {
+        enabled: metadataProviders.filter(id => parsed.enabled?.includes(id)),
+        order: metadataProviders.filter(id => parsed.order?.includes(id)).concat(metadataProviders.filter(id => !parsed.order?.includes(id)))
+      }
+    } catch {
+      return { enabled: metadataProviders, order: metadataProviders }
+    }
+  }
+  const writeProviderPreferences = (enabled: string[], order: string[]) => setMetadataProviderPreferences(JSON.stringify({ enabled, order }))
 
   // FFprobe state
   const [ffprobeAvailable, setFfprobeAvailable] = useState<boolean | null>(null)
-  const [ffprobeBundled, setFfprobeBundled] = useState(false)
   const [ffprobeVersion, setFfprobeVersion] = useState<string | null>(null)
   const [ffprobeEnabled, setFfprobeEnabled] = useState(false)
-  const [isInstalling, setIsInstalling] = useState(false)
-  const [isUninstalling, setIsUninstalling] = useState(false)
-  const [confirmUninstall, setConfirmUninstall] = useState(false)
-  const confirmUninstallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [installProgress, setInstallProgress] = useState<{ stage: string; percent: number } | null>(
-    null
-  )
-  const [ffprobeError, setFfprobeError] = useState<string | null>(null)
-  const [latestVersion, setLatestVersion] = useState<string | null>(null)
-  const [updateAvailable, setUpdateAvailable] = useState(false)
-  const [checkingUpdate, setCheckingUpdate] = useState(false)
 
   // NFS Mappings state
   const [nfsMappings, setNfsMappings] = useState<Record<string, string>>({})
@@ -153,20 +248,78 @@ export function ServicesTab() {
   // Gemini AI state
   const [geminiApiKey, setGeminiApiKey] = useState('')
   const [showGeminiKey, setShowGeminiKey] = useState(false)
-  const [geminiStatus, setGeminiStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>('idle')
+  const [geminiStatus, setGeminiStatus] = useState<'idle' | 'saved-unverified' | 'testing' | 'valid' | 'invalid' | 'unavailable' | 'rate-limited' | 'timed-out' | 'cancelled'>('idle')
+  const [geminiTestedAt, setGeminiTestedAt] = useState<string | null>(null)
+  const [geminiModelAvailable, setGeminiModelAvailable] = useState<boolean | null>(null)
   const [geminiError, setGeminiError] = useState<string | null>(null)
   const [originalGemini, setOriginalGemini] = useState('')
+  const [geminiModel, setGeminiModel] = useState('gemini-2.5-flash')
+  const [originalGeminiModel, setOriginalGeminiModel] = useState('gemini-2.5-flash')
+  const [availableModels, setAvailableModels] = useState<Array<{ name: string; displayName: string }>>([])
   const [aiEnabled, setAiEnabled] = useState(true)
 
   // General state
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
+  const [isSavingTmdb, setIsSavingTmdb] = useState(false)
 
   const tmdbId = useId()
+  const musicbrainzId = useId()
+  const omdbId = useId()
+  const tvdbId = useId()
+  const tvdbPinId = useId()
   const toggleId = useId()
   const geminiId = useId()
+  const geminiModelId = useId()
   const aiToggleId = useId()
+
+  useEffect(() => {
+    if (geminiApiKey !== originalGemini || geminiModel !== originalGeminiModel) return
+    let active = true
+    let revision = -1
+    const apply = (state: Awaited<ReturnType<typeof window.electronAPI.aiGetValidationState>>) => {
+      if (!active || state.revision < revision) return
+      revision = state.revision
+      setGeminiStatus(state.status)
+      setGeminiTestedAt(state.testedAt)
+      setGeminiModelAvailable(state.modelAvailable)
+    }
+    const unsubscribe = window.electronAPI.onAiValidationChanged(apply)
+    void window.electronAPI.aiGetValidationState().then(apply).catch(error => {
+      if (active) setGeminiError(error instanceof Error ? error.message : String(error))
+    })
+    return () => { active = false; unsubscribe() }
+  }, [geminiApiKey, originalGemini, geminiModel, originalGeminiModel])
+
+  useEffect(() => {
+    let active = true
+    const revisions = new Map<SavedServiceId, number>()
+    const apply = (incoming: SavedServiceHealthSnapshot) => {
+      if (!active) return
+      setSavedProviderHealth(previous => {
+        const next = { ...(previous ?? incoming) }
+        for (const service of ['omdb', 'tvdb', 'musicbrainz', 'sonarr', 'radarr'] as const) {
+          if (incoming[service].revision < (revisions.get(service) ?? -1)) continue
+          revisions.set(service, incoming[service].revision)
+          next[service] = incoming[service]
+        }
+        return next
+      })
+      const uiStatus = (service: SavedServiceId) => {
+        const status = incoming[service].status
+        return status === 'checking' ? 'testing' : status === 'valid' ? 'valid' : status === 'not-configured' ? 'idle' : 'invalid'
+      }
+      setOmdbStatus(uiStatus('omdb'))
+      setTvdbStatus(uiStatus('tvdb'))
+      setMusicbrainzStatus(uiStatus('musicbrainz'))
+    }
+    const unsubscribe = window.electronAPI.onSavedServiceHealthChanged(apply)
+    void window.electronAPI.getSavedServiceHealth().then(apply).catch(error => {
+      if (active) addToast({ type: 'error', title: 'Unable to load provider health', message: String(error) })
+    })
+    return () => { active = false; unsubscribe() }
+  }, [addToast])
 
   const toggleCard = (card: string) => {
     setExpandedCards((prev) => {
@@ -181,30 +334,21 @@ export function ServicesTab() {
   }
 
   useEffect(() => {
-    loadSettings()
-  }, [])
-
-  useEffect(() => {
-    const tmdbChanged = tmdbApiKey !== originalTmdb
     const nfsChanged = JSON.stringify(nfsMappings) !== JSON.stringify(originalNfsMappings)
-    const geminiChanged = geminiApiKey !== originalGemini
-    setHasChanges(tmdbChanged || nfsChanged || geminiChanged)
-  }, [tmdbApiKey, originalTmdb, nfsMappings, originalNfsMappings, geminiApiKey, originalGemini])
+    const geminiChanged = geminiApiKey !== originalGemini || geminiModel !== originalGeminiModel
+    const musicbrainzChanged = musicbrainzBaseUrl !== originalMusicbrainzBaseUrl
+    const omdbChanged = omdbApiKey !== originalOmdb
+    const tvdbChanged = tvdbApiKey !== originalTvdbApiKey || tvdbPin !== originalTvdbPin
+    const arrChanged = sonarrUrl !== originalSonarrUrl || sonarrKey !== originalSonarrKey || radarrUrl !== originalRadarrUrl || radarrKey !== originalRadarrKey
+    setHasChanges(nfsChanged || geminiChanged || musicbrainzChanged || omdbChanged || tvdbChanged || arrChanged || metadataProviderPreferences !== originalMetadataProviderPreferences)
+  }, [tmdbApiKey, originalTmdb, nfsMappings, originalNfsMappings, geminiApiKey, originalGemini, geminiModel, originalGeminiModel, musicbrainzBaseUrl, originalMusicbrainzBaseUrl, omdbApiKey, originalOmdb, tvdbApiKey, originalTvdbApiKey, tvdbPin, originalTvdbPin, sonarrUrl, sonarrKey, radarrUrl, radarrKey, originalSonarrUrl, originalSonarrKey, originalRadarrUrl, originalRadarrKey, metadataProviderPreferences, originalMetadataProviderPreferences])
 
-  useEffect(() => {
-    const cleanup = window.electronAPI.onFFprobeInstallProgress?.((progress: unknown) => {
-      setInstallProgress(progress as { stage: string; percent: number })
-    })
-    return () => cleanup?.()
-  }, [])
-
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     setIsLoading(true)
     try {
-      const [allSettings, ffAvailable, ffBundled, ffVersion, nfsMaps] = await Promise.all([
+      const [allSettings, ffAvailable, ffVersion, nfsMaps] = await Promise.all([
         window.electronAPI.getAllSettings(),
         window.electronAPI.ffprobeIsAvailable(),
-        window.electronAPI.ffprobeIsBundled(),
         window.electronAPI.ffprobeGetVersion().catch(() => null),
         window.electronAPI.getNfsMappings(),
       ])
@@ -212,43 +356,124 @@ export function ServicesTab() {
       const tmdb = allSettings.tmdb_api_key || ''
       setTmdbApiKey(tmdb)
       setOriginalTmdb(tmdb)
-      if (tmdb) {
-        setTmdbStatus('valid')
+
+      const mbBaseUrl = allSettings.musicbrainz_base_url || 'https://musicbrainz.org/ws/2'
+      setMusicbrainzBaseUrl(mbBaseUrl)
+      setOriginalMusicbrainzBaseUrl(mbBaseUrl)
+      if (mbBaseUrl) {
+        setMusicbrainzStatus('valid')
       }
+
+      const omdb = allSettings.omdb_api_key || ''
+      setOmdbApiKey(omdb)
+      setOriginalOmdb(omdb)
+      if (omdb) {
+        setOmdbStatus('valid')
+      }
+
+      const tvdb = allSettings.tvdb_api_key || ''
+      const tvdbPinValue = allSettings.tvdb_pin || ''
+      setTvdbApiKey(tvdb)
+      setOriginalTvdbApiKey(tvdb)
+      setTvdbPin(tvdbPinValue)
+      setOriginalTvdbPin(tvdbPinValue)
+      if (tvdb) setTvdbStatus('valid')
+      setSonarrUrl(allSettings.sonarr_url || '')
+      setSonarrKey(allSettings.sonarr_api_key || '')
+      setRadarrUrl(allSettings.radarr_url || '')
+      setRadarrKey(allSettings.radarr_api_key || '')
+      const providerPreferences = allSettings.metadata_provider_preferences || metadataProviderPreferences
+      setMetadataProviderPreferences(providerPreferences)
+      setOriginalMetadataProviderPreferences(providerPreferences)
+      setOriginalSonarrUrl(allSettings.sonarr_url || '')
+      setOriginalSonarrKey(allSettings.sonarr_api_key || '')
+      setOriginalRadarrUrl(allSettings.radarr_url || '')
+      setOriginalRadarrKey(allSettings.radarr_api_key || '')
 
       const gemini = allSettings.gemini_api_key || ''
       setGeminiApiKey(gemini)
       setOriginalGemini(gemini)
-      if (gemini) {
-        setGeminiStatus('valid')
-      }
+      setGeminiStatus(gemini ? 'saved-unverified' : 'idle')
+      const model = allSettings.gemini_model || 'gemini-2.5-flash'
+      setGeminiModel(model)
+      setOriginalGeminiModel(model)
       setAiEnabled(allSettings.ai_enabled !== 'false')
 
       setFfprobeAvailable(ffAvailable)
-      setFfprobeBundled(ffBundled)
       setFfprobeVersion(ffVersion)
-      setFfprobeEnabled(allSettings.ffprobe_enabled === 'true')
+      setFfprobeEnabled(allSettings.ffprobe_enabled !== 'false' && ffAvailable)
 
       setNfsMappings(nfsMaps || {})
       setOriginalNfsMappings(nfsMaps || {})
     } catch (error) {
-      console.error('Failed to load settings:', error)
+      window.electronAPI.log.error('[ServicesTab]', 'Failed to load settings:', error)
     } finally {
       setIsLoading(false)
     }
+  }, [metadataProviderPreferences])
+
+  useEffect(() => {
+    void loadSettings()
+  }, [loadSettings])
+
+  useEffect(() => () => {
+    const requestId = tmdbTestRequestId.current
+    if (requestId) void window.electronAPI.tmdbCancelApiKeyTest(requestId)
+  }, [])
+
+  const cancelTmdbTest = async () => {
+    const requestId = tmdbTestRequestId.current
+    if (!requestId) return
+    await window.electronAPI.tmdbCancelApiKeyTest(requestId)
+    setTmdbStatus('cancelled')
+    tmdbTestRequestId.current = null
   }
 
   const handleTestTmdb = async () => {
-    if (!tmdbApiKey.trim()) return
+    if (!tmdbApiKey.trim() || tmdbTestRequestId.current) return
+    const requestId = crypto.randomUUID()
+    tmdbTestRequestId.current = requestId
     setTmdbStatus('testing')
     try {
-      const response = await fetch(
-        `https://api.themoviedb.org/3/configuration?api_key=${tmdbApiKey}`
-      )
-      setTmdbStatus(response.ok ? 'valid' : 'invalid')
-    } catch {
-      setTmdbStatus('invalid')
+      const result = await window.electronAPI.tmdbTestApiKey(tmdbApiKey.trim(), requestId)
+      if (tmdbTestRequestId.current !== requestId) return
+      setTmdbStatus(result === 'invalid-credential' ? 'invalid' : result)
+      setTmdbTestedAt(new Date().toISOString())
+    } catch (error) {
+      if (tmdbTestRequestId.current !== requestId) return
+      if (error instanceof Error && /timed out/i.test(error.message)) setTmdbStatus('timed-out')
+      else if (error instanceof Error && error.name === 'AbortError') setTmdbStatus('cancelled')
+      else setTmdbStatus('unavailable')
+    } finally {
+      if (tmdbTestRequestId.current === requestId) tmdbTestRequestId.current = null
     }
+  }
+
+  const handleSaveTmdb = async () => {
+    const value = tmdbApiKey.trim()
+    if (value === originalTmdb.trim() || isSavingTmdb) return
+
+    setIsSavingTmdb(true)
+    try {
+      await cancelTmdbTest()
+      await window.electronAPI.setSetting('tmdb_api_key', value)
+      setTmdbApiKey(value)
+      setOriginalTmdb(value)
+      setTmdbStatus(value ? 'testing' : 'idle')
+      setTmdbTestedAt(null)
+      addToast({ type: 'success', title: 'TMDB API key saved' })
+    } catch (error) {
+      window.electronAPI.log.error('[ServicesTab]', 'Failed to save TMDB API key:', error)
+      addToast({ type: 'error', title: 'TMDB API key was not saved', message: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setIsSavingTmdb(false)
+    }
+  }
+
+  const handleCancelTmdbEdit = async () => {
+    await cancelTmdbTest()
+    setTmdbApiKey(originalTmdb)
+    setTmdbStatus(originalTmdb ? 'saved-unverified' : 'idle')
   }
 
   const handleTestGemini = async () => {
@@ -259,12 +484,17 @@ export function ServicesTab() {
       const result = await window.electronAPI.aiTestApiKey(geminiApiKey)
       if (result.success) {
         setGeminiStatus('valid')
+        setGeminiTestedAt(new Date().toISOString())
+        const models = await window.electronAPI.aiGetAvailableModels().catch(() => [])
+        if (models && models.length > 0) {
+          setAvailableModels(models)
+        }
       } else {
-        setGeminiStatus('invalid')
+        setGeminiStatus(/invalid api key/i.test(result.error || '') ? 'invalid' : 'unavailable')
         setGeminiError(result.error || 'Invalid API key')
       }
     } catch {
-      setGeminiStatus('invalid')
+      setGeminiStatus('unavailable')
       setGeminiError('Failed to test API key')
     }
   }
@@ -273,20 +503,54 @@ export function ServicesTab() {
     setIsSaving(true)
     try {
       await Promise.all([
-        window.electronAPI.setSetting('tmdb_api_key', tmdbApiKey),
         window.electronAPI.setNfsMappings(nfsMappings),
         window.electronAPI.setSetting('gemini_api_key', geminiApiKey),
+        window.electronAPI.setSetting('gemini_model', geminiModel),
+        window.electronAPI.setSetting('musicbrainz_base_url', musicbrainzBaseUrl),
+        window.electronAPI.setSetting('omdb_api_key', omdbApiKey),
+        window.electronAPI.setSetting('tvdb_api_key', tvdbApiKey),
+        window.electronAPI.setSetting('tvdb_pin', tvdbPin),
+        window.electronAPI.setSetting('sonarr_url', sonarrUrl),
+        window.electronAPI.setSetting('sonarr_api_key', sonarrKey),
+        window.electronAPI.setSetting('radarr_url', radarrUrl),
+        window.electronAPI.setSetting('radarr_api_key', radarrKey),
+        window.electronAPI.setSetting('metadata_provider_preferences', metadataProviderPreferences),
       ])
-      setOriginalTmdb(tmdbApiKey)
+      void window.electronAPI.refreshSavedServiceHealth().catch(error => {
+        window.electronAPI.log.error('[ServicesTab]', 'Unable to refresh saved provider health:', error)
+      })
+      addToast({ type: 'success', title: 'Settings saved' })
       setOriginalNfsMappings({ ...nfsMappings })
       setOriginalGemini(geminiApiKey)
+      setOriginalGeminiModel(geminiModel)
+      setOriginalMusicbrainzBaseUrl(musicbrainzBaseUrl)
+      setOriginalOmdb(omdbApiKey)
+      setOriginalTvdbApiKey(tvdbApiKey)
+      setOriginalTvdbPin(tvdbPin)
+      setOriginalSonarrUrl(sonarrUrl)
+      setOriginalSonarrKey(sonarrKey)
+      setOriginalRadarrUrl(radarrUrl)
+      setOriginalRadarrKey(radarrKey)
+      setOriginalMetadataProviderPreferences(metadataProviderPreferences)
       setHasChanges(false)
     } catch (error) {
-      console.error('Failed to save settings:', error)
+      window.electronAPI.log.error('[ServicesTab]', 'Failed to save settings:', error)
     } finally {
       setIsSaving(false)
     }
   }
+
+  const handleSavedHealthAction = async (service: SavedServiceId) => {
+    try {
+      await window.electronAPI.retrySavedServiceHealth(service)
+    } catch (error) {
+      addToast({ type: 'error', title: `Unable to check ${service}`, message: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  const handleTestMusicbrainz = () => handleSavedHealthAction('musicbrainz')
+  const handleTestOmdb = () => handleSavedHealthAction('omdb')
+  const handleTestTvdb = () => handleSavedHealthAction('tvdb')
 
   const handleAddNfsMapping = () => {
     if (!newNfsPath.trim() || !newLocalPath.trim()) return
@@ -341,85 +605,26 @@ export function ServicesTab() {
     try {
       await window.electronAPI.setSetting('ffprobe_enabled', newValue ? 'true' : 'false')
     } catch (error) {
-      console.error('Failed to save FFprobe setting:', error)
+      window.electronAPI.log.error('[ServicesTab]', 'Failed to save FFprobe setting:', error)
       setFfprobeEnabled(!newValue)
-    }
-  }
-
-
-  const handleInstallFFprobe = async () => {
-    setIsInstalling(true)
-    setFfprobeError(null)
-    setInstallProgress({ stage: 'Starting...', percent: 0 })
-    try {
-      await window.electronAPI.ffprobeInstall()
-      setUpdateAvailable(false)
-      setLatestVersion(null)
-      await loadSettings()
-    } catch (err: unknown) {
-      setFfprobeError((err as Error).message || 'Failed to install FFprobe')
-    } finally {
-      setIsInstalling(false)
-      setInstallProgress(null)
-    }
-  }
-
-  const handleUninstallFFprobe = async () => {
-    if (!confirmUninstall) {
-      setConfirmUninstall(true)
-      confirmUninstallTimerRef.current = setTimeout(() => setConfirmUninstall(false), 3000)
-      return
-    }
-    if (confirmUninstallTimerRef.current) clearTimeout(confirmUninstallTimerRef.current)
-    setConfirmUninstall(false)
-    setIsUninstalling(true)
-    setFfprobeError(null)
-    try {
-      await window.electronAPI.ffprobeUninstall()
-      setUpdateAvailable(false)
-      setLatestVersion(null)
-      await loadSettings()
-    } catch (err: unknown) {
-      setFfprobeError((err as Error).message || 'Failed to uninstall FFprobe')
-    } finally {
-      setIsUninstalling(false)
-    }
-  }
-
-  const handleCheckForUpdate = async () => {
-    setCheckingUpdate(true)
-    setFfprobeError(null)
-    try {
-      const result = await window.electronAPI.ffprobeCheckForUpdate()
-      if (result.error) {
-        setFfprobeError(result.error)
-      } else {
-        setLatestVersion(result.latestVersion)
-        setUpdateAvailable(result.updateAvailable)
-        if (result.currentVersion) {
-          setFfprobeVersion(result.currentVersion)
-        }
-      }
-    } catch (err: unknown) {
-      setFfprobeError((err as Error).message || 'Failed to check for updates')
-    } finally {
-      setCheckingUpdate(false)
     }
   }
 
   // Status calculations
   const tmdbConfigured = !!tmdbApiKey.trim()
+  const omdbConfigured = !!omdbApiKey.trim()
   const ffprobeStatus: 'configured' | 'partial' | 'not-configured' = ffprobeAvailable
     ? ffprobeEnabled
       ? 'configured'
       : 'partial'
     : 'not-configured'
+
   const nfsConfigured = Object.keys(nfsMappings).length > 0
   const geminiConfigured = !!geminiApiKey.trim() && aiEnabled
 
   const getFFprobeStatusText = () => {
-    if (!ffprobeAvailable) return 'Not installed'
-    if (!ffprobeEnabled) return 'Installed but disabled'
+    if (!ffprobeAvailable) return 'Not found on PATH'
+    if (!ffprobeEnabled) return 'Available but disabled'
     return ffprobeVersion ? `v${ffprobeVersion}` : 'Enabled'
   }
 
@@ -446,8 +651,8 @@ export function ServicesTab() {
         title="TMDB API"
         description="Movie and TV metadata for completeness analysis"
         icon={<Film className="w-5 h-5" />}
-        status={tmdbConfigured ? 'configured' : 'not-configured'}
-        statusText={tmdbConfigured ? 'Configured' : 'Not configured'}
+        status={tmdbStatus === 'valid' ? 'configured' : tmdbConfigured ? 'partial' : 'not-configured'}
+        statusText={tmdbStatus === 'valid' ? 'Verified' : tmdbStatus === 'testing' ? 'Testing key…' : tmdbStatus === 'invalid' ? 'Invalid key' : tmdbStatus === 'unavailable' || tmdbStatus === 'timed-out' ? 'Service unavailable · key status unknown' : tmdbConfigured ? 'Saved · not tested' : 'Not configured'}
         expanded={expandedCards.has('tmdb')}
         onToggle={() => toggleCard('tmdb')}
       >
@@ -459,6 +664,7 @@ export function ServicesTab() {
                   type={showTmdbKey ? 'text' : 'password'}
                   value={tmdbApiKey}
                   onChange={(e) => {
+                    if (tmdbTestRequestId.current) void cancelTmdbTest()
                     setTmdbApiKey(e.target.value)
                     setTmdbStatus('idle')
                   }}
@@ -476,22 +682,24 @@ export function ServicesTab() {
               </div>
               <button
                 onClick={handleTestTmdb}
-                disabled={!tmdbApiKey.trim() || tmdbStatus === 'testing' || tmdbStatus === 'valid'}
+                disabled={!tmdbApiKey.trim() || tmdbStatus === 'testing'}
                 className={`px-3 py-2 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2 ${
-                  tmdbStatus === 'valid' ? 'text-primary' :
-                  tmdbStatus === 'invalid' ? 'text-destructive bg-destructive/10' :
+                  tmdbStatus === 'valid' ? 'text-green-500' :
+                  tmdbStatus === 'invalid' ? 'text-red-500 bg-red-500/10' :
                   'text-sm bg-muted hover:bg-muted/80'
                 }`}
-                title={tmdbStatus === 'valid' ? 'API key is valid' : tmdbStatus === 'invalid' ? 'Invalid API key' : 'Test API key'}
+                title="Test API key"
               >
                 {tmdbStatus === 'testing' ? <Loader2 className="w-4 h-4 animate-spin" /> :
                  tmdbStatus === 'valid' ? <CheckCircle className="w-4 h-4" /> :
                  tmdbStatus === 'invalid' ? <><XCircle className="w-4 h-4" /><span className="text-xs">Invalid</span></> :
                  <span className="text-sm">Test</span>}
               </button>
+              {tmdbStatus === 'testing' && tmdbTestRequestId.current && <button type="button" onClick={() => void cancelTmdbTest()} className="rounded-md border border-border px-3 py-2 text-sm">Cancel</button>}
               {tmdbApiKey.trim() && (
                 <button
                   onClick={() => {
+                    if (tmdbTestRequestId.current) void cancelTmdbTest()
                     setTmdbApiKey('')
                     setTmdbStatus('idle')
                   }}
@@ -506,6 +714,177 @@ export function ServicesTab() {
             Free API key from{' '}
             <button type="button" onClick={() => window.electronAPI.openExternal('https://www.themoviedb.org/settings/api')} className="text-primary hover:underline">themoviedb.org</button>
           </p>
+          <p role="status" className="text-xs text-muted-foreground">
+            {tmdbStatus === 'saved-unverified' ? 'Saved · Not tested' :
+              tmdbStatus === 'valid' ? 'Key accepted by TMDB' :
+              tmdbStatus === 'invalid' ? 'TMDB rejected this key' :
+              tmdbStatus === 'unavailable' ? 'TMDB is unavailable; key status is unknown' :
+              tmdbStatus === 'timed-out' ? 'TMDB test timed out; key status is unknown' :
+              tmdbStatus === 'cancelled' ? 'Test cancelled' :
+              tmdbStatus === 'testing' ? 'Testing key…' : 'Not tested'}
+          </p>
+          {tmdbTestedAt && <p className="text-xs text-muted-foreground">Last tested: {new Date(tmdbTestedAt).toLocaleString()}</p>}
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => void handleCancelTmdbEdit()} disabled={tmdbApiKey === originalTmdb || isSavingTmdb} className="rounded-md border border-border px-3 py-2 text-sm disabled:opacity-50">Cancel edits</button>
+            <button type="button" onClick={() => void handleSaveTmdb()} disabled={tmdbApiKey.trim() === originalTmdb.trim() || isSavingTmdb} className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50">{isSavingTmdb ? 'Saving…' : 'Save key'}</button>
+          </div>
+        </div>
+      </ServiceCard>
+
+      {/* OMDb Card */}
+      <ServiceCard
+        title="OMDb API"
+        description="Movie and TV metadata for ratings and additional info"
+        icon={<Film className="w-5 h-5" />}
+        status={!omdbConfigured ? 'not-configured' : savedProviderHealth?.omdb.status && !['checking', 'valid', 'not-configured'].includes(savedProviderHealth.omdb.status) ? 'partial' : 'configured'}
+        statusText={savedHealthLabel(savedProviderHealth, 'omdb', omdbConfigured)}
+        expanded={expandedCards.has('omdb')}
+        onToggle={() => toggleCard('omdb')}
+      >
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                id={omdbId}
+                type={showOmdbKey ? 'text' : 'password'}
+                value={omdbApiKey}
+                onChange={(e) => {
+                  setOmdbApiKey(e.target.value)
+                  setOmdbStatus('idle')
+                }}
+                placeholder="Enter your OMDb API key"
+                className="w-full px-3 py-2 pr-10 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
+              />
+              <button
+                type="button"
+                onClick={() => setShowOmdbKey(!showOmdbKey)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
+                aria-label={showOmdbKey ? 'Hide API key' : 'Show API key'}
+              >
+                {showOmdbKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <button
+              onClick={handleTestOmdb}
+              disabled={!originalOmdb.trim() || omdbApiKey !== originalOmdb || omdbStatus === 'testing'}
+              className={`px-3 py-2 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2 ${
+                omdbStatus === 'valid' ? 'text-green-500' :
+                omdbStatus === 'invalid' ? 'text-red-500 bg-red-500/10' :
+                'text-sm bg-muted hover:bg-muted/80'
+              }`}
+              title={savedHealthText(savedProviderHealth, 'omdb')}
+            >
+              {omdbStatus === 'testing' ? <><Loader2 className="w-4 h-4 animate-spin" /><span className="text-xs">Checking…</span></> :
+               omdbStatus === 'valid' ? <CheckCircle className="w-4 h-4" /> :
+               omdbStatus === 'invalid' ? <><XCircle className="w-4 h-4" /><span className="text-xs">Invalid</span></> :
+               <span className="text-sm">Retry</span>}
+            </button>
+            {omdbApiKey.trim() && (
+              <button
+                onClick={() => {
+                  setOmdbApiKey('')
+                  setOmdbStatus('idle')
+                }}
+                className="px-3 py-2 text-sm text-muted-foreground hover:text-destructive rounded-md transition-colors"
+                aria-label="Clear OMDb API key"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">{savedHealthText(savedProviderHealth, 'omdb')}</p>
+          <p className="text-xs text-muted-foreground">
+            Get an API key from{' '}
+            <button type="button" onClick={() => window.electronAPI.openExternal('http://www.omdbapi.com/apikey.aspx')} className="text-primary hover:underline">omdbapi.com</button>
+          </p>
+        </div>
+      </ServiceCard>
+
+
+      {/* TVDB Card */}
+      <ServiceCard
+        title="TheTVDB API"
+        description="TV metadata and external IDs; requires an API key"
+        icon={<Film className="w-5 h-5" />}
+        status={!tvdbApiKey ? 'not-configured' : savedProviderHealth?.tvdb.status && !['checking', 'valid', 'not-configured'].includes(savedProviderHealth.tvdb.status) ? 'partial' : 'configured'}
+        statusText={savedHealthLabel(savedProviderHealth, 'tvdb', Boolean(tvdbApiKey))}
+        expanded={expandedCards.has('tvdb')}
+        onToggle={() => toggleCard('tvdb')}
+      >
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+            <input id={tvdbId} type={showTvdbKey ? 'text' : 'password'} value={tvdbApiKey} onChange={(e) => setTvdbApiKey(e.target.value)} placeholder="Enter TheTVDB API key" className="w-full px-3 py-2 pr-10 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary" />
+              <button type="button" onClick={() => setShowTvdbKey(!showTvdbKey)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground" aria-label={showTvdbKey ? 'Hide API key' : 'Show API key'}>{showTvdbKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+            </div>
+            <button onClick={handleTestTvdb} disabled={!originalTvdbApiKey.trim() || tvdbApiKey !== originalTvdbApiKey || tvdbPin !== originalTvdbPin || tvdbStatus === 'testing'} className="px-3 py-2 rounded-md bg-muted hover:bg-muted/80 disabled:opacity-50">{tvdbStatus === 'testing' ? <><Loader2 className="mr-1 inline h-4 w-4 animate-spin" />Checking…</> : tvdbStatus === 'valid' ? <CheckCircle className="w-4 h-4 text-green-500" /> : tvdbStatus === 'invalid' ? <><XCircle className="mr-1 inline h-4 w-4 text-red-500" />Retry</> : 'Retry'}</button>
+          </div>
+          <div className="relative">
+            <input id={tvdbPinId} type={showTvdbPin ? 'text' : 'password'} value={tvdbPin} onChange={(e) => setTvdbPin(e.target.value)} placeholder="Optional subscriber PIN" className="w-full px-3 py-2 pr-10 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary" />
+            <button type="button" onClick={() => setShowTvdbPin(!showTvdbPin)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground" aria-label={showTvdbPin ? 'Hide subscriber PIN' : 'Show subscriber PIN'}>{showTvdbPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+          </div>
+          <p className="text-xs text-muted-foreground">Metadata provided by TheTVDB. Attribution is required for API results.</p>
+          <p className="text-xs text-muted-foreground">{savedHealthText(savedProviderHealth, 'tvdb')}</p>
+        </div>
+      </ServiceCard>
+
+
+      {/* MusicBrainz Card */}
+      <ServiceCard
+        title="MusicBrainz API"
+        description="Music metadata base URL for completeness analysis"
+        icon={<Music className="w-5 h-5" />}
+        status={!musicbrainzBaseUrl ? 'not-configured' : savedProviderHealth?.musicbrainz.status && !['checking', 'valid', 'not-configured'].includes(savedProviderHealth.musicbrainz.status) ? 'partial' : 'configured'}
+        statusText={savedHealthLabel(savedProviderHealth, 'musicbrainz', Boolean(musicbrainzBaseUrl))}
+        expanded={expandedCards.has('musicbrainz')}
+        onToggle={() => toggleCard('musicbrainz')}
+      >
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                id={musicbrainzId}
+                type="text"
+                value={musicbrainzBaseUrl}
+                onChange={(e) => setMusicbrainzBaseUrl(e.target.value)}
+                placeholder="Enter MusicBrainz API base URL"
+                className="w-full px-3 py-2 pr-10 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <button
+              onClick={handleTestMusicbrainz}
+              disabled={!originalMusicbrainzBaseUrl.trim() || musicbrainzBaseUrl !== originalMusicbrainzBaseUrl || musicbrainzStatus === 'testing'}
+              className={`px-3 py-2 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2 ${
+                musicbrainzStatus === 'valid' ? 'text-green-500' :
+                musicbrainzStatus === 'invalid' ? 'text-red-500 bg-red-500/10' :
+                'text-sm bg-muted hover:bg-muted/80'
+              }`}
+              title={savedHealthText(savedProviderHealth, 'musicbrainz')}
+            >
+              {musicbrainzStatus === 'testing' ? <><Loader2 className="w-4 h-4 animate-spin" /><span className="text-xs">Checking…</span></> :
+               musicbrainzStatus === 'valid' ? <CheckCircle className="w-4 h-4" /> :
+               musicbrainzStatus === 'invalid' ? <><XCircle className="w-4 h-4" /><span className="text-xs">Invalid</span></> :
+               <span className="text-sm">Retry</span>}
+            </button>
+            {musicbrainzBaseUrl !== 'https://musicbrainz.org/ws/2' && (
+              <button
+                onClick={() => {
+                  setMusicbrainzBaseUrl('https://musicbrainz.org/ws/2')
+                  setMusicbrainzStatus('idle')
+                }}
+                className="px-3 py-2 text-sm text-muted-foreground hover:text-destructive rounded-md transition-colors"
+                aria-label="Reset MusicBrainz API base URL"
+                title="Reset to default URL"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Default endpoint:{' '}
+            <button type="button" onClick={() => window.electronAPI.openExternal('https://musicbrainz.org')} className="text-primary hover:underline">musicbrainz.org</button>
+          </p>
+          <p className="text-xs text-muted-foreground">{savedHealthText(savedProviderHealth, 'musicbrainz')}</p>
         </div>
       </ServiceCard>
 
@@ -521,76 +900,24 @@ export function ServicesTab() {
         enableToggle={ffprobeAvailable ? { enabled: ffprobeEnabled, onToggle: handleToggleFFprobe, id: toggleId } : undefined}
       >
         <div className="space-y-3">
-          <div className="flex items-center gap-3">
-            <div className="flex-1">
-              <p className="text-sm font-medium">
-                {ffprobeAvailable ? `FFprobe v${ffprobeVersion || '?'}` : 'FFprobe not installed'}
+          {ffprobeAvailable ? (
+            <div className="flex items-center justify-between p-3 bg-background/50 rounded-lg">
+              <div>
+                <p className="text-sm font-medium">System FFprobe available</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Totality invokes <code>ffprobe</code> through the process PATH. Installation and updates are owned by the operating system.
+                </p>
+              </div>
+              {ffprobeVersion && <span className="text-xs text-muted-foreground">v{ffprobeVersion}</span>}
+            </div>
+          ) : (
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+              <p className="text-sm font-medium text-amber-500">FFprobe not found on PATH</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Install FFmpeg with your operating system package manager and restart Totality. Totality does not download or manage its own FFmpeg/FFprobe copy.
               </p>
-              {ffprobeAvailable && !updateAvailable && latestVersion && (
-                <p className="text-xs text-muted-foreground">Up to date</p>
-              )}
-              {ffprobeAvailable && !updateAvailable && !latestVersion && (
-                <p className="text-xs text-muted-foreground">{ffprobeBundled ? 'Bundled' : 'System installed'}</p>
-              )}
-              {updateAvailable && latestVersion && (
-                <p className="text-xs text-primary">Version {latestVersion} available</p>
-              )}
-              {!ffprobeAvailable && (
-                <p className="text-xs text-muted-foreground">Required for local file analysis</p>
-              )}
-            </div>
-            {ffprobeAvailable ? (
-              <button
-                onClick={updateAvailable ? handleInstallFFprobe : handleCheckForUpdate}
-                disabled={checkingUpdate || isInstalling}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
-              >
-                {(checkingUpdate) ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> :
-                 updateAvailable ? <Download className="w-3.5 h-3.5" /> :
-                 <RefreshCw className="w-3.5 h-3.5" />}
-                {checkingUpdate ? 'Checking...' :
-                 updateAvailable ? 'Update' :
-                 'Check for Updates'}
-              </button>
-            ) : (
-              <button
-                onClick={handleInstallFFprobe}
-                disabled={isInstalling}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
-              >
-                {isInstalling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-                Install (~80MB)
-              </button>
-            )}
-          </div>
-
-          {/* Install/Update Progress */}
-          {isInstalling && installProgress && (
-            <div className="w-full bg-muted rounded-full h-1.5">
-              <div className="bg-primary h-1.5 rounded-full transition-all" style={{ width: `${installProgress.percent}%` }} />
             </div>
           )}
-
-          {/* Error */}
-          {ffprobeError && (
-            <p className="text-xs text-destructive">{ffprobeError}</p>
-          )}
-
-          {/* Uninstall */}
-          {ffprobeAvailable && ffprobeBundled && (
-            <button
-              onClick={handleUninstallFFprobe}
-              disabled={isUninstalling || isInstalling}
-              className={`text-xs transition-colors disabled:opacity-50 ${
-                confirmUninstall
-                  ? 'text-destructive'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {isUninstalling ? 'Uninstalling…' : confirmUninstall ? 'Click again to confirm' : 'Uninstall'}
-            </button>
-          )}
-
         </div>
       </ServiceCard>
 
@@ -599,8 +926,8 @@ export function ServicesTab() {
         title="Google Gemini AI"
         description="Free AI-powered library insights, recommendations, and chat"
         icon={<Bot className="w-5 h-5" />}
-        status={geminiConfigured ? 'configured' : 'not-configured'}
-        statusText={geminiConfigured ? 'Configured' : 'Not configured'}
+        status={geminiStatus === 'valid' ? 'configured' : geminiConfigured ? 'partial' : 'not-configured'}
+        statusText={geminiStatus === 'valid' ? 'Credential verified' : geminiStatus === 'testing' ? 'Checking access…' : geminiStatus === 'invalid' ? 'Invalid credential' : geminiStatus === 'rate-limited' ? 'Rate limited' : geminiStatus === 'unavailable' || geminiStatus === 'timed-out' ? 'Service unavailable' : geminiConfigured ? 'Saved · not tested' : 'Not configured'}
         expanded={expandedCards.has('gemini')}
         onToggle={() => toggleCard('gemini')}
         enableToggle={geminiApiKey.trim() ? {
@@ -639,10 +966,10 @@ export function ServicesTab() {
               </div>
               <button
                 onClick={handleTestGemini}
-                disabled={!geminiApiKey.trim() || geminiStatus === 'testing' || geminiStatus === 'valid'}
+                disabled={!geminiApiKey.trim() || geminiStatus === 'testing'}
                 className={`px-3 py-2 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2 ${
-                  geminiStatus === 'valid' ? 'text-primary' :
-                  geminiStatus === 'invalid' ? 'text-destructive bg-destructive/10' :
+                  geminiStatus === 'valid' ? 'text-green-500' :
+                  geminiStatus === 'invalid' ? 'text-red-500 bg-red-500/10' :
                   'text-sm bg-muted hover:bg-muted/80'
                 }`}
                 title={geminiStatus === 'valid' ? 'API key is valid' : geminiStatus === 'invalid' ? (geminiError || 'Invalid API key') : 'Test API key'}
@@ -671,8 +998,36 @@ export function ServicesTab() {
             <button type="button" onClick={() => window.electronAPI.openExternal('https://aistudio.google.com/apikey')} className="text-primary hover:underline">aistudio.google.com</button>
             {' '}(no credit card required)
           </p>
+          <p role="status" className="text-xs text-muted-foreground">
+            {geminiStatus === 'testing' ? 'Checking saved credential and selected model…' :
+             geminiStatus === 'valid' ? geminiModelAvailable ? 'Credential accepted · selected model available' : 'Credential accepted · selected model unavailable' :
+             geminiStatus === 'invalid' ? (geminiError || 'Gemini rejected this credential') :
+             geminiStatus === 'rate-limited' ? 'Gemini is rate limited; credential status is unknown' :
+             geminiStatus === 'unavailable' ? 'Gemini is unavailable; credential status is unknown' :
+             geminiStatus === 'timed-out' ? 'Gemini check timed out; credential status is unknown' :
+             geminiStatus === 'cancelled' ? 'Credential check cancelled' :
+             geminiStatus === 'saved-unverified' ? 'Saved · Not tested' : 'Not tested'}
+          </p>
+          {geminiTestedAt && <p className="text-xs text-muted-foreground">Last checked: {new Date(geminiTestedAt).toLocaleString()}</p>}
 
-          <p className="text-xs text-muted-foreground">Model: Latest Gemini Flash, updated by Google.</p>
+          <div className="space-y-2">
+            <label htmlFor={geminiModelId} className="block text-xs font-medium text-muted-foreground">
+              Model
+            </label>
+            <select
+              id={geminiModelId}
+              value={geminiModel}
+              onChange={(e) => setGeminiModel(e.target.value)}
+              className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
+            >
+              {!availableModels.some(model => model.name === geminiModel) && <option value={geminiModel}>{geminiModel} · availability not confirmed</option>}
+              {availableModels.map((m) => (
+                <option key={m.name} value={m.name}>
+                  {m.displayName}
+                </option>
+              ))}
+            </select>
+          </div>
 
         </div>
       </ServiceCard>
@@ -707,7 +1062,7 @@ export function ServicesTab() {
                       <code className="flex-1 text-xs truncate text-muted-foreground" title={nfsPath}>
                         nfs://{nfsPath}
                       </code>
-                      <span className="text-muted-foreground/50">→</span>
+                      <span className="text-muted-foreground/50">ΓåÆ</span>
                       <code className="flex-1 text-xs truncate" title={localPath}>
                         {localPath}
                       </code>
@@ -736,8 +1091,8 @@ export function ServicesTab() {
                       <div
                         className={`flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg ${
                           testResult.success
-                            ? 'bg-primary/10 text-primary'
-                            : 'bg-destructive/10 text-destructive'
+                            ? 'bg-green-500/10 text-green-500'
+                            : 'bg-red-500/10 text-red-400'
                         }`}
                       >
                         {testResult.success ? (
@@ -802,7 +1157,69 @@ export function ServicesTab() {
         </div>
       </ServiceCard>
 
-      {/* Mood Sync — moved to Library tab */}
+      <ServiceCard
+        title="Sonarr / Radarr"
+        description="Optional release search and import integration"
+        icon={<Bot className="w-5 h-5" />}
+        status={sonarrUrl || radarrUrl ? (arrStatus === 'invalid' ? 'partial' : 'configured') : 'not-configured'}
+        statusText={sonarrUrl || radarrUrl ? 'Configured' : 'Not configured'}
+        expanded={expandedCards.has('arr')}
+        onToggle={() => toggleCard('arr')}
+      >
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div><label className="text-xs text-muted-foreground">Sonarr URL</label><input value={sonarrUrl} onChange={(e) => setSonarrUrl(e.target.value)} placeholder="http://localhost:8989" className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm" /></div>
+            <div><label className="text-xs text-muted-foreground">Sonarr API key</label><input type="password" value={sonarrKey} onChange={(e) => setSonarrKey(e.target.value)} className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm" /></div>
+            <div><label className="text-xs text-muted-foreground">Radarr URL</label><input value={radarrUrl} onChange={(e) => setRadarrUrl(e.target.value)} placeholder="http://localhost:7878" className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm" /></div>
+            <div><label className="text-xs text-muted-foreground">Radarr API key</label><input type="password" value={radarrKey} onChange={(e) => setRadarrKey(e.target.value)} className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm" /></div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              disabled={!originalSonarrUrl || !originalSonarrKey || sonarrUrl !== originalSonarrUrl || sonarrKey !== originalSonarrKey || savedProviderHealth?.sonarr.status === 'checking'}
+              onClick={() => handleSavedHealthAction('sonarr')}
+              className="px-3 py-2 text-sm bg-muted hover:bg-muted/80 rounded-md disabled:opacity-50 transition-colors cursor-pointer"
+            >
+              {savedProviderHealth?.sonarr.status === 'checking' ? 'Checking Sonarr…' : 'Retry Sonarr'}
+            </button>
+            <button
+              disabled={!originalRadarrUrl || !originalRadarrKey || radarrUrl !== originalRadarrUrl || radarrKey !== originalRadarrKey || savedProviderHealth?.radarr.status === 'checking'}
+              onClick={() => handleSavedHealthAction('radarr')}
+              className="px-3 py-2 text-sm bg-muted hover:bg-muted/80 rounded-md disabled:opacity-50 transition-colors cursor-pointer"
+            >
+              {savedProviderHealth?.radarr.status === 'checking' ? 'Checking Radarr…' : 'Retry Radarr'}
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground">Sonarr: {savedHealthText(savedProviderHealth, 'sonarr')}</p>
+          <p className="text-xs text-muted-foreground">Radarr: {savedHealthText(savedProviderHealth, 'radarr')}</p>
+          <p className="text-xs text-muted-foreground">Search commands require explicit confirmation from the media action menu. Totality does not choose indexers or releases.</p>
+        </div>
+      </ServiceCard>
+
+      <ServiceCard
+        title="Metadata providers"
+        description="Choose enabled providers and their fusion priority"
+        icon={<Network className="w-5 h-5" />}
+        status="configured"
+        statusText="Fusion enabled"
+        expanded={expandedCards.has('metadata-providers')}
+        onToggle={() => toggleCard('metadata-providers')}
+      >
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">All enabled providers contribute to metadata fusion. Order controls conflicting field precedence.</p>
+          {(() => {
+            const preferences = readProviderPreferences()
+            return preferences.order.map((id, index) => (
+              <div key={id} className="flex items-center gap-2 rounded-md border border-border/30 px-3 py-2">
+                <input type="checkbox" checked={preferences.enabled.includes(id)} onChange={(e) => writeProviderPreferences(e.target.checked ? [...preferences.enabled, id] : preferences.enabled.filter(provider => provider !== id), preferences.order)} aria-label={`Enable ${metadataProviderLabels[id]}`} />
+                <span className="flex-1 text-sm">{metadataProviderLabels[id]}</span>
+                <button type="button" disabled={index === 0} onClick={() => { const order = [...preferences.order]; [order[index - 1], order[index]] = [order[index], order[index - 1]]; writeProviderPreferences(preferences.enabled, order) }} className="px-2 py-1 text-xs rounded bg-muted disabled:opacity-40" aria-label={`Move ${metadataProviderLabels[id]} up`}>Γåæ</button>
+                <button type="button" disabled={index === preferences.order.length - 1} onClick={() => { const order = [...preferences.order]; [order[index], order[index + 1]] = [order[index + 1], order[index]]; writeProviderPreferences(preferences.enabled, order) }} className="px-2 py-1 text-xs rounded bg-muted disabled:opacity-40" aria-label={`Move ${metadataProviderLabels[id]} down`}>Γåô</button>
+              </div>
+            ))
+          })()}
+          <p className="text-xs text-muted-foreground">TMDB, TVDB, and OMDb use API credentials. AniList, TVmaze, and MusicBrainz do not require an API key.</p>
+        </div>
+      </ServiceCard>
 
       {/* Save button */}
       {hasChanges && (

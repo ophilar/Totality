@@ -1,403 +1,256 @@
-import { IPC_CHANNELS } from '../../shared/ipcChannels'
 import { z } from 'zod'
-import { getSeriesCompletenessService } from '../services/SeriesCompletenessService'
-import { getDatabase } from '../database/getDatabase'
-import { getTMDBService } from '../services/TMDBService'
-import { getWindowFromEvent } from './utils/safeSend'
-import { createProgressUpdater } from './utils/progressUpdater'
-import { validateInput, NonEmptyStringSchema, OptionalSourceIdSchema, PositiveIntSchema, CanonicalSeriesIdentityKeySchema } from '../validation/schemas'
-import { getTaskQueueService } from '../services/TaskQueueService'
-import { createIpcHandler, createIpcHandlerWithEvent } from './utils/createHandler'
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
+import { getSeriesCompletenessService } from '@main/services/SeriesCompletenessService'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getTMDBService } from '@main/services/TMDBService'
+import { MetadataRegistryService } from '@main/services/metadata/MetadataRegistryService'
+import { NonEmptyStringSchema, OptionalSourceIdSchema, PositiveIntSchema, SeriesGetSeasonDetailsTupleSchema, SeriesGetEpisodeStillTupleSchema } from '@main/validation/schemas'
+import { getLoggingService } from '@main/services/LoggingService'
+import { createIpcHandler, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
+import { getDeduplicationService } from '@main/services/DeduplicationService'
+import { deriveSeriesIdentityKey } from '@main/services/SeriesIdentityService'
+import type { MediaItem } from '@main/types/database'
 
+import { getStatsCacheService } from '@main/services/StatsCacheService'
+import { operationRequestRegistry } from '@main/ipc/utils/OperationRequestRegistry'
 
-/**
- * Register all series completeness IPC handlers
- */
-export function registerSeriesHandlers() {
-  // ============================================================================
-  // SERIES COMPLETENESS ANALYSIS
-  // ============================================================================
+const ScopedStringSchema = z.string().min(1).max(200)
 
-  /**
-   * Analyze all series in the library for completeness
-   * @param sourceId Optional source ID to scope analysis
-   * @param libraryId Optional library ID to scope analysis
-   */
-  createIpcHandlerWithEvent(IPC_CHANNELS.seriesAnalyzeAll, async (event, sourceId?: unknown, libraryId?: unknown) => {
-    const validSourceId = sourceId !== undefined ? validateInput(NonEmptyStringSchema, sourceId, 'series:analyzeAll.sourceId') : undefined
-    const validLibraryId = libraryId !== undefined ? validateInput(NonEmptyStringSchema, libraryId, 'series:analyzeAll.libraryId') : undefined
+const SeriesIdentityTupleSchema = z.tuple([
+  NonEmptyStringSchema,
+  ScopedStringSchema,
+  NonEmptyStringSchema,
+  ScopedStringSchema,
+])
 
-    // Guard: prevent concurrent analysis for the same source/library
-    if (getTaskQueueService().hasActiveTask('series-completeness', validSourceId, validLibraryId)) {
-      throw new Error('A series analysis is already in progress for this library')
-    }
+const SeriesFixMatchTupleSchema = z.tuple([
+  NonEmptyStringSchema,
+  ScopedStringSchema,
+  NonEmptyStringSchema,
+  ScopedStringSchema,
+  NonEmptyStringSchema,
+  NonEmptyStringSchema,
+])
 
-    const win = getWindowFromEvent(event)
-    const service = getSeriesCompletenessService()
-    const { onProgress, flush } = createProgressUpdater(win, 'series:progress', 'media')
-
-    try {
-      const result = await service.analyzeAllSeries((progress) => {
-        onProgress(progress)
-      }, validSourceId, validLibraryId)
-
-      return result
-    } catch (error) {
-      console.error('Error analyzing series completeness:', error)
-      throw error
-    } finally {
-      flush()
-    }
-  })
-
-  /**
-   * Cancel series analysis
-   */
-  createIpcHandler(IPC_CHANNELS.seriesCancelAnalysis, async () => {
-    try {
-      const service = getSeriesCompletenessService()
-      service.cancel()
-      return { success: true }
-    } catch (error) {
-      console.error('Error cancelling series analysis:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Analyze a single series by canonical identity key
-   */
-  createIpcHandler(IPC_CHANNELS.seriesAnalyzeByIdentity, async (seriesIdentityKey: unknown, sourceId?: unknown, libraryId?: unknown) => {
-    const validIdentityKey = validateInput(NonEmptyStringSchema, seriesIdentityKey, 'series:analyzeByIdentity.seriesIdentityKey')
-    const validSourceId = sourceId !== undefined ? validateInput(NonEmptyStringSchema, sourceId, 'series:analyzeByIdentity.sourceId') : undefined
-    const validLibraryId = libraryId !== undefined ? validateInput(NonEmptyStringSchema, libraryId, 'series:analyzeByIdentity.libraryId') : undefined
-    const service = getSeriesCompletenessService()
-    return service.analyzeSeries(validIdentityKey, validSourceId, validLibraryId)
-  })
-
-  /**
-   * Analyze a single series by canonical identity key
-   */
-  createIpcHandler(IPC_CHANNELS.seriesAnalyze, async (seriesIdentityKey: unknown, sourceId?: unknown, libraryId?: unknown) => {
-    const validKey = validateInput(NonEmptyStringSchema, seriesIdentityKey, 'series:analyze.seriesIdentityKey')
-    const validSourceId = sourceId !== undefined ? validateInput(NonEmptyStringSchema, sourceId, 'series:analyze.sourceId') : undefined
-    const validLibraryId = libraryId !== undefined ? validateInput(NonEmptyStringSchema, libraryId, 'series:analyze.libraryId') : undefined
-    const service = getSeriesCompletenessService()
-    return service.analyzeSeries(validKey, validSourceId, validLibraryId)
-  })
-
-  // ============================================================================
-  // SERIES COMPLETENESS DATA
-  // ============================================================================
-
-  /**
-   * Get all series completeness records
-   */
-  createIpcHandler(IPC_CHANNELS.seriesGetAll, async (sourceId?: unknown) => {
-    const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'series:getAll.sourceId') : undefined
-    try {
-      const db = getDatabase()
-      return db.getSeriesCompleteness(validSourceId)
-    } catch (error) {
-      console.error('Error getting series completeness:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Get incomplete series only
-   * @param sourceId Optional source ID to filter by
-   */
-  createIpcHandler(IPC_CHANNELS.seriesGetIncomplete, async (sourceId?: unknown) => {
-    const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'series:getIncomplete.sourceId') : undefined
-    try {
-      const db = getDatabase()
-      return db.getIncompleteSeries(validSourceId)
-    } catch (error) {
-      console.error('Error getting incomplete series:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Get series completeness statistics
-   */
-  createIpcHandler(IPC_CHANNELS.seriesGetStats, async () => {
-    try {
-      const db = getDatabase()
-      return db.getSeriesCompletenessStats()
-    } catch (error) {
-      console.error('Error getting series stats:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Get episodes for a specific series by canonical identity key
-   */
-  createIpcHandler(IPC_CHANNELS.seriesGetEpisodes, async (seriesIdentityKey: unknown, sourceId?: unknown, explicitKey?: unknown, libraryId?: unknown) => {
-    const rawKey = (explicitKey || seriesIdentityKey) as string
-    const validKey = validateInput(NonEmptyStringSchema, rawKey, 'series:getEpisodes.seriesIdentityKey')
-    const validSourceId = sourceId !== undefined ? validateInput(NonEmptyStringSchema, sourceId, 'series:getEpisodes.sourceId') : undefined
-    const validLibraryId = libraryId !== undefined ? validateInput(NonEmptyStringSchema, libraryId, 'series:getEpisodes.libraryId') : undefined
-
-    if (!validKey.startsWith('tmdb:') && !validKey.startsWith('tvdb:') && !validKey.startsWith('unresolved:')) {
-      throw new Error(`series:getEpisodes requires a canonical series identity key (received: "${validKey}"). Title-based queries are not permitted.`)
-    }
-
-    try {
-      const db = getDatabase()
-      return db.getEpisodes('', validSourceId || '', validKey, validLibraryId || '')
-    } catch (error) {
-      console.error(`Error getting episodes for identity "${validKey}":`, error)
-      throw error
-    }
-  })
-
-  /**
-   * Get episodes for a series scoped by identity
-   */
-  createIpcHandler(IPC_CHANNELS.seriesGetEpisodesByIdentity, async (seriesTitle: unknown, sourceId: unknown, seriesIdentityKey: unknown, libraryId: unknown) => {
-    const validTitle = validateInput(NonEmptyStringSchema, seriesTitle, 'series:getEpisodesByIdentity.seriesTitle')
-    const validSourceId = validateInput(NonEmptyStringSchema, sourceId, 'series:getEpisodesByIdentity.sourceId')
-    const validIdentityKey = validateInput(NonEmptyStringSchema, seriesIdentityKey, 'series:getEpisodesByIdentity.seriesIdentityKey')
-    const validLibraryId = validateInput(NonEmptyStringSchema, libraryId, 'series:getEpisodesByIdentity.libraryId')
-    try {
-      const db = getDatabase()
-      return db.getEpisodes(validTitle, validSourceId, validIdentityKey, validLibraryId)
-    } catch (error) {
-      console.error(`Error getting episodes for identity "${validIdentityKey}":`, error)
-      throw error
-    }
-  })
-
-  /**
-   * Get audio languages for a series scoped by identity
-   */
-  createIpcHandler(IPC_CHANNELS.seriesGetAudioLanguagesByIdentity, async (seriesTitle: unknown, sourceId: unknown, seriesIdentityKey: unknown, libraryId: unknown) => {
-    const validTitle = validateInput(NonEmptyStringSchema, seriesTitle, 'series:getAudioLanguagesByIdentity.seriesTitle')
-    const validSourceId = validateInput(NonEmptyStringSchema, sourceId, 'series:getAudioLanguagesByIdentity.sourceId')
-    const validIdentityKey = validateInput(NonEmptyStringSchema, seriesIdentityKey, 'series:getAudioLanguagesByIdentity.seriesIdentityKey')
-    const validLibraryId = validateInput(NonEmptyStringSchema, libraryId, 'series:getAudioLanguagesByIdentity.libraryId')
-    try {
-      const db = getDatabase()
-      const episodes = db.getEpisodes(validTitle, validSourceId, validIdentityKey, validLibraryId)
-      const languages = new Set<string>()
-      for (const ep of episodes) {
-        if (ep.audio_language) languages.add(ep.audio_language)
-        if (ep.audio_tracks) {
-          try {
-            const tracks = JSON.parse(ep.audio_tracks) as Array<{ language?: string }>
-            for (const t of tracks) {
-              if (t.language) languages.add(t.language)
-            }
-          } catch {
-            // ignore
+function collectAudioLanguages(episodes: MediaItem[]): string[] {
+  const languages = new Set<string>()
+  for (const ep of episodes) {
+    if (ep.audio_tracks) {
+      try {
+        const tracks = JSON.parse(ep.audio_tracks) as Array<{ language?: string; lang?: string }>
+        if (Array.isArray(tracks)) {
+          for (const track of tracks) {
+            const lang = (track.language || track.lang || '').trim().toLowerCase()
+            if (lang) languages.add(lang)
           }
         }
-      }
-      return Array.from(languages)
-    } catch (error) {
-      console.error(`Error getting audio languages for identity "${validIdentityKey}":`, error)
-      throw error
-    }
-  })
-
-  /**
-   * Delete a series completeness record
-   */
-  createIpcHandler(IPC_CHANNELS.seriesDelete, async (id: unknown) => {
-    const validId = validateInput(PositiveIntSchema, id, 'series:delete.id')
-    try {
-      const db = getDatabase()
-      return await db.deleteSeriesCompleteness(validId)
-    } catch (error) {
-      console.error(`Error deleting series completeness ${validId}:`, error)
-      throw error
-    }
-  })
-
-  // ============================================================================
-  // TMDB ARTWORK FETCHING
-  // ============================================================================
-
-  /**
-   * Get TV show details from TMDB (overview for series view)
-   */
-  createIpcHandler(IPC_CHANNELS.tmdbGetTVShowDetails, async (tmdbId: unknown) => {
-    const validTmdbId = validateInput(NonEmptyStringSchema, tmdbId, 'tmdb:getTVShowDetails')
-    try {
-      const tmdb = getTMDBService()
-      const details = await tmdb.getTVShowDetails(validTmdbId)
-      return {
-        overview: details.overview || null,
-        backdropPath: details.backdrop_path || null,
-      }
-    } catch (error) {
-      console.error(`Error fetching TV show details for ${validTmdbId}:`, error)
-      return null
-    }
-  })
-
-  /**
-   * Get movie details from TMDB (overview for missing movie popup)
-   */
-  createIpcHandler(IPC_CHANNELS.tmdbGetMovieDetails, async (tmdbId: unknown) => {
-    const validTmdbId = validateInput(NonEmptyStringSchema, tmdbId, 'tmdb:getMovieDetails')
-    try {
-      const tmdb = getTMDBService()
-      const details = await tmdb.getMovieDetails(validTmdbId)
-      return {
-        overview: details.overview || null,
-        releaseDate: details.release_date || null,
-        runtime: details.runtime || null,
-        backdropPath: details.backdrop_path || null,
-      }
-    } catch (error) {
-      console.error(`Error fetching movie details for ${validTmdbId}:`, error)
-      return null
-    }
-  })
-
-  /**
-   * Get season details from TMDB (overview, episode count, air date)
-   */
-  createIpcHandler(IPC_CHANNELS.seriesGetSeasonDetails, async (tmdbId: unknown, seasonNumber: unknown) => {
-    const validTmdbId = validateInput(NonEmptyStringSchema, tmdbId, 'series:getSeasonDetails.tmdbId')
-    const validSeasonNumber = validateInput(z.number().int().nonnegative(), seasonNumber, 'series:getSeasonDetails.seasonNumber')
-    try {
-      const tmdb = getTMDBService()
-      const seasonDetails = await tmdb.getSeasonDetails(validTmdbId, validSeasonNumber)
-      return {
-        overview: seasonDetails.overview || null,
-        episodeCount: seasonDetails.episodes?.length || 0,
-        airDate: seasonDetails.air_date || null,
-        name: seasonDetails.name || null,
-      }
-    } catch (error) {
-      console.error(`Error fetching season details for ${validTmdbId} S${validSeasonNumber}:`, error)
-      return null
-    }
-  })
-
-  /**
-   * Get season poster URL from TMDB
-   */
-  createIpcHandler(IPC_CHANNELS.seriesGetSeasonPoster, async (tmdbId: unknown, seasonNumber: unknown) => {
-    const validTmdbId = validateInput(NonEmptyStringSchema, tmdbId, 'series:getSeasonPoster.tmdbId')
-    const validSeasonNumber = validateInput(z.number().int().nonnegative(), seasonNumber, 'series:getSeasonPoster.seasonNumber')
-    try {
-      const tmdb = getTMDBService()
-      const seasonDetails = await tmdb.getSeasonDetails(validTmdbId, validSeasonNumber)
-      return tmdb.buildImageUrl(seasonDetails.poster_path, 'w500')
-    } catch (error) {
-      console.error(`Error fetching season poster for ${validTmdbId} S${validSeasonNumber}:`, error)
-      return null
-    }
-  })
-
-  /**
-   * Get episode still URL from TMDB
-   */
-  createIpcHandler(IPC_CHANNELS.seriesGetEpisodeStill, async (tmdbId: unknown, seasonNumber: unknown, episodeNumber: unknown) => {
-    const validTmdbId = validateInput(NonEmptyStringSchema, tmdbId, 'series:getEpisodeStill.tmdbId')
-    const validSeasonNumber = validateInput(z.number().int().nonnegative(), seasonNumber, 'series:getEpisodeStill.seasonNumber')
-    const validEpisodeNumber = validateInput(z.number().int().nonnegative(), episodeNumber, 'series:getEpisodeStill.episodeNumber')
-    try {
-      const tmdb = getTMDBService()
-      const seasonDetails = await tmdb.getSeasonDetails(validTmdbId, validSeasonNumber)
-      const episode = seasonDetails.episodes.find(ep => ep.episode_number === validEpisodeNumber)
-      if (episode) {
-        return tmdb.buildImageUrl(episode.still_path, 'w300')
-      }
-      return null
-    } catch (error) {
-      console.error(`Error fetching episode still for ${validTmdbId} S${validSeasonNumber}E${validEpisodeNumber}:`, error)
-      return null
-    }
-  })
-
-  // ============================================================================
-  // MATCH FIXING - Fix incorrect TMDB matches for TV series
-  // ============================================================================
-
-  /**
-   * Search TMDB for TV shows to fix a match
-   */
-  createIpcHandler(IPC_CHANNELS.seriesSearchTMDB, async (query: unknown) => {
-    const validQuery = validateInput(NonEmptyStringSchema, query, 'series:searchTMDB.query')
-    try {
-      const tmdb = getTMDBService()
-      await tmdb.initialize()
-      const response = await tmdb.searchTVShow(validQuery)
-
-      // Transform results to include poster URLs
-      return response.results.map(show => ({
-        id: show.id,
-        name: show.name,
-        first_air_date: show.first_air_date,
-        overview: show.overview,
-        poster_url: tmdb.buildImageUrl(show.poster_path, 'w500'),
-        vote_average: show.vote_average,
-      }))
-    } catch (error) {
-      console.error('Error searching TMDB for TV shows:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Fix the TMDB match for a TV series
-   * Updates all episodes of the series with the new TMDB ID, canonical identity key, and title
-   */
-  createIpcHandler(IPC_CHANNELS.seriesFixMatch, async (seriesIdentityKey: unknown, sourceId: unknown, libraryId: unknown, tmdbId: unknown) => {
-      const validSeriesIdentityKey = validateInput(CanonicalSeriesIdentityKeySchema, seriesIdentityKey, 'series:fixMatch.seriesIdentityKey')
-      const validSourceId = validateInput(NonEmptyStringSchema, sourceId, 'series:fixMatch.sourceId')
-      const validLibraryId = (typeof libraryId === 'string' && libraryId.trim() !== '') ? libraryId.trim() : undefined
-      const validTmdbId = validateInput(PositiveIntSchema, tmdbId, 'series:fixMatch.tmdbId')
-      try {
-        const db = getDatabase()
-        const tmdb = getTMDBService()
-        const service = getSeriesCompletenessService()
-
-        // Get show details from TMDB for the poster and title
-        await tmdb.initialize()
-        const showDetails = await tmdb.getTVShowDetails(validTmdbId.toString())
-        const posterUrl = tmdb.buildImageUrl(showDetails.poster_path, 'w500') || undefined
-        const newSeriesTitle = showDetails.name
-
-        // Update all episodes with the new TMDB ID, canonical identity key, and series title
-        const updatedCount = await db.updateSeriesMatch(
-          validSeriesIdentityKey,
-          validSourceId,
-          validLibraryId,
-          validTmdbId.toString(),
-          posterUrl,
-          newSeriesTitle,
-          showDetails.original_language
-        )
-
-        // Re-analyze the series with the canonical identity key and library scope
-        const newIdentityKey = `tmdb:${validTmdbId}`
-        const completeness = await service.analyzeSeries(
-          newIdentityKey,
-          validSourceId,
-          validLibraryId,
-          validTmdbId.toString()
-        )
-
-        return {
-          success: true,
-          updatedEpisodes: updatedCount,
-          completeness,
-          newTitle: newSeriesTitle,
-          newIdentityKey,
-        }
       } catch (error) {
-        console.error('Error fixing series match:', error)
-        throw error
+        getLoggingService().error('[series]', `Failed to parse audio tracks for media item ${ep.id ?? 'unknown'}: ${error instanceof Error ? error.message : String(error)}`)
       }
-    })
+    }
+    if (ep.audio_language) {
+      const lang = ep.audio_language.trim().toLowerCase()
+      if (lang) languages.add(lang)
+    }
+  }
+  return Array.from(languages)
+}
 
-  console.log('Series completeness IPC handlers registered')
+export function registerSeriesHandlers() {
+  const service = getSeriesCompletenessService()
+  const db = getDatabase()
+  const tmdb = getTMDBService()
+  createIpcHandler(IPC_CHANNELS.DATABASE.TMDB_VALIDATION_STATE, async () => tmdb.getValidationState())
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.DATABASE.TMDB_TEST_API_KEY, z.object({ requestId: z.string().min(1), apiKey: z.string().trim().min(1) }), async (event, input) => {
+    const operation = operationRequestRegistry.register(event.sender, input.requestId)
+    try {
+      return await tmdb.testApiKey(input.apiKey, operation.signal)
+    } finally {
+      operation.dispose()
+    }
+  })
+  async function analyzeIdentityScoped(
+    title: string,
+    sourceId: string,
+    seriesIdentityKey: string,
+    libraryId: string,
+    providedEpisodes?: MediaItem[]
+  ) {
+    const episodes = providedEpisodes ?? await db.tvShows.getEpisodes(title, sourceId, seriesIdentityKey, libraryId)
+    if (episodes.length === 0) return null
+
+    const completenessRows = await db.tvShows.getAllCompleteness(sourceId, libraryId)
+    const existingCompleteness = completenessRows.find(row => row.series_identity_key === seriesIdentityKey) ?? null
+
+    const res = await service.analyzeSeries(title, sourceId, libraryId, undefined, episodes, {
+      existingCompleteness,
+      returnConstructed: true,
+    })
+    getStatsCacheService().invalidate()
+    return res
+  }
+
+  createValidatedIpcHandler('series:analyzeByIdentity', SeriesIdentityTupleSchema, async (title, sourceId, seriesIdentityKey, libraryId) => {
+    return await analyzeIdentityScoped(title, sourceId, seriesIdentityKey, libraryId)
+  })
+
+  createValidatedIpcHandler('series:getAll', OptionalSourceIdSchema, async (sourceId) => {
+    return await db.tvShows.getAllCompleteness(sourceId)
+  })
+
+  createValidatedIpcHandler('series:getIncomplete', OptionalSourceIdSchema, async (sourceId) => {
+    return await db.tvShows.getIncomplete(sourceId)
+  })
+
+  createIpcHandler('series:getStats', async () => {
+    return await getStatsCacheService().getSeriesStats(() => db.stats.getLibraryStats())
+  })
+
+  createValidatedIpcHandler('series:getEpisodesByIdentity', SeriesIdentityTupleSchema, async (title, sourceId, seriesIdentityKey, libraryId) => {
+    return await db.tvShows.getEpisodes(title, sourceId, seriesIdentityKey, libraryId)
+  })
+
+  createValidatedIpcHandler('series:getAudioLanguagesByIdentity', SeriesIdentityTupleSchema, async (title, sourceId, seriesIdentityKey, libraryId) => {
+    const episodes = await db.tvShows.getEpisodes(title, sourceId, seriesIdentityKey, libraryId)
+    return collectAudioLanguages(episodes)
+  })
+
+  createValidatedIpcHandler('series:delete', PositiveIntSchema, async (id) => {
+    await db.tvShows.deleteCompleteness(id)
+    getStatsCacheService().invalidate()
+    return true
+  })
+
+  createValidatedIpcHandler('tmdb:getTVShowDetails', NonEmptyStringSchema, async (tmdbId) => {
+    const d = await tmdb.getTVShowDetails(tmdbId)
+    return { overview: d.overview || null }
+  })
+
+  createValidatedIpcHandler('tmdb:getMovieDetails', NonEmptyStringSchema, async (tmdbId) => {
+    const d = await tmdb.getMovieDetails(tmdbId)
+    return { overview: d.overview || null, releaseDate: d.release_date || null, runtime: d.runtime || null }
+  })
+
+  createValidatedIpcHandler('series:getSeasonDetails', SeriesGetSeasonDetailsTupleSchema, async (tmdbId, season) => {
+    const d = await tmdb.getSeasonDetails(tmdbId, season)
+    return { overview: d.overview || null, episodeCount: d.episodes?.length || 0, airDate: d.air_date || null, name: d.name || null }
+  })
+
+  createValidatedIpcHandler('series:getSeasonPoster', SeriesGetSeasonDetailsTupleSchema, async (tmdbId, season) => {
+    const d = await tmdb.getSeasonDetails(tmdbId, season)
+    return tmdb.buildImageUrl(d.poster_path, 'w500')
+  })
+
+  createValidatedIpcHandler('series:getEpisodeStill', SeriesGetEpisodeStillTupleSchema, async (tmdbId, season, episode) => {
+    const d = await tmdb.getSeasonDetails(tmdbId, season)
+    const ep = d.episodes.find(e => e.episode_number === episode)
+    return ep ? tmdb.buildImageUrl(ep.still_path, 'w300') : null
+  })
+
+  createValidatedIpcHandler('series:searchTMDB', NonEmptyStringSchema, async (query) => {
+    await tmdb.initialize()
+    const res = await tmdb.searchTVShow(query)
+    return res.results.map(s => ({ id: s.id, name: s.name, first_air_date: s.first_air_date, overview: s.overview, poster_url: tmdb.buildImageUrl(s.poster_path, 'w500'), vote_average: s.vote_average }))
+  })
+
+  createValidatedIpcHandler('series:fixMatch', SeriesFixMatchTupleSchema, async (title, sourceId, seriesIdentityKey, libraryId, providerId, externalId) => {
+    const completenessRows = await db.tvShows.getAllCompleteness(sourceId, libraryId)
+    const existingCompleteness = completenessRows.find(row => row.series_identity_key === seriesIdentityKey)
+    if (!existingCompleteness?.id) {
+      throw new Error(`Series identity "${seriesIdentityKey}" does not exist in source "${sourceId}" library "${libraryId}"`)
+    }
+
+    const details = await MetadataRegistryService.getInstance()
+      .getCompositeProvider()
+      .getDetails(externalId, 'tv')
+
+    if (!details) {
+      throw new Error(`Could not find details for ${providerId}:${externalId}`)
+    }
+
+    const resolvedTmdbId = providerId === 'tmdb' ? externalId : details.externalIds?.tmdbId
+    const resolvedTvdbId = providerId === 'tvdb' ? externalId : details.externalIds?.tvdbId
+    const resolvedImdbId = providerId === 'omdb' || providerId === 'imdb' ? externalId : details.externalIds?.imdbId
+    const resolvedAnilistId = providerId === 'anilist' ? externalId : details.externalIds?.anilistId
+    const tmdbId = resolvedTmdbId == null ? null : String(resolvedTmdbId)
+    const tvdbId = resolvedTvdbId == null ? null : String(resolvedTvdbId)
+    const imdbId = resolvedImdbId == null ? null : String(resolvedImdbId)
+    const anilistId = resolvedAnilistId == null ? null : String(resolvedAnilistId)
+
+    if (!tmdbId && !tvdbId && !imdbId && !anilistId) {
+      throw new Error('An authoritative external ID (TMDB, TVDB, IMDb, or AniList) could not be resolved for this match')
+    }
+
+    const canonicalKey = deriveSeriesIdentityKey({
+      sourceId,
+      libraryId,
+      folderRelativePath: details.title,
+      tmdbId,
+      tvdbId,
+    })
+    const duplicateCompleteness = completenessRows.find(row =>
+      row.id !== existingCompleteness.id && (
+        row.series_identity_key === canonicalKey
+        || Boolean(tmdbId && row.tmdb_id === tmdbId)
+        || Boolean(tvdbId && row.tvdb_id === tvdbId)
+      )
+    )
+    if (duplicateCompleteness) {
+      throw new Error(`Selected match already belongs to TV series identity "${duplicateCompleteness.series_identity_key}" in this library`)
+    }
+
+    const identities = [
+      tmdbId ? { provider: 'tmdb', externalId: tmdbId } : null,
+      tvdbId ? { provider: 'tvdb', externalId: tvdbId } : null,
+      imdbId ? { provider: 'imdb', externalId: imdbId } : null,
+      anilistId ? { provider: 'anilist', externalId: anilistId } : null,
+    ].filter((identity): identity is { provider: string; externalId: string } => identity !== null)
+
+    const episodes = await db.tvShows.getEpisodes(title, sourceId, seriesIdentityKey, libraryId)
+    const poster = details.posterUrl || null
+
+    await db.db.execute('BEGIN IMMEDIATE')
+    try {
+      await db.db.execute({
+        sql: `UPDATE media_items
+              SET series_identity_key = ?, series_title = ?, series_tmdb_id = ?,
+                  poster_url = COALESCE(?, poster_url), user_fixed_match = 1, updated_at = datetime('now')
+              WHERE type = 'episode' AND source_id = ? AND library_id = ? AND series_identity_key = ?`,
+        args: [canonicalKey, details.title, tmdbId, poster, sourceId, libraryId, seriesIdentityKey],
+      })
+      await db.db.execute({
+        sql: `UPDATE series_completeness
+              SET series_title = ?, series_identity_key = ?, tmdb_id = ?, tvdb_id = ?,
+                  poster_url = COALESCE(?, poster_url), user_fixed_match = 1, updated_at = datetime('now')
+              WHERE id = ? AND source_id = ? AND library_id = ? AND series_identity_key = ?`,
+        args: [details.title, canonicalKey, tmdbId, tvdbId, poster, existingCompleteness.id, sourceId, libraryId, seriesIdentityKey],
+      })
+
+      for (const identity of identities) {
+        await db.identities.upsertIdentity({
+          entityType: 'series',
+          entityId: existingCompleteness.id,
+          provider: identity.provider,
+          externalId: identity.externalId,
+          locked: true,
+          lockSource: 'manual',
+        })
+      }
+      for (const alias of details.alternateTitles || []) {
+        await db.identities.addAlias({ entityType: 'series', entityId: existingCompleteness.id, alias, provider: providerId })
+      }
+
+      await db.db.execute('COMMIT')
+    } catch (error) {
+      await db.db.execute('ROLLBACK')
+      throw error
+    }
+
+    await getDeduplicationService().scanForDuplicates(sourceId)
+    const completeness = await analyzeIdentityScoped(details.title, sourceId, canonicalKey, libraryId)
+    getStatsCacheService().invalidate()
+    return { success: true, updatedEpisodes: episodes.length, completeness, newTitle: details.title }
+  })
+
+  getLoggingService().info('[series]', 'Series completeness IPC handlers registered')
 }

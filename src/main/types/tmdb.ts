@@ -3,13 +3,13 @@
 
 export interface TMDBMovieDetails {
   id: number
-  original_language: string
   title: string
   original_title: string
   release_date: string
   overview: string
   poster_path: string | null
   backdrop_path: string | null
+  original_language: string
   vote_average: number
   vote_count: number
   runtime: number | null
@@ -46,13 +46,13 @@ export interface TMDBCollectionPart {
   overview: string
   poster_path: string | null
   backdrop_path: string | null
+  original_language: string
   vote_average: number
   vote_count: number
 }
 
 export interface TMDBTVShowDetails {
   id: number
-  original_language: string
   name: string
   original_name: string
   overview: string
@@ -60,6 +60,7 @@ export interface TMDBTVShowDetails {
   last_air_date: string
   poster_path: string | null
   backdrop_path: string | null
+  original_language: string
   vote_average: number
   vote_count: number
   status: string // "Returning Series", "Planned", "In Production", "Ended", "Canceled", "Pilot"
@@ -115,27 +116,28 @@ export interface TMDBEpisode {
 // Search result types
 export interface TMDBMovieSearchResult {
   id: number
-  original_language: string
   title: string
   original_title: string
   release_date: string
   overview: string
   poster_path: string | null
   backdrop_path: string | null
+  original_language: string
   vote_average: number
   vote_count: number
   popularity: number
+  adult?: boolean
 }
 
 export interface TMDBTVSearchResult {
   id: number
-  original_language: string
   name: string
   original_name: string
   first_air_date: string
   overview: string
   poster_path: string | null
   backdrop_path: string | null
+  original_language: string
   vote_average: number
   vote_count: number
   popularity: number

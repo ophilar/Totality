@@ -6,25 +6,31 @@
  * Provides access to sources, scanning state, and source operations.
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react'
-import { useToast } from './ToastContext'
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, ReactNode } from 'react'
+import { useToast } from '@/contexts/ToastContext'
+import { LibraryType, ProviderType } from '@main/types/database'
+import type { TaskQueueState } from '@main/types/database'
 import type {
   MediaSourceResponse,
   MediaLibraryResponse,
   ServerInstanceResponse,
   ScanResultResponse,
   ConnectionTestResult,
-} from '../../../preload/index'
-import type { ProviderType } from '@main/types/database'
-import type { ScanProgress as ProviderScanProgress } from '@main/providers/base/MediaProvider'
+} from '@preload/api/types'
 
-// Types for source context
-export type { ProviderType }
-
-export type ScanProgress = ProviderScanProgress & {
+export interface ScanProgress {
   sourceId: string
   sourceName?: string
   libraryId?: string
+  current: number
+  total: number
+  phase: 'fetching' | 'processing' | 'analyzing' | 'saving'
+  currentItem?: string
+  percentage: number
+}
+
+function isScanPhase(value: string): value is ScanProgress['phase'] {
+  return value === 'fetching' || value === 'processing' || value === 'analyzing' || value === 'saving'
 }
 
 export interface SourceStats {
@@ -60,6 +66,8 @@ interface SourceContextType {
 
   // Connection status (real-time online/offline status per source)
   connectionStatus: Map<string, boolean>
+  connectionErrors: Map<string, string>
+  connectionChecking: Set<string>
 
   // Active source selection (for server-based navigation)
   activeSourceId: string | null
@@ -125,9 +133,12 @@ export function SourceProvider({ children }: SourceProviderProps) {
   const [scanProgress, setScanProgress] = useState<Map<string, ScanProgress>>(new Map())
   const [isScanning, setIsScanning] = useState(false)
   const [stats, setStats] = useState<SourceStats | null>(null)
-  const [supportedProviders, setSupportedProviders] = useState<ProviderType[]>(['plex'])
+  const [supportedProviders, setSupportedProviders] = useState<ProviderType[]>([ProviderType.Plex])
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null)
   const [connectionStatus, setConnectionStatus] = useState<Map<string, boolean>>(new Map())
+  const [connectionErrors, setConnectionErrors] = useState<Map<string, string>>(new Map())
+  const [connectionChecking, setConnectionChecking] = useState<Set<string>>(new Set())
+  const healthGeneration = useRef(0)
   const [newItemCounts, setNewItemCounts] = useState<Map<string, number>>(new Map())
   const { addToast } = useToast()
   const hasShownStartupToast = useRef(false)
@@ -139,6 +150,11 @@ export function SourceProvider({ children }: SourceProviderProps) {
 
   // Computed: active (enabled) sources
   const activeSources = sources.filter(s => s.is_enabled)
+  const healthSourceSignature = useMemo(() => JSON.stringify(
+    sources
+      .map(({ source_id, source_type, connection_config, is_enabled }) => ({ source_id, source_type, connection_config, is_enabled }))
+      .sort((a, b) => a.source_id.localeCompare(b.source_id))
+  ), [sources])
 
   // Set active source for server-based navigation
   const setActiveSource = useCallback((sourceId: string | null) => {
@@ -163,76 +179,59 @@ export function SourceProvider({ children }: SourceProviderProps) {
 
   // Use ref to avoid recreating checkAllConnections when sources change
   const sourcesRef = useRef(sources)
-  sourcesRef.current = sources
+  useEffect(() => {
+    sourcesRef.current = sources
+  }, [sources])
 
   // Check connection status for all enabled sources
   const checkAllConnections = useCallback(async () => {
+    const generation = ++healthGeneration.current
     const enabledSources = sourcesRef.current.filter(s => s.is_enabled)
     const newStatus = new Map<string, boolean>()
+    const newErrors = new Map<string, string>()
+    setConnectionChecking(new Set(enabledSources.map(source => source.source_id)))
 
     await Promise.all(
       enabledSources.map(async (source) => {
         try {
-          const result = await window.electronAPI.sourcesTestConnection(source.source_id)
+          const result = await window.electronAPI.sourcesTestConnection(source.source_id, true)
           newStatus.set(source.source_id, result.success)
-        } catch {
+          if (result.error) newErrors.set(source.source_id, result.error)
+        } catch (e) {
+          window.electronAPI.log.error('[SourceContext]', `Failed to test connection for source ${source.source_id}:`, e)
           newStatus.set(source.source_id, false)
+          newErrors.set(source.source_id, e instanceof Error ? e.message : String(e))
         }
       })
     )
 
-    setConnectionStatus(newStatus)
-  }, [])
+    if (generation !== healthGeneration.current) return
 
-  // Load sources on mount
-  useEffect(() => {
-    refreshSources()
-    loadSupportedProviders()
-    loadStats()
-
-    // Set up progress listener with optimized state updates
-    const handleProgress = (progress: ScanProgress) => {
-      setScanProgress(prev => {
-        const existing = prev.get(progress.sourceId)
-        // Skip update if no meaningful change (avoids Map recreation and re-renders)
-        if (existing &&
-            Math.floor(existing.percentage || 0) === Math.floor(progress.percentage || 0) &&
-            existing.phase === progress.phase) {
-          return prev
+    // Only update if something actually changed to prevent infinite re-renders
+    setConnectionStatus(prev => {
+      if (prev.size !== newStatus.size) return newStatus
+      let changed = false
+      for (const [id, status] of newStatus) {
+        if (prev.get(id) !== status) {
+          changed = true
+          break
         }
-        const next = new Map(prev)
-        next.set(progress.sourceId, progress)
-        return next
-      })
-    }
-
-    const cleanupProgress = window.electronAPI.onSourcesScanProgress(handleProgress as (progress: unknown) => void)
-    return () => cleanupProgress()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      }
+      return changed ? newStatus : prev
+    })
+    setConnectionErrors(newErrors)
+    setConnectionChecking(new Set())
   }, [])
 
-  // Check connections when sources change and periodically
+  // Check configured sources when the source set changes. Monitoring owns periodic checks.
   useEffect(() => {
-    if (sources.length > 0) {
-      // Check immediately
-      checkAllConnections()
-
-      // Check every 30 seconds
-      const interval = setInterval(checkAllConnections, 30000)
-      return () => clearInterval(interval)
+    if (healthSourceSignature !== '[]') {
+      void Promise.resolve().then(checkAllConnections)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sources.length])
+    return () => { healthGeneration.current++ }
+  }, [healthSourceSignature, checkAllConnections])
 
-  // Auto-select first enabled source when sources load
-  useEffect(() => {
-    if (activeSourceId === null && sources.length > 0) {
-      const firstEnabled = sources.find(s => s.is_enabled)
-      if (firstEnabled) {
-        setActiveSourceId(firstEnabled.source_id)
-      }
-    }
-  }, [sources, activeSourceId])
+  // Default activeSourceId is null (representing 'All Sources' aggregated mode)
 
   // Load supported providers
   const loadSupportedProviders = async () => {
@@ -240,7 +239,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
       const providers = await window.electronAPI.sourcesGetSupportedProviders()
       setSupportedProviders(providers as ProviderType[])
     } catch (err) {
-      console.error('Failed to load supported providers:', err)
+      window.electronAPI.log.error('[SourceContext]', 'Failed to load supported providers:', err)
     }
   }
 
@@ -250,42 +249,29 @@ export function SourceProvider({ children }: SourceProviderProps) {
       const sourceStats = await window.electronAPI.sourcesGetStats()
       setStats(sourceStats)
     } catch (err) {
-      console.error('Failed to load stats:', err)
+      window.electronAPI.log.error('[SourceContext]', 'Failed to load stats:', err)
     }
   }
 
   // Detect which library types are available from enabled sources
-  // Runs all sources in parallel with a per-source timeout to avoid blocking on unreachable servers
   const detectLibraryTypesFromList = async (sourceList: MediaSourceResponse[]) => {
     let movies = false, tv = false, music = false
-    const unreachable: string[] = []
-
     const enabledSources = sourceList.filter(s => s.is_enabled)
 
-    const results = await Promise.allSettled(
-      enabledSources.map(async (source) => {
-        try {
-          const libraries = await Promise.race([
-            window.electronAPI.sourcesGetLibrariesWithStatus(source.source_id),
-            new Promise<never>((_resolve, reject) =>
-              setTimeout(() => reject(new Error('timeout')), 5000)
-            ),
-          ])
-          return { source, libraries }
-        } catch {
-          unreachable.push(source.display_name)
-          return { source, libraries: [] as Array<MediaLibraryResponse & { isEnabled: boolean }> }
-        }
-      })
+    const results = await Promise.all(
+      enabledSources.map(source => window.electronAPI.sourcesGetLibrariesWithStatus(source.source_id))
     )
 
-    for (const result of results) {
-      if (result.status !== 'fulfilled') continue
-      for (const lib of result.value.libraries) {
+    for (const libraries of results) {
+      for (const lib of libraries) {
         if (lib.isEnabled) {
-          if (lib.type === 'movie') movies = true
-          if (lib.type === 'show') tv = true
-          if (lib.type === 'music') music = true
+          if (lib.type === LibraryType.Movie) movies = true
+          if (lib.type === LibraryType.Show) tv = true
+          if (lib.type === LibraryType.Music) music = true
+          if (lib.type === LibraryType.Mixed) {
+            movies = true
+            tv = true
+          }
         }
       }
     }
@@ -294,7 +280,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
     setHasTV(tv)
     setHasMusic(music)
 
-    return unreachable
+    return []
   }
 
   // Public function to refresh library types (e.g., after toggling a library)
@@ -329,12 +315,30 @@ export function SourceProvider({ children }: SourceProviderProps) {
       }
     } catch (err: unknown) {
       setError((err as Error).message || 'Failed to load sources')
-      console.error('Failed to refresh sources:', err)
+      window.electronAPI.log.error('[SourceContext]', 'Failed to refresh sources:', err)
     } finally {
       setIsLoading(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Load sources on mount
+  useEffect(() => {
+    void Promise.resolve().then(refreshSources)
+    void Promise.resolve().then(loadSupportedProviders)
+    void Promise.resolve().then(loadStats)
+    const handleProgress = (progress: ScanProgress) => {
+      setScanProgress(prev => {
+        const existing = prev.get(progress.sourceId)
+        if (existing && Math.floor(existing.percentage || 0) === Math.floor(progress.percentage || 0) && existing.phase === progress.phase) return prev
+        const next = new Map(prev)
+        next.set(progress.sourceId, progress)
+        return next
+      })
+    }
+    const cleanupProgress = window.electronAPI.onSourcesScanProgress(handleProgress as (progress: unknown) => void)
+    return () => cleanupProgress()
+  }, [refreshSources])
 
   // Refresh source data when a scan completes (updates last_scan_at)
   useEffect(() => {
@@ -415,39 +419,75 @@ export function SourceProvider({ children }: SourceProviderProps) {
     }
   }, [])
 
-  // Scan a single source library
+  // Subscribe to task queue for scan progress
+  useEffect(() => {
+    const updateProgress = (state: TaskQueueState) => {
+      if (!state) return
+      const { currentTask } = state
+      if (currentTask && (currentTask.type === 'library-scan' || currentTask.type === 'source-scan' || currentTask.type === 'music-scan')) {
+        setIsScanning(prev => (prev ? prev : true))
+        const progress = currentTask.progress
+        const phase = progress?.phase
+        if (progress && phase !== undefined && isScanPhase(phase)) {
+          setScanProgress(prev => {
+            const current = prev.get(currentTask.sourceId || 'global')
+            if (
+              current &&
+              current.phase === phase &&
+              current.current === progress.current &&
+              current.total === progress.total &&
+              current.percentage === progress.percentage &&
+              current.currentItem === progress.currentItem
+            ) {
+              return prev
+            }
+            const next = new Map(prev)
+            next.set(currentTask.sourceId || 'global', {
+              sourceId: currentTask.sourceId || 'global',
+              sourceName: currentTask.label,
+              libraryId: currentTask.libraryId,
+              current: progress.current,
+              total: progress.total,
+              phase,
+              currentItem: progress.currentItem,
+              percentage: progress.percentage,
+            })
+            return next
+          })
+        }
+      } else {
+        setIsScanning(prev => (prev ? false : prev))
+        setScanProgress(prev => (prev.size === 0 ? prev : new Map()))
+      }
+    }
+
+    const cleanup = window.electronAPI.onTaskQueueUpdated?.((state) => {
+      updateProgress(state)
+    })
+
+    window.electronAPI.taskQueueGetState?.().then(state => {
+      updateProgress(state)
+    })
+
+    return () => {
+      cleanup?.()
+    }
+  }, [])
+
+  // Scan a single source library via Task Queue
   const scanSource = useCallback(async (
     sourceId: string,
     libraryId: string
   ): Promise<ScanResultResponse> => {
-    setIsScanning(true)
-
-    try {
-      const result = await window.electronAPI.sourcesScanLibrary(sourceId, libraryId)
-      await loadStats()
-      return result
-    } finally {
-      setIsScanning(false)
-      // Clear progress for this source
-      setScanProgress(prev => {
-        const next = new Map(prev)
-        next.delete(sourceId)
-        return next
-      })
-    }
+    return window.electronAPI.sourcesScanLibrary(sourceId, libraryId)
   }, [])
 
-  // Scan all enabled sources
+  // Scan all enabled sources via Task Queue
   const scanAllSources = useCallback(async () => {
-    setIsScanning(true)
-
-    try {
-      await window.electronAPI.sourcesScanAll()
-      await loadStats()
-    } finally {
-      setIsScanning(false)
-      setScanProgress(new Map())
-    }
+    await window.electronAPI.taskQueueAddTask({
+      type: 'source-scan',
+      label: 'Scanning all enabled sources',
+    })
   }, [])
 
   // Stop current scan
@@ -457,7 +497,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
       setIsScanning(false)
       setScanProgress(new Map())
     } catch (err) {
-      console.error('Error stopping scan:', err)
+      window.electronAPI.log.error('[SourceContext]', 'Error stopping scan:', err)
     }
   }, [])
 
@@ -472,10 +512,6 @@ export function SourceProvider({ children }: SourceProviderProps) {
   }, [])
 
   // Plex-specific: Authenticate and discover servers
-  // Note: We intentionally don't call refreshSources() here because the source
-  // is incomplete until a server is selected. Calling refreshSources() would
-  // update sources.length and potentially unmount UI components mid-flow.
-  // refreshSources() should be called after plexSelectServer completes.
   const plexAuthenticateAndDiscover = useCallback(async (
     token: string,
     displayName: string
@@ -485,8 +521,6 @@ export function SourceProvider({ children }: SourceProviderProps) {
   }, [])
 
   // Plex-specific: Select server
-  // NOTE: Don't call refreshSources() here - the flow continues to library selection.
-  // Refresh should happen after the full flow completes (library selection saved).
   const plexSelectServer = useCallback(async (sourceId: string, serverId: string) => {
     const result = await window.electronAPI.plexSelectServerForSource(sourceId, serverId)
     return result
@@ -510,6 +544,8 @@ export function SourceProvider({ children }: SourceProviderProps) {
     hasMusic,
     refreshLibraryTypes,
     connectionStatus,
+    connectionErrors,
+    connectionChecking,
     activeSourceId,
     setActiveSource,
     addSource,

@@ -4,34 +4,14 @@
  * Shared utilities used across media browser components.
  */
 
-import type { ProviderType } from '../../contexts/SourceContext'
-
-export function parseLanguageWhitelist(value: string): string[] {
-  return value.split(/[,\s]+/).map(language => language.trim().toLowerCase()).filter(Boolean)
-}
-
-export function getOptimizationContainer(container?: string): 'mkv' | 'mp4' | '' {
-  const normalizedContainer = container?.split(',')[0].trim().toLowerCase()
-  if (normalizedContainer === 'mkv' || normalizedContainer === 'matroska') return 'mkv'
-  if (normalizedContainer === 'mp4' || normalizedContainer === 'm4v') return 'mp4'
-  return ''
-}
+import { PROVIDERS } from '@main/constants/providers'
 
 // ============================================================================
 // Constants
 // ============================================================================
 
 /** Provider colors for source badges */
-export const providerColors: Record<ProviderType, string> = {
-  plex: 'bg-[#e5a00d]',
-  jellyfin: 'bg-purple-500',
-  emby: 'bg-green-500',
-  kodi: 'bg-blue-500',
-  'kodi-local': 'bg-blue-500',
-  'kodi-mysql': 'bg-blue-500',
-  mediamonkey: 'bg-orange-500',
-  local: 'bg-slate-600',
-}
+export const providerColors: Record<string, string> = Object.values(PROVIDERS).reduce((acc, p) => ({ ...acc, [p.type]: p.color }), {})
 
 /** Lossless audio codecs */
 export const losslessCodecs = ['flac', 'alac', 'wav', 'aiff', 'dsd', 'pcm', 'ape', 'wv', 'wavpack']
@@ -139,48 +119,24 @@ export const isAACCodec = (codec?: string): boolean => {
 }
 
 /**
- * Get quality tier for a track
- */
-export const getTrackQualityTier = (
-  codec?: string,
-  bitDepth?: number,
-  sampleRate?: number,
-  bitrate?: number
-): 'ultra' | 'high' | 'medium' | 'low' | null => {
-  if (!codec) return null
-
-  const isLossless = isLosslessCodec(codec)
-
-  // Ultra: Lossless with high-res (24-bit or >48kHz)
-  if (isLossless && ((bitDepth && bitDepth >= 24) || (sampleRate && sampleRate > 48000))) {
-    return 'ultra'
-  }
-
-  // High: Lossless (CD quality or better)
-  if (isLossless) {
-    return 'high'
-  }
-
-  // For lossy codecs, check bitrate
-  if (bitrate) {
-    if (bitrate >= 256) return 'medium'
-    if (bitrate >= 128) return 'low'
-  }
-
-  return 'low'
-}
-
-/**
  * Get quality tier color
  */
-export const getQualityTierColor = (tier: 'ultra' | 'high' | 'medium' | 'low' | null): string => {
-  switch (tier) {
+export const getQualityTierColor = (tier?: string | null): string => {
+  if (!tier) return 'text-muted-foreground'
+  const normalized = tier.toLowerCase()
+  switch (normalized) {
+    case 'hi_res':
     case 'ultra':
       return 'text-purple-400'
+    case 'lossless':
     case 'high':
       return 'text-green-400'
+    case 'lossy_high':
+    case 'high-lossy':
+    case 'lossy_mid':
     case 'medium':
       return 'text-yellow-400'
+    case 'lossy_low':
     case 'low':
       return 'text-red-400'
     default:
@@ -191,19 +147,34 @@ export const getQualityTierColor = (tier: 'ultra' | 'high' | 'medium' | 'low' | 
 /**
  * Get quality tier background color
  */
-export const getQualityTierBgColor = (tier: 'ultra' | 'high' | 'medium' | 'low' | null): string => {
-  switch (tier) {
+export const getQualityTierBgColor = (tier?: string | null): string => {
+  if (!tier) return 'bg-muted/30'
+  const normalized = tier.toLowerCase()
+  switch (normalized) {
+    case 'hi_res':
     case 'ultra':
       return 'bg-purple-500/20'
+    case 'lossless':
     case 'high':
       return 'bg-green-500/20'
+    case 'lossy_high':
+    case 'high-lossy':
+    case 'lossy_mid':
     case 'medium':
       return 'bg-yellow-500/20'
+    case 'lossy_low':
     case 'low':
       return 'bg-red-500/20'
     default:
       return 'bg-muted/30'
   }
+}
+
+/**
+ * Check if a track is high resolution (24-bit or >48kHz)
+ */
+export const isHighResTrack = (bitDepth?: number, sampleRate?: number): boolean => {
+  return (bitDepth !== undefined && bitDepth >= 24) || (sampleRate !== undefined && sampleRate > 48000)
 }
 
 // ============================================================================
@@ -237,11 +208,9 @@ export const getStatusBadge = (status?: string): { text: string; color: string }
  * Calculate poster minimum width based on grid scale
  */
 export const calculatePosterWidth = (gridScale: number): number => {
-  // Scale 1-7 maps to different poster sizes
-  // 1 = smallest (100px), 7 = largest (300px)
-  const minWidth = 100
-  const maxWidth = 300
-  return minWidth + ((gridScale - 1) / 6) * (maxWidth - minWidth)
+    const widths = [96, 112, 128, 144, 160, 176, 192]
+    const clampedScale = Math.max(1, Math.min(widths.length, Math.round(gridScale)))
+    return widths[clampedScale - 1]
 }
 
 /**

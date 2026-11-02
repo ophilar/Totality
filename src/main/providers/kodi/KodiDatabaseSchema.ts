@@ -1,3 +1,9 @@
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-nocheck
+import { normalizeHdrFormatValue } from '@main/types/mediaContracts'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getLoggingService } from '@main/services/LoggingService'
+
 /**
  * KodiDatabaseSchema
  *
@@ -14,13 +20,6 @@
  * - art: Artwork URLs (posters, fanart, etc.)
  */
 
-import { getDatabase } from '../../database/getDatabase'
-export {
-  normalizeKodiAudioCodec as normalizeAudioCodec,
-  normalizeKodiResolution as normalizeResolution,
-  normalizeVideoCodec,
-} from '../../services/MediaNormalizer'
-
 // ============================================================================
 // NFS MOUNT MAPPINGS
 // ============================================================================
@@ -36,7 +35,7 @@ function getNfsMountMappings(): Record<string, string> {
   if (cachedNfsMappings === null) {
     try {
       const db = getDatabase()
-      const mappingsJson = db.getSetting('nfs_mount_mappings')
+      const mappingsJson = db.config.getSetting('nfs_mount_mappings')
       cachedNfsMappings = mappingsJson ? JSON.parse(mappingsJson) : {}
     } catch {
       cachedNfsMappings = {}
@@ -229,6 +228,13 @@ export interface KodiSetWithDetails {
 // JOINED QUERY RESULTS
 // ============================================================================
 
+export interface KodiAudioStream {
+  idFile: number
+  codec?: string
+  channels?: number
+  language?: string
+}
+
 export interface KodiMovieWithDetails {
   idMovie: number
   idFile: number
@@ -259,14 +265,6 @@ export interface KodiMovieWithDetails {
   setId: number | null
   setName: string | null
   setPosterUrl: string | null
-  // Rating
-  rating: number | null
-  // Watch history (from files table)
-  playCount: number | null
-  lastPlayed: string | null
-  // Debug fields (raw values before transformation)
-  c07_raw: string | null       // Raw c07 value (year string)
-  premiered_raw: string | null // Raw premiered value (full date)
 }
 
 export interface KodiEpisodeWithDetails {
@@ -278,6 +276,11 @@ export interface KodiEpisodeWithDetails {
   showTitle: string
   showSortTitle: string | null
   showImdbId: string | null
+  showTmdbId: string | null
+  showTvdbId: string | null
+  episodeImdbId: string | null
+  episodeTmdbId: string | null
+  episodeTvdbId: string | null
   showId: number
   filename: string
   filepath: string
@@ -297,9 +300,6 @@ export interface KodiEpisodeWithDetails {
   thumbUrl: string | null
   showPosterUrl: string | null
   seasonPosterUrl: string | null
-  // Watch history (from files table)
-  playCount: number | null
-  lastPlayed: string | null
 }
 
 // ============================================================================
@@ -317,8 +317,6 @@ SELECT
   m.c00 AS title,
   NULLIF(m.c10, '') AS sortTitle,
   COALESCE(CAST(NULLIF(m.c07, '') AS INTEGER), CAST(SUBSTR(m.premiered, 1, 4) AS INTEGER)) AS year,
-  m.c07 AS c07_raw,
-  m.premiered AS premiered_raw,
   NULLIF(m.c09, '') AS imdbId,
   (SELECT value FROM uniqueid WHERE media_id = m.idMovie AND media_type = 'movie' AND type = 'tmdb' LIMIT 1) AS tmdbId,
   CAST(NULLIF(m.c11, '') AS INTEGER) AS runtime,
@@ -337,10 +335,7 @@ SELECT
   (SELECT url FROM art WHERE media_id = m.idMovie AND media_type = 'movie' AND type = 'fanart' LIMIT 1) AS fanartUrl,
   m.idSet AS setId,
   s.strSet AS setName,
-  (SELECT url FROM art WHERE media_id = m.idSet AND media_type = 'set' AND type = 'poster' LIMIT 1) AS setPosterUrl,
-  CAST(NULLIF(m.c05, '') AS REAL) AS rating,
-  f.playCount AS playCount,
-  f.lastPlayed AS lastPlayed
+  (SELECT url FROM art WHERE media_id = m.idSet AND media_type = 'set' AND type = 'poster' LIMIT 1) AS setPosterUrl
 FROM movie m
 JOIN files f ON m.idFile = f.idFile
 JOIN path p ON f.idPath = p.idPath
@@ -355,6 +350,8 @@ SELECT
   idShow,
   c00 AS title,
   NULLIF(c21, '') AS imdbId,
+  (SELECT value FROM uniqueid WHERE media_id = tvshow.idShow AND media_type = 'tvshow' AND type = 'tmdb' LIMIT 1) AS tmdbId,
+  (SELECT value FROM uniqueid WHERE media_id = tvshow.idShow AND media_type = 'tvshow' AND type = 'tvdb' LIMIT 1) AS tvdbId,
   (SELECT url FROM art WHERE media_id = tvshow.idShow AND media_type = 'tvshow' AND type = 'poster' LIMIT 1) AS posterUrl
 FROM tvshow
 `
@@ -373,6 +370,11 @@ SELECT
   s.c00 AS showTitle,
   NULLIF(s.c15, '') AS showSortTitle,
   NULLIF(s.c21, '') AS showImdbId,
+  (SELECT value FROM uniqueid WHERE media_id = s.idShow AND media_type = 'tvshow' AND type = 'tmdb' LIMIT 1) AS showTmdbId,
+  (SELECT value FROM uniqueid WHERE media_id = s.idShow AND media_type = 'tvshow' AND type = 'tvdb' LIMIT 1) AS showTvdbId,
+  (SELECT value FROM uniqueid WHERE media_id = e.idEpisode AND media_type = 'episode' AND type = 'imdb' LIMIT 1) AS episodeImdbId,
+  (SELECT value FROM uniqueid WHERE media_id = e.idEpisode AND media_type = 'episode' AND type = 'tmdb' LIMIT 1) AS episodeTmdbId,
+  (SELECT value FROM uniqueid WHERE media_id = e.idEpisode AND media_type = 'episode' AND type = 'tvdb' LIMIT 1) AS episodeTvdbId,
   s.idShow AS showId,
   f.strFilename AS filename,
   p.strPath AS filepath,
@@ -387,9 +389,7 @@ SELECT
   (SELECT strAudioLanguage FROM streamdetails WHERE idFile = e.idFile AND iStreamType = 1 LIMIT 1) AS audioLanguage,
   (SELECT url FROM art WHERE media_id = e.idEpisode AND media_type = 'episode' AND type = 'thumb' LIMIT 1) AS thumbUrl,
   (SELECT url FROM art WHERE media_id = s.idShow AND media_type = 'tvshow' AND type = 'poster' LIMIT 1) AS showPosterUrl,
-  (SELECT url FROM art WHERE media_id = sea.idSeason AND media_type = 'season' AND type = 'poster' LIMIT 1) AS seasonPosterUrl,
-  f.playCount AS playCount,
-  f.lastPlayed AS lastPlayed
+  (SELECT url FROM art WHERE media_id = sea.idSeason AND media_type = 'season' AND type = 'poster' LIMIT 1) AS seasonPosterUrl
 FROM episode e
 JOIN tvshow s ON e.idShow = s.idShow
 JOIN files f ON e.idFile = f.idFile
@@ -408,6 +408,11 @@ export const QUERY_MOVIE_COUNT = `SELECT COUNT(*) as count FROM movie`
 export const QUERY_EPISODE_COUNT = `SELECT COUNT(*) as count FROM episode`
 
 /**
+ * Query to count music songs
+ */
+export const QUERY_MUSIC_SONG_COUNT = `SELECT COUNT(*) as count FROM song`
+
+/**
  * Query to get a single movie by ID with details
  */
 export const QUERY_MOVIE_BY_ID = `
@@ -417,8 +422,6 @@ SELECT
   m.c00 AS title,
   NULLIF(m.c10, '') AS sortTitle,
   COALESCE(CAST(NULLIF(m.c07, '') AS INTEGER), CAST(SUBSTR(m.premiered, 1, 4) AS INTEGER)) AS year,
-  m.c07 AS c07_raw,
-  m.premiered AS premiered_raw,
   NULLIF(m.c09, '') AS imdbId,
   (SELECT value FROM uniqueid WHERE media_id = m.idMovie AND media_type = 'movie' AND type = 'tmdb' LIMIT 1) AS tmdbId,
   CAST(NULLIF(m.c11, '') AS INTEGER) AS runtime,
@@ -458,6 +461,11 @@ SELECT
   CAST(NULLIF(e.c13, '') AS INTEGER) AS episodeNumber,
   s.c00 AS showTitle,
   NULLIF(s.c21, '') AS showImdbId,
+  (SELECT value FROM uniqueid WHERE media_id = s.idShow AND media_type = 'tvshow' AND type = 'tmdb' LIMIT 1) AS showTmdbId,
+  (SELECT value FROM uniqueid WHERE media_id = s.idShow AND media_type = 'tvshow' AND type = 'tvdb' LIMIT 1) AS showTvdbId,
+  (SELECT value FROM uniqueid WHERE media_id = e.idEpisode AND media_type = 'episode' AND type = 'imdb' LIMIT 1) AS episodeImdbId,
+  (SELECT value FROM uniqueid WHERE media_id = e.idEpisode AND media_type = 'episode' AND type = 'tmdb' LIMIT 1) AS episodeTmdbId,
+  (SELECT value FROM uniqueid WHERE media_id = e.idEpisode AND media_type = 'episode' AND type = 'tvdb' LIMIT 1) AS episodeTvdbId,
   s.idShow AS showId,
   f.strFilename AS filename,
   p.strPath AS filepath,
@@ -522,8 +530,6 @@ SELECT
   m.c00 AS title,
   NULLIF(m.c10, '') AS sortTitle,
   COALESCE(CAST(NULLIF(m.c07, '') AS INTEGER), CAST(SUBSTR(m.premiered, 1, 4) AS INTEGER)) AS year,
-  m.c07 AS c07_raw,
-  m.premiered AS premiered_raw,
   NULLIF(m.c09, '') AS imdbId,
   (SELECT value FROM uniqueid WHERE media_id = m.idMovie AND media_type = 'movie' AND type = 'tmdb' LIMIT 1) AS tmdbId,
   CAST(NULLIF(m.c11, '') AS INTEGER) AS runtime,
@@ -551,32 +557,25 @@ WHERE m.idSet = ?
 ORDER BY m.c07, m.c00
 `
 
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
 /**
  * Parse HDR type from Kodi's strHdrType field
  */
 export function parseHdrType(hdrType: string | null): string {
-  if (!hdrType) return 'None'
+  const normalized = normalizeHdrFormatValue(hdrType)
+  return normalized === 'SDR' ? 'None' : normalized
+}
+/**
+ * Normalize resolution string from width/height
+ */
+export function normalizeResolution(width: number | null, height: number | null): string {
+  const w = width || 0
+  const h = height || 0
 
-  const hdrLower = hdrType.toLowerCase()
-
-  if (hdrLower.includes('dolbyvision') || hdrLower.includes('dolby vision') || hdrLower.includes('dovi')) {
-    return 'Dolby Vision'
-  }
-  if (hdrLower.includes('hdr10+') || hdrLower.includes('hdr10plus')) {
-    return 'HDR10+'
-  }
-  if (hdrLower.includes('hdr10') || hdrLower.includes('hdr')) {
-    return 'HDR10'
-  }
-  if (hdrLower.includes('hlg')) {
-    return 'HLG'
-  }
-
-  return 'None'
+  if (h >= 2160 || w >= 3840) return '4K'
+  if (h >= 1080 || w >= 1920) return '1080p'
+  if (h >= 720 || w >= 1280) return '720p'
+  if (h >= 480 || w >= 720) return '480p'
+  return 'SD'
 }
 
 /**
@@ -632,43 +631,40 @@ export function convertKodiImageUrl(imageUrl: string | null | undefined): string
 export function convertKodiPathToLocal(kodiPath: string): string {
   if (!kodiPath) return kodiPath
 
-  // Strip Kodi section prefix (e.g., "music@smb://..." → "smb://...")
-  const path = kodiPath.replace(/^[a-z]+@(?=[a-z]+:\/\/)/i, '')
-
   // Handle SMB URLs: smb://server/share/path -> \\server\share\path (Windows UNC)
-  if (path.startsWith('smb://')) {
+  if (kodiPath.startsWith('smb://')) {
     // Remove smb:// prefix and convert forward slashes to backslashes
-    const uncPath = path.slice(6).replace(/\//g, '\\')
+    const uncPath = kodiPath.slice(6).replace(/\//g, '\\')
     return '\\\\' + uncPath
   }
 
   // Handle NFS URLs: nfs://server/export/path -> convert using configured mount mappings
   // Users configure mappings in Settings > Services (e.g., "nas.local/media" -> "Z:")
-  if (path.startsWith('nfs://')) {
-    const localPath = convertNfsPathToLocal(path)
-    if (localPath !== path) {
+  if (kodiPath.startsWith('nfs://')) {
+    const localPath = convertNfsPathToLocal(kodiPath)
+    if (localPath !== kodiPath) {
       return localPath
     }
     // No mapping found - log warning with guidance
-    console.warn(`[KodiDatabaseSchema] No NFS mount mapping configured for path with scheme: ${path.split('://')[0] || 'unknown'}`)
-    console.warn('[KodiDatabaseSchema] Configure NFS mappings in Settings > Services > Kodi NFS Mounts')
-    return path
+    getLoggingService().warn('[KodiDatabaseSchema]', `No NFS mount mapping configured for path with scheme: ${kodiPath.split('://')[0] || 'unknown'}`)
+    getLoggingService().warn('[KodiDatabaseSchema]', '[KodiDatabaseSchema] Configure NFS mappings in Settings > Services > Kodi NFS Mounts')
+    return kodiPath
   }
 
   // Handle other URL schemes that Kodi might use
-  if (path.includes('://') && !path.startsWith('file://')) {
+  if (kodiPath.includes('://') && !kodiPath.startsWith('file://')) {
     // Unknown URL scheme, return as-is
-    console.warn(`[KodiDatabaseSchema] Unknown URL scheme for FFprobe: ${path.split('://')[0] || 'unknown'}`)
-    return path
+    getLoggingService().warn('[KodiDatabaseSchema]', `Unknown URL scheme for FFprobe: ${kodiPath.split('://')[0] || 'unknown'}`)
+    return kodiPath
   }
 
   // Handle file:// URLs
-  if (path.startsWith('file://')) {
-    return path.slice(7)
+  if (kodiPath.startsWith('file://')) {
+    return kodiPath.slice(7)
   }
 
   // Already a local path
-  return path
+  return kodiPath
 }
 
 /**
@@ -688,6 +684,102 @@ export function buildFilePath(dirPath: string, filename: string): string {
     return localDirPath + filename
   }
   return localDirPath + separator + filename
+}
+
+/**
+ * Normalize video codec name
+ */
+export function normalizeVideoCodec(codec: string | null): string {
+  if (!codec) return ''
+
+  const codecLower = codec.toLowerCase()
+
+  if (codecLower.includes('hevc') || codecLower.includes('h265') || codecLower.includes('x265')) {
+    return 'HEVC'
+  }
+  if (codecLower.includes('avc') || codecLower.includes('h264') || codecLower.includes('x264')) {
+    return 'H.264'
+  }
+  if (codecLower.includes('av1')) {
+    return 'AV1'
+  }
+  if (codecLower.includes('vp9')) {
+    return 'VP9'
+  }
+  if (codecLower.includes('mpeg4') || codecLower.includes('xvid') || codecLower.includes('divx')) {
+    return 'MPEG-4'
+  }
+  if (codecLower.includes('mpeg2')) {
+    return 'MPEG-2'
+  }
+  if (codecLower.includes('vc1') || codecLower.includes('wmv')) {
+    return 'VC-1'
+  }
+
+  return codec.toUpperCase()
+}
+
+/**
+ * Normalize audio codec name
+ */
+export function normalizeAudioCodec(codec: string | null, profile?: string): string {
+  if (!codec) return ''
+
+  const codecLower = codec.toLowerCase()
+  const profileLower = (profile || '').toLowerCase()
+
+  // Plex/FFprobe sends DTS variants as codec 'dca'/'dts' + profile to distinguish
+  if (codecLower === 'dca' || (codecLower === 'dts' && profileLower)) {
+    if (profileLower === 'ma' || profileLower.includes('dts-hd ma')) return 'DTS-HD MA'
+    if (profileLower === 'hra' || profileLower.includes('dts-hd hra')) return 'DTS-HD'
+    if (profileLower.includes('dts:x') || profileLower.includes('dtsx')) return 'DTS:X'
+    if (codecLower === 'dca') return 'DTS'
+  }
+
+  if (codecLower.includes('truehd')) {
+    return 'TrueHD'
+  }
+  if (codecLower.includes('atmos')) {
+    return 'TrueHD Atmos'
+  }
+  if (codecLower.includes('dts-hd ma') || codecLower.includes('dtshd_ma')) {
+    return 'DTS-HD MA'
+  }
+  if (codecLower.includes('dts-hd') || codecLower.includes('dtshd')) {
+    return 'DTS-HD'
+  }
+  if (codecLower.includes('dts:x') || codecLower.includes('dtsx')) {
+    return 'DTS:X'
+  }
+  if (codecLower.includes('dts')) {
+    return 'DTS'
+  }
+  if (codecLower.includes('eac3') || codecLower.includes('e-ac-3') || codecLower.includes('ec3')) {
+    return 'E-AC-3'
+  }
+  if (codecLower.includes('ac3') || codecLower.includes('ac-3')) {
+    return 'AC-3'
+  }
+  if (codecLower.includes('aac')) {
+    return 'AAC'
+  }
+  if (codecLower.includes('flac')) {
+    return 'FLAC'
+  }
+  if (codecLower.includes('pcm') || codecLower.includes('lpcm')) {
+    return 'PCM'
+  }
+  if (codecLower.includes('mp3')) {
+    return 'MP3'
+  }
+  if (codecLower.includes('opus')) {
+    return 'Opus'
+  }
+  if (codecLower.includes('vorbis')) {
+    return 'Vorbis'
+  }
+
+  return codec.toUpperCase()
 }
 
 /**

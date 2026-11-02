@@ -7,6 +7,7 @@
  */
 
 import { createContext, useContext, useState, useCallback, useRef, ReactNode } from 'react'
+import type { MediaViewType } from '@/components/library/types'
 
 // Navigation target types (for navigateTo)
 export interface NavigationTarget {
@@ -22,11 +23,10 @@ export interface NavigationTarget {
 
 // Snapshot of the full navigation state (for history stack)
 export interface NavigationState {
-  view: 'dashboard' | 'library' | 'timelines'
-  tab?: 'movies' | 'tv' | 'music' | 'duplicates'
-  // TV drill-down
+  view: 'dashboard' | 'library'
+  tab?: MediaViewType
+  // TV show detail
   selectedShow?: string | null
-  selectedSeason?: number | null
   // Music drill-down
   selectedArtist?: { id: number; name: string } | null
   selectedAlbum?: { id: number; title: string } | null
@@ -38,7 +38,6 @@ function statesEqual(a: NavigationState, b: NavigationState): boolean {
   return a.view === b.view
     && a.tab === b.tab
     && (a.selectedShow ?? null) === (b.selectedShow ?? null)
-    && (a.selectedSeason ?? null) === (b.selectedSeason ?? null)
     && (a.selectedArtist?.id ?? null) === (b.selectedArtist?.id ?? null)
     && (a.selectedAlbum?.id ?? null) === (b.selectedAlbum?.id ?? null)
 }
@@ -77,7 +76,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const navigateTo = useCallback((target: NavigationTarget) => {
-    console.log('[Navigation] Navigate to:', target)
+    window.electronAPI.log.info('[NavigationContext]', '[Navigation] Navigate to:', target)
     setPendingNavigation(target)
   }, [])
 

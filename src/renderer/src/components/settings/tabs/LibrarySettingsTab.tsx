@@ -5,7 +5,8 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { SETTING_KEYS } from '../../../../../shared/settingKeys'
+import type { MediaSourceResponse, MediaLibraryResponse } from '@preload/api/types'
+import { SETTING_KEYS } from '@shared/settingKeys'
 import {
   Music,
   Film,
@@ -18,9 +19,8 @@ import {
   Library,
   CheckCircle,
   Circle,
-  Users,
+  Lock,
 } from 'lucide-react'
-import { Toggle } from '../../ui/Toggle'
 
 const THEATRICAL_LAG_OPTIONS = [
   { value: '0', label: 'None (show all)' },
@@ -46,7 +46,6 @@ const EXCLUSION_SECTIONS = [
   { type: 'collection_movie', label: 'Dismissed Collection Movies', icon: Film },
   { type: 'series_episode', label: 'Dismissed Episodes', icon: Tv },
   { type: 'artist_album', label: 'Dismissed Albums', icon: Music },
-  { type: 'person_movie', label: 'Dismissed Filmography', icon: Users },
 ] as const
 
 // Collapsible card matching Services tab design
@@ -79,9 +78,9 @@ function SettingsCard({
       >
         <div className="shrink-0">
           {status === 'configured' ? (
-            <CheckCircle className="w-5 h-5 text-foreground" />
+            <CheckCircle className="w-5 h-5 text-green-500" />
           ) : status === 'partial' ? (
-            <CheckCircle className="w-5 h-5 text-muted-foreground" />
+            <CheckCircle className="w-5 h-5 text-amber-500" />
           ) : (
             <Circle className="w-5 h-5 text-muted-foreground/50" />
           )}
@@ -89,10 +88,10 @@ function SettingsCard({
         <div className="shrink-0 text-muted-foreground">{icon}</div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-medium text-label">{title}</span>
-            <span className="text-caption text-muted-foreground">{statusText}</span>
+            <span className="font-medium text-sm">{title}</span>
+            <span className="text-xs text-muted-foreground">{statusText}</span>
           </div>
-          <p className="text-caption text-muted-foreground truncate">{description}</p>
+          <p className="text-xs text-muted-foreground truncate">{description}</p>
         </div>
         <ChevronDown
           className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${
@@ -104,6 +103,38 @@ function SettingsCard({
         <div className="px-4 pb-4 pt-2 border-t border-border/30 bg-muted/10">{children}</div>
       )}
     </div>
+  )
+}
+
+function Toggle({
+  checked,
+  onChange,
+  disabled = false,
+  'aria-label': ariaLabel,
+}: {
+  checked: boolean
+  onChange: (checked: boolean) => void
+  disabled?: boolean
+  'aria-label'?: string
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      disabled={disabled}
+      onClick={() => !disabled && onChange(!checked)}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background ${
+        disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+      } ${checked ? 'bg-primary' : 'bg-muted'}`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-background shadow-md ring-1 ring-border/50 transition-transform ${
+          checked ? 'translate-x-6' : 'translate-x-1'
+        }`}
+      />
+    </button>
   )
 }
 
@@ -129,9 +160,17 @@ export function LibrarySettingsTab() {
     collection_movie: [],
     series_episode: [],
     artist_album: [],
-    person_movie: [],
   })
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
+  const [expandedLibrarySettings, setExpandedLibrarySettings] = useState<Set<string>>(new Set())
+
+  // Protected Libraries state
+  type LibraryWithStatus = MediaLibraryResponse & { isEnabled: boolean; isProtected: boolean; allowExpandedMatching: boolean; lastScanAt: string | null; itemsScanned: number }
+  const [sources, setSources] = useState<MediaSourceResponse[]>([])
+  const [sourceLibraries, setSourceLibraries] = useState<Record<string, LibraryWithStatus[]>>({})
+  const [hasPin, setHasPin] = useState(false)
+  const [isChangingPin, setIsChangingPin] = useState(false)
+  const [newPin, setNewPin] = useState('')
 
   const toggleCard = (card: string) => {
     setExpandedCards((prev) => {
@@ -142,10 +181,41 @@ export function LibrarySettingsTab() {
     })
   }
 
+  const toggleLibrarySettings = (libraryKey: string) => {
+    setExpandedLibrarySettings((prev) => {
+      const next = new Set(prev)
+      if (next.has(libraryKey)) next.delete(libraryKey)
+      else next.add(libraryKey)
+      return next
+    })
+  }
+
+  // Load sources and their libraries
+  const loadSourceData = useCallback(async () => {
+    try {
+      const srcList = await window.electronAPI.sourcesList()
+      setSources(srcList)
+      
+      const libMap: Record<string, LibraryWithStatus[]> = {}
+      await Promise.all(srcList.map(async (src) => {
+        const libs = await window.electronAPI.sourcesGetLibrariesWithStatus(src.source_id)
+        libMap[src.source_id] = libs
+      }))
+      setSourceLibraries(libMap)
+      
+      const pinStatus = await window.electronAPI.dbHasPin()
+      setHasPin(pinStatus)
+    } catch (err) {
+      window.electronAPI.log.error('[LibrarySettingsTab]', 'Failed to load source/library data:', err)
+    }
+  }, [])
+
   // Load all data on mount
   useEffect(() => {
     async function loadData() {
       try {
+        await loadSourceData()
+        
         const [
           epsVal,
           singlesVal,
@@ -155,7 +225,6 @@ export function LibrarySettingsTab() {
           collectionMovie,
           seriesEpisode,
           artistAlbum,
-          personMovie,
         ] = await Promise.all([
           window.electronAPI.getSetting(SETTING_KEYS.completeness_include_eps),
           window.electronAPI.getSetting(SETTING_KEYS.completeness_include_singles),
@@ -165,7 +234,6 @@ export function LibrarySettingsTab() {
           window.electronAPI.getExclusions('collection_movie'),
           window.electronAPI.getExclusions('series_episode'),
           window.electronAPI.getExclusions('artist_album'),
-          window.electronAPI.getExclusions('person_movie'),
         ])
 
         setIncludeEps((epsVal as string) !== 'false')
@@ -177,35 +245,63 @@ export function LibrarySettingsTab() {
           collection_movie: collectionMovie as ExclusionRecord[],
           series_episode: seriesEpisode as ExclusionRecord[],
           artist_album: artistAlbum as ExclusionRecord[],
-          person_movie: personMovie as ExclusionRecord[],
         })
       } catch (error) {
-        console.error('Failed to load library settings:', error)
+        window.electronAPI.log.error('[LibrarySettingsTab]', 'Failed to load library settings:', error)
       } finally {
         setIsLoading(false)
       }
     }
     loadData()
-  }, [])
+  }, [loadSourceData])
+
+  const handleToggleProtected = async (sourceId: string, libraryId: string, isProtected: boolean) => {
+    try {
+      await window.electronAPI.dbSetLibraryProtected(sourceId, libraryId, isProtected)
+      await loadSourceData()
+    } catch (err) {
+      window.electronAPI.log.error('[LibrarySettingsTab]', 'Failed to toggle library protection:', err)
+    }
+  }
+
+  const handleToggleAllowExpandedMatching = async (sourceId: string, libraryId: string, allowExpandedMatching: boolean) => {
+    try {
+      await window.electronAPI.dbSetLibraryAllowExpandedMatching(sourceId, libraryId, allowExpandedMatching)
+      await loadSourceData()
+    } catch (err) {
+      window.electronAPI.log.error('[LibrarySettingsTab]', 'Failed to toggle library expanded matching:', err)
+    }
+  }
+
+  const handleSetPin = async () => {
+    if (newPin.length < 4) return
+    try {
+      await window.electronAPI.dbSetPin(newPin)
+      setNewPin('')
+      setIsChangingPin(false)
+      const pinStatus = await window.electronAPI.dbHasPin()
+      setHasPin(pinStatus)
+    } catch (err) {
+      window.electronAPI.log.error('[LibrarySettingsTab]', 'Failed to set PIN:', err)
+    }
+  }
 
   const reloadExclusions = useCallback(async () => {
     try {
-      const [mediaUpgrade, collectionMovie, seriesEpisode, artistAlbum, personMovie] = await Promise.all([
+      const [mediaUpgrade, collectionMovie, seriesEpisode, artistAlbum] = await Promise.all([
         window.electronAPI.getExclusions('media_upgrade'),
         window.electronAPI.getExclusions('collection_movie'),
         window.electronAPI.getExclusions('series_episode'),
         window.electronAPI.getExclusions('artist_album'),
-        window.electronAPI.getExclusions('person_movie'),
       ])
       setExclusions({
         media_upgrade: mediaUpgrade as ExclusionRecord[],
         collection_movie: collectionMovie as ExclusionRecord[],
         series_episode: seriesEpisode as ExclusionRecord[],
         artist_album: artistAlbum as ExclusionRecord[],
-        person_movie: personMovie as ExclusionRecord[],
       })
     } catch (error) {
-      console.error('Failed to reload exclusions:', error)
+      window.electronAPI.log.error('[LibrarySettingsTab]', 'Failed to reload exclusions:', error)
     }
   }, [])
 
@@ -229,7 +325,7 @@ export function LibrarySettingsTab() {
         // Notify library views to reload completeness data
         window.dispatchEvent(new CustomEvent('exclusions-changed', { detail: { type } }))
       } catch (error) {
-        console.error('Failed to remove exclusion:', error)
+        window.electronAPI.log.error('[LibrarySettingsTab]', 'Failed to remove exclusion:', error)
         await reloadExclusions()
       }
     },
@@ -246,7 +342,7 @@ export function LibrarySettingsTab() {
         // Notify library views to reload completeness data
         window.dispatchEvent(new CustomEvent('exclusions-changed', { detail: { type } }))
       } catch (error) {
-        console.error('Failed to clear exclusions:', error)
+        window.electronAPI.log.error('[LibrarySettingsTab]', 'Failed to clear exclusions:', error)
         await reloadExclusions()
       }
     },
@@ -267,7 +363,7 @@ export function LibrarySettingsTab() {
     <div className="p-6 space-y-5 overflow-y-auto h-full">
       {/* Header */}
       <div className="mb-4">
-        <p className="text-caption text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           Configure library analysis preferences and exclusions.
         </p>
       </div>
@@ -289,27 +385,27 @@ export function LibrarySettingsTab() {
         <div className="space-y-4">
           {/* Completeness Options */}
           <div className="space-y-2">
-            <p className="text-caption font-medium text-foreground">Completeness</p>
-            <p className="text-caption text-muted-foreground">
+            <p className="text-xs font-medium text-foreground">Completeness</p>
+            <p className="text-xs text-muted-foreground">
               Configure how completeness analysis works across your libraries.
               Changes take effect on next analysis run.
             </p>
-            <div className="divide-y divide-border/30">
-              <div className="flex items-center justify-between py-3">
-                <span className="text-label text-foreground">Include EPs</span>
+            <div className="bg-background/50 rounded-lg divide-y divide-border/30">
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-sm text-foreground">Include EPs</span>
                 <Toggle
                   checked={includeEps}
                   onChange={async (checked) => {
                     setIncludeEps(checked)
                     await window.electronAPI.setSetting(
-                      SETTING_KEYS.completeness_include_eps,
+                      'completeness_include_eps',
                       String(checked)
                     )
                   }}
                 />
               </div>
-              <div className="flex items-center justify-between py-3">
-                <span className="text-label text-foreground">Include Singles</span>
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-sm text-foreground">Include Singles</span>
                 <Toggle
                   checked={includeSingles}
                   onChange={async (checked) => {
@@ -326,67 +422,71 @@ export function LibrarySettingsTab() {
 
           {/* TV Shows */}
           <div className="space-y-2">
-            <p className="text-caption font-medium text-foreground">TV Shows</p>
-            <div className="flex items-start justify-between py-3 gap-4">
-              <div className="flex-1 min-w-0">
-                <span className="text-label text-foreground">Exclude seasons I have nothing of</span>
-                <p className="text-caption text-muted-foreground mt-0.5">
-                  Seasons where you own 0 episodes are removed from completion counts. Takes effect immediately.
-                </p>
+            <p className="text-xs font-medium text-foreground">TV Shows</p>
+            <div className="bg-background/50 rounded-lg divide-y divide-border/30">
+              <div className="flex items-start justify-between px-4 py-3 gap-4">
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm text-foreground">Exclude seasons I have nothing of</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Seasons where you own 0 episodes are removed from completion counts. Takes effect immediately.
+                  </p>
+                </div>
+                <Toggle
+                  checked={excludeEmptySeasons}
+                  onChange={async (checked) => {
+                    setExcludeEmptySeasons(checked)
+                    await window.electronAPI.setSetting(
+                      SETTING_KEYS.exclude_empty_seasons,
+                      String(checked)
+                    )
+                    window.dispatchEvent(new CustomEvent('exclusions-changed'))
+                  }}
+                />
               </div>
-              <Toggle
-                checked={excludeEmptySeasons}
-                onChange={async (checked) => {
-                  setExcludeEmptySeasons(checked)
-                  await window.electronAPI.setSetting(
-                    SETTING_KEYS.exclude_empty_seasons,
-                    String(checked)
-                  )
-                  window.dispatchEvent(new CustomEvent('exclusions-changed'))
-                }}
-              />
             </div>
           </div>
 
           {/* Movie Collections */}
           <div className="space-y-2">
-            <p className="text-caption font-medium text-foreground">Movie Collections</p>
-            <div className="flex items-start justify-between py-3 gap-4">
-              <div className="flex-1 min-w-0">
-                <span className="text-label text-foreground">Exclude recently released films</span>
-                <p className="text-caption text-muted-foreground mt-0.5">
-                  Films released within this window (e.g. still in cinemas) are hidden from missing lists. Only applies to collections scanned after enabling.
-                </p>
+            <p className="text-xs font-medium text-foreground">Movie Collections</p>
+            <div className="bg-background/50 rounded-lg divide-y divide-border/30">
+              <div className="flex items-start justify-between px-4 py-3 gap-4">
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm text-foreground">Exclude recently released films</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Films released within this window (e.g. still in cinemas) are hidden from missing lists.
+                  </p>
+                </div>
+                <select
+                  value={theatricalLagDays}
+                  onChange={async (e) => {
+                    const val = e.target.value
+                    setTheatricalLagDays(val)
+                    await window.electronAPI.setSetting(
+                      SETTING_KEYS.collection_theatrical_lag_days,
+                      val
+                    )
+                    window.dispatchEvent(new CustomEvent('exclusions-changed'))
+                  }}
+                  className="shrink-0 text-sm bg-background border border-border/50 rounded-md px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {THEATRICAL_LAG_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
               </div>
-              <select
-                value={theatricalLagDays}
-                onChange={async (e) => {
-                  const val = e.target.value
-                  setTheatricalLagDays(val)
-                  await window.electronAPI.setSetting(
-                    SETTING_KEYS.collection_theatrical_lag_days,
-                    val
-                  )
-                  window.dispatchEvent(new CustomEvent('exclusions-changed'))
-                }}
-                className="shrink-0 text-label bg-background border border-border/50 rounded-lg px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                {THEATRICAL_LAG_OPTIONS.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
             </div>
           </div>
 
           {/* Managed Exclusions */}
           <div className="space-y-2">
-            <p className="text-caption font-medium text-foreground">Managed Exclusions</p>
-            <p className="text-caption text-muted-foreground">
+            <p className="text-xs font-medium text-foreground">Managed Exclusions</p>
+            <p className="text-xs text-muted-foreground">
               {totalExclusions === 0
                 ? 'Items you dismiss will appear here.'
                 : `${totalExclusions} dismissed item${totalExclusions !== 1 ? 's' : ''}. Remove items to see them again.`}
             </p>
-            <div className="divide-y divide-border/30">
+            <div className="bg-background/50 rounded-lg divide-y divide-border/30">
               {EXCLUSION_SECTIONS.map((section) => {
                 const items = exclusions[section.type] || []
                 const isExpanded = expandedSections.has(section.type)
@@ -401,9 +501,9 @@ export function LibrarySettingsTab() {
                     >
                       <div className="flex items-center gap-3">
                         <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
-                        <span className="text-label text-foreground">{section.label}</span>
+                        <span className="text-sm text-foreground">{section.label}</span>
                         {items.length > 0 && (
-                          <span className="text-caption text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
+                          <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
                             {items.length}
                           </span>
                         )}
@@ -418,7 +518,7 @@ export function LibrarySettingsTab() {
                     {isExpanded && (
                       <div className="border-t border-border/30">
                         {items.length === 0 ? (
-                          <p className="px-4 py-3 text-caption text-muted-foreground italic">
+                          <p className="px-4 py-3 text-xs text-muted-foreground italic">
                             No dismissed items
                           </p>
                         ) : (
@@ -427,7 +527,7 @@ export function LibrarySettingsTab() {
                               <button
                                 type="button"
                                 onClick={() => handleClearAll(section.type)}
-                                className="text-caption text-muted-foreground hover:text-destructive transition-colors"
+                                className="text-xs text-muted-foreground hover:text-destructive transition-colors"
                               >
                                 Clear All
                               </button>
@@ -438,13 +538,13 @@ export function LibrarySettingsTab() {
                                   key={item.id}
                                   className="flex items-center justify-between py-1.5 group"
                                 >
-                                  <span className="text-caption text-foreground truncate mr-2">
+                                  <span className="text-xs text-foreground truncate mr-2">
                                     {item.title || item.reference_key || 'Unknown item'}
                                   </span>
                                   <button
                                     type="button"
                                     onClick={() => handleRemoveExclusion(item.id, section.type)}
-                                    className="p-1 rounded-lg text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 shrink-0"
+                                    className="p-1 rounded-md text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 shrink-0"
                                     title="Remove exclusion"
                                   >
                                     <X className="w-3.5 h-3.5" />
@@ -461,6 +561,142 @@ export function LibrarySettingsTab() {
               })}
             </div>
           </div>        </div>
+      </SettingsCard>
+
+      {/* Protected Libraries Card */}
+      <SettingsCard
+        title="Protected Libraries"
+        description="Hide sensitive or personal libraries behind a PIN"
+        icon={<Lock className="w-5 h-5" />}
+        status={hasPin ? 'configured' : 'not-configured'}
+        statusText={hasPin ? 'PIN Set' : 'No PIN'}
+        expanded={expandedCards.has('security')}
+        onToggle={() => toggleCard('security')}
+      >
+        <div className="space-y-6">
+          {/* PIN Management */}
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-foreground">Security PIN</p>
+            <p className="text-xs text-muted-foreground">
+              Used to unlock libraries marked as protected.
+            </p>
+            
+            {!isChangingPin ? (
+              <div className="flex items-center justify-between bg-background/50 px-4 py-3 rounded-lg border border-border/30">
+                <span className="text-sm font-medium">
+                  {hasPin ? '••••••••' : 'No PIN configured'}
+                </span>
+                <button
+                  onClick={() => setIsChangingPin(true)}
+                  className="text-xs text-primary hover:underline font-medium"
+                >
+                  {hasPin ? 'Change PIN' : 'Set PIN'}
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2 items-center">
+                <input
+                  type="password"
+                  value={newPin}
+                  onChange={(e) => setNewPin(e.target.value.replace(/[^0-9]/g, ''))}
+                  placeholder="Enter 4-8 digits"
+                  maxLength={8}
+                  className="flex-1 px-3 py-2 bg-background border border-border rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
+                />
+                <button
+                  onClick={handleSetPin}
+                  disabled={newPin.length < 4}
+                  className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-xs font-bold disabled:opacity-50"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => { setIsChangingPin(false); setNewPin('') }}
+                  className="px-3 py-2 bg-muted text-muted-foreground rounded-md text-xs font-bold"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Library List */}
+          <div className="space-y-3">
+            <p className="text-xs font-medium text-foreground">Manage Libraries</p>
+            {!hasPin && (
+              <p className="text-xs text-muted-foreground">Set a PIN before enabling library protection.</p>
+            )}
+            {sources.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">No sources configured.</p>
+            ) : (
+              <div className="space-y-4">
+                {sources.map(source => {
+                  const libs = sourceLibraries[source.source_id] || []
+                  if (libs.length === 0) return null
+                  
+                  return (
+                    <div key={source.source_id} className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
+                          {source.display_name}
+                        </span>
+                        <div className="h-px bg-border/20 flex-1" />
+                      </div>
+                      
+                      <div className="bg-background/50 rounded-lg border border-border/30 divide-y divide-border/20">
+                        {libs.map(lib => {
+                          const libraryKey = `${source.source_id}:${lib.id}`
+                          const isSettingsExpanded = expandedLibrarySettings.has(libraryKey)
+                          return (
+                          <div key={lib.id}>
+                            <div className="flex items-center justify-between px-4 py-2.5">
+                              <button
+                                type="button"
+                                onClick={() => toggleLibrarySettings(libraryKey)}
+                                className="min-w-0 flex items-center gap-2 text-left"
+                                aria-expanded={isSettingsExpanded}
+                              >
+                                {isSettingsExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+                                <span className="min-w-0">
+                                  <span className="text-sm font-medium truncate block">{lib.name}</span>
+                                  <span className="text-[10px] text-muted-foreground uppercase">{lib.type}</span>
+                                </span>
+                              </button>
+                              <div className="flex items-center gap-4">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Protected</span>
+                                <Toggle 
+                                  checked={!!lib.isProtected}
+                                  disabled={!hasPin && !lib.isProtected}
+                                  aria-label={`Protect ${lib.name}`}
+                                  onChange={(checked) => handleToggleProtected(source.source_id, lib.id, checked)}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                            {isSettingsExpanded && (
+                              <div className="border-t border-border/20 bg-muted/10 px-10 py-3 flex items-center justify-between">
+                                <div>
+                                  <p className="text-xs font-medium text-foreground">Extended Search</p>
+                                  <p className="text-[10px] text-muted-foreground">Use broader metadata results when matching this library.</p>
+                                </div>
+                                <Toggle
+                                  checked={!!lib.allowExpandedMatching}
+                                  onChange={(checked) => handleToggleAllowExpandedMatching(source.source_id, lib.id, checked)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       </SettingsCard>
 
     </div>

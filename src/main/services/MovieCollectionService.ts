@@ -1,796 +1,288 @@
+import { getDatabase, BetterSQLiteService } from '@main/database/BetterSQLiteService'
+import { getTMDBService, TMDBService } from '@main/services/TMDBService'
+import { MovieCollection, MediaItemType } from '@main/types/database'
+import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
+import { getFileNameParser } from '@main/services/FileNameParser'
+import { getLoggingService } from '@main/services/LoggingService'
+import type { MediaItem } from '@main/types/database'
+import type { TMDBCollectionPart } from '@main/types/tmdb'
 
-import { getDatabase } from '../database/getDatabase'
-import { getTMDBService } from './TMDBService'
-import { getLoggingService } from './LoggingService'
-import { fetchJSON } from './utils/httpClient'
-import {
-  CancellableOperation,
-  wasRecentlyAnalyzed,
-  type AnalysisProgress,
-  type AnalysisOptions,
-} from './utils/ProgressTracker'
-import type { MovieCollection, MissingMovie, MediaItem } from '../types/database'
-import type { TMDBCollection, TMDBMovieDetails } from '../types/tmdb'
+interface CollectionProgress { current: number; total: number; phase: string; currentItem: string }
+interface CollectionAnalysis { totalMovies: number; ownedMovies: number; missingMovies: string[]; completenessPercentage: number; posterUrl?: string; backdropUrl?: string }
+interface CollectionMovie { title: string; year?: string; tmdb_id: string; owned: boolean; release_date?: string }
 
-/** Progress phases for collection analysis */
-export type CollectionAnalysisPhase = 'scanning' | 'fetching' | 'complete'
+export class MovieCollectionService {
+  private cancelRequested = false
 
-/** Collection analysis progress type */
-export type CollectionAnalysisProgress = AnalysisProgress<CollectionAnalysisPhase>
+  constructor(
+    private _db?: BetterSQLiteService,
+    private _tmdb?: TMDBService
+  ) {}
 
-export interface CollectionAnalysisOptions extends AnalysisOptions {
-  /** Deduplicate movies across providers by TMDB ID (default: true when no sourceId) */
-  deduplicateByTmdbId?: boolean
-}
+  private get db(): BetterSQLiteService {
+    return this._db || getDatabase()
+  }
 
-interface CollectionInfo {
-  tmdbCollectionId: number
-  collectionName: string
-  ownedMovies: MediaItem[]
-}
+  private get tmdb(): TMDBService {
+    return this._tmdb || getTMDBService()
+  }
 
-interface TMDBLookupProgress {
-  current: number
-  total: number
-  currentItem: string
-  phase: 'lookup'
-}
+  cancel(): void {
+    this.cancelRequested = true
+  }
 
-export class MovieCollectionService extends CancellableOperation {
-  /**
-   * Look up TMDB IDs for movies that don't have them
-   * This is primarily for local sources (kodi-local, local) that may not have TMDB metadata
-   * Uses IMDB ID lookup and title+year search as fallbacks
-   */
-  private async lookupMissingTMDBIds(
-    movies: MediaItem[],
-    onProgress?: (progress: TMDBLookupProgress) => void
-  ): Promise<{ updated: number; failed: number }> {
-    const db = getDatabase()
-    const tmdb = getTMDBService()
+  async analyzeAllCollections(sourceId?: string, libraryId?: string, onProgress?: (prog: CollectionProgress) => void, signal?: AbortSignal): Promise<{ total: number; analyzed: number; complete: number; errors: string[]; completed: boolean; skipped?: boolean }> {
+    signal?.throwIfAborted()
+    this.cancelRequested = false
+    const result = { total: 0, analyzed: 0, complete: 0, errors: [] as string[] }
 
-    // Filter to movies without TMDB IDs
-    const moviesWithoutTmdb = movies.filter(m => !m.tmdb_id)
+    const apiKey = await this.db.config.getSetting('tmdb_api_key')
+    if (!apiKey) return { ...result, skipped: true, completed: true }
 
-    if (moviesWithoutTmdb.length === 0) {
-      return { updated: 0, failed: 0 }
-    }
+    await this.tmdb.initialize()
+      
+      const allMovies = await this.db.media.getItems({ type: MediaItemType.Movie, sourceId, libraryId, includeDisabledLibraries: true })
+      
+      const processedCollections = new Set<string>()
+      const concurrency = 10
 
-    console.log(`[MovieCollectionService] Looking up TMDB IDs for ${moviesWithoutTmdb.length} movies`)
+      for (let i = 0; i < allMovies.length; i += concurrency) {
+        if (this.cancelRequested) break
+        await new Promise(r => setImmediate(r))
+        const chunk = allMovies.slice(i, i + concurrency)
+        
+        await Promise.all(chunk.map(async (m: MediaItem) => {
+          if (this.cancelRequested) return
 
-    let updated = 0
-    let failed = 0
-    const BATCH_SIZE = 5
+          if (!m.tmdb_id) {
+            // Skip searching TMDB for extras/bonus files or non-movie clips
+            const parser = getFileNameParser()
+            if (parser.isExtrasContent(m.title) || parser.isExtrasContent(m.file_path || '')) {
+              return
+            }
 
-    for (let i = 0; i < moviesWithoutTmdb.length; i += BATCH_SIZE) {
-      // Check for cancellation
-      if (this.isCancelled()) {
-        console.log(`[MovieCollectionService] TMDB lookup cancelled at ${i}/${moviesWithoutTmdb.length}`)
-        break
-      }
-
-      const batch = moviesWithoutTmdb.slice(i, i + BATCH_SIZE)
-
-      // Process batch in parallel
-      const results = await Promise.allSettled(
-        batch.map(async (movie) => {
-          let tmdbId: string | null = null
-          let originalLanguage: string | undefined
-
-          // Method 1: Try IMDB ID lookup via /find endpoint
-          if (movie.imdb_id && movie.imdb_id.startsWith('tt')) {
-            try {
-              const findResult = await tmdb.findByExternalId(movie.imdb_id, 'imdb_id')
-              if (findResult.movie_results && findResult.movie_results.length > 0) {
-                tmdbId = String(findResult.movie_results[0].id)
-                originalLanguage = findResult.movie_results[0].original_language
-                console.log(`[MovieCollectionService] Found "${movie.title}" via IMDB: ${tmdbId}`)
+            // Priority 0: Authoritative external IMDb resolution
+            if (m.imdb_id && this.tmdb.isConfigured()) {
+              try {
+                const found = await this.tmdb.findByExternalId(m.imdb_id, 'imdb_id')
+                if (found.movie_results && found.movie_results.length > 0) {
+                  const match = found.movie_results[0]
+                  const releaseYear = match.release_date ? parseInt(match.release_date.split('-')[0], 10) : undefined
+                  const poster = match.poster_path ? (this.tmdb.buildImageUrl(match.poster_path, 'w500') ?? undefined) : undefined
+                  await this.db.media.updateMovieMatch(m.id!, String(match.id), poster, match.title, releaseYear)
+                  m.tmdb_id = String(match.id)
+                }
+              } catch (e) {
+                getLoggingService().warn('[MovieCollectionService]', `IMDb lookup failed for "${m.title}" (${m.imdb_id}):`, e)
               }
-            } catch (error) {
-              console.debug(`[MovieCollectionService] IMDB lookup failed for ${movie.title}; trying title and year:`, error)
+            }
+
+            if (!m.tmdb_id && this.tmdb.isConfigured()) {
+              try {
+                const search = await this.tmdb.searchMovie(m.title, m.year || undefined)
+                if (search?.results?.length > 0) {
+                  const best = search.results[0]
+                  const releaseYear = best.release_date ? parseInt(best.release_date.split('-')[0], 10) : undefined
+                  const poster = best.poster_path ? (this.tmdb.buildImageUrl(best.poster_path, 'w500') ?? undefined) : undefined
+                  await this.db.media.updateMovieMatch(m.id!, String(best.id), poster, best.title, releaseYear)
+                  m.tmdb_id = String(best.id)
+                }
+              } catch (e) {
+                getLoggingService().warn('[MovieCollectionService]', `Failed to search movie match for "${m.title}":`, e)
+              }
             }
           }
 
-          // Method 2: Fall back to title + year search
-          if (!tmdbId) {
+          if (m.tmdb_id && !this.cancelRequested) {
             try {
-              const searchResults = await tmdb.searchMovie(movie.title, movie.year)
-              if (searchResults.results && searchResults.results.length > 0) {
-                // Try to find exact match by year first
-                const exactMatch = searchResults.results.find(r => {
-                  const resultYear = r.release_date ? parseInt(r.release_date.split('-')[0], 10) : null
-                  return resultYear === movie.year
-                })
-                const bestMatch = exactMatch || searchResults.results[0]
-                tmdbId = String(bestMatch.id)
-                originalLanguage = bestMatch.original_language
-                console.log(`[MovieCollectionService] Found "${movie.title}" via search: ${tmdbId}`)
+              let details: Awaited<ReturnType<TMDBService['getMovieDetails']>> | null = null
+              try {
+                details = await this.tmdb.getMovieDetails(m.tmdb_id)
+              } catch (e: unknown) {
+                const errWithStatus = e as { status?: number; message?: string }
+                if (errWithStatus?.status === 404 || errWithStatus?.message?.includes('could not be found')) {
+                  getLoggingService().info('[MovieCollectionService]', `Stale TMDB ID ${m.tmdb_id} for "${m.title}", searching fresh match...`)
+                  let matchFound = false
+                  if (m.imdb_id && this.tmdb.isConfigured()) {
+                    try {
+                      const found = await this.tmdb.findByExternalId(m.imdb_id, 'imdb_id')
+                      if (found.movie_results && found.movie_results.length > 0) {
+                        const match = found.movie_results[0]
+                        const releaseYear = match.release_date ? parseInt(match.release_date.split('-')[0], 10) : undefined
+                        const poster = match.poster_path ? (this.tmdb.buildImageUrl(match.poster_path, 'w500') ?? undefined) : undefined
+                        m.tmdb_id = String(match.id)
+                        await this.db.media.updateMovieMatch(m.id!, String(match.id), poster, match.title, releaseYear)
+                        details = await this.tmdb.getMovieDetails(m.tmdb_id)
+                        matchFound = true
+                      }
+                    } catch (err) {
+                      getLoggingService().warn('[MovieCollectionService]', `Stale fallback IMDb lookup failed for "${m.title}":`, err)
+                    }
+                  }
+                  if (!matchFound) {
+                    const search = await this.tmdb.searchMovie(m.title, m.year || undefined)
+                    if (search?.results?.length > 0) {
+                      const best = search.results[0]
+                      const releaseYear = best.release_date ? parseInt(best.release_date.split('-')[0], 10) : undefined
+                      const poster = best.poster_path ? (this.tmdb.buildImageUrl(best.poster_path, 'w500') ?? undefined) : undefined
+                      m.tmdb_id = String(best.id)
+                      await this.db.media.updateMovieMatch(m.id!, String(best.id), poster, best.title, releaseYear)
+                      details = await this.tmdb.getMovieDetails(m.tmdb_id)
+                    }
+                  }
+                } else {
+                  throw e
+                }
               }
-            } catch (error) {
-              console.warn(`[MovieCollectionService] Search failed for "${movie.title}":`, error)
+
+              if (details?.belongs_to_collection) {
+                const cid = String(details.belongs_to_collection.id)
+                const cacheKey = `${cid}-${m.source_id || ''}-${m.library_id || ''}`
+                if (!processedCollections.has(cacheKey)) {
+                  processedCollections.add(cacheKey)
+                  const cDetails = await this.tmdb.getCollectionDetails(cid)
+                  await this.db.movieCollections.upsertCollection({
+                    tmdb_collection_id: cid,
+                    collection_name: cDetails.name,
+                    source_id: m.source_id || '',
+                    library_id: m.library_id || '',
+                    poster_url: this.tmdb.buildImageUrl(cDetails.poster_path, 'w500') || undefined,
+                    backdrop_url: this.tmdb.buildImageUrl(cDetails.backdrop_path, 'original') || undefined
+                  })
+                }
+              }
+            } catch (e) {
+              const message = e instanceof Error ? e.message : String(e)
+              result.errors.push(`Movie "${m.title}" (${m.tmdb_id}): ${message}`)
+              getLoggingService().warn('[MovieCollectionService]', `Failed to fetch collection details for movie ${m.tmdb_id} (${m.title}): ${message}`)
             }
           }
+        }))
+      }
 
-          if (tmdbId && movie.id) {
-            // Update the movie with the TMDB ID
-            await db.updateMovieWithTMDBId(movie.id, tmdbId, originalLanguage)
-            return { movie, tmdbId, success: true }
+      const collections = await this.db.movieCollections.getCollections(sourceId)
+      result.total = collections.length
+
+      let currentIndex = 0
+      for (let i = 0; i < collections.length; i += concurrency) {
+        if (this.cancelRequested) break
+        await new Promise(r => setImmediate(r))
+        const chunk = collections.slice(i, i + concurrency)
+
+        await Promise.all(chunk.map(async c => {
+          if (this.cancelRequested) return
+          currentIndex++
+          onProgress?.({ current: currentIndex, total: collections.length, phase: 'analyzing', currentItem: c.collection_name })
+          try {
+            const analysis = await this.analyzeCollection(c.collection_name, c.source_id, c.library_id, c.tmdb_collection_id)
+            if (analysis) {
+              result.analyzed++
+              if (analysis.completeness_percentage >= 100) result.complete++
+            }
+          } catch (e: unknown) {
+            const errMsg = e instanceof Error ? e.message : String(e)
+            const diagnostic = `Collection "${c.collection_name}" (TMDB ${c.tmdb_collection_id}): ${errMsg}`
+            result.errors.push(diagnostic)
+            getLoggingService().warn('[MovieCollectionService]', diagnostic)
           }
-
-          return { movie, tmdbId: null, success: false }
-        })
-      )
-
-      // Count results
-      for (const result of results) {
-        if (result.status === 'fulfilled') {
-          if (result.value.success) {
-            updated++
-          } else {
-            failed++
-          }
-        } else {
-          failed++
-        }
+        }))
       }
-
-      // Update progress
-      onProgress?.({
-        current: Math.min(i + BATCH_SIZE, moviesWithoutTmdb.length),
-        total: moviesWithoutTmdb.length,
-        currentItem: batch[0]?.title || '',
-        phase: 'lookup',
-      })
-    }
-
-    getLoggingService().verbose('[MovieCollectionService]',
-      `TMDB ID lookup: ${updated} found, ${failed} failed out of ${moviesWithoutTmdb.length} movies`)
-    console.log(`[MovieCollectionService] TMDB lookup complete: ${updated} updated, ${failed} failed`)
-    return { updated, failed }
+      
+      getLiveMonitoringService().notifyLibraryUpdated(sourceId)
+      
+    return { ...result, completed: !this.cancelRequested }
   }
 
-
-  /**
-   * Fetch collection poster URLs from Plex for a given library.
-   * Returns a map of collection name (lowercase) -> full poster URL.
-   */
-  private async fetchPlexCollectionPosters(
-    sourceId: string,
-    libraryId?: string
-  ): Promise<Map<string, string>> {
-    const posterMap = new Map<string, string>()
-    const db = getDatabase()
-
-    try {
-      const source = db.getMediaSourceById(sourceId)
-      if (!source || source.source_type !== 'plex') return posterMap
-
-      const config = JSON.parse(source.connection_config)
-      if (!config.serverUrl || !config.token) return posterMap
-
-      // Fetch all libraries to find movie libraries
-      const libraryIds: string[] = []
-      if (libraryId) {
-        libraryIds.push(libraryId)
-      } else {
-        const sectionsData = await fetchJSON<{ MediaContainer?: { Directory?: Array<{ key: string; type: string }> } }>(
-          `${config.serverUrl}/library/sections`,
-          { headers: { Accept: 'application/json', 'X-Plex-Token': config.token }, timeoutMs: 10_000 }
-        )
-        for (const dir of sectionsData?.MediaContainer?.Directory || []) {
-          if (dir.type === 'movie') libraryIds.push(dir.key)
-        }
-      }
-
-      for (const libId of libraryIds) {
-        const data = await fetchJSON<{ MediaContainer?: { Metadata?: Array<{ title: string; thumb?: string }> } }>(
-          `${config.serverUrl}/library/sections/${libId}/collections`,
-          { headers: { Accept: 'application/json', 'X-Plex-Token': config.token }, timeoutMs: 30_000 }
-        )
-        for (const coll of data?.MediaContainer?.Metadata || []) {
-          if (coll.thumb) {
-            posterMap.set(
-              coll.title.toLowerCase(),
-              `${config.serverUrl}${coll.thumb}?X-Plex-Token=${config.token}`
-            )
-          }
-        }
-      }
-
-      console.log(`[MovieCollectionService] Fetched ${posterMap.size} Plex collection posters`)
-    } catch (error) {
-      console.warn('[MovieCollectionService] Failed to fetch Plex collection posters:', error)
+  async analyzeCollection(name: string, sourceId = '', libraryId = '', tmdbCollectionId?: string): Promise<MovieCollection | null> {
+    let collectionId = tmdbCollectionId
+    if (!collectionId) {
+      const search = await this.tmdb.searchCollection(name)
+      if (!search?.results?.length) return null
+      collectionId = String(search.results[0].id)
     }
 
-    return posterMap
-  }
+    const details = await this.tmdb.getCollectionDetails(collectionId)
+    if (!details?.parts) return null
+    const tmdbIds = details.parts.map(p => String(p.id))
+    const ownedMap = await this.db.media.getItemsByTmdbIds(tmdbIds, { sourceId, libraryId })
 
-  /**
-   * Deduplicate movies by TMDB ID across all providers
-   * Keeps the highest quality version (by video bitrate) when duplicates exist
-   */
-  private deduplicateMoviesByTmdbId(movies: MediaItem[]): MediaItem[] {
-    const movieMap = new Map<string, MediaItem>()
-
-    for (const movie of movies) {
-      // Skip movies without TMDB ID
-      if (!movie.tmdb_id) continue
-
-      const existing = movieMap.get(movie.tmdb_id)
-      if (!existing) {
-        movieMap.set(movie.tmdb_id, movie)
-      } else {
-        // Keep the one with higher video bitrate (better quality)
-        const existingBitrate = existing.video_bitrate_kbps || 0
-        const currentBitrate = movie.video_bitrate_kbps || 0
-        if (currentBitrate > existingBitrate) {
-          movieMap.set(movie.tmdb_id, movie)
-        }
+    const movies: CollectionMovie[] = details.parts.map((p: TMDBCollectionPart) => {
+      const id = String(p.id)
+      const isOwned = ownedMap.has(id)
+      return {
+        title: p.title,
+        year: p.release_date?.substring(0, 4),
+        tmdb_id: id,
+        owned: isOwned,
+        release_date: p.release_date || undefined
       }
-    }
-
-    return Array.from(movieMap.values())
-  }
-
-  /**
-   * Get movies deduplicated by TMDB ID across all providers
-   * This merges ownership from multiple sources for accurate collection completeness
-   */
-  private async getMoviesDeduplicatedByTmdbId(
-    onProgress?: (progress: CollectionAnalysisProgress) => void
-  ): Promise<MediaItem[]> {
-    const db = getDatabase()
-
-    // Get all movies from all sources
-    const allMovies = db.getMediaItems({ type: 'movie' }) as MediaItem[]
-    console.log(`[MovieCollectionService] Cross-provider deduplication: ${allMovies.length} total movies`)
-
-    // For any source that's local, we need TMDB IDs first
-    const sources = db.getMediaSources() as Array<{ id: number; source_type: string }>
-    const localSourceIds = new Set(
-      sources
-        .filter((s: typeof sources[0]) => s.source_type === 'kodi-local' || s.source_type === 'local')
-        .map((s: typeof sources[0]) => String(s.id))
-    )
-
-    // Check if any movies from local sources need TMDB ID lookups
-    const localMoviesWithoutTmdb = allMovies.filter(
-      m => m.source_id && localSourceIds.has(m.source_id) && !m.tmdb_id
-    )
-
-    if (localMoviesWithoutTmdb.length > 0) {
-      console.log(`[MovieCollectionService] Looking up TMDB IDs for ${localMoviesWithoutTmdb.length} local movies`)
-
-      const lookupProgressWrapper = onProgress ? (progress: TMDBLookupProgress) => {
-        onProgress({
-          current: progress.current,
-          total: progress.total,
-          currentItem: `Looking up: ${progress.currentItem}`,
-          phase: 'scanning',
-        })
-      } : undefined
-
-      await this.lookupMissingTMDBIds(localMoviesWithoutTmdb, lookupProgressWrapper)
-
-      // Check for cancellation after lookup
-      if (this.isCancelled()) {
-        return []
-      }
-
-      // Re-fetch all movies to get updated TMDB IDs
-      const updatedMovies = db.getMediaItems({ type: 'movie' }) as MediaItem[]
-      const deduplicated = this.deduplicateMoviesByTmdbId(updatedMovies)
-      console.log(`[MovieCollectionService] After deduplication: ${deduplicated.length} unique movies`)
-      return deduplicated
-    }
-
-    const deduplicated = this.deduplicateMoviesByTmdbId(allMovies)
-    console.log(`[MovieCollectionService] After deduplication: ${deduplicated.length} unique movies`)
-    return deduplicated
-  }
-
-  /**
-   * Look up a TMDB collection's full membership and calculate completeness.
-   * Used by both analyzeAllCollections() and BoxSet scanning.
-   */
-  async lookupCollectionCompleteness(
-    tmdbCollectionId: string,
-    ownedTmdbIds: string[],
-  ): Promise<{
-    totalMovies: number
-    ownedMovies: number
-    missingMovies: MissingMovie[]
-    completenessPercentage: number
-    posterUrl?: string
-    backdropUrl?: string
-    collectionName: string
-  } | null> {
-    const tmdb = getTMDBService()
-
-    const tmdbCollection: TMDBCollection = await tmdb.getCollectionDetails(tmdbCollectionId)
-
-    // Filter to only include released movies
-    const today = new Date().toISOString().split('T')[0]
-    const releasedParts = tmdbCollection.parts.filter(part => {
-      if (!part.release_date) return false
-      return part.release_date <= today
     })
 
-    // Skip collections with only 1 movie
-    if (releasedParts.length <= 1) {
-      return null
+    const ownedCount = movies.filter(m => m.owned).length
+    const result: MovieCollection = {
+      collection_name: details.name,
+      total_movies: movies.length,
+      owned_movies: ownedCount,
+      missing_movies: JSON.stringify(movies.filter(m => !m.owned)),
+      completeness_percentage: movies.length > 0 ? (ownedCount / movies.length) * 100 : 0,
+      tmdb_collection_id: String(details.id),
+      owned_movie_ids: JSON.stringify(movies.filter(m => m.owned).map(m => m.tmdb_id)),
+      source_id: sourceId,
+      library_id: libraryId,
+      poster_url: this.tmdb.buildImageUrl(details.poster_path, 'w500') || undefined,
+      backdrop_url: this.tmdb.buildImageUrl(details.backdrop_path, 'original') || undefined,
     }
 
-    const allOwnedIdsSet = new Set(ownedTmdbIds)
+    await this.db.movieCollections.upsertCollection(result)
+    return result
+  }
 
-    const missingMovies: MissingMovie[] = releasedParts
-      .filter(part => !allOwnedIdsSet.has(part.id.toString()))
-      .map(part => ({
-        tmdb_id: part.id.toString(),
-        title: part.title,
-        year: part.release_date ? parseInt(part.release_date.split('-')[0], 10) : undefined,
-        poster_path: part.poster_path ? tmdb.buildImageUrl(part.poster_path, 'w300') || undefined : undefined,
-        release_date: part.release_date || undefined,
-      }))
+  async getCollections(sourceId?: string) {
+    return await this.db.movieCollections.getCollections(sourceId)
+  }
 
-    const totalMovies = releasedParts.length
-    const ownedCount = ownedTmdbIds.length
-    const completenessPercentage = totalMovies > 0
-      ? Math.round((ownedCount / totalMovies) * 100)
-      : 100
+  async getIncompleteCollections(sourceId?: string) {
+    return await this.db.movieCollections.getIncompleteCollections(sourceId)
+  }
 
+  async getStats() {
+    const stats = await this.db.movieCollections.getStats()
+    return { total: stats.total, complete: stats.complete }
+  }
+
+  async deleteCollection(id: number) {
+    return await this.db.movieCollections.deleteCollection(id)
+  }
+
+  async lookupCollectionCompleteness(tmdbId: string, ownedTmdbIds: string[]): Promise<CollectionAnalysis> {
+    const details = await this.tmdb.getCollectionDetails(tmdbId)
+    const parts = details.parts.filter(p => p.release_date && new Date(p.release_date) <= new Date())
+    const owned = parts.filter(p => ownedTmdbIds.includes(String(p.id))).length
     return {
-      totalMovies,
-      ownedMovies: ownedCount,
-      missingMovies,
-      completenessPercentage,
-      posterUrl: tmdbCollection.poster_path
-        ? tmdb.buildImageUrl(tmdbCollection.poster_path, 'w500') || undefined
-        : undefined,
-      backdropUrl: tmdbCollection.backdrop_path
-        ? tmdb.buildImageUrl(tmdbCollection.backdrop_path, 'original') || undefined
-        : undefined,
-      collectionName: tmdbCollection.name,
+      totalMovies: parts.length,
+      ownedMovies: owned,
+      completenessPercentage: parts.length > 0 ? (owned / parts.length) * 100 : 0,
+      missingMovies: parts.filter(p => !ownedTmdbIds.includes(String(p.id))).map(p => p.title),
+      posterUrl: this.tmdb.buildImageUrl(details.poster_path, 'w500') || undefined,
+      backdropUrl: this.tmdb.buildImageUrl(details.backdrop_path, 'original') || undefined
     }
   }
 
-  /**
-   * Analyze collections using TMDB API
-   * 1. For each movie with TMDB ID, lookup which collection it belongs to
-   * 2. Group movies by TMDB collection ID
-   * 3. Fetch full collection details from TMDB to find all movies in collection
-   * 4. Calculate missing movies by comparing with owned movies
-   *
-   * @param onProgress Progress callback
-   * @param sourceId Optional source ID to scope analysis
-   * @param libraryId Optional library ID to scope analysis
-   * @param options Analysis options for performance tuning
-   */
-  async analyzeAllCollections(
-    onProgress?: (progress: CollectionAnalysisProgress) => void,
-    sourceId?: string,
-    libraryId?: string,
-    options: CollectionAnalysisOptions = {}
-  ): Promise<{ completed: boolean; analyzed: number; skipped: number; failures: number }> {
-    // Apply default options
-    // Default to deduplication when scanning all sources (no sourceId)
-    const {
-      skipRecentlyAnalyzed: skipRecentlyAnalyzedOpt = true,
-      reanalyzeAfterDays = 7,
-      deduplicateByTmdbId = !sourceId, // Default to true when no sourceId
-    } = options
-    let skipRecentlyAnalyzed = skipRecentlyAnalyzedOpt
-    // Reset cancellation flag at start
-    this.resetCancellation()
-
-    const db = getDatabase()
-    const tmdb = getTMDBService()
-
-    // If previous analysis was cancelled (incomplete), force full re-analysis
-    if (skipRecentlyAnalyzed && db.getSetting('collection_analysis_incomplete') === 'true') {
-      console.log('[MovieCollectionService] Previous analysis was incomplete, forcing full re-analysis')
-      skipRecentlyAnalyzed = false
-      db.deleteSetting('collection_analysis_incomplete')
-    }
-
-    // Check if TMDB API key is configured
-    const tmdbApiKey = db.getSetting('tmdb_api_key')
-    if (!tmdbApiKey) {
-      console.log('[MovieCollectionService] TMDB API key not configured, cannot analyze collections')
-      throw new Error('TMDB API key not configured. Please add your API key in Settings.')
-    }
-
-    // Initialize TMDB service
-    await tmdb.initialize()
-
-    // Check source type for special handling
-    let isLocalSource = false
-    let isPlexSource = false
-    if (sourceId) {
-      const source = db.getMediaSourceById(sourceId)
-      if (source && (source.source_type === 'kodi-local' || source.source_type === 'local')) {
-        isLocalSource = true
-        console.log('[MovieCollectionService] Local source detected, will lookup missing TMDB IDs and update artwork')
-      }
-      if (source && source.source_type === 'plex') {
-        isPlexSource = true
+  async getMoviesDeduplicatedByTmdbId(): Promise<MediaItem[]> {
+    const allMovies = await this.db.media.getItems({ type: MediaItemType.Movie, includeDisabledLibraries: true })
+    const map = new Map<string, MediaItem>()
+    for (const m of allMovies) {
+      if (!m.tmdb_id) continue
+      const existing = map.get(m.tmdb_id)
+      if (!existing || (m.video_bitrate || 0) > (existing.video_bitrate || 0)) {
+        map.set(m.tmdb_id, m)
       }
     }
-
-    // Fetch Plex collection posters (single API call per library, non-blocking on failure)
-    const plexPosterMap = isPlexSource && sourceId
-      ? await this.fetchPlexCollectionPosters(sourceId, libraryId)
-      : new Map<string, string>()
-
-    // Get movies - either deduplicated across providers or from specific source
-    let movies: MediaItem[]
-
-    // Define filters for fetching movies (used for non-deduplicated path)
-    const filters: { type: 'movie'; sourceId?: string; libraryId?: string } = { type: 'movie' }
-    if (sourceId) filters.sourceId = sourceId
-    if (libraryId) filters.libraryId = libraryId
-
-    if (deduplicateByTmdbId && !sourceId) {
-      console.log('[MovieCollectionService] Using cross-provider deduplication by TMDB ID')
-      movies = await this.getMoviesDeduplicatedByTmdbId(onProgress)
-
-      // Check for cancellation after deduplication
-      if (this.isCancelled()) {
-        return { completed: false, analyzed: 0, skipped: 0, failures: 0 }
-      }
-    } else {
-      // Get movies from specific source/library
-      movies = db.getMediaItems(filters) as MediaItem[]
-    }
-
-    // For local sources, look up TMDB IDs for movies that don't have them
-    if (isLocalSource && !deduplicateByTmdbId) {
-      const moviesWithoutTmdb = movies.filter(m => !m.tmdb_id)
-      if (moviesWithoutTmdb.length > 0) {
-        console.log(`[MovieCollectionService] Looking up TMDB IDs for ${moviesWithoutTmdb.length} movies without them`)
-
-        // Create a lookup progress wrapper that maps to CollectionAnalysisProgress
-        const lookupProgressWrapper = onProgress ? (progress: TMDBLookupProgress) => {
-          onProgress({
-            current: progress.current,
-            total: progress.total,
-            currentItem: `Looking up: ${progress.currentItem}`,
-            phase: 'scanning', // Use scanning phase for lookup
-          })
-        } : undefined
-
-        await this.lookupMissingTMDBIds(movies, lookupProgressWrapper)
-
-        // Check for cancellation after lookup
-        if (this.isCancelled()) {
-          return { completed: false, analyzed: 0, skipped: 0, failures: 0 }
-        }
-
-        // Re-fetch movies to get updated TMDB IDs
-        movies = db.getMediaItems(filters) as MediaItem[]
-      }
-    }
-
-    // Filter to only movies with TMDB IDs
-    const moviesWithTmdb = movies.filter(m => m.tmdb_id)
-    console.log(`[MovieCollectionService] Found ${movies.length} movies, ${moviesWithTmdb.length} have TMDB IDs`)
-
-    if (moviesWithTmdb.length === 0) {
-      onProgress?.({
-        current: 0,
-        total: 0,
-        currentItem: '',
-        phase: 'complete',
-      })
-      return { completed: true, analyzed: 0, skipped: 0, failures: 0 }
-    }
-
-    // Phase 1: Scan movies to find which collections they belong to
-    onProgress?.({
-      current: 0,
-      total: moviesWithTmdb.length,
-      currentItem: 'Looking up movie collections from TMDB...',
-      phase: 'scanning',
-    })
-
-    // Map: TMDB collection ID -> collection info
-    const collectionMap = new Map<number, CollectionInfo>()
-    let scannedCount = 0
-    const BATCH_SIZE = 10
-
-    for (let i = 0; i < moviesWithTmdb.length; i += BATCH_SIZE) {
-      // Check for cancellation
-      if (this.isCancelled()) {
-        console.log(`[MovieCollectionService] Analysis cancelled at ${scannedCount}/${moviesWithTmdb.length}`)
-        return { completed: false, analyzed: 0, skipped: 0, failures: 0 }
-      }
-
-      const batch = moviesWithTmdb.slice(i, i + BATCH_SIZE)
-
-      // Fetch movie details from TMDB in parallel (with rate limiting handled by TMDBService)
-      const detailsResults = await Promise.allSettled(
-        batch.map(movie => tmdb.getMovieDetails(movie.tmdb_id!))
-      )
-
-      for (let j = 0; j < batch.length; j++) {
-        const movie = batch[j]
-        const result = detailsResults[j]
-
-        if (result.status === 'fulfilled' && result.value) {
-          const details: TMDBMovieDetails = result.value
-
-          // Update artwork for local sources
-          if (isLocalSource && sourceId && details.poster_path) {
-            const posterUrl = tmdb.buildImageUrl(details.poster_path, 'w500') || undefined
-            if (posterUrl) {
-              await db.updateMediaItemArtwork(sourceId, movie.plex_id, {
-                posterUrl: posterUrl,
-              })
-            }
-          }
-
-          // Check if movie belongs to a collection
-          if (details.belongs_to_collection) {
-            const collectionId = details.belongs_to_collection.id
-            const collectionName = details.belongs_to_collection.name
-
-            if (!collectionMap.has(collectionId)) {
-              collectionMap.set(collectionId, {
-                tmdbCollectionId: collectionId,
-                collectionName: collectionName,
-                ownedMovies: []
-              })
-            }
-            collectionMap.get(collectionId)!.ownedMovies.push(movie)
-          }
-        } else if (result.status === 'rejected') {
-          console.warn(`[MovieCollectionService] Failed to get TMDB details for "${movie.title}":`, result.reason)
-        }
-
-        scannedCount++
-        onProgress?.({
-          current: scannedCount,
-          total: moviesWithTmdb.length,
-          currentItem: movie.title,
-          phase: 'scanning',
-        })
-      }
-    }
-
-    console.log(`[MovieCollectionService] Found ${collectionMap.size} collections from TMDB`)
-
-    if (collectionMap.size === 0) {
-      onProgress?.({
-        current: moviesWithTmdb.length,
-        total: moviesWithTmdb.length,
-        currentItem: '',
-        phase: 'complete',
-      })
-      return { completed: true, analyzed: 0, skipped: 0, failures: 0 }
-    }
-
-    // Pre-fetch existing collections to check for recently analyzed
-    const existingCollections = new Map<string, { updatedAt: string; ownedCount: number }>()
-    if (skipRecentlyAnalyzed) {
-      const allCollections = db.getMovieCollections(sourceId)
-      for (const col of allCollections) {
-        if (col.updated_at && col.tmdb_collection_id) {
-          existingCollections.set(col.tmdb_collection_id, {
-            updatedAt: col.updated_at,
-            ownedCount: col.owned_movies,
-          })
-        }
-      }
-      console.log(`[MovieCollectionService] Found ${existingCollections.size} existing collections for skip check`)
-    }
-
-    // Clear existing collections to sync (only if not skipping)
-    // Scope to sourceId to preserve BoxSet-scanned collections from other sources
-    if (!skipRecentlyAnalyzed) {
-      db.clearMovieCollections(sourceId || undefined)
-    }
-
-    // Phase 2: Fetch full collection details and calculate missing movies
-    const collectionEntries = Array.from(collectionMap.values())
-    let processedCount = 0
-    let skipped = 0
-    let failures = 0
-
-    // Start batch mode for efficient writes with checkpoints
-    db.startBatch()
-
-    try {
-    for (const collectionInfo of collectionEntries) {
-      // Check for cancellation - break instead of return to allow finally block to save
-      if (this.isCancelled()) {
-        console.log(`[MovieCollectionService] Analysis cancelled at ${processedCount}/${collectionEntries.length}`)
-        break
-      }
-
-      // Check if recently analyzed and owned count hasn't changed
-      if (skipRecentlyAnalyzed) {
-        const existing = existingCollections.get(collectionInfo.tmdbCollectionId.toString())
-        if (existing &&
-            wasRecentlyAnalyzed(existing.updatedAt, reanalyzeAfterDays) &&
-            existing.ownedCount === collectionInfo.ownedMovies.length) {
-          skipped++
-          processedCount++
-          continue
-        }
-      }
-
-      onProgress?.({
-        current: processedCount + 1,
-        total: collectionEntries.length,
-        currentItem: collectionInfo.collectionName,
-        phase: 'fetching',
-        skipped,
-      })
-
-      try {
-        // Get owned movie TMDB IDs
-        const ownedTmdbIds = collectionInfo.ownedMovies
-          .map(m => m.tmdb_id)
-          .filter(Boolean) as string[]
-
-        // Skip only if we have NO owned movies at all
-        if (ownedTmdbIds.length === 0) {
-          console.log(`[MovieCollectionService] Skipping "${collectionInfo.collectionName}" - no owned movies found`)
-          processedCount++
-          continue
-        }
-
-        const result = await this.lookupCollectionCompleteness(
-          collectionInfo.tmdbCollectionId.toString(),
-          ownedTmdbIds,
-        )
-
-        // lookupCollectionCompleteness returns null for single-movie collections
-        if (!result) {
-          console.log(`[MovieCollectionService] Skipping "${collectionInfo.collectionName}" - not a real collection (<=1 released movie)`)
-          processedCount++
-          continue
-        }
-
-        const data: Omit<MovieCollection, 'id' | 'created_at' | 'updated_at'> = {
-          tmdb_collection_id: collectionInfo.tmdbCollectionId.toString(),
-          collection_name: result.collectionName,
-          source_id: sourceId,
-          library_id: libraryId,
-          total_movies: result.totalMovies,
-          owned_movies: result.ownedMovies,
-          missing_movies: result.missingMovies,
-          owned_movie_ids: ownedTmdbIds,
-          completeness_percentage: result.completenessPercentage,
-          poster_url: plexPosterMap.get(result.collectionName.toLowerCase()) || result.posterUrl,
-          backdrop_url: result.backdropUrl,
-        }
-
-        await db.upsertMovieCollection(data)
-
-        getLoggingService().verbose('[MovieCollectionService]',
-          `"${result.collectionName}" — ${result.ownedMovies}/${result.totalMovies} owned, ${result.missingMovies.length} missing (${result.completenessPercentage}%)`)
-        console.log(`[MovieCollectionService] ${result.collectionName}: ${result.ownedMovies}/${result.totalMovies} owned, ${result.missingMovies.length} missing (${result.completenessPercentage}%)`)
-
-      } catch (error) {
-        failures++
-        console.error(`[MovieCollectionService] Failed to fetch collection "${collectionInfo.collectionName}":`, error)
-
-        // Store partial info without TMDB details
-        const ownedTmdbIds = collectionInfo.ownedMovies
-          .map(m => m.tmdb_id)
-          .filter(Boolean) as string[]
-
-        const data: Omit<MovieCollection, 'id' | 'created_at' | 'updated_at'> = {
-          tmdb_collection_id: collectionInfo.tmdbCollectionId.toString(),
-          collection_name: collectionInfo.collectionName,
-          source_id: sourceId,
-          library_id: libraryId,
-          total_movies: collectionInfo.ownedMovies.length,
-          owned_movies: collectionInfo.ownedMovies.length,
-          missing_movies: [],
-          owned_movie_ids: ownedTmdbIds,
-          completeness_percentage: 100, // Can't determine without TMDB
-          poster_url: collectionInfo.ownedMovies[0]?.poster_url,
-          backdrop_url: undefined,
-        }
-
-        await db.upsertMovieCollection(data)
-      }
-
-      processedCount++
-
-      // Checkpoint every 25 collections to save progress
-      if (processedCount % 25 === 0) {
-        await db.forceSave()
-      }
-    }
-    } finally {
-      // Always save on exit (normal completion or cancellation)
-      await db.endBatch()
-    }
-
-    const wasCompleted = !this.isCancelled()
-
-    if (wasCompleted) {
-      // Clean up stale collections that no longer have any owned movies in this source
-      const currentCollectionTmdbIds = new Set(
-        collectionEntries.map(c => c.tmdbCollectionId.toString())
-      )
-      const allExistingCollections = db.getMovieCollections(sourceId)
-      let removedStale = 0
-      for (const existing of allExistingCollections) {
-        // Only clean up collections matching this library scope
-        if (libraryId && existing.library_id !== libraryId) continue
-        if (!currentCollectionTmdbIds.has(existing.tmdb_collection_id) && existing.id) {
-          db.deleteMovieCollection(existing.id)
-          removedStale++
-        }
-      }
-      if (removedStale > 0) {
-        console.log(`[MovieCollectionService] Removed ${removedStale} stale collections`)
-      }
-      // Clear incomplete flag on successful completion
-      db.deleteSetting('collection_analysis_incomplete')
-    } else {
-      // Mark analysis as incomplete so next run forces full re-analysis
-      db.setSetting('collection_analysis_incomplete', 'true')
-    }
-
-    onProgress?.({
-      current: collectionEntries.length,
-      total: collectionEntries.length,
-      currentItem: '',
-      phase: 'complete',
-      skipped,
-    })
-
-    getLoggingService().verbose('[MovieCollectionService]',
-      `Analysis ${wasCompleted ? 'complete' : 'cancelled'}: ${processedCount - skipped} collections analyzed, ${skipped} skipped, ${failures} failed, ${collectionEntries.length} total found`)
-    console.log(`[MovieCollectionService] Analysis ${wasCompleted ? 'complete' : 'cancelled'}: ${processedCount - skipped} analyzed, ${skipped} skipped${failures > 0 ? `, ${failures} failed` : ''}`)
-    return { completed: wasCompleted, analyzed: processedCount - skipped, skipped, failures }
-  }
-
-  /**
-   * Get all movie collections
-   */
-  getCollections(sourceId?: string): MovieCollection[] {
-    const db = getDatabase()
-    return db.getMovieCollections(sourceId)
-  }
-
-  /**
-   * Get incomplete collections only
-   * @param sourceId Optional source ID to filter by
-   */
-  getIncompleteCollections(sourceId?: string): MovieCollection[] {
-    const db = getDatabase()
-    return db.getIncompleteMovieCollections(sourceId)
-  }
-
-  /**
-   * Delete a collection
-   */
-  async deleteCollection(id: number): Promise<boolean> {
-    const db = getDatabase()
-    return await db.deleteMovieCollection(id)
-  }
-
-  /**
-   * Get collection stats
-   */
-  getStats(): { total: number; complete: number; incomplete: number; totalMissing: number; avgCompleteness: number } {
-    const db = getDatabase()
-    return db.getMovieCollectionStats()
+    return Array.from(map.values())
   }
 }
 
-// Singleton instance
-let serviceInstance: MovieCollectionService | null = null
-
+let instance: MovieCollectionService | null = null
 export function getMovieCollectionService(): MovieCollectionService {
-  if (!serviceInstance) {
-    serviceInstance = new MovieCollectionService()
-  }
-  return serviceInstance
+  return instance ??= new MovieCollectionService()
 }

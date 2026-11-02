@@ -1,0 +1,156 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { render, screen, fireEvent, act } from '@testing-library/react'
+import { MusicView } from '@/components/library/MusicView'
+import { SourceProvider } from '@/contexts/SourceContext'
+import { LibraryProvider } from '@/contexts/LibraryContext'
+import { ToastProvider } from '@/contexts/ToastContext'
+import { ScrollMemoryProvider } from '@/contexts/ScrollMemoryContext'
+
+import React from 'react'
+import type { MusicArtist, MusicAlbum } from '@/components/library/types'
+
+describe('MusicView Rendering (Mocked Bridge)', () => {
+  let mockConfig: Record<string, string | undefined> = {}
+
+  beforeEach(async () => {
+    mockConfig = {}
+    
+    // Setup real bridge for contexts
+    Object.assign(window, { electronAPI: {
+      sourcesList: () => Promise.resolve([]),
+      getSetting: (key: string) => Promise.resolve(mockConfig[key]),
+      setSetting: (key: string, value: string) => {
+        mockConfig[key] = value
+        return Promise.resolve(true)
+      },
+      log: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} },
+      onSourcesScanProgress: () => () => {},
+      onSourcesScanCompleted: () => () => {},
+      onScanCompleted: () => () => {},
+      onSettingsChanged: () => () => {},
+      onWishlistAutoCompleted: () => () => {}
+    }})
+  })
+
+  afterEach(() => {})
+
+  const mockArtists = [
+    { id: 1, name: 'Artist One', sort_name: 'Artist One', provider_id: 'a1', source_id: 's1', source_type: 'local', album_count: 1 },
+    { id: 2, name: 'Artist Two', sort_name: 'Artist Two', provider_id: 'a2', source_id: 's1', source_type: 'local', album_count: 2 }
+  ]
+
+  const mockAlbums = [
+    { id: 10, title: 'Album One', artist_id: 1, artist_name: 'Artist One', provider_id: 'al1', source_id: 's1', source_type: 'local', year: 2020 },
+    { id: 11, title: 'Album Two', artist_id: 2, artist_name: 'Artist Two', provider_id: 'al2', source_id: 's1', source_type: 'local', year: 2021 }
+  ]
+
+  const defaultProps: Parameters<typeof MusicView>[0] = {
+    artists: [],
+    totalArtistCount: 0,
+    artistsLoading: false,
+    onLoadMoreArtists: () => {},
+    albums: [],
+    tracks: [],
+    allTracks: [],
+    totalTrackCount: 0,
+    tracksLoading: false,
+    onLoadMoreTracks: () => {},
+    totalAlbumCount: 0,
+    albumsLoading: false,
+    onLoadMoreAlbums: () => {},
+    albumSortColumn: 'title',
+    albumSortDirection: 'asc',
+    onAlbumSortChange: () => {},
+    stats: null,
+    selectedArtist: null,
+    selectedAlbum: null,
+    artistCompleteness: new Map(),
+    albumCompleteness: null,
+    allAlbumCompleteness: new Map(),
+    musicViewMode: 'artists',
+    trackSortColumn: 'title',
+    trackSortDirection: 'asc',
+    onTrackSortChange: () => {},
+    onSelectArtist: () => {},
+    onSelectAlbum: () => {},
+    onBack: () => {},
+    gridScale: 5,
+    viewType: 'grid',
+    searchQuery: '',
+    qualityFilter: 'all',
+    showSourceBadge: true,
+    onAnalyzeAlbum: async () => {},
+    onAnalyzeArtist: async () => {},
+    onArtistCompletenessUpdated: () => {},
+    includeEps: true,
+    includeSingles: true,
+    sortBy: 'title',
+    onSortChange: () => {},
+    slimDown: false
+  }
+
+  it('renders artist grid by default', async () => {
+    await act(async () => {
+      render(
+        <ToastProvider>
+          <LibraryProvider>
+            <SourceProvider>
+              <ScrollMemoryProvider>
+                <MusicView {...defaultProps} artists={mockArtists as MusicArtist[]} totalArtistCount={2} />
+              </ScrollMemoryProvider>
+            </SourceProvider>
+          </LibraryProvider>
+        </ToastProvider>
+      )
+    })
+    expect(screen.getByText('Artist One')).toBeTruthy()
+    expect(screen.getByText('Artist Two')).toBeTruthy()
+  })
+
+  it('renders album grid in albums mode', async () => {
+    await act(async () => {
+      render(
+        <ToastProvider>
+          <LibraryProvider>
+            <SourceProvider>
+              <ScrollMemoryProvider>
+                <MusicView {...defaultProps} musicViewMode="albums" albums={mockAlbums as MusicAlbum[]} totalAlbumCount={2} />
+              </ScrollMemoryProvider>
+            </SourceProvider>
+          </LibraryProvider>
+        </ToastProvider>
+      )
+    })
+    expect(screen.getByText('Album One')).toBeTruthy()
+    expect(screen.getByText('Album Two')).toBeTruthy()
+  })
+
+  it('calls onSelectArtist when an artist card is clicked', async () => {
+    const onSelectArtist = vi.fn()
+    await act(async () => {
+      render(
+        <ToastProvider>
+          <LibraryProvider>
+            <SourceProvider>
+              <ScrollMemoryProvider>
+                <MusicView {...defaultProps} artists={mockArtists as MusicArtist[]} onSelectArtist={onSelectArtist} />
+              </ScrollMemoryProvider>
+            </SourceProvider>
+          </LibraryProvider>
+        </ToastProvider>
+      )
+    })
+    
+    const artistCard = screen.getByText('Artist One')
+    await act(async () => {
+      fireEvent.click(artistCard)
+    })
+    expect(onSelectArtist).toHaveBeenCalledWith(expect.objectContaining({ name: 'Artist One' }))
+  })
+})
+
+
+

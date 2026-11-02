@@ -5,16 +5,19 @@
  * (Plex, Jellyfin, Emby, Kodi)
  */
 
-// Import and re-export shared IPC types
-import type { ConnectionTestResult } from '../../types/ipc'
-export type { ConnectionTestResult }
-import type { ProviderType } from '../../types/database'
-export type { ProviderType } from '../../types/database'
+import {
+  normalizeResolution,
+} from '@main/services/MediaNormalizer'
+import { ProviderType, LibraryType, MediaItemVersion, MediaItemType } from '@main/types/database'
+import type { ConnectionTestResult } from '@main/types/ipc'
+import { generateSourceId } from '@main/providers/utils/IdUtils'
+import { calculateVersionScore } from '@main/providers/utils/ProviderUtils'
 
 // Credentials for different provider types
 export interface ProviderCredentials {
   // Plex: OAuth token
   token?: string
+  serverId?: string
 
   // Jellyfin/Emby: Server URL + credentials
   serverUrl?: string
@@ -42,18 +45,14 @@ export interface ProviderCredentials {
   includeVideo?: boolean
   includeMusic?: boolean
 
-  // MediaMonkey: Local database access
-  mediamonkeyDatabasePath?: string
-  mediamonkeyVersion?: 4 | 5
-
   // Local folder
   folderPath?: string
-  mediaType?: 'movies' | 'tvshows' | 'mixed'
+  mediaType?: LibraryType
   name?: string
   customLibraries?: Array<{
     name: string
     path: string
-    mediaType: 'movies' | 'tvshows' | 'music'
+    mediaType: LibraryType
     enabled: boolean
   }>
 
@@ -61,7 +60,6 @@ export interface ProviderCredentials {
   userId?: string
 }
 
-// Authentication result
 export interface AuthResult {
   success: boolean
   error?: string
@@ -91,7 +89,7 @@ export interface ServerInstance {
 export interface MediaLibrary {
   id: string
   name: string
-  type: 'movie' | 'show' | 'music' | 'unknown'
+  type: LibraryType
   collectionType?: string // Raw provider-specific type (e.g., 'boxsets', 'movies', 'tvshows')
   itemCount?: number
   scannedAt?: string
@@ -123,7 +121,6 @@ export interface AudioStreamInfo {
   isDefault?: boolean
   hasObjectAudio?: boolean
   index?: number
-  streamIndex?: number
 }
 
 // Subtitle stream metadata
@@ -144,48 +141,49 @@ export interface MediaMetadata {
   // Core identification
   itemId: string
   title: string
-  sortTitle?: string
-  type: 'movie' | 'episode'
-  year?: number
+  sortTitle?: string | null
+  type: MediaItemType
+  year?: number | null
 
   // Episode-specific
-  seriesTitle?: string
-  seasonNumber?: number
-  episodeNumber?: number
+  seriesTitle?: string | null
+  seasonNumber?: number | null
+  episodeNumber?: number | null
 
   // External IDs
-  imdbId?: string
-  tmdbId?: number
-  seriesTmdbId?: number
-  originalLanguage?: string
+  imdbId?: string | null
+  tmdbId?: number | null
+  tvdbId?: number | null
+  seriesTmdbId?: number | null
+  seriesTvdbId?: number | null
+  seriesIdentityKey?: string | null
 
   // File info
-  filePath?: string
-  fileSize?: number
-  duration?: number
-  container?: string
+  filePath?: string | null
+  fileSize?: number | null
+  duration?: number | null
+  container?: string | null
 
   // Video quality
-  resolution?: string
-  width?: number
-  height?: number
-  videoCodec?: string
-  videoBitrate?: number
-  videoFrameRate?: number
-  colorBitDepth?: number
-  hdrFormat?: string
-  colorSpace?: string
-  videoProfile?: string
-  videoLevel?: string
-  dolbyVisionProfile?: number
+  resolution?: string | null
+  width?: number | null
+  height?: number | null
+  videoCodec?: string | null
+  videoBitrate?: number | null
+  videoFrameRate?: number | null
+  colorBitDepth?: number | null
+  hdrFormat?: string | null
+  colorSpace?: string | null
+  videoProfile?: string | null
+  videoLevel?: string | null
 
   // Audio quality (primary track)
-  audioCodec?: string
-  audioChannels?: number
-  audioBitrate?: number
-  audioProfile?: string
-  audioSampleRate?: number
-  hasObjectAudio?: boolean
+  audioCodec?: string | null
+  audioChannels?: number | null
+  audioBitrate?: number | null
+  audioProfile?: string | null
+  audioSampleRate?: number | null
+  hasObjectAudio?: boolean | null
 
   // All audio tracks
   audioTracks?: AudioStreamInfo[]
@@ -194,17 +192,10 @@ export interface MediaMetadata {
   subtitleTracks?: SubtitleStreamInfo[]
 
   // Artwork
-  posterUrl?: string
-  episodeThumbUrl?: string
-  seasonPosterUrl?: string
-  backdropUrl?: string
-
-  // Ratings
-  tmdbRating?: number // 0-10 scale
-
-  // Watch history
-  playCount?: number
-  lastWatched?: string // ISO 8601
+  posterUrl?: string | null
+  episodeThumbUrl?: string | null
+  seasonPosterUrl?: string | null
+  backdropUrl?: string | null
 
   // Original raw data for debugging
   rawData?: unknown
@@ -243,6 +234,7 @@ export interface ScanResult {
   errors: string[]
   durationMs: number
   cancelled?: boolean
+  postScanAnalysis?: { status: 'queued' } | { status: 'failed'; error: string }
 }
 
 // Source configuration stored in database
@@ -305,8 +297,6 @@ export interface MediaProvider {
   // Library Operations
   getLibraries(): Promise<MediaLibrary[]>
   scanLibrary(libraryId: string, options?: ScanOptions): Promise<ScanResult>
-  cancelScan?(): void
-  cancelMusicScan?(): void
 
   // Item Operations
   getItemMetadata(itemId: string): Promise<MediaMetadata>
@@ -315,4 +305,68 @@ export interface MediaProvider {
   // TV-specific operations (optional)
   getShowSeasons?(showId: string): Promise<{ seasonNumber: number; episodeCount: number }[]>
   getSeasonEpisodes?(showId: string, seasonNumber: number): Promise<MediaMetadata[]>
+}
+
+/**
+ * Base class for providers with common functionality
+ */
+export abstract class BaseMediaProvider implements MediaProvider {
+  abstract readonly providerType: ProviderType
+  readonly sourceId: string
+
+  protected config: SourceConfig
+  protected isConnected: boolean = false
+
+  constructor(config: SourceConfig) {
+    this.sourceId = config.sourceId || generateSourceId(config.sourceType)
+    this.config = { ...config, sourceId: this.sourceId }
+  }
+
+  /**
+   * Update the provider's configuration.
+   */
+  public updateConfig(updates: Partial<SourceConfig>): void {
+    this.config = {
+      ...this.config,
+      ...updates,
+      connectionConfig: {
+        ...this.config.connectionConfig,
+        ...(updates.connectionConfig || {})
+      }
+    }
+  }
+
+  abstract authenticate(credentials: ProviderCredentials): Promise<AuthResult>
+  abstract isAuthenticated(): Promise<boolean>
+  abstract disconnect(): Promise<void>
+  abstract testConnection(): Promise<ConnectionTestResult>
+  abstract getLibraries(): Promise<MediaLibrary[]>
+  abstract scanLibrary(libraryId: string, options?: ScanOptions): Promise<ScanResult>
+  abstract getItemMetadata(itemId: string): Promise<MediaMetadata>
+
+  /**
+   * Calculate a quality score for a media version to pick the 'best' one for display.
+   * Higher score = better quality.
+   */
+  protected calculateVersionScore(v: Partial<MediaItemVersion>): number {
+    return calculateVersionScore(v)
+  }
+
+  /**
+   * Clean titles for version grouping.
+   * Removes edition names and bracketed content to find the common 'feature' name.
+   */
+  protected normalizeGroupTitle(title: string): string {
+    return title
+      .toLowerCase()
+      .trim()
+      .replace(/\s*[-:(]\s*(director'?s?\s*cut|extended|unrated|theatrical|imax|remastered|special\s*edition|ultimate\s*edition|collector'?s?\s*edition)\s*[):]?\s*$/i, '')
+      .replace(/\s*\(\s*\)\s*$/, '') // Empty brackets
+      .trim()
+  }
+
+  // Helper to normalize resolution string using MediaNormalizer
+  protected normalizeResolution(width: number, height: number): string {
+    return normalizeResolution(width, height)
+  }
 }

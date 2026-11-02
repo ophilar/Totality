@@ -1,319 +1,29 @@
-import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
-import { RefreshCw, MoreVertical, Pencil, Folder, CircleFadingArrowUp, EyeOff, ChevronDown, ChevronUp, Copy, Check, Zap } from 'lucide-react'
-import { TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
-import { DropdownMenu, DropdownMenuItem } from '../ui/DropdownMenu'
-import { AnimatedNumber } from '../ui/AnimatedNumber'
-import { MissingItemCard } from './MissingItemCard'
-import { SharedOptimizationDialog } from './TranscodeModal'
-import { useMenuClose } from '../../hooks/useMenuClose'
-import { providerColors, formatBytes, formatSeasonLabel, getStatusBadge } from './mediaUtils'
-import type { MediaItem, TVShow, TVShowSummary, SeasonInfo, TVSeason, SeriesCompletenessData, MissingEpisode, TVOptimizationNavigation } from './types'
-import type { ProviderType } from '../../contexts/SourceContext'
-import type { ShowTranscodePreflight } from '@main/services/TranscodingService'
-import { QualityBadges } from './QualityBadges'
-import { ScopedOptimizationSummary } from './ScopedOptimizationSummary'
-import { logOptimizationDiagnostic } from './optimizationDiagnostics'
-import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
-import { tvSortOptions, type TVShowSortBy } from './sortDefinitions'
-
-// List item component for TV shows
-const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizeSeries }: {
-  show: TVShowSummary
-  onClick: () => void
-  completenessData?: SeriesCompletenessData
-  showSourceBadge?: boolean
-  onAnalyzeSeries?: () => Promise<void>
-  onFixMatch?: (seriesIdentityKey: string, title: string, sourceId: string, libraryId?: string, folderPath?: string) => void
-  onOptimizeSeries?: (show: TVShowSummary) => void
-}) => {
-  const [showMenu, setShowMenu] = useState(false)
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const cardRef = useRef<HTMLDivElement>(null)
-
-  const totalEpisodes = show.episode_count
-  const seasonCount = show.season_count
-  const sourceType = show.source_type as ProviderType | undefined
-  const sourceId = show.source_id
-  const libraryId = show.library_id
-  const seriesIdentityKey = show.series_identity_key
-  const folderPath: string | undefined = undefined
-
-  const handleAnalyze = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setShowMenu(false)
-    if (onAnalyzeSeries) {
-      setIsAnalyzing(true)
-      await onAnalyzeSeries()
-      setIsAnalyzing(false)
-    }
-  }
-
-  const handleFixMatch = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setShowMenu(false)
-    if (onFixMatch && sourceId && seriesIdentityKey) {
-      onFixMatch(seriesIdentityKey, show.series_title, sourceId, libraryId || undefined, folderPath)
-    }
-  }
-
-  const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
-
-  return (
-    <div
-      ref={cardRef}
-      tabIndex={0}
-      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center outline-hidden"
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onClick()
-        }
-      }}
-    >
-      {/* Poster Thumbnail */}
-      <div className="w-16 h-24 bg-muted rounded-md overflow-hidden shrink-0 relative shadow-md shadow-black/20">
-        {show.poster_url ? (
-          <img
-            src={show.poster_url}
-            alt={show.series_title}
-            loading="lazy"
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none'
-            }}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-muted/50"><TvPlaceholder className="w-8 h-8 text-muted-foreground" /></div>
-        )}
-        {/* Source badge */}
-        {showSourceBadge && sourceType && (
-          <div
-            className={`absolute bottom-0 right-0 ${providerColors[sourceType] || 'bg-gray-500'} text-white text-xs font-bold px-1 py-0.5 rounded`}
-          >
-            {sourceType.charAt(0).toUpperCase()}
-          </div>
-        )}
-      </div>
-
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <h4 className="font-semibold text-sm truncate">{show.series_title}</h4>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          {seasonCount} {seasonCount === 1 ? 'Season' : 'Seasons'} • {totalEpisodes} Episodes
-          {completenessData?.status && ` • ${getStatusBadge(completenessData.status)?.text || completenessData.status}`}
-        </p>
-        <p className="text-xs text-muted-foreground mt-0.5">Total size: {formatBytes(show.total_size_bytes)}</p>
-        <ScopedOptimizationSummary totalCount={totalEpisodes} estimatedSavingsBytes={show.estimated_savings_bytes} coverage={show.savings_coverage} className="mt-1" />
-        {completenessData && (
-          <div className="mt-2">
-            <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded">
-              {completenessData.owned_episodes}/{completenessData.total_episodes}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* 3-dot menu */}
-      <div ref={menuRef} className="relative shrink-0">
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            setShowMenu(!showMenu)
-          }}
-          className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-        >
-          {isAnalyzing ? (
-            <RefreshCw className="w-4 h-4 animate-spin" />
-          ) : (
-            <MoreVertical className="w-4 h-4" />
-          )}
-        </button>
-
-        {showMenu && (
-          <DropdownMenu>
-            <DropdownMenuItem onClick={handleAnalyze} icon={<RefreshCw className="w-3.5 h-3.5" />}>
-              Analyze Series
-            </DropdownMenuItem>
-            {onFixMatch && (
-              <DropdownMenuItem onClick={handleFixMatch} icon={<Pencil className="w-3.5 h-3.5" />}>
-                Fix Match
-              </DropdownMenuItem>
-            )}
-            {onOptimizeSeries && show.series_identity_key?.trim() && (
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setShowMenu(false)
-                  onOptimizeSeries(show)
-                }}
-                icon={<Zap className="w-3.5 h-3.5 text-purple-400" />}
-              >
-                <span className="text-purple-300">Optimize show</span>
-              </DropdownMenuItem>
-            )}
-          </DropdownMenu>
-        )}
-      </div>
-    </div>
-  )
-})
-
-// Episode row component with keyboard navigation
-const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onOptimizeEpisode, isMobile = false }: {
-  episode: MediaItem
-  onClick: () => void
-  onRescan?: (episode: MediaItem) => Promise<void>
-  onDismissUpgrade?: (episode: MediaItem) => void
-  onOptimizeEpisode?: (episode: MediaItem) => void
-  isMobile?: boolean
-}) => {
-  const cardRef = useRef<HTMLDivElement>(null)
-  const [showMenu, setShowMenu] = useState(false)
-  const [isRescanning, setIsRescanning] = useState(false)
-  const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
-
-  const handleRescan = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setShowMenu(false)
-    if (onRescan) {
-      setIsRescanning(true)
-      try {
-        await onRescan(episode)
-      } finally {
-        setIsRescanning(false)
-      }
-    }
-  }
-
-  const handleDismissUpgrade = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setShowMenu(false)
-    if (onDismissUpgrade) {
-      onDismissUpgrade(episode)
-    }
-  }
-
-  const needsUpgrade = !!episode.needs_upgrade
-  const showMenuButton = (onRescan && episode.file_path) || (onDismissUpgrade && needsUpgrade) || (onOptimizeEpisode && episode.id && episode.file_path && episode.source_id && episode.series_identity_key)
-
-  return (
-    <div
-      ref={cardRef}
-      tabIndex={0}
-      className={`group flex ${isMobile ? 'gap-2.5 p-2.5' : 'gap-4 p-4'} items-center hover:bg-muted/30 transition-colors cursor-pointer outline-hidden`}
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onClick()
-        }
-      }}
-    >
-      {/* Episode Thumbnail - 16:9 aspect ratio with shadow */}
-      <div className={`${isMobile ? 'w-24' : 'w-44'} aspect-video bg-muted overflow-hidden rounded-md shadow-md shadow-black/20 shrink-0`}>
-        {episode.episode_thumb_url ? (
-          <img
-            src={episode.episode_thumb_url}
-            alt={episode.title}
-            loading="lazy"
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none'
-            }}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-muted/50"><EpisodePlaceholder className="w-10 h-10 text-muted-foreground" /></div>
-        )}
-      </div>
-
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-muted-foreground shrink-0">
-            E{episode.episode_number}
-          </span>
-          <h4 className="font-semibold truncate">{episode.title}</h4>
-        </div>
-        <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
-          <span>{episode.resolution} • {(episode.video_bitrate_kbps / 1000).toFixed(1)} Mbps • {episode.audio_channels}.0 Audio</span>
-          {needsUpgrade && (
-            <>
-              <span>•</span>
-              <span title="Quality upgrade recommended"><CircleFadingArrowUp className="w-4 h-4 text-red-500 shrink-0" /></span>
-            </>
-          )}
-        </div>
-        <QualityBadges item={episode} showSavings={false} />
-        {episode.estimated_savings_bytes != null && (
-          <div className="mt-1 flex items-center gap-1.5 text-xs" aria-label="Estimated savings">
-            <span className="text-muted-foreground">Estimated savings</span>
-            <EstimatedSavingsDisplay bytes={episode.estimated_savings_bytes} />
-          </div>
-        )}
-      </div>
-
-      {/* 3-dot menu */}
-      {showMenuButton && (
-        <div ref={menuRef} className="relative shrink-0">
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowMenu(!showMenu)
-            }}
-            className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            {isRescanning ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <MoreVertical className="w-4 h-4" />
-            )}
-          </button>
-
-          {showMenu && !isRescanning && (
-            <DropdownMenu>
-              {onOptimizeEpisode && episode.id && episode.file_path && episode.source_id && episode.series_identity_key && (
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setShowMenu(false)
-                    onOptimizeEpisode(episode)
-                  }}
-                  icon={<Zap className="w-3.5 h-3.5 text-purple-400" />}
-                >
-                  Optimize episode
-                </DropdownMenuItem>
-              )}
-              {onRescan && episode.file_path && (
-                <DropdownMenuItem onClick={handleRescan} icon={<RefreshCw className="w-3.5 h-3.5" />}>
-                  Rescan File
-                </DropdownMenuItem>
-              )}
-              {onDismissUpgrade && needsUpgrade && (
-                <DropdownMenuItem onClick={handleDismissUpgrade} icon={<EyeOff className="w-3.5 h-3.5" />}>
-                  Dismiss Upgrade
-                </DropdownMenuItem>
-              )}
-            </DropdownMenu>
-          )}
-        </div>
-      )}
-    </div>
-  )
-})
+import { useState, useMemo, useCallback, useRef } from 'react'
+import { RefreshCw, Tv } from 'lucide-react'
+import { ShowCard } from '@/components/library/tv/ShowCard'
+import { ShowListItem } from '@/components/library/tv/ShowListItem'
+import { TVShowDetails } from '@/components/library/tv/TVShowDetails'
+import { getTVShowIdentityKey } from '@/components/library/tv/showIdentity'
+import { getSortLabel, getSortOptions } from '@/components/library/sortDefinitions'
+import { useSources } from '@/contexts/SourceContext'
+import { MediaGridView } from '@/components/library/MediaGridView'
+import { TvPlaceholder } from '@/components/ui/MediaPlaceholders'
+import { LibraryEmptyState } from '@/components/library/browser/LibraryEmptyState'
+import { calculatePosterWidth } from '@/components/library/mediaUtils'
+import type { MediaItem, TVShow, TVShowSummary, SeriesCompletenessData, MissingEpisode, MissingItemPopupData } from '@/components/library/types'
 
 export function TVShowsView({
-  pendingTVOptimizationAction,
-  onTVOptimizationActionHandled,
   shows,
+  sortBy,
+  sortOrder,
+  onSortChange,
+  slimDown: _slimDown,
   selectedShow,
-  selectedSeason,
   selectedShowData,
   selectedShowLoading,
   onSelectShow,
-  onSelectSeason,
   onSelectEpisode,
-  filterItem: _filterItem,
+  filterItem,
   gridScale,
   viewType,
   seriesCompleteness,
@@ -321,1219 +31,161 @@ export function TVShowsView({
   showSourceBadge,
   onAnalyzeSeries,
   onFixMatch,
-  onRescanEpisode,
   onDismissUpgrade,
+  onRescanEpisode,
   onDismissMissingEpisode,
   onDismissMissingSeason,
   totalShowCount,
-  totalEpisodeCount,
   showsLoading,
   onLoadMoreShows,
-  tvSortBy = 'title',
-  onTvSortChange,
-  isMobile = false,
-  isTablet = false,
+  isAnalyzing = false,
+  onTranscodeShow
 }: {
-  pendingTVOptimizationAction?: TVOptimizationNavigation | null
-  onTVOptimizationActionHandled?: () => void
   shows: TVShowSummary[]
-  selectedShow: string | null
-  selectedSeason: number | null
+  sortBy: string
+  sortOrder: 'asc' | 'desc'
+  onSortChange: (sort: string) => void
+  slimDown: boolean
+  selectedShow: TVShowSummary | null
   selectedShowData: TVShow | null
   selectedShowLoading: boolean
-  onSelectShow: (show: TVShowSummary | string | null) => void
-  onSelectSeason: (season: number | null) => void
+  onSelectShow: (show: TVShowSummary | null) => void
   onSelectEpisode: (id: number) => void
   filterItem: (item: MediaItem) => boolean
   gridScale: number
   viewType: 'grid' | 'list'
   seriesCompleteness: Map<string, SeriesCompletenessData>
-  onMissingItemClick: (item: {
-    type: 'episode' | 'season' | 'movie'
-    title: string
-    year?: number
-    airDate?: string
-    seasonNumber?: number
-    episodeNumber?: number
-    posterUrl?: string
-    tmdbId?: string
-    imdbId?: string
-    seriesTitle?: string
-  } | null) => void
+  onMissingItemClick: (item: MissingItemPopupData) => void
   showSourceBadge: boolean
-  onAnalyzeSeries: (showOrTitle: TVShowSummary | string) => void
-  onFixMatch?: (
-    seriesIdentityKey: string,
-    title: string,
-    sourceId: string,
-    libraryId?: string,
-    folderPath?: string
-  ) => void
+  onAnalyzeSeries: (show: TVShowSummary) => Promise<void> | void
+  onFixMatch?: (show: TVShowSummary, folderPath?: string) => void
+  onDismissUpgrade: (item: MediaItem) => void
   onRescanEpisode?: (episode: MediaItem) => Promise<void>
-  onDismissUpgrade?: (item: MediaItem) => void
-  onDismissMissingEpisode?: (episode: MissingEpisode, seriesTitle: string, tmdbId?: string) => void
-  onDismissMissingSeason?: (seasonNumber: number, seriesTitle: string, tmdbId?: string) => void
+  onDismissMissingEpisode?: (episode: MissingEpisode, seriesTitle: string, tmdbId: string | undefined, seriesMapKey: string) => void
+  onDismissMissingSeason?: (seasonNumber: number, seriesTitle: string, tmdbId: string | undefined, seriesMapKey: string) => void
   totalShowCount: number
-  totalEpisodeCount: number
+  totalEpisodeCount?: number
   showsLoading: boolean
   onLoadMoreShows: () => void
-  tvSortBy?: TVShowSortBy
-  onTvSortChange?: (sort: TVShowSortBy) => void
-  isMobile?: boolean
-  isTablet?: boolean
+  isAnalyzing?: boolean
+  onTranscodeShow?: (show: TVShowSummary) => void
 }) {
-  // Breadcrumb navigation
-  const handleBack = () => {
-    if (selectedSeason !== null) {
-      onSelectSeason(null)
-    } else if (selectedShow !== null) {
-      onSelectShow(null)
-    }
-  }
+  const [expandedRecommendations, setExpandedRecommendations] = useState<Set<number>>(new Set())
+  const detailScrollRef = useRef<HTMLDivElement>(null)
+  const { isScanning, scanProgress } = useSources()
+  const activeScan = Array.from(scanProgress.values())[0]
 
-  // Escape key to go back in drill-down
-  useEffect(() => {
-    if (!selectedShow) return
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        handleBack()
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedShow, selectedSeason])
+  const posterMinWidth = useMemo(() => calculatePosterWidth(gridScale), [gridScale])
 
-  // Episode-level filters (local to this view, reset on season/show change)
-  const [episodeTierFilter, setEpisodeTierFilter] = useState<'all' | 'SD' | '720p' | '1080p' | '4K'>('all')
-  const [episodeQualityFilter, setEpisodeQualityFilter] = useState<'all' | 'low' | 'medium' | 'high'>('all')
-  useEffect(() => { setEpisodeTierFilter('all'); setEpisodeQualityFilter('all') }, [selectedSeason, selectedShow])
+  const handleBack = useCallback(() => onSelectShow(null), [onSelectShow])
 
-  // Show detail view menu
-  const [showDetailMenu, setShowDetailMenu] = useState(false)
-  const [showOverviewExpanded, setShowOverviewExpanded] = useState(false)
-  const [showOverviewToggle, setShowOverviewToggle] = useState(false)
-  const showOverviewRef = useRef<HTMLParagraphElement>(null)
-  const [copiedTitle, setCopiedTitle] = useState(false)
-  useEffect(() => { setShowOverviewExpanded(false); setCopiedTitle(false) }, [selectedShow])
-  const closeShowDetailMenu = useCallback(() => setShowDetailMenu(false), [])
-  const showDetailMenuRef = useMenuClose({ isOpen: showDetailMenu, onClose: closeShowDetailMenu })
-
-  // Fetch show summary from TMDB when a show is selected
-  const [showOverview, setShowOverview] = useState<string | null>(null)
-  useEffect(() => {
-    if (showOverviewExpanded) return
-    const element = showOverviewRef.current
-    if (!element) {
-      setShowOverviewToggle(false)
-      return
-    }
-    const measureOverflow = () => setShowOverviewToggle(element.scrollHeight > element.clientHeight + 1)
-    measureOverflow()
-    const observer = new ResizeObserver(measureOverflow)
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [showOverview, showOverviewExpanded])
-  useEffect(() => {
-    setShowOverview(null)
-    if (!selectedShow || selectedSeason !== null) return
-
-    let cancelled = false
-    const show = shows.find(item => item.series_identity_key === selectedShow || item.series_title === selectedShow)
-    const completenessData = seriesCompleteness.get(selectedShow)
-    const identityTmdbId = show?.series_identity_key?.startsWith('tmdb:')
-      ? show.series_identity_key.slice('tmdb:'.length)
-      : undefined
-    const tmdbId = completenessData?.tmdb_id || show?.tmdb_id?.toString() || identityTmdbId
-
-    const loadOverview = async () => {
-      if (tmdbId) {
-        const details = await window.electronAPI.tmdbGetTVShowDetails(tmdbId)
-        if (!cancelled) setShowOverview(details?.overview || null)
-        return
-      }
-
-      const matches = await window.electronAPI.seriesSearchTMDB(show?.series_title || selectedShow)
-      const exactMatch = matches.find(result => result.name.trim().toLocaleLowerCase() === (show?.series_title || selectedShow).trim().toLocaleLowerCase())
-      if (!cancelled) setShowOverview(exactMatch?.overview || null)
-    }
-
-    loadOverview().catch(error => {
-      if (!cancelled) console.error('Failed to load TV show overview:', error)
+  const toggleRecommendation = useCallback((id: number) => {
+    setExpandedRecommendations(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
     })
-    return () => { cancelled = true }
-  }, [selectedShow, selectedSeason, seriesCompleteness, shows])
+  }, [])
 
-  // IntersectionObserver for infinite scroll
-  const showSentinelRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!showSentinelRef.current || selectedShow) return
-    const observer = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting) onLoadMoreShows() },
-      { rootMargin: '400px' }
-    )
-    observer.observe(showSentinelRef.current)
-    return () => observer.disconnect()
-  }, [onLoadMoreShows, selectedShow])
-
-  // Optimization modal state
-  const [optimizingShow, setOptimizingShow] = useState<TVShowSummary | null>(null)
-  const [optimizingEpisode, setOptimizingEpisode] = useState<MediaItem | null>(null)
-  const [optimizingSeason, setOptimizingSeason] = useState<number | null>(null)
-  const [reviewingPreflight, setReviewingPreflight] = useState<{ request: import('@main/services/TranscodingService').ShowTranscodeRequest; result: ShowTranscodePreflight } | null>(null)
-  const [resumePreflightRequestId, setResumePreflightRequestId] = useState<string | null>(null)
-  useEffect(() => {
-    const openReview = (event: Event) => {
-      const preflightId = (event as CustomEvent<{ preflightId?: string }>).detail?.preflightId
-      if (!preflightId) return
-      void window.electronAPI.getShowPreflight(preflightId).then(async saved => {
-        if (!saved) return
-        const { request, result } = saved as { request: import('@main/services/TranscodingService').ShowTranscodeRequest; result: ShowTranscodePreflight }
-        const episode = request.mediaItemId ? await window.electronAPI.getMediaItem(request.mediaItemId) as MediaItem | null : null
-        const title = request.seriesTitle || episode?.series_title || result.seriesTitle
-        setOptimizingEpisode(episode)
-        setOptimizingSeason(request.seasonNumber ?? null)
-        setOptimizingShow({
-          series_title: title,
-          episode_count: result.episodeCount,
-          season_count: 0,
-          poster_url: episode?.poster_url,
-          source_id: request.sourceId,
-          source_type: episode?.source_type,
-          library_id: request.libraryId,
-          series_identity_key: request.seriesIdentityKey,
-        })
-        setReviewingPreflight({ request, result })
-        setResumePreflightRequestId(null)
-      }).catch(error => console.error('Could not reopen completed optimization review:', error))
-    }
-    const resumeOperation = (event: Event) => {
-      const detail = (event as CustomEvent<{ requestId?: string; entity?: { seriesTitle?: string; seriesIdentityKey?: string; sourceId: string; libraryId?: string; mediaItemId?: number; seasonNumber?: number } }>).detail
-      if (!detail?.requestId || !detail.entity) return
-      const entity = detail.entity
-      const requestId = detail.requestId
-      void (async () => {
-        const episode = entity.mediaItemId ? await window.electronAPI.getMediaItem(entity.mediaItemId) as MediaItem | null : null
-        const existing = shows.find(show => show.series_identity_key === entity.seriesIdentityKey && show.source_id === entity.sourceId && show.library_id === entity.libraryId)
-        setOptimizingEpisode(episode)
-        setOptimizingSeason(entity.seasonNumber ?? null)
-        setOptimizingShow(existing ?? {
-          series_title: entity.seriesTitle || episode?.series_title || 'TV series',
-          episode_count: episode ? 1 : 0,
-          season_count: episode ? 1 : 0,
-          poster_url: episode?.poster_url,
-          source_id: entity.sourceId,
-          source_type: episode?.source_type,
-          library_id: entity.libraryId,
-          series_identity_key: entity.seriesIdentityKey,
-        })
-        setReviewingPreflight(null)
-        setResumePreflightRequestId(requestId)
-      })().catch(error => console.error('Could not return to background optimization preflight:', error))
-    }
-    window.addEventListener('tvOptimization:review', openReview)
-    window.addEventListener('tvOptimization:resume', resumeOperation)
-    return () => {
-      window.removeEventListener('tvOptimization:review', openReview)
-      window.removeEventListener('tvOptimization:resume', resumeOperation)
-    }
-  }, [shows])
-
-  useEffect(() => {
-    if (!pendingTVOptimizationAction || pendingTVOptimizationAction.kind === 'review-movie') return
-    const detail = pendingTVOptimizationAction.kind === 'review'
-      ? { preflightId: pendingTVOptimizationAction.preflightId }
-      : { requestId: pendingTVOptimizationAction.requestId, entity: pendingTVOptimizationAction.entity }
-    const eventName = pendingTVOptimizationAction.kind === 'review' ? 'tvOptimization:review' : 'tvOptimization:resume'
-    window.dispatchEvent(new CustomEvent(eventName, { detail }))
-    onTVOptimizationActionHandled?.()
-  }, [pendingTVOptimizationAction, onTVOptimizationActionHandled])
-
-  const firstIdentifiedEpisode = useMemo(() => {
-    if (!selectedShowData) return undefined
-    for (const season of selectedShowData.seasons.values()) {
-      const episode = season.episodes.find(candidate => candidate.series_identity_key?.trim())
-      if (episode) return episode
-    }
-    return undefined
-  }, [selectedShowData])
-
-  const handleOpenOptimize = useCallback((showSummary?: TVShowSummary | null) => {
-    setOptimizingEpisode(null)
-    setOptimizingSeason(null)
-    if (showSummary) {
-      if (!showSummary.series_identity_key) return
-      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'optimizer.opened', { seriesIdentityKey: showSummary.series_identity_key, seriesTitle: showSummary.series_title, sourceId: showSummary.source_id, libraryId: showSummary.library_id, episodeCount: showSummary.episode_count })
-      setOptimizingShow(showSummary)
-      return
-    }
-    const firstEp = firstIdentifiedEpisode
-    if (!firstEp?.series_identity_key) return
-    logOptimizationDiagnostic('TVOptimizationUI', 'info', 'selected-series.optimizer.opened', { seriesIdentityKey: firstEp.series_identity_key, seriesTitle: selectedShowData?.title, sourceId: firstEp.source_id, libraryId: firstEp.library_id })
-
-    const summary = shows.find(s => s.series_identity_key === firstEp.series_identity_key)
-    if (summary && summary.series_identity_key) {
-      setOptimizingShow(summary)
-    } else if (selectedShowData) {
-      setOptimizingShow({
-        series_title: selectedShowData.title,
-        episode_count: Array.from(selectedShowData.seasons.values()).reduce((sum, s) => sum + s.episodes.length, 0),
-        season_count: selectedShowData.seasons.size,
-        poster_url: selectedShowData.poster_url,
-        source_id: firstEp.source_id,
-        library_id: firstEp.library_id,
-        series_identity_key: firstEp.series_identity_key
-      })
-    }
-  }, [firstIdentifiedEpisode, selectedShowData, shows])
-
-  const handleOpenOptimizeSeason = useCallback(() => {
-    if (selectedSeason === null || !selectedShowData) return
-    const season = selectedShowData.seasons.get(selectedSeason)
-    const firstEpisode = season?.episodes.find(episode => episode.series_identity_key?.trim())
-    if (!season || !firstEpisode?.series_identity_key) return
-    const show = shows.find(candidate => candidate.series_identity_key === firstEpisode.series_identity_key && candidate.source_id === firstEpisode.source_id && candidate.library_id === firstEpisode.library_id)
-    logOptimizationDiagnostic('TVOptimizationUI', 'info', 'season.optimizer.opened', { seasonNumber: selectedSeason, seriesIdentityKey: firstEpisode.series_identity_key, seriesTitle: selectedShowData.title, sourceId: firstEpisode.source_id, libraryId: firstEpisode.library_id, episodeCount: season.episodes.length })
-    setOptimizingEpisode(null)
-    setOptimizingSeason(selectedSeason)
-    setOptimizingShow(show ?? {
-      series_title: selectedShowData.title,
-      episode_count: season.episodes.length,
-      season_count: 1,
-      poster_url: season.posterUrl ?? selectedShowData.poster_url,
-      source_id: firstEpisode.source_id,
-      source_type: firstEpisode.source_type,
-      library_id: firstEpisode.library_id,
-      series_identity_key: firstEpisode.series_identity_key,
-    })
-  }, [selectedSeason, selectedShowData, shows])
-
-  const handleOpenOptimizeEpisode = useCallback((episode: MediaItem) => {
-    if (!episode.id || !episode.file_path || !episode.source_id || !episode.series_identity_key) return
-    logOptimizationDiagnostic('TVOptimizationUI', 'info', 'episode.optimizer.opened', { mediaItemId: episode.id, seriesIdentityKey: episode.series_identity_key, seriesTitle: episode.series_title, sourceId: episode.source_id, libraryId: episode.library_id })
-    const show = shows.find(candidate => candidate.series_identity_key === episode.series_identity_key && candidate.source_id === episode.source_id && candidate.library_id === episode.library_id)
-    setOptimizingShow(show ?? {
-      series_title: episode.series_title || episode.title,
-      episode_count: 1,
-      season_count: 1,
-      poster_url: episode.poster_url,
-      source_id: episode.source_id,
-      source_type: episode.source_type,
-      library_id: episode.library_id,
-      series_identity_key: episode.series_identity_key,
-    })
-    setOptimizingEpisode(episode)
-    setOptimizingSeason(null)
-  }, [shows])
-
-  const closeOptimization = useCallback(() => {
-    logOptimizationDiagnostic('TVOptimizationUI', 'info', 'optimizer.closed', { seriesIdentityKey: optimizingShow?.series_identity_key, seasonNumber: optimizingSeason ?? undefined, mediaItemId: optimizingEpisode?.id })
-    setOptimizingShow(null)
-    setOptimizingEpisode(null)
-    setOptimizingSeason(null)
-    setReviewingPreflight(null)
-    setResumePreflightRequestId(null)
-  }, [optimizingEpisode?.id, optimizingSeason, optimizingShow?.series_identity_key])
-  const posterMinWidth = useMemo(() => {
-    const widthMap: Record<number, number> = {
-      1: 120, 2: 140, 3: 160, 4: 180, 5: 200, 6: 240, 7: 300
-    }
-    return widthMap[gridScale] || widthMap[5]
-  }, [gridScale])
-
-  const gridClassName = isMobile
-    ? 'grid grid-cols-3 gap-3'
-    : isTablet
-      ? 'grid grid-cols-4 gap-4'
-      : 'grid gap-8'
-
-  const gridStyle = (!isMobile && !isTablet)
-    ? { gridTemplateColumns: `repeat(auto-fill, ${posterMinWidth}px)` }
-    : undefined
-
-  // Show list view (top level - all shows)
   if (!selectedShow) {
-    if (shows.length === 0 && showsLoading) {
-      if (viewType === 'list') {
-        return (
-          <div className="space-y-2 mt-4">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-3 p-2 rounded-lg">
-                <div className="w-10 h-14 bg-muted/50 rounded animate-pulse shrink-0" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-3.5 bg-muted/50 rounded animate-pulse w-2/5" />
-                  <div className="h-3 bg-muted/40 rounded animate-pulse w-1/4" />
-                </div>
-              </div>
-            ))}
-          </div>
-        )
-      }
-      return (
-        <div className={`${gridClassName} mt-4`} style={gridStyle}>
-          {Array.from({ length: 18 }).map((_, i) => (
-            <div key={i}>
-              <div className="aspect-2/3 bg-muted/50 rounded-md animate-pulse" />
-              <div className="mt-2 h-3 bg-muted/50 rounded animate-pulse" />
-              <div className="mt-1 h-3 w-2/3 bg-muted/40 rounded animate-pulse" />
+    const listHeader = (
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-4">
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            <Tv className="w-6 h-6 text-primary" /> TV Shows
+            <span className="text-sm font-normal text-muted-foreground ml-2">{totalShowCount} shows</span>
+          </h2>
+          {activeScan && (
+            <div className="flex items-center gap-2 px-3 py-1 bg-primary/10 text-primary rounded-full text-xs font-medium animate-pulse">
+              <RefreshCw className="w-3 h-3 animate-spin" /> Scan: {activeScan.phase} ({Math.round(activeScan.percentage)}%)
             </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-lg">
+          {getSortOptions('tv').map(s => (
+              <button key={s.key} onClick={() => onSortChange(s.key)} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${sortBy === s.key ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>{s.label}{sortBy === s.key ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : ''}</button>
           ))}
         </div>
-      )
-    }
-
-    if (shows.length === 0 && !showsLoading) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-          <TvPlaceholder className="w-20 h-20 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground text-lg">No TV shows found</p>
-          <p className="text-sm text-muted-foreground mt-2">
-            Scan a TV library from the sidebar to get started
-          </p>
-        </div>
-      )
-    }
-
-    const statsBar = (
-      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-        <span><AnimatedNumber value={totalShowCount} locale /> Shows</span>
-        <span className="text-muted-foreground/50">•</span>
-        <span>{totalEpisodeCount.toLocaleString()} Episodes</span>
-        {onTvSortChange && (
-          <div className="flex items-center gap-1.5 ml-auto">
-            <select
-              value={tvSortBy}
-              onChange={(e) => onTvSortChange(e.target.value as TVShowSortBy)}
-              className="bg-transparent text-xs text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground transition-colors"
-            >
-              {tvSortOptions.map(({ key, label }) => (
-                <option key={key} value={key}>{label}</option>
-              ))}
-            </select>
-          </div>
-        )}
       </div>
     )
 
-    // List view
-    if (viewType === 'list') {
-      return (
-        <>
-          {statsBar}
-          <div className="space-y-2 mt-4">
-            {shows.map((show) => {
-              const completeness = seriesCompleteness.get(show.series_title)
-              return (
-                <div key={`${show.series_identity_key || show.source_id || ''}-${show.series_title}`} data-title={show.series_title}>
-                  <ShowListItem
-                    show={show}
-                    onClick={() => onSelectShow(show)}
-                    completenessData={completeness}
-                    showSourceBadge={showSourceBadge}
-                    onAnalyzeSeries={async () => { await onAnalyzeSeries(show) }}
-                    onFixMatch={onFixMatch}
-                    onOptimizeSeries={handleOpenOptimize}
-                  />
-                </div>
-              )
-            })}
-          </div>
-          <div ref={showSentinelRef} className="h-1" />
-          {showsLoading && <div className="flex justify-center py-4"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>}
-          {totalShowCount > 0 && (
-            <div className="text-center text-sm text-muted-foreground py-2">
-              {shows.length} of {totalShowCount} TV shows
-            </div>
-          )}
-          {optimizingShow && (
-            <SharedOptimizationDialog request={{
-              controller: 'series',
-              onClose: closeOptimization,
-              series: { show: optimizingShow, episode: optimizingEpisode ?? undefined, seasonNumber: optimizingSeason ?? undefined, initialPreflight: reviewingPreflight, resumeRequestId: resumePreflightRequestId }
-            }} />
-          )}
-        </>
-      )
-    }
-
-    // Grid view (default)
     return (
-      <>
-        {statsBar}
-        <div
-          className={`${gridClassName} mt-4`}
-          style={gridStyle}
-        >
-          {shows.map((show) => {
-            const completeness = seriesCompleteness.get(show.series_title)
-            return (
-              <div key={`${show.series_identity_key || show.source_id || ''}-${show.series_title}`} data-title={show.series_title}>
-                <ShowCard
-                  show={show}
-                  onClick={() => onSelectShow(show)}
-                  completenessData={completeness}
-                  showSourceBadge={showSourceBadge}
-                  onAnalyzeSeries={() => onAnalyzeSeries(show)}
-                  onFixMatch={onFixMatch}
-                  onOptimizeSeries={handleOpenOptimize}
-                />
-              </div>
-            )
-          })}
-        </div>
-        <div ref={showSentinelRef} className="h-1" />
-        {showsLoading && <div className="flex justify-center py-4"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>}
-        {totalShowCount > 0 && (
-          <div className="text-center text-sm text-muted-foreground py-2">
-            {shows.length} of {totalShowCount} TV shows
-          </div>
-        )}
-        {optimizingShow && (
-          <SharedOptimizationDialog request={{ controller: 'series', onClose: closeOptimization, series: { show: optimizingShow, episode: optimizingEpisode ?? undefined, seasonNumber: optimizingSeason ?? undefined, initialPreflight: reviewingPreflight, resumeRequestId: resumePreflightRequestId } }} />
-        )}
-      </>
-    )
-  }
-
-  // Season list view — use selectedShowData (loaded on demand)
-  if (selectedShow && selectedSeason === null) {
-    if (selectedShowLoading) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-[40vh]">
-          <RefreshCw className="w-8 h-8 animate-spin text-muted-foreground mb-4" />
-          <p className="text-muted-foreground">Loading episodes...</p>
-        </div>
-      )
-    }
-
-    if (!selectedShowData) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-[40vh] text-center">
-          <button onClick={handleBack} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-            Back to TV Shows
-          </button>
-          <p className="text-muted-foreground">No episodes found for this show</p>
-        </div>
-      )
-    }
-
-    const ownedSeasons = Array.from(selectedShowData.seasons.values()).sort((a, b) => a.seasonNumber - b.seasonNumber)
-    const regularOwnedSeasons = ownedSeasons.filter(season => season.seasonNumber > 0)
-    const specialsEpisodes = selectedShowData.seasons.get(0)?.episodes
-    const completenessData = seriesCompleteness.get(selectedShow)
-
-    const missingSeasonNumbers = completenessData?.missing_seasons || []
-
-    // Build combined list of owned and missing seasons
-    const ownedSeasonNumbers = new Set(ownedSeasons.map(s => s.seasonNumber))
-    const allSeasonItems: Array<{ type: 'owned' | 'missing'; seasonNumber: number; season?: TVSeason }> = [
-      ...ownedSeasons.map(s => ({ type: 'owned' as const, seasonNumber: s.seasonNumber, season: s })),
-      ...missingSeasonNumbers
-        .filter(num => !ownedSeasonNumbers.has(num))
-        .map(num => ({ type: 'missing' as const, seasonNumber: num }))
-    ].sort((a, b) => a.seasonNumber - b.seasonNumber)
-
-
-    return (
-      <div className="space-y-6">
-        {/* Breadcrumb */}
-        <button
-          onClick={handleBack}
-          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Back to TV Shows
-        </button>
-
-        {/* Show Header */}
-        <div className={`flex ${isMobile ? 'gap-3 mb-4' : 'gap-6 mb-6'}`}>
-          {/* Poster */}
-          {selectedShowData.poster_url && (
-            <div className={`${isMobile ? 'w-24' : 'w-44'} aspect-2/3 bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30`}>
-              <img
-                src={selectedShowData.poster_url}
-                alt={selectedShowData.title}
-                loading="lazy"
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none'
-                }}
-              />
-            </div>
+      <div className="h-full flex flex-col overflow-hidden">
+        <MediaGridView
+          items={shows} totalCount={totalShowCount} viewType={viewType} loading={showsLoading} onLoadMore={onLoadMoreShows} posterMinWidth={posterMinWidth} banner={listHeader}
+          scrollKey="shows"
+          emptyState={
+            <LibraryEmptyState
+              isScanning={isScanning}
+              scanProgress={activeScan ? { phase: activeScan.phase, currentItem: activeScan.currentItem } : undefined}
+              totalCount={totalShowCount}
+              icon={TvPlaceholder}
+              title="No TV shows found"
+              description="Scan a TV show library from the sidebar to start analyzing your collection"
+            />
+          }
+          renderGridItem={(show) => (
+            <ShowCard
+              key={getTVShowIdentityKey(show)} show={show} onClick={() => onSelectShow(show)}
+              completenessData={seriesCompleteness.get(getTVShowIdentityKey(show))} showSourceBadge={showSourceBadge}
+              onAnalyzeSeries={() => onAnalyzeSeries(show)}
+              onTranscodeShow={onTranscodeShow ? () => onTranscodeShow(show) : undefined}
+              onFixMatch={onFixMatch ? (_sId, fp) => onFixMatch(show, fp) : undefined}
+              isLibraryAnalyzing={!!activeScan || isAnalyzing}
+            />
           )}
-
-          {/* Info */}
-          <div className="flex-1 min-w-0">
-            {/* Title */}
-            <div className="flex items-center gap-1.5">
-              <h3 className={`${isMobile ? 'text-lg' : 'text-3xl'} font-bold`}>{selectedShowData.title}</h3>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  navigator.clipboard.writeText(selectedShowData.title)
-                  setCopiedTitle(true)
-                  setTimeout(() => setCopiedTitle(false), 1500)
-                }}
-                className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                title="Copy title"
-              >
-                {copiedTitle ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-              </button>
+          renderListItem={(show) => (
+            <ShowListItem
+              key={getTVShowIdentityKey(show)} show={show} onClick={() => onSelectShow(show)}
+              completenessData={seriesCompleteness.get(getTVShowIdentityKey(show))} showSourceBadge={showSourceBadge}
+              onAnalyzeSeries={async () => { await onAnalyzeSeries(show) }}
+              onFixMatch={onFixMatch ? (_sId, fp) => onFixMatch(show, fp) : undefined}
+              onTranscodeShow={onTranscodeShow ? () => onTranscodeShow(show) : undefined}
+            />
+          )}
+          listHeader={
+            <div className="mx-2 mb-2 flex items-center gap-4 rounded-md border-b border-border/50 bg-muted/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              <span className="w-16 shrink-0">Poster</span>
+              <button className="flex-1 text-left hover:text-foreground" onClick={() => onSortChange('title')} aria-label="Sort TV shows by title">{getSortLabel('tv', 'title')}</button>
+              <button className="w-32 text-left hover:text-foreground" onClick={() => onSortChange('recoverable')} aria-label="Sort TV shows by total debt">{getSortLabel('tv', 'recoverable')}</button>
+              <button className="w-32 text-left hover:text-foreground" onClick={() => onSortChange('weighted_efficiency')} aria-label="Sort TV shows by weighted efficiency">{getSortLabel('tv', 'weighted_efficiency')}</button>
+              <span className="w-8 shrink-0" />
             </div>
-
-            {/* Metadata line */}
-            <div className="flex flex-wrap items-center gap-2 mt-1 text-sm text-muted-foreground">
-              <span>{completenessData && completenessData.total_seasons > 0 ? `${completenessData.owned_seasons} of ${completenessData.total_seasons} Seasons` : `${regularOwnedSeasons.length} Seasons`}</span>
-              {specialsEpisodes && specialsEpisodes.length > 0 && <><span>•</span><span>{specialsEpisodes.length} {specialsEpisodes.length === 1 ? 'Special' : 'Specials'}</span></>}
-              {!completenessData && <><span>•</span><span>Completion not analyzed</span></>}
-              {completenessData && completenessData.total_episodes === 0 && <><span>•</span><span>Completion unknown</span></>}
-              {completenessData?.status && (
-                <>
-                  <span>•</span>
-                  <span>{getStatusBadge(completenessData.status)?.text || completenessData.status}</span>
-                </>
-              )}
-            </div>
-
-            {/* Action buttons row */}
-            <div className="flex items-center gap-3 mt-3" ref={showDetailMenuRef}>
-              <button
-                onClick={() => {
-                  const firstEp = selectedShowData ? Array.from(selectedShowData.seasons.values())[0]?.episodes[0] : undefined
-                  if (!firstEp?.series_identity_key) return
-                  const matched = shows.find(s => s.series_identity_key === firstEp.series_identity_key)
-                  if (matched && matched.series_identity_key) {
-                    onAnalyzeSeries(matched)
-                  } else if (selectedShowData) {
-                    onAnalyzeSeries({
-                      series_title: selectedShowData.title,
-                      episode_count: Array.from(selectedShowData.seasons.values()).reduce((sum, s) => sum + s.episodes.length, 0),
-                      season_count: selectedShowData.seasons.size,
-                      poster_url: selectedShowData.poster_url,
-                      source_id: firstEp.source_id,
-                      library_id: firstEp.library_id,
-                      series_identity_key: firstEp.series_identity_key
-                    })
-                  }
-                }}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-                title="Analyze Series"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Analyze Series
-              </button>
-              <button
-                onClick={() => handleOpenOptimize()}
-                disabled={!firstIdentifiedEpisode}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-purple-600/20 text-purple-300 border border-purple-500/30 rounded-md hover:bg-purple-600/30 transition-colors"
-                title={firstIdentifiedEpisode ? 'Optimize show' : 'Optimization requires a canonical series identity'}
-              >
-                <Zap className="w-3.5 h-3.5 text-purple-400" />
-                Optimize show
-              </button>
-              {onFixMatch && (
-                <button
-                  onClick={() => {
-                    const firstEp = selectedShowData ? Array.from(selectedShowData.seasons.values())[0]?.episodes[0] : undefined
-                    if (firstEp && firstEp.series_identity_key && firstEp.source_id) {
-                      onFixMatch(
-                        firstEp.series_identity_key,
-                        selectedShowData?.title || selectedShow || firstEp.series_title || '',
-                        firstEp.source_id,
-                        firstEp.library_id || undefined,
-                        undefined
-                      )
-                    }
-                  }}
-                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
-                  title="Fix Match"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-
-            {/* Overview */}
-            {showOverview && (
-              <div className="mt-3 max-w-2xl">
-                <p ref={showOverviewRef} className={`text-sm text-muted-foreground leading-relaxed ${showOverviewExpanded ? '' : 'line-clamp-3'}`}>
-                  {showOverview}
-                </p>
-                {showOverviewToggle && (
-                  <button
-                    aria-expanded={showOverviewExpanded}
-                    onClick={() => setShowOverviewExpanded(expanded => !expanded)}
-                    className="flex items-center gap-1 text-sm text-primary hover:text-primary/80 mt-1 transition-colors"
-                  >
-                    {showOverviewExpanded ? (
-                      <><span>Less</span><ChevronUp className="w-4 h-4" /></>
-                    ) : (
-                      <><span>More</span><ChevronDown className="w-4 h-4" /></>
-                    )}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div
-          className={gridClassName}
-          style={gridStyle}
-        >
-          {allSeasonItems.map((item) => (
-            item.type === 'owned' && item.season ? (
-              <SeasonCard
-                key={item.seasonNumber}
-                season={item.season as SeasonInfo}
-                showTitle={selectedShowData.title}
-                onClick={() => onSelectSeason(item.seasonNumber)}
-                missingCount={(completenessData?.missing_episodes || []).filter(ep => ep.season_number === item.seasonNumber).length}
-              />
-            ) : (
-              <MissingSeasonCardWithArtwork
-                key={`missing-${item.seasonNumber}`}
-                seasonNumber={item.seasonNumber}
-                showTitle={selectedShowData.title}
-                tmdbId={completenessData?.tmdb_id}
-                fallbackPosterUrl={completenessData?.poster_url || selectedShowData.poster_url}
-                onClick={() => onMissingItemClick({
-                  type: 'season',
-                  title: formatSeasonLabel(item.seasonNumber),
-                  seasonNumber: item.seasonNumber,
-                  posterUrl: completenessData?.poster_url || selectedShowData.poster_url,
-                  tmdbId: completenessData?.tmdb_id,
-                  seriesTitle: selectedShowData.title
-                })}
-                onDismiss={onDismissMissingSeason ? () => onDismissMissingSeason(item.seasonNumber, selectedShowData.title, completenessData?.tmdb_id) : undefined}
-                             />
-            )
-          ))}
-        </div>
-        {optimizingShow && (
-          <SharedOptimizationDialog request={{ controller: 'series', onClose: closeOptimization, series: { show: optimizingShow, episode: optimizingEpisode ?? undefined, seasonNumber: optimizingSeason ?? undefined, initialPreflight: reviewingPreflight, resumeRequestId: resumePreflightRequestId } }} />
-        )}
+          }
+        />
       </div>
     )
   }
 
-  // Episode list view
-  if (selectedShow && selectedSeason !== null && selectedShowData) {
-    const season = selectedShowData.seasons.get(selectedSeason)
-    const seasonHasCanonicalIdentity = season?.episodes.some(episode => episode.series_identity_key?.trim()) ?? false
-    const completenessData = seriesCompleteness.get(selectedShow)
-
-    // Get owned episodes for this season, filtered by resolution/quality
-    const allOwnedEpisodes = season ? season.episodes : []
-    const ownedEpisodes = allOwnedEpisodes.filter(ep => {
-      if (episodeTierFilter !== 'all' && ep.quality_tier !== episodeTierFilter) return false
-      if (episodeQualityFilter !== 'all' && (ep.tier_quality || 'UNKNOWN').toLowerCase() !== episodeQualityFilter) return false
-      return true
-    })
-    const ownedEpisodeNumbers = new Set(allOwnedEpisodes.map(e => e.episode_number))
-
-    const missingEpisodesForSeason = (completenessData?.missing_episodes || []).filter(
-      ep => ep.season_number === selectedSeason && !ownedEpisodeNumbers.has(ep.episode_number)
-    )
-
-    // Get fallback poster for missing episodes (season poster > series poster)
-    const missingEpisodePoster = season?.posterUrl || completenessData?.poster_url || selectedShowData.poster_url
-
-    // Build combined list sorted by episode number
-    type EpisodeItem = { type: 'owned'; episode: MediaItem } | { type: 'missing'; missing: MissingEpisode }
-    const allEpisodeItems: EpisodeItem[] = [
-      ...ownedEpisodes.map(e => ({ type: 'owned' as const, episode: e })),
-      ...missingEpisodesForSeason.map(m => ({ type: 'missing' as const, missing: m }))
-    ].sort((a, b) => {
-      const aNum = a.type === 'owned' ? (a.episode.episode_number || 0) : a.missing.episode_number
-      const bNum = b.type === 'owned' ? (b.episode.episode_number || 0) : b.missing.episode_number
-      return aNum - bNum
-    })
-
+  if (selectedShow) {
+    const completenessData = seriesCompleteness.get(getTVShowIdentityKey(selectedShow))
     return (
-      <div className="space-y-6">
-        {/* Breadcrumb */}
-        <button
-          onClick={handleBack}
-          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Back to {selectedShowData.title}
-        </button>
-
-        <div className="flex items-center justify-between">
-          <h3 className="text-xl font-bold">
-            {selectedShowData.title} - {formatSeasonLabel(selectedSeason!)}
-          </h3>
-          <button
-            onClick={handleOpenOptimizeSeason}
-            disabled={!seasonHasCanonicalIdentity}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-purple-600/20 text-purple-300 border border-purple-500/30 rounded-md hover:bg-purple-600/30 transition-colors"
-            title={seasonHasCanonicalIdentity ? `Optimize season ${selectedSeason}` : 'Optimization requires a canonical series identity'}
-          >
-            <Zap className="w-3.5 h-3.5 text-purple-400" />
-            Optimize season
-          </button>
-        </div>
-
-        {/* Episode filters */}
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Resolution</span>
-            <div className="flex gap-1">
-              {(['all', '4K', '1080p', '720p', 'SD'] as const).map((tier) => (
-                <button
-                  key={tier}
-                  onClick={() => setEpisodeTierFilter(tier)}
-                  className={`px-2.5 py-1 rounded-md text-xs transition-colors ${
-                    episodeTierFilter === tier
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-card text-muted-foreground hover:bg-muted'
-                  }`}
-                >
-                  {tier === 'all' ? 'All' : tier}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="h-6 w-px bg-border/50" />
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Quality</span>
-            <div className="flex gap-1">
-              {(['all', 'high', 'medium', 'low'] as const).map((quality) => (
-                <button
-                  key={quality}
-                  onClick={() => setEpisodeQualityFilter(quality)}
-                  className={`px-2.5 py-1 rounded-md text-xs transition-colors ${
-                    episodeQualityFilter === quality
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-card text-muted-foreground hover:bg-muted'
-                  }`}
-                >
-                  {quality.charAt(0).toUpperCase() + quality.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-          {(episodeTierFilter !== 'all' || episodeQualityFilter !== 'all') && (
-            <span className="text-xs text-muted-foreground">
-              {ownedEpisodes.length} of {allOwnedEpisodes.length} episodes
-            </span>
-          )}
-        </div>
-
-        <div className="divide-y divide-border/50">
-          {allEpisodeItems.map((item) => (
-            item.type === 'owned' ? (
-              <EpisodeRow
-                key={item.episode.id}
-                episode={item.episode}
-                onClick={() => onSelectEpisode(item.episode.id)}
-                onRescan={onRescanEpisode}
-                onDismissUpgrade={onDismissUpgrade}
-                onOptimizeEpisode={handleOpenOptimizeEpisode}
-                isMobile={isMobile}
-                             />
-            ) : (
-              <MissingEpisodeRowWithArtwork
-                key={`missing-${item.missing.season_number}-${item.missing.episode_number}`}
-                episode={item.missing}
-                tmdbId={completenessData?.tmdb_id}
-                fallbackPosterUrl={missingEpisodePoster}
-                onClick={() => onMissingItemClick({
-                  type: 'episode',
-                  title: item.missing.title || `Episode ${item.missing.episode_number}`,
-                  airDate: item.missing.air_date,
-                  seasonNumber: item.missing.season_number,
-                  episodeNumber: item.missing.episode_number,
-                  posterUrl: missingEpisodePoster,
-                  tmdbId: completenessData?.tmdb_id,
-                  seriesTitle: selectedShowData.title
-                })}
-                onDismiss={onDismissMissingEpisode ? () => onDismissMissingEpisode(item.missing, selectedShowData.title, completenessData?.tmdb_id) : undefined}
-                isMobile={isMobile}
-                             />
-            )
-          ))}
-        </div>
-        {optimizingShow && (
-          <SharedOptimizationDialog request={{ controller: 'series', onClose: closeOptimization, series: { show: optimizingShow, episode: optimizingEpisode ?? undefined, seasonNumber: optimizingSeason ?? undefined, initialPreflight: reviewingPreflight, resumeRequestId: resumePreflightRequestId } }} />
-        )}
+      <div ref={detailScrollRef} className="h-full overflow-y-auto">
+        <TVShowDetails
+          key={getTVShowIdentityKey(selectedShow)}
+          scrollParentRef={detailScrollRef}
+          selectedShow={selectedShow}
+          selectedShowData={selectedShowData}
+          selectedShowLoading={selectedShowLoading}
+          completenessData={completenessData}
+          onBack={handleBack}
+          onAnalyzeSeries={onAnalyzeSeries}
+          onFixMatch={onFixMatch}
+          filterItem={filterItem}
+          onSelectEpisode={onSelectEpisode}
+          onRescanEpisode={onRescanEpisode}
+          onDismissUpgrade={onDismissUpgrade}
+          expandedRecommendations={expandedRecommendations}
+          onToggleOptimize={toggleRecommendation}
+          onMissingItemClick={onMissingItemClick}
+          onDismissMissingSeason={onDismissMissingSeason}
+          onDismissMissingEpisode={onDismissMissingEpisode}
+          onTranscodeShow={onTranscodeShow}
+        />
       </div>
     )
   }
 
   return null
 }
-
-const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizeSeries }: { show: TVShowSummary; onClick: () => void; completenessData?: SeriesCompletenessData; showSourceBadge?: boolean; onAnalyzeSeries?: () => void; onFixMatch?: (seriesIdentityKey: string, title: string, sourceId: string, libraryId?: string, folderPath?: string) => void; onOptimizeSeries?: (show: TVShowSummary) => void }) => {
-  const [showMenu, setShowMenu] = useState(false)
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const cardRef = useRef<HTMLDivElement>(null)
-  const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
-
-  const totalEpisodes = show.episode_count
-  const sourceType = show.source_type as ProviderType | undefined
-  const sourceId = show.source_id
-  const libraryId = show.library_id
-  const seriesIdentityKey = show.series_identity_key
-  const folderPath: string | undefined = undefined
-
-  const handleAnalyze = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setShowMenu(false)
-    if (onAnalyzeSeries) {
-      setIsAnalyzing(true)
-      await onAnalyzeSeries()
-      setIsAnalyzing(false)
-    }
-  }
-
-  const handleFixMatch = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setShowMenu(false)
-    if (onFixMatch && sourceId && seriesIdentityKey) {
-      onFixMatch(seriesIdentityKey, show.series_title, sourceId, libraryId || undefined, folderPath)
-    }
-  }
-
-  return (
-    <div
-      ref={cardRef}
-      tabIndex={0}
-      className="focus-poster-only cursor-pointer hover-scale relative group outline-hidden"
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onClick()
-        }
-      }}
-    >
-      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
-        {/* 3-dot menu button */}
-        <div ref={menuRef} className="absolute top-2 left-2 z-20">
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowMenu(!showMenu)
-            }}
-            className="w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
-          >
-            {isAnalyzing ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <MoreVertical className="w-4 h-4" />
-            )}
-          </button>
-
-          {showMenu && (
-            <DropdownMenu align="left">
-              <DropdownMenuItem onClick={handleAnalyze} icon={<RefreshCw className="w-3.5 h-3.5" />}>
-                Analyze Series
-              </DropdownMenuItem>
-              {onFixMatch && (
-                <DropdownMenuItem onClick={handleFixMatch} icon={<Pencil className="w-3.5 h-3.5" />}>
-                  Fix Match
-                </DropdownMenuItem>
-              )}
-              {onOptimizeSeries && show.series_identity_key?.trim() && (
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setShowMenu(false)
-                    onOptimizeSeries(show)
-                  }}
-                  icon={<Zap className="w-3.5 h-3.5 text-purple-400" />}
-                >
-                  <span className="text-purple-300">Optimize show</span>
-                </DropdownMenuItem>
-              )}
-            </DropdownMenu>
-          )}
-        </div>
-
-        {/* Source Badge */}
-        {showSourceBadge && sourceType && (
-          <div
-            className={`absolute bottom-2 left-2 ${providerColors[sourceType] || 'bg-gray-500'} text-white text-xs font-bold px-1.5 py-0.5 rounded shadow-md`}
-            title={sourceType.charAt(0).toUpperCase() + sourceType.slice(1)}
-          >
-            {sourceType.charAt(0).toUpperCase()}
-          </div>
-        )}
-
-        {show.poster_url ? (
-          <img
-            src={show.poster_url}
-            alt={show.series_title}
-            loading="lazy"
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none'
-            }}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-muted/50"><TvPlaceholder className="w-20 h-20 text-muted-foreground" /></div>
-        )}
-      </div>
-
-      {/* Title and info below poster */}
-      <div className="pt-2 flex gap-2 items-start">
-        <div className="flex-1 min-w-0">
-          <h4 className="font-medium text-sm truncate">{show.series_title}</h4>
-          <p className="text-xs text-muted-foreground">
-            {show.season_count} {show.season_count === 1 ? 'Season' : 'Seasons'} • {totalEpisodes} Episodes
-          </p>
-          <p className="text-xs text-muted-foreground">Total size: {formatBytes(show.total_size_bytes)}</p>
-          <ScopedOptimizationSummary totalCount={totalEpisodes} estimatedSavingsBytes={show.estimated_savings_bytes} coverage={show.savings_coverage} />
-        </div>
-        {completenessData && (
-          <div
-            className="shrink-0"
-            title={`${completenessData.owned_episodes} of ${completenessData.total_episodes} episodes`}
-          >
-            {completenessData.completeness_percentage === 100 ? (
-              <div className="bg-green-500 text-white text-xs font-bold px-2 py-1 rounded shadow-md flex items-center gap-1">
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-                100%
-              </div>
-            ) : (
-              <div className="bg-foreground text-background text-xs font-bold px-2 py-1 rounded shadow-md border border-border">
-                {Math.round(completenessData.completeness_percentage)}%
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}, (prevProps, nextProps) => {
-  // Compare all props that affect rendering
-  return prevProps.show.series_title === nextProps.show.series_title &&
-         prevProps.show.poster_url === nextProps.show.poster_url &&
-         prevProps.show.episode_count === nextProps.show.episode_count &&
-         prevProps.show.estimated_savings_bytes === nextProps.show.estimated_savings_bytes &&
-         prevProps.show.total_size_bytes === nextProps.show.total_size_bytes &&
-         prevProps.show.season_count === nextProps.show.season_count &&
-         prevProps.showSourceBadge === nextProps.showSourceBadge &&
-         prevProps.completenessData?.id === nextProps.completenessData?.id &&
-         prevProps.completenessData?.completeness_percentage === nextProps.completenessData?.completeness_percentage &&
-         prevProps.onAnalyzeSeries === nextProps.onAnalyzeSeries
-})
-
-// Component to fetch and display missing season with actual TMDB artwork
-const MissingSeasonCardWithArtwork = memo(({
-  seasonNumber,
-  showTitle,
-  tmdbId,
-  fallbackPosterUrl,
-  onClick,
-  onDismiss
-}: {
-  seasonNumber: number
-  showTitle: string
-  tmdbId?: string
-  fallbackPosterUrl?: string
-  onClick: () => void
-  onDismiss?: () => void
-}) => {
-  const [posterUrl, setPosterUrl] = useState<string | undefined>(fallbackPosterUrl)
-
-  useEffect(() => {
-    if (tmdbId) {
-      window.electronAPI.seriesGetSeasonPoster(tmdbId, seasonNumber)
-        .then((url) => {
-          if (url) setPosterUrl(url)
-        })
-        .catch((err) => {
-          console.warn(`Failed to fetch ${formatSeasonLabel(seasonNumber)} poster:`, err)
-        })
-    }
-  }, [tmdbId, seasonNumber])
-
-  return (
-    <MissingItemCard
-      type="season"
-      title={formatSeasonLabel(seasonNumber)}
-      subtitle={showTitle}
-      posterUrl={posterUrl}
-      onClick={onClick}
-      onDismiss={onDismiss}
-      tmdbId={tmdbId}
-      seriesTitle={showTitle}
-      seasonNumber={seasonNumber}
-    />
-  )
-})
-
-// Component to fetch and display missing episode with actual TMDB artwork
-const MissingEpisodeRowWithArtwork = memo(({
-  episode,
-  tmdbId,
-  fallbackPosterUrl,
-  onClick,
-  onDismiss,
-  isMobile = false,
-}: {
-  episode: MissingEpisode
-  tmdbId?: string
-  fallbackPosterUrl?: string
-  onClick: () => void
-  onDismiss?: () => void
-  isMobile?: boolean
-}) => {
-  const [stillUrl, setStillUrl] = useState<string | undefined>(fallbackPosterUrl)
-  const [showMenu, setShowMenu] = useState(false)
-  const cardRef = useRef<HTMLDivElement>(null)
-  const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
-
-  useEffect(() => {
-    if (tmdbId) {
-      window.electronAPI.seriesGetEpisodeStill(tmdbId, episode.season_number, episode.episode_number)
-        .then((url) => {
-          if (url) setStillUrl(url)
-        })
-        .catch((err) => {
-          console.warn(`Failed to fetch episode still for S${episode.season_number}E${episode.episode_number}:`, err)
-        })
-    }
-  }, [tmdbId, episode.season_number, episode.episode_number])
-
-  return (
-    <div
-      ref={cardRef}
-      tabIndex={0}
-      className={`group flex ${isMobile ? 'gap-2.5 p-2.5' : 'gap-4 p-4'} items-center hover:bg-muted/30 transition-colors cursor-pointer outline-hidden`}
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onClick()
-        }
-      }}
-    >
-      {/* Missing Episode Thumbnail - 16:9 aspect ratio with shadow */}
-      <div className={`${isMobile ? 'w-24' : 'w-44'} aspect-video bg-muted shrink-0 overflow-hidden rounded-md shadow-md shadow-black/20`}>
-        {stillUrl ? (
-          <img
-            src={stillUrl}
-            alt={episode.title || `Episode ${episode.episode_number}`}
-            loading="lazy"
-            className="w-full h-full object-cover grayscale opacity-50"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none'
-            }}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-muted/50">
-            <EpisodePlaceholder className="w-10 h-10 text-muted-foreground" />
-          </div>
-        )}
-      </div>
-
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-muted-foreground shrink-0">
-            E{episode.episode_number}
-          </span>
-          <h4 className="font-semibold truncate text-muted-foreground">
-            {episode.title || 'Unknown Title'}
-          </h4>
-        </div>
-        {episode.air_date && (
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Aired: {new Date(episode.air_date).toLocaleDateString()}
-          </p>
-        )}
-      </div>
-
-      {/* 3-dot menu */}
-      {onDismiss && (
-        <div ref={menuRef} className="relative shrink-0">
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowMenu(!showMenu)
-            }}
-            className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <MoreVertical className="w-4 h-4" />
-          </button>
-
-          {showMenu && (
-            <DropdownMenu>
-              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setShowMenu(false); onDismiss() }} icon={<EyeOff className="w-3.5 h-3.5" />}>
-                Dismiss
-              </DropdownMenuItem>
-            </DropdownMenu>
-          )}
-        </div>
-      )}
-    </div>
-  )
-})
-
-const SeasonCard = memo(({ season, showTitle, onClick, missingCount = 0 }: { season: SeasonInfo; showTitle: string; onClick: () => void; missingCount?: number }) => {
-  const cardRef = useRef<HTMLDivElement>(null)
-  const owned = season.episodes.length
-  const total = owned + missingCount
-
-  return (
-    <div
-      ref={cardRef}
-      tabIndex={0}
-      className="focus-poster-only group cursor-pointer hover-scale outline-hidden"
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onClick()
-        }
-      }}
-    >
-      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
-        {season.posterUrl ? (
-          <img
-            src={season.posterUrl}
-            alt={`${showTitle} - ${formatSeasonLabel(season.seasonNumber)}`}
-            loading="lazy"
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none'
-            }}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-muted/50"><Folder className="w-16 h-16 text-white/30" strokeWidth={1.5} /></div>
-        )}
-      </div>
-
-      {/* Title below poster */}
-      <div className="pt-2">
-        <h4 className="font-medium text-sm truncate">{formatSeasonLabel(season.seasonNumber)}</h4>
-        <p className="text-xs text-muted-foreground">
-          {total > 0 && owned < total
-            ? `${owned} of ${total} ${total === 1 ? 'Episode' : 'Episodes'}`
-            : `${owned} ${owned === 1 ? 'Episode' : 'Episodes'}`
-          }
-        </p>
-      </div>
-    </div>
-  )
-}, (prevProps, nextProps) => {
-  // Compare all props that affect rendering
-  return prevProps.season.seasonNumber === nextProps.season.seasonNumber &&
-         prevProps.showTitle === nextProps.showTitle &&
-         prevProps.season.posterUrl === nextProps.season.posterUrl &&
-         prevProps.season.episodes === nextProps.season.episodes &&
-         prevProps.missingCount === nextProps.missingCount
-})

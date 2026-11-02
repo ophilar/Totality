@@ -1,0 +1,86 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+import { getSeriesCompletenessService } from '@main/services/SeriesCompletenessService'
+import { MediaItemType } from '@main/types/database'
+
+describe('Show Analysis & Metadata Integrity', () => {
+  let db: Awaited<ReturnType<typeof setupTestDb>>
+
+  beforeEach(async () => {
+    db = await setupTestDb()
+  })
+
+  afterEach(() => {
+    cleanupTestDb()
+  })
+
+  it('uses owned episode inventory while keeping unavailable completeness unknown', async () => {
+    const service = getSeriesCompletenessService()
+
+    await db.sources.upsertSource({ source_id: 's1', source_type: 'local', display_name: 'Local', connection_config: '{}', is_enabled: 1 })
+    await db.media.upsertItem({
+      source_id: 's1',
+      library_id: '2',
+      plex_id: 'ep1',
+      title: 'Episode 1',
+      type: MediaItemType.Episode,
+      series_title: 'Unmatched Show',
+      series_identity_key: 'unresolved:s1:2:unmatched-show',
+      season_number: 1,
+      episode_number: 1,
+      file_path: '/path/to/ep1.mkv',
+      poster_url: 'provider-poster-url'
+    })
+
+    await db.config.setSetting('tmdb_api_key', '')
+    const analysis = await service.analyzeSeries('Unmatched Show', 's1', '2', undefined, undefined, { seriesIdentityKey: 'unresolved:s1:2:unmatched-show' })
+
+    expect(analysis).not.toBeNull()
+    expect(analysis!.total_episodes).toBe(1)
+    expect(analysis!.owned_episodes).toBe(1)
+    expect(analysis!.poster_url).toBe('provider-poster-url')
+    expect(analysis!.completeness_percentage).toBeNull()
+    expect(analysis!.efficiency_score).toBeNull()
+    expect(analysis!.storage_debt_bytes).toBeNull()
+    expect(analysis!.status).toBeUndefined()
+  })
+
+  it('preserves verified identity metadata when completeness cannot be refreshed', async () => {
+    const service = getSeriesCompletenessService()
+
+    await db.tvShows.upsertCompleteness({
+      series_title: 'Matched Show',
+      series_identity_key: 'tmdb:12345',
+      source_id: 's1',
+      library_id: '2',
+      total_seasons: 5,
+      total_episodes: 100,
+      owned_seasons: 1,
+      owned_episodes: 1,
+      missing_seasons: '[]',
+      missing_episodes: '[]',
+      completeness_percentage: 1,
+      tmdb_id: '12345',
+      poster_url: 'existing-poster-url'
+    })
+
+    await db.media.upsertItem({
+      source_id: 's1',
+      library_id: '2',
+      plex_id: 'ep2',
+      title: 'Ep 1',
+      type: MediaItemType.Episode,
+      series_title: 'Matched Show',
+      series_identity_key: 'tmdb:12345',
+      season_number: 1,
+      episode_number: 1,
+      file_path: '/p2.mkv'
+    })
+
+    await db.config.setSetting('tmdb_api_key', '')
+    const analysis = await service.analyzeSeries('Matched Show', 's1', '2', '12345', undefined, { seriesIdentityKey: 'tmdb:12345' })
+
+    expect(analysis!.tmdb_id).toBe('12345')
+    expect(analysis!.poster_url).toBe('existing-poster-url')
+  })
+})

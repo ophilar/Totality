@@ -1,20 +1,11 @@
-
-import { getDatabase } from '../database/getDatabase'
-import { getQualityAnalyzer } from './QualityAnalyzer'
-import { getGeminiService } from './GeminiService'
-import type { SeriesCompleteness, MovieCollection } from '../types/database'
-import { formatSize } from './utils/formatUtils'
-import {
-  QUALITY_REPORT_SYSTEM_PROMPT,
-  UPGRADE_PRIORITIES_SYSTEM_PROMPT,
-  COMPLETENESS_INSIGHTS_SYSTEM_PROMPT,
-  WISHLIST_ADVICE_SYSTEM_PROMPT,
-  STORAGE_OPTIMIZATION_SYSTEM_PROMPT,
-  MUSIC_QUALITY_SYSTEM_PROMPT,
-} from './ai-system-prompts'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
+import { getGeminiService } from '@main/services/GeminiService'
+import { WishlistStatus } from '@main/types/database'
+import { APP_CONFIG } from '@main/config'
 
 /** Strip null/undefined/empty fields to reduce token usage */
-function compact<T extends object>(obj: T): Record<string, unknown> {
+function compact(obj: object): Record<string, unknown> {
   const result: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(obj)) {
     if (v !== null && v !== undefined && v !== '') result[k] = v
@@ -31,21 +22,94 @@ function compact<T extends object>(obj: T): Record<string, unknown> {
 
 export class GeminiAnalysisService {
   /**
+   * Generate optimal compression parameters for a specific movie or episode.
+   * Uses structured JSON output for precision.
+   */
+  async getCompressionAdvice(
+    mediaId: number,
+  ): Promise<{ text: string; skipped?: boolean }> {
+    const gemini = getGeminiService()
+    if (!gemini.isConfigured()) {
+      return { text: 'Gemini AI is not configured. Please add your API key in Settings > Services.', skipped: true }
+    }
+
+    const db = getDatabase()
+    const item = await db.media.getItem(mediaId)
+
+    if (!item) {
+      throw new Error(`Media item with ID ${mediaId} not found`)
+    }
+
+    // Prepare detailed metadata for the AI
+    const metadata = compact({
+      title: item.title,
+      type: item.type,
+      series_title: item.series_title,
+      season_number: item.season_number,
+      episode_number: item.episode_number,
+      year: item.year,
+      file_path: item.file_path,
+      file_size_bytes: item.file_size,
+      duration_ms: item.duration,
+      container: item.container,
+      video: {
+        codec: item.video_codec,
+        resolution: item.resolution,
+        width: item.width,
+        height: item.height,
+        bitrate_kbps: item.video_bitrate,
+        frame_rate: item.video_frame_rate,
+        bit_depth: item.color_bit_depth,
+        hdr_format: item.hdr_format,
+        profile: item.video_profile,
+        level: item.video_level,
+      },
+      audio_tracks: item.audio_tracks ? JSON.parse(item.audio_tracks) : [],
+      quality: {
+        tier: item.quality_tier,
+        level: item.tier_quality,
+        score: item.tier_score,
+        efficiency: item.efficiency_score,
+      },
+    })
+
+    const result = await getGeminiService().sendMessage({
+      messages: [
+        {
+          role: 'user',
+          content: `Analyze this media file and provide optimal compression parameters:\n\n${JSON.stringify(metadata, null, 2)}`,
+        },
+      ],
+      system: APP_CONFIG.ai.compressionAdvice,
+      maxTokens: 2048,
+    })
+
+    return { text: result.text }
+  }
+
+  /**
    * Generate a quality health report for the library.
    */
   async generateQualityReport(
     onDelta: (text: string) => void,
-  ): Promise<{ text: string }> {
-    const db = getDatabase()
-    const stats = db.getLibraryStats()
-    const distribution = getQualityAnalyzer().getQualityDistribution()
+    signal?: AbortSignal,
+  ): Promise<{ text: string; skipped?: boolean }> {
+    const gemini = getGeminiService()
+    if (!gemini.isConfigured()) {
+      return { text: 'Gemini AI is not configured. Please add your API key in Settings > Services.', skipped: true }
+    }
 
-    const lowQualityItems = db.getMediaItems({
+    const db = getDatabase()
+    const stats = await db.stats.getLibraryStats()
+    const distribution = await getQualityAnalyzer().getQualityDistribution()
+
+    const lowQualityItems = await db.media.getItems({
       tierQuality: 'LOW',
       sortBy: 'title',
       sortOrder: 'asc',
       limit: 20,
     })
+    signal?.throwIfAborted()
 
     const dataContext = [
       '## Library Stats',
@@ -56,13 +120,15 @@ export class GeminiAnalysisService {
       '',
       '## Sample Low-Quality Items (up to 20)',
       JSON.stringify(
-        lowQualityItems.map((item) => compact({
+        lowQualityItems.map(item => compact({
           title: item.title,
           year: item.year,
           type: item.type,
           resolution: item.resolution,
           video_codec: item.video_codec,
-          video_bitrate_kbps: item.video_bitrate_kbps,
+          video_bitrate: item.video_bitrate,
+          quality_tier: item.quality_tier,
+          tier_quality: item.tier_quality,
         })),
       ),
     ].join('\n')
@@ -75,8 +141,9 @@ export class GeminiAnalysisService {
             content: `Here is my media library data. Please generate a quality health report.\n\n${dataContext}`,
           },
         ],
-        system: QUALITY_REPORT_SYSTEM_PROMPT,
+        system: APP_CONFIG.ai.qualityReport,
         maxTokens: 4096,
+        signal,
       },
       onDelta,
     )
@@ -89,23 +156,30 @@ export class GeminiAnalysisService {
    */
   async generateUpgradePriorities(
     onDelta: (text: string) => void,
-  ): Promise<{ text: string }> {
+    signal?: AbortSignal,
+  ): Promise<{ text: string; skipped?: boolean }> {
+    const gemini = getGeminiService()
+    if (!gemini.isConfigured()) {
+      return { text: 'Gemini AI is not configured. Please add your API key in Settings > Services.', skipped: true }
+    }
+
     const db = getDatabase()
 
-    const lowItems = db.getMediaItems({
+    const lowItems = await db.media.getItems({
       tierQuality: 'LOW',
       sortBy: 'title',
       sortOrder: 'asc',
       limit: 30,
     })
-    const mediumItems = db.getMediaItems({
+    const mediumItems = await db.media.getItems({
       tierQuality: 'MEDIUM',
       sortBy: 'title',
       sortOrder: 'asc',
       limit: 20,
     })
 
-    const stats = db.getLibraryStats()
+    const stats = await db.stats.getLibraryStats()
+    signal?.throwIfAborted()
 
     const dataContext = [
       '## Library Overview',
@@ -113,27 +187,31 @@ export class GeminiAnalysisService {
       '',
       '## LOW Quality Items (up to 30)',
       JSON.stringify(
-        lowItems.map((item) => compact({
+        lowItems.map(item => compact({
           title: item.title,
           year: item.year,
           type: item.type,
           series_title: item.series_title,
           resolution: item.resolution,
           video_codec: item.video_codec,
-          video_bitrate_kbps: item.video_bitrate_kbps,
+          video_bitrate: item.video_bitrate,
+          quality_tier: item.quality_tier,
+          tier_quality: item.tier_quality,
         })),
       ),
       '',
       '## MEDIUM Quality Items (up to 20)',
       JSON.stringify(
-        mediumItems.map((item) => compact({
+        mediumItems.map(item => compact({
           title: item.title,
           year: item.year,
           type: item.type,
           series_title: item.series_title,
           resolution: item.resolution,
           video_codec: item.video_codec,
-          video_bitrate_kbps: item.video_bitrate_kbps,
+          video_bitrate: item.video_bitrate,
+          quality_tier: item.quality_tier,
+          tier_quality: item.tier_quality,
         })),
       ),
     ].join('\n')
@@ -146,8 +224,9 @@ export class GeminiAnalysisService {
             content: `Here are the items in my library that may need quality upgrades. Please prioritize them.\n\n${dataContext}`,
           },
         ],
-        system: UPGRADE_PRIORITIES_SYSTEM_PROMPT,
+        system: APP_CONFIG.ai.upgradePriorities,
         maxTokens: 4096,
+        signal,
       },
       onDelta,
     )
@@ -160,12 +239,19 @@ export class GeminiAnalysisService {
    */
   async generateCompletenessInsights(
     onDelta: (text: string) => void,
-  ): Promise<{ text: string }> {
+    signal?: AbortSignal,
+  ): Promise<{ text: string; skipped?: boolean }> {
+    const gemini = getGeminiService()
+    if (!gemini.isConfigured()) {
+      return { text: 'Gemini AI is not configured. Please add your API key in Settings > Services.', skipped: true }
+    }
+
     const db = getDatabase()
 
-    const incompleteSeries = db.getIncompleteSeries()
-    const incompleteCollections = db.getIncompleteMovieCollections()
-    const stats = db.getLibraryStats()
+    const incompleteSeries = await db.tvShows.getIncomplete()
+    const incompleteCollections = await db.movieCollections.getIncompleteCollections()
+    const stats = await db.stats.getLibraryStats()
+    signal?.throwIfAborted()
 
     const dataContext = [
       '## Library Overview',
@@ -173,10 +259,10 @@ export class GeminiAnalysisService {
       '',
       `## Incomplete TV Series (${incompleteSeries.length} total, showing up to 30)`,
       JSON.stringify(
-        (incompleteSeries as SeriesCompleteness[]).slice(0, 30).map((s) => {
-          const missingEps = s.missing_episodes || []
-          const missingCount = missingEps.length
-          const missingSample = missingEps.slice(0, 5).map((e) =>
+        incompleteSeries.slice(0, 30).map(s => {
+          const parsed = JSON.parse((s.missing_episodes as string) || '[]')
+          const missingCount = parsed.length
+          const missingSample = parsed.slice(0, 5).map((e: { season_number: number; episode_number: number }) =>
             `S${e.season_number}E${e.episode_number}`,
           )
           return compact({
@@ -193,10 +279,10 @@ export class GeminiAnalysisService {
       '',
       `## Incomplete Movie Collections (${incompleteCollections.length} total, showing up to 30)`,
       JSON.stringify(
-        (incompleteCollections as MovieCollection[]).slice(0, 30).map((c) => {
-          const missingMovies = c.missing_movies || []
-          const missingCount = missingMovies.length
-          const missingSample = missingMovies.slice(0, 5).map((m) =>
+        incompleteCollections.slice(0, 30).map(c => {
+          const parsed = JSON.parse((c.missing_movies as string) || '[]')
+          const missingCount = parsed.length
+          const missingSample = parsed.slice(0, 5).map((m: { title: string; year?: number }) =>
             m.year ? `${m.title} (${m.year})` : `${m.title}`,
           )
           return compact({
@@ -219,8 +305,9 @@ export class GeminiAnalysisService {
             content: `Here is my collection and series completeness data. Please analyze it and provide insights.\n\n${dataContext}`,
           },
         ],
-        system: COMPLETENESS_INSIGHTS_SYSTEM_PROMPT,
+        system: APP_CONFIG.ai.completenessInsights,
         maxTokens: 4096,
+        signal,
       },
       onDelta,
     )
@@ -233,11 +320,18 @@ export class GeminiAnalysisService {
    */
   async generateWishlistAdvice(
     onDelta: (text: string) => void,
-  ): Promise<{ text: string }> {
+    signal?: AbortSignal,
+  ): Promise<{ text: string; skipped?: boolean }> {
+    const gemini = getGeminiService()
+    if (!gemini.isConfigured()) {
+      return { text: 'Gemini AI is not configured. Please add your API key in Settings > Services.', skipped: true }
+    }
+
     const db = getDatabase()
 
-    const wishlistItems = db.getWishlistItems({ status: 'active', limit: 50 })
-    const stats = db.getLibraryStats()
+    const wishlistItems = await db.wishlist.getItems({ status: WishlistStatus.Active, limit: 50 })
+    const stats = await db.stats.getLibraryStats()
+    signal?.throwIfAborted()
 
     const dataContext = [
       '## Library Overview',
@@ -245,7 +339,7 @@ export class GeminiAnalysisService {
       '',
       `## Wishlist Items (${wishlistItems.length})`,
       JSON.stringify(
-        wishlistItems.map((item) => compact({
+        wishlistItems.map(item => compact({
           title: item.title,
           year: item.year,
           media_type: item.media_type,
@@ -268,138 +362,9 @@ export class GeminiAnalysisService {
             content: `Here is my wishlist. Please analyze it and provide shopping advice.\n\n${dataContext}`,
           },
         ],
-        system: WISHLIST_ADVICE_SYSTEM_PROMPT,
+        system: APP_CONFIG.ai.wishlistAdvice,
         maxTokens: 4096,
-      },
-      onDelta,
-    )
-
-    return { text: result.text }
-  }
-
-  /**
-   * Generate a storage optimization report.
-   */
-  async generateStorageOptimization(
-    onDelta: (text: string) => void,
-  ): Promise<{ text: string }> {
-    const db = getDatabase()
-    const stats = db.getLibraryStats()
-    const analytics = db.getStorageAnalytics()
-
-    const dataContext = [
-      '## Library Stats',
-      JSON.stringify(stats),
-      '',
-      '## Storage Analytics',
-      JSON.stringify({
-        total_size: formatSize(analytics.totalSize),
-        total_items: analytics.totalItems,
-        by_codec: analytics.byCodec.map((c: { codec: string; count: number; size: number }) => ({
-          codec: c.codec, count: c.count, size: formatSize(c.size),
-        })),
-        by_tier: analytics.byTier.map((t: { tier: string; count: number; size: number }) => ({
-          tier: t.tier, count: t.count, size: formatSize(t.size),
-        })),
-        codec_migration: {
-          h264_count: analytics.codecMigration.h264Count,
-          modern_count: analytics.codecMigration.modernCount,
-          total: analytics.codecMigration.totalCount,
-          modern_percentage: analytics.codecMigration.totalCount > 0
-            ? Math.round((analytics.codecMigration.modernCount / analytics.codecMigration.totalCount) * 100) : 0,
-        },
-      }),
-    ].join('\n')
-
-    const result = await getGeminiService().streamMessage(
-      {
-        messages: [
-          {
-            role: 'user',
-            content: `Here is my library storage and codec data. Please analyze it and recommend an optimization strategy.\n\n${dataContext}`,
-          },
-        ],
-        system: STORAGE_OPTIMIZATION_SYSTEM_PROMPT,
-        maxTokens: 4096,
-      },
-      onDelta,
-    )
-
-    return { text: result.text }
-  }
-
-  /**
-   * Generate a music quality report.
-   */
-  async generateMusicQualityReport(
-    onDelta: (text: string) => void,
-  ): Promise<{ text: string }> {
-    const db = getDatabase()
-    const musicStats = db.getMusicStats()
-
-    // Get quality distribution
-    const allAlbums = db.getMusicAlbums({ limit: 10000 }) as unknown as Record<string, unknown>[]
-    const tiers: Record<string, number> = {
-      HI_RES: 0, LOSSLESS: 0, LOSSY_HIGH: 0, LOSSY_MID: 0, LOSSY_LOW: 0, UNSCORED: 0,
-    }
-    for (const album of allAlbums) {
-      const quality = db.getMusicQualityScore(album.id as number)
-      if (quality) {
-        const tier = (quality as unknown as Record<string, unknown>).quality_tier as string
-        if (tier in tiers) tiers[tier]++
-        else tiers.UNSCORED++
-      } else {
-        tiers.UNSCORED++
-      }
-    }
-
-    // Get albums needing upgrade
-    const upgradeAlbums = db.getAlbumsNeedingUpgrade(20)
-
-    // Get artist completeness summary
-    const artistCompleteness = db.getAllArtistCompleteness() as unknown as Record<string, unknown>[]
-    const incompleteArtists = artistCompleteness
-      .filter(a => (a.completeness_percentage as number) < 100)
-      .slice(0, 15)
-
-    const dataContext = [
-      '## Music Library Stats',
-      JSON.stringify(musicStats),
-      '',
-      '## Quality Distribution',
-      JSON.stringify({ total_albums: allAlbums.length, distribution: tiers,
-        lossless_percentage: allAlbums.length > 0
-          ? Math.round(((tiers.LOSSLESS + tiers.HI_RES) / allAlbums.length) * 100) : 0,
-      }),
-      '',
-      '## Albums Needing Upgrade (up to 20)',
-      JSON.stringify(upgradeAlbums.map((a) => compact({
-        title: a.title,
-        artist_name: a.artist_name,
-        best_audio_codec: a.best_audio_codec,
-        avg_audio_bitrate: a.avg_audio_bitrate,
-        track_count: a.track_count,
-      }))),
-      '',
-      `## Incomplete Artists (${incompleteArtists.length} of ${artistCompleteness.length})`,
-      JSON.stringify(incompleteArtists.map((a: Record<string, unknown>) => compact({
-        artist_name: a.artist_name,
-        total_albums: a.total_albums,
-        owned_albums: a.owned_albums,
-        completeness_percentage: a.completeness_percentage,
-      }))),
-    ].join('\n')
-
-    const result = await getGeminiService().streamMessage(
-      {
-        messages: [
-          {
-            role: 'user',
-            content: `Here is my music library quality data. Please analyze it and recommend a quality upgrade strategy.\n\n${dataContext}`,
-          },
-        ],
-        system: MUSIC_QUALITY_SYSTEM_PROMPT,
-        maxTokens: 4096,
+        signal,
       },
       onDelta,
     )

@@ -1,4 +1,3 @@
-
 import path from 'node:path'
 import { PathUtils } from './utils/PathUtils'
 
@@ -66,13 +65,6 @@ export class MediaPathAuthorization {
     }
     if (Array.isArray(config.paths)) {
       for (const p of config.paths) {
-        if (typeof p === 'string' && p.trim().length > 0) {
-          roots.push(p.trim())
-        }
-      }
-    }
-    if (Array.isArray(config.plexLibraryPaths)) {
-      for (const p of config.plexLibraryPaths) {
         if (typeof p === 'string' && p.trim().length > 0) {
           roots.push(p.trim())
         }

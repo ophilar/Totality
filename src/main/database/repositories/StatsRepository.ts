@@ -1,0 +1,476 @@
+import { eq, and, sql, asc, desc, lt, countDistinct, exists, count, avg, sum } from 'drizzle-orm'
+import type { SQLWrapper } from 'drizzle-orm'
+import type { DashboardDataSection, DashboardSummary, MovieCollection, MusicAlbum, MusicCompletenessStats } from '@main/types/database'
+
+import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import * as schema from '@main/database/drizzleSchema'
+import { toSnakeCaseMediaItem, toSnakeCaseArtistCompleteness, toSnakeCaseSeriesCompleteness } from '@main/database/utils/mappers'
+
+export class StatsRepository {
+  constructor(
+    private drizzle: LibSQLDatabase<typeof schema>
+  ) {}
+
+  public async getDashboardSummary(
+    sourceId?: string,
+    sections: DashboardDataSection[] = ['upgrades', 'collections', 'series', 'artists']
+  ): Promise<DashboardSummary> {
+    const refreshes = new Set(sections)
+    // 1. Settings
+    const settingsList = await this.drizzle.select({ key: schema.settings.key, value: schema.settings.value })
+      .from(schema.settings)
+      .where(sql`key IN ('completeness_include_eps', 'completeness_include_singles', 'dashboard_upgrade_sort', 'dashboard_collection_sort', 'dashboard_series_sort', 'dashboard_artist_sort', 'dashboard_collection_sort_order', 'dashboard_series_sort_order', 'dashboard_artist_sort_order')`)
+      .all()
+    
+    const settingsMap = settingsList.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.value }), {} as Record<string, string>)
+
+    const uSort = settingsMap['dashboard_upgrade_sort'] || 'quality'
+    const cSort = settingsMap['dashboard_collection_sort'] || 'completeness'
+    const sSort = settingsMap['dashboard_series_sort'] || 'completeness'
+    const aSort = settingsMap['dashboard_artist_sort'] || 'completeness'
+    const cOrder = settingsMap['dashboard_collection_sort_order'] === 'asc' ? 'asc' : 'desc'
+    const sOrder = settingsMap['dashboard_series_sort_order'] === 'asc' ? 'asc' : 'desc'
+    const aOrder = settingsMap['dashboard_artist_sort_order'] === 'asc' ? 'asc' : 'desc'
+
+    // Sort order helpers
+    const getUpgradeOrder = (item: typeof schema.mediaItems, q: typeof schema.qualityScores) => {
+      if (uSort === 'efficiency') return [asc(q.efficiencyScore), desc(q.storageDebtBytes)]
+      if (uSort === 'recent') return [desc(item.createdAt)]
+      if (uSort === 'title') return [asc(item.title)]
+      return [asc(q.tierScore)]
+    }
+
+    const getCollectionOrder = () => {
+      if (cSort === 'name') return [cOrder === 'asc' ? asc(schema.movieCollections.collectionName) : desc(schema.movieCollections.collectionName)]
+      if (cSort === 'recent') return [cOrder === 'asc' ? asc(schema.movieCollections.createdAt) : desc(schema.movieCollections.createdAt)]
+      return [cOrder === 'asc' ? asc(schema.movieCollections.completenessPercentage) : desc(schema.movieCollections.completenessPercentage)]
+    }
+
+    const getSeriesOrder = () => {
+      if (sSort === 'name') return [sOrder === 'asc' ? asc(schema.seriesCompleteness.seriesTitle) : desc(schema.seriesCompleteness.seriesTitle)]
+      if (sSort === 'recent') return [sOrder === 'asc' ? asc(schema.seriesCompleteness.createdAt) : desc(schema.seriesCompleteness.createdAt)]
+      return [sOrder === 'asc' ? asc(schema.seriesCompleteness.completenessPercentage) : desc(schema.seriesCompleteness.completenessPercentage)]
+    }
+
+    const getArtistOrder = () => {
+      if (aSort === 'name') return [aOrder === 'asc' ? asc(schema.artistCompleteness.artistName) : desc(schema.artistCompleteness.artistName)]
+      return [aOrder === 'asc' ? asc(schema.artistCompleteness.completenessPercentage) : desc(schema.artistCompleteness.completenessPercentage)]
+    }
+
+    // Common conditions for library visibility
+    const visibilitySubquery = (sourceCol: SQLWrapper, libCol: SQLWrapper) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
+    const sourceEnabledSubquery = (sourceCol: SQLWrapper) => sql`(SELECT is_enabled FROM media_sources s WHERE s.source_id = ${sourceCol}) = 1`
+
+    // 2. Movie Upgrades
+    const movieUpgradesQuery = this.drizzle.select({ item: schema.mediaItems, q: schema.qualityScores })
+      .from(schema.mediaItems)
+      .innerJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+      .where(and(
+        eq(schema.mediaItems.type, 'movie'),
+        eq(schema.qualityScores.needsUpgrade, 1),
+        sourceEnabledSubquery(schema.mediaItems.sourceId),
+        visibilitySubquery(schema.mediaItems.sourceId, schema.mediaItems.libraryId),
+        sourceId ? eq(schema.mediaItems.sourceId, sourceId) : undefined,
+        sql`media_items.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'media_upgrade' AND reference_id IS NOT NULL)`
+      ))
+      .orderBy(...getUpgradeOrder(schema.mediaItems, schema.qualityScores))
+      .limit(100)
+
+    // 3. TV Upgrades
+    const tvUpgradesQuery = this.drizzle.select({ item: schema.mediaItems, q: schema.qualityScores })
+      .from(schema.mediaItems)
+      .innerJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+      .where(and(
+        eq(schema.mediaItems.type, 'episode'),
+        eq(schema.qualityScores.needsUpgrade, 1),
+        sourceEnabledSubquery(schema.mediaItems.sourceId),
+        visibilitySubquery(schema.mediaItems.sourceId, schema.mediaItems.libraryId),
+        sourceId ? eq(schema.mediaItems.sourceId, sourceId) : undefined,
+        sql`media_items.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'media_upgrade' AND reference_id IS NOT NULL)`
+      ))
+      .orderBy(...getUpgradeOrder(schema.mediaItems, schema.qualityScores))
+      .limit(100)
+
+    // 4. Music Upgrades
+    const musicUpgradeOrderBy = uSort === 'efficiency' ? [asc(schema.musicQualityScores.efficiencyScore), desc(schema.musicQualityScores.storageDebtBytes)] :
+                          uSort === 'recent' ? [desc(schema.musicAlbums.createdAt)] :
+                          uSort === 'title' ? [asc(schema.musicAlbums.title)] : [asc(schema.musicQualityScores.tierScore)]
+
+    const musicUpgradesQuery = this.drizzle.select({ album: schema.musicAlbums, q: schema.musicQualityScores })
+      .from(schema.musicAlbums)
+      .innerJoin(schema.musicQualityScores, eq(schema.musicAlbums.id, schema.musicQualityScores.albumId))
+      .where(and(
+        eq(schema.musicQualityScores.needsUpgrade, 1),
+        sourceEnabledSubquery(schema.musicAlbums.sourceId),
+        visibilitySubquery(schema.musicAlbums.sourceId, schema.musicAlbums.libraryId),
+        sourceId ? eq(schema.musicAlbums.sourceId, sourceId) : undefined,
+        sql`music_albums.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'media_upgrade' AND reference_id IS NOT NULL)`
+      ))
+      .orderBy(...musicUpgradeOrderBy)
+      .limit(100)
+
+    // 5. Incomplete Collections
+    const collectionsQuery = this.drizzle.select().from(schema.movieCollections)
+      .where(and(
+        lt(schema.movieCollections.completenessPercentage, 100),
+        sourceEnabledSubquery(schema.movieCollections.sourceId),
+        visibilitySubquery(schema.movieCollections.sourceId, schema.movieCollections.libraryId),
+        sourceId ? eq(schema.movieCollections.sourceId, sourceId) : undefined
+      ))
+      .orderBy(...getCollectionOrder())
+
+    // 6. Incomplete Series
+    const seriesQuery = this.drizzle.select().from(schema.seriesCompleteness)
+      .where(and(
+        lt(schema.seriesCompleteness.completenessPercentage, 100),
+        sourceEnabledSubquery(schema.seriesCompleteness.sourceId),
+        visibilitySubquery(schema.seriesCompleteness.sourceId, schema.seriesCompleteness.libraryId),
+        sourceId ? eq(schema.seriesCompleteness.sourceId, sourceId) : undefined
+      ))
+      .orderBy(...getSeriesOrder())
+
+    // 7. Incomplete Artists
+    const artistsQuery = this.drizzle.select().from(schema.artistCompleteness)
+      .where(and(
+        lt(schema.artistCompleteness.completenessPercentage, 100),
+        exists(
+          this.drizzle.select().from(schema.musicArtists)
+            .where(and(
+              eq(schema.musicArtists.name, schema.artistCompleteness.artistName),
+              sourceEnabledSubquery(schema.musicArtists.sourceId),
+              visibilitySubquery(schema.musicArtists.sourceId, schema.musicArtists.libraryId)
+            ))
+        )
+      ))
+      .orderBy(...getArtistOrder())
+
+    // Parallel execution
+    const [
+      movieUpgradesRows, tvUpgradesRows, musicUpgradesRows,
+      collectionsRows, seriesRows, artistsRows,
+      collEx, serEx, artEx
+    ] = await Promise.all([
+      refreshes.has('upgrades') ? movieUpgradesQuery.all() : [],
+      refreshes.has('upgrades') ? tvUpgradesQuery.all() : [],
+      refreshes.has('upgrades') ? musicUpgradesQuery.all() : [],
+      refreshes.has('collections') ? collectionsQuery.all() : [],
+      refreshes.has('series') ? seriesQuery.all() : [],
+      refreshes.has('artists') ? artistsQuery.all() : [],
+      refreshes.has('collections') ? this.drizzle.select({ reference_key: schema.exclusions.referenceKey, parent_key: schema.exclusions.parentKey }).from(schema.exclusions).where(eq(schema.exclusions.exclusionType, 'collection_movie')).all() : [],
+      refreshes.has('series') ? this.drizzle.select({ reference_key: schema.exclusions.referenceKey, parent_key: schema.exclusions.parentKey }).from(schema.exclusions).where(eq(schema.exclusions.exclusionType, 'series_episode')).all() : [],
+      refreshes.has('artists') ? this.drizzle.select({ reference_key: schema.exclusions.referenceKey, parent_key: schema.exclusions.parentKey }).from(schema.exclusions).where(eq(schema.exclusions.exclusionType, 'artist_album')).all() : []
+    ])
+
+    // Mapper helper
+    const mapItem = (r: unknown) => toSnakeCaseMediaItem(r)
+
+    // Process Collections exclusions
+    const incompleteCollections: MovieCollection[] = []
+    for (const c of collectionsRows) {
+      const missing = JSON.parse(c.missingMovies || '[]')
+      const filtered = missing.filter((m: unknown) => {
+        if (!m || typeof m !== 'object' || !('tmdb_id' in m)) return true
+        const tmdbId = (m as { tmdb_id: unknown }).tmdb_id
+        return !collEx.some(ex => ex.reference_key === String(tmdbId) && ex.parent_key === String(c.tmdbCollectionId))
+      })
+      const owned = c.ownedMovies || 0
+      const total = owned + filtered.length
+      const completeness = total > 0 ? (owned / total) * 100 : 100
+      if (completeness < 100 && total > 1) {
+        incompleteCollections.push({ 
+          ...c, 
+          tmdb_collection_id: c.tmdbCollectionId, collection_name: c.collectionName, source_id: c.sourceId, library_id: c.libraryId,
+          total_movies: total, owned_movies: owned, missing_movies: JSON.stringify(filtered), 
+          completeness_percentage: completeness, poster_url: c.posterUrl || undefined, backdrop_url: c.backdropUrl || undefined
+        } as unknown as MovieCollection)
+      }
+    }
+
+    // 8. Storage Waste
+    const storageWasteRows = refreshes.has('upgrades') ? await this.drizzle.select({ item: schema.mediaItems, q: schema.qualityScores })
+      .from(schema.mediaItems)
+      .innerJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+      .where(and(
+        sql`quality_scores.storage_debt_bytes > 1073741824`,
+        sourceEnabledSubquery(schema.mediaItems.sourceId),
+        visibilitySubquery(schema.mediaItems.sourceId, schema.mediaItems.libraryId),
+        sourceId ? eq(schema.mediaItems.sourceId, sourceId) : undefined,
+        sql`media_items.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'cleanup_radar' AND reference_id IS NOT NULL)`
+      ))
+      .orderBy(desc(schema.qualityScores.storageDebtBytes))
+      .limit(50)
+      .all() : []
+
+    return {
+      movieUpgrades: movieUpgradesRows.map(mapItem),
+      tvUpgrades: tvUpgradesRows.map(mapItem),
+      musicUpgrades: musicUpgradesRows.map(r => {
+        const album = r.album
+        return {
+          ...album,
+          source_id: album.sourceId,
+          source_type: album.sourceType,
+          library_id: album.libraryId,
+          provider_id: album.providerId,
+          artist_id: album.artistId,
+          artist_name: album.artistName,
+          sort_title: album.sortTitle,
+          musicbrainz_id: album.musicbrainzId,
+          musicbrainz_release_group_id: album.musicbrainzReleaseGroupId,
+          album_type: album.albumType,
+          track_count: album.trackCount,
+          total_duration: album.totalDuration,
+          total_size: album.totalSize,
+          best_audio_codec: album.bestAudioCodec,
+          best_audio_bitrate: album.bestAudioBitrate,
+          best_sample_rate: album.bestSampleRate,
+          best_bit_depth: album.bestBitDepth,
+          avg_audio_bitrate: album.avgAudioBitrate,
+          thumb_url: album.thumbUrl,
+          art_url: album.artUrl,
+          user_fixed_match: album.userFixedMatch === 1,
+          release_date: album.releaseDate,
+          added_at: album.addedAt,
+          created_at: album.createdAt,
+          updated_at: album.updatedAt,
+          quality_tier: r.q.qualityTier,
+          tier_quality: r.q.tierQuality,
+          tier_score: r.q.tierScore,
+          efficiency_score: r.q.efficiencyScore,
+          storage_debt_bytes: r.q.storageDebtBytes
+        }
+      }) as unknown as MusicAlbum[],
+      incompleteCollections,
+      incompleteSeries: seriesRows.filter(s => !serEx.some(ex => ex.reference_key === s.seriesTitle && ex.parent_key === s.seriesTitle)).map(s => toSnakeCaseSeriesCompleteness(s)),
+      incompleteArtists: artistsRows.filter(a => !artEx.some(ex => ex.reference_key === a.artistName && ex.parent_key === a.artistName)).map(a => toSnakeCaseArtistCompleteness(a)),
+      storageWaste: storageWasteRows.map(mapItem),
+      settings: {
+        includeEps: settingsMap['completeness_include_eps'] !== 'false',
+        includeSingles: settingsMap['completeness_include_singles'] !== 'false',
+        upgradeSort: settingsMap['dashboard_upgrade_sort'] || 'quality',
+        collectionSort: settingsMap['dashboard_collection_sort'] || 'completeness',
+        seriesSort: settingsMap['dashboard_series_sort'] || 'completeness',
+        artistSort: settingsMap['dashboard_artist_sort'] || 'completeness',
+        collectionSortOrder: cOrder,
+        seriesSortOrder: sOrder,
+        artistSortOrder: aOrder
+      }
+    }
+  }
+
+  public async getLibraryStats(sourceId?: string): Promise<{
+    totalItems: number; totalMovies: number; totalEpisodes: number; totalShows: number;
+    lowQualityCount: number; needsUpgradeCount: number; averageQualityScore: number;
+    movieNeedsUpgradeCount: number; movieAverageQualityScore: number;
+    tvNeedsUpgradeCount: number; tvAverageQualityScore: number;
+  }> {
+    const visibilitySubquery = (sourceCol: SQLWrapper, libCol: SQLWrapper) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
+    const sourceEnabledSubquery = (sourceCol: SQLWrapper) => sql`(SELECT is_enabled FROM media_sources s WHERE s.source_id = ${sourceCol}) = 1`
+
+    const baseQuery = this.drizzle.select()
+      .from(schema.mediaItems)
+      .where(and(
+        sourceEnabledSubquery(schema.mediaItems.sourceId),
+        visibilitySubquery(schema.mediaItems.sourceId, schema.mediaItems.libraryId),
+        sourceId ? eq(schema.mediaItems.sourceId, sourceId) : undefined
+      ))
+
+    const [totalItems, totalMovies, totalEpisodes, totalShows, qualityStats] = await Promise.all([
+      this.drizzle.select({ count: count() }).from(baseQuery.as('b')).get(),
+      this.drizzle.select({ count: count() }).from(baseQuery.as('b')).where(eq(sql`type`, 'movie')).get(),
+      this.drizzle.select({ count: count() }).from(baseQuery.as('b')).where(eq(sql`type`, 'episode')).get(),
+      this.drizzle.select({ count: countDistinct(schema.mediaItems.seriesTitle) }).from(schema.mediaItems).where(and(eq(schema.mediaItems.type, 'episode'), sourceEnabledSubquery(schema.mediaItems.sourceId), visibilitySubquery(schema.mediaItems.sourceId, schema.mediaItems.libraryId), sourceId ? eq(schema.mediaItems.sourceId, sourceId) : undefined)).get(),
+      this.drizzle.select({
+        lowQualityCount: sql<number>`count(CASE WHEN ${schema.qualityScores.isLowQuality} = 1 THEN 1 END)`,
+        needsUpgradeCount: sql<number>`count(CASE WHEN ${schema.qualityScores.needsUpgrade} = 1 THEN 1 END)`,
+        averageQualityScore: avg(schema.qualityScores.overallScore),
+        movieNeedsUpgradeCount: sql<number>`count(CASE WHEN ${schema.mediaItems.type} = 'movie' AND ${schema.qualityScores.needsUpgrade} = 1 THEN 1 END)`,
+        movieAverageQualityScore: sql<number>`avg(CASE WHEN ${schema.mediaItems.type} = 'movie' THEN ${schema.qualityScores.overallScore} END)`,
+        tvNeedsUpgradeCount: sql<number>`count(CASE WHEN ${schema.mediaItems.type} = 'episode' AND ${schema.qualityScores.needsUpgrade} = 1 THEN 1 END)`,
+        tvAverageQualityScore: sql<number>`avg(CASE WHEN ${schema.mediaItems.type} = 'episode' THEN ${schema.qualityScores.overallScore} END)`
+      })
+      .from(schema.mediaItems)
+      .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+      .where(and(
+        sourceEnabledSubquery(schema.mediaItems.sourceId),
+        visibilitySubquery(schema.mediaItems.sourceId, schema.mediaItems.libraryId),
+        sourceId ? eq(schema.mediaItems.sourceId, sourceId) : undefined
+      ))
+      .get()
+    ])
+
+    return {
+      totalItems: totalItems?.count || 0,
+      totalMovies: totalMovies?.count || 0,
+      totalEpisodes: totalEpisodes?.count || 0,
+      totalShows: totalShows?.count || 0,
+      lowQualityCount: qualityStats?.lowQualityCount || 0,
+      needsUpgradeCount: qualityStats?.needsUpgradeCount || 0,
+      averageQualityScore: Math.round(Number(qualityStats?.averageQualityScore || 0)),
+      movieNeedsUpgradeCount: qualityStats?.movieNeedsUpgradeCount || 0,
+      movieAverageQualityScore: Math.round(Number(qualityStats?.movieAverageQualityScore || 0)),
+      tvNeedsUpgradeCount: qualityStats?.tvNeedsUpgradeCount || 0,
+      tvAverageQualityScore: Math.round(Number(qualityStats?.tvAverageQualityScore || 0)),
+    }
+  }
+
+  public async getItemsCountBySource(sourceId: string): Promise<number> {
+    const visibilitySubquery = (sourceCol: SQLWrapper, libCol: SQLWrapper) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
+    
+    const res = await this.drizzle.select({ count: count() })
+      .from(schema.mediaItems)
+      .where(and(
+        eq(schema.mediaItems.sourceId, sourceId),
+        visibilitySubquery(schema.mediaItems.sourceId, schema.mediaItems.libraryId),
+        sql`(SELECT is_enabled FROM media_sources s WHERE s.source_id = media_items.source_id) = 1`
+      ))
+      .get()
+    return res?.count || 0
+  }
+
+  public async getSourceStats(): Promise<Array<{ sourceId: string, displayName: string, sourceType: string, isEnabled: boolean, itemCount: number, lastScanAt?: string }>> {
+    const visibilitySubquery = (sourceCol: SQLWrapper, libCol: SQLWrapper) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
+
+    const rows = await this.drizzle.select({
+      sourceId: schema.mediaSources.sourceId,
+      displayName: schema.mediaSources.displayName,
+      sourceType: schema.mediaSources.sourceType,
+      isEnabled: schema.mediaSources.isEnabled,
+      lastScanAt: schema.mediaSources.lastScanAt,
+      itemCount: count(schema.mediaItems.id)
+    })
+    .from(schema.mediaSources)
+    .leftJoin(schema.mediaItems, and(
+      eq(schema.mediaSources.sourceId, schema.mediaItems.sourceId),
+      visibilitySubquery(schema.mediaItems.sourceId, schema.mediaItems.libraryId)
+    ))
+    .groupBy(schema.mediaSources.sourceId)
+    .all()
+
+    return rows.map(r => ({
+      ...r,
+      isEnabled: !!r.isEnabled,
+      itemCount: r.itemCount || 0,
+      lastScanAt: r.lastScanAt || undefined
+    }))
+  }
+
+  public async getAggregatedSourceStats(): Promise<{
+    totalSources: number;
+    enabledSources: number;
+    totalItems: number;
+    bySource: Array<{ sourceId: string, displayName: string, sourceType: string, isEnabled: boolean, itemCount: number, lastScanAt?: string }>;
+  }> {
+    const bySource = await this.getSourceStats()
+    const totalSources = bySource.length
+    const enabledSources = bySource.filter(s => s.isEnabled).length
+    const totalItems = bySource.reduce((acc, curr) => acc + curr.itemCount, 0)
+
+    return {
+      totalSources,
+      enabledSources,
+      totalItems,
+      bySource
+    }
+  }
+
+  public async getMusicCompletenessStats(sourceId?: string): Promise<MusicCompletenessStats> {
+    const conditions = []
+    if (sourceId) {
+      conditions.push(exists(
+        this.drizzle.select().from(schema.musicArtists)
+          .where(and(
+            eq(schema.musicArtists.name, schema.artistCompleteness.artistName),
+            eq(schema.musicArtists.sourceId, sourceId)
+          ))
+      ))
+    }
+
+    const [stats, missingRes] = await Promise.all([
+      this.drizzle.select({
+        total: count(),
+        analyzed: sql<number>`count(CASE WHEN last_sync_at IS NOT NULL THEN 1 END)`,
+        complete: sql<number>`count(CASE WHEN completeness_percentage >= 100 THEN 1 END)`,
+        incomplete: sql<number>`count(CASE WHEN completeness_percentage < 100 THEN 1 END)`,
+        average: avg(schema.artistCompleteness.completenessPercentage)
+      })
+      .from(schema.artistCompleteness)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .get(),
+      this.drizzle.select({
+        total: sum(sql`JSON_ARRAY_LENGTH(COALESCE(missing_albums, "[]")) + JSON_ARRAY_LENGTH(COALESCE(missing_eps, "[]")) + JSON_ARRAY_LENGTH(COALESCE(missing_singles, "[]"))`)
+      })
+      .from(schema.artistCompleteness)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .get()
+    ])
+
+    return {
+      totalArtists: stats?.total || 0,
+      analyzedArtists: stats?.analyzed || 0,
+      completeArtists: stats?.complete || 0,
+      incompleteArtists: stats?.incomplete || 0,
+      totalMissingAlbums: Number(missingRes?.total || 0),
+      averageCompleteness: Math.round(Number(stats?.average || 0))
+    }
+  }
+
+  public async getMusicQualityDistribution(): Promise<Record<string, number>> {
+    const rows = await this.drizzle.select({
+      qualityTier: schema.musicQualityScores.qualityTier,
+      count: count()
+    })
+    .from(schema.musicQualityScores)
+    .groupBy(schema.musicQualityScores.qualityTier)
+    .all()
+
+    const distribution: Record<string, number> = { HI_RES: 0, LOSSLESS: 0, LOSSY_HIGH: 0, LOSSY_MID: 0, LOSSY_LOW: 0 }
+    rows.forEach(r => { if (r.qualityTier in distribution) distribution[r.qualityTier] = r.count })
+    return distribution
+  }
+
+  public async getMusicLibraryStats(sourceId?: string): Promise<{ 
+    totalArtists: number; totalAlbums: number; totalTracks: number; totalSize: number; avgAudioBitrate: number 
+  }> {
+    const visibilitySubquery = (sourceCol: SQLWrapper, libCol: SQLWrapper) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
+    const sourceEnabledSubquery = (sourceCol: SQLWrapper) => sql`(SELECT is_enabled FROM media_sources s WHERE s.source_id = ${sourceCol}) = 1`
+    
+    const conditions = [sourceEnabledSubquery(schema.musicArtists.sourceId), visibilitySubquery(schema.musicArtists.sourceId, schema.musicArtists.libraryId)]
+    if (sourceId) conditions.push(eq(schema.musicArtists.sourceId, sourceId))
+
+    const [artistRes, albumRes, trackRes] = await Promise.all([
+      this.drizzle.select({ count: sql<number>`count(distinct ${schema.musicArtists.id})` })
+        .from(schema.musicArtists)
+        .where(and(...conditions))
+        .get(),
+      this.drizzle.select({ 
+        count: sql<number>`count(distinct ${schema.musicAlbums.id})`, 
+        totalSize: sql<number>`sum(${schema.musicAlbums.totalSize})`, 
+        avgBitrate: sql<number>`avg(${schema.musicAlbums.avgAudioBitrate})` 
+      })
+        .from(schema.musicAlbums)
+        .where(and(
+          sourceEnabledSubquery(schema.musicAlbums.sourceId),
+          visibilitySubquery(schema.musicAlbums.sourceId, schema.musicAlbums.libraryId),
+          sourceId ? eq(schema.musicAlbums.sourceId, sourceId) : undefined
+        ))
+        .get(),
+      this.drizzle.select({ count: sql<number>`count(distinct ${schema.musicTracks.id})` })
+        .from(schema.musicTracks)
+        .where(and(
+          sourceEnabledSubquery(schema.musicTracks.sourceId),
+          visibilitySubquery(schema.musicTracks.sourceId, schema.musicTracks.libraryId),
+          sourceId ? eq(schema.musicTracks.sourceId, sourceId) : undefined
+        ))
+        .get()
+    ])
+
+    return { 
+      totalArtists: artistRes?.count || 0, 
+      totalAlbums: albumRes?.count || 0, 
+      totalTracks: trackRes?.count || 0, 
+      totalSize: albumRes?.totalSize || 0, 
+      avgAudioBitrate: albumRes?.avgBitrate || 0 
+    }
+  }
+}

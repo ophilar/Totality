@@ -2,7 +2,7 @@ import { useCallback, type Dispatch, type SetStateAction } from 'react'
 import {
   emitDismissUpgrade,
   emitDismissCollectionMovie,
-} from '../../../utils/dismissEvents'
+} from '@/utils/dismissEvents'
 import type {
   MediaItem,
   MissingEpisode,
@@ -10,7 +10,7 @@ import type {
   SeriesCompletenessData,
   MovieCollectionData,
   ArtistCompletenessData,
-} from '../types'
+} from '@/components/library/types'
 
 interface MissingItemPopupState {
   type: 'episode' | 'season' | 'movie'
@@ -23,6 +23,7 @@ interface MissingItemPopupState {
   tmdbId?: string
   imdbId?: string
   seriesTitle?: string
+  seriesMapKey?: string
 }
 
 interface ToastOptions {
@@ -49,18 +50,14 @@ interface UseDismissHandlersOptions {
 
 interface UseDismissHandlersReturn {
   handleDismissUpgrade: (item: MediaItem) => Promise<void>
-  handleDismissMissingEpisode: (episode: MissingEpisode, seriesTitle: string, tmdbId?: string) => Promise<void>
-  handleDismissMissingSeason: (seasonNumber: number, seriesTitle: string, tmdbId?: string) => Promise<void>
+  handleDismissMissingEpisode: (episode: MissingEpisode, seriesTitle: string, tmdbId: string | undefined, seriesMapKey: string) => Promise<void>
+  handleDismissMissingSeason: (seasonNumber: number, seriesTitle: string, tmdbId: string | undefined, seriesMapKey: string) => Promise<void>
   handleDismissCollectionMovie: (tmdbId: string, movieTitle: string) => Promise<void>
   handleDismissAllMissingInCollection: () => Promise<void>
   handleDismissMissingAlbum: (album: MissingAlbum, artistName: string, artistMusicbrainzId?: string) => Promise<void>
   handleDismissMissingItem: () => void
 }
 
-/**
- * Hook to manage dismiss/exclusion handlers for upgrades, missing episodes,
- * missing seasons, and missing collection movies.
- */
 export function useDismissHandlers({
   setPaginatedMovies,
   setSelectedShowEpisodes,
@@ -82,13 +79,12 @@ export function useDismissHandlers({
         : item.title
       const exclusionId = await window.electronAPI.addExclusion('media_upgrade', item.id, undefined, undefined, title)
       setPaginatedMovies(prev => prev.map(m =>
-        m.id === item.id ? { ...m, needs_upgrade: false, tier_quality: 'UNKNOWN' } : m
+        m.id === item.id ? { ...m, needs_upgrade: false, tier_quality: m.tier_quality === 'LOW' ? 'MEDIUM' : m.tier_quality } : m
       ))
       setSelectedShowEpisodes(prev => prev.map(e =>
-        e.id === item.id ? { ...e, needs_upgrade: false, tier_quality: 'UNKNOWN' } : e
+        e.id === item.id ? { ...e, needs_upgrade: false, tier_quality: e.tier_quality === 'LOW' ? 'MEDIUM' : e.tier_quality } : e
       ))
-      emitDismissUpgrade({ mediaId: item.id })
-      window.dispatchEvent(new CustomEvent('exclusions-changed'))
+      emitDismissUpgrade({ mediaId: item.id! })
       addToast({
         type: 'success',
         title: 'Upgrade dismissed',
@@ -105,48 +101,46 @@ export function useDismissHandlers({
               setSelectedShowEpisodes(prev => prev.map(e =>
                 e.id === item.id ? { ...e, needs_upgrade: true } : e
               ))
-              window.dispatchEvent(new CustomEvent('exclusions-changed'))
-            } catch (error) {
-              addToast({ type: 'error', title: 'Could not restore upgrade recommendation', message: error instanceof Error ? error.message : String(error) })
+            } catch (err) {
+              window.electronAPI.log.error('[useDismissHandlers]', 'Failed to undo dismissed upgrade:', err)
             }
           },
         },
       })
     } catch (err) {
-      console.error('Failed to dismiss upgrade:', err)
+      window.electronAPI.log.error('[useDismissHandlers]', 'Failed to dismiss upgrade:', err)
     }
   }, [setPaginatedMovies, setSelectedShowEpisodes, addToast])
 
-  const handleDismissMissingEpisode = useCallback(async (episode: MissingEpisode, seriesTitle: string, tmdbId?: string) => {
+  const handleDismissMissingEpisode = useCallback(async (episode: MissingEpisode, seriesTitle: string, tmdbId: string | undefined, seriesMapKey: string) => {
     try {
       const refKey = `S${episode.season_number}E${episode.episode_number}`
       const title = `${seriesTitle} ${refKey}`
       await window.electronAPI.addExclusion('series_episode', undefined, refKey, tmdbId || seriesTitle, title)
       setSeriesCompleteness(prev => {
         const next = new Map(prev)
-        const data = next.get(seriesTitle)
-        if (data?.missing_episodes) {
-          const missing = data.missing_episodes
-          const filtered = missing.filter(e => !(e.season_number === episode.season_number && e.episode_number === episode.episode_number))
-          // Also update missing_seasons if no episodes remain for dismissed season
-          const remainingSeasonsWithMissing = new Set(filtered.map(e => e.season_number))
-          const filteredSeasons = (data.missing_seasons || []).filter(s => remainingSeasonsWithMissing.has(s))
-          next.set(seriesTitle, { ...data, missing_episodes: filtered, missing_seasons: filteredSeasons })
-        }
+        const data = next.get(seriesMapKey)!
+        const missing: MissingEpisode[] = JSON.parse(data.missing_episodes)
+        const filtered = missing.filter(e => !(e.season_number === episode.season_number && e.episode_number === episode.episode_number))
+        const remainingSeasonsWithMissing = new Set(filtered.map(e => e.season_number))
+        const missSeasons: number[] = JSON.parse(data.missing_seasons)
+        next.set(seriesMapKey, {
+          ...data,
+          missing_episodes: JSON.stringify(filtered),
+          missing_seasons: JSON.stringify(missSeasons.filter(s => remainingSeasonsWithMissing.has(s))),
+        })
         return next
       })
-      window.dispatchEvent(new CustomEvent('exclusions-changed'))
       addToast({ type: 'success', title: 'Item dismissed', message: `"${title}" removed from recommendations` })
     } catch (err) {
-      console.error('Failed to dismiss missing episode:', err)
+      window.electronAPI.log.error('[useDismissHandlers]', 'Failed to dismiss missing episode:', err)
     }
   }, [setSeriesCompleteness, addToast])
 
-  const handleDismissMissingSeason = useCallback(async (seasonNumber: number, seriesTitle: string, tmdbId?: string) => {
+  const handleDismissMissingSeason = useCallback(async (seasonNumber: number, seriesTitle: string, tmdbId: string | undefined, seriesMapKey: string) => {
     try {
-      const data = seriesCompleteness.get(seriesTitle)
-      if (!data?.missing_episodes) return
-      const allMissing = data.missing_episodes
+      const data = seriesCompleteness.get(seriesMapKey)!
+      const allMissing: MissingEpisode[] = JSON.parse(data.missing_episodes)
       const seasonEpisodes = allMissing.filter(e => e.season_number === seasonNumber)
       await Promise.all(seasonEpisodes.map(ep => {
         const refKey = `S${ep.season_number}E${ep.episode_number}`
@@ -154,19 +148,21 @@ export function useDismissHandlers({
       }))
       setSeriesCompleteness(prev => {
         const next = new Map(prev)
-        const d = next.get(seriesTitle)
-        if (d?.missing_episodes) {
-          const filtered = d.missing_episodes.filter(e => e.season_number !== seasonNumber)
-          const remainingSeasonsWithMissing = new Set(filtered.map(e => e.season_number))
-          const filteredSeasons = (d.missing_seasons || []).filter(s => remainingSeasonsWithMissing.has(s))
-          next.set(seriesTitle, { ...d, missing_episodes: filtered, missing_seasons: filteredSeasons })
-        }
+        const current = next.get(seriesMapKey)!
+        const missing: MissingEpisode[] = JSON.parse(current.missing_episodes)
+        const filtered = missing.filter(e => e.season_number !== seasonNumber)
+        const remainingSeasonsWithMissing = new Set(filtered.map(e => e.season_number))
+        const missSeasons: number[] = JSON.parse(current.missing_seasons)
+        next.set(seriesMapKey, {
+          ...current,
+          missing_episodes: JSON.stringify(filtered),
+          missing_seasons: JSON.stringify(missSeasons.filter(s => remainingSeasonsWithMissing.has(s))),
+        })
         return next
       })
-      window.dispatchEvent(new CustomEvent('exclusions-changed'))
       addToast({ type: 'success', title: 'Season dismissed', message: `${seasonEpisodes.length} missing episodes from Season ${seasonNumber} removed` })
     } catch (err) {
-      console.error('Failed to dismiss missing season:', err)
+      window.electronAPI.log.error('[useDismissHandlers]', 'Failed to dismiss missing season:', err)
     }
   }, [seriesCompleteness, setSeriesCompleteness, addToast])
 
@@ -177,14 +173,17 @@ export function useDismissHandlers({
       await window.electronAPI.addExclusion('collection_movie', undefined, tmdbId, collectionId, movieTitle)
 
       const updateCollection = (c: MovieCollectionData): MovieCollectionData => {
-        const filtered = (c.missing_movies || []).filter(m => m.tmdb_id !== tmdbId)
-        const newTotal = c.total_movies - 1
-        return {
-          ...c,
-          missing_movies: filtered,
-          total_movies: newTotal,
-          completeness_percentage: newTotal > 0 ? c.owned_movies / newTotal * 100 : 100,
-        }
+        try {
+          const missing = JSON.parse(c.missing_movies || '[]')
+          const filtered = missing.filter((m: { tmdb_id: string }) => m.tmdb_id !== tmdbId)
+          const newTotal = c.total_movies - 1
+          return {
+            ...c,
+            missing_movies: JSON.stringify(filtered),
+            total_movies: newTotal,
+            completeness_percentage: newTotal > 0 ? c.owned_movies / newTotal * 100 : 100
+          }
+        } catch { return c }
       }
 
       setSelectedCollection(prev => prev ? updateCollection(prev) : prev)
@@ -193,10 +192,9 @@ export function useDismissHandlers({
             .filter(c => c.total_movies > 1)
       )
       emitDismissCollectionMovie({ collectionId, tmdbId })
-      window.dispatchEvent(new CustomEvent('exclusions-changed'))
       addToast({ type: 'success', title: 'Movie dismissed', message: `"${movieTitle}" removed from collection recommendations` })
     } catch (err) {
-      console.error('Failed to dismiss collection movie:', err)
+      window.electronAPI.log.error('[useDismissHandlers]', 'Failed to dismiss collection movie:', err)
     }
   }, [selectedCollection, setSelectedCollection, setMovieCollections, addToast])
 
@@ -211,10 +209,7 @@ export function useDismissHandlers({
           try {
             const parsed = JSON.parse(json || '[]') as Array<{ musicbrainz_id?: string }>
             return JSON.stringify(parsed.filter(item => item.musicbrainz_id !== album.musicbrainz_id))
-          } catch (error) {
-            console.error(`[useDismissHandlers] Invalid missing-album data for ${artistName}:`, error)
-            return json ?? '[]'
-          }
+          } catch { return json || '[]' }
         }
         const updated = { ...data }
         if (album.album_type === 'album') updated.missing_albums = removeFromJson(data.missing_albums)
@@ -223,17 +218,16 @@ export function useDismissHandlers({
         next.set(artistName, updated)
         return next
       })
-      window.dispatchEvent(new CustomEvent('exclusions-changed'))
       addToast({ type: 'success', title: 'Album dismissed', message: `"${album.title}" removed from recommendations` })
     } catch (err) {
-      console.error('Failed to dismiss missing album:', err)
+      window.electronAPI.log.error('[useDismissHandlers]', 'Failed to dismiss missing album:', err)
     }
   }, [setArtistCompleteness, addToast])
 
   const handleDismissAllMissingInCollection = useCallback(async () => {
     if (!selectedCollection) return
     try {
-      const missing = selectedCollection.missing_movies || []
+      const missing = JSON.parse(selectedCollection.missing_movies || '[]') as Array<{ tmdb_id: string; title: string }>
       if (missing.length === 0) return
       const collectionId = selectedCollection.tmdb_collection_id
       const collectionName = selectedCollection.collection_name
@@ -242,7 +236,7 @@ export function useDismissHandlers({
       ))
       const markComplete = (c: MovieCollectionData): MovieCollectionData => ({
         ...c,
-        missing_movies: [],
+        missing_movies: '[]',
         total_movies: c.owned_movies,
         completeness_percentage: 100,
       })
@@ -258,23 +252,29 @@ export function useDismissHandlers({
         message: `${missing.length} missing film${missing.length !== 1 ? 's' : ''} removed from "${collectionName}"`,
       })
     } catch (err) {
-      console.error('Failed to dismiss all collection movies:', err)
+      window.electronAPI.log.error('[useDismissHandlers]', 'Failed to dismiss all collection movies:', err)
+      addToast({
+        type: 'error',
+        title: 'Dismiss failed',
+        message: 'Could not dismiss collection movies'
+      })
     }
   }, [selectedCollection, setSelectedCollection, setMovieCollections, addToast])
 
   const handleDismissMissingItem = useCallback(() => {
     if (!selectedMissingItem) return
     const item = selectedMissingItem
-    if (item.type === 'episode' && item.seasonNumber !== undefined && item.episodeNumber !== undefined) {
-      handleDismissMissingEpisode(
+    if (item.type === 'episode' && item.seasonNumber !== undefined && item.episodeNumber !== undefined && item.seriesTitle && item.seriesMapKey) {
+      void handleDismissMissingEpisode(
         { season_number: item.seasonNumber, episode_number: item.episodeNumber, title: item.title, air_date: item.airDate },
-        item.seriesTitle || '',
-        item.tmdbId
+        item.seriesTitle,
+        item.tmdbId,
+        item.seriesMapKey
       )
-    } else if (item.type === 'season' && item.seasonNumber !== undefined) {
-      handleDismissMissingSeason(item.seasonNumber, item.seriesTitle || '', item.tmdbId)
+    } else if (item.type === 'season' && item.seasonNumber !== undefined && item.seriesTitle && item.seriesMapKey) {
+      void handleDismissMissingSeason(item.seasonNumber, item.seriesTitle, item.tmdbId, item.seriesMapKey)
     } else if (item.type === 'movie' && item.tmdbId) {
-      handleDismissCollectionMovie(item.tmdbId, item.title)
+      void handleDismissCollectionMovie(item.tmdbId, item.title)
     }
     setSelectedMissingItem(null)
   }, [selectedMissingItem, setSelectedMissingItem, handleDismissMissingEpisode, handleDismissMissingSeason, handleDismissCollectionMovie])

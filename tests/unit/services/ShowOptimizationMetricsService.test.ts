@@ -2,65 +2,58 @@ import { describe, expect, it } from 'vitest'
 import { aggregateShowOptimizationMetrics } from '@main/services/ShowOptimizationMetricsService'
 
 describe('aggregateShowOptimizationMetrics', () => {
-  it('sums known estimated savings across episodes', () => {
+  it('sums waste and size-weights scored episodes', () => {
     const result = aggregateShowOptimizationMetrics([
-      { sizeBytes: 100, estimatedSavingsBytes: 20 },
-      { sizeBytes: 300, estimatedSavingsBytes: 100 },
-      { sizeBytes: 0 },
+      { sizeBytes: 100, recoverableBytes: 20, efficiency: 0.5 },
+      { sizeBytes: 300, recoverableBytes: 100, efficiency: 0.9 },
+      { sizeBytes: 0, recoverableBytes: null, efficiency: null }
     ])
-
     expect(result.totalSize).toBe(400)
-    expect(result.totalEstimatedSavingsBytes).toBe(120)
-    expect(result.coverage).toBe('partial')
+    expect(result.totalRecoverableBytes).toBe(120)
+    expect(result.weightedEfficiency).toBeCloseTo(0.8)
+    expect(result.scoredEpisodeCount).toBe(2)
+    expect(result.unscoredEpisodeCount).toBe(1)
   })
 
-  it('does not invent savings for episodes without an estimate', () => {
+  it('weights only the bytes of scored episodes', () => {
     const result = aggregateShowOptimizationMetrics([
-      { sizeBytes: 100, estimatedSavingsBytes: 20 },
-      { sizeBytes: 900 },
+      { sizeBytes: 100, recoverableBytes: 20, efficiency: 0.5 },
+      { sizeBytes: 900, recoverableBytes: null, efficiency: null },
     ])
 
-    expect(result.totalEstimatedSavingsBytes).toBe(20)
-    expect(result.coverage).toBe('partial')
+    expect(result.weightedEfficiency).toBeCloseTo(0.5)
+    expect(result.unscoredEpisodeCount).toBe(1)
   })
 
-  it('returns no numeric series total when no episode has savings evidence', () => {
+  it('correctly aggregates integer percentage efficiency scores (0-100 scale)', () => {
     const result = aggregateShowOptimizationMetrics([
-      { sizeBytes: 100 },
-      { sizeBytes: 900, estimatedSavingsBytes: null },
+      { sizeBytes: 2000, recoverableBytes: 500, efficiency: 80 },
+      { sizeBytes: 8000, recoverableBytes: 2000, efficiency: 90 }
     ])
-
-    expect(result.totalEstimatedSavingsBytes).toBeNull()
-    expect(result.coverage).toBe('insufficient')
+    // (80 * 2000 + 90 * 8000) / 10000 = (160000 + 720000) / 10000 = 88
+    expect(result.weightedEfficiency).toBe(88)
+    expect(result.totalSize).toBe(10000)
+    expect(result.totalRecoverableBytes).toBe(2500)
+    expect(result.scoredEpisodeCount).toBe(2)
+    expect(result.unscoredEpisodeCount).toBe(0)
   })
 
-  it('preserves an evidenced zero when all planned episodes have complete coverage', () => {
+  it('falls back to simple average when all scored episodes have 0 size', () => {
     const result = aggregateShowOptimizationMetrics([
-      { sizeBytes: 100, estimatedSavingsBytes: 0, savingsCoverage: 'complete' },
-      { sizeBytes: 200, estimatedSavingsBytes: 0, savingsCoverage: 'complete' },
+      { sizeBytes: 0, recoverableBytes: 0, efficiency: 80 },
+      { sizeBytes: 0, recoverableBytes: 0, efficiency: 90 }
     ])
-
-    expect(result.totalEstimatedSavingsBytes).toBe(0)
-    expect(result.coverage).toBe('complete')
+    expect(result.weightedEfficiency).toBe(85)
+    expect(result.scoredEpisodeCount).toBe(2)
   })
 
-  it('caps the series total at the combined episode source size', () => {
+  it('returns null weightedEfficiency when no episodes are scored', () => {
     const result = aggregateShowOptimizationMetrics([
-      { sizeBytes: 100, estimatedSavingsBytes: 90, savingsCoverage: 'complete' },
-      { sizeBytes: 200, estimatedSavingsBytes: 250, savingsCoverage: 'complete' },
+      { sizeBytes: 1000, recoverableBytes: null, efficiency: null }
     ])
-
-    expect(result.totalEstimatedSavingsBytes).toBe(300)
-  })
-
-  it('keeps evidenced savings when a source size is missing and marks the series partial', () => {
-    const result = aggregateShowOptimizationMetrics([
-      { sizeBytes: 100, estimatedSavingsBytes: 20, savingsCoverage: 'complete' },
-      { sizeBytes: null, estimatedSavingsBytes: 30, savingsCoverage: 'partial' },
-    ])
-
-    expect(result.totalSize).toBeNull()
-    expect(result.totalEstimatedSavingsBytes).toBe(50)
-    expect(result.coverage).toBe('partial')
+    expect(result.weightedEfficiency).toBeNull()
+    expect(result.scoredEpisodeCount).toBe(0)
+    expect(result.unscoredEpisodeCount).toBe(1)
   })
 })
+

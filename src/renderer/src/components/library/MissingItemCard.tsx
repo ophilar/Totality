@@ -1,7 +1,7 @@
 import { memo, useRef } from 'react'
 import { Tv, EyeOff } from 'lucide-react'
-import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
-import type { WishlistMediaType } from '../../contexts/WishlistContext'
+import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
+import type { WishlistMediaType } from '@/contexts/WishlistContext'
 
 interface MissingItemCardProps {
   type: 'episode' | 'season' | 'movie'
@@ -38,6 +38,8 @@ export const MissingItemCard = memo(function MissingItemCard({
   return (
     <div
       ref={cardRef}
+      role="button"
+      aria-label={`Open ${title}`}
       tabIndex={0}
       className="group cursor-pointer hover-scale outline-hidden"
       onClick={onClick}
@@ -48,7 +50,7 @@ export const MissingItemCard = memo(function MissingItemCard({
         }
       }}
     >
-      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-lg shadow-lg shadow-black/30">
+      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
         {/* Grayscale poster or placeholder */}
         {posterUrl ? (
           <img
@@ -70,9 +72,9 @@ export const MissingItemCard = memo(function MissingItemCard({
       {/* Title and wishlist button below poster */}
       <div className="pt-2 flex gap-2 items-start">
         <div className="flex-1 min-w-0">
-          <h4 className="font-medium text-label truncate text-muted-foreground">{title}</h4>
+          <h4 className="font-medium text-sm truncate text-muted-foreground">{title}</h4>
           {subtitle && (
-            <p className="text-caption text-muted-foreground/70">{subtitle}</p>
+            <p className="text-xs text-muted-foreground/70">{subtitle}</p>
           )}
         </div>
         {/* Action buttons */}
@@ -81,7 +83,7 @@ export const MissingItemCard = memo(function MissingItemCard({
             <button
               onClick={onDismiss}
               className="flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-              title="Hide from completeness"
+              title="Dismiss"
             >
               <EyeOff className="w-4 h-4" />
             </button>

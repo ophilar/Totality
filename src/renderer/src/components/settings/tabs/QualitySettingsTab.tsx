@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useId } from 'react'
-import { RotateCcw, Save, Loader2, RefreshCw, ChevronDown, Film, Music } from 'lucide-react'
+import { RotateCcw, Save, Loader2, RefreshCw, ChevronDown, Film, Music, Clapperboard } from 'lucide-react'
 
 // Default values for all quality settings
 const DEFAULT_SETTINGS = {
@@ -38,8 +38,18 @@ const DEFAULT_SETTINGS = {
   quality_codec_av1: 2.5,
   quality_codec_vp9: 1.8,
   quality_video_weight: 70,
+  quality_efficiency_sd_target: 1200,
+  quality_efficiency_720p_target: 2500,
+  quality_efficiency_1080p_target: 5000,
+  quality_efficiency_4k_target: 15000,
+  quality_efficiency_sd_bloat: 2500,
+  quality_efficiency_720p_bloat: 5000,
+  quality_efficiency_1080p_bloat: 10000,
+  quality_efficiency_4k_bloat: 30000,
+  quality_efficiency_trash_threshold: 60,
+  quality_efficiency_lossless_allowance: 4000,
+  quality_efficiency_hdr_overhead: 1.10,
 }
-
 type SettingsState = typeof DEFAULT_SETTINGS
 type ResolutionTier = 'sd' | '720p' | '1080p' | '4k'
 
@@ -56,14 +66,12 @@ const VIDEO_THRESHOLDS: Record<ResolutionTier, { min: number; max: number; step:
   '1080p': { min: 2000, max: 30000, step: 100 },
   '4k': { min: 5000, max: 80000, step: 500 },
 }
-
 const AUDIO_THRESHOLDS: Record<ResolutionTier, { min: number; max: number; step: number }> = {
   sd: { min: 64, max: 640, step: 8 },
   '720p': { min: 64, max: 1000, step: 8 },
   '1080p': { min: 64, max: 1500, step: 8 },
   '4k': { min: 64, max: 2000, step: 8 },
 }
-
 // Expandable card component (matching ServicesTab)
 interface SettingsCardProps {
   title: string
@@ -73,7 +81,6 @@ interface SettingsCardProps {
   onToggle: () => void
   children: React.ReactNode
 }
-
 function SettingsCard({
   title,
   description,
@@ -112,7 +119,6 @@ function SettingsCard({
     </div>
   )
 }
-
 function formatEffectiveThreshold(thresholdKbps: number, multiplier: number): string {
   const neededKbps = thresholdKbps / multiplier
   if (neededKbps >= 1000) {
@@ -148,7 +154,33 @@ export function QualitySettingsTab() {
   }
 
   useEffect(() => {
-    loadSettings()
+    queueMicrotask(() => {
+      void (async () => {
+        setIsLoading(true)
+        const allSettings = await window.electronAPI.getAllSettings()
+        const loaded: SettingsState = { ...DEFAULT_SETTINGS }
+        for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof SettingsState)[]) {
+          if (allSettings[key] !== undefined && allSettings[key] !== '') {
+            const value = parseFloat(allSettings[key])
+            if (!isNaN(value)) loaded[key] = value
+          }
+        }
+        setSettings(loaded)
+        setOriginalSettings(loaded)
+        setIsLoading(false)
+      })()
+    })
+  }, [])
+
+  useEffect(() => {
+    const cleanup = window.electronAPI.onTaskQueueTaskComplete?.((task) => {
+      if (task.type === 'quality-analysis') {
+        setIsReanalyzing(false)
+        setReanalyzeProgress(null)
+        setShowReanalyzePrompt(false)
+      }
+    })
+    return () => cleanup?.()
   }, [])
 
   useEffect(() => {
@@ -160,32 +192,8 @@ export function QualitySettingsTab() {
 
   useEffect(() => {
     const changed = JSON.stringify(settings) !== JSON.stringify(originalSettings)
-    setHasChanges(changed)
+    queueMicrotask(() => { setHasChanges(changed) })
   }, [settings, originalSettings])
-
-  const loadSettings = async () => {
-    setIsLoading(true)
-    try {
-      const allSettings = await window.electronAPI.getAllSettings()
-      const loaded: SettingsState = { ...DEFAULT_SETTINGS }
-
-      for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof SettingsState)[]) {
-        if (allSettings[key] !== undefined && allSettings[key] !== '') {
-          const value = parseFloat(allSettings[key])
-          if (!isNaN(value)) {
-            loaded[key] = value
-          }
-        }
-      }
-
-      setSettings(loaded)
-      setOriginalSettings(loaded)
-    } catch (error) {
-      console.error('Failed to load settings:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   const handleSave = async () => {
     setIsSaving(true)
@@ -196,7 +204,7 @@ export function QualitySettingsTab() {
       setOriginalSettings({ ...settings })
       setShowReanalyzePrompt(true)
     } catch (error) {
-      console.error('Failed to save settings:', error)
+      window.electronAPI.log.error('[QualitySettingsTab]', 'Failed to save settings:', error)
     } finally {
       setIsSaving(false)
     }
@@ -206,13 +214,14 @@ export function QualitySettingsTab() {
     setIsReanalyzing(true)
     setReanalyzeProgress({ current: 0, total: 0 })
     try {
-      await window.electronAPI.qualityAnalyzeAll()
+      await window.electronAPI.taskQueueAddTask({
+        type: 'quality-analysis',
+        label: 'Recalculate Media Quality (Settings)',
+      })
     } catch (error) {
-      console.error('Failed to re-analyze:', error)
-    } finally {
+      window.electronAPI.log.error('[QualitySettingsTab]', 'Failed to re-analyze:', error)
       setIsReanalyzing(false)
       setReanalyzeProgress(null)
-      setShowReanalyzePrompt(false)
     }
   }
 
@@ -380,6 +389,106 @@ export function QualitySettingsTab() {
             </div>
           </div>
 
+          {/* Efficiency UI Thresholds */}
+          <div className="border-t border-border pt-4 mt-2">
+            <h4 className="text-sm font-medium mb-2">Efficiency UI Thresholds</h4>
+            <p className="text-xs text-muted-foreground mb-3">
+              Configure when the "Efficiency Trash" icon appears in your library.
+            </p>
+
+            <div className="grid grid-cols-2 gap-4">
+              <NumberInput
+                label="Efficiency Score Trash Threshold (%)"
+                value={settings.quality_efficiency_trash_threshold}
+                min={0}
+                max={100}
+                step={5}
+                onChange={(v) => updateSetting('quality_efficiency_trash_threshold', v)}
+                hint="Items with efficiency below this will show the trash icon."
+              />
+            </div>
+          </div>
+
+          {/* Efficiency & Bloat */}
+          <div className="border-t border-border pt-4 mt-2">
+            <h4 className="text-sm font-medium mb-2">Efficiency & Bloat</h4>
+            <p className="text-xs text-muted-foreground mb-3">
+              Configure targets for storage efficiency analysis. These thresholds define when a file
+              is considered "efficient" or "bloated" for its resolution tier.
+            </p>
+
+            <div className="grid grid-cols-2 gap-4">
+              <QualityThreshold
+                label="Efficiency Target"
+                mediumValue={settings[`quality_efficiency_${selectedTier}_target` as keyof SettingsState] as number}
+                highValue={settings[`quality_efficiency_${selectedTier}_target` as keyof SettingsState] as number}
+                min={VIDEO_THRESHOLDS[selectedTier].min / 2}
+                max={VIDEO_THRESHOLDS[selectedTier].max / 2}
+                step={VIDEO_THRESHOLDS[selectedTier].step / 2}
+                unit="Mbps"
+                displayDivisor={1000}
+                lowLabel="Efficient"
+                mediumLabel="Target"
+                highLabel="Target"
+                onChange={(val) => {
+                  updateSetting(`quality_efficiency_${selectedTier}_target` as keyof SettingsState, val)
+                }}
+              />
+              <QualityThreshold
+                label="Bloat Threshold"
+                mediumValue={settings[`quality_efficiency_${selectedTier}_bloat` as keyof SettingsState] as number}
+                highValue={settings[`quality_efficiency_${selectedTier}_bloat` as keyof SettingsState] as number}
+                min={VIDEO_THRESHOLDS[selectedTier].min}
+                max={VIDEO_THRESHOLDS[selectedTier].max * 1.5}
+                step={VIDEO_THRESHOLDS[selectedTier].step}
+                unit="Mbps"
+                displayDivisor={1000}
+                lowLabel="Optimal"
+                mediumLabel="Bloat"
+                highLabel="Bloat"
+                onChange={(val) => {
+                  updateSetting(`quality_efficiency_${selectedTier}_bloat` as keyof SettingsState, val)
+                }}
+              />
+            </div>
+
+            <h4 className="text-xs font-medium mt-4 mb-2">Quality Allowances</h4>
+            <p className="text-[10px] text-muted-foreground mb-3">
+              High-value features like lossless audio and HDR require more space. These settings
+              grant "bitrate credits" so feature-rich files aren't unfairly penalized as bloat.
+            </p>
+
+            <div className="grid grid-cols-2 gap-4">
+              <QualityThreshold
+                label="Lossless Audio Allowance"
+                mediumValue={settings.quality_efficiency_lossless_allowance}
+                highValue={settings.quality_efficiency_lossless_allowance}
+                min={0}
+                max={10000}
+                step={500}
+                unit="Mbps"
+                displayDivisor={1000}
+                lowLabel="None"
+                mediumLabel="Allowance"
+                highLabel="Allowance"
+                onChange={(val) => updateSetting('quality_efficiency_lossless_allowance', val)}
+              />
+              <QualityThreshold
+                label="HDR Bloat Allowance"
+                mediumValue={Math.round(settings.quality_efficiency_hdr_overhead * 100)}
+                highValue={Math.round(settings.quality_efficiency_hdr_overhead * 100)}
+                min={100}
+                max={150}
+                step={5}
+                unit="%"
+                lowLabel="Standard"
+                mediumLabel="Allowance"
+                highLabel="Allowance"
+                onChange={(val) => updateSetting('quality_efficiency_hdr_overhead', val / 100)}
+              />
+            </div>
+          </div>
+
           {/* Codec Efficiency */}
           <div className="border-t border-border pt-4 mt-2">
             <h4 className="text-sm font-medium mb-2">Codec Efficiency</h4>
@@ -489,7 +598,18 @@ export function QualitySettingsTab() {
           </div>
         </div>
       </SettingsCard>
-{/* Footer */}
+
+      <SettingsCard
+        title="FFmpeg encoding guidance"
+        description="Totality uses FFmpeg for hardware HEVC and SVT-AV1 transcoding. Audio remains stream-copied. HDR metadata is retained only when the selected encoder and source format support it."
+        icon={<Clapperboard className="w-7 h-7" />}
+        expanded={expandedCards.has('ffmpeg')}
+        onToggle={() => toggleCard('ffmpeg')}
+      >
+        <p className="text-xs text-muted-foreground">Use HEVC NVENC or Quick Sync for fast HDR-compatible output. Use SVT-AV1 when software encoding time is acceptable and the playback client supports AV1. Totality verifies the produced streams before activation.</p>
+      </SettingsCard>
+
+      {/* Footer */}
       <div className="flex items-center justify-end gap-2 pt-3">
         <button
           onClick={handleReset}

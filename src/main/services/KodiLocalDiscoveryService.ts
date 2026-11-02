@@ -1,5 +1,3 @@
-
-import { getErrorMessage } from './utils/errorUtils'
 /**
  * KodiLocalDiscoveryService
  *
@@ -13,10 +11,12 @@ import { getErrorMessage } from './utils/errorUtils'
 
 import * as fs from 'fs'
 import * as path from 'node:path'
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { promisify } from 'util'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 export interface KodiLocalInstallation {
   path: string            // Kodi userdata folder
@@ -117,25 +117,20 @@ export class KodiLocalDiscoveryService {
     try {
       if (platform === 'win32') {
         // Windows: use tasklist
-        const { stdout } = await execAsync('tasklist /FI "IMAGENAME eq kodi.exe" /NH')
+        const { stdout } = await execFileAsync('tasklist', ['/FI', 'IMAGENAME eq kodi.exe', '/NH'])
         return stdout.toLowerCase().includes('kodi.exe')
+      } else if (platform === 'darwin') {
+        // macOS: use pgrep
+        await execFileAsync('pgrep', ['-x', 'Kodi'])
+        return true
       } else {
-        const processName = platform === 'darwin' ? 'Kodi' : 'kodi'
-        return await this.isProcessRunning(`pgrep -x ${processName}`)
+        // Linux: use pgrep
+        await execFileAsync('pgrep', ['-x', 'kodi'])
+        return true
       }
     } catch (error) {
-      console.debug('[KodiLocalDiscovery] Could not detect running Kodi process:', error)
+      // If command fails, assume Kodi is not running
       return false
-    }
-  }
-
-  private async isProcessRunning(command: string): Promise<boolean> {
-    try {
-      await execAsync(command)
-      return true
-    } catch (error) {
-      if ((error as { code?: string | number }).code === 1) return false
-      throw error
     }
   }
 
@@ -149,7 +144,6 @@ export class KodiLocalDiscoveryService {
       fs.closeSync(fd)
       return true
     } catch (error) {
-      console.debug(`[KodiLocalDiscovery] Database file is not readable: ${dbPath}`, error)
       return false
     }
   }
@@ -163,11 +157,11 @@ export class KodiLocalDiscoveryService {
       const userdataPath = this.getDefaultKodiPath()
       const databaseDir = path.join(userdataPath, 'Database')
 
-      console.log('[KodiLocalDiscovery] Checking for Kodi database directory')
+      getLoggingService().info('[KodiLocalDiscoveryService]', '[KodiLocalDiscovery] Checking for Kodi database directory')
 
       // Check if Database directory exists
       if (!fs.existsSync(databaseDir)) {
-        console.log('[KodiLocalDiscovery] Database directory not found')
+        getLoggingService().info('[KodiLocalDiscoveryService]', '[KodiLocalDiscovery] Database directory not found')
         return null
       }
 
@@ -179,21 +173,21 @@ export class KodiLocalDiscoveryService {
 
       // Need at least one database to continue
       if (!videoDbInfo && !musicDbInfo) {
-        console.log('[KodiLocalDiscovery] No Kodi database files found')
+        getLoggingService().info('[KodiLocalDiscoveryService]', '[KodiLocalDiscovery] No Kodi database files found')
         return null
       }
 
       if (videoDbInfo) {
-        console.log(`[KodiLocalDiscovery] Found video database: ${path.basename(videoDbInfo.path)} (version ${videoDbInfo.version})`)
+        getLoggingService().info('[KodiLocalDiscovery]', `Found video database: ${path.basename(videoDbInfo.path)} (version ${videoDbInfo.version})`)
       }
       if (musicDbInfo) {
-        console.log(`[KodiLocalDiscovery] Found music database: ${path.basename(musicDbInfo.path)} (version ${musicDbInfo.version})`)
+        getLoggingService().info('[KodiLocalDiscovery]', `Found music database: ${path.basename(musicDbInfo.path)} (version ${musicDbInfo.version})`)
       }
 
       // Check if Kodi is running
       const kodiRunning = await this.isKodiRunning()
       if (kodiRunning) {
-        console.log('[KodiLocalDiscovery] Warning: Kodi is currently running')
+        getLoggingService().info('[KodiLocalDiscoveryService]', '[KodiLocalDiscovery] Warning: Kodi is currently running')
       }
 
       // Check if at least one database is readable
@@ -201,7 +195,7 @@ export class KodiLocalDiscoveryService {
       const musicReadable = musicDbInfo ? this.isDatabaseReadable(musicDbInfo.path) : false
 
       if (!videoReadable && !musicReadable) {
-        console.log('[KodiLocalDiscovery] No database files are readable (may be locked)')
+        getLoggingService().info('[KodiLocalDiscoveryService]', '[KodiLocalDiscovery] No database files are readable (may be locked)')
         // Still return the installation info, but with running flag
         return {
           path: userdataPath,
@@ -222,7 +216,7 @@ export class KodiLocalDiscoveryService {
         kodiRunning,
       }
     } catch (error: unknown) {
-      console.error('[KodiLocalDiscovery] Error detecting installation:', getErrorMessage(error))
+      getLoggingService().error('[KodiLocalDiscoveryService]', '[KodiLocalDiscovery] Error detecting installation:', getErrorMessage(error))
       return null
     }
   }

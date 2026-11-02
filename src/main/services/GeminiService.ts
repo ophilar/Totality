@@ -1,9 +1,17 @@
-
 import { GoogleGenAI } from '@google/genai'
-import type { Content, FunctionDeclaration, GenerateContentResponse } from '@google/genai'
-import APP_CONFIG from '../config'
-import { getDatabase } from '../database/getDatabase'
-import { getLoggingService } from './LoggingService'
+import type { Content, FunctionDeclaration, GenerateContentResponse, Schema } from '@google/genai'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getLoggingService } from '@main/services/LoggingService'
+import { APP_CONFIG } from '@main/config'
+import { EventEmitter } from 'node:events'
+
+export interface GeminiValidationState {
+  status: 'idle' | 'testing' | 'valid' | 'invalid' | 'unavailable' | 'rate-limited' | 'timed-out' | 'cancelled'
+  modelAvailable: boolean | null
+  testedAt: string | null
+  revision: number
+}
+import type { RateLimitInfo } from '@main/types/ipc'
 
 /**
  * Google Gemini AI Service with rate limit tracking
@@ -12,7 +20,7 @@ import { getLoggingService } from './LoggingService'
  * API key is read from settings (encrypted at rest via CredentialEncryptionService).
  * Rate limits are tracked from 429 responses and surfaced to the renderer.
  *
- * Model aliases follow Google's latest Flash release.
+ * Free tier limits (gemini-2.5-flash): 10 RPM, 250 RPD — no credit card required.
  */
 
 export interface GeminiMessage {
@@ -33,12 +41,7 @@ export interface GeminiStreamComplete {
 export interface GeminiToolDefinition {
   name: string
   description?: string
-  parameters: Record<string, unknown>
-}
-
-export interface RateLimitInfo {
-  limited: boolean
-  retryAfterSeconds: number
+  parameters: Schema
 }
 
 export class RateLimitError extends Error {
@@ -52,38 +55,94 @@ export class RateLimitError extends Error {
 }
 
 export class GeminiService {
+  readonly validationEvents = new EventEmitter()
+  private validationController: AbortController | null = null
+  private validationKey: string | null | undefined = undefined
+  private validationModel: string | null = null
+  private validationState: GeminiValidationState = { status: 'idle', modelAvailable: null, testedAt: null, revision: 0 }
   private static readonly DEFAULT_MODEL = APP_CONFIG.gemini.defaultModel
+  private static readonly FAST_MODEL = APP_CONFIG.gemini.fastModel
 
   private client: GoogleGenAI | null = null
   private apiKey: string | null = null
+  private model: string = GeminiService.DEFAULT_MODEL
   private enabled: boolean = true
   private rateLimitedUntil: number | null = null
-  private static readonly MAX_EXPLANATION_CACHE = 20
+  private static readonly MAX_EXPLANATION_CACHE = APP_CONFIG.gemini.maxExplanationCache
   private explanationCache = new Map<string, { text: string; timestamp: number }>()
 
-  constructor() {
-    const db = getDatabase()
-    this.apiKey = db.getSetting('gemini_api_key') || null
-    this.enabled = db.getSetting('ai_enabled') !== 'false'
+  constructor() {}
 
-    if (this.apiKey && this.enabled) {
-      this.client = new GoogleGenAI({ apiKey: this.apiKey })
+  getValidationState(): GeminiValidationState { return { ...this.validationState } }
+
+  private publishValidation(status: GeminiValidationState['status'], modelAvailable: boolean | null, testedAt: string | null): void {
+    this.validationState = { status, modelAvailable, testedAt, revision: this.validationState.revision + 1 }
+    this.validationEvents.emit('changed', this.getValidationState())
+  }
+
+  private validateSavedCredential(): void {
+    if (!this.apiKey || !this.enabled) {
+      this.validationController?.abort()
+      this.validationController = null
+      this.validationKey = this.apiKey
+      this.validationModel = this.model
+      this.publishValidation('idle', null, null)
+      return
+    }
+    if (this.validationKey === this.apiKey && this.validationModel === this.model) return
+    this.validationController?.abort()
+    const controller = new AbortController()
+    this.validationController = controller
+    this.validationKey = this.apiKey
+    this.validationModel = this.model
+    this.publishValidation('testing', null, null)
+    void this.checkCredentialAndModel(this.client!, this.model, controller.signal).then(result => {
+      if (this.validationController !== controller) return
+      this.publishValidation('valid', result.modelAvailable, new Date().toISOString())
+    }).catch(error => {
+      if (this.validationController !== controller) return
+      const status = controller.signal.aborted ? 'cancelled' : geminiFailureStatus(error)
+      this.publishValidation(status, null, new Date().toISOString())
+    }).finally(() => {
+      if (this.validationController === controller) this.validationController = null
+    })
+  }
+
+  private async checkCredentialAndModel(client: GoogleGenAI, model: string, signal: AbortSignal): Promise<{ modelAvailable: boolean }> {
+    await client.models.list({ config: { abortSignal: signal, pageSize: 1 } })
+    try {
+      await client.models.get({ model: model.startsWith('models/') ? model : `models/${model}`, config: { abortSignal: signal } })
+      return { modelAvailable: true }
+    } catch (error) {
+      if (error && typeof error === 'object' && 'status' in error && Number((error as { status: unknown }).status) === 404) return { modelAvailable: false }
+      throw error
     }
   }
 
   /**
-   * Refresh API key and enabled state from database (called when settings change)
+   * Initialize the service by loading settings from the database
    */
-  refreshApiKey(): void {
+  async initialize(): Promise<void> {
     const db = getDatabase()
-    this.apiKey = db.getSetting('gemini_api_key') || null
-    this.enabled = db.getSetting('ai_enabled') !== 'false'
+    this.apiKey = (await db.config.getSetting('gemini_api_key')) || null
+    this.model = (await db.config.getSetting('gemini_model')) || GeminiService.DEFAULT_MODEL
+    this.enabled = (await db.config.getSetting('ai_enabled')) !== 'false'
 
     if (this.apiKey && this.enabled) {
-      this.client = new GoogleGenAI({ apiKey: this.apiKey })
-    } else {
-      this.client = null
+      const baseUrl = process.env.GOOGLE_GENAI_BASE_URL || (await db.config.getSetting('gemini_base_url'))
+      this.client = new GoogleGenAI({ 
+        apiKey: this.apiKey,
+        httpOptions: baseUrl ? { baseUrl } : undefined
+      })
     }
+    this.validateSavedCredential()
+  }
+
+  /**
+   * Refresh API key, model, and enabled state from database (called when settings change)
+   */
+  async refreshApiKey(): Promise<void> {
+    await this.initialize()
   }
 
   /**
@@ -163,7 +222,6 @@ export class GeminiService {
    * Handle API errors, tracking rate limits
    */
   private handleApiError(error: unknown): never {
-    console.warn('[GeminiService] API error:', error instanceof Error ? error.message : error)
     if (error && typeof error === 'object' && 'status' in error) {
       const apiError = error as { status: number; message?: string; headers?: unknown }
       if (apiError.status === 429) {
@@ -223,11 +281,10 @@ export class GeminiService {
   }): Promise<{ text: string; usage: { input_tokens: number; output_tokens: number } }> {
     this.checkRateLimit()
     const client = this.getClient()
-    getLoggingService().verbose('[GeminiService]', `sendMessage: ${params.messages.length} messages, model=${GeminiService.DEFAULT_MODEL}`)
 
     try {
       const response = await client.models.generateContent({
-        model: GeminiService.DEFAULT_MODEL,
+        model: this.model,
         contents: this.toGeminiContents(params.messages),
         config: {
           maxOutputTokens: params.maxTokens || 4096,
@@ -252,9 +309,10 @@ export class GeminiService {
     messages: GeminiMessage[]
     system?: string
     tools: GeminiToolDefinition[]
-    executeTool: (name: string, input: Record<string, unknown>) => Promise<string>
+    executeTool: (name: string, input: unknown) => Promise<string>
     maxTokens?: number
     maxToolRounds?: number
+    signal?: AbortSignal
   }): Promise<{ text: string; usage: { input_tokens: number; output_tokens: number } }> {
     this.checkRateLimit()
     const client = this.getClient()
@@ -272,15 +330,17 @@ export class GeminiService {
     const recentToolCalls: string[] = [] // Track recent tool call signatures for loop detection
 
     for (let round = 0; round < maxRounds; round++) {
+      params.signal?.throwIfAborted()
       let response: GenerateContentResponse
       try {
         response = await client.models.generateContent({
-          model: GeminiService.DEFAULT_MODEL,
+          model: this.model,
           contents,
           config: {
             maxOutputTokens: params.maxTokens || 4096,
             systemInstruction: params.system,
             tools: [{ functionDeclarations }],
+            abortSignal: params.signal,
           },
         })
       } catch (error) {
@@ -314,22 +374,13 @@ export class GeminiService {
         parts: [],
       }
 
-      // Detect tool-use loops: same tool calls repeated 3+ times (consecutive or alternating)
+      // Detect tool-use loops: same tool calls repeated 3+ times in a row
       const callSignature = functionCalls.map(fc => `${fc.name}:${JSON.stringify(fc.args)}`).join('|')
       recentToolCalls.push(callSignature)
       if (recentToolCalls.length >= 3) {
-        // Check consecutive repeats (A, A, A)
         const last3 = recentToolCalls.slice(-3)
-        const isConsecutiveLoop = last3[0] === last3[1] && last3[1] === last3[2]
-        // Check alternating repeats (A, B, A, B, A, B) — same pair repeated 3+ times
-        let isAlternatingLoop = false
-        if (recentToolCalls.length >= 6) {
-          const last6 = recentToolCalls.slice(-6)
-          isAlternatingLoop = last6[0] === last6[2] && last6[2] === last6[4]
-            && last6[1] === last6[3] && last6[3] === last6[5]
-        }
-        if (isConsecutiveLoop || isAlternatingLoop) {
-          console.warn('[GeminiService] Tool-use loop detected — repeating pattern, breaking')
+        if (last3[0] === last3[1] && last3[1] === last3[2]) {
+          getLoggingService().warn('[GeminiService]', '[GeminiService] Tool-use loop detected — same calls repeated 3 times, breaking')
           return {
             text: 'I encountered an issue processing your request. Please try rephrasing your question.',
             usage: totalUsage,
@@ -338,10 +389,11 @@ export class GeminiService {
       }
 
       for (const fc of functionCalls) {
+        params.signal?.throwIfAborted()
         try {
           const resultStr = await params.executeTool(
             fc.name || '',
-            (fc.args as Record<string, unknown>) || {},
+            fc.args ?? {},
           )
           functionResponses.parts!.push({
             functionResponse: {
@@ -374,6 +426,7 @@ export class GeminiService {
       messages: GeminiMessage[]
       system?: string
       maxTokens?: number
+      signal?: AbortSignal
     },
     onDelta: (text: string) => void,
   ): Promise<{ text: string; usage: { input_tokens: number; output_tokens: number } }> {
@@ -382,11 +435,12 @@ export class GeminiService {
 
     try {
       const stream = await client.models.generateContentStream({
-        model: GeminiService.DEFAULT_MODEL,
+        model: this.model,
         contents: this.toGeminiContents(params.messages),
         config: {
           maxOutputTokens: params.maxTokens || 4096,
           systemInstruction: params.system,
+          abortSignal: params.signal,
         },
       })
 
@@ -394,6 +448,7 @@ export class GeminiService {
       let lastUsage = { input_tokens: 0, output_tokens: 0 }
 
       for await (const chunk of stream) {
+        params.signal?.throwIfAborted()
         const text = chunk.text
         if (text) {
           fullText += text
@@ -424,33 +479,27 @@ export class GeminiService {
     year: number | undefined,
     candidates: Array<{ id: number; title: string; year?: number; overview?: string }>,
   ): Promise<number> {
-    if (candidates.length <= 1) return 0
-    if (!this.isConfigured()) return -1
+    if (!this.isConfigured() || candidates.length <= 1) return 0
 
-    try {
-      this.checkRateLimit()
-      const client = this.getClient()
+    this.checkRateLimit()
+    const client = this.getClient()
 
-      const candidateList = candidates.map((c, i) =>
-        `${i + 1}. "${c.title}" (${c.year || 'unknown year'})${c.overview ? ` — ${c.overview.slice(0, 100)}` : ''}`
-      ).join('\n')
+    const candidateList = candidates.map((c, i) =>
+      `${i + 1}. "${c.title}" (${c.year || 'unknown year'})${c.overview ? ` — ${c.overview.slice(0, 100)}` : ''}`
+    ).join('\n')
 
-      const response = await client.models.generateContent({
-        model: GeminiService.DEFAULT_MODEL,
+    const response = await client.models.generateContent({
+        model: GeminiService.FAST_MODEL,
         contents: `A media file named "${filename}"${year ? ` (year: ${year})` : ''} matched multiple TMDB results. Which is the best match? Reply with ONLY the number.\n\n${candidateList}`,
         config: {
           maxOutputTokens: 20,
         },
-      })
+    })
 
-      const text = (response.text || '').trim()
-      const num = parseInt(text, 10)
-      if (num >= 1 && num <= candidates.length) return num - 1
-      return -1
-    } catch (error) {
-      console.warn('[GeminiService] Title disambiguation failed:', error)
-      return -1
-    }
+    const text = (response.text || '').trim()
+    const num = parseInt(text, 10)
+    if (num >= 1 && num <= candidates.length) return num - 1
+    return 0
   }
 
   /**
@@ -492,7 +541,7 @@ export class GeminiService {
 
     try {
       const response = await client.models.generateContent({
-        model: GeminiService.DEFAULT_MODEL,
+        model: GeminiService.FAST_MODEL,
         contents: `Briefly explain the quality of "${params.title}" in 2-3 sentences. Specs: ${details}. Focus on what's good/bad and if an upgrade would be worthwhile.`,
         config: {
           maxOutputTokens: 200,
@@ -518,14 +567,8 @@ export class GeminiService {
   async testApiKey(apiKey: string): Promise<{ success: boolean; error?: string }> {
     try {
       const testClient = new GoogleGenAI({ apiKey })
-
-      await testClient.models.generateContent({
-        model: GeminiService.DEFAULT_MODEL,
-        contents: 'Hi',
-        config: {
-          maxOutputTokens: 10,
-        },
-      })
+      const models = await testClient.models.list({ config: { pageSize: 1 } })
+      for await (const _model of models) break
 
       return { success: true }
     } catch (error) {
@@ -539,6 +582,57 @@ export class GeminiService {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
     }
   }
+
+  /**
+   * List available models by querying the REST endpoint
+   */
+  async listModels(): Promise<Array<{ name: string; displayName: string }>> {
+    if (!this.apiKey) return []
+    try {
+      let baseUrl = 'https://generativelanguage.googleapis.com'
+      const db = getDatabase()
+      const customBaseUrl = process.env.GOOGLE_GENAI_BASE_URL || (await db.config.getSetting('gemini_base_url'))
+      if (customBaseUrl) {
+        baseUrl = customBaseUrl.replace(/\/v1beta\/?$/, '').replace(/\/v1\/?$/, '')
+      }
+      const url = `${baseUrl}/v1beta/models?key=${this.apiKey}`
+      const response = await fetch(url)
+      if (!response.ok) throw new Error(`Failed to fetch models: ${response.statusText}`)
+      const data = await response.json() as { models?: Array<{ name: string; displayName?: string; supportedGenerationMethods?: string[] }> }
+      
+      if (!data.models) return []
+      
+      const filtered = data.models
+        .filter(m => {
+          const name = m.name.replace('models/', '')
+          const supportsGeneration = m.supportedGenerationMethods?.includes('generateContent')
+          return supportsGeneration && (name.startsWith('gemini-') || name.startsWith('tunedModels/'))
+        })
+        .map(m => {
+          const name = m.name.replace('models/', '')
+          return {
+            name,
+            displayName: m.displayName || name
+          }
+        })
+
+      if (filtered.length > 0) return filtered
+    } catch (error) {
+      getLoggingService().error('[GeminiService]', 'Failed to list models:', error)
+    }
+
+    return []
+  }
+}
+
+function geminiFailureStatus(error: unknown): Exclude<GeminiValidationState['status'], 'idle' | 'testing' | 'valid' | 'cancelled'> {
+  if (error && typeof error === 'object' && 'status' in error) {
+    const status = Number((error as { status: unknown }).status)
+    if (status === 400 || status === 401 || status === 403) return 'invalid'
+    if (status === 429) return 'rate-limited'
+  }
+  if (error instanceof Error && /timed out/i.test(error.message)) return 'timed-out'
+  return 'unavailable'
 }
 
 // Singleton instance
@@ -549,4 +643,8 @@ export function getGeminiService(): GeminiService {
     geminiService = new GeminiService()
   }
   return geminiService
+}
+
+export function resetGeminiServiceForTesting(): void {
+  geminiService = null
 }

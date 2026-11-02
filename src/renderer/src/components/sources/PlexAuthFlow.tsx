@@ -6,9 +6,8 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Film, Tv, Music, Folder } from 'lucide-react'
-import { useSources } from '../../contexts/SourceContext'
-import { useLibrarySelection } from '../../hooks/useLibrarySelection'
-import type { ServerInstanceResponse, MediaLibraryResponse } from '../../../../preload/index'
+import { useSources } from '@/contexts/SourceContext'
+import type { ServerInstanceResponse, MediaLibraryResponse } from '@preload/api/types'
 
 interface PlexAuthFlowProps {
   onSuccess: () => void
@@ -34,7 +33,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
   const [servers, setServers] = useState<ServerInstanceResponse[]>([])
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null)
   const [libraries, setLibraries] = useState<MediaLibraryResponse[]>([])
-  const { selectedLibraries, setSelectedLibraries, handleToggleLibrary, handleSelectAll, handleDeselectAll } = useLibrarySelection(libraries)
+  const [selectedLibraries, setSelectedLibraries] = useState<Set<string>>(new Set())
   const [sourceId, setSourceId] = useState<string | null>(null)
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -78,7 +77,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
             setStep('servers')
           }
         } catch (err) {
-          console.error('Error checking auth:', err)
+          window.electronAPI.log.error('[PlexAuthFlow]', 'Error checking auth:', err)
         }
       }, POLL_INTERVAL_MS)
 
@@ -126,6 +125,27 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
   }
 
   // Toggle library selection
+  const handleToggleLibrary = (libraryId: string) => {
+    setSelectedLibraries(prev => {
+      const next = new Set(prev)
+      if (next.has(libraryId)) {
+        next.delete(libraryId)
+      } else {
+        next.add(libraryId)
+      }
+      return next
+    })
+  }
+
+  // Select/deselect all libraries
+  const handleSelectAll = () => {
+    setSelectedLibraries(new Set(libraries.map(lib => lib.id)))
+  }
+
+  const handleDeselectAll = () => {
+    setSelectedLibraries(new Set())
+  }
+
   // Complete setup
   const handleComplete = async () => {
     if (!sourceId) return
@@ -142,7 +162,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
         }))
       )
     } catch (err) {
-      console.error('Failed to save library selection:', err)
+      window.electronAPI.log.error('[PlexAuthFlow]', 'Failed to save library selection:', err)
     }
 
     // Refresh sources list now that setup is complete
@@ -162,7 +182,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
           libraryId: lib.id,
         })
       } catch (err) {
-        console.error('Failed to queue library scan:', err)
+        window.electronAPI.log.error('[PlexAuthFlow]', 'Failed to queue library scan:', err)
       }
     }
 

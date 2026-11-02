@@ -1,67 +1,14 @@
-import { measuredOptimizationEncoderSpec } from './transcoding/OptimizationEncoderPolicy'
-
-import { APP_CONFIG } from '@main/config'
-import { getOptimizationVideoCodec, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
-import type { MeasurementSourcePreparation } from './MeasuredOptimizationService'
-
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
-
-export const MEASUREMENT_VERSION = 14
-export const OPTIMIZATION_SEARCH_VERSION = 3
-/** Hard bound on expensive full-sample evaluations in each encoder/preset domain. */
-export const MAX_MEASURED_CANDIDATES_PER_PRESET = 5
-export const VMAF_LOW_PERCENTILE = 0.05
-export const SHOW_PREFLIGHT_SETTING_PREFIX = 'transcoding.preflight.'
-export const MEASUREMENT_SETTING_PREFIX = 'transcoding.measurement.'
-
-export interface CachedMeasurement {
-  version: number
-  searchVersion?: number
-  cacheKey: string
-  sourceSha256: string
-  complete: boolean
-  candidates: MeasuredCandidate[]
-  sampleHashes: string[][]
-  sourcePreparation?: MeasurementSourcePreparation
-  partialSamples: MeasuredCandidateSample[]
-  partialSampleHashes: string[]
-}
-
-export interface MeasuredCandidateSample {
-  screeningOnly?: boolean
-  encoder: string
-  preset: string
-  quality: number
-  sampleIndex: number
-  outputBytes: number
-  sampledDurationSeconds: number
-  encodingDurationMs: number
-  vmafScores: number[]
-  cambiScores: number[]
-  sourceSelfVmaf: number
-  sourceCambiMean: number
-  samplePath: string
-}
 
 export interface MeasuredCandidate {
   encoder: string
   preset: string
   quality: number
   outputBytes: number
-  sampledDurationSeconds: number
   vmafMean: number
   vmafP5: number
-  encodingDurationMs?: number
-  sourceSelfVmaf?: number
-  sourceCambiMean?: number
   samplePaths?: string[]
   cambiMean: number
-  /** Runtime compatibility evidence; excluded from durable candidate measurements. */
-  playbackBlockers?: string[]
-  qualityRejectedReason?: string
-  incompleteMeasurement?: boolean
-  /** Bounded search selects the best tested candidate, not a proven global optimum. */
-  searchSummary?: { measuredCount: number; maximumCandidates: number; budgetReached: boolean }
 }
 
 export interface CandidateEncodingParameters {
@@ -70,75 +17,14 @@ export interface CandidateEncodingParameters {
   quality: number
 }
 
-/** Returns the next measurement batch for adaptive search across the configured encoder and preset domain. */
-export function nextCandidateSearch(
-  domainCatalogue: CandidateEncodingParameters[],
-  measuredCandidates: MeasuredCandidate[],
-  profile: OptimizationQualityProfile,
-): CandidateEncodingParameters[] {
-  const presets = [...new Map(domainCatalogue.map(candidate => [`${candidate.encoder}/${candidate.preset}`, candidate])).values()]
-  const evaluation = (candidate: MeasuredCandidate) => evaluateMeasuredCandidates(profile, [candidate])[0]
-  const qualityPasses = (candidate: MeasuredCandidate) => evaluation(candidate).qualityPassed
-  const encoders = [...new Set(presets.map(candidate => candidate.encoder))]
-  for (const encoder of encoders) {
-    for (const presetCandidate of presets.filter(candidate => candidate.encoder === encoder)) {
-      const domain = domainCatalogue.filter(candidate => candidate.encoder === encoder && candidate.preset === presetCandidate.preset)
-      const measured = measuredCandidates.filter(candidate => candidate.encoder === encoder && candidate.preset === presetCandidate.preset)
-      const qualities = [...new Set(domain.map(candidate => candidate.quality))].sort((a, b) => a - b)
-      const tested = new Set(measured.map(candidate => candidate.quality))
-      const untested = (values: number[]) => values.filter(quality => !tested.has(quality)).map(quality => domain.find(candidate => candidate.quality === quality) ?? { encoder: presetCandidate.encoder, preset: presetCandidate.preset, quality })
-      if (measured.length >= MAX_MEASURED_CANDIDATES_PER_PRESET) continue
-      if (measured.length === 0) {
-        const middle = qualities[Math.floor((qualities.length - 1) / 2)]
-        return untested([middle])
-      }
-      const ordered = [...measured].sort((a, b) => a.quality - b.quality)
-      const passFlags = ordered.map(qualityPasses)
-      const passTransitions = passFlags.reduce((count, pass, index) => count + (index > 0 && pass !== passFlags[index - 1] ? 1 : 0), 0)
-      const contradictory = passTransitions > 1 || ordered.some((candidate, index) => index > 0 && (candidate.vmafMean > ordered[index - 1].vmafMean || candidate.vmafP5 > ordered[index - 1].vmafP5))
-      if (contradictory) {
-        // Perceptual metrics can be non-monotonic. Never schedule the entire
-        // integer interval: it can contain dozens of full encodes per preset.
-        // Probe the widest unresolved gap, one candidate at a time, under the budget.
-        const anchors = [qualities[0], ...ordered.map(candidate => candidate.quality), qualities[qualities.length - 1]]
-        const gaps = [...new Set(anchors)].sort((a, b) => a - b)
-        const midpointCandidates = gaps.slice(1).map((high, index) => {
-          const low = gaps[index]
-          return { gap: high - low, midpoint: Math.floor((high + low) / 2) }
-        }).filter(entry => entry.gap > 1 && !tested.has(entry.midpoint))
-          .sort((a, b) => b.gap - a.gap)
-        if (midpointCandidates.length) return untested([midpointCandidates[0].midpoint])
-      }
-      const next = new Set<number>()
-      if (measured.length === 1) {
-        const direction = qualityPasses(measured[0]) ? qualities[qualities.length - 1] : qualities[0]
-        if (!tested.has(direction)) next.add(direction)
-      }
-      for (let index = 1; index < ordered.length; index += 1) {
-        if (passFlags[index] !== passFlags[index - 1]) {
-          const midpoint = Math.floor((ordered[index].quality + ordered[index - 1].quality) / 2)
-          if (!tested.has(midpoint)) next.add(midpoint)
-        }
-      }
-      if (next.size) return untested([...next].sort((a, b) => a - b)).slice(0, MAX_MEASURED_CANDIDATES_PER_PRESET - measured.length)
-    }
-  }
-  return []
-}
-
-export function buildCandidateLadder(targetCodec: OptimizationVideoCodec, encoderPolicy: 'automatic' | 'hardware' | 'software' | 'compare', hardwareEncoder?: string): CandidateEncodingParameters[] {
-  const softwareEncoder = getOptimizationVideoCodec(targetCodec).softwareEncoder
+export function buildCandidateLadder(targetCodec: 'av1' | 'hevc', encoderPolicy: 'hardware' | 'software' | 'compare', hardwareEncoder?: string): CandidateEncodingParameters[] {
+  const softwareEncoder = targetCodec === 'av1' ? 'svt_av1' : 'x265'
   const hardware = hardwareEncoder ?? ''
-  const encoders = encoderPolicy === 'hardware' ? [hardware] : encoderPolicy === 'software' ? [softwareEncoder] : encoderPolicy === 'automatic' ? [hardware || softwareEncoder] : [hardware, softwareEncoder]
+  const encoders = encoderPolicy === 'hardware' ? [hardware] : encoderPolicy === 'software' ? [softwareEncoder] : [hardware, softwareEncoder]
   if (encoders.some(encoder => !encoder)) throw new Error('A verified hardware encoder is required for hardware candidate measurement')
   return encoders.flatMap(encoder => {
-    const policy = measuredOptimizationEncoderSpec(encoder, targetCodec)
-    const presets = policy.presets
-    const qualities = APP_CONFIG.transcoding.sampleQualityDomains[policy.qualityDomain]
-    // Automatic mode should not benchmark every speed preset before it can
-    // recommend a usable encode. Explicit policies retain full preset exploration.
-    const selectedPresets = encoderPolicy === 'automatic' ? [presets[Math.floor(presets.length / 2)]] : [...new Set(presets)]
-    return selectedPresets.flatMap(preset => qualities.map(quality => ({ encoder, preset, quality })))
+    const presets = encoder.startsWith('nvenc') ? ['p5', 'p6', 'p7'] : encoder === 'svt_av1' ? ['8', '6', '4'] : encoder.startsWith('qsv') ? ['medium', 'slow', 'veryslow'] : ['medium', 'slow', 'slower']
+    return [18, 22, 26].map((quality, index) => ({ encoder, preset: presets[index], quality }))
   })
 }
 
@@ -148,104 +34,18 @@ interface QualityGates {
   cambiMean: number
 }
 
-interface MeasuredCandidateEvaluation {
-  candidate: MeasuredCandidate
-  passed: boolean
-  qualityPassed: boolean
-  failedGates: string[]
-}
-
 const QUALITY_GATES: Record<OptimizationQualityProfile, QualityGates> = {
   transparent: { vmafMean: 96, vmafP5: 93, cambiMean: 5 },
   balanced: { vmafMean: 95, vmafP5: 92, cambiMean: 8 },
   maximum_savings: { vmafMean: 93, vmafP5: 88, cambiMean: 12 }
 }
 
-export function getImpossibleQualityReason(
-  profile: OptimizationQualityProfile,
-  vmafScores: number[],
-  cambiScores: number[],
-  totalFrames: number,
-): string | undefined {
-  if (!Number.isInteger(totalFrames) || totalFrames <= 0 || vmafScores.length > totalFrames || cambiScores.length > totalFrames) throw new Error('Quality bound requires valid accumulated scores and total frame count')
+export function selectMeasuredCandidate(profile: OptimizationQualityProfile, candidates: MeasuredCandidate[]): MeasuredCandidate {
   const gates = QUALITY_GATES[profile]
-  const remaining = totalFrames - vmafScores.length
-  const optimisticMean = (vmafScores.reduce((sum, score) => sum + score, 0) + remaining * 100) / totalFrames
-  if (optimisticMean < gates.vmafMean) return `VMAF mean cannot reach ${gates.vmafMean} even if all remaining frames score 100`
-  const failedTailFrames = vmafScores.filter(score => score < gates.vmafP5).length
-  if (failedTailFrames > Math.floor(totalFrames * VMAF_LOW_PERCENTILE)) return `VMAF p5 cannot reach ${gates.vmafP5} with ${failedTailFrames} below-threshold frames`
-  const optimisticCambi = cambiScores.reduce((sum, score) => sum + score, 0) / totalFrames
-  if (optimisticCambi > gates.cambiMean) return `CAMBI cannot reach ${gates.cambiMean} even if all remaining frames score 0`
-  return undefined
-}
-
-export class MeasuredQualityError extends Error {
-  constructor(message: string, public readonly decisionStatus: 'quality_threshold_unmet' | 'incompatible' | 'no_positive_savings') {
-    super(message)
-    this.name = 'MeasuredQualityError'
-  }
-}
-
-export function selectMeasuredCandidate(
-  profile: OptimizationQualityProfile,
-  candidates: MeasuredCandidate[],
-  maximumOutputBytesPerSecond?: number,
-): MeasuredCandidate {
-  const gates = QUALITY_GATES[profile]
-  const evaluations = evaluateMeasuredCandidates(profile, candidates)
-  const gatePassing = evaluations.filter(evaluation => evaluation.passed)
-  const eligible = evaluations
-    .filter(evaluation => evaluation.passed)
-    .map(evaluation => evaluation.candidate)
-    .filter(candidate => maximumOutputBytesPerSecond === undefined || candidate.outputBytes / candidate.sampledDurationSeconds < maximumOutputBytesPerSecond)
-    .sort((left, right) => left.outputBytes - right.outputBytes || (left.encodingDurationMs ?? Number.POSITIVE_INFINITY) - (right.encodingDurationMs ?? Number.POSITIVE_INFINITY))
+  const eligible = candidates
+    .filter(candidate => candidate.vmafMean >= gates.vmafMean && candidate.vmafP5 >= gates.vmafP5 && candidate.cambiMean <= gates.cambiMean)
+    .sort((left, right) => left.outputBytes - right.outputBytes)
   const selected = eligible[0]
-  if (!selected) {
-    const reports = evaluations.map(({ candidate, failedGates }) =>
-      `${candidate.encoder}/${candidate.preset} q${candidate.quality}: output ${candidate.outputBytes} bytes across ${candidate.sampledDurationSeconds}s, ${candidate.outputBytes / candidate.sampledDurationSeconds} bytes/s; VMAF mean ${candidate.vmafMean.toFixed(2)} (min ${gates.vmafMean}), VMAF p5 ${candidate.vmafP5.toFixed(2)} (min ${gates.vmafP5}), CAMBI ${candidate.cambiMean.toFixed(2)} (max ${gates.cambiMean}); failed=${failedGates.join(',')}`
-    )
-    const qualityPassed = evaluations.some(evaluation => evaluation.qualityPassed)
-    const decisionStatus = gatePassing.length > 0 ? 'no_positive_savings' : qualityPassed ? 'incompatible' : 'quality_threshold_unmet'
-    const reason = decisionStatus === 'no_positive_savings'
-      ? `No measured candidate produces positive savings below ${maximumOutputBytesPerSecond} output bytes per second.`
-      : `No measured candidate satisfies the ${profile} quality and playback requirements.`
-    throw new MeasuredQualityError(`${reason} Candidate results: ${reports.join(' | ')}`, decisionStatus)
-  }
+  if (!selected) throw new Error(`No measured candidate satisfies the ${profile} quality gates`)
   return selected
-}
-
-export function getNonDominatedMeasuredCandidates(
-  profile: OptimizationQualityProfile,
-  candidates: MeasuredCandidate[],
-  maximumOutputBytesPerSecond?: number,
-): MeasuredCandidate[] {
-  const eligible = evaluateMeasuredCandidates(profile, candidates)
-    .filter(evaluation => evaluation.passed)
-    .map(evaluation => evaluation.candidate)
-    .filter(candidate => maximumOutputBytesPerSecond === undefined || candidate.outputBytes / candidate.sampledDurationSeconds < maximumOutputBytesPerSecond)
-  return eligible.filter(candidate => !eligible.some(other => other !== candidate &&
-    other.outputBytes <= candidate.outputBytes &&
-    other.vmafMean >= candidate.vmafMean &&
-    other.vmafP5 >= candidate.vmafP5 &&
-    other.cambiMean <= candidate.cambiMean &&
-    (other.encodingDurationMs === undefined || candidate.encodingDurationMs === undefined || other.encodingDurationMs <= candidate.encodingDurationMs) &&
-    (other.outputBytes < candidate.outputBytes || other.vmafMean > candidate.vmafMean || other.vmafP5 > candidate.vmafP5 || other.cambiMean < candidate.cambiMean ||
-      other.encodingDurationMs !== undefined && candidate.encodingDurationMs !== undefined && other.encodingDurationMs < candidate.encodingDurationMs)
-  )).sort((left, right) => left.outputBytes - right.outputBytes)
-}
-
-function evaluateMeasuredCandidates(profile: OptimizationQualityProfile, candidates: MeasuredCandidate[]): MeasuredCandidateEvaluation[] {
-  const gates = QUALITY_GATES[profile]
-  return candidates.map(candidate => {
-    const failedGates = [
-      ...(candidate.qualityRejectedReason ? [candidate.qualityRejectedReason] : []),
-      ...(candidate.vmafMean >= gates.vmafMean ? [] : [`VMAF mean < ${gates.vmafMean}`]),
-      ...(candidate.vmafP5 >= gates.vmafP5 ? [] : [`VMAF p5 < ${gates.vmafP5}`]),
-      ...(candidate.cambiMean <= gates.cambiMean ? [] : [`CAMBI > ${gates.cambiMean}`]),
-    ]
-    const qualityPassed = failedGates.length === 0
-    if (candidate.incompleteMeasurement) failedGates.push('Measurement did not cover all sample segments')
-    failedGates.push(...candidate.playbackBlockers ?? [])
-    return { candidate, passed: failedGates.length === 0, qualityPassed, failedGates }
-  })
 }

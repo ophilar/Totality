@@ -1,22 +1,48 @@
-import { IPC_CHANNELS } from '../../shared/ipcChannels'
+import { getStatsCacheService } from '@main/services/StatsCacheService'
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { BrowserWindow, dialog, shell } from 'electron'
 import * as path from 'node:path'
 import { z } from 'zod'
-import { getDatabase } from '../database/getDatabase'
-import { getQualityAnalyzer } from '../services/QualityAnalyzer'
-import { getTaskQueueService } from '../services/TaskQueueService'
-import { getGeminiService } from '../services/GeminiService'
-import { getTMDBService } from '../services/TMDBService'
-import { invalidateNfsMappingsCache } from '../providers/kodi/KodiDatabaseSchema'
-import { getErrorMessage, isNodeError } from './utils'
-import { safeSend } from './utils/safeSend'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
+import { getGeminiService } from '@main/services/GeminiService'
+import { getTMDBService } from '@main/services/TMDBService'
+import { MetadataRegistryService } from '@main/services/metadata/MetadataRegistryService'
+import { invalidateNfsMappingsCache } from '@main/providers/kodi/KodiDatabaseSchema'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
+import { createValidatedIpcHandler, createIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
 import fs from 'fs/promises'
-import type { MediaItem } from '../types/database'
-import { validateInput, PositiveIntSchema, NonEmptyStringSchema, SettingKeySchema, SettingValueSchema, MediaItemFiltersSchema, TVShowFiltersSchema, MediaItemSchema, QualityScoreSchema, NfsMappingsSchema, ExportCSVOptionsSchema, AddExclusionSchema, OptionalSourceIdSchema, FilePathSchema, LetterOffsetSchema } from '../validation/schemas'
-import { SETTING_KEYS } from '../../shared/settingKeys'
+import { randomUUID } from 'node:crypto'
+import { operationRequestRegistry } from '@main/ipc/utils/OperationRequestRegistry'
+import {
+  PositiveIntSchema,
+  SecurityPinSchema,
+  NonEmptyStringSchema,
+  SettingKeySchema,
+  MediaItemFiltersSchema,
+  TVShowFiltersSchema,
+  MediaItemSchema,
+  QualityScoreSchema,
+  NfsMappingsSchema,
+  ExportCSVOptionsSchema,
+  OptionalSourceIdSchema,
+  LetterOffsetSchema,
+  SetSettingTupleSchema,
+  TestNfsMappingTupleSchema,
+  FixMatchTupleSchema,
+  AddExclusionTupleSchema,
+  GetExclusionsTupleSchema,
+} from '@main/validation/schemas'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getSourceManager } from '@main/services/SourceManager'
+import { MediaItemType, TaskType } from '@main/types/database'
+import type { MediaItem, MediaItemFilters, QualityScore } from '@main/types/database'
+import type { TMDBMovieSearchResult } from '@main/types/tmdb'
+import { getDeduplicationService } from '@main/services/DeduplicationService'
+import { getTaskQueueService } from '@main/services/TaskQueueService'
+import { getSavedServiceHealthService } from '@main/services/SavedServiceHealthService'
 
-import { operationRequestRegistry } from './utils/OperationRequestRegistry'
-import { createIpcHandler, createIpcHandlerWithEvent, createValidatedIpcHandlerWithEvent } from './utils/createHandler'
+import { registerListHandlers } from '@main/ipc/utils/genericHandlers'
 
 /**
  * Register all database-related IPC handlers
@@ -24,919 +50,406 @@ import { createIpcHandler, createIpcHandlerWithEvent, createValidatedIpcHandlerW
 export function registerDatabaseHandlers() {
   const db = getDatabase()
 
-  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.dbCancelOperation, z.string().min(1).max(100), async (event, requestId) => ({
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.DATABASE.CANCEL_OPERATION, z.string().min(1).max(100), async (event, requestId) => ({
     status: operationRequestRegistry.cancel(event.sender.id, requestId),
   }))
 
-  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.operationsGetActivity, z.tuple([]), async (event) => operationRequestRegistry.getSnapshot(event.sender.id))
-  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.operationsGetResult, z.string().min(1).max(100), async (event, requestId) => operationRequestRegistry.getResult(event.sender.id, requestId))
-  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.operationsDismiss, z.string().min(1).max(100), async (event, requestId) => {
-    operationRequestRegistry.dismiss(event.sender.id, requestId)
-    await db.config.deleteSetting(`transcoding.backgroundPreflight.${requestId}`)
-    for (const key of Object.keys(db.config.getAllSettings()).filter(key => key.startsWith(`transcoding.preflightCheckpoint.${requestId}.`))) {
-      await db.config.deleteSetting(key)
-    }
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.OPERATIONS.GET_ACTIVITY, z.tuple([]), async event => operationRequestRegistry.getSnapshot(event.sender.id))
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.OPERATIONS.GET_RESULT, z.string().min(1).max(100), async (event, requestId) => operationRequestRegistry.getResult(event.sender.id, requestId))
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.OPERATIONS.DISMISS, z.string().min(1).max(100), async (event, requestId) => operationRequestRegistry.dismiss(event.sender.id, requestId))
+
+  createIpcHandler(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_STATE, async () => getSavedServiceHealthService().getSnapshot())
+  createIpcHandler(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_REFRESH, async () => {
+    await getGeminiService().refreshApiKey()
+    await getSavedServiceHealthService().refreshSavedChecks()
+    return getSavedServiceHealthService().getSnapshot()
   })
-  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.operationsSetPaused, z.tuple([z.string().min(1).max(100), z.boolean()]), async (event, requestId, paused) => ({
-    status: operationRequestRegistry.setPaused(event.sender.id, requestId, paused),
-  }))
+  createValidatedIpcHandler(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_RETRY, z.enum(['omdb', 'tvdb', 'musicbrainz', 'sonarr', 'radarr']), async service => {
+    await getSavedServiceHealthService().retry(service)
+    return getSavedServiceHealthService().getSnapshot()
+  })
+
+
+
+  // Register generic list/count handlers
+  registerListHandlers('db:media', f => db.media.getItems(f as MediaItemFilters), f => db.media.count(f as MediaItemFilters), MediaItemFiltersSchema)
+  registerListHandlers('db:tvshows', f => db.tvShows.getSummaries(f), f => db.tvShows.count(f), TVShowFiltersSchema)
 
   // ============================================================================
   // MEDIA ITEMS
   // ============================================================================
 
-  createIpcHandler(IPC_CHANNELS.dbGetMediaItems, async (filters?: unknown) => {
-    try {
-      const validFilters = filters !== undefined ? validateInput(MediaItemFiltersSchema, filters, 'db:getMediaItems') : undefined
-      const items = db.getMediaItems(validFilters) as MediaItem[]
-      // Debug logging for movies without year data
-      const moviesWithoutYear = items.filter((i: MediaItem) => i.type === 'movie' && !i.year)
-      if (moviesWithoutYear.length > 0) {
-        console.log(`[IPC] Warning: ${moviesWithoutYear.length} movies without year data`)
-        // Log first few for debugging
-        moviesWithoutYear.slice(0, 5).forEach(m => {
-          console.log(`[IPC]   - "${m.title}" (id: ${m.id})`)
-        })
-      }
-      return items
-    } catch (error) {
-      console.error('Error getting media items:', error)
-      throw error
-    }
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.MEDIA_OPTIMIZATION_SUMMARY, MediaItemFiltersSchema, async (filters) => {
+    return await db.media.getOptimizationMetricsSummary(filters as MediaItemFilters)
   })
 
-  createIpcHandler(IPC_CHANNELS.dbGetMediaItemsSlim, async (filters?: unknown) => {
-    const validFilters = filters !== undefined
-      ? validateInput(MediaItemFiltersSchema, filters, 'db:getMediaItemsSlim')
-      : undefined
-    return db.getMediaItems(validFilters, 'card')
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.TV_EPISODES_COUNT, TVShowFiltersSchema, async (filters) => {
+    return await db.media.count({ ...filters, type: MediaItemType.Episode } as MediaItemFilters)
   })
 
-  createIpcHandler(IPC_CHANNELS.dbCountMediaItems, async (filters?: unknown) => {
-    try {
-      const validFilters = filters !== undefined ? validateInput(MediaItemFiltersSchema, filters, 'db:countMediaItems') : undefined
-      return db.countMediaItems(validFilters)
-    } catch (error) {
-      console.error('Error counting media items:', error)
-      throw error
-    }
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.GET_LETTER_OFFSET, LetterOffsetSchema, async (params) => {
+    return await db.media.getLetterOffset(params.table, params.letter, { sourceId: params.sourceId, libraryId: params.libraryId })
   })
 
-  createIpcHandler(IPC_CHANNELS.dbGetOptimizationMetrics, async (filters?: unknown) => {
-    try {
-      const validFilters = filters !== undefined ? validateInput(MediaItemFiltersSchema, filters, 'db:getOptimizationMetrics') : undefined
-      return db.getOptimizationMetrics(validFilters)
-    } catch (error) {
-      console.error('Error getting optimization metrics:', error)
-      throw error
-    }
+  const getMediaItemHandler = async (id: number) => {
+    return await db.media.getItem(id)
+  }
+
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.MEDIA_GET_ITEM, PositiveIntSchema, getMediaItemHandler)
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.MEDIA_GET_BY_ID, PositiveIntSchema, getMediaItemHandler)
+
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.MEDIA_UPSERT, MediaItemSchema, async (item) => {
+    return await db.media.upsertItem(item as MediaItem)
   })
 
-  // ============================================================================
-  // TV SHOWS (grouped by series_title)
-  // ============================================================================
-
-  createIpcHandler(IPC_CHANNELS.dbGetTVShows, async (filters?: unknown) => {
-    try {
-      const validFilters = validateInput(TVShowFiltersSchema, filters, 'db:getTVShows')
-      return db.getTVShows(validFilters)
-    } catch (error) {
-      console.error('Error getting TV shows:', error)
-      throw error
-    }
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.MEDIA_GET_VERSIONS, PositiveIntSchema, async (mediaItemId) => {
+    return await db.media.getItemVersions(mediaItemId)
   })
-
-  createIpcHandler(IPC_CHANNELS.dbCountTVShows, async (filters?: unknown) => {
-    try {
-      const validFilters = validateInput(TVShowFiltersSchema, filters, 'db:countTVShows')
-      return db.countTVShows(validFilters)
-    } catch (error) {
-      console.error('Error counting TV shows:', error)
-      throw error
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.dbCountTVEpisodes, async (filters?: unknown) => {
-    try {
-      const validFilters = validateInput(TVShowFiltersSchema, filters, 'db:countTVEpisodes')
-      return db.countTVEpisodes(validFilters)
-    } catch (error) {
-      console.error('Error counting TV episodes:', error)
-      throw error
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.dbGetLetterOffset, async (params: unknown) => {
-    try {
-      const { table, letter, sourceId, libraryId } = validateInput(LetterOffsetSchema, params, 'db:getLetterOffset')
-      return db.getLetterOffset(table, letter, { sourceId, libraryId })
-    } catch (error) {
-      console.error('Error getting letter offset:', error)
-      throw error
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.dbGetMediaItemById, async (id: unknown) => {
-    try {
-      const validId = validateInput(PositiveIntSchema, id, 'db:getMediaItemById')
-      return db.getMediaItemById(validId)
-    } catch (error) {
-      console.error('Error getting media item:', error)
-      throw error
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.dbUpsertMediaItem, async (item: unknown) => {
-    try {
-      const validItem = validateInput(MediaItemSchema, item, 'db:upsertMediaItem')
-      return await db.upsertMediaItem(validItem)
-    } catch (error) {
-      console.error('Error upserting media item:', error)
-      throw error
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.dbGetMediaItemVersions, async (mediaItemId: unknown) => {
-    try {
-      const validId = validateInput(PositiveIntSchema, mediaItemId, 'db:getMediaItemVersions')
-      return db.getMediaItemVersions(validId)
-    } catch (error) {
-      console.error('Error getting media item versions:', error)
-      throw error
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.dbDeleteMediaItem, async (id: unknown) => {
-    try {
-      const validId = validateInput(PositiveIntSchema, id, 'db:deleteMediaItem')
-      await db.deleteMediaItem(validId)
-      return true
-    } catch (error) {
-      console.error('Error deleting media item:', error)
-      throw error
-    }
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.MEDIA_DELETE, PositiveIntSchema, async (id) => {
+    await db.media.deleteItem(id)
+    getStatsCacheService().invalidate()
+    return true
   })
 
   // ============================================================================
   // QUALITY SCORES
   // ============================================================================
 
-  createIpcHandler(IPC_CHANNELS.dbGetQualityScores, async () => {
-    try {
-      return db.getQualityScores()
-    } catch (error) {
-      console.error('Error getting quality scores:', error)
-      throw error
-    }
+  createIpcHandler(IPC_CHANNELS.DATABASE.GET_QUALITY_SCORES, async () => {
+    return await db.media.getQualityScores()
   })
 
-  createIpcHandler(IPC_CHANNELS.dbGetQualityScoreByMediaId, async (mediaItemId: unknown) => {
-    try {
-      const validMediaItemId = validateInput(PositiveIntSchema, mediaItemId, 'db:getQualityScoreByMediaId')
-      return db.getQualityScoreByMediaId(validMediaItemId)
-    } catch (error) {
-      console.error('Error getting quality score:', error)
-      throw error
-    }
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.GET_QUALITY_SCORE_BY_MEDIA_ID, PositiveIntSchema, async (mediaItemId) => {
+    return await db.media.getQualityScoreByMediaId(mediaItemId)
   })
 
-  createIpcHandler(IPC_CHANNELS.dbUpsertQualityScore, async (score: unknown) => {
-    try {
-      const validScore = validateInput(QualityScoreSchema, score, 'db:upsertQualityScore')
-      return await db.upsertQualityScore(validScore)
-    } catch (error) {
-      console.error('Error upserting quality score:', error)
-      throw error
-    }
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.UPSERT_QUALITY_SCORE, QualityScoreSchema, async (score) => {
+    return await db.media.upsertQualityScore(score as Partial<QualityScore>)
   })
 
   // ============================================================================
   // SETTINGS
   // ============================================================================
 
-  createIpcHandler(IPC_CHANNELS.dbGetSetting, async (key: unknown) => {
-    try {
-      const validKey = validateInput(SettingKeySchema, key, 'db:getSetting')
-      return db.getSetting(validKey)
-    } catch (error) {
-      console.error('Error getting setting:', error)
-      throw error
-    }
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.GET_SETTING, SettingKeySchema, async (key) => {
+    return await db.config.getSetting(key)
   })
 
-  const sensitiveSettingKeys = new Set(['plex_token', 'tmdb_api_key', 'musicbrainz_api_token', 'gemini_api_key'])
+  const sensitiveSettingKeys = new Set(['plex_token', 'tmdb_api_key', 'musicbrainz_api_token', 'gemini_api_key', 'omdb_api_key', 'tvdb_api_key', 'tvdb_pin', 'sonarr_api_key', 'radarr_api_key'])
 
-  createIpcHandlerWithEvent(IPC_CHANNELS.dbSetSetting, async (event, key: unknown, value: unknown) => {
-    try {
-      const validKey = validateInput(SettingKeySchema, key, 'db:setSetting')
-      const validValue = validateInput(SettingValueSchema, value, 'db:setSetting')
-      console.log('[IPC db:setSetting]', validKey, sensitiveSettingKeys.has(validKey) ? '(redacted)' : validValue)
-      const previousValue = validKey === SETTING_KEYS.optimization_default_target_profile_id || validKey.startsWith('quality_')
-        ? await db.getSetting(validKey)
-        : null
-      await db.setSetting(validKey, validValue)
-      const targetProfileChanged = validKey === SETTING_KEYS.optimization_default_target_profile_id && previousValue !== validValue
-      const mediaQualitySettingChanged = validKey.startsWith('quality_') && !validKey.startsWith('quality_music_') && previousValue !== validValue
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.DATABASE.SET_SETTING, SetSettingTupleSchema, async (event, key, value) => {
+    getLoggingService().info('[IPC db:setSetting]', key, sensitiveSettingKeys.has(key) ? '(redacted)' : value)
+    await db.config.setSetting(key, value)
 
-      // Invalidate quality analyzer cache when quality settings change
-      if (validKey.startsWith('quality_') || targetProfileChanged) {
-        getQualityAnalyzer().invalidateThresholdsCache()
-      }
-      if (targetProfileChanged) {
-        await db.setSetting('optimization.savings_reanalysis_pending', 'true')
-        getTaskQueueService().addTask({ type: 'media-analysis', label: 'Measure media files', options: { completedMediaItemIds: [] } })
-      }
-      if (mediaQualitySettingChanged) {
-        await db.setSetting('optimization.quality_reanalysis_pending', 'true')
-        getTaskQueueService().addTask({ type: 'quality-analysis', label: 'Refresh media quality' })
-      }
-
-      // Refresh TMDB API key when it changes (no restart needed)
-      if (validKey === 'tmdb_api_key') {
-        getTMDBService().refreshApiKey()
-      }
-
-      // Refresh Gemini API key/enabled state when they change (no restart needed)
-      if (validKey === 'gemini_api_key' || validKey === 'ai_enabled') {
-        getGeminiService().refreshApiKey()
-      }
-
-      // Broadcast settings change event to all windows
-      const win = BrowserWindow.fromWebContents(event.sender)
-      safeSend(win, IPC_CHANNELS.settingsChanged, { key: validKey, hasValue: !!validValue })
-
-      return true
-    } catch (error) {
-      console.error('Error setting setting:', error)
-      throw error
+    if (key.startsWith('quality_')) getQualityAnalyzer().invalidateThresholdsCache()
+    if (key === 'tmdb_api_key') {
+      await getTMDBService().refreshApiKey()
     }
-  })
-
-  createIpcHandler(IPC_CHANNELS.dbGetAllSettings, async () => {
-    try {
-      return db.getAllSettings()
-    } catch (error) {
-      console.error('Error getting all settings:', error)
-      throw error
+    if (key === 'ai_enabled') {
+      await getGeminiService().refreshApiKey()
     }
-  })
 
-  // NFS Mount Mappings (for Kodi NFS path conversion)
-  createIpcHandler(IPC_CHANNELS.settingsGetNfsMappings, async () => {
-    try {
-      const json = db.getSetting('nfs_mount_mappings')
-      return json ? JSON.parse(json) : {}
-    } catch (error) {
-      console.error('Error getting NFS mappings:', error)
-      return {}
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.settingsSetNfsMappings, async (mappings: unknown) => {
-    try {
-      const validMappings = validateInput(NfsMappingsSchema, mappings, 'settings:setNfsMappings')
-      await db.setSetting('nfs_mount_mappings', JSON.stringify(validMappings))
-      invalidateNfsMappingsCache()
-      return true
-    } catch (error) {
-      console.error('Error setting NFS mappings:', error)
-      throw error
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.settingsTestNfsMapping, async (nfsPath: unknown, localPath: unknown) => {
-    validateInput(NonEmptyStringSchema, nfsPath, 'settings:testNfsMapping')
-    const validLocalPath = validateInput(FilePathSchema, localPath, 'settings:testNfsMapping')
-    try {
-      const stats = await fs.stat(validLocalPath)
-      if (!stats.isDirectory()) {
-        return { success: false, error: `Path is not a directory: ${validLocalPath}` }
-      }
-
-      const entries = await fs.readdir(validLocalPath, { withFileTypes: true })
-      const folderCount = entries.filter(e => e.isDirectory()).length
-      const fileCount = entries.filter(e => e.isFile()).length
-
-      return {
-        success: true,
-        folderCount,
-        fileCount,
-        message: `Found ${entries.length} items (${folderCount} folders, ${fileCount} files)`
-      }
-    } catch (error: unknown) {
-      // Provide user-friendly error messages
-      let errorMessage = getErrorMessage(error) || `Unable to access: ${validLocalPath}`
-      if (isNodeError(error)) {
-        if (error.code === 'ENOENT') {
-          errorMessage = `Path does not exist: ${validLocalPath}`
-        } else if (error.code === 'EACCES') {
-          errorMessage = `Permission denied: ${validLocalPath}`
-        } else if (error.code === 'ENOTDIR') {
-          errorMessage = `Not a directory: ${validLocalPath}`
-        }
-      }
-      return { success: false, error: errorMessage }
-    }
-  })
-
-  // ============================================================================
-  // STATISTICS
-  // ============================================================================
-
-  createIpcHandler(IPC_CHANNELS.dbGetLibraryStats, async (sourceId?: unknown) => {
-    try {
-      const validSourceId = validateInput(OptionalSourceIdSchema, sourceId, 'db:getLibraryStats')
-      return db.getLibraryStats(validSourceId)
-    } catch (error) {
-      console.error('Error getting library stats:', error)
-      throw error
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.dbGetStorageAnalytics, async () => {
-    try {
-      return db.getStorageAnalytics()
-    } catch (error) {
-      console.error('Error getting storage analytics:', error)
-      throw error
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.dbGetDuplicateMedia, async () => {
-    try {
-      return db.getDuplicateMedia()
-    } catch (error) {
-      console.error('Error getting duplicate media:', error)
-      throw error
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.dbGetLibraryHealthScores, async () => {
-    try {
-      return db.getLibraryHealthScores()
-    } catch (error) {
-      console.error('Error getting library health scores:', error)
-      throw error
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.dbGetRecentlyUpgraded, async (days?: unknown) => {
-    try {
-      const validDays = days !== undefined ? validateInput(z.number().int().min(1).max(365), days, 'db:getRecentlyUpgraded') : 30
-      return db.getRecentlyUpgraded(validDays)
-    } catch (error) {
-      console.error('Error getting recently upgraded items:', error)
-      throw error
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.dbGetRecentlyAdded, async (days?: unknown, limit?: unknown) => {
-    try {
-      const validDays = days !== undefined ? validateInput(z.number().int().min(1).max(365), days, 'db:getRecentlyAdded') : 14
-      const validLimit = limit !== undefined ? validateInput(z.number().int().min(1).max(500), limit, 'db:getRecentlyAdded') : 50
-      return db.getRecentlyAdded(validDays, validLimit)
-    } catch (error) {
-      console.error('Error getting recently added items:', error)
-      throw error
-    }
-  })
-
-  // ============================================================================
-  // PERSON FILMOGRAPHY COMPLETENESS
-  // ============================================================================
-
-  createIpcHandler(IPC_CHANNELS.personGetCompleteness, async (personType?: unknown) => {
-    try {
-      const validType = personType ? validateInput(z.enum(['director', 'actor']), personType, 'person:getCompleteness') : undefined
-      return db.getPersonCompleteness(validType)
-    } catch (error) {
-      console.error('Error getting person completeness:', error)
-      throw error
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.personSearchTMDB, async (query: unknown) => {
-    try {
-      const name = validateInput(z.string().min(1).max(200), query, 'person:searchTMDB')
-      const tmdb = getTMDBService()
-      await tmdb.initialize()
-      const results = await tmdb.searchPerson(name)
-      const persons = (results.results || []).slice(0, 6)
-
-      // Fetch credits for each person to determine available roles
-      const enriched = await Promise.all(persons.map(async (p: { id: number; name: string; profile_path: string | null; known_for_department: string }) => {
-        try {
-          const credits = await tmdb.getPersonMovieCredits(p.id)
-          const roles: string[] = []
-          if (credits.cast.length > 0) roles.push('actor')
-          const crewJobs = new Set(credits.crew.map(c => c.job))
-          if (crewJobs.has('Director')) roles.push('director')
-          if (crewJobs.has('Writer') || crewJobs.has('Screenplay') || crewJobs.has('Story')) roles.push('writer')
-          if (crewJobs.has('Original Music Composer') || crewJobs.has('Music')) roles.push('composer')
-          if (crewJobs.has('Director of Photography')) roles.push('cinematographer')
-          if (crewJobs.has('Editor')) roles.push('editor')
-          return {
-            id: p.id,
-            name: p.name,
-            profile_url: p.profile_path ? tmdb.buildImageUrl(p.profile_path, 'w300') : null,
-            known_for: p.known_for_department,
-            roles,
-          }
-        } catch {
-          return {
-            id: p.id,
-            name: p.name,
-            profile_url: p.profile_path ? tmdb.buildImageUrl(p.profile_path, 'w300') : null,
-            known_for: p.known_for_department,
-            roles: [p.known_for_department === 'Directing' ? 'director' : 'actor'],
-          }
-        }
-      }))
-      return enriched
-    } catch (error) {
-      console.error('Error searching TMDB persons:', error)
-      return []
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.personAnalyze, async (personName: unknown, personType: unknown) => {
-    try {
-      const name = validateInput(z.string().min(1).max(200), personName, 'person:analyze')
-      const type = validateInput(z.enum(['director', 'actor', 'writer', 'composer', 'cinematographer', 'editor']), personType, 'person:analyze')
-
-      const tmdb = getTMDBService()
-      await tmdb.initialize()
-
-      // Search for the person
-      const searchResults = await tmdb.searchPerson(name)
-      if (!searchResults.results || searchResults.results.length === 0) {
-        throw new Error(`Person "${name}" not found on TMDB`)
-      }
-
-      const person = searchResults.results[0]
-      const credits = await tmdb.getPersonMovieCredits(person.id)
-
-      // Map person type to crew job filter
-      const crewJobMap: Record<string, string[]> = {
-        director: ['Director'],
-        writer: ['Writer', 'Screenplay', 'Story'],
-        composer: ['Original Music Composer', 'Music'],
-        cinematographer: ['Director of Photography'],
-        editor: ['Editor'],
-      }
-
-      // Get the relevant credits based on type
-      const filmography = type === 'actor'
-        ? credits.cast
-        : credits.crew.filter(c => (crewJobMap[type] || []).includes(c.job))
-
-      // Filter to released movies only (no future releases, no TV specials)
-      const validMovies = filmography.filter(m =>
-        m.title && m.release_date && m.release_date <= new Date().toISOString().split('T')[0]
-      )
-
-      // Check which movies we own (by TMDB ID) — use getMediaItems with tmdb_id filter
-      const allOwnedMovies = db.getMediaItems({ type: 'movie' })
-      const ownedTmdbSet = new Set(allOwnedMovies.filter(m => m.tmdb_id).map(m => m.tmdb_id as string))
-      const ownedTmdbIds = new Set<string>()
-      for (const movie of validMovies) {
-        if (ownedTmdbSet.has(movie.id.toString())) ownedTmdbIds.add(movie.id.toString())
-      }
-
-      const missingMovies = validMovies
-        .filter(m => !ownedTmdbIds.has(m.id.toString()))
-        .map(m => ({
-          tmdb_id: m.id.toString(),
-          title: m.title,
-          year: m.release_date ? parseInt(m.release_date.split('-')[0], 10) : null,
-          poster_path: m.poster_path,
-        }))
-
-      const totalMovies = validMovies.length
-      const ownedMovies = totalMovies - missingMovies.length
-      const pct = totalMovies > 0 ? Math.round((ownedMovies / totalMovies) * 100) : 100
-
-      db.upsertPersonCompleteness({
-        person_type: type,
-        person_name: person.name,
-        tmdb_person_id: person.id,
-        total_movies: totalMovies,
-        owned_movies: ownedMovies,
-        missing_movies: JSON.stringify(missingMovies),
-        owned_movie_ids: JSON.stringify(Array.from(ownedTmdbIds)),
-        completeness_percentage: pct,
-        profile_url: person.profile_path
-          ? `https://image.tmdb.org/t/p/w185${person.profile_path}`
-          : undefined,
+    if (key === 'ffprobe_enabled' && value === 'true') {
+      await getTaskQueueService().addTask({
+        type: TaskType.QualityAnalysis,
+        label: 'Recalculate Media Quality (FFprobe enabled)',
       })
-
-      return { name: person.name, totalMovies, ownedMovies, missingCount: missingMovies.length, percentage: pct }
-    } catch (error) {
-      console.error('Error analyzing person filmography:', error)
-      throw error
     }
+
+    if (key.startsWith('quality_')) {
+      await getTaskQueueService().addTask({
+        type: TaskType.QualityAnalysis,
+        label: 'Recalculate Media Quality (Settings changed)',
+      })
+    }
+
+
+    const win = BrowserWindow.fromWebContents(event.sender)
+    win?.webContents.send('settings:changed', { key, hasValue: !!value })
+    return true
   })
 
-  createIpcHandler(IPC_CHANNELS.personDelete, async (id: unknown) => {
+  createIpcHandler(IPC_CHANNELS.DATABASE.GET_ALL_SETTINGS, async () => {
+    return await db.config.getAllSettings()
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.SET_LIBRARY_PROTECTED, z.tuple([z.string(), z.string(), z.boolean()]), async (sourceId, libraryId, isProtected) => {
+    if (isProtected && !await db.config.hasPin()) {
+      throw new Error('Set a security PIN before protecting a library')
+    }
+    const manager = getSourceManager()
+    const libs = await manager.getLibraries(sourceId)
+    const lib = libs.find(l => l.id === libraryId)
+    if (!lib) throw new Error(`Library ${libraryId} not found in source ${sourceId}`)
+
+    await db.sources.setLibraryProtected(sourceId, libraryId, isProtected, lib.name, lib.type)
+    return true
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.SET_LIBRARY_ALLOW_EXPANDED_MATCHING, z.tuple([z.string(), z.string(), z.boolean()]), async (sourceId, libraryId, allowExpandedMatching) => {
+    const manager = getSourceManager()
+    const libs = await manager.getLibraries(sourceId)
+    const lib = libs.find(l => l.id === libraryId)
+    if (!lib) throw new Error(`Library ${libraryId} not found in source ${sourceId}`)
+
+    await db.sources.setLibraryAllowExpandedMatching(sourceId, libraryId, allowExpandedMatching, lib.name, lib.type)
+    return true
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.VERIFY_PIN, z.string(), async (pin) => {
+    return await db.config.verifyPin(pin)
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.SET_PIN, SecurityPinSchema, async (pin) => {
+    await db.config.setPin(pin)
+    return true
+  })
+
+  createIpcHandler(IPC_CHANNELS.DATABASE.HAS_PIN, async () => {
+    return await db.config.hasPin()
+  })
+
+  createIpcHandler(IPC_CHANNELS.SETTINGS.GET_NFS_MAPPINGS, async () => {
+    const json = await db.config.getSetting('nfs_mount_mappings')
+    return json ? JSON.parse(json) : {}
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.SETTINGS.SET_NFS_MAPPINGS, NfsMappingsSchema, async (mappings) => {
+    await db.config.setSetting('nfs_mount_mappings', JSON.stringify(mappings))
+    invalidateNfsMappingsCache()
+    return true
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.SETTINGS.TEST_NFS_MAPPING, TestNfsMappingTupleSchema, async (_nfsPath, localPath) => {
     try {
-      const validId = validateInput(PositiveIntSchema, id, 'person:delete')
-      db.deletePersonCompleteness(validId)
-    } catch (error) {
-      console.error('Error deleting person completeness:', error)
-      throw error
-    }
+      const stats = await fs.stat(localPath)
+      if (!stats.isDirectory()) return { success: false, error: 'Not a directory' }
+      const entries = await fs.readdir(localPath, { withFileTypes: true })
+      const folders = entries.filter(e => e.isDirectory()).length
+      const files = entries.filter(e => e.isFile()).length
+      return { success: true, folderCount: folders, fileCount: files, message: `Found ${entries.length} items` }
+    } catch (e) { return { success: false, error: getErrorMessage(e) } }
   })
 
-  // ============================================================================
-  // WATCHLIST SYNC (Trakt / Letterboxd)
-  // ============================================================================
-
-  createIpcHandler(IPC_CHANNELS.syncPlexWatchlist, async () => {
-    try {
-      // Get Plex token from saved settings
-      const plexToken = db.getSetting('plex_token')
-      if (!plexToken) throw new Error('No Plex account connected. Add a Plex source first.')
-      const { getWatchlistSyncService } = await import('../services/WatchlistSyncService')
-      return await getWatchlistSyncService().syncPlex(plexToken)
-    } catch (error) {
-      console.error('Error syncing Plex watchlist:', error)
-      throw error
-    }
+  createIpcHandler(IPC_CHANNELS.DATABASE.GET_LIBRARY_OVERVIEW, async (sourceId?: string) => {
+    const filters = { sourceId, limit: 200 }
+    const [movies, movieCount, tvShows, tvShowCount, artists, artistCount, albums, albumCount, tracks, trackCount, stats] = await Promise.all([
+      db.media.getItems({ ...filters, type: 'movie' }),
+      db.media.count({ ...filters, type: 'movie' }),
+      db.tvShows.getSummaries(filters),
+      db.tvShows.count(filters),
+      db.music.getArtists(filters),
+      db.music.countMusicArtists(filters),
+      db.music.getAlbums(filters),
+      db.music.countMusicAlbums(filters),
+      db.music.getTracks(filters),
+      db.music.countMusicTracks(filters),
+      db.stats.getLibraryStats(sourceId)
+    ])
+    return { movies: { items: movies, total: movieCount }, tvShows: { items: tvShows, total: tvShowCount }, music: { artists: { items: artists, total: artistCount }, albums: { items: albums, total: albumCount }, tracks: { items: tracks, total: trackCount } }, stats }
   })
 
-  createIpcHandler(IPC_CHANNELS.syncTrakt, async (username: unknown) => {
-    try {
-      const validUsername = validateInput(z.string().min(1).max(100), username, 'sync:trakt')
-      const { getWatchlistSyncService } = await import('../services/WatchlistSyncService')
-      return await getWatchlistSyncService().syncTrakt(validUsername)
-    } catch (error) {
-      console.error('Error syncing Trakt watchlist:', error)
-      throw error
-    }
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.GET_LIBRARY_STATS, OptionalSourceIdSchema, async (sourceId) => {
+    return await db.stats.getLibraryStats(sourceId)
   })
 
+  createValidatedIpcHandler(
+    IPC_CHANNELS.DATABASE.GET_DASHBOARD_SUMMARY,
+    z.object({
+      sourceId: OptionalSourceIdSchema,
+      sections: z.array(z.enum(['upgrades', 'collections', 'series', 'artists'])).min(1),
+    }),
+    async ({ sourceId, sections }) => await db.stats.getDashboardSummary(sourceId, sections)
+  )
 
-
-  createIpcHandler(IPC_CHANNELS.syncFetchPlex, async () => {
-    try {
-      const plexToken = db.getSetting('plex_token')
-      if (!plexToken) throw new Error('No Plex account connected.')
-      const { getWatchlistSyncService } = await import('../services/WatchlistSyncService')
-      return await getWatchlistSyncService().fetchPlex(plexToken)
-    } catch (error) {
-      console.error('Error fetching Plex watchlist:', error)
-      throw error
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.syncFetchTrakt, async (username: unknown) => {
-    try {
-      const validUsername = validateInput(z.string().min(1).max(100), username, 'sync:fetchTrakt')
-      const { getWatchlistSyncService } = await import('../services/WatchlistSyncService')
-      return await getWatchlistSyncService().fetchTrakt(validUsername)
-    } catch (error) {
-      console.error('Error fetching Trakt watchlist:', error)
-      throw error
-    }
-  })
-
-  // ============================================================================
-  // RELEASE ALERTS
-  // ============================================================================
-
-  createIpcHandler(IPC_CHANNELS.releaseAlertsCheck, async () => {
-    try {
-      const { getReleaseAlertService } = await import('../services/ReleaseAlertService')
-      return await getReleaseAlertService().checkForReleases()
-    } catch (error) {
-      console.error('Error checking release alerts:', error)
-      throw error
-    }
-  })
-
-  // ============================================================================
-  // MATCH FIXING - Fix incorrect TMDB matches for movies
-  // ============================================================================
-
-  /**
-   * Search TMDB for movies to fix a match
-   */
   const OptionalYearSchema = z.number().int().min(1800).max(2100).optional()
 
-  createIpcHandler(IPC_CHANNELS.movieSearchTMDB, async (query: unknown, year?: unknown) => {
-    try {
-      const validQuery = validateInput(NonEmptyStringSchema, query, 'movie:searchTMDB')
-      const validYear = validateInput(OptionalYearSchema, year, 'movie:searchTMDB')
-      console.log('[movie:searchTMDB] Searching for:', validQuery, 'year:', validYear)
-      const tmdb = getTMDBService()
-      await tmdb.initialize()
-      const response = await tmdb.searchMovie(validQuery, validYear)
-      console.log('[movie:searchTMDB] Got response:', JSON.stringify(response).substring(0, 500))
-
-      // Handle null/undefined results
-      if (!response || !response.results) {
-        console.log('[movie:searchTMDB] No results in response')
-        return []
-      }
-
-      console.log('[movie:searchTMDB] Got', response.results.length, 'results')
-
-      // Transform results and enrich with physical/digital release dates
-      const region = (db.getSetting('store_region') || 'US').toUpperCase()
-      const results = await Promise.all(response.results.slice(0, 10).map(async movie => {
-        let physical_release_date: string | null = null
-        try {
-          const releaseDates = await tmdb.getMovieReleaseDates(movie.id.toString())
-          let countryReleases = releaseDates.results.find(r => r.iso_3166_1 === region)
-          if (!countryReleases && region !== 'US') countryReleases = releaseDates.results.find(r => r.iso_3166_1 === 'US')
-          if (countryReleases) {
-            // Prefer Physical (5), fall back to Digital (4)
-            const physical = countryReleases.release_dates.find(r => r.type === 5)
-            const digital = countryReleases.release_dates.find(r => r.type === 4)
-            const best = physical || digital
-            if (best) physical_release_date = best.release_date.split('T')[0]
-          }
-        } catch (error) {
-          console.warn(`[movie:searchTMDB] Could not load release dates for "${movie.title}":`, error)
-        }
-        return {
-          id: movie.id,
-          title: movie.title,
-          release_date: movie.release_date,
-          physical_release_date,
-          overview: movie.overview,
-          poster_url: tmdb.buildImageUrl(movie.poster_path, 'w500'),
-          vote_average: movie.vote_average,
-        }
-      }))
-      console.log('[movie:searchTMDB] Returning', results.length, 'transformed results')
-      return results
-    } catch (error) {
-      console.error('Error searching TMDB for movies:', error)
-      throw error
-    }
+  createValidatedIpcHandler(IPC_CHANNELS.MOVIE.SEARCH_TMDB, z.tuple([NonEmptyStringSchema, OptionalYearSchema, z.boolean().optional()]), async (query, year, includeAdult) => {
+    const tmdb = getTMDBService()
+    await tmdb.initialize()
+    const res = await tmdb.searchMovie(query, year, includeAdult)
+    return (res?.results || []).map((m: TMDBMovieSearchResult) => ({ id: m.id, title: m.title, release_date: m.release_date, overview: m.overview, poster_url: tmdb.buildImageUrl(m.poster_path, 'w500'), vote_average: m.vote_average }))
   })
 
-  /**
-   * Fix the TMDB match for a movie
-   */
-  createIpcHandlerWithEvent(IPC_CHANNELS.movieFixMatch, async (event, mediaItemId: unknown, tmdbId: unknown) => {
-    try {
-      const validMediaItemId = validateInput(PositiveIntSchema, mediaItemId, 'movie:fixMatch')
-      const validTmdbId = validateInput(PositiveIntSchema, tmdbId, 'movie:fixMatch')
-      const tmdb = getTMDBService()
-      const win = BrowserWindow.fromWebContents(event.sender)
+  createValidatedIpcHandlerWithEvent(
+    IPC_CHANNELS.MEDIA.SEARCH_METADATA,
+    z.tuple([NonEmptyStringSchema, z.enum(['movie', 'tv', 'anime', 'music', 'artwork']).optional(), z.boolean().optional(), NonEmptyStringSchema.optional(), z.string().min(1).max(100)]),
+    async (event, query, type, includeAdult, artistName, requestId) => {
+      const matchingService = MetadataRegistryService.getInstance().getMatchingService()
+      const operation = operationRequestRegistry.register(event.sender, requestId)
+      try {
+        return await matchingService.matchMediaItem({ title: query, type: type || 'movie', includeAdult, artistName }, operation.signal)
+      } catch (error) {
+        if (operation.signal.aborted) return { status: 'cancelled' as const }
+        throw error
+      } finally {
+        operation.dispose()
+      }
+    }
+  )
 
-      // Get movie details from TMDB for the poster, title, and year
-      await tmdb.initialize()
-      const movieDetails = await tmdb.getMovieDetails(validTmdbId.toString())
-      const posterUrl = tmdb.buildImageUrl(movieDetails.poster_path, 'w500') || undefined
-      const title = movieDetails.title
-      const year = movieDetails.release_date
-        ? parseInt(movieDetails.release_date.split('-')[0], 10)
-        : undefined
+  createValidatedIpcHandlerWithEvent(
+    IPC_CHANNELS.MOVIE.FIX_MATCH,
+    FixMatchTupleSchema,
+    async (event, mediaItemId, providerId, externalId) => {
+      const details = await MetadataRegistryService.getInstance()
+        .getCompositeProvider()
+        .getDetails(externalId, 'movie')
 
-      // Update the movie with the new TMDB ID, poster, title, and year
-      await db.updateMovieMatch(validMediaItemId, validTmdbId.toString(), posterUrl, title, year, movieDetails.original_language)
+      if (!details) {
+        throw new Error(`Could not find details for ${providerId}:${externalId}`)
+      }
 
-      // Send library update for live refresh
-      safeSend(win, IPC_CHANNELS.libraryUpdated, { type: 'media' })
+      // Determine TMDB, IMDB, and AniList IDs based on the provider and external IDs
+      const tmdbId = providerId === 'tmdb' ? externalId : details.externalIds?.tmdbId || null
+      const imdbId = providerId === 'omdb' || providerId === 'imdb' ? externalId : details.externalIds?.imdbId || null
+      const anilistId = providerId === 'anilist' ? externalId : details.externalIds?.anilistId || null
 
-      return {
-        success: true,
-        tmdbId: validTmdbId,
+      if (!tmdbId && !imdbId && !anilistId) {
+        throw new Error(`An authoritative external ID (TMDB, IMDb, or AniList) could not be resolved for this match`)
+      }
+
+      const posterUrl = details.posterUrl || undefined
+      const year = details.year
+
+      await db.media.updateMovieMatch(
+        mediaItemId,
+        tmdbId || undefined,
         posterUrl,
-        title,
+        details.title,
         year,
+        imdbId || undefined
+      )
+      const identityIds = details.externalIds || {}
+      for (const [provider, value] of Object.entries(identityIds)) {
+        if (value) await db.identities.upsertIdentity({ entityType: 'movie', entityId: mediaItemId, provider, externalId: String(value), locked: true, lockSource: 'manual' })
       }
-    } catch (error) {
-      console.error('Error fixing movie match:', error)
-      throw error
-    }
-  })
+      const aliasesToInsert = (details.alternateTitles || []).map(alias => ({ entityType: 'movie' as const, entityId: mediaItemId, alias, provider: providerId }))
+      await db.identities.batchAddAliases(aliasesToInsert)
 
-  // ============================================================================
-  // DATA MANAGEMENT - Export/Import/Reset
-  // ============================================================================
+      const item = await db.media.getItem(mediaItemId)
+      if (item?.source_id) {
+        await getDeduplicationService().scanForDuplicates(item.source_id)
+      }
 
-  /**
-   * Get the database file path
-   */
-  createIpcHandler(IPC_CHANNELS.dbGetPath, async () => {
-    try {
-      return db.getDbPath()
-    } catch (error) {
-      console.error('Error getting database path:', error)
-      throw error
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.dbOpenFolder, async () => {
-    try {
-      const dbPath = db.getDbPath()
-      const folder = path.dirname(dbPath)
-      await shell.openPath(folder)
-      return { success: true }
-    } catch (error) {
-      console.error('Error opening database folder:', error)
-      return { success: false }
-    }
-  })
-
-  /**
-   * Export database to JSON file
-   */
-  createIpcHandlerWithEvent(IPC_CHANNELS.dbExport, async (event) => {
-    try {
       const win = BrowserWindow.fromWebContents(event.sender)
-      if (!win) throw new Error('No window found')
+      win?.webContents.send('library:updated', { type: 'media' })
 
-      // Show save dialog
-      const result = await dialog.showSaveDialog(win, {
-        title: 'Export Database',
-        defaultPath: `totality-backup-${new Date().toISOString().split('T')[0]}.json`,
-        filters: [
-          { name: 'JSON Files', extensions: ['json'] },
-          { name: 'All Files', extensions: ['*'] },
-        ],
-      })
-
-      if (result.canceled || !result.filePath) {
-        return { success: false, cancelled: true }
-      }
-
-      // Export data
-      const data = db.exportData()
-      await fs.writeFile(result.filePath, JSON.stringify(data, null, 2), 'utf-8')
-
-      return { success: true, path: result.filePath }
-    } catch (error: unknown) {
-      console.error('Error exporting database:', error)
-      throw error
+      return { success: true, tmdbId: tmdbId || undefined, posterUrl, title: details.title, year }
     }
+  )
+
+  createIpcHandler(IPC_CHANNELS.DATABASE.GET_PATH, async () => {
+    return db.getDbPath()
   })
 
-  /**
-   * Export working document CSV for tracking upgrades and completions
-   */
-  createIpcHandlerWithEvent(IPC_CHANNELS.dbExportCSV, async (event, options: unknown) => {
+  createIpcHandler(IPC_CHANNELS.DATABASE.OPEN_FOLDER, async () => {
+    await shell.openPath(path.dirname(db.getDbPath()))
+    return { success: true }
+  })
+
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.DATABASE.EXPORT, z.string().min(1).max(100), async (event, requestId) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('No window')
+    const operation = operationRequestRegistry.register(event.sender, requestId)
     try {
-      const validOptions = validateInput(ExportCSVOptionsSchema, options, 'db:exportCSV')
-      const win = BrowserWindow.fromWebContents(event.sender)
-      if (!win) throw new Error('No window found')
-
-      // Show save dialog
-      const result = await dialog.showSaveDialog(win, {
-        title: 'Export Working Document',
-        defaultPath: `totality-working-${new Date().toISOString().split('T')[0]}.csv`,
-        filters: [
-          { name: 'CSV Files', extensions: ['csv'] },
-          { name: 'All Files', extensions: ['*'] },
-        ],
-      })
-
-      if (result.canceled || !result.filePath) {
-        return { success: false, cancelled: true }
+      const res = await dialog.showSaveDialog(win, { title: 'Export Database', defaultPath: `totality-backup-${new Date().toISOString().split('T')[0]}.json`, filters: [{ name: 'JSON Files', extensions: ['json'] }, { name: 'All Files', extensions: ['*'] }] })
+      if (res.canceled || !res.filePath) return { success: false, cancelled: true }
+      operation.signal.throwIfAborted()
+      const temporaryPath = path.join(path.dirname(res.filePath), `.${path.basename(res.filePath)}.${randomUUID()}.tmp`)
+      try {
+        const data = await db.exportData(operation.signal)
+        operation.signal.throwIfAborted()
+        await fs.writeFile(temporaryPath, JSON.stringify(data, null, 2), { encoding: 'utf-8', signal: operation.signal })
+        operation.beginCommit()
+        await fs.rename(temporaryPath, res.filePath)
+        return { success: true, path: res.filePath }
+      } finally {
+        await fs.rm(temporaryPath, { force: true })
       }
-
-      // Export data as CSV
-      const csv = await db.exportWorkingCSV({
-        includeUpgrades: validOptions.includeUpgrades,
-        includeMissingMovies: validOptions.includeMissingMovies,
-        includeMissingEpisodes: validOptions.includeMissingEpisodes,
-        includeMissingAlbums: validOptions.includeMissingAlbums,
-        includeMusicUpgrades: validOptions.includeMusicUpgrades,
-      })
-      await fs.writeFile(result.filePath, csv, 'utf-8')
-
-      return { success: true, path: result.filePath }
-    } catch (error: unknown) {
-      console.error('Error exporting CSV:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Import database from JSON file
-   */
-  createIpcHandlerWithEvent(IPC_CHANNELS.dbImport, async (event) => {
-    try {
-      const win = BrowserWindow.fromWebContents(event.sender)
-      if (!win) throw new Error('No window found')
-
-      // Show open dialog
-      const result = await dialog.showOpenDialog(win, {
-        title: 'Import Database',
-        filters: [
-          { name: 'JSON Files', extensions: ['json'] },
-          { name: 'All Files', extensions: ['*'] },
-        ],
-        properties: ['openFile'],
-      })
-
-      if (result.canceled || result.filePaths.length === 0) {
-        return { success: false, cancelled: true }
-      }
-
-      // Read and parse file
-      const content = await fs.readFile(result.filePaths[0], 'utf-8')
-      const data = JSON.parse(content)
-
-      // Validate it looks like our export format
-      if (!data._meta || !Array.isArray(data._meta)) {
-        throw new Error('Invalid export file format')
-      }
-
-      // Import data
-      const importResult = await db.importData(data)
-
-      return {
-        success: true,
-        imported: importResult.imported,
-        errors: importResult.errors,
-      }
-    } catch (error: unknown) {
-      console.error('Error importing database:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Reset the database (delete all data)
-   */
-  createIpcHandler(IPC_CHANNELS.dbReset, async () => {
-    try {
-      await db.resetDatabase()
-      return { success: true }
-    } catch (error: unknown) {
-      console.error('Error resetting database:', error)
-      throw error
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.dbResetLibraryData, async () => {
-    try {
-      await db.resetLibraryData()
-      return { success: true }
-    } catch (error: unknown) {
-      console.error('Error resetting library data:', error)
-      throw error
-    }
-  })
-
-  // ============================================================================
-  // GLOBAL SEARCH
-  // ============================================================================
-
-  /**
-   * Search across all media types for global search bar
-   */
-  createIpcHandler(IPC_CHANNELS.mediaSearch, async (query: unknown) => {
-    const validQuery = validateInput(NonEmptyStringSchema, query, 'media:search')
-    return db.globalSearch(validQuery)
-  })
-
-  // ============================================================================
-  // EXCLUSIONS
-  // ============================================================================
-
-  createIpcHandler(IPC_CHANNELS.dbAddExclusion, async (exclusionType: unknown, referenceId?: unknown, referenceKey?: unknown, parentKey?: unknown, title?: unknown) => {
-    try {
-      const validArgs = validateInput(AddExclusionSchema, { exclusionType, referenceId, referenceKey, parentKey, title }, 'db:addExclusion')
-      console.log('[IPC db:addExclusion]', validArgs.exclusionType, validArgs.title || validArgs.referenceKey || '')
-      const result = db.addExclusion(validArgs.exclusionType, validArgs.referenceId, validArgs.referenceKey, validArgs.parentKey, validArgs.title)
-      safeSend(BrowserWindow.getAllWindows()[0] || null, IPC_CHANNELS.libraryUpdated, { type: 'media' })
-      return result
     } catch (error) {
-      console.error('Error adding exclusion:', error)
+      if (operation.signal.aborted) return { success: false, cancelled: true }
       throw error
+    } finally {
+      operation.dispose()
     }
   })
 
-  createIpcHandler(IPC_CHANNELS.dbRemoveExclusion, async (id: unknown) => {
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.DATABASE.EXPORT_CSV, z.tuple([ExportCSVOptionsSchema, z.string().min(1).max(100)]), async (event, options, requestId) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('No window')
+    const operation = operationRequestRegistry.register(event.sender, requestId)
     try {
-      const validId = validateInput(PositiveIntSchema, id, 'db:removeExclusion')
-      console.log('[IPC db:removeExclusion] id:', validId)
-      db.removeExclusion(validId)
-      safeSend(BrowserWindow.getAllWindows()[0] || null, IPC_CHANNELS.libraryUpdated, { type: 'media' })
+      const res = await dialog.showSaveDialog(win, { title: 'Export Working Document', defaultPath: `totality-working-${new Date().toISOString().split('T')[0]}.csv`, filters: [{ name: 'CSV Files', extensions: ['csv'] }, { name: 'All Files', extensions: ['*'] }] })
+      if (res.canceled || !res.filePath) return { success: false, cancelled: true }
+      operation.signal.throwIfAborted()
+      const temporaryPath = path.join(path.dirname(res.filePath), `.${path.basename(res.filePath)}.${randomUUID()}.tmp`)
+      try {
+        const csv = await db.media.exportWorkingCSV(options)
+        operation.signal.throwIfAborted()
+        await fs.writeFile(temporaryPath, csv, { encoding: 'utf-8', signal: operation.signal })
+        operation.beginCommit()
+        await fs.rename(temporaryPath, res.filePath)
+        return { success: true, path: res.filePath }
+      } finally {
+        await fs.rm(temporaryPath, { force: true })
+      }
     } catch (error) {
-      console.error('Error removing exclusion:', error)
+      if (operation.signal.aborted) return { success: false, cancelled: true }
       throw error
+    } finally {
+      operation.dispose()
     }
   })
 
-  const OptionalStringSchema = z.string().max(500).optional()
-
-  createIpcHandler(IPC_CHANNELS.dbGetExclusions, async (exclusionType?: unknown, parentKey?: unknown) => {
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.DATABASE.IMPORT, z.string().min(1).max(100), async (event, requestId) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('No window')
+    const operation = operationRequestRegistry.register(event.sender, requestId)
     try {
-      const validExclusionType = validateInput(OptionalStringSchema, exclusionType, 'db:getExclusions')
-      const validParentKey = validateInput(OptionalStringSchema, parentKey, 'db:getExclusions')
-      return db.getExclusions(validExclusionType, validParentKey)
+      const res = await dialog.showOpenDialog(win, { title: 'Import Database', filters: [{ name: 'JSON Files', extensions: ['json'] }, { name: 'All Files', extensions: ['*'] }], properties: ['openFile'] })
+      if (res.canceled || res.filePaths.length === 0) return { success: false, cancelled: true }
+      const contents = await fs.readFile(res.filePaths[0], { encoding: 'utf-8', signal: operation.signal })
+      const data = JSON.parse(contents)
+      operation.signal.throwIfAborted()
+      if (!data._meta) throw new Error('Invalid format')
+      const result = await db.importData(data, operation.signal, operation.beginCommit)
+      return { success: true, imported: result.imported, errors: result.errors }
     } catch (error) {
-      console.error('Error getting exclusions:', error)
-      return []
+      if (operation.signal.aborted) return { success: false, cancelled: true }
+      throw error
+    } finally {
+      operation.dispose()
     }
   })
 
-  console.log('Database IPC handlers registered')
+  createIpcHandler(IPC_CHANNELS.DATABASE.RESET, async () => {
+    await db.resetDatabase()
+    return { success: true }
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.MEDIA.SEARCH, NonEmptyStringSchema, async (query) => {
+    return await db.media.globalSearch(query)
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.ADD_EXCLUSION, AddExclusionTupleSchema, async (type, refId, refKey, pKey, title) => {
+    const exclusion: Parameters<typeof db.exclusions.addExclusion>[0] = { exclusion_type: type as Parameters<typeof db.exclusions.addExclusion>[0]['exclusion_type'], reference_id: refId, reference_key: refKey, parent_key: pKey, title }
+    return await db.exclusions.addExclusion(exclusion)
+  })
+
+  createIpcHandler(IPC_CHANNELS.DATABASE.BATCH_ADD_EXCLUSIONS, async (exclusions: Parameters<typeof db.exclusions.batchAddExclusions>[0]) => {
+    return await db.exclusions.batchAddExclusions(exclusions)
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.REMOVE_EXCLUSION, PositiveIntSchema, async (id) => {
+    await db.exclusions.delete(id)
+    return true
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.GET_EXCLUSIONS, GetExclusionsTupleSchema, async (type, pKey) => {
+    return await db.exclusions.getExclusions(type, pKey)
+  })
+
+  getLoggingService().info('[database]', 'Database IPC handlers registered')
 }
+

@@ -1,13 +1,11 @@
-import { useState, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Star, ExternalLink, ChevronDown } from 'lucide-react'
-import type { StoreLink } from '../../contexts/WishlistContext'
-import { useMenuClose } from '../../hooks/useMenuClose'
+import type { StoreLink } from '@/contexts/WishlistContext'
 
 interface StoreLinksMenuProps {
   storeLinks: StoreLink[]
   onOpenLink: (url: string) => void
   isLoading?: boolean
-  compact?: boolean
 }
 
 // Store icons mapping
@@ -23,10 +21,33 @@ const storeIcons: Record<string, string> = {
   hdtracks: 'HD'
 }
 
-export function StoreLinksMenu({ storeLinks, onOpenLink, isLoading, compact = false }: StoreLinksMenuProps) {
+export function StoreLinksMenu({ storeLinks, onOpenLink, isLoading }: StoreLinksMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const closeMenu = useCallback(() => setIsOpen(false), [])
-  const menuRef = useMenuClose({ isOpen, onClose: closeMenu })
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Close on escape
+  useEffect(() => {
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setIsOpen(false)
+      }
+    }
+    if (isOpen) {
+      document.addEventListener('keydown', handleEscape)
+      return () => document.removeEventListener('keydown', handleEscape)
+    }
+  }, [isOpen])
 
   // Group stores by category
   const aggregators = storeLinks.filter(s => s.category === 'aggregator')
@@ -38,12 +59,11 @@ export function StoreLinksMenu({ storeLinks, onOpenLink, isLoading, compact = fa
       <button
         onClick={() => setIsOpen(!isOpen)}
         disabled={isLoading}
-        className={`flex items-center text-xs font-medium rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50 ${compact ? "gap-1 p-1.5" : "gap-1.5 px-2.5 py-1.5"}`}
-        aria-label={compact ? "Shop" : undefined}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
       >
         <Star className="w-3.5 h-3.5" />
-        {!compact && <span>Shop</span>}
-        {!compact && <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />}
+        <span>Shop</span>
+        <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && (

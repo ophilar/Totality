@@ -32,8 +32,11 @@ release
 
 # Database
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
+tests/tmp/
 
 # OS
 Thumbs.db
@@ -43,36 +46,26 @@ nul
 .claude/
 CLAUDE.md
 
+# Jules / Gemini CLI
+.jules/
+.gemini/
+.superpowers/
+dev_docs/
+
 # Test coverage
 coverage/
-# After Effects project files
-Adobe After Effects Auto-Save/
-*.aep
-*.aep_AME/
 
-# Personal notes / old release notes
-TODO-audit-fixes.md
-quality-scoring-explained.txt
-release-notes-*.txt
-
-test-results/
-
-# Database journals
-*.db-shm
-*.db-wal
-tests/tmp/
-
-# Repomix & CLI Scratch
+# Repomix
 repomix-output.xml
 repomix-analysis.txt
 repomix.config.json
 repomix-output.txt
-.superpowers/
 
-# Local timeline data
+# Build and IDE
+*.tsbuildinfo
+.eslintcache
+
+test-results/
+
+# Local timeline data is user-owned and is never committed.
 data/timelines/*.json
-!data/timelines/midnight-diner-release-order.json
-
-# Project Dev Docs
-dev_docs/
-

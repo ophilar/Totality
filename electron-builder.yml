@@ -11,17 +11,10 @@ directories:
 files:
   - dist
   - dist-electron
-  - data/timelines/midnight-diner-release-order.json
   - package.json
   - "!**/*.map"
   - "!**/*.d.ts"
   - "!**/node_modules/**/{test,tests,__tests__,__mocks__}/**/*"
-  - "!**/node_modules/**/{browser-test,system-test}/**/*"
-  - "!**/node_modules/**/__fixtures__/**/*"
-  - "!**/node_modules/**/__snapshots__/**/*"
-  - "!**/node_modules/**/.history/**/*"
-  - "!**/node_modules/**/test.js"
-  - "!**/node_modules/**/tests.js"
   - "!**/node_modules/**/*.md"
   - "!**/node_modules/**/{.eslintrc*,.prettierrc*,tsconfig*.json}"
   - "!**/node_modules/**/CHANGELOG*"
@@ -29,15 +22,6 @@ files:
   - "!**/node_modules/**/{example,examples,doc,docs}/**/*"
   - "!**/node_modules/**/*.{ts,tsx}"
   - "!**/node_modules/**/.github/**/*"
-  - "!**/node_modules/better-sqlite3/{deps,src,build}/**/*"
-  - "!**/node_modules/better-sqlite3/prebuilds/*"
-  - "**/node_modules/better-sqlite3/prebuilds/${platform}-${arch}.node"
-  - "!**/node_modules/sql.js/.devcontainer/**/*"
-  - "!**/node_modules/sql.js/{.jsdoc.config.json,.nojekyll,AUTHORS,eslint.config.cjs,logo.svg}"
-  - "!**/node_modules/sql.js/dist/*"
-  - "!**/node_modules/sql.js/dist/**/*"
-  - "**/node_modules/sql.js/dist/sql-wasm.js"
-  - "**/node_modules/sql.js/dist/sql-wasm.wasm"
 
 # Native module configuration for better-sqlite3
 asar: true
@@ -53,11 +37,12 @@ electronLanguages:
   - en-US
 
 win:
+  compression: maximum
   target:
     - target: nsis
       arch:
         - x64
-  icon: resources/icon.ico
+  icon: resources/icon.png
 
 nsis:
   artifactName: "${productName}-Setup-${version}.${ext}"

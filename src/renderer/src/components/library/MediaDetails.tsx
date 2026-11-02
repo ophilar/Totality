@@ -1,996 +1,259 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { MoreVertical, RefreshCw, Pencil, EyeOff, X, Copy, Check, ChevronDown, Star } from 'lucide-react'
-import { getQualityLevelColors } from '../../utils/qualityColors'
-import { formatBitrate } from './mediaUtils'
-import { DropdownMenu, DropdownMenuItem } from '../ui/DropdownMenu'
-import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
-import type { WishlistMediaType } from '../../contexts/WishlistContext'
-import { useMenuClose } from '../../hooks/useMenuClose'
-import { useFocusTrap } from '../../hooks/useFocusTrap'
-import { ConversionRecommendation } from './ConversionRecommendation'
-import type { AudioTrack, SubtitleTrack } from '@main/types/database'
+import { 
+  X, 
+  Film, 
+  RefreshCw, 
+  Clock, 
+  HardDrive, 
+  Database,
+  ChevronDown
+} from 'lucide-react'
+import { formatHdrLabel } from '@/components/library/QualityBadges'
+import { TranscodeModal } from '@/components/library/TranscodeModal'
+import { useToast } from '@/contexts/ToastContext'
+import { toSafeNumber, toSafeString } from '@/utils/typeSafety'
+import { formatDuration } from '@/components/library/mediaUtils'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
+import { Zap } from 'lucide-react'
+import type { MediaItem, MediaItemVersion } from '@main/types/database'
 
 interface MediaDetailsProps {
   mediaId: number
   onClose: () => void
-  onRescan?: (mediaId: number, sourceId: string, libraryId: string | null, filePath: string) => Promise<void>
   onFixMatch?: (mediaItemId: number, title: string, year?: number, filePath?: string) => void
-  onDismissUpgrade?: (mediaId: number, title: string) => void
-  isMobile?: boolean
 }
 
-interface MediaVersion {
-  id: number
-  media_item_id: number
-  version_source: string
-  edition?: string
-  label?: string
-  file_path: string
-  file_size_bytes: number
-  duration_ms: number
-  resolution: string
-  width: number
-  height: number
-  video_codec: string
-  video_bitrate_kbps: number
-  audio_codec: string
-  audio_channels: number
-  audio_bitrate_kbps: number
-  video_frame_rate?: number
-  color_bit_depth?: number
-  hdr_format?: string
-  video_profile?: string
-  audio_profile?: string
-  audio_sample_rate?: number
-  has_object_audio?: boolean
-  audio_tracks?: string
-  subtitle_tracks?: string
-  color_space?: string
-  container?: string
-  quality_tier?: string
-  tier_quality?: string
-  tier_score?: number | null
-  bitrate_tier_score?: number | null
-  audio_tier_score?: number | null
-  is_best?: boolean
-}
-
-interface MediaWithQuality {
-  id: number
-  title: string
-  year?: number
-  type: 'movie' | 'episode'
-  series_title?: string
-  season_number?: number
-  episode_number?: number
-  source_id: string
-  library_id?: string
-  file_path: string
-  file_size_bytes: number
-  duration_ms: number
-  resolution: string
-  width: number
-  height: number
-  video_codec: string
-  video_bitrate_kbps: number
-  audio_codec: string
-  audio_channels: number
-  audio_bitrate_kbps: number
-  imdb_id?: string
-  tmdb_id?: string
-  poster_url?: string
-  episode_thumb_url?: string
-  season_poster_url?: string
-  summary?: string
-  video_frame_rate?: number
-  color_bit_depth?: number
-  hdr_format?: string
-  color_space?: string
-  video_profile?: string
-  video_level?: number
-  audio_profile?: string
-  audio_sample_rate?: number
-  has_object_audio?: boolean
-  container?: string
-  audio_tracks?: string
-  subtitle_tracks?: string
-  version_count?: number
-  quality_tier?: 'SD' | '720p' | '1080p' | '4K' | 'UNKNOWN'
-  tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
-  tier_score?: number | null
-  bitrate_tier_score?: number | null
-  audio_tier_score?: number | null
-  evidence_status?: 'measured' | 'estimated' | 'insufficient' | null
-  estimated_savings_bytes?: number | null
-  savings_coverage?: 'complete' | 'partial' | 'insufficient'
-  confidence?: string | null
-  savings_basis?: string | null
-  overall_score?: number | null
-  needs_upgrade?: boolean
-  issues?: string
-  tmdb_rating?: number
-  play_count?: number
-  last_watched_at?: string
-}
-
-interface QualityThresholds {
-  video: { medium: number; high: number }
-  audio: { medium: number; high: number }
-}
-
-const DEFAULT_THRESHOLDS: Record<string, QualityThresholds> = {
-  'SD': { video: { medium: 1500, high: 3500 }, audio: { medium: 128, high: 192 } },
-  '720p': { video: { medium: 3000, high: 8000 }, audio: { medium: 192, high: 320 } },
-  '1080p': { video: { medium: 6000, high: 15000 }, audio: { medium: 256, high: 640 } },
-  '4K': { video: { medium: 15000, high: 40000 }, audio: { medium: 320, high: 1000 } },
-}
-
-function parseTrackMetadata<T>(raw: string | null | undefined, mediaItemId: number | undefined, field: string): T[] {
-  if (!raw) return []
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    if (!Array.isArray(parsed)) throw new Error('Expected an array')
-    return parsed as T[]
-  } catch (error) {
-    console.error(`[MediaDetails] Invalid ${field} metadata for media item ${mediaItemId ?? 'unknown'}:`, error)
-    return []
-  }
-}
-
-export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismissUpgrade, isMobile = false }: MediaDetailsProps) {
-  const [media, setMedia] = useState<MediaWithQuality | null>(null)
-  const [versions, setVersions] = useState<MediaVersion[]>([])
+export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps) {
+  const [media, setMedia] = useState<MediaItem | null>(null)
+  const [versions, setVersions] = useState<MediaItemVersion[]>([])
   const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null)
-  const [showVersionTable, setShowVersionTable] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [thresholds, setThresholds] = useState<Record<string, QualityThresholds>>(DEFAULT_THRESHOLDS)
-  const [showMenu, setShowMenu] = useState(false)
-  const [isRescanning, setIsRescanning] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const [backdropUrl, setBackdropUrl] = useState<string | null>(null)
-  const audioTracks = useMemo(
-    () => parseTrackMetadata<AudioTrack>(media?.audio_tracks, media?.id, 'audio_tracks'),
-    [media?.audio_tracks, media?.id],
-  )
-  const subtitleTracks = useMemo(
-    () => parseTrackMetadata<SubtitleTrack>(media?.subtitle_tracks, media?.id, 'subtitle_tracks'),
-    [media?.subtitle_tracks, media?.id],
-  )
-  const sv = versions.find(version => version.id === selectedVersionId) || null
-  const svAudioTracks = useMemo(
-    () => sv ? parseTrackMetadata<AudioTrack>(sv.audio_tracks, sv.media_item_id, 'version audio_tracks') : audioTracks,
-    [sv, audioTracks],
-  )
-  const svSubtitleTracks = useMemo(
-    () => sv ? parseTrackMetadata<SubtitleTrack>(sv.subtitle_tracks, sv.media_item_id, 'version subtitle_tracks') : subtitleTracks,
-    [sv, subtitleTracks],
-  )
-  const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
-
-  const handleRescan = async () => {
-    if (!media || !onRescan) return
-    setShowMenu(false)
-    setIsRescanning(true)
-    try {
-      await onRescan(media.id, media.source_id, media.library_id || null, media.file_path)
-    } finally {
-      setIsRescanning(false)
-    }
-  }
-
-  const handleFixMatch = () => {
-    if (!media || !onFixMatch) return
-    setShowMenu(false)
-    onFixMatch(media.id, media.title, media.year, media.file_path)
-  }
-
-  const handleDismissUpgrade = () => {
-    if (!media || !onDismissUpgrade) return
-    setShowMenu(false)
-    const title = media.type === 'episode' && media.series_title
-      ? `${media.series_title} S${media.season_number}E${media.episode_number}`
-      : media.title
-    onDismissUpgrade(media.id, title)
-    // Update local state so UI reflects immediately
-    setMedia(prev => prev ? { ...prev, needs_upgrade: false, tier_quality: 'UNKNOWN' } : prev)
-  }
+  const [showTranscodeModal, setShowTranscodeModal] = useState(false)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [deepAnalysis, setDeepAnalysis] = useState<{ peakBitrate?: number; avgBitrate?: number; scanDurationMs?: number } | null>(null)
+  const [expandedSection, setExpandedSection] = useState<'playback' | 'video' | 'audio' | 'file' | 'analysis' | null>(null)
+  const { addToast } = useToast()
+  const modalRef = useRef<HTMLDivElement | null>(null)
+  useFocusTrap(!!media, modalRef)
 
   useEffect(() => {
-    loadMediaDetails()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mediaId])
+    let active = true
+    void Promise.all([
+      window.electronAPI.getMediaItem(mediaId),
+      window.electronAPI.getMediaItemVersions(mediaId),
+    ]).then(async ([item, itemVersions]) => {
+      if (!active || !item) return
+      const typedItem = item as MediaItem
+      const typedVersions = itemVersions as MediaItemVersion[]
+      setMedia(typedItem)
+      setDeepAnalysis(typedItem.deep_analysis ? JSON.parse(typedItem.deep_analysis).deepAnalysis || null : null)
+      setVersions(typedVersions)
+      const best = typedVersions.find(version => version.is_best) || typedVersions[0]
+      setSelectedVersionId(best?.id ?? null)
+    }).catch(err => {
+      if (!active) return
+      window.electronAPI.log.error('[MediaDetails]', 'Failed to load media details:', err)
+      addToast({ title: 'Failed to load details', type: 'error' })
+    }).finally(() => {
+      if (active) setLoading(false)
+    })
+    return () => { active = false }
+  }, [mediaId, addToast])
 
-  // Focus trap — must be before any conditional returns (Rules of Hooks)
-  const modalRef = useRef<HTMLDivElement>(null)
-  useFocusTrap(true, modalRef)
-
-  const loadMediaDetails = async () => {
+  const handleAnalyze = async () => {
+    if (!media?.id) return
     try {
-      setLoading(true)
-      setError(null)
-
-      // Load quality settings
-      const allSettings = await window.electronAPI.getAllSettings()
-      const loadedThresholds: Record<string, QualityThresholds> = { ...DEFAULT_THRESHOLDS }
-
-      const tiers = ['sd', '720p', '1080p', '4k']
-      const tierKeys: Record<string, string> = { 'sd': 'SD', '720p': '720p', '1080p': '1080p', '4k': '4K' }
-
-      for (const tier of tiers) {
-        const key = tierKeys[tier]
-        const audioMedium = allSettings[`quality_audio_${tier}_medium`]
-        const audioHigh = allSettings[`quality_audio_${tier}_high`]
-
-        loadedThresholds[key] = {
-          video: DEFAULT_THRESHOLDS[key].video,
-          audio: {
-            medium: audioMedium ? parseFloat(audioMedium) : DEFAULT_THRESHOLDS[key].audio.medium,
-            high: audioHigh ? parseFloat(audioHigh) : DEFAULT_THRESHOLDS[key].audio.high,
-          },
-        }
-      }
-      setThresholds(loadedThresholds)
-
-      const item = await window.electronAPI.getMediaItemById(mediaId) as MediaWithQuality | null
-      if (!item) {
-        setError('Media item not found')
-        return
-      }
-
-      const qualityScore = await window.electronAPI.getQualityScoreByMediaId(mediaId) as {
-        quality_tier?: 'SD' | '720p' | '1080p' | '4K' | 'UNKNOWN'
-        tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
-        tier_score?: number | null
-        bitrate_tier_score?: number | null
-        audio_tier_score?: number | null
-        evidence_status?: 'measured' | 'estimated' | 'insufficient' | null
-        estimated_savings_bytes?: number | null
-        confidence?: string | null
-        savings_basis?: string | null
-        overall_score?: number | null
-        needs_upgrade?: boolean
-        issues?: string
-      } | null
-
-      const mediaWithQuality: MediaWithQuality = {
-        ...item,
-        quality_tier: qualityScore?.quality_tier,
-        tier_quality: qualityScore?.tier_quality,
-        tier_score: qualityScore?.tier_score,
-        bitrate_tier_score: qualityScore?.bitrate_tier_score,
-        audio_tier_score: qualityScore?.audio_tier_score,
-        evidence_status: qualityScore?.evidence_status,
-        estimated_savings_bytes: qualityScore?.estimated_savings_bytes,
-        confidence: qualityScore?.confidence,
-        savings_basis: qualityScore?.savings_basis,
-        overall_score: qualityScore?.overall_score,
-        needs_upgrade: qualityScore?.needs_upgrade,
-        issues: qualityScore?.issues
-      }
-      setMedia(mediaWithQuality)
-
-      // Fetch TMDB backdrop for mobile hero image
-      if (isMobile && item.tmdb_id) {
-        try {
-          const tmdbDetails = item.type === 'episode'
-            ? await window.electronAPI.tmdbGetTVShowDetails((item as unknown as { series_tmdb_id?: string }).series_tmdb_id || item.tmdb_id) as { backdropPath?: string } | null
-            : await window.electronAPI.tmdbGetMovieDetails(item.tmdb_id) as { backdropPath?: string } | null
-          if (tmdbDetails?.backdropPath) {
-            setBackdropUrl(`https://image.tmdb.org/t/p/w780${tmdbDetails.backdropPath}`)
-          }
-        } catch {
-          // Non-critical: poster will be used as fallback
-        }
-      }
-
-      // Fetch versions if there are multiple
-      if (item.version_count && item.version_count > 1) {
-        try {
-          const versionData = await window.electronAPI.getMediaItemVersions(mediaId) as MediaVersion[]
-          setVersions(versionData || [])
-          // Auto-select the best version
-          const best = versionData?.find(v => v.is_best) || versionData?.[0]
-          if (best) setSelectedVersionId(best.id)
-        } catch {
-          // Non-critical: versions just won't show
-        }
-      }
-    } catch (err) {
-      console.error('Error loading media details:', err)
-      setError('Failed to load media details')
+      setIsAnalyzing(true)
+      await window.electronAPI.mediaAnalyze({ kind: 'item', mediaId: media.id })
     } finally {
-      setLoading(false)
+      setIsAnalyzing(false)
     }
   }
 
-  const formatFileSize = (bytes: number): string => {
-    const gb = bytes / (1024 * 1024 * 1024)
-    return gb >= 1 ? `${gb.toFixed(1)} GB` : `${(bytes / (1024 * 1024)).toFixed(0)} MB`
-  }
-
-  const formatDuration = (milliseconds: number): string => {
-    const totalSeconds = Math.floor(milliseconds / 1000)
-    const hours = Math.floor(totalSeconds / 3600)
-    const minutes = Math.floor((totalSeconds % 3600) / 60)
-    return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`
-  }
-
-  const formatChannels = (channels: number): string => {
-    if (channels > 2) return `${channels - 1}.1`
-    return `${channels}.0`
-  }
-
-  const isAudioBitrateLow = (track: AudioTrack, tier?: string): boolean => {
-    // Commentary tracks — don't flag
-    if (isCommentary(track)) return false
-
-    // Lossless / object audio — bitrate doesn't matter
-    if (track.hasObjectAudio) return false
-    const c = (track.codec || '').toLowerCase()
-    if (c.includes('truehd') || c.includes('flac') || c.includes('pcm') || c.includes('lpcm') ||
-        c.includes('alac') || c.includes('dts-hd ma') || c.includes('dtshd_ma')) return false
-
-    // No bitrate reported — can't determine
-    if (!track.bitrate || track.bitrate <= 0) return false
-
-    const t = thresholds[tier || 'SD'] || DEFAULT_THRESHOLDS['SD']
-
-    // Stereo (1-2 channels) — use half the surround threshold
-    if (track.channels <= 2) {
-      return track.bitrate < Math.round(t.audio.medium / 2)
-    }
-
-    // Surround — use full threshold
-    return track.bitrate < t.audio.medium
-  }
-
-  const isAudioBitrateRawLow = (bitrate: number, tier?: string): boolean => {
-    const t = thresholds[tier || 'SD'] || DEFAULT_THRESHOLDS['SD']
-    return bitrate < t.audio.medium
-  }
-
-  const LowIndicator = () => (
-    <span className="inline-block w-2 h-2 rounded-full bg-red-500 ml-1.5" title="Below quality threshold" />
-  )
-
-  const getTrackDiagnostic = (track: AudioTrack, tier?: string): { message: string; severity: 'error' | 'warning' } | null => {
-    if (isCommentary(track)) return null
-    if (track.hasObjectAudio) return null
-    const c = (track.codec || '').toLowerCase()
-    const isLossless = c.includes('truehd') || c.includes('flac') || c.includes('pcm') || c.includes('lpcm') ||
-      c.includes('alac') || c.includes('dts-hd ma') || c.includes('dtshd_ma')
-    if (isLossless) return null
-    if (!track.bitrate || track.bitrate <= 0) return null
-
-    const channels = track.channels || 2
-    const minExpected = channels * 32
-
-    if (track.bitrate < minExpected) {
-      return { message: `Possibly corrupt — bitrate too low for ${channels >= 6 ? 'surround' : 'stereo'}`, severity: 'error' }
-    }
-
-    const t = thresholds[tier || 'SD'] || DEFAULT_THRESHOLDS['SD']
-    const threshold = channels <= 2 ? Math.round(t.audio.medium / 2) : t.audio.medium
-    if (track.bitrate < threshold) {
-      return { message: `Below ${tier || 'SD'} target (${threshold} kbps)`, severity: 'warning' }
-    }
-
-    return null
-  }
-
-  // Parse quality issues and return abbreviated badge labels
-  const tierRank = (tier?: string): number => {
-    switch (tier) {
-      case '4K': return 4
-      case '1080p': return 3
-      case '720p': return 2
-      default: return 0
-    }
-  }
-
-  const getVersionInsight = (v: MediaVersion): { type: 'redundant'; label: string; color: string } | null => {
-    if (v.is_best || versions.length < 2) return null
-    const best = versions.find(ver => ver.is_best)
-    if (!best) return null
-
-    // Redundant: same edition name and best version is same or higher tier
-    const sameEdition = (v.edition || '') === (best.edition || '') && v.edition !== undefined
-    if (sameEdition && best.quality_tier && v.quality_tier && tierRank(best.quality_tier) >= tierRank(v.quality_tier)) {
-      return { type: 'redundant', label: 'Possible redundant', color: 'bg-amber-500/20 text-amber-400' }
-    }
-
-    return null
-  }
-
-  const isCommentary = (track: AudioTrack): boolean => {
-    if (!track.title) return false
-    return track.title.toLowerCase().includes('commentary')
-  }
-
-  if (loading) {
+  if (loading && !media) {
     return createPortal(
-      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-150">
-        <div className="bg-card rounded-xl p-8 shadow-2xl">
-          <div className="text-muted-foreground">Loading...</div>
-        </div>
+      <div className="fixed inset-0 z-200 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
       </div>,
       document.body
     )
   }
 
-  if (error || !media) {
-    return createPortal(
-      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-150">
-        <div className="bg-card rounded-xl p-8 shadow-2xl text-center">
-          <div className="text-destructive mb-4">{error || 'Media not found'}</div>
-          <button onClick={onClose} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg">
-            Close
+  if (!media) return null
+
+  const sv = versions.find(v => v.id === selectedVersionId) || versions[0]
+  const isMovie = media.type === 'movie'
+  const canOptimize = Boolean(media.file_path && media.id)
+  
+  const formatFileSize = (bytes: number) => {
+    const units = ['B', 'KB', 'MB', 'GB', 'TB']
+    let size = bytes
+    let unit = 0
+    while (size >= 1024 && unit < units.length - 1) {
+      size /= 1024
+      unit++
+    }
+    return `${size.toFixed(1)} ${units[unit]}`
+  }
+
+  const formatBitrate = (kbps: number) => {
+    if (kbps >= 1000) return `${(kbps / 1000).toFixed(1)} Mbps`
+    return `${kbps} kbps`
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-200 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200" onClick={onClose}>
+      <div 
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="media-details-title"
+        tabIndex={-1}
+        className="relative bg-card border border-border rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Left: Poster/Backdrop Area */}
+        <div className="w-full h-[220px] shrink-0 bg-muted relative">
+          <div className="w-full h-full relative group">
+            {media.poster_url ? (
+              <img src={media.poster_url} alt="" className="w-full h-full object-cover shadow-2xl" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-muted-foreground/30"><Film className="w-20 h-20" /></div>
+            )}
+            <div className="absolute inset-0 bg-linear-to-t from-black/80 via-transparent to-transparent opacity-60" />
+          </div>
+          
+          <button 
+            onClick={onClose}
+            className="absolute top-4 left-4 p-2 bg-black/40 hover:bg-black/60 rounded-full text-white backdrop-blur-md transition-all z-50 md:hidden"
+          >
+            <X className="w-5 h-5" />
           </button>
         </div>
-      </div>,
-      document.body
-    )
-  }
 
-  const displayTitle = media.type === 'episode' && media.series_title ? media.series_title : media.title
-  const tierScore = sv?.tier_score ?? media.tier_score
-
-  // Selected version derived data
-  return createPortal(
-    <div className={`fixed inset-0 bg-black/60 flex justify-center z-150 ${isMobile ? 'items-end p-3 pt-12' : 'items-center p-6'}`} role="dialog" aria-modal="true" onClick={onClose}>
-      <div
-        ref={modalRef}
-        className={`bg-card overflow-hidden flex flex-col shadow-2xl border border-border ${
-          isMobile
-            ? 'w-full max-h-full rounded-2xl'
-            : 'rounded-xl w-full max-w-4xl max-h-[calc(100vh-48px)]'
-        }`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        {isMobile ? (
-          // ── Mobile: Hero artwork with seamless background ──
-          <div className="shrink-0 rounded-t-2xl overflow-hidden">
-            {/* Hero artwork with gradient fade into card background */}
-            <div className="relative">
-              {(() => {
-                // Episodes: prefer episode still, then series backdrop, then poster
-                // Movies: prefer TMDB backdrop, then poster
-                const heroSrc = media.type === 'episode'
-                  ? (media.episode_thumb_url || backdropUrl || media.poster_url)
-                  : (backdropUrl || media.poster_url)
-                const isWide = !!(media.type === 'episode' ? (media.episode_thumb_url || backdropUrl) : backdropUrl)
-                return heroSrc ? (
-                  <img
-                    src={heroSrc}
-                    alt=""
-                    className={`w-full object-cover ${isWide ? 'aspect-video' : 'aspect-[3/2]'}`}
-                    onError={(e) => { e.currentTarget.style.display = 'none' }}
-                  />
-                ) : null
-              })()}
-              {/* Gradient fade — blends into the card background seamlessly */}
-              <div className="absolute inset-0 bg-gradient-to-t from-card via-card/60 to-black/20" />
-
-              {/* Close button */}
-              <button
+        {/* Right: Info Area */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Header */}
+          <div className="p-6 pb-4 border-b border-border/10 flex justify-between items-start gap-4">
+            <div className="min-w-0">
+              <h2 id="media-details-title" className="text-2xl font-bold truncate leading-tight">{media.title}</h2>
+              <div className="flex items-center gap-2 mt-1.5 text-sm text-muted-foreground font-medium">
+                {media.year && <span className="bg-muted px-2 py-0.5 rounded text-xs">{media.year}</span>}
+                {toSafeNumber(sv?.duration ?? media.duration) > 0 && <><span className="mx-0.5">·</span><span>{formatDuration(toSafeNumber(sv?.duration ?? media.duration))}</span></>}
+                {toSafeNumber(sv?.file_size ?? media.file_size) > 0 && <><span className="mx-0.5">·</span><span>{formatFileSize(toSafeNumber(sv?.file_size ?? media.file_size))}</span></>}
+                {isMovie && <span className="text-xs uppercase tracking-widest ml-2 opacity-50">Movie</span>}
+                {!isMovie && <span className="text-xs uppercase tracking-widest ml-2 opacity-50">S{media.season_number}E{media.episode_number}</span>}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button 
                 onClick={onClose}
-                className="absolute top-3 right-3 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm hover:bg-white/20 transition-colors z-10"
+                className="hidden md:flex p-2 hover:bg-muted rounded-full text-muted-foreground hover:text-foreground transition-all"
               >
                 <X className="w-5 h-5" />
               </button>
-
-              {/* Title overlaid at bottom of artwork */}
-              <div className="absolute bottom-0 left-0 right-0 px-4 pb-4">
-                <h2 className="text-2xl font-extrabold text-foreground leading-tight tracking-tight">{displayTitle}</h2>
-                {media.type === 'episode' && (
-                  <p className="text-sm text-foreground/80 mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
-                )}
-                {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
-                  <p className="text-sm text-foreground/70 font-medium">{sv?.edition || versions[0]?.edition}</p>
-                )}
-              </div>
-            </div>
-
-            {/* Metadata + actions — seamless with card background */}
-            <div className="px-4 pt-2 pb-3">
-              {/* Stats row */}
-              <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-                {media.year && <span>{media.year}</span>}
-                {(sv?.duration_ms ?? media.duration_ms) > 0 && <><span className="mx-0.5">·</span><span>{formatDuration(sv?.duration_ms ?? media.duration_ms)}</span></>}
-                {(sv?.file_size_bytes ?? media.file_size_bytes) > 0 && <><span className="mx-0.5">·</span><span>{formatFileSize(sv?.file_size_bytes ?? media.file_size_bytes)}</span></>}
-                {media.tmdb_rating != null && media.tmdb_rating > 0 && (
-                  <><span className="mx-0.5">·</span><span>★ {media.tmdb_rating.toFixed(1)}</span></>
-                )}
-                {(media.play_count ?? 0) > 0 && (
-                  <><span className="mx-0.5">·</span><span>Played {media.play_count}×</span></>
-                )}
-              </div>
-
-              {/* Action buttons — round icon buttons */}
-              <div className="flex items-center gap-3 mt-3">
-                {media.tier_quality && media.tier_quality !== 'HIGH' && media.tier_quality !== 'UNKNOWN' && (
-                  <AddToWishlistButton
-                    mediaType={media.type as WishlistMediaType}
-                    title={media.title}
-                    year={media.year}
-                    tmdbId={media.tmdb_id}
-                    imdbId={media.imdb_id}
-                    seriesTitle={media.series_title}
-                    seasonNumber={media.season_number}
-                    episodeNumber={media.episode_number}
-                    posterUrl={media.poster_url}
-                    reason="upgrade"
-                    mediaItemId={media.id}
-                    currentQualityTier={media.quality_tier}
-                    currentQualityLevel={media.tier_quality}
-                    currentResolution={media.resolution}
-                    currentVideoCodec={media.video_codec}
-                    currentAudioCodec={media.audio_codec}
-                  />
-                )}
-
-                {onRescan && media.file_path && (
-                  <button
-                    onClick={handleRescan}
-                    disabled={isRescanning}
-                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
-                    title="Rescan File"
-                  >
-                    <RefreshCw className={`w-5 h-5 ${isRescanning ? 'animate-spin' : ''}`} />
-                  </button>
-                )}
-
-                {onFixMatch && media.type === 'movie' && (
-                  <button
-                    onClick={handleFixMatch}
-                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
-                    title="Fix Match"
-                  >
-                    <Pencil className="w-5 h-5" />
-                  </button>
-                )}
-
-                {onDismissUpgrade && media.tier_quality !== 'HIGH' && media.tier_quality !== 'UNKNOWN' && (
-                  <button
-                    onClick={handleDismissUpgrade}
-                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground transition-colors"
-                    title="Dismiss Upgrade"
-                  >
-                    <EyeOff className="w-5 h-5" />
-                  </button>
-                )}
-              </div>
-
-              {/* Summary */}
-              {media.summary && (
-                <p className="mt-3 text-sm text-muted-foreground leading-relaxed line-clamp-3">{media.summary}</p>
-              )}
             </div>
           </div>
-        ) : (
-          // ── Desktop: side-by-side poster + info ──
-          <div className="p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl shrink-0">
-            <div className="flex gap-4">
-              {(media.poster_url || media.episode_thumb_url) && (
-                <img
-                  src={media.type === 'episode' && media.episode_thumb_url ? media.episode_thumb_url : media.poster_url}
-                  alt=""
-                  className={`rounded-lg object-cover shrink-0 shadow-lg shadow-black/30 ${
-                    media.type === 'episode' && media.episode_thumb_url ? 'w-44 h-28' : 'w-24 h-36'
-                  }`}
-                  onError={(e) => { e.currentTarget.style.display = 'none' }}
-                />
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <h2 className="text-xl font-medium truncate">{displayTitle}</h2>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          navigator.clipboard.writeText(displayTitle)
-                          setCopied(true)
-                          setTimeout(() => setCopied(false), 1500)
-                        }}
-                        className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                        title="Copy title"
-                      >
-                        {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                    {media.type === 'episode' && (
-                      <p className="text-sm text-muted-foreground">S{media.season_number}E{media.episode_number} · {media.title}</p>
-                    )}
-                    {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
-                      <p className="text-sm text-muted-foreground">{sv?.edition || versions[0]?.edition}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                {media.tier_quality && media.tier_quality !== 'HIGH' && media.tier_quality !== 'UNKNOWN' && (
-                      <AddToWishlistButton
-                        mediaType={media.type as WishlistMediaType}
-                        title={media.title}
-                        year={media.year}
-                        tmdbId={media.tmdb_id}
-                        imdbId={media.imdb_id}
-                        seriesTitle={media.series_title}
-                        seasonNumber={media.season_number}
-                        episodeNumber={media.episode_number}
-                        posterUrl={media.poster_url}
-                        reason="upgrade"
-                        mediaItemId={media.id}
-                        currentQualityTier={media.quality_tier}
-                        currentQualityLevel={media.tier_quality}
-                        currentResolution={media.resolution}
-                        currentVideoCodec={media.video_codec}
-                        currentAudioCodec={media.audio_codec}
-                      />
-                    )}
-                    {(onRescan || onFixMatch || (onDismissUpgrade && media.tier_quality !== 'HIGH' && media.tier_quality !== 'UNKNOWN')) && (
-                      <div ref={menuRef} className="relative">
-                        <button onClick={() => setShowMenu(!showMenu)} className="text-muted-foreground hover:text-foreground p-1.5" title="More options">
-                          {isRescanning ? <RefreshCw className="w-5 h-5 animate-spin" /> : <MoreVertical className="w-5 h-5" />}
-                        </button>
-                        {showMenu && !isRescanning && (
-                          <DropdownMenu className="min-w-[140px] z-50">
-                            {onRescan && media.file_path && <DropdownMenuItem onClick={handleRescan} icon={<RefreshCw className="w-3.5 h-3.5" />}>Rescan File</DropdownMenuItem>}
-                            {onFixMatch && media.type === 'movie' && <DropdownMenuItem onClick={handleFixMatch} icon={<Pencil className="w-3.5 h-3.5" />}>Fix Match</DropdownMenuItem>}
-                            {onDismissUpgrade && media.tier_quality !== 'HIGH' && media.tier_quality !== 'UNKNOWN' && <DropdownMenuItem onClick={handleDismissUpgrade} icon={<EyeOff className="w-3.5 h-3.5" />}>Dismiss Upgrade</DropdownMenuItem>}
-                          </DropdownMenu>
-                        )}
-                      </div>
-                    )}
-                    <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-1"><X className="w-5 h-5" /></button>
-                  </div>
+
+          <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
+            {/* Version Selection if multiple */}
+            {versions.length > 1 && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground/70">
+                  <Database className="w-3.5 h-3.5" />
+                  Available Versions
                 </div>
-                <div className="flex flex-wrap items-center gap-1.5 mt-2 text-sm text-muted-foreground">
-                  {media.year && <span>{media.year}</span>}
-                  {(sv?.duration_ms ?? media.duration_ms) > 0 && <><span className="mx-0.5">·</span><span>{formatDuration(sv?.duration_ms ?? media.duration_ms)}</span></>}
-                  {(sv?.file_size_bytes ?? media.file_size_bytes) > 0 && <><span className="mx-0.5">·</span><span>{formatFileSize(sv?.file_size_bytes ?? media.file_size_bytes)}</span></>}
-                  {(sv?.container ?? media.container) && <><span className="mx-0.5">·</span><span className="uppercase">{sv?.container ?? media.container}</span></>}
-                  {media.tmdb_rating != null && media.tmdb_rating > 0 && (
-                    <><span className="mx-0.5">·</span><span title="TMDB Rating">★ {media.tmdb_rating.toFixed(1)}</span></>
-                  )}
-                  {(media.play_count ?? 0) > 0 && (
-                    <><span className="mx-0.5">·</span><span>{media.play_count === 1 ? 'Watched once' : `Watched ${media.play_count}×`}</span></>
-                  )}
-                  {media.last_watched_at && (
-                    <><span className="mx-0.5">·</span><span title={new Date(media.last_watched_at).toLocaleString()}>Last watched {new Date(media.last_watched_at).toLocaleDateString()}</span></>
-                  )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {versions.map(v => (
+                    <button
+                      key={v.id}
+                      onClick={() => setSelectedVersionId(v.id!)}
+                      className={`text-left p-3 rounded-xl border transition-all ${v.id === selectedVersionId ? 'bg-primary/5 border-primary shadow-xs' : 'border-border/50 hover:border-border bg-muted/20'}`}
+                    >
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="font-bold text-sm tracking-tight">{v.resolution} {v.video_codec?.toUpperCase()}</span>
+                        {v.is_best && <span className="text-[10px] bg-primary text-primary-foreground font-black px-1.5 py-0.5 rounded-sm">BEST</span>}
+                      </div>
+                      <div className="flex justify-between text-xs text-muted-foreground font-medium">
+                        <span>{formatBitrate(toSafeNumber(v.video_bitrate))}</span>
+                        <span>{formatFileSize(toSafeNumber(v.file_size))}</span>
+                      </div>
+                    </button>
+                  ))}
                 </div>
               </div>
-            </div>
-
-            {/* Summary */}
-            {media.summary && (
-              <p className="mt-2 text-sm text-muted-foreground leading-relaxed max-h-20 overflow-y-auto">{media.summary}</p>
             )}
 
-          {/* Version Selector Pills */}
-          {versions.length > 1 && (
-            <div className="mt-2 space-y-2">
-                <div className="flex gap-1.5 overflow-x-auto">
-                  {versions.map((v) => {
-                    const isSelected = selectedVersionId === v.id
-                    const qualityColor = getQualityLevelColors(v.tier_quality || '')
-                    return (
-                      <button
-                        key={v.id}
-                        onClick={() => setSelectedVersionId(v.id)}
-                        className={`shrink-0 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                          isSelected
-                            ? 'bg-primary text-primary-foreground'
-                            : `${qualityColor || 'bg-muted/50'} text-muted-foreground hover:text-foreground hover:bg-muted`
-                        }`}
-                      >
-                        {v.is_best && <Star className="w-3 h-3 inline-block mr-1 -mt-0.5" />}
-                        {v.edition || v.label || `${v.resolution} ${v.video_codec}`}
-                      </button>
-                    )
-                  })}
+            {/* Analysis and compact details */}
+            <div className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <span className={`h-2.5 w-2.5 rounded-full ${deepAnalysis ? 'bg-green-500' : 'bg-amber-400'}`} />
+                    {deepAnalysis ? 'Analysis complete' : 'Not analyzed yet'}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">Episode scope · file, media quality, storage, and metadata</div>
                 </div>
-
-                {/* Version Comparison Table */}
-                <button
-                  onClick={() => setShowVersionTable(prev => !prev)}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <ChevronDown className={`w-3 h-3 transition-transform ${showVersionTable ? '' : '-rotate-90'}`} />
-                  Compare Versions ({versions.length})
+                <div className="flex shrink-0 items-center gap-2">
+                  <button onClick={handleAnalyze} disabled={isAnalyzing} className="flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                    <RefreshCw className={`h-4 w-4 ${isAnalyzing ? 'animate-spin' : ''}`} />
+                    Analyze
+                  </button>
+                  <button disabled={!onFixMatch} onClick={() => onFixMatch?.(media.id!, media.title, media.year ?? undefined, media.file_path ?? undefined)} className="rounded-lg border border-border px-3 py-2 text-sm font-semibold hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50">Fix match</button>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center justify-between rounded-lg border border-border/40 bg-background/20 px-3 py-2 text-xs">
+                <span className="text-muted-foreground">Actions after analysis</span>
+                <button onClick={() => setShowTranscodeModal(true)} disabled={!canOptimize} title={canOptimize ? 'Review optimization options for this file' : 'A local media file is required'} className="flex items-center gap-2 rounded-md bg-primary/10 px-2.5 py-1.5 font-semibold text-primary hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-40">
+                  <Zap className="h-3.5 w-3.5" /> Optimize
                 </button>
-                {showVersionTable && (
-                  <div className={`rounded-md border border-border/50 overflow-hidden text-xs ${isMobile ? 'overflow-x-auto' : ''}`}>
-                    <table className={`${isMobile ? 'min-w-[500px]' : ''} w-full`}>
-                      <thead>
-                        <tr className="bg-muted/40 text-muted-foreground">
-                          <th className="px-2 py-1.5 text-left font-medium">Version</th>
-                          <th className="px-2 py-1.5 text-left font-medium">Quality</th>
-                          <th className="px-2 py-1.5 text-left font-medium">Video</th>
-                          <th className="px-2 py-1.5 text-left font-medium">Audio</th>
-                          <th className="px-2 py-1.5 text-right font-medium">Size</th>
-                          <th className="px-2 py-1.5 text-right font-medium">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {versions.map((v) => {
-                          const insight = getVersionInsight(v)
-                          const isSelected = selectedVersionId === v.id
-                          return (
-                            <tr
-                              key={v.id}
-                              onClick={() => setSelectedVersionId(v.id)}
-                              className={`cursor-pointer border-t border-border/30 transition-colors hover:bg-muted/30 ${
-                                isSelected ? 'bg-primary/10' : ''
-                              }`}
-                            >
-                              <td className="px-2 py-1.5">
-                                <div className="flex items-center gap-1">
-                                  {v.is_best && <Star className="w-3 h-3 text-primary shrink-0" />}
-                                  <span className="font-medium truncate max-w-[120px]">{v.edition || v.label || v.resolution}</span>
-                                </div>
-                              </td>
-                              <td className="px-2 py-1.5 text-muted-foreground">
-                                {v.quality_tier === 'UNKNOWN' ? 'Unknown' : v.quality_tier || '--'}
-                              </td>
-                              <td className="px-2 py-1.5 text-muted-foreground">
-                                <span className="font-mono">{v.video_codec}</span> {formatBitrate(v.video_bitrate_kbps)}
-                              </td>
-                              <td className="px-2 py-1.5 text-muted-foreground">
-                                <span className="font-mono">{v.audio_codec}</span> {v.audio_channels > 0 ? `${v.audio_channels}ch` : ''}
-                              </td>
-                              <td className="px-2 py-1.5 text-right text-muted-foreground">{formatFileSize(v.file_size_bytes)}</td>
-                              <td className="px-2 py-1.5 text-right">
-                                {v.is_best ? (
-                                  <span className="text-primary font-medium">Best</span>
-                                ) : insight ? (
-                                  <span className={insight.type === 'redundant' ? 'text-amber-500' : 'text-yellow-500'}>
-                                    {insight.label}
-                                  </span>
-                                ) : null}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Scrollable Content — flat layout, no tabs */}
-        <div className={`flex-1 overflow-y-auto ${isMobile ? 'p-3' : 'p-4'} space-y-4`}>
-
-          {/* Quality Score Summary */}
-          <div className="rounded-lg p-3">
-            {(sv?.quality_tier ?? media.quality_tier) ? (
-              <>
-                <div className={`flex ${isMobile ? 'flex-col gap-3' : 'items-center justify-between gap-4'}`}>
-                  <div className={`flex items-center gap-4 bg-muted/30 ${isMobile ? 'px-3 py-2 rounded-lg' : '-ml-3 -mt-3 -mb-3 px-4 py-3 rounded-l-lg'}`}>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold">{(sv?.quality_tier ?? media.quality_tier) === 'UNKNOWN' ? 'Unknown' : sv?.quality_tier ?? media.quality_tier}</div>
-                      <div className="text-xs font-medium text-muted-foreground">{(sv?.tier_quality ?? media.tier_quality) === 'UNKNOWN' ? 'Insufficient evidence' : (sv?.tier_quality ?? media.tier_quality)}</div>
-                    </div>
-                    {tierScore != null && (sv?.tier_quality ?? media.tier_quality) !== 'UNKNOWN' && (
-                      <>
-                        <div className="h-10 w-px bg-border" />
-                        <div className="text-center">
-                          <div className="text-2xl font-bold">{Math.round(tierScore)}</div>
-                          <div className="text-xs font-medium text-muted-foreground">Overall score</div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                </div>
-              </>
-            ) : (
-              <div className="text-sm text-muted-foreground text-center py-2">
-                Quality rating is not available — rescan to analyze
-              </div>
-            )}
-          </div>
-
-          <ConversionRecommendation item={media} onOptimizationCompleted={loadMediaDetails} />
-
-
-          {/* Insight Banner */}
-          {sv && (() => {
-            const insight = getVersionInsight(sv)
-            if (!insight) return null
-            return (
-              <div className={`text-sm px-3 py-2 rounded-lg ${
-                insight.type === 'redundant' ? 'bg-amber-500/10 border border-amber-500/20 text-amber-500' : 'bg-yellow-500/10 border border-yellow-500/20 text-yellow-500'
-              }`}>
-                {insight.type === 'redundant'
-                  ? 'A better version exists \u2014 this copy may be safe to remove.'
-                  : 'This version scores LOW quality \u2014 consider replacing it.'}
-              </div>
-            )
-          })()}
-
-          {/* Video & Audio — 2-column grid (stacks on mobile) */}
-          <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
-            {/* Video */}
-            <div className="bg-muted/30 rounded-lg p-3">
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Video</h3>
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Dimensions</span>
-                  <span className="font-medium">{sv?.width ?? media.width}×{sv?.height ?? media.height}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Codec</span>
-                  <span className="font-medium">{sv?.video_codec ?? media.video_codec}</span>
-                </div>
-                {(sv?.video_bitrate_kbps ?? media.video_bitrate_kbps) > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Bitrate</span>
-                    <span className="font-medium">{formatBitrate(sv?.video_bitrate_kbps ?? media.video_bitrate_kbps)}</span>
-                  </div>
-                )}
-                {(sv?.video_frame_rate ?? media.video_frame_rate) != null && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Frame Rate</span>
-                    <span className="font-medium">{(sv?.video_frame_rate ?? media.video_frame_rate)?.toFixed(2)} fps</span>
-                  </div>
-                )}
-                {(sv?.color_space ?? media.color_space) && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Color Space</span>
-                    <span className="font-medium">{sv?.color_space ?? media.color_space}</span>
-                  </div>
-                )}
-                {(sv?.video_profile ?? media.video_profile) && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Profile</span>
-                    <span className="font-medium">{sv?.video_profile ?? media.video_profile}</span>
-                  </div>
-                )}
-                {(sv?.color_bit_depth ?? media.color_bit_depth) != null && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Bit Depth</span>
-                    <span className="font-medium">{sv?.color_bit_depth ?? media.color_bit_depth}-bit</span>
-                  </div>
-                )}
-                {(sv?.hdr_format ?? media.hdr_format) && (sv?.hdr_format ?? media.hdr_format) !== 'None' && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">HDR</span>
-                    <span className={`font-medium ${
-                      (sv?.hdr_format ?? media.hdr_format) === 'Dolby Vision' ? 'text-purple-400' :
-                      (sv?.hdr_format ?? media.hdr_format) === 'HDR10' ? 'text-orange-400' :
-                      'text-yellow-400'
-                    }`}>{sv?.hdr_format ?? media.hdr_format}</span>
-                  </div>
-                )}
               </div>
             </div>
 
-            {/* Audio */}
-            <div className="bg-muted/30 rounded-lg p-3">
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                Audio{svAudioTracks.length > 0 ? ` (${svAudioTracks.length})` : ''}
-              </h3>
-              {/* Audio Tracks */}
-              {svAudioTracks.length > 0 ? (
-                <div className="space-y-2">
-                  {svAudioTracks.map((track, idx) => {
-                    const commentary = isCommentary(track)
-                    return (
-                      <div key={idx} className={`text-sm ${idx > 0 ? 'pt-2 border-t border-border' : ''} ${commentary ? 'opacity-50' : ''}`}>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium">{track.codec?.toUpperCase()} {formatChannels(track.channels)}</span>
-                          {isAudioBitrateLow(track, sv?.quality_tier ?? media.quality_tier) && <LowIndicator />}
-                          {track.hasObjectAudio && (
-                            <span className="px-1.5 py-0.5 text-xs bg-blue-500/20 text-blue-300 rounded">Atmos</span>
-                          )}
-                          {commentary && (
-                            <span className="px-1.5 py-0.5 text-xs bg-amber-500/20 text-amber-300 rounded">Commentary</span>
-                          )}
-                        </div>
-                        {track.title && (
-                          <div className="text-xs text-muted-foreground mt-0.5 truncate" title={track.title}>{track.title}</div>
-                        )}
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {track.bitrate > 0 ? formatBitrate(track.bitrate) : 'VBR'}
-                          {track.sampleRate && ` · ${(track.sampleRate / 1000).toFixed(1)}kHz`}
-                          {track.language && ` · ${track.language.toUpperCase()}`}
-                        </div>
-                        {(() => {
-                          const diag = getTrackDiagnostic(track, sv?.quality_tier ?? media.quality_tier)
-                          if (!diag) return null
-                          return (
-                            <div className="text-xs mt-1 text-muted-foreground">
-                              {diag.message}
-                            </div>
-                          )
-                        })()}
-                      </div>
-                    )
-                  })}
-                </div>
-              ) : (
-                <div className="text-sm">
-                  <div className="font-medium">{(sv?.audio_codec ?? media.audio_codec)?.toUpperCase()} {formatChannels(sv?.audio_channels ?? media.audio_channels)}</div>
-                  <div className="text-xs text-muted-foreground flex items-center">
-                    <span>{(sv?.audio_bitrate_kbps ?? media.audio_bitrate_kbps) > 0 ? formatBitrate(sv?.audio_bitrate_kbps ?? media.audio_bitrate_kbps) : 'Lossless'}</span>
-                    {isAudioBitrateRawLow(sv?.audio_bitrate_kbps ?? media.audio_bitrate_kbps, sv?.quality_tier ?? media.quality_tier) && <LowIndicator />}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Subtitles */}
-          {svSubtitleTracks.length > 0 && (
-            <div className="bg-muted/30 rounded-lg p-3">
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                Subtitles ({svSubtitleTracks.length})
-              </h3>
-              <div className="flex flex-wrap gap-1.5">
-                {svSubtitleTracks.map((track, idx) => (
-                  <div
-                    key={idx}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-muted/50 rounded"
-                    title={track.title || `${track.language || 'Unknown'} (${track.codec})`}
-                  >
-                    <span className="font-medium">{track.language?.toUpperCase() || 'UND'}</span>
-                    <span className="text-muted-foreground">{track.codec}</span>
-                    {track.isForced && (
-                      <span className="px-1.5 py-0.5 text-xs bg-muted text-muted-foreground rounded leading-none">Forced</span>
-                    )}
-                    {track.isDefault && (
-                      <span className="px-1.5 py-0.5 text-xs bg-muted text-muted-foreground rounded leading-none">Default</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* File Info & IDs */}
-          <div className="bg-muted/30 rounded-lg p-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">File Information</h3>
-            <div className="space-y-1.5 text-sm">
-              <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground shrink-0">Path</span>
-                <span className="font-mono text-xs text-right truncate" title={sv?.file_path ?? media.file_path}>
-                  {sv?.file_path ?? media.file_path}
-                </span>
-              </div>
-              {media.imdb_id && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">IMDb</span>
-                  <button
-                    onClick={() => window.electronAPI.openExternal(`https://www.imdb.com/title/${media.imdb_id}`)}
-                    className="text-primary hover:underline cursor-pointer"
-                  >
-                    {media.imdb_id}
+            <div className="space-y-1.5">
+              {[
+                { id: 'playback' as const, label: 'Playback & compatibility', icon: <Clock className="h-4 w-4" />, summary: 'Profile rules used by Optimize' },
+                { id: 'video' as const, label: 'Video details', icon: <Film className="h-4 w-4" />, summary: `${toSafeString(sv?.video_codec ?? media.video_codec).toUpperCase()} · ${toSafeString(sv?.resolution ?? media.resolution ?? media.quality_tier ?? media.tier_quality)} · ${formatBitrate(toSafeNumber(sv?.video_bitrate ?? media.video_bitrate))}` },
+                { id: 'audio' as const, label: 'Audio & subtitles', icon: <Clock className="h-4 w-4" />, summary: `${toSafeString(sv?.audio_codec ?? media.audio_codec).toUpperCase()} ${formatChannels(toSafeNumber(sv?.audio_channels ?? media.audio_channels))}` },
+                { id: 'file' as const, label: 'File & identifiers', icon: <HardDrive className="h-4 w-4" />, summary: `${formatFileSize(toSafeNumber(sv?.file_size ?? media.file_size))} · ${media.match_status ?? 'Match status unknown'}` },
+                { id: 'analysis' as const, label: 'Analysis history', icon: <Database className="h-4 w-4" />, summary: deepAnalysis ? 'Deep bitrate scan available' : 'No analysis recorded' },
+              ].map(section => (
+                <div key={section.id} className="overflow-hidden rounded-lg border border-border/50 bg-muted/10">
+                  <button onClick={() => setExpandedSection(expandedSection === section.id ? null : section.id)} className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-muted/30">
+                    {section.icon}<span className="text-sm font-semibold">{section.label}</span><span className="ml-auto truncate text-xs text-muted-foreground">{section.summary}</span><ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${expandedSection === section.id ? 'rotate-180' : ''}`} />
                   </button>
+                  {expandedSection === section.id && <div className="border-t border-border/40 px-3 py-2.5 text-xs text-muted-foreground">
+                    {section.id === 'playback' && <div className="grid grid-cols-2 gap-x-6 gap-y-1"><span>Video stream <b className="float-right text-foreground uppercase">{toSafeString(sv?.video_codec ?? media.video_codec)} · {toSafeString(sv?.resolution ?? media.resolution)}</b></span><span>Audio stream <b className="float-right text-foreground uppercase">{toSafeString(sv?.audio_codec ?? media.audio_codec)} {formatChannels(toSafeNumber(sv?.audio_channels ?? media.audio_channels))}</b></span><span>Compatibility <b className="float-right text-foreground">Evaluated in Optimize</b></span></div>}
+                    {section.id === 'video' && <div className="grid grid-cols-2 gap-x-6 gap-y-1"><span>Codec <b className="float-right text-foreground uppercase">{toSafeString(sv?.video_codec ?? media.video_codec)}</b></span><span>Resolution <b className="float-right text-foreground">{toSafeString(sv?.resolution ?? media.resolution ?? media.quality_tier)}</b></span><span>Bitrate <b className="float-right text-foreground">{formatBitrate(toSafeNumber(sv?.video_bitrate ?? media.video_bitrate))}</b></span><span>HDR <b className="float-right text-foreground">{formatHdrLabel(media.hdr_format) || '—'}</b></span></div>}
+                    {section.id === 'audio' && <div className="grid grid-cols-2 gap-x-6 gap-y-1"><span>Audio <b className="float-right text-foreground uppercase">{toSafeString(sv?.audio_codec ?? media.audio_codec)} {formatChannels(toSafeNumber(sv?.audio_channels ?? media.audio_channels))}</b></span><span>Bitrate <b className="float-right text-foreground">{formatBitrate(toSafeNumber(sv?.audio_bitrate ?? media.audio_bitrate))}</b></span><span>Object audio <b className="float-right text-foreground">{media.has_object_audio ? 'Atmos / DTS:X' : '—'}</b></span></div>}
+                    {section.id === 'file' && <div className="space-y-1"><div>Size <b className="float-right text-foreground">{formatFileSize(toSafeNumber(sv?.file_size ?? media.file_size))}</b></div><div>Path <b className="ml-2 font-mono text-foreground" title={toSafeString(sv?.file_path ?? media.file_path)}>{toSafeString(sv?.file_path ?? media.file_path)}</b></div><div>Match <b className="float-right text-foreground">{media.match_status ?? 'unknown'}</b></div></div>}
+                    {section.id === 'analysis' && <div>{deepAnalysis ? `Average bitrate ${Math.round((deepAnalysis.avgBitrate || 0) / 1000)} kbps${deepAnalysis.peakBitrate ? ` · peak ${Math.round(deepAnalysis.peakBitrate / 1000)} kbps` : ''}` : 'Run Analyze to collect analysis details.'}</div>}
+                  </div>}
                 </div>
-              )}
-              {media.tmdb_id && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">TMDb</span>
-                  <button
-                    onClick={() => window.electronAPI.openExternal(`https://www.themoviedb.org/${media.type === 'movie' ? 'movie' : 'tv'}/${media.tmdb_id}`)}
-                    className="text-primary hover:underline cursor-pointer"
-                  >
-                    {media.tmdb_id}
-                  </button>
-                </div>
-              )}
+              ))}
             </div>
-          </div>
+
+
         </div>
       </div>
+      </div>
+
+      {showTranscodeModal && (
+        <TranscodeModal 
+          mediaId={mediaId} 
+          onClose={() => setShowTranscodeModal(false)} 
+        />
+      )}
     </div>,
     document.body
   )
+}
+
+function formatChannels(ch: number) {
+  if (ch >= 8) return '7.1'
+  if (ch >= 6) return '5.1'
+  if (ch >= 3) return '2.1'
+  if (ch >= 2) return 'Stereo'
+  return 'Mono'
 }

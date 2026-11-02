@@ -1,0 +1,191 @@
+import React from 'react'
+import { Film, Tv, Disc3, EyeOff } from 'lucide-react'
+import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
+import type { MediaItem } from '@/components/library/types'
+import type { MusicAlbumUpgrade } from '@/components/dashboard/types'
+
+interface UpgradeRowProps {
+  item: MediaItem
+  index: number
+  isExpanded: boolean
+  onToggleExpand: (id: number) => void
+  onSelect: (id: number) => void
+  onDismiss: (index: number) => void
+}
+
+export const MovieUpgradeRow = React.memo(({ item, index, isExpanded, onToggleExpand, onSelect, onDismiss }: UpgradeRowProps) => {
+  const wasteGB = item.storage_debt_bytes != null ? (item.storage_debt_bytes / (1024 * 1024 * 1024)).toFixed(1) : null
+
+  return (
+    <div className="px-2 overflow-hidden pb-1">
+      <div
+        className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row"
+      >
+        <button type="button" onClick={() => onSelect(item.id!)} aria-label={`Open ${item.title}`} className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+        <div className="w-10 h-14 bg-muted rounded overflow-hidden shrink-0 shadow-md shadow-black/40 relative">
+          {item.poster_url ? (
+            <img src={item.poster_url} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <Film className="w-5 h-5 text-muted-foreground/50" />
+            </div>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-sm truncate">{item.title}</div>
+          <div className="text-xs text-muted-foreground truncate">{item.year}</div>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-[10px] text-muted-foreground">
+              {item.quality_tier} · {item.tier_quality}
+            </span>
+          </div>
+        </div>
+        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          {wasteGB != null && parseFloat(wasteGB) > 0.5 && <button type="button" aria-pressed={isExpanded} aria-label={`${isExpanded ? 'Hide' : 'Show'} storage details`} onClick={() => onToggleExpand(item.id!)} title="Estimated size reduction if replaced with an HEVC encode" className="rounded px-1 py-1 text-[10px] font-bold text-orange-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{wasteGB}GB</button>}
+          <AddToWishlistButton
+            mediaType="movie"
+            title={item.title}
+            year={item.year ?? undefined}
+            tmdbId={item.tmdb_id ?? undefined}
+            posterUrl={item.poster_url ?? undefined}
+            reason="upgrade"
+            mediaItemId={item.id!}
+            currentQualityTier={item.quality_tier}
+            currentQualityLevel={item.tier_quality}
+            currentResolution={item.resolution ?? undefined}
+            compact
+          />
+          <button
+            type="button"
+            aria-label={`Dismiss upgrade for ${item.title}`}
+            onClick={() => onDismiss(index)}
+            className="opacity-0 group-hover/row:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
+            title="Dismiss"
+          >
+            <EyeOff className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+})
+
+export const TvUpgradeRow = React.memo(({ item, index, isExpanded, onToggleExpand, onSelect, onDismiss }: UpgradeRowProps) => {
+  const wasteGB = item.storage_debt_bytes != null ? (item.storage_debt_bytes / (1024 * 1024 * 1024)).toFixed(1) : null
+
+  return (
+    <div className="px-2 overflow-hidden pb-1">
+      <div
+        className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row"
+      >
+        <button type="button" onClick={() => onSelect(item.id!)} aria-label={`Open ${item.series_title || item.title}`} className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+        <div className="w-10 h-14 bg-muted rounded overflow-hidden shrink-0 shadow-md shadow-black/40 relative">
+          {item.poster_url ? (
+            <img src={item.poster_url} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <Tv className="w-5 h-5 text-muted-foreground/50" />
+            </div>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-sm truncate">{item.series_title || item.title}</div>
+          <div className="text-xs text-muted-foreground truncate">
+            S{item.season_number}E{item.episode_number} · {item.title}
+          </div>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-[10px] text-muted-foreground">
+              {item.quality_tier} · {item.tier_quality}
+            </span>
+          </div>
+        </div>
+        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          {wasteGB != null && parseFloat(wasteGB) > 0.5 && <button type="button" aria-pressed={isExpanded} aria-label={`${isExpanded ? 'Hide' : 'Show'} storage details`} onClick={() => onToggleExpand(item.id!)} title="Estimated size reduction if replaced with an HEVC encode" className="rounded px-1 py-1 text-[10px] font-bold text-orange-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{wasteGB}GB</button>}
+          <AddToWishlistButton
+            mediaType="episode"
+            title={item.title!}
+            year={item.year ?? undefined}
+            tmdbId={item.tmdb_id ?? undefined}
+            posterUrl={item.poster_url ?? undefined}
+            seriesTitle={item.series_title ?? undefined}
+            seasonNumber={item.season_number ?? undefined}
+            episodeNumber={item.episode_number ?? undefined}
+            reason="upgrade"
+            mediaItemId={item.id!}
+            currentQualityTier={item.quality_tier}
+            currentQualityLevel={item.tier_quality}
+            currentResolution={item.resolution ?? undefined}
+            compact
+          />
+          <button
+            type="button"
+            aria-label={`Dismiss upgrade for ${item.title}`}
+            onClick={() => onDismiss(index)}
+            className="opacity-0 group-hover/row:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
+            title="Dismiss"
+          >
+            <EyeOff className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+})
+
+interface MusicUpgradeRowProps {
+  album: MusicAlbumUpgrade
+  index: number
+  onSelect: (id: number) => void
+  onDismiss: (index: number) => void
+}
+
+export const MusicUpgradeRow = React.memo(({ album, index, onSelect, onDismiss }: MusicUpgradeRowProps) => {
+  return (
+    <div className="px-2 pb-1">
+      <div
+        className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row"
+      >
+        <button type="button" onClick={() => onSelect(album.id!)} aria-label={`Open album ${album.title}`} className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+        <div className="w-10 h-10 bg-muted rounded overflow-hidden shrink-0">
+          {album.thumb_url ? (
+            <img src={album.thumb_url} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <Disc3 className="w-5 h-5 text-muted-foreground/50" />
+            </div>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-sm truncate">{album.title}</div>
+          <div className="text-xs text-muted-foreground truncate">{album.artist_name}</div>
+          <div className="text-[10px] text-muted-foreground mt-1">
+            {album.quality_tier} · {album.tier_quality}{album.best_audio_bitrate ? ` · ${Math.round(album.best_audio_bitrate)} kbps` : ''}
+          </div>
+        </div>
+        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          <AddToWishlistButton
+            mediaType="album"
+            title={album.title}
+            year={album.year}
+            artistName={album.artist_name}
+            musicbrainzId={album.musicbrainz_id}
+            reason="upgrade"
+            compact
+          />
+          <button
+            type="button"
+            aria-label={`Dismiss upgrade for ${album.title}`}
+            onClick={() => onDismiss(index)}
+            className="opacity-0 group-hover/row:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
+            title="Dismiss"
+          >
+            <EyeOff className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+})

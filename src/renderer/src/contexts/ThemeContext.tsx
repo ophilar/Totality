@@ -1,18 +1,16 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 
-export type BaseTheme = 'dark' | 'slate' | 'ember' | 'midnight' | 'oled' | 'velvet' | 'emerald' | 'cobalt' | 'carbon' | 'matrix' | 'fury' | 'gotham' | 'neon' | 'whimsy'
+export type BaseTheme = 'dark' | 'slate' | 'ember' | 'midnight' | 'oled' | 'velvet' | 'emerald' | 'cobalt' | 'carbon'
 export type ThemeMode = 'dark' | 'light' | 'system'
 
-const BASE_THEMES: BaseTheme[] = ['dark', 'slate', 'ember', 'midnight', 'oled', 'velvet', 'emerald', 'cobalt', 'carbon', 'matrix', 'fury', 'gotham', 'neon', 'whimsy']
+const BASE_THEMES: BaseTheme[] = ['dark', 'slate', 'ember', 'midnight', 'oled', 'velvet', 'emerald', 'cobalt', 'carbon']
 export const DARK_ONLY_THEMES: BaseTheme[] = ['dark', 'oled']
 
 const ALL_THEME_CLASSES = [
   'dark', 'slate', 'ember', 'midnight', 'oled', 'velvet', 'emerald', 'cobalt', 'carbon', 'frost',
-  'matrix', 'fury', 'gotham', 'neon', 'whimsy',
   'slate-light', 'ember-light', 'midnight-light',
   'velvet-light', 'emerald-light', 'cobalt-light', 'carbon-light',
-  'matrix-light', 'fury-light', 'gotham-light', 'neon-light', 'whimsy-light',
 ]
 
 interface ThemeContextValue {
@@ -35,10 +33,6 @@ function resolveThemeCSSClass(theme: BaseTheme, mode: ThemeMode, systemIsDark: b
   if (DARK_ONLY_THEMES.includes(theme)) return theme
   const effectiveMode = mode === 'system' ? (systemIsDark ? 'dark' : 'light') : mode
   return effectiveMode === 'light' ? `${theme}-light` : theme
-}
-
-export function getActiveThemeClass(): string {
-  return ALL_THEME_CLASSES.find(themeClass => document.documentElement.classList.contains(themeClass)) ?? 'dark'
 }
 
 function applyThemeToDOM(cssClass: string) {
@@ -72,8 +66,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       if (baseTheme === 'frost') {
         baseTheme = 'slate'
         themeMode = 'light'
-        window.electronAPI.setSetting('theme', 'slate').catch(console.error)
-        window.electronAPI.setSetting('theme_mode', 'light').catch(console.error)
+        window.electronAPI.setSetting('theme', 'slate').catch(err => window.electronAPI.log.error('ThemeContext', String(err)))
+        window.electronAPI.setSetting('theme_mode', 'light').catch(err => window.electronAPI.log.error('ThemeContext', String(err)))
       }
 
       if (!BASE_THEMES.includes(baseTheme as BaseTheme)) {
@@ -83,8 +77,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       setThemeState(baseTheme as BaseTheme)
       setModeState(themeMode)
       setIsLoaded(true)
-    }).catch(error => {
-      console.error('[ThemeContext] Failed to load theme settings:', error)
+    }).catch(() => {
       setIsLoaded(true)
     })
   }, [])
@@ -98,18 +91,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setTheme = useCallback((newTheme: BaseTheme) => {
     setThemeState(newTheme)
-    window.electronAPI.setSetting('theme', newTheme).catch(console.error)
+    window.electronAPI.setSetting('theme', newTheme).catch(err => window.electronAPI.log.error('ThemeContext', String(err)))
   }, [])
 
   const setMode = useCallback((newMode: ThemeMode) => {
     setModeState(newMode)
-    window.electronAPI.setSetting('theme_mode', newMode).catch(console.error)
+    window.electronAPI.setSetting('theme_mode', newMode).catch(err => window.electronAPI.log.error('ThemeContext', String(err)))
     // Auto-switch away from dark-only themes when explicitly choosing light mode
     if (newMode === 'light') {
       setThemeState(current => {
         if (DARK_ONLY_THEMES.includes(current)) {
           const fallback: BaseTheme = 'slate'
-          window.electronAPI.setSetting('theme', fallback).catch(console.error)
+          window.electronAPI.setSetting('theme', fallback).catch(err => window.electronAPI.log.error('ThemeContext', String(err)))
           return fallback
         }
         return current

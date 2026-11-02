@@ -1,42 +1,24 @@
-import { IPC_CHANNELS } from '../../shared/ipcChannels'
-import { getQualityAnalyzer } from '../services/QualityAnalyzer'
-import { getTaskQueueService } from '../services/TaskQueueService'
-import { getDatabase } from '../database/getDatabase'
-import { PositiveIntSchema } from '../validation/schemas'
-import { createIpcHandler, createValidatedIpcHandler } from './utils/createHandler'
+import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { PositiveIntSchema } from '@main/validation/schemas'
+import { getLoggingService } from '@main/services/LoggingService'
+import { createIpcHandler, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
 
-/**
- * Register all quality analysis IPC handlers
- */
 export function registerQualityHandlers() {
   const analyzer = getQualityAnalyzer()
 
-  // ============================================================================
-  // QUALITY ANALYSIS
-  // ============================================================================
-
-  createIpcHandler(IPC_CHANNELS.qualityAnalyzeAll, async () => {
-    const queue = getTaskQueueService()
-    const taskId = queue.addTask({ type: 'quality-analysis', label: 'Refresh media quality' })
-    const task = await queue.waitForTask(taskId)
-    if (task.status !== 'completed') throw new Error(task.error ?? `Quality refresh ${task.status}`)
-    return task.result!.itemsScanned!
-  })
-
-  createIpcHandler(IPC_CHANNELS.qualityGetDistribution, async () => {
+  createIpcHandler('quality:getDistribution', async () => {
     return analyzer.getQualityDistribution()
   })
 
-  createValidatedIpcHandler(IPC_CHANNELS.qualityGetRecommendedFormat, PositiveIntSchema, async mediaItemId => {
+  createValidatedIpcHandler('quality:getRecommendedFormat', PositiveIntSchema, async (mediaItemId) => {
     const db = getDatabase()
-    const mediaItem = db.getMediaItemById(mediaItemId)
-
-    if (!mediaItem) {
-      throw new Error('Media item not found')
-    }
-
-    return analyzer.getRecommendedFormat(mediaItem)
+    const mediaItem = await db.media.getItem(mediaItemId)
+    if (!mediaItem) throw new Error('Media item not found')
+    const score = await db.media.getQualityScoreByMediaId(mediaItemId)
+    return analyzer.getRecommendedFormat(mediaItem, score?.overall_score || 0)
   })
 
-  console.log('Quality analysis IPC handlers registered')
+  getLoggingService().info('[quality]', 'Quality analysis IPC handlers registered')
 }
+

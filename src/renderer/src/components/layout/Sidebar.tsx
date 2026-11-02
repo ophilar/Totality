@@ -1,32 +1,50 @@
+import type { QueuedTask, TaskQueueState } from '@main/types/database'
 import { useState, useEffect, useRef } from 'react'
 import { ChevronDown, ChevronRight, Loader2, RefreshCw, Plus, Film, Tv, Music, Folder, Trash2, Pencil, Info, Square, Server, HardDrive, Settings, Eye, EyeOff, Clock, PanelLeftClose, PanelLeft } from 'lucide-react'
-import { useSources, type ProviderType } from '../../contexts/SourceContext'
-import type { MediaSourceResponse, MediaLibraryResponse } from '../../../../preload/index'
-import type { QueueState, QueuedTask } from '@main/types/taskQueue'
-import { formatRelativeTime } from '../../utils/dateUtils'
-import { providerColors } from '../library/mediaUtils'
+import { useSources } from '@/contexts/SourceContext'
+import { AddSourceModal } from '@/components/sources/AddSourceModal'
+import { LibraryType, ProviderType } from '@main/types/database'
+import { PROVIDERS } from '@main/constants/providers'
+import type { MediaSourceResponse, MediaLibraryResponse } from '@preload/api/types'
+
+// Task queue types
+
+
+
+
+// ... remove old PROVIDER_COLORS ...
 
 const LIBRARY_ICONS: Record<string, typeof Film> = {
-  movie: Film,
-  show: Tv,
-  music: Music,
+  [LibraryType.Movie]: Film,
+  [LibraryType.Show]: Tv,
+  [LibraryType.Music]: Music,
+}
+
+function formatRelativeTime(dateStr?: string): string | null {
+  if (!dateStr) return null
+  const diffMs = Date.now() - new Date(dateStr).getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMins / 60)
+  const diffDays = Math.floor(diffHours / 24)
+
+  if (diffMins < 1) return 'Just now'
+  if (diffMins < 60) return `${diffMins}m ago`
+  if (diffHours < 24) return `${diffHours}h ago`
+  return `${diffDays}d ago`
 }
 
 interface SidebarProps {
   onOpenAbout: () => void
-  onAddSource: () => void
   isCollapsed: boolean
   onToggleCollapse: () => void
 }
 
-export function Sidebar({ onOpenAbout, onAddSource, isCollapsed, onToggleCollapse }: SidebarProps) {
+export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarProps) {
   const {
     sources,
     isLoading,
     scanProgress,
     refreshSources,
-     
-    scanSource: _scanSource,
     stopScan,
     activeSourceId,
     setActiveSource,
@@ -37,22 +55,20 @@ export function Sidebar({ onOpenAbout, onAddSource, isCollapsed, onToggleCollaps
     refreshLibraryTypes,
   } = useSources()
 
+  const [showAddModal, setShowAddModal] = useState(false)
   const [expandedSourceId, setExpandedSourceId] = useState<string | null>(null)
   const [sourceLibraries, setSourceLibraries] = useState<Map<string, MediaLibraryResponse[]>>(new Map())
   const [allSourceLibraries, setAllSourceLibraries] = useState<Map<string, Array<MediaLibraryResponse & { isEnabled: boolean }>>>(new Map())
   const [loadingLibraries, setLoadingLibraries] = useState<Set<string>>(new Set())
   const [managingSourceId, setManagingSourceId] = useState<string | null>(null)
   // These state values are read but setters reserved for future use
-   
-  const [scanningLibrary, _setScanningLibrary] = useState<string | null>(null)
-   
-  const [scanningLibraryType, _setScanningLibraryType] = useState<string | null>(null)
-   
-  const [scanPhase, _setScanPhase] = useState<'scanning' | 'analyzing' | null>(null)
+  const [scanningLibrary] = useState<string | null>(null)
+  const [scanningLibraryType] = useState<string | null>(null)
+  const [scanPhase] = useState<'scanning' | 'analyzing' | null>(null)
   const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number; percentage: number; currentItem?: string } | null>(null)
   const [musicScanProgress, setMusicScanProgress] = useState<Map<string, { current: number; total: number; percentage: number; currentItem?: string; phase?: string }>>(new Map())
   const [renamingSourceId, setRenamingSourceId] = useState<string | null>(null)
-  const [taskQueueState, setTaskQueueState] = useState<QueueState | null>(null)
+  const [taskQueueState, setTaskQueueState] = useState<TaskQueueState | null>(null)
   const addSourceButtonRef = useRef<HTMLButtonElement>(null)
   const aboutButtonRef = useRef<HTMLButtonElement>(null)
   // Listen for library updates to refresh sidebar when libraries are toggled
@@ -133,13 +149,25 @@ export function Sidebar({ onOpenAbout, onAddSource, isCollapsed, onToggleCollaps
   // Listen for task queue updates to show scanning/queued status
   useEffect(() => {
     // Load initial state
-    window.electronAPI.taskQueueGetState?.().then((state) => {
-      setTaskQueueState(state)
-    }).catch(console.error)
+    window.electronAPI.taskQueueGetState?.().then((state: unknown) => {
+      setTaskQueueState(state as TaskQueueState)
+    }).catch(err => window.electronAPI.log.error('[Sidebar]', err))
 
     // Subscribe to updates
-    const unsubscribe = window.electronAPI.onTaskQueueUpdated?.((state) => {
-      setTaskQueueState(state)
+    const unsubscribe = window.electronAPI.onTaskQueueUpdated?.((state: unknown) => {
+      const queueState = state as TaskQueueState
+      if (!queueState) return
+      setTaskQueueState(prev => {
+        if (!prev) return queueState
+        const prevCurrent = prev.currentTask
+        const nextCurrent = queueState.currentTask
+        if (prev.queue.length !== queueState.queue.length) return queueState
+        if (prevCurrent?.id !== nextCurrent?.id || prevCurrent?.status !== nextCurrent?.status) return queueState
+        if (nextCurrent && (nextCurrent.type === 'library-scan' || nextCurrent.type === 'source-scan' || nextCurrent.type === 'music-scan')) {
+          return queueState
+        }
+        return prev
+      })
     })
     return () => unsubscribe?.()
   }, [])
@@ -165,7 +193,7 @@ export function Sidebar({ onOpenAbout, onAddSource, isCollapsed, onToggleCollaps
         const enabledLibs = libsWithStatus.filter((lib) => lib.isEnabled)
         setSourceLibraries(prev => new Map(prev).set(sourceId, enabledLibs))
       } catch (err) {
-        console.error('Failed to load libraries:', err)
+        window.electronAPI.log.error('[Sidebar]', 'Failed to load libraries:', err)
       } finally {
         setLoadingLibraries(prev => {
           const next = new Set(prev)
@@ -209,7 +237,7 @@ export function Sidebar({ onOpenAbout, onAddSource, isCollapsed, onToggleCollaps
       // Refresh library types in context so TopBar/Dashboard update
       await refreshLibraryTypes()
     } catch (err) {
-      console.error('Failed to toggle library:', err)
+      window.electronAPI.log.error('[Sidebar]', 'Failed to toggle library:', err)
     }
   }
 
@@ -219,46 +247,24 @@ export function Sidebar({ onOpenAbout, onAddSource, isCollapsed, onToggleCollaps
 
   const handleScanAllLibraries = async (sourceId: string) => {
     try {
-      const source = sources.find(s => s.source_id === sourceId)
       const libraries = sourceLibraries.get(sourceId) || []
-      const sourceName = source?.display_name || sourceId
+      const sourceName = sources.find(s => s.source_id === sourceId)?.display_name || sourceId
 
       // Queue scan tasks for every enabled library in this source
-      for (const library of libraries) {
-        const taskType = library.type === 'music' ? 'music-scan' : 'library-scan'
-        await window.electronAPI.taskQueueAddTask({
-          type: taskType,
-          label: `Scan ${library.name} (${sourceName})`,
-          sourceId,
-          libraryId: library.id,
+      await Promise.all(
+        libraries.map(library => {
+          const taskType = library.type === LibraryType.Music ? 'music-scan' : 'library-scan'
+          return window.electronAPI.taskQueueAddTask({
+            type: taskType,
+            label: `Scan ${library.name} (${sourceName})`,
+            sourceId,
+            libraryId: library.id,
+          })
         })
-      }
+      )
 
-      // Queue analysis tasks for this source based on library types present
-      const libraryTypes = new Set(libraries.map(l => l.type))
-      if (libraryTypes.has('show')) {
-        await window.electronAPI.taskQueueAddTask({
-          type: 'series-completeness',
-          label: `Analyze TV Series (${sourceName})`,
-          sourceId,
-        })
-      }
-      if (libraryTypes.has('movie')) {
-        await window.electronAPI.taskQueueAddTask({
-          type: 'collection-completeness',
-          label: `Analyze Collections (${sourceName})`,
-          sourceId,
-        })
-      }
-      if (libraryTypes.has('music')) {
-        await window.electronAPI.taskQueueAddTask({
-          type: 'music-completeness',
-          label: `Analyze Music (${sourceName})`,
-          sourceId,
-        })
-      }
     } catch (err) {
-      console.error('Failed to queue full rescan:', err)
+      window.electronAPI.log.error('[Sidebar]', 'Failed to queue full rescan:', err)
     }
   }
 
@@ -280,7 +286,7 @@ export function Sidebar({ onOpenAbout, onAddSource, isCollapsed, onToggleCollaps
         libraryId,
       })
     } catch (err) {
-      console.error('Failed to queue library scan:', err)
+      window.electronAPI.log.error('[Sidebar]', 'Failed to queue library scan:', err)
     }
   }
 
@@ -295,8 +301,13 @@ export function Sidebar({ onOpenAbout, onAddSource, isCollapsed, onToggleCollaps
         await stopScan()
       }
     } catch (err) {
-      console.error('Failed to stop scan:', err)
+      window.electronAPI.log.error('[Sidebar]', 'Failed to stop scan:', err)
     }
+  }
+
+  const handleSourceAdded = () => {
+    setShowAddModal(false)
+    refreshSources()
   }
 
   const handleRenameSource = async (sourceId: string, newName: string) => {
@@ -304,7 +315,7 @@ export function Sidebar({ onOpenAbout, onAddSource, isCollapsed, onToggleCollaps
       await window.electronAPI.sourcesUpdate(sourceId, { displayName: newName })
       await refreshSources()
     } catch (err) {
-      console.error('Failed to rename source:', err)
+      window.electronAPI.log.error('[Sidebar]', 'Failed to rename source:', err)
     } finally {
       setRenamingSourceId(null)
     }
@@ -320,7 +331,7 @@ export function Sidebar({ onOpenAbout, onAddSource, isCollapsed, onToggleCollaps
   // Unified sidebar with conditional collapsed/expanded content
   return (
     <aside
-      className={`fixed left-4 top-[76px] bottom-4 ${isCollapsed ? 'w-16' : 'w-64'} bg-sidebar-gradient rounded-2xl shadow-xl z-40 flex flex-col overflow-hidden transition-[width] duration-300 ease-out will-change-[width]`}
+      className={`fixed left-4 top-[88px] bottom-4 ${isCollapsed ? 'w-16' : 'w-64'} bg-sidebar-gradient rounded-2xl shadow-xl z-40 flex flex-col overflow-hidden transition-[width] duration-300 ease-out will-change-[width]`}
       role="navigation"
       aria-label="Media sources"
     >
@@ -351,7 +362,8 @@ export function Sidebar({ onOpenAbout, onAddSource, isCollapsed, onToggleCollaps
           )}
 
           {sources.map((source) => {
-            const color = providerColors[source.source_type as ProviderType] || 'bg-gray-500'
+            const providerMetadata = PROVIDERS[source.source_type as ProviderType]
+            const color = providerMetadata?.color || 'bg-gray-500'
             const isActive = activeSourceId === source.source_id
 
             return (
@@ -367,8 +379,10 @@ export function Sidebar({ onOpenAbout, onAddSource, isCollapsed, onToggleCollaps
                 aria-label={`Select ${source.display_name}`}
               >
                 <div className={`w-8 h-8 ${color} rounded-md flex items-center justify-center`}>
-                  {source.source_type === 'local' ? (
+                  {providerMetadata?.icon === 'folder' ? (
                     <HardDrive className="w-4 h-4 text-white" />
+                  ) : providerMetadata?.icon === 'music' ? (
+                    <Music className="w-4 h-4 text-white" />
                   ) : (
                     <Server className="w-4 h-4 text-white" />
                   )}
@@ -378,7 +392,7 @@ export function Sidebar({ onOpenAbout, onAddSource, isCollapsed, onToggleCollaps
           })}
 
           <button
-            onClick={onAddSource}
+            onClick={() => setShowAddModal(true)}
             className="w-12 h-12 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
             title="Add Source"
             aria-label="Add media source"
@@ -408,7 +422,7 @@ export function Sidebar({ onOpenAbout, onAddSource, isCollapsed, onToggleCollaps
               No media sources configured
             </p>
             <button
-              onClick={onAddSource}
+              onClick={() => setShowAddModal(true)}
               className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
               aria-label="Add media source"
             >
@@ -470,7 +484,7 @@ export function Sidebar({ onOpenAbout, onAddSource, isCollapsed, onToggleCollaps
         {sources.length > 0 && (
           <button
             ref={addSourceButtonRef}
-            onClick={onAddSource}
+            onClick={() => setShowAddModal(true)}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
             aria-label="Add media source"
           >
@@ -494,6 +508,14 @@ export function Sidebar({ onOpenAbout, onAddSource, isCollapsed, onToggleCollaps
           {!isCollapsed && 'About Totality'}
         </button>
       </div>
+
+      {/* Add Source Modal */}
+      {showAddModal && (
+        <AddSourceModal
+          onClose={() => setShowAddModal(false)}
+          onSuccess={handleSourceAdded}
+        />
+      )}
 
     </aside>
   )
@@ -524,7 +546,7 @@ interface SourceItemProps {
   onCancelRename: () => void
   onStopScan: () => void
   onScanAll: () => void
-  taskQueueState: QueueState | null
+  taskQueueState: TaskQueueState | null
   newItemCounts: Map<string, number>
   onClearNewItems: (libraryKey: string) => void
 }
@@ -563,7 +585,8 @@ function SourceItem({
   newItemCounts,
   onClearNewItems,
 }: SourceItemProps) {
-  const color = providerColors[source.source_type as ProviderType] || 'bg-gray-500'
+  const providerMetadata = PROVIDERS[source.source_type as ProviderType]
+  const color = providerMetadata?.color || 'bg-gray-500'
 
   // Helper to check if a library is being scanned via task queue
   const getTaskQueueStatus = (libraryId: string): { isScanning: boolean; isQueued: boolean; queuePosition?: number; progress?: QueuedTask['progress'] } => {
@@ -597,16 +620,25 @@ function SourceItem({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [renameValue, setRenameValue] = useState(source.display_name)
+  const [prevIsRenaming, setPrevIsRenaming] = useState(isRenaming)
+
+  // Adjust state when renaming starts (React 19 recommended pattern instead of useEffect)
+  if (isRenaming && !prevIsRenaming) {
+    setPrevIsRenaming(true)
+    setRenameValue(source.display_name)
+  } else if (!isRenaming && prevIsRenaming) {
+    setPrevIsRenaming(false)
+  }
+
   const confirmTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Focus input when renaming starts
   useEffect(() => {
     if (isRenaming && renameInputRef.current) {
-      setRenameValue(source.display_name)
       renameInputRef.current.focus()
       renameInputRef.current.select()
     }
-  }, [isRenaming, source.display_name])
+  }, [isRenaming])
 
   const handleRenameSubmit = async () => {
     const trimmed = renameValue.trim()
@@ -677,8 +709,10 @@ function SourceItem({
         }`}
       >
         <div className={`w-5 h-5 ${color} rounded flex items-center justify-center text-white shrink-0`} aria-hidden="true">
-          {source.source_type === 'local' ? (
+          {providerMetadata?.icon === 'folder' ? (
             <HardDrive className="w-3 h-3" />
+          ) : providerMetadata?.icon === 'music' ? (
+            <Music className="w-3 h-3" />
           ) : (
             <Server className="w-3 h-3" />
           )}
@@ -947,8 +981,8 @@ function SourceItem({
               onClick={(e) => { e.stopPropagation(); onScanAll() }}
               disabled={libraries.length === 0}
               className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors focus:outline-hidden disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Scan & Analyze All Libraries"
-              aria-label="Scan and analyze all libraries"
+              title="Scan All Libraries"
+              aria-label="Scan all libraries"
             >
               <RefreshCw className="w-4 h-4" aria-hidden="true" />
             </button>

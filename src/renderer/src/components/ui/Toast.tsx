@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { X, CheckCircle2, AlertCircle, Info } from 'lucide-react'
-import { useToast, Toast as ToastType } from '../../contexts/ToastContext'
+import { useToast, Toast } from '@/contexts/ToastContext'
 
-function ToastItem({ toast, onRemove }: { toast: ToastType; onRemove: () => void }) {
+function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: () => void }) {
   const [isVisible, setIsVisible] = useState(false)
 
   // Animate in on mount
@@ -29,9 +29,12 @@ function ToastItem({ toast, onRemove }: { toast: ToastType; onRemove: () => void
 
   return (
     <div
+      role={toast.type === 'error' ? 'alert' : 'status'}
+      aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
+      aria-atomic="true"
       className={`
         bg-card border border-border/50 rounded-lg shadow-lg p-4 min-w-[300px] max-w-[400px]
-        transform transition-[opacity,transform] duration-200 ease-out
+        transform transition-all duration-200 ease-out
         ${isVisible ? 'translate-x-0 opacity-100' : 'translate-x-4 opacity-0'}
       `}
     >
@@ -39,15 +42,15 @@ function ToastItem({ toast, onRemove }: { toast: ToastType; onRemove: () => void
         {icons[toast.type]}
 
         <div className="flex-1 min-w-0">
-          <p className="font-medium text-foreground text-label">{toast.title}</p>
+          <p className="font-medium text-foreground text-sm">{toast.title}</p>
           {toast.message && (
-            <p className="text-muted-foreground text-caption mt-0.5">{toast.message}</p>
+            <p className="text-muted-foreground text-xs mt-0.5">{toast.message}</p>
           )}
 
           {toast.action && (
             <button
               onClick={handleActionClick}
-              className="mt-2 text-caption font-medium text-primary hover:text-primary/80 transition-colors"
+              className="mt-2 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
             >
               {toast.action.label}
             </button>
@@ -57,6 +60,7 @@ function ToastItem({ toast, onRemove }: { toast: ToastType; onRemove: () => void
         <button
           onClick={handleRemove}
           className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+          aria-label="Close toast"
         >
           <X className="w-4 h-4" />
         </button>

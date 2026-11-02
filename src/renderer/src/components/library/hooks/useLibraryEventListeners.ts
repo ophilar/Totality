@@ -1,15 +1,10 @@
-import { useEffect, useRef, useCallback } from 'react'
-import { SETTING_KEYS } from '../../../../../shared/settingKeys'
-import type { AnalysisProgress } from '../types'
-import { formatOptimizationBytes } from '../transcoding/optimizationResults'
+import { useEffect, useEffectEvent } from 'react'
+import type { AnalysisProgress } from '@/components/library/types'
 
 interface UseLibraryEventListenersOptions {
   activeSourceId: string | null
-  scanProgressSize: number
-  loadMedia: () => Promise<void>
   loadStats: (sourceId?: string) => Promise<void>
   loadCompletenessData: () => Promise<void>
-  loadMusicData: () => Promise<void>
   loadMusicCompletenessData: (overrideEps?: boolean, overrideSingles?: boolean) => Promise<void>
   loadActiveSourceLibraries: () => Promise<void>
   loadEpSingleSettings: () => Promise<void>
@@ -38,11 +33,8 @@ interface UseLibraryEventListenersOptions {
  */
 export function useLibraryEventListeners({
   activeSourceId,
-  scanProgressSize: _scanProgressSize,
-  loadMedia,
-  loadStats: _loadStats,
+  loadStats,
   loadCompletenessData,
-  loadMusicData,
   loadMusicCompletenessData,
   loadActiveSourceLibraries,
   loadEpSingleSettings,
@@ -55,64 +47,28 @@ export function useLibraryEventListeners({
   markLibraryAsNew,
   addToast,
 }: UseLibraryEventListenersOptions): void {
-  // Debounced library update handler for live refresh during scans/analysis
-  const pendingUpdateRef = useRef<NodeJS.Timeout | null>(null)
-
-  const handleLibraryUpdate = useCallback(
-    (data: { type: 'media' | 'music' | 'libraryToggle'; sourceId?: string }) => {
-      // Debounce updates to avoid excessive refreshes
-      if (pendingUpdateRef.current) {
-        clearTimeout(pendingUpdateRef.current)
-      }
-      pendingUpdateRef.current = setTimeout(() => {
-        // Only refresh if it's the active source or no sourceId specified
-        if (data.sourceId && data.sourceId !== activeSourceId) return
-
-        if (data.type === 'libraryToggle') {
-          // Refresh enabled libraries when a library is toggled
-          loadActiveSourceLibraries().then(() => {
-            loadMedia()
-            loadCompletenessData()
-          })
-        } else if (data.type === 'media') {
-          // Refresh media data when items are added/removed/updated
-          loadMedia()
-          loadCompletenessData()
-        } else if (data.type === 'music') {
-          // Refresh music data when tracks are added/removed/updated
-          loadMusicData()
-          loadMusicCompletenessData()
-        }
-        pendingUpdateRef.current = null
-      }, 500) // 500ms debounce for live updates
-    },
-    [
-      activeSourceId,
-      loadActiveSourceLibraries,
-      loadMedia,
-      loadCompletenessData,
-      loadMusicData,
-      loadMusicCompletenessData,
-    ]
-  )
+  const handleLibraryUpdate = useEffectEvent((data: { type: 'media' | 'music' | 'libraryToggle'; sourceId?: string }) => {
+    if (data.sourceId && data.sourceId !== activeSourceId) return
+    if (data.type === 'libraryToggle') {
+      void loadActiveSourceLibraries()
+      return
+    }
+    void loadStats(data.sourceId)
+  })
 
   useEffect(() => {
-    // Shape guard for IPC event payloads
-    const isProgressLike = (v: unknown): v is AnalysisProgress =>
-      v != null && typeof v === 'object' && 'current' in v && 'total' in v
-
     // Listen for completeness analysis progress
     const cleanupSeriesProgress = window.electronAPI.onSeriesProgress((prog: unknown) => {
-      if (isProgressLike(prog)) setAnalysisProgress(prog)
+      setAnalysisProgress(prog as AnalysisProgress)
     })
     const cleanupCollectionsProgress = window.electronAPI.onCollectionsProgress(
       (prog: unknown) => {
-        if (isProgressLike(prog)) setAnalysisProgress(prog)
+        setAnalysisProgress(prog as AnalysisProgress)
       }
     )
     const cleanupMusicAnalysisProgress = window.electronAPI.onMusicAnalysisProgress(
       (prog: unknown) => {
-        if (isProgressLike(prog)) setAnalysisProgress(prog)
+        setAnalysisProgress(prog as AnalysisProgress)
       }
     )
 
@@ -127,42 +83,59 @@ export function useLibraryEventListeners({
       setIsAutoRefreshing(false)
     })
 
+    // Debounced task queue task completion handler to prevent render storms during batch scans
+    let taskCompleteTimer: NodeJS.Timeout | null = null
+    const pendingTaskTypes = new Set<string>()
+
+    const flushCompletedTasks = () => {
+      if (pendingTaskTypes.has('quality-analysis')) {
+        loadStats(activeSourceId || undefined)
+      }
+      if (pendingTaskTypes.has('analysis')) {
+        loadStats(activeSourceId || undefined)
+        loadCompletenessData()
+        loadMusicCompletenessData()
+      }
+      if (pendingTaskTypes.has('series-completeness') || pendingTaskTypes.has('collection-completeness')) {
+        loadCompletenessData()
+      }
+      if (pendingTaskTypes.has('music-completeness')) {
+        loadMusicCompletenessData()
+      }
+      pendingTaskTypes.clear()
+      taskCompleteTimer = null
+    }
+
     // Listen for task queue task completion
     const cleanupTaskComplete = window.electronAPI.onTaskQueueTaskComplete?.((task: unknown) => {
-      if (task == null || typeof task !== 'object') return
-      const t = task as { type?: string; status?: string }
-      // Refresh completeness data after completeness tasks (not scans — scans don't auto-reload)
+      const t = task as { type: string; status: string }
       if (t.status === 'completed') {
-        if (t.type === 'series-completeness' || t.type === 'collection-completeness') {
-          loadCompletenessData()
-        }
-        if (t.type === 'music-completeness') {
-          loadMusicCompletenessData()
-        }
+        pendingTaskTypes.add(t.type)
+        if (taskCompleteTimer) clearTimeout(taskCompleteTimer)
+        taskCompleteTimer = setTimeout(flushCompletedTasks, 250)
       }
     })
 
     // Listen for task queue state updates to sync analyzing state
-    const cleanupTaskQueueUpdated = window.electronAPI.onTaskQueueUpdated?.((state) => {
-      if (state.currentTask) {
-        const taskType = state.currentTask.type
-        if (taskType === 'series-completeness') {
+    const cleanupTaskQueueUpdated = window.electronAPI.onTaskQueueUpdated?.((state: unknown) => {
+      const s = state as { currentTask: { type: string; progress?: AnalysisProgress; id?: string; status?: string; analysisScope?: { kind?: string } } | null }
+      if (s.currentTask) {
+        if (s.currentTask.status === 'cancelling') {
           setIsAnalyzing(true)
-          setAnalysisType('series')
-          if (state.currentTask.progress) {
-            setAnalysisProgress(state.currentTask.progress)
+          setAnalysisProgress({ current: 0, total: 1, currentItem: 'Cancelling…', phase: 'cancelling' })
+        }
+        const taskType = s.currentTask.type
+        if (taskType === 'analysis') {
+          setIsAnalyzing(true)
+          setAnalysisType(s.currentTask.analysisScope?.kind === 'show' ? 'series' : s.currentTask.analysisScope?.kind === 'collection' ? 'collections' : s.currentTask.analysisScope?.kind === 'album' || s.currentTask.analysisScope?.kind === 'artist' ? 'music' : null)
+          if (s.currentTask.progress) {
+            setAnalysisProgress(s.currentTask.progress)
           }
-        } else if (taskType === 'collection-completeness') {
+        } else if (taskType === 'collection-completeness' || taskType === 'music-completeness' || taskType === 'series-completeness') {
           setIsAnalyzing(true)
-          setAnalysisType('collections')
-          if (state.currentTask.progress) {
-            setAnalysisProgress(state.currentTask.progress)
-          }
-        } else if (taskType === 'music-completeness') {
-          setIsAnalyzing(true)
-          setAnalysisType('music')
-          if (state.currentTask.progress) {
-            setAnalysisProgress(state.currentTask.progress)
+          setAnalysisType(taskType === 'series-completeness' ? 'series' : taskType === 'collection-completeness' ? 'collections' : 'music')
+          if (s.currentTask.progress) {
+            setAnalysisProgress(s.currentTask.progress)
           }
         } else {
           // Non-completeness task running, reset completeness analyzing state
@@ -179,23 +152,19 @@ export function useLibraryEventListeners({
 
     // Listen for settings changes (e.g., API key added/removed in Settings)
     const cleanupSettingsChanged = window.electronAPI.onSettingsChanged?.(async (data) => {
-      if (data.key === SETTING_KEYS.tmdb_api_key) {
+      if (data.key === 'tmdb_api_key') {
         setTmdbApiKeySet(data.hasValue)
       }
-      if (data.key === SETTING_KEYS.completeness_include_eps || data.key === SETTING_KEYS.completeness_include_singles) {
+      if (data.key === 'completeness_include_eps' || data.key === 'completeness_include_singles') {
         // Read fresh settings to avoid stale state race condition
         const [epsVal, singlesVal] = await Promise.all([
-          window.electronAPI.getSetting(SETTING_KEYS.completeness_include_eps),
-          window.electronAPI.getSetting(SETTING_KEYS.completeness_include_singles),
+          window.electronAPI.getSetting('completeness_include_eps'),
+          window.electronAPI.getSetting('completeness_include_singles'),
         ])
         const freshEps = (epsVal as string) !== 'false'
         const freshSingles = (singlesVal as string) !== 'false'
         loadEpSingleSettings()
-        loadMusicData()
         loadMusicCompletenessData(freshEps, freshSingles)
-      }
-      if (data.key === SETTING_KEYS.exclude_empty_seasons || data.key === SETTING_KEYS.collection_theatrical_lag_days) {
-        loadCompletenessData()
       }
     })
 
@@ -231,32 +200,11 @@ export function useLibraryEventListeners({
         itemsChanged > 0
           ? `Added ${data.itemsAdded}, updated ${data.itemsUpdated}`
           : `${data.itemsScanned} items scanned, no changes`
-      const optimizationCandidates = data.optimizationCandidates
-      const reasonLabels: Record<string, string> = {
-        h264_video_transcode: 'H.264',
-        hevc_to_av1: 'H.265 to AV1',
-        audio_stream_pruning: 'audio pruning',
-        subtitle_stream_pruning: 'subtitle pruning',
-        dolby_vision_profile_5_mp4_remux: 'Dolby Vision remux',
-      }
-      const reasonSummary = optimizationCandidates
-        ? Object.entries(optimizationCandidates.reasonCounts)
-            .filter((entry): entry is [string, number] => entry[1] !== undefined && entry[1] > 0)
-            .map(([reason, count]) => `${reasonLabels[reason] ?? reason}: ${count}`)
-            .join(', ')
-        : ''
-      const optimizationMessage = optimizationCandidates
-        ? optimizationCandidates.candidateCount === 0
-          ? 'No optimization candidates found'
-          : `${optimizationCandidates.candidateCount} optimization candidates found${reasonSummary ? ` (${reasonSummary})` : ''}${optimizationCandidates.estimatedSavingsBytes === null ? '' : ` · about ${formatOptimizationBytes(optimizationCandidates.estimatedSavingsBytes)} estimated savings`}${optimizationCandidates.candidatesWithoutEstimate ? ` · ${optimizationCandidates.candidatesWithoutEstimate} without an estimate` : ''}`
-        : data.optimizationCandidateError
-          ? `Optimization candidates could not be calculated: ${data.optimizationCandidateError}`
-          : undefined
 
       addToast({
         type: 'success',
         title: `${data.libraryName} complete`,
-        message: optimizationMessage ? `${message} · ${optimizationMessage}` : message,
+        message,
         action: data.sourceId
           ? {
               label: 'View Library',
@@ -274,20 +222,14 @@ export function useLibraryEventListeners({
         markLibraryAsNew(`${data.sourceId}:${data.libraryId}`, data.itemsAdded)
       }
 
-      // Reload library data after scan completes with changes
-      if (data.itemsAdded > 0 || data.itemsUpdated > 0 || (data as { itemsRemoved?: number } | undefined)?.itemsRemoved) {
-        loadMedia()
-        loadCompletenessData()
-        loadMusicData()
-        loadMusicCompletenessData()
+      // Auto-navigate on first scan to help new users
+      if (data.isFirstScan && data.sourceId) {
+        setActiveSource(data.sourceId)
       }
     })
 
     // Cleanup all listeners on unmount
     return () => {
-      if (pendingUpdateRef.current) {
-        clearTimeout(pendingUpdateRef.current)
-      }
       cleanupSeriesProgress?.()
       cleanupCollectionsProgress?.()
       cleanupMusicAnalysisProgress?.()
@@ -295,15 +237,16 @@ export function useLibraryEventListeners({
       cleanupAutoRefreshStarted?.()
       cleanupAutoRefreshComplete?.()
       cleanupTaskComplete?.()
+      if (taskCompleteTimer) clearTimeout(taskCompleteTimer)
       cleanupTaskQueueUpdated?.()
       cleanupSettingsChanged?.()
       cleanupWishlistAutoCompleted?.()
       cleanupScanCompleted?.()
       window.removeEventListener('exclusions-changed', handleExclusionsChanged)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- loadMedia is stable via parent; adding it causes re-subscription loops
   }, [
-    handleLibraryUpdate,
+    activeSourceId,
+    loadStats,
     addToast,
     setActiveSource,
     markLibraryAsNew,
@@ -315,6 +258,5 @@ export function useLibraryEventListeners({
     loadEpSingleSettings,
     loadCompletenessData,
     loadMusicCompletenessData,
-    loadMusicData,
   ])
 }

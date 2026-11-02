@@ -1,54 +1,25 @@
-/**
- * Safe IPC Send Utilities
- *
- * Provides a safe way to send messages to BrowserWindow webContents,
- * handling cases where the window may have been closed during an operation.
- */
-
 import { BrowserWindow } from 'electron'
+import { getLoggingService } from '@main/services/LoggingService'
 
 /**
- * Safely send a message to a BrowserWindow's webContents.
- * Returns false if the window or webContents is no longer valid.
- *
- * @param win The target BrowserWindow (may be null)
- * @param channel The IPC channel name
- * @param args Arguments to send
- * @returns true if message was sent, false if window was invalid
- *
- * @example
- * const win = BrowserWindow.fromWebContents(event.sender)
- * safeSend(win, 'sources:scanProgress', { current: 5, total: 100 })
+ * Safely send a message to a BrowserWindow's webContents if not destroyed.
+ * Logs and rethrows any unexpected errors encountered during transmission.
  */
 export function safeSend(win: BrowserWindow | null, channel: string, ...args: unknown[]): boolean {
-  try {
-    if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+  if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+    try {
       win.webContents.send(channel, ...args)
       return true
+    } catch (error) {
+      getLoggingService().error('[IPC]', `Failed to send IPC message on channel "${channel}":`, error)
+      throw error
     }
-  } catch (error) {
-    console.debug(`[IPC] Failed to send ${channel} to the Electron window`, error)
   }
-  // Also broadcast to web clients
-  try {
-    const { getWebServerService } = require('../../services/WebServerService')
-    const webServer = getWebServerService()
-    if (webServer?.isRunning()) {
-      webServer.broadcastEvent(channel, ...args)
-    }
-  } catch (error) {
-    process.stderr.write(`[IPC] Failed to broadcast ${channel} to web clients: ${error instanceof Error ? error.message : String(error)}\n`)
-  }
-
   return false
 }
 
 /**
  * Get the BrowserWindow from an IPC event sender.
- * Convenience wrapper around BrowserWindow.fromWebContents.
- *
- * @param event The IPC event with a sender property
- * @returns The BrowserWindow or null if not found
  */
 export function getWindowFromEvent(event: Electron.IpcMainInvokeEvent): BrowserWindow | null {
   return BrowserWindow.fromWebContents(event.sender)

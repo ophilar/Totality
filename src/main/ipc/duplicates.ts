@@ -1,18 +1,18 @@
-import { IPC_CHANNELS } from '../../shared/ipcChannels'
-import { getDatabase } from '../database/getDatabase'
-import { getLoggingService } from '../services/LoggingService'
-import { getDeduplicationService } from '../services/DeduplicationService'
-import { createIpcHandler, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from './utils/createHandler'
-import { operationRequestRegistry } from './utils/OperationRequestRegistry'
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getDeduplicationService } from '@main/services/DeduplicationService'
+import { createIpcHandler, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
+import { operationRequestRegistry } from '@main/ipc/utils/OperationRequestRegistry'
 import { z } from 'zod'
-import { PositiveIntSchema } from '../validation/schemas'
+import { PositiveIntSchema } from '@main/validation/schemas'
 
 export function registerDuplicateHandlers() {
-  createIpcHandler(IPC_CHANNELS.duplicatesGetPending, async (sourceId?: string) => {
-    return getDatabase().getPendingDuplicates(sourceId)
+  createIpcHandler(IPC_CHANNELS.DUPLICATES.GET_PENDING, async (sourceId?: string) => {
+    return await getDatabase().duplicates.getPendingDuplicates(sourceId)
   })
 
-  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.duplicatesScan, z.tuple([z.string().optional(), z.string().min(1).max(100)]), async (event, sourceId, requestId) => {
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.DUPLICATES.SCAN, z.tuple([z.string().optional(), z.string().min(1).max(100)]), async (event, sourceId, requestId) => {
     const operation = operationRequestRegistry.register(event.sender, requestId, {
       kind: 'duplicate-scan',
       label: 'Duplicate scan',
@@ -35,13 +35,14 @@ export function registerDuplicateHandlers() {
     }
   })
 
-  createValidatedIpcHandler(IPC_CHANNELS.duplicatesGetRecommendation, z.array(z.number()), async (ids) => {
+  createValidatedIpcHandler(IPC_CHANNELS.DUPLICATES.GET_RECOMMENDATION, z.array(z.number()), async (ids) => {
     return getDeduplicationService().recommendRetention(ids)
   })
 
-  createValidatedIpcHandler(IPC_CHANNELS.duplicatesResolve, z.tuple([PositiveIntSchema, PositiveIntSchema, z.boolean()]), async (duplicateId, keepItemId, deleteOthers) => {
+  createValidatedIpcHandler(IPC_CHANNELS.DUPLICATES.RESOLVE, z.tuple([PositiveIntSchema, PositiveIntSchema, z.boolean()]), async (duplicateId, keepItemId, deleteOthers) => {
     return await getDeduplicationService().resolveDuplicate(duplicateId, keepItemId, deleteOthers)
   })
 
   getLoggingService().info('[duplicates]', 'Duplicates IPC handlers registered')
 }
+

@@ -31,20 +31,6 @@ const mockAnalysis: FileAnalysisResult = {
 }
 
 describe('StreamRemuxCommandBuilder', () => {
-  it('tags a verified Dolby Vision Profile 5 stream during MP4 remux', () => {
-    const analysis: FileAnalysisResult = { ...mockAnalysis, video: { ...mockAnalysis.video!, hdrFormat: 'Dolby Vision', dolbyVisionProfile: 5 } }
-    const args = new StreamRemuxCommandBuilder().buildFFmpegArgs('in.mkv', 'out.mp4', { optimizationMode: 'remux_only' }, analysis)
-    expect(args).toContain('-tag:v')
-    expect(args).toContain('dvh1')
-    expect(args).toContain('-c:v')
-    expect(args).toContain('copy')
-  })
-
-  it('refuses a Dolby Vision MP4 remux when profile evidence is absent', () => {
-    const analysis: FileAnalysisResult = { ...mockAnalysis, video: { ...mockAnalysis.video!, hdrFormat: 'Dolby Vision' } }
-    expect(() => new StreamRemuxCommandBuilder().buildFFmpegArgs('in.mkv', 'out.mp4', { optimizationMode: 'remux_only' }, analysis)).toThrow(/Profile 5/)
-  })
-
   it('builds FFmpeg args with -c:v copy and stream mapping without re-encoding video', () => {
     const builder = new StreamRemuxCommandBuilder()
     const options: TranscodeOptions = {

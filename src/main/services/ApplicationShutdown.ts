@@ -1,4 +1,3 @@
-
 export type ApplicationShutdownStage =
   | 'stop-accepting-work'
   | 'pause-task-queue'
@@ -14,7 +13,7 @@ export interface ApplicationShutdownOperations {
   shutdownWorkerPool: () => Promise<void>
   persistInterruptedTasks: () => Promise<void>
   checkpointWal: () => Promise<void>
-  closeDatabase: () => void | Promise<void>
+  closeDatabase: () => void
   shutdownLogging: () => Promise<void>
 }
 

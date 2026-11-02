@@ -1,4 +1,3 @@
-
 import { getFileNameParser } from '@main/services/FileNameParser'
 
 export type MediaMatchStatus = 'manual' | 'conflicting' | 'verified' | 'unresolved'
@@ -31,3 +30,5 @@ export function getMediaMatchStatus(input: { locked: boolean; canonicalIds: stri
   if (input.conflictingEntityIds.length > 0) return 'conflicting'
   return input.canonicalIds.length > 0 ? 'verified' : 'unresolved'
 }
+
+

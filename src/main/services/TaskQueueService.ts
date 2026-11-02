@@ -1,1641 +1,1267 @@
-import { IPC_CHANNELS } from '../../shared/ipcChannels'
-import { SETTING_KEYS } from '../../shared/settingKeys'
-import { getErrorMessage } from './utils/errorUtils'
 /**
  * TaskQueueService - Manages background task queue for scans and analysis
- *
- * Features:
- * - Sequential task execution
- * - Queue management (add, remove, reorder)
- * - Pause/resume functionality
- * - Task cancellation
- * - Progress tracking
- * - Activity logging
  */
 
+import { createHash, randomUUID } from 'crypto'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import type { BetterSQLiteService } from '@main/database/BetterSQLiteService'
+import { getStatsCacheService } from '@main/services/StatsCacheService'
+import { getLoggingService, LoggingService } from '@main/services/LoggingService'
+import { getErrorMessage, parseDatabaseError } from '@main/services/utils/errorUtils'
+import { getSourceManager, SourceManager } from '@main/services/SourceManager'
+import { getSeriesCompletenessService, SeriesCompletenessService } from '@main/services/SeriesCompletenessService'
+import { getMovieCollectionService, MovieCollectionService } from '@main/services/MovieCollectionService'
+import { getMusicBrainzService, MusicBrainzService } from '@main/services/MusicBrainzService'
+import { getQualityAnalyzer, QualityAnalyzer, QualityAnalysisError } from '@main/services/QualityAnalyzer'
+import { getTranscodingService, TranscodingService, TranscodeProgress } from '@main/services/TranscodingService'
+import { safeSend } from '@main/ipc/utils/safeSend'
 import { BrowserWindow } from 'electron'
-import { safeSend } from '../ipc/utils/safeSend'
-import { emitNotificationCreated } from '../ipc/utils/notificationEmitter'
-import { getWebServerService } from './WebServerService'
-import { getSourceManager } from './SourceManager'
-import { getSeriesCompletenessService } from './SeriesCompletenessService'
-import { getMovieCollectionService } from './MovieCollectionService'
-import { getMusicBrainzService, MusicBrainzReleaseDataNotFoundError } from './MusicBrainzService'
-import { getDatabase } from '../database/getDatabase'
-import { getLiveMonitoringService } from './LiveMonitoringService'
-import { PlexProvider } from '../providers/plex/PlexProvider'
-import { JellyfinEmbyBase } from '../providers/jellyfin-emby/JellyfinEmbyBase'
-import { KodiProvider } from '../providers/kodi/KodiProvider'
-import { KodiLocalProvider } from '../providers/kodi/KodiLocalProvider'
-import type { ScanResult } from '../providers/base/MediaProvider'
-import { getWishlistCompletionService } from './WishlistCompletionService'
-import { getTMDBService } from './TMDBService'
-import { getTranscodingService } from './TranscodingService'
-import type { OptimizationCandidateScanSummary, ShowTranscodeRequest, ShowTranscodePreflight, ShowTranscodeEpisodeCheckpoint } from './TranscodingService'
-import { getQualityAnalyzer } from './QualityAnalyzer'
-import { analyzeAlbumQuality } from './MusicQualityAnalyzer'
-import { getArtistAlbumsCombined } from './utils/musicUtils'
-import type {
-  ActivityLogEntry,
-  MediaAnalysisOptions,
-  QueueState,
-  QueuedTask,
-  TaskDefinition,
-  TaskStatus,
-  TaskType,
-} from '../types/taskQueue'
-
-function formatCandidateSavings(bytes: number): string {
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let value = bytes
-  let unit = 0
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit += 1
-  }
-  return `${value.toFixed(unit === 0 || value >= 100 ? 0 : 1)} ${units[unit]}`
-}
-
-export type {
-  ActivityLogEntry,
-  QueueState,
-  QueuedTask,
-  TaskDefinition,
+import { 
+  QueuedTask, 
+  TaskType, 
+  TaskStatus, 
   TaskProgress,
-  TaskStatus,
-  TaskType,
-} from '../types/taskQueue'
+  AnalysisJobResult,
+  AnalysisStageOutcome,
+} from '@main/types/database'
+import { NotificationType } from '@main/types/monitoring'
+import type { AnalysisScope } from '@shared/analysisScope'
+import { planAnalysisStages } from '@main/services/AnalysisTaskPlanner'
+import { LibraryType } from '@main/types/database'
+import type { ScanResult } from '@main/providers/base/MediaProvider'
 
-// ============================================================================
-// Types
-// ============================================================================
+interface CollectionProgress { current: number; total: number; percentage?: number; phase: string; currentItem?: string }
 
-// ============================================================================
-// TaskQueueService
-// ============================================================================
+export interface TaskQueueDependencies {
+  db?: BetterSQLiteService
+  logging?: LoggingService
+  sourceManager?: SourceManager
+  seriesCompleteness?: SeriesCompletenessService
+  movieCollection?: MovieCollectionService
+  musicBrainz?: MusicBrainzService
+  qualityAnalyzer?: QualityAnalyzer
+  transcoding?: TranscodingService
+}
 
 export class TaskQueueService {
   private queue: QueuedTask[] = []
   private currentTask: QueuedTask | null = null
-  private isPaused = false
-  private isProcessing = false
-  private mainWindow: BrowserWindow | null = null
+  private currentTaskAbortController: AbortController | null = null
   private completedTasks: QueuedTask[] = []
-  private taskHistory: ActivityLogEntry[] = []
-  private monitoringHistory: ActivityLogEntry[] = []
+  private isPaused = false
   private cancelRequested = false
-  private shuttingDown = false
-  private monitoringWasPausedByUs = false // Track if we paused monitoring
-  private monitoringResumeTimer: ReturnType<typeof setTimeout> | null = null
-  private progressThrottleTimer: NodeJS.Timeout | null = null
-  private progressUpdatePending = false
-  private processingIdleWaiters: Array<() => void> = []
-  private currentTaskAbortController?: AbortController
-  private taskPauseRequested = false
-  private taskYieldRequested = false
-  private readonly taskCompletionWaiters = new Map<string, Set<(task: QueuedTask) => void>>()
+  private historyLimit = 100
+  private stateWrite: Promise<void> = Promise.resolve()
+  private submissionWrite: Promise<unknown> = Promise.resolve()
 
-  private static readonly MAX_COMPLETED_TASKS = 50
-  private static readonly MAX_HISTORY_ENTRIES = 100
-  private static readonly MAX_QUEUE_DEPTH = 50
-  private static readonly PROGRESS_THROTTLE_MS = 250 // Max ~4 progress events/second
+  private db: BetterSQLiteService
+  private logging: LoggingService
+  private sourceManager: SourceManager | null
+  private seriesCompleteness: SeriesCompletenessService | null
+  private movieCollection: MovieCollectionService | null
+  private musicBrainz: MusicBrainzService | null
+  private qualityAnalyzer: QualityAnalyzer | null
+  private transcoding: TranscodingService | null
+  private mainWindow: BrowserWindow | null = null
 
-  /**
-   * Set the main window reference for IPC events
-   */
-  setMainWindow(window: BrowserWindow | null): void {
-    this.mainWindow = window
+  constructor(deps: TaskQueueDependencies = {}) {
+    this.db = deps.db || getDatabase()
+    this.logging = deps.logging || getLoggingService()
+    this.sourceManager = deps.sourceManager || null
+    this.seriesCompleteness = deps.seriesCompleteness || null
+    this.movieCollection = deps.movieCollection || null
+    this.musicBrainz = deps.musicBrainz || null
+    this.qualityAnalyzer = deps.qualityAnalyzer || null
+    this.transcoding = deps.transcoding || null
+  }
+
+  private getSourceManager(): SourceManager {
+    if (!this.sourceManager) this.sourceManager = getSourceManager()
+    return this.sourceManager
+  }
+
+  private getSeriesCompleteness(): SeriesCompletenessService {
+    if (!this.seriesCompleteness) this.seriesCompleteness = getSeriesCompletenessService()
+    return this.seriesCompleteness
+  }
+
+  private getQualityAnalyzer(): QualityAnalyzer {
+    if (!this.qualityAnalyzer) this.qualityAnalyzer = getQualityAnalyzer()
+    return this.qualityAnalyzer
+  }
+
+  private getMovieCollection(): MovieCollectionService {
+    if (!this.movieCollection) this.movieCollection = getMovieCollectionService()
+    return this.movieCollection
+  }
+
+  private getMusicBrainz(): MusicBrainzService {
+    if (!this.musicBrainz) this.musicBrainz = getMusicBrainzService()
+    return this.musicBrainz
+  }
+
+  private getTranscoding(): TranscodingService {
+    if (!this.transcoding) {
+      this.transcoding = getTranscodingService()
+    }
+    return this.transcoding
+  }
+
+  setMainWindow(win: BrowserWindow): void {
+    this.mainWindow = win
+  }
+
+  async loadPersistedHistory(): Promise<void> {
+    await this.loadState()
+  }
+
+  async resumePersistedTasks(): Promise<void> {
+    if (this.queue.length > 0 && !this.isPaused && !this.currentTask) {
+      this.logging.info('[TaskQueue]', `Resuming queue with ${this.queue.length} persisted tasks`)
+      await this.processQueue()
+    }
+  }
+
+  private getTaskSignature(task: Pick<QueuedTask, 'type' | 'mediaItemId' | 'artistId' | 'albumId' | 'sourceId' | 'libraryId' | 'label' | 'analysisScope' | 'inputFingerprint'>): string {
+    if (task.type === TaskType.Analysis && task.analysisScope) return `${task.type}:${JSON.stringify(task.analysisScope)}:${task.inputFingerprint ?? 'unversioned'}`
+    if (task.mediaItemId !== undefined) return `${task.type}:media:${task.mediaItemId}`
+    if (task.artistId !== undefined) return `${task.type}:artist:${task.artistId}`
+    if (task.albumId !== undefined) return `${task.type}:album:${task.albumId}`
+    if (task.sourceId !== undefined) return `${task.type}:source:${task.sourceId}:lib:${task.libraryId ?? 'all'}`
+    return `${task.type}:label:${task.label}`
+  }
+
+  private createQueuedTask(definition: Omit<QueuedTask, 'id' | 'status' | 'createdAt'>, createdAt = new Date().toISOString()): QueuedTask {
+    return {
+      ...definition,
+      id: `task_${Date.now()}_${randomUUID()}`,
+      status: TaskStatus.Queued,
+      createdAt,
+    }
   }
 
   /**
-   * Add a task to the queue
+   * Add a new task to the queue
    */
-  addTask(definition: TaskDefinition): string {
-    // Check for duplicate: same type + sourceId + libraryId already queued or running
-    const isDuplicate = (t: QueuedTask) => {
-      if (definition.type === 'optimization-preflight') {
-        const current = definition.options as { request?: ShowTranscodeRequest } | undefined
-        const existing = t.options as { request?: ShowTranscodeRequest } | undefined
-        return t.type === definition.type && JSON.stringify(current?.request) === JSON.stringify(existing?.request)
+  async addTask(definition: Omit<QueuedTask, 'id' | 'status' | 'createdAt'>): Promise<string> {
+    return this.serializeSubmission(async () => {
+      const signature = this.getTaskSignature(definition)
+      const existing = definition.type === TaskType.Analysis ? this.queue.find(t => this.getTaskSignature(t) === signature) ?? (this.currentTask?.type === TaskType.Analysis && this.currentTask.inputFingerprint === definition.inputFingerprint ? this.currentTask : undefined) : undefined
+      if (existing) return existing.id
+      if (this.queue.length >= 50) throw new Error('Task queue is at maximum capacity (50 tasks).')
+      const task = this.createQueuedTask(definition)
+      this.queue.push(task)
+      try {
+        await this.saveState(true)
+      } catch (error) {
+        this.queue = this.queue.filter(queued => queued.id !== task.id)
+        throw error
       }
-      if (definition.type === 'transcode' && definition.mediaItemId !== undefined) {
-        return t.type === 'transcode' && t.mediaItemId === definition.mediaItemId
-      }
-      return (
-        t.type === definition.type &&
-        t.sourceId === definition.sourceId &&
-        t.libraryId === definition.libraryId
-      )
-    }
-
-    // Check running task
-    if (this.currentTask && isDuplicate(this.currentTask)) {
-      console.log(`[TaskQueue] Duplicate task already running: ${definition.label} (${this.currentTask.id})`)
-      return this.currentTask.id
-    }
-
-    // Check queued tasks
-    const existing = this.queue.find(isDuplicate)
-    if (existing) {
-      console.log(`[TaskQueue] Duplicate task already queued: ${definition.label} (${existing.id})`)
-      return existing.id
-    }
-
-    // Guard against runaway queue accumulation
-    if (this.queue.length >= TaskQueueService.MAX_QUEUE_DEPTH) {
-      console.warn(`[TaskQueue] Queue depth limit reached (${TaskQueueService.MAX_QUEUE_DEPTH}), rejecting: ${definition.label}`)
-      return ''
-    }
-
-    const task: QueuedTask = {
-      id: this.generateId(),
-      type: definition.type,
-      label: definition.label,
-      sourceId: definition.sourceId,
-      libraryId: definition.libraryId,
-      artistId: definition.artistId,
-      mediaItemId: definition.mediaItemId,
-      batchId: definition.batchId,
-      options: definition.options,
-      status: 'queued',
-      createdAt: new Date().toISOString(),
-    }
-
-    this.queue.push(task)
-    console.log(`[TaskQueue] Added task: ${task.label} (${task.id})`)
-    this.emitQueueUpdate()
-
-    // Start processing if not already running
-    this.processNext()
-
-    return task.id
+      this.notifyListeners()
+      void this.processQueue()
+      return task.id
+    })
   }
 
   /**
-   * Add multiple tasks to the queue
+   * Add multiple tasks to the queue at once
    */
-  addTasks(definitions: TaskDefinition[]): string[] {
-    return definitions.map(def => this.addTask(def))
-  }
-
-  /**
-   * Remove a task from the queue (only if not running)
-   */
-  removeTask(taskId: string): boolean {
-    const index = this.queue.findIndex(t => t.id === taskId)
-    if (index === -1) return false
-
-    const [removed] = this.queue.splice(index, 1)
-    removed.status = 'cancelled'
-    removed.completedAt = new Date().toISOString()
-    this.resolveTaskCompletion(removed)
-    if (removed.type === 'optimization-preflight') {
-      const payload = removed.options as { requestId: string }
-      getDatabase().config.deleteSetting(`transcoding.backgroundPreflight.${payload.requestId}`)
-    }
-    console.log(`[TaskQueue] Removed task: ${taskId}`)
-    this.emitQueueUpdate()
-    return true
-  }
-
-  waitForTask(taskId: string): Promise<QueuedTask> {
-    if (this.currentTask?.id === taskId || this.queue.some(task => task.id === taskId)) {
-      return new Promise(resolve => {
-        const waiters = this.taskCompletionWaiters.get(taskId) ?? new Set<(task: QueuedTask) => void>()
-        waiters.add(resolve)
-        this.taskCompletionWaiters.set(taskId, waiters)
+  async addTasks(definitions: Omit<QueuedTask, 'id' | 'status' | 'createdAt'>[]): Promise<string[]> {
+    return this.serializeSubmission(async () => {
+      const signatures = new Map<string, string>()
+      for (const task of this.queue) if (task.type === TaskType.Analysis) signatures.set(this.getTaskSignature(task), task.id)
+      if (this.currentTask?.type === TaskType.Analysis) signatures.set(this.getTaskSignature(this.currentTask), this.currentTask.id)
+      const created: QueuedTask[] = []
+      const ids = definitions.map(definition => {
+        const signature = this.getTaskSignature(definition)
+        const existingId = definition.type === TaskType.Analysis ? signatures.get(signature) : undefined
+        if (existingId) return existingId
+        const task = this.createQueuedTask(definition)
+        created.push(task)
+        signatures.set(signature, task.id)
+        return task.id
       })
+      if (this.queue.length + created.length > 50) throw new Error('Task queue is at maximum capacity (50 tasks).')
+      if (created.length === 0) return ids
+      this.queue.push(...created)
+      try {
+        await this.saveState(true)
+      } catch (error) {
+        const createdIds = new Set(created.map(task => task.id))
+        this.queue = this.queue.filter(task => !createdIds.has(task.id))
+        throw error
+      }
+      this.notifyListeners()
+      void this.processQueue()
+      return ids
+    })
+  }
+
+  private serializeSubmission<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.submissionWrite.then(operation)
+    this.submissionWrite = result.then(() => undefined, () => undefined)
+    return result
+  }
+
+  async submitAnalysis(scope: AnalysisScope): Promise<string> {
+    await this.validateAnalysisScope(scope)
+    const inputFingerprint = await this.getAnalysisInputFingerprint(scope)
+    const taskId = await this.addTask({ type: TaskType.Analysis, label: `Analyze ${scope.kind}`, analysisScope: scope, inputFingerprint })
+    return taskId
+  }
+
+  private async getAnalysisInputFingerprint(scope: AnalysisScope): Promise<string> {
+    let rows: Array<Record<string, unknown>>
+    if (scope.kind === 'item') {
+      const item = await this.db.media.getItemById(scope.mediaId)
+      if (!item) throw new Error(`Media item ${scope.mediaId} was not found`)
+      rows = [item as unknown as Record<string, unknown>]
+    } else if (scope.kind === 'show') rows = await this.db.tvShows.getEpisodes(scope.title, scope.sourceId, scope.seriesIdentityKey, scope.libraryId) as unknown as Array<Record<string, unknown>>
+    else if (scope.kind === 'album') {
+      const album = await this.db.music.getAlbumById(scope.albumId)
+      if (!album) throw new Error(`Album ${scope.albumId} was not found`)
+      rows = [album as unknown as Record<string, unknown>, ...await this.db.music.getTracks({ albumId: scope.albumId, sourceId: album.source_id, libraryId: album.library_id }) as unknown as Array<Record<string, unknown>>]
     }
-    const completedTask = this.completedTasks.find(task => task.id === taskId)
-    if (completedTask) return Promise.resolve(completedTask)
-    throw new Error(`Task ${taskId} is no longer available`)
+    else if (scope.kind === 'artist') {
+      const artist = await this.db.music.getArtistById(scope.artistId)
+      if (!artist) throw new Error(`Artist ${scope.artistId} was not found`)
+      const albums = await this.db.music.getAlbums({ artistId: scope.artistId, sourceId: artist.source_id, libraryId: artist.library_id })
+      const tracks = await Promise.all(albums.map(album => this.db.music.getTracks({ albumId: album.id, sourceId: artist.source_id, libraryId: artist.library_id })))
+      rows = [artist as unknown as Record<string, unknown>, ...albums as unknown as Array<Record<string, unknown>>, ...tracks.flat() as unknown as Array<Record<string, unknown>>]
+    } else if (scope.kind === 'collection') {
+      const collection = (await this.getMovieCollection().getCollections()).find(row => row.id === scope.collectionId)
+      if (!collection) throw new Error(`Collection ${scope.collectionId} was not found`)
+      if (!collection.source_id || !collection.library_id) throw new Error(`Collection ${scope.collectionId} has no verified source and library ownership`)
+      rows = [collection as unknown as Record<string, unknown>, ...await this.db.media.getMediaItemsForCollection(scope.collectionId) as unknown as Array<Record<string, unknown>>]
+    } else {
+      const sources = scope.kind === 'library' ? [await this.db.sources.getSourceById(scope.sourceId)].filter((source): source is NonNullable<typeof source> => !!source) : await this.db.sources.getEnabledSources()
+      const libraryRows = await Promise.all(sources.map(async source => ({ source, libraries: await this.db.sources.getSourceLibraries(source.source_id) })))
+      const selected = libraryRows.flatMap(({ source, libraries }) => libraries.filter(library => library.isEnabled === 1 && (scope.kind !== 'library' || (source.source_id === scope.sourceId && library.libraryId === scope.libraryId))).map(library => ({ sourceId: source.source_id, libraryId: library.libraryId })))
+      rows = await Promise.all(selected.map(async library => {
+        const [items, albums] = await Promise.all([
+          this.db.media.getItems({ sourceId: library.sourceId, libraryId: library.libraryId }),
+          this.db.music.getAlbums({ sourceId: library.sourceId, libraryId: library.libraryId }),
+        ])
+        const tracks = await Promise.all(albums.map(album => this.db.music.getTracks({ albumId: album.id, sourceId: library.sourceId, libraryId: library.libraryId })))
+        return { ...library, items, albums, tracks: tracks.flat() }
+      }))
+      if (!rows.length) throw new Error('No enabled library exists in the requested scope')
+    }
+    const input = JSON.stringify(rows.map(row => Object.fromEntries(Object.entries(row).sort(([a], [b]) => a.localeCompare(b)))))
+    return createHash('sha256').update(input).digest('hex')
+  }
+
+  private async validateAnalysisScope(scope: AnalysisScope): Promise<void> {
+    if (scope.kind === 'item' && !await this.db.media.getItemById(scope.mediaId)) throw new Error(`Media item ${scope.mediaId} was not found`)
+    if (scope.kind === 'show') {
+      const source = await this.db.sources.getSourceById(scope.sourceId)
+      if (!source) throw new Error(`Show source ${scope.sourceId} was not found`)
+      const libraries = await this.db.sources.getSourceLibraries(scope.sourceId)
+      if (!libraries.some(library => library.libraryId === scope.libraryId && library.isEnabled === 1)) throw new Error(`Show library ${scope.libraryId} is not enabled for source ${scope.sourceId}`)
+      if ((await this.db.tvShows.getEpisodes(scope.title, scope.sourceId, scope.seriesIdentityKey, scope.libraryId)).length === 0) throw new Error('Requested show identity owns no episodes in the selected library')
+    }
+    if (scope.kind === 'collection') {
+      const collection = (await this.getMovieCollection().getCollections()).find(row => row.id === scope.collectionId)
+      if (!collection) throw new Error(`Collection ${scope.collectionId} was not found`)
+      const { source_id: sourceId, library_id: libraryId } = collection
+      if (!sourceId || !libraryId) throw new Error(`Collection ${scope.collectionId} has no verified source and library ownership`)
+      const source = await this.db.sources.getSourceById(sourceId)
+      const libraries = await this.db.sources.getSourceLibraries(sourceId)
+      if (!source?.is_enabled || !libraries.some(library => library.libraryId === libraryId && library.isEnabled === 1)) throw new Error(`Collection ${scope.collectionId} does not belong to an enabled library`)
+    }
+    if (scope.kind === 'album' || scope.kind === 'artist') {
+      const owned = scope.kind === 'album' ? await this.db.music.getAlbumById(scope.albumId) : await this.db.music.getArtistById(scope.artistId)
+      if (!owned) throw new Error(`${scope.kind === 'album' ? 'Album' : 'Artist'} ${scope.kind === 'album' ? scope.albumId : scope.artistId} was not found`)
+      const source = await this.db.sources.getSourceById(owned.source_id)
+      const libraries = await this.db.sources.getSourceLibraries(owned.source_id)
+      if (!source?.is_enabled || !libraries.some(library => library.libraryId === owned.library_id && library.isEnabled === 1)) throw new Error(`${scope.kind} does not belong to an enabled library`)
+    }
+    if (scope.kind === 'library') {
+      const source = await this.db.sources.getSourceById(scope.sourceId)
+      if (!source || !source.is_enabled) throw new Error(`Source ${scope.sourceId} is not enabled`)
+      const libraries = await this.db.sources.getSourceLibraries(scope.sourceId)
+      if (!libraries.some(library => library.libraryId === scope.libraryId && library.isEnabled === 1)) throw new Error(`Library ${scope.libraryId} is not enabled for source ${scope.sourceId}`)
+    }
+    if (scope.kind === 'all-libraries') {
+      const sources = await this.db.sources.getEnabledSources()
+      const enabled = await Promise.all(sources.map(source => this.db.sources.getSourceLibraries(source.source_id)))
+      if (!enabled.some(libraries => libraries.some(library => library.isEnabled === 1))) throw new Error('No enabled libraries are available for analysis')
+    }
   }
 
   /**
-   * Reorder the queue
+   * Remove a task from the queue
    */
-  reorderQueue(taskIds: string[]): void {
-    const reordered = taskIds
-      .map(id => this.queue.find(t => t.id === id))
-      .filter((t): t is QueuedTask => t !== undefined)
+  async removeTask(taskId: string): Promise<boolean> {
+    if (this.currentTask && this.currentTask.id === taskId) {
+      await this.cancelCurrent()
+      this.notifyListeners()
+      return true
+    }
+    const index = this.queue.findIndex(t => t.id === taskId)
+    if (index !== -1) {
+      const task = this.queue.splice(index, 1)[0]
+      task.status = TaskStatus.Cancelled
+      task.completedAt = new Date().toISOString()
+      this.completedTasks.unshift(task)
+      if (this.completedTasks.length > this.historyLimit) this.completedTasks.pop()
+      if (task.type === TaskType.Transcode) await this.getTranscoding().discardTaskSamples(task)
+      this.logging.info('[TaskQueue]', `Task removed: ${task.label} (${task.id})`)
+      try {
+        await this.saveState(true)
+      } catch (error) {
+        this.queue.splice(index, 0, task)
+        this.completedTasks = this.completedTasks.filter(completed => completed.id !== task.id)
+        throw error
+      }
+      this.notifyListeners()
+      return true
+    }
+    return false
+  }
 
-    // Only reorder if all IDs matched
-    if (reordered.length === this.queue.length) {
-      this.queue = reordered
-      console.log(`[TaskQueue] Queue reordered`)
-      this.emitQueueUpdate()
+  async removeTasksForSource(sourceId: string): Promise<void> {
+    const originalCount = this.queue.length
+    this.queue = this.queue.filter(t => t.sourceId !== sourceId)
+    const cancelledCurrent = this.currentTask?.sourceId === sourceId
+    if (cancelledCurrent) {
+      await this.cancelCurrent()
+    }
+    if (this.queue.length !== originalCount || cancelledCurrent) {
+      this.logging.info('[TaskQueue]', `Removed ${originalCount - this.queue.length} tasks for source ${sourceId}`)
+      await this.saveState()
+      this.notifyListeners()
     }
   }
 
   /**
-   * Clear all queued tasks (not the current running task)
+   * Reorder tasks in the queue
    */
-  clearQueue(): void {
-    this.queue = []
-    console.log(`[TaskQueue] Queue cleared`)
-    this.emitQueueUpdate()
-
-    // If no task is currently running, resume monitoring
-    if (!this.currentTask && this.monitoringWasPausedByUs) {
-      console.log('[TaskQueue] Queue cleared with no running task, resuming live monitoring')
-      this.monitoringWasPausedByUs = false
-      getLiveMonitoringService().resume()
+  async reorderQueue(taskIds: string[]): Promise<void> {
+    const newQueue: QueuedTask[] = []
+    for (const id of taskIds) {
+      const task = this.queue.find(t => t.id === id)
+      if (task) newQueue.push(task)
     }
+    // Add any tasks that weren't in the ID list (safety)
+    for (const task of this.queue) {
+      if (!taskIds.includes(task.id)) newQueue.push(task)
+    }
+    this.queue = newQueue
+    await this.saveState()
+    this.notifyListeners()
   }
 
   /**
-   * Pause the queue and checkpoint resumable analysis work.
+   * Clear the entire queue
    */
-  pauseQueue(): void {
+  async clearQueue(batchId?: string, cancelCurrent = true): Promise<void> {
+    const count = this.queue.length
+    const removed = this.queue.filter(task => !batchId || task.batchId === batchId)
+    this.queue = this.queue.filter(task => batchId && task.batchId !== batchId)
+    if (cancelCurrent && this.currentTask && (!batchId || this.currentTask.batchId === batchId)) await this.cancelCurrent()
+    for (const task of removed) if (task.type === TaskType.Transcode) await this.getTranscoding().discardTaskSamples(task)
+    for (const task of removed) if (task.type === TaskType.Transcode && task.batchId !== this.currentTask?.batchId) await this.getTranscoding().discardBatchSamples(task)
+    if (!batchId && cancelCurrent) this.getTranscoding().abortAll()
+    this.logging.info('[TaskQueue]', `Queue cleared (${count} tasks removed)`)
+    await this.saveState()
+    this.notifyListeners()
+  }
+
+  /**
+   * Pause queue processing
+   */
+  async pause(): Promise<void> {
     this.isPaused = true
-    if ((this.currentTask?.type === 'optimization-preflight' || this.currentTask?.type === 'media-analysis') && !this.taskPauseRequested) {
-      this.taskPauseRequested = true
-      this.currentTaskAbortController?.abort(new DOMException('Task paused', 'AbortError'))
-    }
-    console.log(`[TaskQueue] Queue paused`)
-    this.emitQueueUpdate()
+    this.logging.info('[TaskQueue]', 'Queue paused')
+    await this.saveState()
+    this.notifyListeners()
   }
 
-  async stopForShutdown(): Promise<void> {
-    const queueWasPaused = this.isPaused
-    this.shuttingDown = true
-    const interruptedTask = this.currentTask ? structuredClone(this.currentTask) : undefined
-    this.pauseQueue()
-    if (interruptedTask) this.cancelCurrentTask()
-    if (this.isProcessing) await new Promise<void>(resolve => this.processingIdleWaiters.push(resolve))
-    if (interruptedTask && this.completedTasks.find(task => task.id === interruptedTask.id)?.status === 'interrupted') {
-      this.queue.unshift({ ...interruptedTask, status: 'queued', progress: undefined, completedAt: undefined, error: undefined })
-    }
-    this.isPaused = queueWasPaused
-  }
+  pauseQueue(): Promise<void> { return this.pause() }
 
   /**
-   * Resume the queue
+   * Resume queue processing
    */
-  resumeQueue(): void {
+  async resume(): Promise<void> {
     this.isPaused = false
-    console.log(`[TaskQueue] Queue resumed`)
-    this.emitQueueUpdate()
-    this.processNext()
+    this.logging.info('[TaskQueue]', 'Queue resumed')
+    await this.saveState()
+    this.notifyListeners()
+    void this.processQueue()
   }
 
+  resumeQueue(): Promise<void> { return this.resume() }
+
   /**
-   * Cancel the current running task
+   * Cancel the currently running task
    */
-  cancelCurrentTask(): void {
-    if (!this.currentTask || this.cancelRequested) return
-
-    console.log(`[TaskQueue] Cancelling current task: ${this.currentTask.label}`)
-    this.cancelRequested = true
-    this.taskPauseRequested = false
-    this.currentTaskAbortController?.abort(new Error('Task cancelled'))
-    this.currentTask.status = 'cancelling'
-    this.emitQueueUpdate()
-
-    // Also cancel in underlying services
-    switch (this.currentTask.type) {
-      case 'library-scan':
-      case 'source-scan':
-        getSourceManager().stopScan()
-        break
-      case 'music-scan':
-        if (this.currentTask.sourceId) getSourceManager().cancelMusicScan(this.currentTask.sourceId)
-        break
-      case 'series-completeness':
-        getSeriesCompletenessService().cancel()
-        break
-      case 'collection-completeness':
-        getMovieCollectionService().cancel()
-        break
-      case 'transcode':
-        getTranscodingService().cancel()
-        break
-      case 'optimization-preflight':
-        break
+  async cancelCurrent(): Promise<void> {
+    if (this.currentTask) {
+      this.cancelRequested = true
+      this.currentTaskAbortController?.abort()
+      this.currentTask.status = TaskStatus.Cancelling
+      this.logging.info('[TaskQueue]', `Cancellation requested for task: ${this.currentTask.label}`)
+      if (this.currentTask.type === TaskType.SeriesCompleteness || this.currentTask.type === TaskType.Analysis) {
+        this.getSeriesCompleteness().cancel()
+      }
+      if (this.currentTask.type === TaskType.CollectionCompleteness || this.currentTask.type === TaskType.Analysis) this.getMovieCollection().cancel()
+      if (this.currentTask.type === TaskType.MusicCompleteness || this.currentTask.type === TaskType.Analysis) this.getMusicBrainz().cancel()
+      if (this.currentTask.type === TaskType.Transcode && this.currentTask.mediaItemId) {
+        this.getTranscoding().cancelTranscode(this.currentTask.mediaItemId)
+      }
+      if (this.currentTask.type === TaskType.LibraryScan ||
+        this.currentTask.type === TaskType.SourceScan ||
+        this.currentTask.type === TaskType.MusicScan) {
+        this.getSourceManager().stopScan()
+      }
+      await this.saveState()
     }
   }
 
-  /**
-   * Check if a task of the given type is currently running or queued
-   * for the specified source/library combination
-   */
-  hasActiveTask(type: TaskType, sourceId?: string, libraryId?: string): boolean {
-    const matches = (t: QueuedTask) =>
-      t.type === type &&
-      t.sourceId === sourceId &&
-      t.libraryId === libraryId
-
-    if (this.currentTask && matches(this.currentTask)) return true
-    return this.queue.some(matches)
+  async cancelCurrentTask(batchId?: string): Promise<void> {
+    if (batchId && this.currentTask?.batchId !== batchId) return
+    await this.cancelCurrent()
+    this.notifyListeners()
   }
 
   /**
-   * Get current queue state
+   * Get the current state of the queue
    */
-  getQueueState(): QueueState {
+  getState() {
     return {
       currentTask: this.currentTask,
-      queue: [...this.queue],
+      queue: this.queue,
+      completedTasks: this.completedTasks,
       isPaused: this.isPaused,
-      completedTasks: [...this.completedTasks],
     }
   }
 
-  /**
-   * Get all queued and currently running tasks
-   */
+  getQueueState() { return this.getState() }
+
   getTasks(): QueuedTask[] {
-    return [...this.queue, ...(this.currentTask ? [this.currentTask] : [])]
+    return [...this.queue, ...(this.currentTask ? [this.currentTask] : []), ...this.completedTasks]
   }
 
-  /**
-   * Get activity history (task completions)
-   */
-  getTaskHistory(): ActivityLogEntry[] {
-    return [...this.taskHistory]
-  }
+  getTaskHistory(): QueuedTask[] { return this.completedTasks }
+  getMonitoringHistory(): unknown[] { return [] }
+  async clearTaskHistory(): Promise<void> { this.completedTasks = []; await this.saveState(); this.notifyListeners() }
+  clearMonitoringHistory(): void { }
 
-  /**
-   * Get monitoring history
-   */
-  getMonitoringHistory(): ActivityLogEntry[] {
-    return [...this.monitoringHistory]
-  }
-
-  /**
-   * Add monitoring event to history
-   */
-  addMonitoringEvent(message: string): void {
-    const entry: ActivityLogEntry = {
-      id: this.generateId(),
-      timestamp: new Date().toISOString(),
-      type: 'monitoring',
-      message,
+  async persistInterruptedTasks(): Promise<void> {
+    if (this.currentTask && this.currentTask.status === TaskStatus.Running) {
+      this.currentTask.status = TaskStatus.Queued
+      this.queue.unshift(this.currentTask)
+      this.currentTask = null
     }
-
-    this.monitoringHistory.unshift(entry)
-    if (this.monitoringHistory.length > TaskQueueService.MAX_HISTORY_ENTRIES) {
-      this.monitoringHistory = this.monitoringHistory.slice(0, TaskQueueService.MAX_HISTORY_ENTRIES)
-    }
-
-    // Persist to database
-    try {
-      const db = getDatabase()
-      db.saveActivityLogEntry({ entryType: 'monitoring', message })
-    } catch (err) {
-      console.error('[TaskQueue] Failed to persist monitoring event:', getErrorMessage(err))
-    }
-
-    this.emitHistoryUpdate()
+    await this.saveState()
   }
 
-  /**
-   * Clear task history
-   */
-  clearTaskHistory(): void {
-    this.taskHistory = []
-    this.completedTasks = []
-    try { getDatabase().clearTaskHistory() } catch (err) { console.error('[TaskQueue] Failed to clear task history:', err) }
-    this.emitHistoryUpdate()
-    this.emitQueueUpdate()
-  }
+  // --- Internal Methods ---
 
-  /**
-   * Clear monitoring history
-   */
-  clearMonitoringHistory(): void {
-    this.monitoringHistory = []
-    try { getDatabase().clearActivityLog('monitoring') } catch (err) { console.error('[TaskQueue] Failed to clear monitoring history:', err) }
-    this.emitHistoryUpdate()
-  }
-
-  /**
-   * Load persisted task history from database on startup
-   */
-  loadPersistedHistory(): void {
-    try {
-      const db = getDatabase()
-
-      const dbTasks = db.getTaskHistory(TaskQueueService.MAX_COMPLETED_TASKS)
-      this.completedTasks = dbTasks.map((row: { taskId: string; type: string; label: string; sourceId: string | null; libraryId: string | null; status: string; error: string | null; result: string | null; createdAt: string; startedAt: string | null; completedAt: string | null }) => ({
-        id: row.taskId,
-        type: row.type as TaskType,
-        label: row.label,
-        sourceId: row.sourceId || undefined,
-        libraryId: row.libraryId || undefined,
-        status: row.status as TaskStatus,
-        error: row.error || undefined,
-        result: row.result ? JSON.parse(row.result) : undefined,
-        createdAt: row.createdAt,
-        startedAt: row.startedAt || undefined,
-        completedAt: row.completedAt || undefined,
-      }))
-
-      const taskEntries = db.getActivityLog('task', TaskQueueService.MAX_HISTORY_ENTRIES)
-      this.taskHistory = taskEntries.map((row: { id: number; entryType: string; message: string; taskId: string | null; taskType: string | null; createdAt: string }) => ({
-        id: `db_${row.id}`,
-        timestamp: row.createdAt,
-        type: row.entryType as ActivityLogEntry['type'],
-        message: row.message,
-        taskId: row.taskId || undefined,
-        taskType: (row.taskType as TaskType) || undefined,
-      }))
-
-      const monEntries = db.getActivityLog('monitoring', TaskQueueService.MAX_HISTORY_ENTRIES)
-      this.monitoringHistory = monEntries.map((row: { id: number; entryType: string; message: string; createdAt: string }) => ({
-        id: `db_${row.id}`,
-        timestamp: row.createdAt,
-        type: 'monitoring' as const,
-        message: row.message,
-      }))
-
-      console.log(`[TaskQueue] Loaded ${this.completedTasks.length} tasks, ${this.taskHistory.length} task events, ${this.monitoringHistory.length} monitoring events from DB`)
-    } catch (err) {
-      console.error('[TaskQueue] Failed to load persisted history:', getErrorMessage(err))
+  private async processQueue(): Promise<void> {
+    if (this.currentTask) {
+      this.logging.info('[TaskQueue]', 'processQueue: Task already running, skipping')
+      return
     }
-
-    const db = getDatabase()
-    db.setSeriesCompletenessInvalidationHandler((sourceId, libraryId) => {
-      this.queueSeriesCompletenessRecovery(sourceId, libraryId)
-    })
-
-    // Re-enqueue tasks that were pending when the app last quit
-    this.restorePendingQueue()
-
-    for (const scope of db.consumeInvalidatedSeriesCompletenessScopes()) {
-      this.queueSeriesCompletenessRecovery(scope.sourceId, scope.libraryId)
+    if (this.isPaused) {
+      this.logging.info('[TaskQueue]', 'processQueue: Queue is paused, skipping')
+      return
     }
-  }
-
-  /**
-   * Persist any in-flight or queued tasks on app shutdown.
-   * Queued tasks (and the interrupted running task) are saved to pending_tasks so
-   * they can be restored on next startup. All are also logged as interrupted.
-   */
-  persistInterruptedTasks(): void {
-    // Clear any pending progress throttle timer
-    if (this.progressThrottleTimer) {
-      clearTimeout(this.progressThrottleTimer)
-      this.progressThrottleTimer = null
-    }
-
-    const now = new Date().toISOString()
-    try {
-      const db = getDatabase()
-      if (this.currentTask) {
-        db.saveTaskHistory({
-          taskId: this.currentTask.id, type: this.currentTask.type, label: this.currentTask.label,
-          sourceId: this.currentTask.sourceId, libraryId: this.currentTask.libraryId,
-          status: 'interrupted', createdAt: this.currentTask.createdAt,
-          startedAt: this.currentTask.startedAt, completedAt: now,
-        })
-        db.saveActivityLogEntry({
-          entryType: 'task-interrupted',
-          message: `Interrupted (app quit): ${this.currentTask.label}`,
-          taskId: this.currentTask.id, taskType: this.currentTask.type,
-        })
-      }
-
-      for (const task of this.queue) {
-        db.saveTaskHistory({
-          taskId: task.id, type: task.type, label: task.label,
-          sourceId: task.sourceId, libraryId: task.libraryId,
-          status: 'interrupted', createdAt: task.createdAt, completedAt: now,
-        })
-        db.saveActivityLogEntry({
-          entryType: 'task-interrupted',
-          message: `Interrupted (app quit, was queued): ${task.label}`,
-          taskId: task.id, taskType: task.type,
-        })
-      }
-
-      this.persistPendingQueue()
-    } catch (err) {
-      console.error('[TaskQueue] Failed to persist interrupted tasks:', getErrorMessage(err))
-    }
-  }
-
-  /**
-   * Restore any tasks that were pending when the app last quit.
-   * Called once on startup after loadPersistedHistory().
-   */
-  restorePendingQueue(): void {
-    try {
-      const db = getDatabase()
-      this.isPaused = db.config.getSetting(SETTING_KEYS.task_queue_paused_on_shutdown) === 'true'
-      db.config.deleteSetting(SETTING_KEYS.task_queue_paused_on_shutdown)
-      const pending = db.getPendingTasks()
-      if (pending.length === 0) return
-      const restoredTasks: QueuedTask[] = []
-      for (const row of pending) {
-        try {
-          const savedTask = row.payloadJson ? JSON.parse(row.payloadJson) as QueuedTask : undefined
-          if (row.type === 'transcode' && !savedTask?.options) throw new Error('Persisted optimization plan is unavailable')
-          restoredTasks.push({
-            ...(savedTask ?? {
-              type: row.type as TaskType,
-              label: row.label,
-              sourceId: row.sourceId ?? undefined,
-              libraryId: row.libraryId ?? undefined,
-              artistId: row.artistId ?? undefined,
-            }),
-            id: row.taskId,
-            createdAt: row.createdAt,
-            status: 'queued',
-            progress: undefined,
-            completedAt: undefined,
-            error: undefined,
-          })
-        } catch (error) {
-          const message = `Could not resume interrupted task: ${getErrorMessage(error)}`
-          console.error(`[TaskQueue] ${row.label}: ${message}`)
-          db.saveTaskHistory({
-            taskId: row.taskId, type: row.type, label: row.label, sourceId: row.sourceId ?? undefined,
-            libraryId: row.libraryId ?? undefined, status: 'failed', error: message,
-            createdAt: row.createdAt, completedAt: new Date().toISOString(),
-          })
-          db.saveActivityLogEntry({ entryType: 'task-failed', message: `${row.label}: ${message}`, taskId: row.taskId, taskType: row.type as TaskType })
-        }
-      }
-
-      db.clearPendingTasks()
-      this.queue.push(...restoredTasks)
-      const restored = restoredTasks.length
-      if (restored > 0) {
-        this.emitQueueUpdate()
-        if (!this.isPaused) this.processNext()
-      }
-
-      if (restored > 0) {
-        console.log(`[TaskQueue] Restored ${restored} task(s) from previous session`)
-      }
-    } catch (err) {
-      console.error('[TaskQueue] Failed to restore pending queue:', getErrorMessage(err))
-    }
-  }
-
-  /**
-   * Remove all queued tasks for a specific source
-   * Called when a source is deleted
-   */
-  removeTasksForSource(sourceId: string): void {
-    // Cancel current task if it belongs to this source
-    if (this.currentTask?.sourceId === sourceId) {
-      this.cancelCurrentTask()
-    }
-
-    // Remove queued tasks for this source
-    this.queue = this.queue.filter(task => task.sourceId !== sourceId)
-
-    // Remove from completed tasks history
-    this.completedTasks = this.completedTasks.filter(task => task.sourceId !== sourceId)
-
-    // Notify UI of queue change
-    this.emitQueueUpdate()
-
-    console.log(`[TaskQueueService] Removed tasks for source: ${sourceId}`)
-  }
-
-  // ============================================================================
-  // Private Methods
-  // ============================================================================
-
-  /**
-   * Process the next task in the queue
-   */
-  private async processNext(): Promise<void> {
-    // Don't start if paused, already processing, or queue is empty
-    if (this.isPaused || this.isProcessing || this.queue.length === 0) {
-      // If queue is empty and we paused monitoring, resume after a brief delay
-      // to allow post-scan operations (auto-completeness, quality analysis) to finish
-      if (this.queue.length === 0 && this.monitoringWasPausedByUs) {
-        this.monitoringResumeTimer = setTimeout(() => {
-          this.monitoringResumeTimer = null
-          this.monitoringWasPausedByUs = false
-          console.log('[TaskQueue] All tasks complete, resuming live monitoring')
-          getLiveMonitoringService().resume()
-        }, 5000)
-      }
+    if (this.queue.length === 0) {
       return
     }
 
-    // Cancel any pending monitoring resume (new task arrived during delay)
-    if (this.monitoringResumeTimer) {
-      clearTimeout(this.monitoringResumeTimer)
-      this.monitoringResumeTimer = null
-    }
-
-    // Pause monitoring when we start processing (first task)
-    if (!this.monitoringWasPausedByUs) {
-      const liveMonitoring = getLiveMonitoringService()
-      if (liveMonitoring.isActiveAndEnabled()) {
-        console.log('[TaskQueue] Pausing live monitoring during task execution')
-        liveMonitoring.pause()
-        this.monitoringWasPausedByUs = true
-      }
-    }
-
-    this.isProcessing = true
-    const task = this.queue.shift()!
-    this.currentTask = task
-    this.cancelRequested = false
-    this.taskPauseRequested = false
-    this.taskYieldRequested = false
+    this.currentTask = this.queue.shift() || null
+    if (!this.currentTask) return
     this.currentTaskAbortController = new AbortController()
 
-    task.status = 'running'
-    task.startedAt = new Date().toISOString()
-    this.emitQueueUpdate()
+    this.currentTask.status = TaskStatus.Running
+    this.currentTask.startedAt = new Date().toISOString()
+    this.cancelRequested = false
+    
+    this.logging.info('[TaskQueue]', `Starting task: ${this.currentTask.label} (${this.currentTask.id})`)
+    await this.saveState()
+    this.notifyListeners()
 
-    console.log(`[TaskQueue] Starting task: ${task.label}`)
+    const task = this.currentTask
+    let lastProgressWriteStartedAt = 0
+    const PROGRESS_THROTTLE_MS = 250 // Max 4 UI updates per second
+    let progressWrite: Promise<void> | null = null
+    let progressWritePending = false
+    let forceProgressWrite = false
+    let progressWriteTimer: ReturnType<typeof setTimeout> | null = null
+
+    const startProgressWrite = (): void => {
+      if (progressWrite) {
+        progressWritePending = true
+        return
+      }
+
+      progressWritePending = false
+      forceProgressWrite = false
+      lastProgressWriteStartedAt = Date.now()
+      progressWrite = this.saveState()
+        .then(() => this.notifyListeners())
+        .finally(() => {
+          progressWrite = null
+          if (progressWritePending) scheduleProgressWrite(forceProgressWrite)
+        })
+    }
+
+    const scheduleProgressWrite = (force: boolean): void => {
+      progressWritePending = true
+      forceProgressWrite ||= force
+      if (progressWrite) return
+
+      const delay = forceProgressWrite ? 0 : Math.max(0, PROGRESS_THROTTLE_MS - (Date.now() - lastProgressWriteStartedAt))
+      if (progressWriteTimer) {
+        if (delay > 0) return
+        clearTimeout(progressWriteTimer)
+      }
+      progressWriteTimer = setTimeout(() => {
+        progressWriteTimer = null
+        startProgressWrite()
+      }, delay)
+    }
+
+    const flushProgressWrite = async (): Promise<void> => {
+      if (progressWriteTimer) {
+        clearTimeout(progressWriteTimer)
+        progressWriteTimer = null
+      }
+      progressWritePending = true
+      forceProgressWrite = true
+      while (progressWrite || progressWritePending) {
+        if (!progressWrite) {
+          if (progressWriteTimer) {
+            clearTimeout(progressWriteTimer)
+            progressWriteTimer = null
+          }
+          startProgressWrite()
+        }
+        await progressWrite
+      }
+    }
+
+    const onProgress = (p: TaskProgress) => {
+      task.progress = p
+      const terminal = p.percentage === 100 || p.phase === 'complete' || p.phase === 'failed'
+      scheduleProgressWrite(terminal)
+    }
 
     try {
-      await this.executeTask(task)
-
-      if (this.taskYieldRequested) {
-        task.status = 'queued'
-        task.progress = undefined
-        this.queue.push(task)
-        this.taskYieldRequested = false
-        this.currentTask = null
-        this.isProcessing = false
-        this.currentTaskAbortController = undefined
-        this.emitQueueUpdate()
-        for (const resolve of this.processingIdleWaiters.splice(0)) resolve()
-        setImmediate(() => this.processNext())
-        return
-      } else if (this.cancelRequested) {
-        task.status = this.shuttingDown ? 'interrupted' : 'cancelled'
-        this.addTaskHistoryEntry(task, this.shuttingDown ? 'task-interrupted' : 'task-cancelled', `${this.shuttingDown ? 'Interrupted (app quit)' : 'Cancelled'}: ${task.label}`)
-      } else if ((task.result?.failedCount ?? 0) > 0) {
-        task.status = 'partial'
-        this.addTaskHistoryEntry(task, 'task-partial', this.formatCompletionMessage(task))
-      } else {
-        task.status = 'completed'
-        this.addTaskHistoryEntry(task, 'task-complete', this.formatCompletionMessage(task))
+      switch (task.type) {
+        case TaskType.LibraryScan:
+        case TaskType.MusicScan:
+          await this.executeLibraryScan(task, onProgress)
+          break
+        case TaskType.SourceScan:
+          await this.executeSourceScan(task, onProgress)
+          break
+        case TaskType.SeriesCompleteness:
+          await this.executeSeriesCompleteness(task, onProgress, undefined, true)
+          break
+        case TaskType.CollectionCompleteness:
+          await this.executeCollectionCompleteness(task, onProgress)
+          break
+        case TaskType.MusicCompleteness:
+          await this.executeMusicCompleteness(task, onProgress, true)
+          break
+        case TaskType.QualityAnalysis:
+          await this.executeQualityAnalysis(task, onProgress)
+          break
+        case TaskType.Analysis:
+          await this.executeAnalysis(task, onProgress)
+          break
+        case TaskType.Transcode:
+          await this.executeTranscode(task, onProgress)
+          break
+        default:
+          throw new Error(`Unknown task type: ${task.type}`)
       }
-    } catch (error: unknown) {
-      const errorMsg = getErrorMessage(error) || 'Unknown error'
-      const isCancellation = this.cancelRequested || errorMsg === 'Task cancelled'
 
-      if (this.taskPauseRequested) {
-        task.status = 'queued'
-        task.progress = undefined
-        this.queue.unshift(task)
-        this.taskPauseRequested = false
-        this.currentTask = null
-        this.isProcessing = false
-        this.currentTaskAbortController = undefined
-        this.emitQueueUpdate()
-        for (const resolve of this.processingIdleWaiters.splice(0)) resolve()
-        setImmediate(() => this.processNext())
-        return
-      } else if (isCancellation) {
-        if (task.type === 'optimization-preflight') {
-          const payload = task.options as { requestId: string }
-          try {
-            await getDatabase().config.deleteSetting(`transcoding.backgroundPreflight.${payload.requestId}`)
-          } catch (cleanupError) {
-            console.error('[TaskQueue] Failed to clear cancelled preflight migration record:', getErrorMessage(cleanupError))
+      if (this.cancelRequested || task.result?.status === 'cancelled') {
+        task.status = TaskStatus.Cancelled
+        this.logging.info('[TaskQueue]', `Task cancelled: ${task.label}`)
+      } else if (task.result?.status === 'partial' || task.result?.status === 'deferred') {
+        task.status = TaskStatus.Partial
+        task.error ??= 'Analysis completed with required work deferred or failed'
+      } else if (task.result?.status === 'failed' && task.type === TaskType.Analysis) {
+        task.status = TaskStatus.Failed
+        task.error = task.error || 'All required analysis stages failed'
+      } else if (task.result?.status === 'blocked' && task.type === TaskType.Analysis) {
+        task.status = TaskStatus.Blocked
+        task.error = task.error || 'Analysis was blocked before useful work could complete'
+      } else {
+        task.status = TaskStatus.Completed
+        this.logging.info('[TaskQueue]', `Task completed: ${task.label}`)
+      }
+    } catch (error) {
+      if (this.cancelRequested) {
+        task.status = TaskStatus.Cancelled
+        task.result = { ...task.result, status: 'cancelled' }
+        this.logging.info('[TaskQueue]', `Task cancelled: ${task.label}`)
+      } else {
+        const errorMsg = getErrorMessage(error)
+        task.status = TaskStatus.Failed
+        task.error = errorMsg
+        if (error instanceof QualityAnalysisError) {
+          task.result = {
+            ...task.result,
+            status: 'partial',
+            itemsScanned: error.details.analyzedCount,
+            totalCount: error.details.totalCount,
+            failedCount: error.details.totalCount - error.details.analyzedCount,
+            failedItemId: error.details.mediaItemId,
+            failedItemIndex: error.details.itemIndex,
+            failedStage: error.details.stage,
           }
         }
-        task.status = this.shuttingDown ? 'interrupted' : 'cancelled'
-        this.addTaskHistoryEntry(task, this.shuttingDown ? 'task-interrupted' : 'task-cancelled', `${this.shuttingDown ? 'Interrupted (app quit)' : 'Cancelled'}: ${task.label}`)
-        console.log(`[TaskQueue] Task ${this.shuttingDown ? 'interrupted for shutdown' : 'cancelled'}: ${task.label}`)
-      } else {
-        task.status = 'failed'
-        task.error = errorMsg
-        this.addTaskHistoryEntry(task, 'task-failed', `Failed: ${task.label} - ${task.error}`)
-        console.error(`[TaskQueue] Task failed: ${task.label} (type=${task.type}, sourceId=${task.sourceId || 'all'}, libraryId=${task.libraryId || 'all'})`, error)
+        this.logging.error('[TaskQueue]', `Task failed: ${task.label}`, error)
+
         try {
-          getDatabase().createNotification({
-            type: 'error',
+          await this.db.notifications.addNotification({
+            type: NotificationType.Error,
             title: 'Task failed',
             message: `${task.label}: ${errorMsg}`,
-            sourceId: task.sourceId,
-            sourceName: task.label,
+            reference_id: task.sourceId,
           })
-          emitNotificationCreated()
-        } catch (err) { console.error('[TaskQueue] Failed to create notification:', err) }
+        } catch (e) {
+          getLoggingService().error('[TaskQueueService]', 'Failed to dispatch notification:', e)
+        }
+      }
+    } finally {
+      await flushProgressWrite()
+      if (task.type === TaskType.Analysis && task.result?.analysis && task.status !== TaskStatus.Cancelled && task.status !== TaskStatus.Failed) {
+        const result = task.result.analysis
+        const message = [
+          `${result.completedCount} stages complete`,
+          `${result.failedCount} failed`,
+          `${result.deferredCount} deferred`,
+          `${result.skippedCount} skipped`,
+          ...(result.reconciliation ? [`Summary cleanup: ${result.reconciliation.merged} merged, ${result.reconciliation.removed} removed, ${result.reconciliation.preservedLocked} locked preserved, ${result.reconciliation.ambiguous} ambiguous`] : []),
+          ...result.diagnostics.slice(0, 3).map(diagnostic => `${diagnostic.itemName}: ${diagnostic.message}`),
+        ].join(' · ')
+        try {
+          await this.db.notifications.addNotification({
+            type: task.status === TaskStatus.Completed ? NotificationType.ScanComplete : NotificationType.Info,
+            title: `${task.label} · Analysis ${result.status}`,
+            message,
+            reference_id: task.sourceId,
+          })
+        } catch (error) {
+          this.logging.error('[TaskQueue]', 'Could not persist analysis outcome notification', error)
+        }
+      }
+      task.completedAt = new Date().toISOString()
+      this.completedTasks.unshift(task)
+      if (this.completedTasks.length > this.historyLimit) {
+        this.completedTasks.pop()
+      }
+      
+      const prevTask = task
+      this.currentTask = null
+      this.currentTaskAbortController = null
+      if (prevTask.type === TaskType.Transcode && !this.queue.some(queued => queued.batchId === prevTask.batchId)) {
+        await this.getTranscoding().discardBatchSamples(prevTask)
+      }
+      await this.saveState()
+      this.notifyListeners()
+      
+      // Emit completion event for UI sounds/effects
+      if ((prevTask.status === TaskStatus.Completed || prevTask.status === TaskStatus.Partial || prevTask.status === TaskStatus.Blocked || prevTask.status === TaskStatus.Failed || prevTask.status === TaskStatus.Cancelled) && this.mainWindow) {
+        getStatsCacheService().invalidate()
+        safeSend(this.mainWindow, 'library:updated', { type: 'media', sourceId: prevTask.sourceId })
+        safeSend(this.mainWindow, 'taskQueue:taskComplete', prevTask)
+
+        // Special case: Scan tasks should also emit scan:completed
+        if (prevTask.type === TaskType.LibraryScan || prevTask.type === TaskType.SourceScan || prevTask.type === TaskType.MusicScan) {
+          const res = prevTask.result
+          if (res) {
+            safeSend(this.mainWindow, 'scan:completed', {
+              sourceId: prevTask.sourceId,
+              libraryId: prevTask.libraryId,
+              libraryName: prevTask.label.replace('Scan ', ''),
+              itemsScanned: res.itemsScanned || 0,
+              itemsAdded: res.itemsAdded || 0,
+              itemsUpdated: res.itemsUpdated || 0,
+              isFirstScan: false
+            })
+          }
+        }
+      }
+
+      // Small delay before next task
+      setTimeout(() => this.processQueue(), 500)
+    }
+  }
+
+  private async executeLibraryScan(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
+    if (!task.sourceId || !task.libraryId) throw new Error('Missing sourceId or libraryId')
+    const manager = this.getSourceManager()
+    const result = await manager.scanLibrary(task.sourceId, task.libraryId, onProgress)
+    await this.recordScanResults(task, [result])
+  }
+
+  private async recordScanResults(task: QueuedTask, results: ScanResult[]): Promise<void> {
+    const failures = results.flatMap(result => result.postScanAnalysis?.status === 'failed'
+      ? [result.postScanAnalysis.error]
+      : [])
+    task.result = {
+      itemsScanned: results.reduce((total, result) => total + result.itemsScanned, 0),
+      itemsAdded: results.reduce((total, result) => total + result.itemsAdded, 0),
+      itemsUpdated: results.reduce((total, result) => total + result.itemsUpdated, 0),
+      itemsRemoved: results.reduce((total, result) => total + result.itemsRemoved, 0),
+      status: failures.length ? 'partial' : 'completed',
+      ...(results.some(result => result.postScanAnalysis) ? {
+        postScanAnalysis: failures.length ? { status: 'failed', errors: failures } : { status: 'queued' },
+      } : {}),
+    }
+    if (failures.length) {
+      task.error = `Scan completed, but post-scan analysis could not be queued: ${failures.join('; ')}`
+      try {
+        await this.db.notifications.addNotification({
+          type: NotificationType.Info,
+          title: 'Scan completed; analysis not queued',
+          message: task.error,
+          reference_id: task.sourceId,
+        })
+      } catch (error) {
+        this.logging.error('[TaskQueue]', 'Could not notify about post-scan analysis scheduling failure', error)
       }
     }
+  }
 
-    task.completedAt = new Date().toISOString()
+  private async executeSourceScan(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
+    if (!task.sourceId) throw new Error('Missing sourceId')
+    const manager = this.getSourceManager()
+    const results = await manager.scanSource(task.sourceId, onProgress)
+    await this.recordScanResults(task, results)
+  }
 
-    // Persist completed task to database
-    try {
-      const db = getDatabase()
-      db.saveTaskHistory({
-        taskId: task.id, type: task.type, label: task.label,
-        sourceId: task.sourceId, libraryId: task.libraryId,
-        status: task.status, error: task.error,
-        result: task.result as Record<string, unknown> | undefined,
-        createdAt: task.createdAt, startedAt: task.startedAt,
-        completedAt: task.completedAt,
+  private async executeSeriesCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void, existingBackupPath: string | undefined, notifyOutcome: boolean): Promise<void> {
+    const service = this.getSeriesCompleteness()
+    const outcome = await service.analyzeAllSeries(task.sourceId, task.libraryId, onProgress, task.seriesIdentityKey && task.seriesTitle ? { title: task.seriesTitle, seriesIdentityKey: task.seriesIdentityKey } : undefined, existingBackupPath, this.currentTaskAbortController?.signal)
+
+    task.result = {
+      itemsScanned: outcome.processedCount,
+      totalSeries: outcome.totalCount,
+      analyzedSeries: outcome.processedCount,
+      failedSeries: outcome.diagnostics.map(d => d.message),
+      status: outcome.status,
+      diagnostics: outcome.diagnostics,
+      outcome,
+      ...(outcome.reconciliation ? {
+        reconciliation: outcome.reconciliation,
+        databaseBackupPath: outcome.databaseBackupPath,
+      } : {}),
+    }
+
+    if (outcome.status === 'failed' && !this.cancelRequested) {
+      const firstError = outcome.diagnostics[0]?.message
+      if (!firstError) {
+        throw new Error('Series analysis failed: diagnostic message missing')
+      }
+      throw new Error(`Series analysis failed: ${firstError}`)
+    }
+    if ((outcome.status === 'partial' || outcome.status === 'deferred') && !this.cancelRequested) {
+      const summary = `Series analysis partially completed: ${outcome.processedCount}/${outcome.totalCount} analyzed; ${outcome.diagnostics.length} failed`
+      this.logging.warn('[TaskQueue]', summary, { totalCount: outcome.totalCount, processedCount: outcome.processedCount, diagnostics: outcome.diagnostics })
+      if (notifyOutcome) await this.db.notifications.addNotification({
+        type: 'info',
+        title: 'Series analysis partially completed',
+        message: summary,
+        reference_id: task.sourceId,
       })
-    } catch (err) {
-      console.error('[TaskQueue] Failed to persist task history:', getErrorMessage(err))
+    } else if (outcome.status === 'completed' && !this.cancelRequested) {
+      if (notifyOutcome) await this.db.notifications.addNotification({
+        type: 'scan_complete',
+        title: 'Series analysis completed',
+        message: `Series analysis completed: ${outcome.processedCount} analyzed`,
+        reference_id: task.sourceId,
+      })
     }
-
-    // Add to completed tasks
-    this.completedTasks.unshift(task)
-    if (this.completedTasks.length > TaskQueueService.MAX_COMPLETED_TASKS) {
-      const evicted = this.completedTasks.slice(TaskQueueService.MAX_COMPLETED_TASKS)
-      this.completedTasks = this.completedTasks.slice(0, TaskQueueService.MAX_COMPLETED_TASKS)
-      // Remove history entries for evicted tasks to prevent memory leak
-      const evictedIds = new Set(evicted.map(t => t.id))
-      this.taskHistory = this.taskHistory.filter(entry => !entry.taskId || !evictedIds.has(entry.taskId))
-    }
-
-    this.currentTask = null
-    this.isProcessing = false
-    this.cancelRequested = false
-    this.taskPauseRequested = false
-    this.currentTaskAbortController = undefined
-    for (const resolve of this.processingIdleWaiters.splice(0)) resolve()
-
-    this.emitQueueUpdate()
-    this.emitTaskComplete(task)
-    this.resolveTaskCompletion(task)
-
-    // Process next task (this will resume monitoring if queue is empty)
-    // Use setImmediate to avoid growing call stack with many sequential tasks
-    setImmediate(() => this.processNext())
   }
 
-  private resolveTaskCompletion(task: QueuedTask): void {
-    const waiters = this.taskCompletionWaiters.get(task.id)
-    if (!waiters) return
-    this.taskCompletionWaiters.delete(task.id)
-    for (const resolve of waiters) resolve(task)
+  private async executeCollectionCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
+    const service = this.getMovieCollection()
+    if (task.collectionId !== undefined) {
+      if (!await this.db.config.getSetting('tmdb_api_key')) throw new Error('TMDB configuration is required for collection completeness analysis')
+      const collection = (await service.getCollections(task.sourceId)).find(row => row.id === task.collectionId && row.library_id === task.libraryId)
+      if (!collection) throw new Error(`Collection ${task.collectionId} no longer belongs to the requested library`)
+      const result = await service.analyzeCollection(collection.collection_name, collection.source_id, collection.library_id, collection.tmdb_collection_id)
+      if (!result) throw new Error(`Collection ${collection.collection_name} completeness was deferred because TMDB returned no result`)
+      task.result = { ...task.result, status: 'completed', itemsScanned: 1, completedCount: 1, failedCount: 0, deferredCount: 0 }
+      return
+    }
+    const result = await service.analyzeAllCollections(task.sourceId, task.libraryId, (prog: CollectionProgress) => {
+      onProgress({
+        current: prog.current,
+        total: prog.total,
+        percentage: prog.percentage || Math.round((prog.current / prog.total) * 100) || 0,
+        phase: prog.phase,
+        currentItem: prog.currentItem
+      })
+    }, this.currentTaskAbortController?.signal)
+    if (result.skipped) throw new Error('TMDB configuration is required for collection completeness analysis')
+
+    task.result = {
+      itemsScanned: result.analyzed,
+      totalCount: result.total,
+      completeCount: result.complete,
+      failedCount: result.errors.length,
+      errors: result.errors,
+      status: !result.completed ? 'cancelled' : result.errors.length ? 'partial' : 'completed',
+    }
   }
 
-  /**
-   * Execute a task based on its type
-   */
-  private async executeTask(task: QueuedTask): Promise<void> {
-    // Throttled library:updated emission — lets the UI show items as they're scanned/analyzed
-    let lastLibraryUpdateTime = 0
-    const LIBRARY_UPDATE_INTERVAL = 3000
+  private async executeMusicCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void, notifyOutcome: boolean): Promise<void> {
+    const service = this.getMusicBrainz()
+    const db = this.db
+    
+    if (task.artistId === undefined && task.albumId === undefined) {
+      const outcome = await service.analyzeAllMusic(
+        (prog: TaskProgress) => {
+          onProgress({
+            current: prog.current,
+            total: prog.total,
+            percentage: Math.round(prog.percentage),
+            phase: prog.phase || 'processing',
+            currentItem: prog.currentItem
+          })
+        },
+        task.sourceId,
+        { libraryId: task.libraryId, artistId: task.artistId },
+        this.currentTaskAbortController?.signal,
+      )
+      if (outcome.completedCount === undefined || outcome.failedCount === undefined) {
+        throw new Error('Music analysis returned incomplete outcome counts')
+      }
+      const completedCount = outcome.completedCount
+      const failedCount = outcome.failedCount
+      const totalCount = completedCount + failedCount + outcome.deferredCount + outcome.skipped
 
-    const progressCallback = (progress: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => {
-      if (this.cancelRequested) {
-        throw new Error('Task cancelled')
+      task.result = {
+        itemsScanned: completedCount,
+        status: outcome.status,
+        deferred: outcome.deferredCount,
+        errors: outcome.diagnostics.map(d => d.message),
+        diagnostics: outcome.diagnostics,
+        outcome,
       }
 
-      const current = progress.current ?? 0
-      const total = progress.total ?? 0
-      // Calculate percentage if not provided
-      const percentage = progress.percentage ?? (task.type === 'optimization-preflight' ? undefined : total > 0 ? Math.round((current / total) * 100) : 0)
+      if (outcome.status === 'failed' && !this.cancelRequested) {
+        const firstError = outcome.diagnostics[0]?.message
+        if (!firstError) {
+          throw new Error('Music analysis failed: diagnostic message missing')
+        }
+        throw new Error(`Music analysis failed: ${firstError}`)
+      }
+      if ((outcome.status === 'partial' || outcome.status === 'deferred') && !this.cancelRequested) {
+        const summary = `Music analysis ${outcome.status}: ${completedCount}/${totalCount} analyzed; ${outcome.deferredCount} deferred; ${outcome.diagnostics.length} issues`
+        this.logging.warn('[TaskQueue]', summary, { totalCount, completedCount, deferredCount: outcome.deferredCount })
+        if (notifyOutcome) await db.notifications.addNotification({
+          type: 'info',
+          title: `Music analysis ${outcome.status}`,
+          message: summary,
+          reference_id: task.sourceId,
+        })
+      } else if (outcome.status === 'completed' && !this.cancelRequested) {
+        if (notifyOutcome) await db.notifications.addNotification({
+          type: 'scan_complete',
+          title: 'Music analysis completed',
+          message: `Music analysis completed: ${completedCount} analyzed`,
+          reference_id: task.sourceId,
+        })
+      }
+        return
+      }
 
-      task.progress = {
+    if (task.albumId !== undefined) {
+      const album = await db.music.getAlbumById(task.albumId)
+      if (!album) throw new Error(`Album not found: ${task.albumId}`)
+      const tracks = await db.music.getTracks({ albumId: task.albumId, sourceId: album.source_id, libraryId: album.library_id })
+      const result = await service.analyzeAlbumTrackCompleteness(task.albumId, album.artist_name, album.title, album.musicbrainz_release_group_id || album.musicbrainz_id || undefined, tracks.map(track => track.title))
+      if (result) await db.music.upsertAlbumCompleteness(result)
+      task.result = { itemsScanned: tracks.length, status: result ? 'completed' : 'deferred', deferred: result ? 0 : 1 }
+      return
+    }
+
+    if (task.artistId === undefined) throw new Error('Music task requires an artist, album, or library scope')
+    const artist = await db.music.getArtistById(task.artistId)
+    if (!artist) throw new Error(`Artist not found: ${task.artistId}`)
+    const albumOutcome = await service.analyzeAllMusic(prog => onProgress(prog), artist.source_id, { libraryId: artist.library_id, artistId: artist.id, skipRecentlyAnalyzed: false })
+    if (albumOutcome.status !== 'completed') {
+      task.result = { itemsScanned: albumOutcome.completedCount, status: albumOutcome.status, completedCount: albumOutcome.completedCount, failedCount: albumOutcome.failedCount, deferredCount: albumOutcome.deferredCount, diagnostics: albumOutcome.diagnostics, outcome: albumOutcome }
+      if (albumOutcome.status !== 'cancelled') throw new Error(`Owned album completeness ${albumOutcome.status}`)
+      return
+    }
+    const albums = await db.music.getAlbums({ artistId: task.artistId, sourceId: artist.source_id, libraryId: artist.library_id })
+    const ownedAlbumTitles = albums.map(a => a.title)
+    const ownedAlbumMbIds = albums.map(a => a.musicbrainz_id).filter((id): id is string => !!id)
+
+    const result = await service.analyzeArtistCompleteness(
+      artist.name,
+      artist.musicbrainz_id || undefined,
+      ownedAlbumTitles,
+      ownedAlbumMbIds
+    )
+
+    if (this.cancelRequested) {
+      task.result = { itemsScanned: 0, status: 'cancelled', completedCount: 0, failedCount: 0, deferredCount: albums.length, skippedCount: 0 }
+      return
+    }
+    await db.music.upsertArtistCompleteness({ ...result, artist_name: artist.name, library_id: artist.library_id })
+    task.result = { itemsScanned: result.total_albums, status: 'completed' }
+
+    // Set progress to complete
+    onProgress({
+      current: 1,
+      total: 1,
+      percentage: 100,
+      phase: 'complete',
+      currentItem: artist.name
+    })
+  }
+
+  private async executeQualityAnalysis(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
+    if (task.options && typeof task.options === 'object' && 'domain' in task.options && task.options.domain === 'music-quality') {
+      const albums = await this.db.music.getAlbums({ sourceId: task.sourceId, libraryId: task.libraryId })
+      const scores = await Promise.all(albums.map(async album => this.getQualityAnalyzer().analyzeMusicAlbum(album, await this.db.music.getTracks({ albumId: album.id, sourceId: task.sourceId, libraryId: task.libraryId }))))
+      await this.db.music.upsertQualityScores(scores)
+      onProgress({ current: albums.length, total: albums.length, percentage: 100, phase: 'complete' })
+      return
+    }
+    await this.getQualityAnalyzer().analyzeAllMediaItems((current, total) => {
+      if (this.mainWindow) safeSend(this.mainWindow, 'quality:analysisProgress', { current, total })
+      onProgress({
         current,
         total,
-        ...(percentage === undefined ? {} : { percentage }),
-        phase: progress.phase ?? 'processing',
-        currentItem: progress.currentItem,
-      }
-      this.emitProgressUpdate()
-
-      // Periodically tell the renderer to reload data so items appear during scans
-      const now = Date.now()
-      if (now - lastLibraryUpdateTime >= LIBRARY_UPDATE_INTERVAL) {
-        lastLibraryUpdateTime = now
-        const updateType = (task.type === 'music-scan' || task.type === 'music-completeness') ? 'music' : 'media'
-        this.sendLibraryUpdated(updateType)
-      }
-    }
-
-    switch (task.type) {
-      case 'library-scan':
-        await this.executeLibraryScan(task, progressCallback)
-        break
-
-      case 'source-scan':
-        await this.executeSourceScan(task, progressCallback)
-        break
-
-      case 'series-completeness':
-        await this.executeSeriesCompleteness(task, progressCallback)
-        this.sendLibraryUpdated()
-        try { getDatabase().createNotification({ type: 'info', title: 'Series completeness analyzed', message: task.label || 'TV series completeness analysis complete' }); emitNotificationCreated() } catch (err) { console.error('[TaskQueue] Failed to create notification:', err) }
-        break
-
-      case 'collection-completeness':
-        await this.executeCollectionCompleteness(task, progressCallback)
-        this.sendLibraryUpdated()
-        try { getDatabase().createNotification({ type: 'info', title: 'Collection completeness analyzed', message: task.label || 'Movie collection completeness analysis complete' }); emitNotificationCreated() } catch (err) { console.error('[TaskQueue] Failed to create notification:', err) }
-        break
-
-      case 'music-completeness':
-        await this.executeMusicCompleteness(task, progressCallback)
-        this.sendLibraryUpdated('music')
-        try { getDatabase().createNotification({ type: 'info', title: 'Music completeness analyzed', message: task.label || 'Artist completeness analysis complete' }); emitNotificationCreated() } catch (err) { console.error('[TaskQueue] Failed to create notification:', err) }
-        break
-
-      case 'music-scan':
-        await this.executeMusicScan(task, progressCallback)
-        this.sendLibraryUpdated('music')
-        break
-
-      case 'quality-analysis':
-        {
-        await getQualityAnalyzer().loadThresholdsFromDatabase()
-        const errors: string[] = []
-        const analysisResult = await getQualityAnalyzer().analyzeAllMediaItems(
-          (current, total) => {
-            progressCallback({ current, total, phase: 'Refreshing media quality' })
-            this.sendToRenderer(IPC_CHANNELS.qualityAnalysisProgress, { current, total })
-          },
-          () => this.cancelRequested,
-          task.sourceId,
-          task.libraryId,
-          this.currentTaskAbortController!.signal,
-          undefined,
-          (mediaItemId, error) => errors.push(`Media item ${mediaItemId ?? 'unknown'}: ${getErrorMessage(error)}`),
-        )
-        const itemsScanned = typeof analysisResult === 'number' ? analysisResult : analysisResult.itemsScanned
-        task.result = { itemsScanned, failedCount: errors.length, errors }
-        if (errors.length === 0 && !this.cancelRequested) {
-          await getDatabase().deleteSetting('optimization.quality_reanalysis_pending')
-        }
-        }
-        this.sendLibraryUpdated()
-        break
-      case 'media-analysis': {
-        const options = task.options as MediaAnalysisOptions
-        const errors = new Set(task.result?.errors ?? [])
-        let currentItem: string | undefined
-        const analysisResult = await getQualityAnalyzer().analyzeAllMediaItems(
-          (current, total) => progressCallback({ current, total, phase: 'Measuring media files', currentItem }),
-          () => this.cancelRequested,
-          task.sourceId,
-          task.libraryId,
-          this.currentTaskAbortController!.signal,
-          undefined,
-          (mediaItemId, error) => errors.add(`Media item ${mediaItemId}: ${getErrorMessage(error)}`),
-          {
-            completedMediaItemIds: options.completedMediaItemIds,
-            onItemStarted: (title, current, total) => {
-              currentItem = title
-              progressCallback({ current, total, phase: 'Measuring media files', currentItem })
-            },
-            onItemComplete: mediaItemId => {
-              options.completedMediaItemIds.push(mediaItemId)
-              this.persistPendingQueue()
-            },
-            shouldYield: () => this.queue.some(queuedTask => queuedTask.type !== 'media-analysis'),
-          },
-        )
-        const itemsScanned = typeof analysisResult === 'number' ? analysisResult : analysisResult.itemsScanned
-        if (typeof analysisResult !== 'number') this.taskYieldRequested = true
-        task.result = { itemsScanned, failedCount: errors.size, errors: [...errors] }
-        if (typeof analysisResult === 'number' && errors.size === 0 && !this.cancelRequested) {
-          await getDatabase().deleteSetting('optimization.savings_reanalysis_pending')
-        }
-        this.sendLibraryUpdated()
-        break
-      }
-
-      case 'transcode':
-        await this.executeTranscode(task, progressCallback)
-        break
-
-      case 'optimization-preflight':
-        await this.executeOptimizationPreflight(task, progressCallback)
-        break
-
-      default:
-        throw new Error(`Unknown task type: ${task.type}`)
-    }
+        percentage: total > 0 ? Math.round((current / total) * 100) : 100,
+        phase: current >= total ? 'complete' : 'analyzing',
+      })
+    }, () => this.cancelRequested, task.sourceId, task.libraryId, this.currentTaskAbortController?.signal)
   }
 
-  private async executeOptimizationPreflight(
-    task: QueuedTask,
-    onProgress: (progress: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void,
-  ): Promise<void> {
-    const payload = task.options as { requestId: string; request: ShowTranscodeRequest; preflightId: string; batchId: string; mediaType?: string }
-    const checkpointPrefix = `transcoding.preflightCheckpoint.${payload.requestId}.`
-    const signal = this.currentTaskAbortController!.signal
-    const result: ShowTranscodePreflight = await getTranscodingService().preflightShowTranscode(payload.request, {
-      signal,
-      beginCommit: () => undefined,
-      waitUntilRunning: async () => { signal.throwIfAborted() },
-      update: update => onProgress({
-        current: update.progress?.current,
-        total: update.progress?.total,
-        percentage: update.progress?.percentage,
-        phase: update.phase,
-        currentItem: update.progress?.currentItem,
-      }),
-      preflightId: payload.preflightId,
-      batchId: payload.batchId,
-      loadEpisodeCheckpoint: async mediaItemId => {
-        const raw = await getDatabase().config.getSetting(`${checkpointPrefix}${mediaItemId}`)
-        if (!raw) return undefined
-        const checkpoint = JSON.parse(raw) as ShowTranscodeEpisodeCheckpoint
-        if (checkpoint.version !== 1 || checkpoint.plan.mediaItemId !== mediaItemId) throw new Error(`Invalid optimization checkpoint for media item ${mediaItemId}`)
-        return checkpoint
-      },
-      saveEpisodeCheckpoint: async (mediaItemId, checkpoint) => {
-        await getDatabase().config.setSetting(`${checkpointPrefix}${mediaItemId}`, JSON.stringify(checkpoint))
-      },
-    })
-    task.result = { preflightId: result.preflightId, batchId: result.batchId, episodeCount: result.episodeCount, mediaItemId: payload.request.mediaItemId, mediaType: payload.mediaType }
-    for (const key of Object.keys(getDatabase().config.getAllSettings()).filter(key => key.startsWith(checkpointPrefix))) await getDatabase().config.deleteSetting(key)
-    await getDatabase().config.deleteSetting(`transcoding.backgroundPreflight.${payload.requestId}`)
+  async cancelTask(taskId: string): Promise<boolean> { return this.removeTask(taskId) }
+
+  private async executeAnalysis(task: QueuedTask, onProgress: (progress: TaskProgress) => void): Promise<void> {
+    const scope = task.analysisScope
+    if (!scope) throw new Error('Analysis task is missing its persisted scope')
+    await this.validateAnalysisScope(scope)
+    const outcomes: AnalysisStageOutcome[] = []
+    let persistenceFailure: Error | null = null
+    let databaseBackupPath: string | undefined
+    const reconciliation = { merged: 0, removed: 0, preservedLocked: 0, ambiguous: 0 }
+    const stages: Array<{ name: string; execute: () => Promise<void> }> = []
+    let activeStageIndex = 0
+    const quality = (sourceId?: string, libraryId?: string, series?: { title: string; seriesIdentityKey: string }, mediaItemId?: number, collectionId?: number) => stages.push({ name: 'quality', execute: async () => {
+      if (mediaItemId !== undefined) {
+        const item = await this.db.media.getItemById(mediaItemId)
+        if (!item?.file_path) throw new Error(`Media item ${mediaItemId} has no local file path`)
+        const source = item.source_id ? await this.db.sources.getSourceById(item.source_id) : null
+        const stillOwned = await this.db.media.getItemById(mediaItemId)
+        if (!source || !stillOwned || stillOwned.file_path !== item.file_path || stillOwned.source_id !== item.source_id || stillOwned.library_id !== item.library_id) throw new Error(`Media item ${mediaItemId} ownership changed before analysis`)
+        const { qualityScore } = await this.getQualityAnalyzer().analyzeMediaItemFileEvidence(item, this.currentTaskAbortController?.signal)
+        const stillOwnedAfterAnalysis = await this.db.media.getItemById(mediaItemId)
+        if (!stillOwnedAfterAnalysis || stillOwnedAfterAnalysis.file_path !== item.file_path || stillOwnedAfterAnalysis.source_id !== item.source_id || stillOwnedAfterAnalysis.library_id !== item.library_id) throw new Error(`Media item ${mediaItemId} ownership changed during analysis`)
+        await this.db.media.upsertQualityScore(qualityScore)
+        task.result = { ...task.result, itemsScanned: 1 }
+        return
+      }
+      if (collectionId !== undefined) {
+        const collection = (await this.getMovieCollection().getCollections()).find(row => row.id === collectionId)
+        if (!collection || collection.source_id !== sourceId || collection.library_id !== libraryId) throw new Error(`Collection ${collectionId} ownership changed before quality analysis`)
+        const items = await this.db.media.getMediaItemsForCollection(collectionId)
+        let analyzed = 0
+        for (const item of items) {
+          if (this.cancelRequested) throw new Error('Collection quality analysis was cancelled')
+          if (!item.file_path) continue
+          const { qualityScore } = await this.getQualityAnalyzer().analyzeMediaItemFileEvidence(item, this.currentTaskAbortController?.signal)
+          const owner = await this.db.media.getItemById(item.id!)
+          if (!owner || owner.source_id !== sourceId || owner.library_id !== libraryId || owner.file_path !== item.file_path) throw new Error(`Collection member ${item.id} ownership changed during analysis`)
+          await this.db.media.upsertQualityScore(qualityScore)
+          analyzed++
+        }
+        task.result = { ...task.result, itemsScanned: analyzed }
+        return
+      }
+      const count = await this.getQualityAnalyzer().analyzeAllMediaItems((current, total) => {
+        onProgress({
+          current,
+          total,
+          percentage: Math.floor(((activeStageIndex + (total > 0 ? current / total : 1)) / stages.length) * 100),
+          phase: 'quality',
+          currentItem: `${current} of ${total} media items`,
+        })
+      }, () => this.cancelRequested, sourceId, libraryId, this.currentTaskAbortController?.signal, series)
+      if (this.cancelRequested) throw new Error('Quality analysis was cancelled')
+      task.result = { ...task.result, itemsScanned: count }
+    } })
+    const series = (sourceId?: string, libraryId?: string, identity?: { title: string; seriesIdentityKey: string }) => stages.push({ name: 'series-completeness', execute: async () => {
+      const seriesTask = { ...task, type: TaskType.SeriesCompleteness, sourceId, libraryId, ...(identity ? { seriesTitle: identity.title, seriesIdentityKey: identity.seriesIdentityKey } : {}) }
+      await this.executeSeriesCompleteness(seriesTask, onProgress, databaseBackupPath, false)
+      task.result = seriesTask.result
+    } })
+    const collections = (sourceId?: string, libraryId?: string) => stages.push({ name: 'collection-completeness', execute: async () => {
+      await this.executeCollectionCompleteness({ ...task, type: TaskType.CollectionCompleteness, sourceId, libraryId }, onProgress)
+      if (task.result?.status === 'cancelled') throw new Error('Collection completeness was cancelled')
+    } })
+    const music = (sourceId?: string, libraryId?: string, albumId?: number) => stages.push({ name: 'music-completeness', execute: async () => {
+      await this.executeMusicCompleteness({ ...task, type: TaskType.MusicCompleteness, sourceId, libraryId, albumId }, onProgress, false)
+    } })
+    const artistCompleteness = (artistId: number) => stages.push({ name: 'artist-completeness', execute: async () => {
+      const artist = await this.db.music.getArtistById(artistId)
+      if (!artist) throw new Error(`Artist ${artistId} was not found`)
+      const albums = await this.db.music.getAlbums({ artistId, sourceId: artist.source_id, libraryId: artist.library_id })
+      const titles = albums.map(album => album.title)
+      const mbids = albums.map(album => album.musicbrainz_release_group_id || album.musicbrainz_id).filter((id): id is string => !!id)
+      const result = await this.getMusicBrainz().analyzeArtistCompleteness(artist.name, artist.musicbrainz_id || undefined, titles, mbids)
+      if (this.cancelRequested) throw new Error('Artist discography analysis was cancelled')
+      const verified = await this.db.music.getArtistById(artistId)
+      if (!verified || verified.source_id !== artist.source_id || verified.library_id !== artist.library_id) throw new Error(`Artist ${artistId} ownership changed before completeness persistence`)
+      await this.db.music.upsertArtistCompleteness({ ...result, artist_name: artist.name, artist_id: artist.id, source_id: artist.source_id, library_id: artist.library_id })
+    } })
+    const ownedAlbumCompleteness = (artistId: number) => stages.push({ name: 'owned-album-completeness', execute: async () => {
+      const artist = await this.db.music.getArtistById(artistId)
+      if (!artist) throw new Error(`Artist ${artistId} was not found`)
+      const albums = await this.db.music.getAlbums({ artistId, sourceId: artist.source_id, libraryId: artist.library_id })
+      for (const album of albums) {
+        if (this.cancelRequested) throw new Error('Owned album completeness was cancelled')
+        const owned = await this.db.music.getAlbumById(album.id!)
+        if (!owned || owned.source_id !== artist.source_id || owned.library_id !== artist.library_id || owned.artist_id !== artistId) throw new Error(`Album ${album.id} ownership changed before completeness analysis`)
+        const tracks = await this.db.music.getTracks({ albumId: album.id, sourceId: artist.source_id, libraryId: artist.library_id })
+        const result = await this.getMusicBrainz().analyzeAlbumTrackCompleteness(album.id!, album.artist_name, album.title, album.musicbrainz_release_group_id || album.musicbrainz_id || undefined, tracks.map(track => track.title))
+        if (this.cancelRequested) throw new Error('Owned album completeness was cancelled')
+        if (result) await this.db.music.upsertAlbumCompleteness(result)
+      }
+    } })
+    const musicQuality = (sourceId: string, libraryId: string, artistId?: number, albumId?: number) => stages.push({ name: 'music-quality', execute: async () => {
+      if (this.cancelRequested) throw new Error('Music quality analysis cancelled')
+      const albums = albumId === undefined ? await this.db.music.getAlbums({ sourceId, libraryId, artistId }) : [await this.db.music.getAlbumById(albumId)].filter((album): album is NonNullable<typeof album> => album !== null)
+      const scores = []
+      for (const album of albums) {
+        if (this.cancelRequested) throw new Error('Music quality analysis cancelled')
+        const tracks = await this.db.music.getTracks({ albumId: album.id, sourceId, libraryId })
+        scores.push(await this.getQualityAnalyzer().analyzeMusicAlbum(album, tracks))
+      }
+      if (this.cancelRequested) throw new Error('Music quality analysis cancelled')
+      await this.db.music.upsertQualityScores(scores)
+    } })
+    let ownedScope: { sourceId?: string; libraryId?: string; mediaItemId?: number; artistId?: number; albumId?: number; collectionId?: number; series?: { title: string; seriesIdentityKey: string } } = {}
+    let libraryScopes: Array<{ sourceId: string; libraryId: string; libraryType: LibraryType }> = []
+      if (scope.kind === 'item') {
+      const item = await this.db.media.getItemById(scope.mediaId)
+      if (!item) throw new Error(`Media item ${scope.mediaId} was not found`)
+      ownedScope = { mediaItemId: scope.mediaId, sourceId: item.source_id, libraryId: item.library_id }
+    } else if (scope.kind === 'show') {
+      const episodes = await this.db.tvShows.getEpisodes(scope.title, scope.sourceId, scope.seriesIdentityKey, scope.libraryId)
+      if (!episodes.length) throw new Error('Requested show identity owns no episodes in the selected library')
+      ownedScope = { sourceId: scope.sourceId, libraryId: scope.libraryId, series: { title: scope.title, seriesIdentityKey: scope.seriesIdentityKey } }
+    } else if (scope.kind === 'collection') {
+      const collection = (await this.getMovieCollection().getCollections()).find(row => row.id === scope.collectionId)
+      if (!collection) throw new Error(`Collection ${scope.collectionId} was not found`)
+      ownedScope = { sourceId: collection.source_id, libraryId: collection.library_id, collectionId: collection.id }
+    } else if (scope.kind === 'album') {
+      const album = await this.db.music.getAlbumById(scope.albumId)
+      if (!album) throw new Error(`Album ${scope.albumId} was not found`)
+      ownedScope = { sourceId: album.source_id, libraryId: album.library_id, albumId: album.id }
+    } else if (scope.kind === 'artist') {
+      const artist = await this.db.music.getArtistById(scope.artistId)
+      if (!artist) throw new Error(`Artist ${scope.artistId} was not found`)
+      ownedScope = { sourceId: artist.source_id, libraryId: artist.library_id, artistId: artist.id }
+    } else {
+      const sources = scope.kind === 'library' ? [await this.db.sources.getSourceById(scope.sourceId)].filter((source): source is NonNullable<typeof source> => source !== null) : await this.db.sources.getEnabledSources()
+      libraryScopes = (await Promise.all(sources.map(async source => ({ source, rows: await this.db.sources.getSourceLibraries(source.source_id) }))))
+        .flatMap(({ source, rows }) => rows.filter(row => row.isEnabled === 1).map(row => ({ sourceId: source.source_id, libraryId: row.libraryId, libraryType: row.libraryType as LibraryType })))
+        .filter(row => scope.kind !== 'library' || (row.sourceId === scope.sourceId && row.libraryId === scope.libraryId))
+      if (!libraryScopes.length) throw new Error('No enabled library exists in the requested scope')
+    }
+    for (const definition of planAnalysisStages(scope, libraryScopes)) {
+      const sourceId = definition.sourceId ?? ownedScope.sourceId
+      const libraryId = definition.libraryId ?? ownedScope.libraryId
+      switch (definition.name) {
+        case 'quality': quality(sourceId, libraryId, definition.series ?? ownedScope.series, definition.mediaItemId ?? ownedScope.mediaItemId, definition.collectionId ?? ownedScope.collectionId); break
+        case 'series-completeness': series(sourceId, libraryId, definition.series ?? ownedScope.series); break
+        case 'collection-completeness':
+          if (definition.collectionId !== undefined || ownedScope.collectionId !== undefined) stages.push({ name: definition.name, execute: () => this.executeCollectionCompleteness({ ...task, type: TaskType.CollectionCompleteness, sourceId, libraryId, collectionId: definition.collectionId ?? ownedScope.collectionId }, onProgress) })
+          else collections(sourceId, libraryId)
+          break
+        case 'music-quality': musicQuality(sourceId!, libraryId!, definition.artistId ?? ownedScope.artistId, definition.albumId ?? ownedScope.albumId); break
+        case 'music-completeness': music(sourceId, libraryId, definition.albumId ?? ownedScope.albumId); break
+        case 'artist-completeness': artistCompleteness(definition.artistId ?? ownedScope.artistId!); break
+        case 'owned-album-completeness': ownedAlbumCompleteness(definition.artistId ?? ownedScope.artistId!); break
+      }
+    }
+    if (!stages.length) throw new Error('No applicable analysis stages exist for this scope')
+    for (let index = 0; index < stages.length; index++) {
+      if (this.cancelRequested) {
+        for (const remaining of stages.slice(index)) outcomes.push({ stage: remaining.name, status: 'skipped', error: 'Cancelled before stage started' })
+        break
+      }
+      const stage = stages[index]
+      activeStageIndex = index
+      onProgress({ current: index, total: stages.length, percentage: Math.floor(index * 100 / stages.length), phase: stage.name })
+      try {
+        await stage.execute()
+        const stageReconciliation = task.result?.reconciliation
+        if (stageReconciliation && typeof stageReconciliation === 'object') {
+          const counts = stageReconciliation as typeof reconciliation
+          reconciliation.merged += counts.merged
+          reconciliation.removed += counts.removed
+          reconciliation.preservedLocked += counts.preservedLocked
+          reconciliation.ambiguous += counts.ambiguous
+          databaseBackupPath ??= task.result?.databaseBackupPath
+        }
+        const stageResultStatus = task.result?.status
+        const diagnostics = task.result?.diagnostics
+        outcomes.push({
+          stage: stage.name,
+          status: stageResultStatus === 'deferred' ? 'deferred' : stageResultStatus === 'partial' ? 'partial' : stageResultStatus === 'failed' ? 'failed' : 'completed',
+          ...(stageResultStatus === 'deferred' ? { error: 'Provider returned no completeness result', code: 'PROVIDER_DEFERRED' } : {}),
+          ...(diagnostics?.length ? { diagnostics } : {}),
+        })
+      } catch (error) {
+        const message = getErrorMessage(error)
+        if (parseDatabaseError(error).isDatabaseError) persistenceFailure = error instanceof Error ? error : new Error(message)
+        const blocked = /required|not found|no local|not enabled|ownership changed|identity/i.test(message)
+        const wasCancelled = this.cancelRequested && error instanceof Error && (error.name === 'AbortError' || /cancelled/i.test(message))
+        outcomes.push({ stage: stage.name, status: wasCancelled ? 'skipped' : blocked ? 'blocked' : 'failed', error: message, code: wasCancelled ? 'CANCELLED' : blocked ? 'WORK_BLOCKED' : 'STAGE_FAILED', diagnostics: [{ itemType: scope.kind === 'show' ? 'series' : scope.kind === 'item' ? 'movie' : scope.kind === 'collection' ? 'collection' : scope.kind === 'album' ? 'album' : scope.kind === 'artist' ? 'artist' : 'library', itemId: scope.kind === 'item' ? scope.mediaId : scope.kind === 'artist' ? scope.artistId : scope.kind === 'album' ? scope.albumId : undefined, itemName: task.label, stage: stage.name, category: wasCancelled ? 'cancelled' : blocked ? 'identity' : 'unresolved', code: wasCancelled ? 'CANCELLED' : blocked ? 'WORK_BLOCKED' : 'STAGE_FAILED', message }] })
+        if (!wasCancelled) this.logging.error('[TaskQueue]', `Analysis stage ${stage.name} failed`, error)
+        if (persistenceFailure) break
+      }
+    }
+    const failedCount = outcomes.filter(outcome => outcome.status === 'failed' || outcome.status === 'partial').length
+    const blockedCount = outcomes.filter(outcome => outcome.status === 'blocked').length
+    const deferredCount = outcomes.filter(outcome => outcome.status === 'deferred').length
+    const completedCount = outcomes.filter(outcome => outcome.status === 'completed').length
+    const skippedCount = outcomes.filter(outcome => outcome.status === 'skipped').length
+    const hasPartialWork = outcomes.some(outcome => outcome.status === 'partial')
+    const status = this.cancelRequested ? 'cancelled' : failedCount || blockedCount || deferredCount ? completedCount || hasPartialWork ? 'partial' : blockedCount ? 'blocked' : failedCount ? 'failed' : 'deferred' : 'completed'
+    const diagnostics = outcomes.flatMap(outcome => outcome.diagnostics ?? [])
+    const hasReconciliation = databaseBackupPath !== undefined
+    const analysis: AnalysisJobResult = {
+      scope,
+      outcomes,
+      status,
+      completedCount,
+      failedCount,
+      deferredCount,
+      skippedCount,
+      diagnostics,
+      ...(hasReconciliation ? { reconciliation, databaseBackupPath } : {}),
+    }
+    task.result = { ...task.result, status, completedCount, failedCount, deferredCount, skippedCount, diagnostics, outcomes, analysis, ...(hasReconciliation ? { reconciliation, databaseBackupPath } : {}) }
+    if (persistenceFailure) throw persistenceFailure
+    if (status === 'failed') throw new Error('All required analysis stages failed')
   }
 
-  private async executeTranscode(task: QueuedTask, onProgress: (p: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void): Promise<void> {
+  private async executeTranscode(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
     if (!task.mediaItemId) throw new Error('Missing mediaItemId for transcode task')
-    const service = getTranscodingService()
-
+    const service = this.getTranscoding()
+    
     onProgress({
       current: 0,
       total: 100,
       percentage: 0,
       phase: 'initializing',
-      currentItem: task.label,
+      currentItem: task.label
     })
 
     const success = await service.transcode(
       task.mediaItemId,
       task.options || {},
-      (p) => {
+      (p: TranscodeProgress) => {
         if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-          safeSend(this.mainWindow, IPC_CHANNELS.transcodingProgress, { mediaItemId: task.mediaItemId, ...p })
+          safeSend(this.mainWindow, 'transcoding:progress', { mediaItemId: task.mediaItemId, ...p })
         }
         onProgress({
           current: Math.round(p.percent),
           total: 100,
           percentage: p.percent,
-          phase: p.phase ?? p.status,
+          phase: p.status,
           currentItem: task.label,
+          fps: p.fps,
+          speed: p.speed,
+          eta: p.eta
         })
       }
     )
     if (success) {
-      const db = getDatabase()
-      const job = await db.mediaRemuxJobs.getLatest(task.mediaItemId)
+      const job = await this.db.mediaRemuxJobs.getLatest(task.mediaItemId)
       if (job?.outputAnalysis) {
-        const output = JSON.parse(job.outputAnalysis) as { encodedReductionBytes?: number; retainedOriginalBytes?: number; physicallyReclaimedBytes?: number; qualityVerification?: NonNullable<QueuedTask['result']>['qualityVerification'] }
-        task.result = {
-          encodedReductionBytes: output.encodedReductionBytes,
-          outputBytes: job.actualOutputBytes ?? undefined,
-          retainedOriginalBytes: output.retainedOriginalBytes,
-          physicallyReclaimedBytes: output.physicallyReclaimedBytes,
-          qualityVerification: output.qualityVerification,
-        }
+        const output = JSON.parse(job.outputAnalysis) as { encodedReductionBytes: number; retainedOriginalBytes: number; physicallyReclaimedBytes: number }
+        task.result = { encodedReductionBytes: output.encodedReductionBytes, retainedOriginalBytes: output.retainedOriginalBytes, physicallyReclaimedBytes: output.physicallyReclaimedBytes }
       }
-    } else if (!this.cancelRequested) {
-      throw new Error('Transcoding ended without producing a verified output')
+    } else if (!this.cancelRequested) throw new Error('Transcoding ended without producing a verified output')
+  }
+
+  private notifyListeners(): void {
+    const state = this.getState()
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      safeSend(this.mainWindow, 'taskQueue:updated', state)
     }
   }
 
-  private async executeLibraryScan(task: QueuedTask, onProgress: (p: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void): Promise<void> {
-    if (!task.sourceId || !task.libraryId) {
-      throw new Error('Library scan requires sourceId and libraryId')
-    }
-
-    // Check if this is the first scan for this library
-    const db = getDatabase()
-    const existingScanTime = db.getLibraryScanTime(task.sourceId, task.libraryId)
-    const isFirstScan = !existingScanTime
-
-    const manager = getSourceManager()
-    const result = await manager.scanLibrary(task.sourceId, task.libraryId, onProgress)
-    let optimizationCandidates: OptimizationCandidateScanSummary | undefined
-    let optimizationCandidateError: string | undefined
-    if (result.success) {
-      try {
-        optimizationCandidates = await getTranscodingService().discoverLibraryOptimizationCandidates(task.sourceId, task.libraryId)
-      } catch (error) {
-        optimizationCandidateError = getErrorMessage(error)
-      }
-    }
-
-    task.result = {
-      itemsScanned: result.itemsScanned,
-      itemsAdded: result.itemsAdded,
-      itemsUpdated: result.itemsUpdated,
-      itemsRemoved: result.itemsRemoved,
-      isFirstScan,
-      optimizationCandidates,
-      optimizationCandidateError,
-      errors: result.errors,
-      failedCount: result.errors.length + (optimizationCandidateError ? 1 : 0),
-    }
-
-    if (!result.success) {
-      throw new Error(result.errors.length > 0 ? result.errors.join('; ') : 'Library scan did not complete successfully')
-    }
-  }
-
-  private async executeSourceScan(task: QueuedTask, onProgress: (p: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void): Promise<void> {
-    if (!task.sourceId) {
-      throw new Error('Source scan requires sourceId')
-    }
-
-    const manager = getSourceManager()
-    const db = getDatabase()
-
-    // Get all enabled libraries for this source
-    type LibraryInfo = { libraryId: string; libraryName: string; libraryType: string; isEnabled: boolean; lastScanAt: string | null; itemsScanned: number }
-    const libraries = db.getSourceLibraries(task.sourceId) as LibraryInfo[]
-    const enabledLibraries = libraries.filter((lib: LibraryInfo) => lib.isEnabled)
-
-    let totalScanned = 0
-    let totalAdded = 0
-    let totalUpdated = 0
-    let totalRemoved = 0
-    let allLibrariesScannedSuccessfully = true
-    let optimizationCandidateError: string | undefined
-    const scanFailures: string[] = []
-    const scanItemErrors: string[] = []
-
-    for (let i = 0; i < enabledLibraries.length; i++) {
-      const lib = enabledLibraries[i]
-
-      // Update progress for overall source scan
-      onProgress({
-        current: i,
-        total: enabledLibraries.length,
-        phase: 'processing',
-        currentItem: lib.libraryName,
-        percentage: (i / enabledLibraries.length) * 100,
-      })
-
-      const result = await manager.scanLibrary(task.sourceId, lib.libraryId, (p) => {
-        // Emit sub-progress
-        onProgress({
-          current: i,
-          total: enabledLibraries.length,
-          phase: p.phase,
-          currentItem: p.currentItem,
-          percentage: ((i + (p.percentage || 0) / 100) / enabledLibraries.length) * 100,
-        })
-      })
-
-      totalScanned += result.itemsScanned || 0
-      totalAdded += result.itemsAdded || 0
-      totalUpdated += result.itemsUpdated || 0
-      totalRemoved += result.itemsRemoved || 0
-      allLibrariesScannedSuccessfully &&= result.success
-      if (!result.success) scanFailures.push(`${lib.libraryName}: ${result.errors.join('; ') || 'scan failed'}`)
-      else if (result.errors.length > 0) scanItemErrors.push(`${lib.libraryName}: ${result.errors.join('; ')}`)
-    }
-
-    let optimizationCandidates: OptimizationCandidateScanSummary | undefined
-    if (allLibrariesScannedSuccessfully) {
-      try {
-        optimizationCandidates = await getTranscodingService().discoverSourceOptimizationCandidates(task.sourceId)
-      } catch (error) {
-        optimizationCandidateError = getErrorMessage(error)
-      }
-    } else optimizationCandidateError = 'One or more libraries failed to scan; source-wide candidates were not calculated.'
-
-    task.result = {
-      itemsScanned: totalScanned,
-      itemsAdded: totalAdded,
-      itemsUpdated: totalUpdated,
-      itemsRemoved: totalRemoved,
-      optimizationCandidates,
-      optimizationCandidateError,
-      errors: [...scanFailures, ...scanItemErrors],
-      failedCount: scanFailures.length + scanItemErrors.length + (optimizationCandidateError && scanFailures.length === 0 ? 1 : 0),
-    }
-    if (scanFailures.length > 0) throw new Error(`Source scan failed for ${scanFailures.length} libraries: ${scanFailures.join(' | ')}`)
-  }
-
-  private async executeSeriesCompleteness(task: QueuedTask, onProgress: (p: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void): Promise<void> {
-    const service = getSeriesCompletenessService()
-    const result = await service.analyzeAllSeries(onProgress, task.sourceId, task.libraryId)
-
-    task.result = {
-      itemsScanned: result.analyzed,
-    }
-
-    if (!result.completed && !this.cancelRequested) {
-      throw new Error('Series analysis did not complete')
-    }
-  }
-
-  private queueSeriesCompletenessRecovery(sourceId: string, libraryId: string): void {
-    this.addTask({
-      type: 'series-completeness',
-      label: 'Recover invalidated series completeness',
-      sourceId,
-      libraryId,
+  private async saveState(propagateFailure = false): Promise<void> {
+    const state = JSON.stringify({
+      currentTask: this.currentTask,
+      queue: this.queue,
+      completedTasks: this.completedTasks,
+      isPaused: this.isPaused
     })
+    const write = this.stateWrite.then(() => this.db.config.setSetting('task_queue_state', state))
+    this.stateWrite = write.then(() => undefined, error => {
+      getLoggingService().warn('[TaskQueueService]', 'Failed to save state:', error)
+    })
+    if (propagateFailure) return write
+    return this.stateWrite
   }
 
-  private async executeCollectionCompleteness(task: QueuedTask, onProgress: (p: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void): Promise<void> {
-    const service = getMovieCollectionService()
-    const result = await service.analyzeAllCollections(onProgress, task.sourceId, task.libraryId)
+  private async loadState(): Promise<void> {
+    try {
+      const stateStr = await this.db.config.getSetting('task_queue_state')
+      if (stateStr) {
+        const state = JSON.parse(stateStr)
+        this.queue = state.queue || []
+        this.completedTasks = state.completedTasks || []
+        this.isPaused = state.isPaused === true
 
-    task.result = {
-      itemsScanned: result.analyzed,
-    }
-
-    if (!result.completed && !this.cancelRequested) {
-      throw new Error('Collection analysis did not complete')
-    }
-  }
-
-  private async executeMusicCompleteness(task: QueuedTask, onProgress: (p: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void): Promise<void> {
-    const mbService = getMusicBrainzService()
-
-    // Single artist analysis
-    if (task.artistId) {
-      const db = getDatabase()
-      const artist = db.getMusicArtistById(task.artistId)
-      if (!artist) throw new Error(`Artist not found: ${task.artistId}`)
-
-      // Get albums by FK and name (same logic as music:analyzeArtistCompleteness IPC handler)
-      const albums = getArtistAlbumsCombined(db, task.artistId, artist.name)
-
-      onProgress({ phase: 'Analyzing artist', currentItem: artist.name, percentage: 5 })
-
-      const errors: string[] = []
-      const ownedTitles = albums.map(a => a.title)
-      const ownedMbIds = albums.filter(a => a.musicbrainz_id).map(a => a.musicbrainz_id!)
-      try {
-        const completeness = await mbService.analyzeArtistCompleteness(
-          artist.name, artist.musicbrainz_id, ownedTitles, ownedMbIds
-        )
-        await db.upsertArtistCompleteness(completeness)
-      } catch (error) {
-        errors.push(`Artist ${artist.name}: ${getErrorMessage(error)}`)
-      }
-
-      // Analyze track completeness for each album
-      for (let i = 0; i < albums.length; i++) {
-        if (this.cancelRequested) break
-        const album = albums[i]
-        if (!album.id) continue
-
-        onProgress({ current: i + 1, total: albums.length, phase: 'Analyzing albums', currentItem: album.title })
-
-        try {
-          const tracks = db.getMusicTracks({ albumId: album.id })
-          const trackTitles = tracks.map((t: { title: string }) => t.title)
-          const albumCompleteness = await mbService.analyzeAlbumTrackCompleteness(
-            album.id, album.artist_name, album.title, album.musicbrainz_id, trackTitles
-          )
-          if (albumCompleteness) {
-            await db.upsertAlbumCompleteness(albumCompleteness)
-          }
-        } catch (albumError) {
-          if (albumError instanceof MusicBrainzReleaseDataNotFoundError) {
-            errors.push(`Album ${album.title}: ${getErrorMessage(albumError)}`)
+        // A renderer reconnect must observe the persisted task immediately,
+        // while an application restart must not leave a stale task blocking
+        // queue processing. Requeue any task that was active at shutdown.
+        if (state.currentTask) {
+          if (state.currentTask.status === TaskStatus.Cancelled) {
+            this.completedTasks.unshift(state.currentTask)
           } else {
-            errors.push(`Album ${album.title}: ${getErrorMessage(albumError)}`)
+            state.currentTask.status = TaskStatus.Queued
+            this.queue.unshift(state.currentTask)
           }
         }
+        this.currentTask = null
+        
+        this.logging.info('[TaskQueue]', `State loaded: ${this.queue.length} queued, ${this.completedTasks.length} completed, isPaused=${this.isPaused}`)
+        
+        // Reset any tasks that were running to queued
+        this.queue.forEach(t => { if (t.status === TaskStatus.Running) t.status = TaskStatus.Queued })
+      } else {
+        this.logging.info('[TaskQueue]', 'No persisted state found')
       }
-
-      task.result = { itemsScanned: albums.length + 1, failedCount: errors.length, errors }
-      return
+    } catch (e) {
+      this.logging.warn('[TaskQueue]', 'Failed to load state:', e)
     }
-
-    // Full music completeness analysis
-    const result = await mbService.analyzeAllMusic(onProgress, task.sourceId)
-
-    task.result = {
-      itemsScanned: (result.artistsAnalyzed || 0) + (result.albumsAnalyzed || 0) + result.skipped,
-      skippedCount: result.skipped,
-      failedCount: result.failedCount,
-      errors: result.errors,
-    }
-
-  }
-
-  private async executeMusicScan(task: QueuedTask, onProgress: (p: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void): Promise<void> {
-    if (!task.sourceId || !task.libraryId) {
-      throw new Error('Music scan requires sourceId and libraryId')
-    }
-
-    const manager = getSourceManager()
-    const provider = manager.getProvider(task.sourceId)
-    if (!provider) {
-      throw new Error(`Provider not found for source: ${task.sourceId}`)
-    }
-
-    let result: ScanResult
-
-    // Route to provider-specific music scanning method
-    if (provider.providerType === 'plex') {
-      const plexProvider = provider as PlexProvider
-      result = await plexProvider.scanMusicLibrary(task.libraryId, onProgress)
-    } else if (provider.providerType === 'jellyfin' || provider.providerType === 'emby') {
-      const jellyfinProvider = provider as JellyfinEmbyBase
-      result = await jellyfinProvider.scanMusicLibrary(task.libraryId, onProgress)
-    } else if (provider.providerType === 'kodi') {
-      const kodiProvider = provider as KodiProvider
-      result = await kodiProvider.scanMusicLibrary(onProgress)
-    } else if (provider.providerType === 'kodi-local') {
-      const kodiLocalProvider = provider as KodiLocalProvider
-      result = await kodiLocalProvider.scanMusicLibrary(onProgress)
-    } else if (provider.providerType === 'local' || provider.providerType === 'mediamonkey') {
-      // Local folder / MediaMonkey providers route music through scanLibrary
-      result = await provider.scanLibrary(task.libraryId, { onProgress })
-    } else {
-      throw new Error(`Music scanning not supported for provider type: ${provider.providerType}`)
-    }
-
-    task.result = {
-      itemsScanned: result.itemsScanned,
-      itemsAdded: result.itemsAdded,
-      itemsUpdated: result.itemsUpdated,
-      itemsRemoved: result.itemsRemoved,
-    }
-
-    if (this.cancelRequested || result.cancelled) return
-
-    if (!result.success && result.errors?.length > 0) {
-      throw new Error(result.errors.join(', '))
-    }
-
-    // Analyze quality for all albums after scan
-    const db = getDatabase()
-    console.log(`[TaskQueue] Analyzing music quality for source ${task.sourceId}...`)
-    await analyzeAlbumQuality(db, task.sourceId, (current, total) => onProgress({
-      current,
-      total,
-      phase: 'music quality analysis',
-      currentItem: `Album ${current} of ${total}`,
-    }))
-    console.log(`[TaskQueue] Music quality analysis complete`)
-  }
-
-  // ============================================================================
-  // Helper Methods
-  // ============================================================================
-
-  /**
-   * Send library:updated event to trigger UI refresh
-   * Called after completeness tasks complete to refresh MediaBrowser
-   */
-  private sendLibraryUpdated(type: 'media' | 'music' = 'media'): void {
-    const win = BrowserWindow.getAllWindows()[0]
-    if (win) {
-      safeSend(win, IPC_CHANNELS.libraryUpdated, { type })
-    }
-  }
-
-  private generateId(): string {
-    return `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  private formatCompletionMessage(task: QueuedTask): string {
-    const result = task.result
-    if (!result) {
-      return `Completed: ${task.label}`
-    }
-
-    const parts: string[] = []
-    if (result.itemsScanned) parts.push(`${result.itemsScanned} scanned`)
-    if (result.itemsAdded) parts.push(`${result.itemsAdded} added`)
-    if (result.itemsUpdated) parts.push(`${result.itemsUpdated} updated`)
-    if (result.itemsRemoved) parts.push(`${result.itemsRemoved} removed`)
-    if (result.failedCount) parts.push(`${result.failedCount} item${result.failedCount === 1 ? '' : 's'} failed`)
-
-    if (parts.length === 0) {
-      return `Completed: ${task.label}`
-    }
-
-    return `Completed: ${task.label} (${parts.join(', ')})`
-  }
-
-  private addTaskHistoryEntry(task: QueuedTask, type: ActivityLogEntry['type'], message: string): void {
-    const entry: ActivityLogEntry = {
-      id: this.generateId(),
-      timestamp: new Date().toISOString(),
-      type,
-      message,
-      taskId: task.id,
-      taskType: task.type,
-    }
-
-    this.taskHistory.unshift(entry)
-    if (this.taskHistory.length > TaskQueueService.MAX_HISTORY_ENTRIES) {
-      this.taskHistory = this.taskHistory.slice(0, TaskQueueService.MAX_HISTORY_ENTRIES)
-    }
-
-    // Persist to database
-    try {
-      const db = getDatabase()
-      db.saveActivityLogEntry({ entryType: type, message, taskId: task.id, taskType: task.type })
-    } catch (err) {
-      console.error('[TaskQueue] Failed to persist activity log entry:', getErrorMessage(err))
-    }
-
-    this.emitHistoryUpdate()
-  }
-
-  // ============================================================================
-  // IPC Communication
-  // ============================================================================
-
-  private emitQueueUpdate(): void {
-    this.persistPendingQueue()
-    this.sendToRenderer('taskQueue:updated', this.getQueueState())
-  }
-
-  private persistPendingQueue(): void {
-    const db = getDatabase()
-    db.config.setSetting(SETTING_KEYS.task_queue_paused_on_shutdown, String(this.isPaused))
-    const tasks = [...(this.currentTask ? [this.currentTask] : []), ...this.queue]
-    db.savePendingTasks(tasks.map(task => ({
-      taskId: task.id, type: task.type, label: task.label,
-      sourceId: task.sourceId, libraryId: task.libraryId, artistId: task.artistId,
-      createdAt: task.createdAt, payload: task,
-    })))
-  }
-
-  /**
-   * Throttled version of emitQueueUpdate for progress events.
-   * Limits IPC sends to avoid flooding the renderer during large scans.
-   */
-  private emitProgressUpdate(): void {
-    if (this.progressThrottleTimer) {
-      this.progressUpdatePending = true
-      return
-    }
-    this.emitQueueUpdate()
-    this.progressThrottleTimer = setTimeout(() => {
-      this.progressThrottleTimer = null
-      if (this.progressUpdatePending) {
-        this.progressUpdatePending = false
-        this.emitQueueUpdate()
-      }
-    }, TaskQueueService.PROGRESS_THROTTLE_MS)
-  }
-
-  private emitTaskComplete(task: QueuedTask): void {
-    this.sendToRenderer('taskQueue:taskComplete', task)
-
-    // Emit scan:completed for library/source scans to show toast notification
-    if (task.status === 'completed' && (task.type === 'library-scan' || task.type === 'source-scan' || task.type === 'music-scan')) {
-      this.sendToRenderer('scan:completed', {
-        sourceId: task.sourceId,
-        libraryId: task.libraryId,
-        libraryName: task.label,
-        itemsAdded: task.result?.itemsAdded || 0,
-        itemsUpdated: task.result?.itemsUpdated || 0,
-        itemsScanned: task.result?.itemsScanned || 0,
-        isFirstScan: task.result?.isFirstScan || false,
-        optimizationCandidates: task.result?.optimizationCandidates,
-        optimizationCandidateError: task.result?.optimizationCandidateError,
-      })
-
-      // Create notification for scan completion
-      try {
-        const added = task.result?.itemsAdded || 0
-        const updated = task.result?.itemsUpdated || 0
-        const scanned = task.result?.itemsScanned || 0
-        const parts = []
-        if (added > 0) parts.push(`${added} added`)
-        if (updated > 0) parts.push(`${updated} updated`)
-        if (parts.length === 0) parts.push(`${scanned} scanned`)
-        const optimizationCandidates = task.result?.optimizationCandidates as OptimizationCandidateScanSummary | undefined
-        if (optimizationCandidates && optimizationCandidates.candidateCount > 0) {
-          const candidates = `${optimizationCandidates.candidateCount} optimization candidates`
-          if (optimizationCandidates.estimatedSavingsBytes === null) parts.push(candidates)
-          else parts.push(`${candidates}, about ${formatCandidateSavings(optimizationCandidates.estimatedSavingsBytes)} potential savings`)
-        }
-        if (task.result?.optimizationCandidateError) parts.push('optimization candidate discovery failed')
-        getDatabase().createNotification({
-          type: 'scan_complete',
-          title: 'Library scan complete',
-          message: `${task.label}: ${parts.join(', ')}`,
-          sourceId: task.sourceId,
-          sourceName: task.label,
-          itemCount: scanned,
-        })
-        emitNotificationCreated()
-      } catch (err) { console.error('[TaskQueue] Failed to create notification:', err) }
-
-      // Check for quality upgrades detected during this scan (video + music)
-      try {
-        if (task.startedAt) {
-          const db = getDatabase()
-          const videoUpgrades = db.getRecentlyUpgraded(1)
-            .filter((u: { upgraded_at: string }) => u.upgraded_at >= task.startedAt!)
-            .map((u: { title: string; previous_quality_tier: string; quality_tier: string }) =>
-              `${u.title}: ${u.previous_quality_tier} → ${u.quality_tier}`)
-          const musicUpgrades = db.getRecentlyUpgradedMusic(1)
-            .filter((u: { upgraded_at: string }) => u.upgraded_at >= task.startedAt!)
-            .map((u: { title: string; artist_name: string; previous_quality_tier: string; quality_tier: string }) =>
-              `${u.title} (${u.artist_name}): ${u.previous_quality_tier} → ${u.quality_tier}`)
-          const allUpgrades = [...videoUpgrades, ...musicUpgrades]
-          if (allUpgrades.length > 0) {
-            const summaries = allUpgrades.slice(0, 5)
-            const message = allUpgrades.length <= 5
-              ? summaries.join(', ')
-              : `${summaries.join(', ')} + ${allUpgrades.length - 5} more`
-            db.createNotification({
-              type: 'info',
-              title: `${allUpgrades.length} quality upgrade${allUpgrades.length !== 1 ? 's' : ''} detected`,
-              message,
-              sourceId: task.sourceId,
-              sourceName: task.label,
-              itemCount: allUpgrades.length,
-            })
-            emitNotificationCreated()
-          }
-        }
-      } catch (err) { console.error('[TaskQueue] Failed to create upgrade notification:', err) }
-
-      // Check wishlist for auto-completion after items were added or updated
-      if ((task.result?.itemsAdded || 0) > 0 || (task.result?.itemsUpdated || 0) > 0) {
-        getWishlistCompletionService().checkAndComplete().catch((err) => {
-          console.error('[TaskQueue] Wishlist completion check failed:', getErrorMessage(err))
-        })
-      }
-
-      // Auto-queue completeness analysis for scanned libraries
-      if ((task.type === 'library-scan' || task.type === 'source-scan' || task.type === 'music-scan') &&
-          ((task.result?.itemsAdded || 0) > 0 || (task.result?.itemsUpdated || 0) > 0 || (task.result?.itemsRemoved || 0) > 0)) {
-        this.autoQueueCompleteness(task)
-      }
-    }
-  }
-
-  /**
-   * Auto-trigger completeness analysis for libraries that were just scanned.
-   * For 'show' libraries → targeted series completeness (only affected series, requires TMDB)
-   * For 'movie' libraries → collection completeness task (requires TMDB)
-   * For 'music' libraries → music quality analysis (no external API required)
-   */
-  private autoQueueCompleteness(task: QueuedTask): void {
-    try {
-      const db = getDatabase()
-
-      if (!task.sourceId) return
-
-      // For library scans, check the specific library type
-      // For source scans, check all libraries for the source
-      const libraries = task.libraryId
-        ? db.getSourceLibraries(task.sourceId).filter(
-            (l: { libraryId: string }) => l.libraryId === task.libraryId
-          )
-        : db.getSourceLibraries(task.sourceId).filter(
-            (l: { isEnabled: boolean }) => l.isEnabled
-          )
-
-      const tmdbApiKey = db.getSetting('tmdb_api_key')
-
-      for (const lib of libraries) {
-        if (lib.libraryType === 'show' && tmdbApiKey) {
-          // Targeted: analyze only series whose episode counts changed
-          this.autoAnalyzeAffectedSeries(task.sourceId, lib.libraryId, lib.libraryName)
-        } else if (lib.libraryType === 'movie' && tmdbApiKey) {
-          const taskId = this.addTask({
-            type: 'collection-completeness',
-            label: `Collection completeness: ${lib.libraryName}`,
-            sourceId: task.sourceId,
-            libraryId: lib.libraryId,
-          })
-          console.log(`[TaskQueue] Auto-queued collection completeness for ${lib.libraryName} (${taskId})`)
-        } else if (lib.libraryType === 'music') {
-          // Music quality analysis (already runs after music-scan tasks,
-          // but also needed for library-scan/source-scan of music libraries)
-          if (task.type !== 'music-scan') {
-            this.autoRunMusicQualityAnalysis(task.sourceId, lib.libraryName)
-          }
-        }
-      }
-    } catch (err) {
-      console.error('[TaskQueue] Auto-queue completeness failed:', getErrorMessage(err))
-    }
-  }
-
-  /**
-   * Run music quality analysis after a non-music-scan updates a music library.
-   * (music-scan tasks already run quality analysis inline.)
-   */
-  private autoRunMusicQualityAnalysis(sourceId: string, libraryName: string): void {
-    const doAnalysis = async () => {
-      const db = getDatabase()
-      console.log(`[TaskQueue] Auto-analyzing music quality for ${libraryName}...`)
-      await analyzeAlbumQuality(db, sourceId)
-
-      // Sync completeness — remove newly-owned items from missing lists (no API calls)
-      const artistsSynced = db.syncArtistCompletenessAfterScan(sourceId)
-      const albumsSynced = db.syncAlbumCompletenessAfterScan(sourceId)
-      if (artistsSynced > 0 || albumsSynced > 0) {
-        console.log(`[TaskQueue] Updated completeness for ${artistsSynced} artists, ${albumsSynced} albums in ${libraryName}`)
-      }
-
-      console.log(`[TaskQueue] Music quality analysis complete for ${libraryName}`)
-      this.sendLibraryUpdated('music')
-    }
-
-    doAnalysis().catch(err => {
-      console.error('[TaskQueue] Auto music quality analysis failed:', getErrorMessage(err))
-    })
-  }
-
-  /**
-   * Analyze only series whose episode counts changed after a scan.
-   * Finds series that are new (no completeness record) or stale (owned count mismatch).
-   * Removes completeness records for series with no remaining episodes.
-   * Runs asynchronously to not block the scan completion flow.
-   */
-  private autoAnalyzeAffectedSeries(sourceId: string, libraryId: string, libraryName: string): void {
-    const doAnalysis = async () => {
-      const db = getDatabase()
-      const service = getSeriesCompletenessService()
-
-      // Get distinct series in this library from media_items
-      const episodes = db.getMediaItems({ type: 'episode' as const, sourceId, libraryId }) as Array<{ series_title?: string; series_identity_key?: string | null }>
-      const currentSeries = new Map<string, { title: string; count: number }>()
-      for (const ep of episodes) {
-        const identityKey = ep.series_identity_key
-        if (!identityKey) throw new Error('Episode is missing its canonical series identity key')
-        const series = currentSeries.get(identityKey)
-        currentSeries.set(identityKey, { title: ep.series_title || identityKey, count: (series?.count || 0) + 1 })
-      }
-
-      // Get existing completeness records for this library
-      const existing = db.getAllSeriesCompleteness(sourceId, libraryId)
-      const existingMap = new Map<string, { owned_episodes: number }>(
-        existing.filter(sc => sc.series_identity_key).map(sc => [sc.series_identity_key!, { owned_episodes: sc.owned_episodes }])
-      )
-
-      // Find affected series:
-      // 1. New series (in media_items but no completeness record)
-      // 2. Changed series (owned_episodes mismatch)
-      const affectedSeries: Array<{ identityKey: string; title: string }> = []
-      for (const [identityKey, { title, count }] of currentSeries) {
-        const record = existingMap.get(identityKey)
-        if (!record || record.owned_episodes !== count) {
-          affectedSeries.push({ identityKey, title })
-        }
-      }
-
-      // 3. Removed series (in completeness but no longer in media_items)
-      for (const sc of existing) {
-        if (sc.series_identity_key && !currentSeries.has(sc.series_identity_key) && sc.id) {
-          // Series completely removed — delete the completeness record
-          db.deleteSeriesCompleteness(sc.id)
-          console.log(`[TaskQueue] Removed completeness for deleted series: ${sc.series_title}`)
-        }
-      }
-
-      if (affectedSeries.length === 0) {
-        console.log(`[TaskQueue] No series changes detected in ${libraryName}`)
-        return
-      }
-
-      console.log(`[TaskQueue] Analyzing ${affectedSeries.length} affected series in ${libraryName}: ${affectedSeries.map(series => series.title).join(', ')}`)
-
-      // Initialize TMDB service
-      const tmdb = getTMDBService()
-      await tmdb.initialize()
-
-      // Analyze each affected series
-      for (const { identityKey, title } of affectedSeries) {
-        try {
-          await service.analyzeSeries(identityKey, sourceId, libraryId)
-          console.log(`[TaskQueue] Completed series analysis: ${title}`)
-        } catch (err) {
-          console.error(`[TaskQueue] Failed to analyze series "${title}":`, getErrorMessage(err))
-        }
-      }
-
-      // Emit library updated so dashboard refreshes
-      this.sendLibraryUpdated()
-    }
-
-    doAnalysis().catch(err => {
-      console.error('[TaskQueue] Auto-analyze affected series failed:', getErrorMessage(err))
-    })
-  }
-
-  private emitHistoryUpdate(): void {
-    this.sendToRenderer('taskQueue:historyUpdated', {
-      taskHistory: this.taskHistory,
-      monitoringHistory: this.monitoringHistory,
-    })
-  }
-
-  private sendToRenderer(channel: string, data: unknown): void {
-    if (this.mainWindow) safeSend(this.mainWindow, channel, data)
-    getWebServerService()?.broadcastEvent(channel, data)
   }
 }
 
-// ============================================================================
-// Singleton Export
-// ============================================================================
-
 let taskQueueService: TaskQueueService | null = null
-
 export function getTaskQueueService(): TaskQueueService {
   if (!taskQueueService) {
     taskQueueService = new TaskQueueService()
   }
   return taskQueueService
+}
+
+export function resetTaskQueueServiceForTesting(): void {
+  taskQueueService = null
 }

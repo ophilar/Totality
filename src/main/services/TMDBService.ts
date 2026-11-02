@@ -1,4 +1,3 @@
-
 import {
   TMDBMovieDetails,
   TMDBCollection,
@@ -12,13 +11,31 @@ import {
   TMDBConfiguration,
   TMDBGenre,
   TMDBGenreListResponse,
-} from '../types/tmdb'
-import { getDatabase } from '../database/getDatabase'
-import { getLoggingService } from './LoggingService'
-import { RateLimiters, SlidingWindowRateLimiter } from './utils/RateLimiter'
-import { fetchWithTimeout } from './utils/httpClient'
-import { retryWithBackoff, getRateLimitRetryAfter } from './utils/retryWithBackoff'
+} from '@main/types/tmdb'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getLoggingService } from '@main/services/LoggingService'
+import { RateLimiters, SlidingWindowRateLimiter } from '@main/services/utils/RateLimiter'
+import { retryWithBackoff, getRateLimitRetryAfter } from '@main/services/utils/retryWithBackoff'
+
 import { APP_CONFIG } from '@main/config'
+import { fetchWithTimeout } from '@main/services/utils/httpClient'
+import { EventEmitter } from 'node:events'
+
+export interface TMDBValidationState {
+  status: 'idle' | 'testing' | 'valid' | 'invalid' | 'unavailable' | 'timed-out' | 'cancelled'
+  testedAt: string | null
+  revision: number
+}
+
+interface MissingTmdbItem {
+  id?: number
+  title: string
+  year?: number
+  series_title?: string
+  tmdb_id?: string | null
+  imdb_id?: string | null
+  source_id: string
+}
 
 /**
  * TMDB API v3 Service with rate limiting and caching
@@ -26,21 +43,46 @@ import { APP_CONFIG } from '@main/config'
  * API Documentation: https://developer.themoviedb.org/reference/intro/getting-started
  */
 export class TMDBService {
-  private static readonly BASE_URL = 'https://api.themoviedb.org/3'
-  private static readonly IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/'
-  private static readonly CACHE_DURATION = 24 * 60 * 60 * 1000 // 24 hours in milliseconds
-  private static readonly MAX_CONCURRENT = 10 // Max concurrent requests
-  private static readonly REQUEST_TIMEOUT = 30000 // 30 second timeout for API requests
-  private static readonly MAX_CACHE_SIZE = 1000 // Max cache entries to prevent unbounded memory growth
+  readonly validationEvents = new EventEmitter()
+  private validationController: AbortController | null = null
+  private validationKey: string | null | undefined = undefined
+  private validationState: TMDBValidationState = { status: 'idle', testedAt: null, revision: 0 }
+
+  getValidationState(): TMDBValidationState {
+    return { ...this.validationState }
+  }
+
+  private publishValidation(status: TMDBValidationState['status'], testedAt: string | null): void {
+    this.validationState = { status, testedAt, revision: this.validationState.revision + 1 }
+    this.validationEvents.emit('changed', this.getValidationState())
+  }
+
+  private async validateSavedKey(apiKey: string, controller: AbortController): Promise<void> {
+    try {
+      const result = await this.testApiKey(apiKey, controller.signal)
+      if (this.validationController !== controller) return
+      this.publishValidation(result === 'invalid-credential' ? 'invalid' : result, new Date().toISOString())
+    } catch (error) {
+      if (this.validationController !== controller) return
+      const status = controller.signal.aborted ? 'cancelled' : error instanceof Error && error.message.startsWith('Request timed out') ? 'timed-out' : 'unavailable'
+      this.publishValidation(status, new Date().toISOString())
+    } finally {
+      if (this.validationController === controller) this.validationController = null
+    }
+  }
+  private baseURL: string = APP_CONFIG.tmdb.baseUrl
+  private static readonly IMAGE_BASE_URL = APP_CONFIG.tmdb.imageBaseUrl
+  private static readonly CACHE_DURATION = APP_CONFIG.tmdb.cacheDuration
+  private static readonly MAX_CONCURRENT = APP_CONFIG.tmdb.maxConcurrent
+  private static readonly REQUEST_TIMEOUT = APP_CONFIG.tmdb.requestTimeout
+  private static readonly MAX_CACHE_SIZE = APP_CONFIG.tmdb.maxCacheSize
 
   private apiKey: string | null = null
   private movieGenres: TMDBGenre[] | null = null
   private tvGenres: TMDBGenre[] | null = null
   private cache: Map<string, { data: unknown; timestamp: number }> = new Map()
-  private rateLimiter: SlidingWindowRateLimiter = RateLimiters.createTMDBLimiter(
-    APP_CONFIG.tmdb.rateLimitRequests,
-    APP_CONFIG.tmdb.rateLimitWindowMs
-  )
+  private inFlightRequests: Map<string, Promise<unknown>> = new Map()
+  private rateLimiter: SlidingWindowRateLimiter = RateLimiters.createTMDBLimiter()
   private activeRequests = 0
   private requestQueue: Array<{ execute: () => Promise<void>; resolve: () => void }> = []
 
@@ -49,25 +91,74 @@ export class TMDBService {
    */
   async initialize(): Promise<void> {
     const db = getDatabase()
-    const setting = db.getSetting('tmdb_api_key')
-    this.apiKey = setting || null
+    this.apiKey = (await db.config.getSetting('tmdb_api_key')) || null
+    this.baseURL = (await db.config.getSetting('tmdb_base_url')) || APP_CONFIG.tmdb.baseUrl
+    // Ordinary initialization also occurs during reads; validation belongs to startup/settings changes.
+
+    // Dynamically configure rate limits from settings/config
+    const requests = APP_CONFIG.tmdb.rateLimitRequests || 40
+    const windowMs = APP_CONFIG.tmdb.rateLimitWindowMs || 10000
+    this.rateLimiter = RateLimiters.createTMDBLimiter(requests, windowMs)
 
     if (!this.apiKey || this.apiKey === '') {
-      console.warn('TMDB API key not configured. Collection detection will be unavailable.')
+      getLoggingService().warn('[TMDBService]', 'TMDB API key not configured. Collection detection will be unavailable.')
     }
   }
 
-  isConfigured(): boolean {
-    return this.apiKey !== null && this.apiKey !== ''
+  validateSavedCredential(): void {
+    if (this.validationKey !== this.apiKey) {
+      this.validationController?.abort()
+      this.validationController = null
+      this.validationKey = this.apiKey
+      if (this.apiKey) {
+        const controller = new AbortController()
+        this.validationController = controller
+        this.publishValidation('testing', null)
+        void this.validateSavedKey(this.apiKey, controller)
+      } else {
+        this.publishValidation('idle', null)
+      }
+    }
+
+  }
+
+  async testApiKey(apiKey: string, signal: AbortSignal): Promise<'valid' | 'invalid-credential' | 'unavailable'> {
+    const db = getDatabase()
+    const baseUrl = (await db.config.getSetting('tmdb_base_url')) || APP_CONFIG.tmdb.baseUrl
+    const url = new URL('configuration', `${baseUrl.replace(/\/$/, '')}/`)
+    url.searchParams.set('api_key', apiKey)
+    try {
+      const response = await fetchWithTimeout(url.toString(), { signal }, TMDBService.REQUEST_TIMEOUT)
+      if (response.ok) return 'valid'
+      if (response.status === 401) return 'invalid-credential'
+      return 'unavailable'
+    } catch (error) {
+      if (signal.aborted) throw error
+      if (error instanceof Error && error.message.startsWith('Request timed out')) throw error
+      return 'unavailable'
+    }
   }
 
   /**
    * Refresh API key from database (called when settings change)
    */
-  refreshApiKey(): void {
-    const db = getDatabase()
-    const setting = db.getSetting('tmdb_api_key')
-    this.apiKey = setting || null
+  async refreshApiKey(): Promise<void> {
+    await this.initialize()
+    this.validateSavedCredential()
+  }
+
+  /**
+   * Check if TMDB is configured with an API key
+   */
+  isConfigured(): boolean {
+    return !!this.apiKey && this.apiKey !== ''
+  }
+
+  /**
+   * Builds the full URL for an API request
+   */
+  private buildUrl(endpoint: string): string {
+    return `${this.baseURL}${endpoint}`
   }
 
   /**
@@ -82,7 +173,7 @@ export class TMDBService {
 
   /**
    * Rate limiting: Wait for a request slot
-   * Uses the configured shared sliding-window rate limiter.
+   * Uses shared SlidingWindowRateLimiter (40 requests per second)
    */
   private async waitForRateLimit(): Promise<void> {
     await this.rateLimiter.waitForSlot()
@@ -141,55 +232,25 @@ export class TMDBService {
   }
 
   /**
-   * Cache management: Get from cache or return null.
-   * Checks L1 (in-memory) first, then L2 (SQLite) on miss.
-   * A SQLite hit warms the in-memory cache so subsequent calls are free.
+   * Cache management: Get from cache or return null
    */
   private getFromCache<T>(key: string): T | null {
-    // L1: in-memory
     const cached = this.cache.get(key)
-    if (cached) {
-      if (Date.now() - cached.timestamp < TMDBService.CACHE_DURATION) {
-        return cached.data as T
-      }
-      this.cache.delete(key)
+
+    if (cached && Date.now() - cached.timestamp < TMDBService.CACHE_DURATION) {
+      return cached.data as T
     }
 
-    // L2: SQLite (persists across restarts)
-    try {
-      const row = getDatabase().getTmdbCache(key)
-      if (row && Date.now() - row.cached_at < TMDBService.CACHE_DURATION) {
-        const data = JSON.parse(row.data) as T
-        // Warm L1 so the next access is free
-        this.warmCache(key, data, row.cached_at)
-        getLoggingService().verbose('[TMDB]', `SQLite cache hit: ${key}`)
-        return data
-      }
-    } catch {
-      // DB unavailable — fall through to API call
+    // Remove expired cache
+    if (cached) {
+      this.cache.delete(key)
     }
 
     return null
   }
 
   /**
-   * Write to L1 (in-memory) only, without touching SQLite.
-   * Used when restoring from the SQLite L2 cache.
-   */
-  private warmCache(key: string, data: unknown, timestamp: number): void {
-    if (this.cache.size >= TMDBService.MAX_CACHE_SIZE) {
-      let oldest: string | null = null
-      let oldestTime = Infinity
-      for (const [k, v] of this.cache) {
-        if (v.timestamp < oldestTime) { oldestTime = v.timestamp; oldest = k }
-      }
-      if (oldest) this.cache.delete(oldest)
-    }
-    this.cache.set(key, { data, timestamp })
-  }
-
-  /**
-   * Cache management: Store in L1 (in-memory) and L2 (SQLite).
+   * Cache management: Store in cache
    */
   private setCache(key: string, data: unknown): void {
     // Evict oldest entries when cache exceeds max size
@@ -197,19 +258,17 @@ export class TMDBService {
       let oldest: string | null = null
       let oldestTime = Infinity
       for (const [k, v] of this.cache) {
-        if (v.timestamp < oldestTime) { oldestTime = v.timestamp; oldest = k }
+        if (v.timestamp < oldestTime) {
+          oldestTime = v.timestamp
+          oldest = k
+        }
       }
       if (oldest) this.cache.delete(oldest)
     }
-    const now = Date.now()
-    this.cache.set(key, { data, timestamp: now })
-
-    // Persist to SQLite so the cache survives restarts
-    try {
-      getDatabase().setTmdbCache(key, JSON.stringify(data))
-    } catch {
-      // Non-fatal: DB write failure only means no persistence
-    }
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now()
+    })
   }
 
   /**
@@ -231,83 +290,111 @@ export class TMDBService {
       return cached
     }
 
-    // Build URL
-    const url = new URL(`${TMDBService.BASE_URL}${endpoint}`)
-    url.searchParams.append('api_key', apiKey)
-    Object.entries(params).forEach(([key, value]) => {
-      url.searchParams.append(key, value)
+    // Check in-flight concurrent requests
+    const inFlight = this.inFlightRequests.get(cacheKey)
+    if (inFlight) {
+      getLoggingService().verbose('[TMDB]', `In-flight deduplication hit: ${endpoint}`)
+      return (await inFlight) as T
+    }
+
+    const requestPromise = (async (): Promise<T> => {
+      // Apply rate limiting
+      await this.waitForRateLimit()
+
+      // Build URL
+      const url = new URL(this.buildUrl(endpoint))
+      url.searchParams.append('api_key', apiKey)
+      Object.entries(params).forEach(([key, value]) => {
+        url.searchParams.append(key, value)
+      })
+
+      const urlForLogging = url.toString().replace(apiKey, 'API_KEY')
+
+      // Track rate limit delay from Retry-After header for retry backoff
+      const retryState = { minRetryDelay: 0 }
+
+      // Make request with retry logic and timeout
+      const data = await retryWithBackoff<T>(
+        async () => {
+          getLoggingService().info('[TMDBService]', '[TMDB] Requesting:', urlForLogging)
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), TMDBService.REQUEST_TIMEOUT)
+
+          let response: Response
+          try {
+            response = await fetch(url.toString(), { signal: controller.signal })
+          } catch (error: unknown) {
+            clearTimeout(timeoutId)
+            if (error instanceof Error && error.name === 'AbortError') {
+              throw new Error('TMDB API request timed out')
+            }
+            throw error
+          } finally {
+            clearTimeout(timeoutId)
+          }
+
+          // Handle rate limiting with Retry-After header
+          const rateLimitDelay = getRateLimitRetryAfter(response)
+          if (rateLimitDelay !== null) {
+            getLoggingService().verbose('[TMDB]', `Rate limited, retry after ${rateLimitDelay}ms`)
+            getLoggingService().warn('[TMDB]', `Rate limited, retry after ${rateLimitDelay}ms`)
+            // Pass server's delay to retry backoff as minimum floor
+            retryState.minRetryDelay = rateLimitDelay
+            const error = new Error(`TMDB rate limited (429)`) as Error & { status: number }
+            error.status = 429
+            throw error
+          }
+
+          if (!response.ok) {
+            const errorBody = await response.json().catch(() => ({})) as { status_message?: string }
+            if (response.status === 404) {
+              getLoggingService().warn('[TMDBService]', `[TMDB] Resource not found (404) for ${endpoint}:`, errorBody)
+            } else {
+              getLoggingService().error('[TMDBService]', '[TMDB] Error response:', errorBody)
+            }
+            const error = new Error(`TMDB API Error: ${errorBody.status_message || response.statusText}`) as Error & { status: number }
+            error.status = response.status
+            throw error
+          }
+
+          const result = await response.json()
+          const totalResults = (result as { total_results?: number }).total_results
+          if (totalResults !== undefined) {
+            getLoggingService().info('[TMDBService]', '[TMDB] Response for', endpoint, '- total_results:', totalResults)
+          } else {
+            getLoggingService().info('[TMDBService]', '[TMDB] Response for', endpoint, '- success')
+          }
+          return result as T
+        },
+        {
+          maxRetries: 3,
+          initialDelay: 1000,
+          maxDelay: 10000,
+          get minRetryDelay() { return retryState.minRetryDelay },
+          onRetry: (attempt, error, delay) => {
+            getLoggingService().warn('[TMDB]', `Retry ${attempt}/3 for ${urlForLogging} after ${delay}ms: ${error.message}`)
+          }
+        }
+      )
+
+      // Cache the response
+      this.setCache(cacheKey, data)
+
+      return data
+    })().finally(() => {
+      this.inFlightRequests.delete(cacheKey)
     })
 
-    const urlForLogging = url.toString().replace(apiKey, 'API_KEY')
-
-    // Track rate limit delay from Retry-After header for retry backoff
-    const retryState = { minRetryDelay: 0 }
-
-    // Make request with retry logic and timeout
-    const data = await this.queueRequest(() => retryWithBackoff<T>(
-      async () => {
-        await this.waitForRateLimit()
-        console.log('[TMDB] Requesting:', urlForLogging)
-        let response: Response
-        try {
-          response = await fetchWithTimeout(url.toString(), {}, TMDBService.REQUEST_TIMEOUT)
-        } catch (error: unknown) {
-          if (error instanceof Error && error.name === 'AbortError') {
-            throw new Error('TMDB API request timed out')
-          }
-          throw error
-        }
-
-        // Handle rate limiting with Retry-After header
-        const rateLimitDelay = getRateLimitRetryAfter(response)
-        if (rateLimitDelay !== null) {
-          this.rateLimiter.pauseFor(rateLimitDelay)
-          this.rateLimiter.recordError(429)
-          getLoggingService().verbose('[TMDB]', `Rate limited, retry after ${rateLimitDelay}ms`)
-          console.warn(`[TMDB] Rate limited, retry after ${rateLimitDelay}ms`)
-          // Pass server's delay to retry backoff as minimum floor
-          retryState.minRetryDelay = rateLimitDelay
-          const error = new Error(`TMDB rate limited (429)`) as Error & { status: number }
-          error.status = 429
-          throw error
-        }
-
-        if (!response.ok) {
-          this.rateLimiter.recordError(response.status)
-          const errorBody = await response.json().catch(() => ({}))
-          console.error('[TMDB] Error response:', errorBody)
-          const error = new Error(`TMDB API Error: ${errorBody.status_message || response.statusText}`) as Error & { status: number }
-          error.status = response.status
-          throw error
-        }
-
-        const result = await response.json()
-        this.rateLimiter.recordSuccess()
-        console.log('[TMDB] Response for', endpoint, '- total_results:', (result as { total_results?: number }).total_results)
-        return result as T
-      },
-      {
-        maxRetries: 3,
-        initialDelay: 1000,
-        maxDelay: 10000,
-        get minRetryDelay() { return retryState.minRetryDelay },
-        onRetry: (attempt, error, delay) => {
-          console.warn(`[TMDB] Retry ${attempt}/3 for ${urlForLogging} after ${delay}ms: ${error.message}`)
-        }
-      }
-    ))
-
-    // Cache the response
-    this.setCache(cacheKey, data)
-
-    return data
+    this.inFlightRequests.set(cacheKey, requestPromise)
+    return await requestPromise
   }
 
   /**
    * Get movie details by TMDB ID
    */
   async getMovieDetails(tmdbId: string): Promise<TMDBMovieDetails> {
-    return await this.request<TMDBMovieDetails>(`/movie/${tmdbId}`)
+    const data = await this.request<TMDBMovieDetails>(`/movie/${tmdbId}`)
+    return data
   }
 
   /**
@@ -321,7 +408,8 @@ export class TMDBService {
    * Get TV show details by TMDB ID
    */
   async getTVShowDetails(tmdbId: string): Promise<TMDBTVShowDetails> {
-    return await this.request<TMDBTVShowDetails>(`/tv/${tmdbId}`)
+    const data = await this.request<TMDBTVShowDetails>(`/tv/${tmdbId}`)
+    return data
   }
 
   /**
@@ -329,20 +417,30 @@ export class TMDBService {
    * Uses append_to_response to fetch up to 20 seasons at once
    * This is MUCH faster than calling getSeasonDetails for each season
    */
-  async getTVShowWithSeasons(tmdbId: string, seasonNumbers: number[]): Promise<TMDBTVShowDetails & { [key: string]: TMDBSeasonDetails }> {
+  async getTVShowWithSeasons(
+    tmdbId: string,
+    seasonNumbers: number[]
+  ): Promise<TMDBTVShowDetails & { external_ids?: { imdb_id?: string | null; tvdb_id?: number | string | null; id?: number } } & Record<`season/${number}`, TMDBSeasonDetails | undefined>> {
     // TMDB limits append_to_response to 20 items
     const MAX_APPEND = 20
-    const seasonsToAppend = seasonNumbers.slice(0, MAX_APPEND)
+    const seasonsToAppend = seasonNumbers.slice(0, MAX_APPEND - 1)
 
-    // Build append_to_response parameter: season/1,season/2,season/3,...
-    const appendParam = seasonsToAppend.map(n => `season/${n}`).join(',')
+    // Build append_to_response parameter: external_ids,season/1,season/2,season/3,...
+    const appendItems = ['external_ids', ...seasonsToAppend.map(n => `season/${n}`)]
+    const appendParam = appendItems.join(',')
 
-    const result = await this.request<TMDBTVShowDetails & { [key: string]: TMDBSeasonDetails }>(
-      `/tv/${tmdbId}`,
-      { append_to_response: appendParam }
-    )
+    const result = await this.request<
+      TMDBTVShowDetails & { external_ids?: { imdb_id?: string | null; tvdb_id?: number | string | null; id?: number } } & Record<`season/${number}`, TMDBSeasonDetails | undefined>
+    >(`/tv/${tmdbId}`, { append_to_response: appendParam })
 
     return result
+  }
+
+  /**
+   * Get TV show external IDs (TVDB, IMDB, etc.)
+   */
+  async getTVShowExternalIds(tmdbId: string): Promise<{ imdb_id?: string | null; tvdb_id?: number | string | null; id?: number }> {
+    return await this.request<{ imdb_id?: string | null; tvdb_id?: number | string | null; id?: number }>(`/tv/${tmdbId}/external_ids`)
   }
 
   /**
@@ -386,21 +484,151 @@ export class TMDBService {
       return { seriesTmdbId, episode, seriesName }
     } catch (error) {
       // Episode might not exist in TMDB
-      console.debug(`[TMDBService] Failed to load episode for ${seriesTitle} S${seasonNumber}E${episodeNumber}:`, error)
       return null
     }
   }
 
   /**
-   * Search for movies by title and optional year
+   * Refactored movie matching using Strategy Pattern principles.
+   * Matches candidate title/year strictly against constraints and respects includeAdult setting per library.
    */
-  async searchMovie(query: string, year?: number): Promise<TMDBSearchResponse<TMDBMovieSearchResult>> {
+  async searchMovieWithFallbacks(
+    originalTitle: string,
+    normalizedTitle: string,
+    year: number | undefined,
+    includeAdult: boolean = false,
+    externalImdbId?: string | null
+  ): Promise<{ tmdbId: number; title: string; year?: number; posterPath?: string; backdropPath?: string } | null> {
+    // Priority 0: Direct External ID resolution (100% precision)
+    if (externalImdbId && externalImdbId.trim()) {
+      try {
+        const found = await this.findByExternalId(externalImdbId.trim(), 'imdb_id')
+        if (found && Array.isArray(found.movie_results) && found.movie_results.length > 0) {
+          const match = found.movie_results[0]
+          return {
+            tmdbId: match.id,
+            title: match.title,
+            year: match.release_date ? parseInt(match.release_date.split('-')[0], 10) : undefined,
+          }
+        }
+      } catch (err) {
+        getLoggingService().warn('[TMDBService]', `External ID lookup failed for ${externalImdbId}, falling back to title search:`, err)
+      }
+    }
+
+    const normalizeString = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, '')
+    const targetNormalized = normalizeString(normalizedTitle || originalTitle)
+
+    const evaluateCandidates = (
+      results: TMDBMovieSearchResult[]
+    ): TMDBMovieSearchResult | null => {
+      if (!results || results.length === 0) return null
+
+      // Filter out adult content strictly if includeAdult is false
+      const safeCandidates = includeAdult ? results : results.filter((r) => !r.adult)
+      if (safeCandidates.length === 0) return null
+
+      // 1. Exact Year & Exact Normalized Title Strategy
+      if (year) {
+        const exactMatch = safeCandidates.find((r) => {
+          if (!r.release_date) return false
+          const resultYear = parseInt(r.release_date.split('-')[0], 10)
+          return resultYear === year && normalizeString(r.title) === targetNormalized
+        })
+        if (exactMatch) return exactMatch
+      }
+
+      // 2. Fuzzy Year (+/- 1 year) & Normalized Title Strategy
+      if (year) {
+        const fuzzyYearMatch = safeCandidates.find((r) => {
+          if (!r.release_date) return false
+          const resultYear = parseInt(r.release_date.split('-')[0], 10)
+          return Math.abs(resultYear - year) <= 1 && normalizeString(r.title) === targetNormalized
+        })
+        if (fuzzyYearMatch) return fuzzyYearMatch
+      }
+
+      // 3. Exact Normalized Title Strategy (regardless of year if target year not specified or not matched)
+      const exactTitleMatch = safeCandidates.find((r) => normalizeString(r.title) === targetNormalized)
+      if (exactTitleMatch) return exactTitleMatch
+
+      return null
+    }
+
+    // Pass 1: Search with original title and target year
+    if (year) {
+      const response = await this.searchMovie(originalTitle, year, includeAdult)
+      const match = evaluateCandidates(response.results)
+      if (match) {
+        return {
+          tmdbId: match.id,
+          title: match.title,
+          year: match.release_date ? parseInt(match.release_date.split('-')[0], 10) : undefined,
+          posterPath: match.poster_path || undefined,
+          backdropPath: match.backdrop_path || undefined,
+        }
+      }
+    }
+
+    // Pass 2: Search with normalized title and target year
+    if (year && normalizedTitle !== originalTitle) {
+      const response = await this.searchMovie(normalizedTitle, year, includeAdult)
+      const match = evaluateCandidates(response.results)
+      if (match) {
+        return {
+          tmdbId: match.id,
+          title: match.title,
+          year: match.release_date ? parseInt(match.release_date.split('-')[0], 10) : undefined,
+          posterPath: match.poster_path || undefined,
+          backdropPath: match.backdrop_path || undefined,
+        }
+      }
+    }
+
+    // Pass 3: Search with original title without year filter
+    {
+      const response = await this.searchMovie(originalTitle, undefined, includeAdult)
+      const match = evaluateCandidates(response.results)
+      if (match) {
+        return {
+          tmdbId: match.id,
+          title: match.title,
+          year: match.release_date ? parseInt(match.release_date.split('-')[0], 10) : undefined,
+          posterPath: match.poster_path || undefined,
+          backdropPath: match.backdrop_path || undefined,
+        }
+      }
+    }
+
+    // Pass 4: Search with normalized title without year filter
+    if (normalizedTitle !== originalTitle) {
+      const response = await this.searchMovie(normalizedTitle, undefined, includeAdult)
+      const match = evaluateCandidates(response.results)
+      if (match) {
+        return {
+          tmdbId: match.id,
+          title: match.title,
+          year: match.release_date ? parseInt(match.release_date.split('-')[0], 10) : undefined,
+          posterPath: match.poster_path || undefined,
+          backdropPath: match.backdrop_path || undefined,
+        }
+      }
+    }
+
+    return null
+  }
+
+  async searchMovie(query: string, year?: number, includeAdult?: boolean): Promise<TMDBSearchResponse<TMDBMovieSearchResult>> {
     const params: Record<string, string> = {
       query
     }
 
     if (year) {
       params.year = year.toString()
+    }
+
+    if (includeAdult) {
+      params.include_adult = 'true'
     }
 
     return await this.request<TMDBSearchResponse<TMDBMovieSearchResult>>('/search/movie', params)
@@ -425,63 +653,23 @@ export class TMDBService {
   }
 
   /**
-   * Find content by external ID (IMDB)
+   * Find content by external ID (IMDB, TVDB, Wikidata)
    * Returns both movie and TV show results if found
    */
   async findByExternalId(
     externalId: string,
-    externalSource: 'imdb_id'
+    externalSource: 'imdb_id' | 'tvdb_id' | 'wikidata_id' = 'imdb_id'
   ): Promise<{
-    movie_results: Array<{ id: number; title: string; release_date?: string; original_language: string }>
-    tv_results: Array<{ id: number; name: string }>
+    movie_results: Array<{ id: number; title: string; release_date?: string; poster_path?: string | null; backdrop_path?: string | null }>
+    tv_results: Array<{ id: number; name: string; first_air_date?: string; poster_path?: string | null; backdrop_path?: string | null }>
   }> {
     return await this.request<{
-      movie_results: Array<{ id: number; title: string; release_date?: string; original_language: string }>
-      tv_results: Array<{ id: number; name: string }>
+      movie_results: Array<{ id: number; title: string; release_date?: string; poster_path?: string | null; backdrop_path?: string | null }>
+      tv_results: Array<{ id: number; name: string; first_air_date?: string; poster_path?: string | null; backdrop_path?: string | null }>
     }>(
       `/find/${externalId}`,
       { external_source: externalSource }
     )
-  }
-
-  /**
-   * Search for a person (actor/director) by name
-   */
-  async searchPerson(query: string): Promise<TMDBSearchResponse<{
-    id: number; name: string; profile_path: string | null
-    known_for_department: string
-  }>> {
-    return await this.request('/search/person', { query })
-  }
-
-  /**
-   * Get a person's movie credits (cast + crew)
-   */
-  async getPersonMovieCredits(personId: number): Promise<{
-    cast: Array<{ id: number; title: string; character: string; release_date?: string; poster_path?: string | null; vote_average?: number }>
-    crew: Array<{ id: number; title: string; job: string; department: string; release_date?: string; poster_path?: string | null; vote_average?: number }>
-  }> {
-    return await this.request(`/person/${personId}/movie_credits`)
-  }
-
-  /**
-   * Get upcoming movies (next N days)
-   */
-  async getUpcomingMovies(page = 1): Promise<TMDBSearchResponse<TMDBMovieSearchResult>> {
-    return await this.request('/movie/upcoming', { page: page.toString() })
-  }
-
-  /**
-   * Get release dates for a movie by country (includes theatrical, digital, physical)
-   * Type 1=Premiere, 2=Theatrical (limited), 3=Theatrical, 4=Digital, 5=Physical
-   */
-  async getMovieReleaseDates(tmdbId: string): Promise<{
-    results: Array<{
-      iso_3166_1: string
-      release_dates: Array<{ type: number; release_date: string; note?: string }>
-    }>
-  }> {
-    return await this.request(`/movie/${tmdbId}/release_dates`)
   }
 
   /**
@@ -624,6 +812,79 @@ export class TMDBService {
       oldestEntry: oldestAge
     }
   }
+
+  /**
+   * Look up TMDB IDs for media items that don't have them
+   */
+  async lookupMissingTMDBIds(
+    items: MissingTmdbItem[],
+    type: 'movie' | 'tv',
+    onProgress?: (progress: { current: number; total: number; currentItem: string; phase: string }) => void
+  ): Promise<{ updated: number; failed: number }> {
+    const db = getDatabase()
+    const itemsWithoutTmdb = items.filter(m => !m.tmdb_id)
+
+    if (itemsWithoutTmdb.length === 0) return { updated: 0, failed: 0 }
+
+    getLoggingService().info('[TMDBService]', `Looking up TMDB IDs for ${itemsWithoutTmdb.length} ${type}s`)
+
+    let updated = 0
+    let failed = 0
+    const BATCH_SIZE = 5
+
+    for (let i = 0; i < itemsWithoutTmdb.length; i += BATCH_SIZE) {
+      const batch = itemsWithoutTmdb.slice(i, i + BATCH_SIZE)
+
+      const results = await Promise.allSettled(
+        batch.map(async (item) => {
+          let tmdbId: string | null = null
+
+          if (item.imdb_id && item.imdb_id.startsWith('tt')) {
+            try {
+              const findResult = await this.findByExternalId(item.imdb_id, 'imdb_id')
+              const res = type === 'movie' ? findResult.movie_results : findResult.tv_results
+              if (res && res.length > 0) tmdbId = String(res[0].id)
+            } catch { /* ignore */ }
+          }
+
+          if (!tmdbId) {
+            try {
+              const res = type === 'movie' 
+                ? await this.searchMovie(item.title, item.year) 
+                : await this.searchTVShow(item.series_title || item.title)
+              if (res.results && res.results.length > 0) {
+                const bestMatch = type === 'movie' 
+                  ? res.results.find(r => 'release_date' in r && r.release_date?.startsWith(String(item.year))) || res.results[0]
+                  : res.results[0]
+                tmdbId = String(bestMatch.id)
+              }
+            } catch { /* ignore */ }
+          }
+
+          if (tmdbId && item.id) {
+            if (type === 'movie') db.media.updateMovieWithTMDBId(item.id, tmdbId)
+            else db.media.updateSeriesMatch(item.series_title || item.title, item.source_id, tmdbId)
+            return { success: true }
+          }
+          return { success: false }
+        })
+      )
+
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value.success) updated++
+        else failed++
+      }
+
+      onProgress?.({
+        current: Math.min(i + BATCH_SIZE, itemsWithoutTmdb.length),
+        total: itemsWithoutTmdb.length,
+        currentItem: batch[0]?.title || '',
+        phase: 'lookup',
+      })
+    }
+
+    return { updated, failed }
+  }
 }
 
 // Singleton instance
@@ -632,9 +893,14 @@ let tmdbService: TMDBService | null = null
 export function getTMDBService(): TMDBService {
   if (!tmdbService) {
     tmdbService = new TMDBService()
-    tmdbService.initialize().catch(err => {
-      console.error('Failed to initialize TMDB service:', err)
+    const service = tmdbService
+    service.initialize().then(() => service.validateSavedCredential()).catch(err => {
+      getLoggingService().error('[TMDBService]', 'Failed to initialize TMDB service:', err)
     })
   }
   return tmdbService
+}
+
+export function resetTMDBServiceForTesting(): void {
+  tmdbService = null
 }

@@ -1,0 +1,173 @@
+import { useState, useCallback, memo, useRef } from 'react'
+import { RefreshCw, MoreVertical, Pencil, Zap } from 'lucide-react'
+import { TvPlaceholder } from '@/components/ui/MediaPlaceholders'
+import { useMenuClose } from '@/hooks/useMenuClose'
+import { providerColors, getStatusBadge } from '@/components/library/mediaUtils'
+import type { TVShowSummary, SeriesCompletenessData, ProviderType } from '@/components/library/types'
+import { EvidenceStatusBadge } from '@/components/library/EvidenceStatusBadge'
+import { EfficiencyDisplay } from '@/components/library/EfficiencyDisplay'
+import { RecoverableWasteDisplay } from '@/components/library/RecoverableWasteDisplay'
+import { ScopedOptimizationSummary } from '@/components/library/ScopedOptimizationSummary'
+
+
+
+export const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onTranscodeShow }: {
+  show: TVShowSummary
+  onClick: () => void
+  completenessData?: SeriesCompletenessData
+  showSourceBadge?: boolean
+  onAnalyzeSeries?: () => Promise<void>
+  onFixMatch?: (sourceId: string, folderPath?: string) => void
+  onTranscodeShow?: () => void
+}) => {
+  const [showMenu, setShowMenu] = useState(false)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const cardRef = useRef<HTMLDivElement>(null)
+
+  const totalEpisodes = show.episode_count
+  const seasonCount = show.season_count
+  const sourceType = show.source_type as ProviderType | undefined
+  const sourceId = show.source_id
+  const folderPath: string | undefined = undefined
+
+  const handleAnalyze = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setShowMenu(false)
+    if (onAnalyzeSeries) {
+      setIsAnalyzing(true)
+      await onAnalyzeSeries()
+      setIsAnalyzing(false)
+    }
+  }
+
+  const handleFixMatch = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setShowMenu(false)
+    if (onFixMatch && sourceId) {
+      onFixMatch(sourceId, folderPath)
+    }
+  }
+
+  const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
+
+  return (
+    <div
+      ref={cardRef}
+      role="button"
+      aria-label={`Open ${show.series_title}`}
+      tabIndex={0}
+      className={`group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center outline-hidden relative ${showMenu ? 'z-50' : ''}`}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick()
+        }
+      }}
+    >
+      <div className="w-16 h-24 bg-muted rounded-md overflow-hidden shrink-0 relative shadow-md shadow-black/20">
+        {show.poster_url ? (
+          <img
+            src={show.poster_url}
+            alt={show.series_title}
+            loading="lazy"
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none'
+            }}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-muted/50"><TvPlaceholder className="w-8 h-8 text-muted-foreground" /></div>
+        )}
+        {showSourceBadge && sourceType && (
+          <div
+            className={`absolute bottom-0 right-0 ${providerColors[sourceType] || 'bg-gray-500'} text-white text-xs font-bold px-1 py-0.5 rounded`}
+          >
+            {sourceType.charAt(0).toUpperCase()}
+          </div>
+        )}
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <h4 className="font-semibold text-sm truncate">{show.series_title}</h4>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {show.owned_regular_seasons == null ? `${seasonCount} ${seasonCount === 1 ? 'Season' : 'Seasons'} • ${totalEpisodes} Episodes` : `${show.owned_regular_seasons}/${show.total_regular_seasons ?? '—'} Seasons • ${show.owned_regular_episodes ?? 0}/${show.total_regular_episodes ?? '—'} Episodes${show.special_episode_count ? ` • ${show.special_episode_count} Specials` : ''}`}
+          {completenessData?.status && ` • ${getStatusBadge(completenessData.status)?.text || completenessData.status}`}
+        </p>
+        <ScopedOptimizationSummary totalCount={show.episode_count} analyzedCount={show.scored_episode_count} className="mt-1" />
+        {completenessData && (
+          <div className="mt-2">
+            <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded">
+              {completenessData.owned_episodes}/{completenessData.total_episodes}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {show.evidence_status && (
+        <div className="shrink-0 flex items-center">
+          <EvidenceStatusBadge status={show.evidence_status} />
+        </div>
+      )}
+
+      {/* Total Debt */}
+      <div className="w-32 text-left shrink-0">
+        <RecoverableWasteDisplay bytes={show.total_recoverable_bytes} />
+      </div>
+
+      <div className="w-32 text-left shrink-0">
+        <EfficiencyDisplay score={show.weighted_efficiency} />
+      </div>
+
+      <div ref={menuRef} className="w-8 shrink-0 flex justify-center relative">
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            setShowMenu(!showMenu)
+          }}
+          className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {isAnalyzing ? (
+            <RefreshCw className="w-4 h-4 animate-spin" />
+          ) : (
+            <MoreVertical className="w-4 h-4" />
+          )}
+        </button>
+
+        {showMenu && (
+          <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-50">
+            <button
+              onClick={handleAnalyze}
+              className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Analyze Series
+            </button>
+            {onFixMatch && (
+              <button
+                onClick={handleFixMatch}
+                className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                Fix Match
+              </button>
+            )}
+            {onTranscodeShow && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowMenu(false)
+                  onTranscodeShow()
+                }}
+                className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2 text-primary font-medium"
+              >
+                <Zap className="w-3.5 h-3.5 fill-current" />
+                Optimize Series
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+})

@@ -1,156 +1,134 @@
-
-import { getErrorMessage } from './utils/errorUtils'
+import { MediaItem, SourceLibrary } from '@main/types/database'
 /**
  * LiveMonitoringService - Background service for detecting media library changes
- *
- * Features:
- * - File watching for local sources using chokidar
- * - Polling for remote sources (Plex, Jellyfin, Emby, Kodi)
- * - Pauses during manual scans to avoid conflicts
- * - Respects user_fixed_match during scans
- * - Configurable polling intervals per provider type
- * - Notifications for both added AND updated items
  */
 
 import { BrowserWindow } from 'electron'
-import * as chokidar from 'chokidar'
 import * as path from 'node:path'
 import * as fs from 'fs'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { getDatabase } from '../database/getDatabase'
-import { getSourceManager } from './SourceManager'
-import { getLoggingService } from './LoggingService'
-import { getSeriesCompletenessService } from './SeriesCompletenessService'
-import { getTMDBService } from './TMDBService'
-import { getTaskQueueService } from './TaskQueueService'
-import { getWishlistCompletionService } from './WishlistCompletionService'
-import { analyzeAlbumQuality } from './MusicQualityAnalyzer'
-import { PlexProvider } from '../providers/plex/PlexProvider'
-import { JellyfinEmbyBase } from '../providers/jellyfin-emby/JellyfinEmbyBase'
-import { KodiProvider } from '../providers/kodi/KodiProvider'
-import { KodiLocalProvider } from '../providers/kodi/KodiLocalProvider'
-import { getSupportedProviders } from '../providers/ProviderFactory'
-import type { ScanResult } from '../providers/base/MediaProvider'
-import { safeSend } from '../ipc/utils/safeSend'
-import { emitNotificationCreated } from '../ipc/utils/notificationEmitter'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getSourceManager } from '@main/services/SourceManager'
+import { getLoggingService } from '@main/services/LoggingService'
+import { safeSend } from '@main/ipc/utils/safeSend'
 import {
   MonitoringConfig,
   DEFAULT_MONITORING_CONFIG,
-  ProviderType,
   SourceChangeEvent,
   ChangedItem,
-} from '../types/monitoring'
+  ChangeType,
+} from '@main/types/monitoring'
+import { ProviderType } from '@main/types/database'
 
-// Media file extensions to watch
 const MEDIA_EXTENSIONS = new Set([
-  // Video
-  '.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg', '.ts', '.m2ts',
-  // Audio
-  '.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav', '.wma', '.alac', '.aiff', '.opus',
+  '.mkv',
+  '.mp4',
+  '.avi',
+  '.mov',
+  '.wmv',
+  '.flv',
+  '.webm',
+  '.m4v',
+  '.mpg',
+  '.mpeg',
+  '.ts',
+  '.m2ts',
+  '.mp3',
+  '.flac',
+  '.m4a',
+  '.aac',
+  '.ogg',
+  '.wav',
+  '.wma',
+  '.alac',
+  '.aiff',
+  '.opus',
 ])
 
 const execFileAsync = promisify(execFile)
-
-/** Cache of mapped Windows network drives, detected once at startup. */
 let networkDriveLetters: Set<string> = new Set()
-let networkDriveDetectionError: unknown = null
 
 async function detectWindowsNetworkDrivesAsync(): Promise<void> {
   if (process.platform !== 'win32') return
   try {
-    const { stdout } = await execFileAsync('powershell.exe', [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      'Get-PSDrive -PSProvider FileSystem | Select-Object -Property Name,DisplayRoot | ConvertTo-Json -Compress',
-    ], { encoding: 'utf-8', timeout: 5000, windowsHide: true })
-    const drives = JSON.parse(stdout) as Array<{ Name: string; DisplayRoot: string | null }> | { Name: string; DisplayRoot: string | null }
-    networkDriveLetters = new Set((Array.isArray(drives) ? drives : [drives])
-      .filter(drive => Boolean(drive.DisplayRoot))
-      .map(drive => drive.Name.toUpperCase()))
-    networkDriveDetectionError = null
-  } catch (error) {
-    networkDriveDetectionError = error
-    getLoggingService().warn('[LiveMonitoring]', 'Could not determine Windows drive types; drive-letter sources will not be watched until detection succeeds:', error)
+    const { stdout } = await execFileAsync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-Command',
+        'Get-CimInstance Win32_LogicalDisk | Where-Object {$_.DriveType -eq 4} | Select-Object -ExpandProperty DeviceID',
+      ],
+      {
+        timeout: 2000,
+        windowsHide: true,
+      }
+    )
+    const detected = new Set<string>()
+    for (const line of stdout.split('\n')) {
+      const drive = line.trim().replace(':', '')
+      if (drive.length === 1) detected.add(drive.toUpperCase())
+    }
+    networkDriveLetters = detected
+  } catch {
+    // Ignore error fetching network drives
   }
 }
 
-/**
- * Detect if a path is likely a network/NAS path where native watchers are unreliable.
- * On Windows, uses the current user session's mapped filesystem drives.
- */
-export function isNetworkPath(filePath: string): boolean {
-  // Windows UNC paths: \\server\share
+function isNetworkPath(filePath: string): boolean {
   if (filePath.startsWith('\\\\')) return true
-
-  // Windows mapped drives — check actual drive type from cached CIM result
   if (process.platform === 'win32') {
     const driveLetter = filePath.match(/^([A-Za-z]):/)?.[1]?.toUpperCase()
-    if (driveLetter && networkDriveDetectionError) {
-      throw new Error(`Cannot classify Windows drive ${driveLetter}: while drive type detection is unavailable`)
-    }
-    if (driveLetter && networkDriveLetters.has(driveLetter)) {
-      return true
-    }
+    if (driveLetter && networkDriveLetters.has(driveLetter)) return true
   }
-
-  // Linux/Mac network mounts
-  if (filePath.startsWith('/mnt/') || filePath.startsWith('/Volumes/') ||
-      filePath.includes('/smb/') || filePath.includes('/nfs/')) {
-    return true
-  }
-
-  return false
+  return (
+    filePath.startsWith('/mnt/') ||
+    filePath.startsWith('/Volumes/') ||
+    filePath.includes('/smb/') ||
+    filePath.includes('/nfs/')
+  )
 }
 
 export class LiveMonitoringService {
   private config: MonitoringConfig = { ...DEFAULT_MONITORING_CONFIG }
   private isActive = false
-  private isPausedByTaskQueue = false // Track if paused by task queue (vs user manually stopping)
+  private isPausedByTaskQueue = false
   private mainWindow: BrowserWindow | null = null
 
-  // Polling state (for remote sources)
   private pollingTimers: Map<string, NodeJS.Timeout> = new Map()
   private lastCheckTimes: Map<string, Date> = new Map()
-
-  // File watching state (for local sources)
-  private fileWatchers: Map<string, chokidar.FSWatcher> = new Map()
+  private fileWatchers: Map<string, fs.FSWatcher> = new Map()
   private fileChangeDebounce: Map<string, NodeJS.Timeout> = new Map()
   private pendingFileChanges: Map<string, Set<string>> = new Map()
-  private startupTimer: NodeJS.Timeout | null = null
 
-  // Timing constants
-  private static readonly MIN_POLL_INTERVAL_MS = 30000 // Minimum 30s between polls
-  private static readonly FILE_CHANGE_DEBOUNCE_MS = 2000 // Wait 2s after last file change
-  private static readonly STARTUP_DELAY_MS = 5000 // Delay before starting monitoring on app launch
-  private static readonly FIRST_POLL_DELAY_MS = 5000 // Delay before first poll after starting
-  private static readonly NETWORK_POLL_INTERVAL_MS = 10000 // 10s polling interval for network paths
-  private static readonly WRITE_STABILITY_THRESHOLD_MS = 2000 // Wait for file writes to stabilize
-  private static readonly CHOKIDAR_POLL_INTERVAL_MS = 500 // Poll interval for chokidar awaitWriteFinish
-  private static readonly MAX_REASONABLE_CHANGES = 50 // Max file changes to process at once
-  private static readonly POLL_TIMEOUT_MS = 120000 // 2-minute timeout for polling a source
+  private static readonly MIN_POLL_INTERVAL_MS = 30000
+  private static readonly FILE_CHANGE_DEBOUNCE_MS = 2000
+  private static readonly STARTUP_DELAY_MS = 5000
+  private static readonly FIRST_POLL_DELAY_MS = 5000
+  private static readonly MAX_REASONABLE_CHANGES = 50
+  private static readonly POLL_TIMEOUT_MS = 120000
 
-  /**
-   * Initialize the monitoring service
-   */
   async initialize(): Promise<void> {
-    // Detect network drives early (async, non-blocking)
     await detectWindowsNetworkDrivesAsync()
-
     const db = getDatabase()
-    const enabled = db.getSetting('monitoring_enabled')
-    this.config.enabled = enabled === 'true'
 
-    const startOnLaunch = db.getSetting('monitoring_start_on_launch')
-    this.config.startOnLaunch = startOnLaunch !== 'false' // Default true
+    this.config.enabled = (await db.config.getSetting('monitoring_enabled')) === 'true'
+    this.config.startOnLaunch =
+      (await db.config.getSetting('monitoring_start_on_launch')) !== 'false'
+    this.config.pauseDuringManualScan =
+      (await db.config.getSetting('monitoring_pause_during_scan')) !== 'false'
 
-    const pauseDuringManualScan = db.getSetting('monitoring_pause_during_scan')
-    this.config.pauseDuringManualScan = pauseDuringManualScan !== 'false' // Default true
-
-    // Load per-provider intervals
-    for (const provider of getSupportedProviders()) {
-      const interval = db.getSetting(`monitoring_interval_${provider}`)
+    const providerTypes: ProviderType[] = [
+      ProviderType.Plex,
+      ProviderType.Jellyfin,
+      ProviderType.Emby,
+      ProviderType.Kodi,
+      ProviderType.KodiLocal,
+      ProviderType.KodiMySQL,
+      ProviderType.Local,
+    ]
+    for (const provider of providerTypes) {
+      const interval = await db.config.getSetting(`monitoring_interval_${provider}`)
       if (interval) {
         const parsed = parseInt(interval, 10)
         if (!Number.isNaN(parsed)) {
@@ -162,139 +140,94 @@ export class LiveMonitoringService {
       }
     }
 
-    // Auto-start if enabled
     if (this.config.enabled && this.config.startOnLaunch) {
-      // Delay start to allow app initialization
-      this.startupTimer = setTimeout(() => {
-        this.startupTimer = null
-        this.start()
-      }, LiveMonitoringService.STARTUP_DELAY_MS)
+      setTimeout(() => this.start(), LiveMonitoringService.STARTUP_DELAY_MS)
     }
   }
 
-  /**
-   * Set the main window reference for IPC events
-   */
   setMainWindow(window: BrowserWindow | null): void {
     this.mainWindow = window
   }
 
-  /**
-   * Get current configuration
-   */
   getConfig(): MonitoringConfig {
     return { ...this.config }
   }
 
-  /**
-   * Update configuration
-   */
   async setConfig(config: Partial<MonitoringConfig>): Promise<void> {
     const wasActive = this.isActive
     const wasEnabled = this.config.enabled
-
-    // Update config
     this.config = { ...this.config, ...config }
 
-    // Persist to database
     const db = getDatabase()
-    if (config.enabled !== undefined) {
-      await db.setSetting('monitoring_enabled', config.enabled.toString())
-    }
-    if (config.startOnLaunch !== undefined) {
-      await db.setSetting('monitoring_start_on_launch', config.startOnLaunch.toString())
-    }
-    if (config.pauseDuringManualScan !== undefined) {
-      await db.setSetting('monitoring_pause_during_scan', config.pauseDuringManualScan.toString())
-    }
+    if (config.enabled !== undefined)
+      await db.config.setSetting('monitoring_enabled', config.enabled.toString())
+    if (config.startOnLaunch !== undefined)
+      await db.config.setSetting('monitoring_start_on_launch', config.startOnLaunch.toString())
+    if (config.pauseDuringManualScan !== undefined)
+      await db.config.setSetting(
+        'monitoring_pause_during_scan',
+        config.pauseDuringManualScan.toString()
+      )
+
     if (config.pollingIntervals) {
       for (const [provider, interval] of Object.entries(config.pollingIntervals)) {
-        await db.setSetting(`monitoring_interval_${provider}`, interval.toString())
+        await db.config.setSetting(`monitoring_interval_${provider}`, interval.toString())
       }
     }
 
-    // Handle enable/disable
     if (wasEnabled && !this.config.enabled && wasActive) {
       this.stop()
     } else if (!wasEnabled && this.config.enabled) {
-      this.start()
+      await this.start()
     } else if (wasActive && config.pollingIntervals) {
-      // Restart with new intervals
       this.stop()
-      this.start()
+      await this.start()
     }
   }
 
-  /**
-   * Check if monitoring is currently active
-   */
   isMonitoringActive(): boolean {
     return this.isActive
   }
 
-  /**
-   * Start monitoring all enabled sources
-   */
-  start(): void {
-    if (this.isActive) {
-      console.log('[LiveMonitoring] Already active')
-      return
-    }
+  async start(): Promise<void> {
+    if (this.isActive || !this.config.enabled) return
 
-    if (!this.config.enabled) {
-      console.log('[LiveMonitoring] Monitoring is disabled')
-      return
-    }
-
-    console.log('[LiveMonitoring] Starting...')
+    getLoggingService().info('[LiveMonitoringService]', 'Starting...')
     this.isActive = true
 
-    // Get all enabled sources
     const db = getDatabase()
-    const sources = db.getEnabledMediaSources()
+    const sources = await db.sources.getEnabledSources()
 
-    for (const source of sources) {
-      this.startMonitoringSource(source.source_id, source.source_type as ProviderType, source.connection_config)
-    }
+    await Promise.all(
+      sources.map((source) =>
+        this.startMonitoringSource(
+          source.source_id,
+          source.source_type as ProviderType,
+          source.connection_config
+        )
+      )
+    )
 
     this.sendStatusUpdate()
   }
 
-  /**
-   * Stop all monitoring
-   */
   stop(): void {
-    if (this.startupTimer) {
-      clearTimeout(this.startupTimer)
-      this.startupTimer = null
-    }
-    if (!this.isActive) {
-      console.log('[LiveMonitoring] Already stopped')
-      return
-    }
+    if (!this.isActive) return
+    getLoggingService().info('[LiveMonitoringService]', 'Stopping...')
 
-    console.log('[LiveMonitoring] Stopping...')
-
-    // Clear all polling timers
-    for (const [sourceId, timer] of this.pollingTimers) {
-      clearTimeout(timer)
-      console.log(`[LiveMonitoring] Stopped polling for ${sourceId}`)
-    }
+    for (const timer of this.pollingTimers.values()) clearTimeout(timer)
     this.pollingTimers.clear()
 
-    // Close all file watchers (fire-and-forget, but log errors)
-    for (const [sourceId, watcher] of this.fileWatchers) {
-      watcher.close().catch((err) => {
-        console.error(`[LiveMonitoring] Error closing watcher for ${sourceId}:`, err)
-      })
-      console.log(`[LiveMonitoring] Stopped watching ${sourceId}`)
+    for (const watcher of this.fileWatchers.values()) {
+      try {
+        watcher.close()
+      } catch (err) {
+        getLoggingService().error('[LiveMonitoring]', 'Error closing watcher:', err)
+      }
     }
     this.fileWatchers.clear()
 
-    // Clear debounce timers
-    for (const timer of this.fileChangeDebounce.values()) {
-      clearTimeout(timer)
-    }
+    for (const timer of this.fileChangeDebounce.values()) clearTimeout(timer)
     this.fileChangeDebounce.clear()
     this.pendingFileChanges.clear()
     this.lastCheckTimes.clear()
@@ -303,1095 +236,517 @@ export class LiveMonitoringService {
     this.sendStatusUpdate()
   }
 
-  /**
-   * Pause monitoring (called by TaskQueueService during scans)
-   * Unlike stop(), this remembers we were active and can be resumed
-   */
   pause(): void {
-    if (!this.isActive) {
-      return
-    }
-
-    console.log('[LiveMonitoring] Pausing for task queue - stopping all timers')
+    if (!this.isActive) return
+    getLoggingService().info('[LiveMonitoringService]', 'Pausing for scan')
     this.emitDebugEvent('info', 'Monitoring paused for scan')
 
-    // Clear all polling timers
-    for (const [, timer] of this.pollingTimers) {
-      clearTimeout(timer)
-    }
+    for (const timer of this.pollingTimers.values()) clearTimeout(timer)
     this.pollingTimers.clear()
-
-    // Clear debounce timers for file changes
-    for (const timer of this.fileChangeDebounce.values()) {
-      clearTimeout(timer)
-    }
+    for (const timer of this.fileChangeDebounce.values()) clearTimeout(timer)
     this.fileChangeDebounce.clear()
-
-    // Clear pending file changes to avoid processing stale data on resume
     this.pendingFileChanges.clear()
-
-    // Keep file watchers running but they won't trigger scans while paused
-    // New changes will accumulate in pendingFileChanges but get cleared on resume
 
     this.isPausedByTaskQueue = true
     this.isActive = false
     this.sendStatusUpdate()
   }
 
-  /**
-   * Resume monitoring after task queue completes
-   * Only resumes if we were paused by the task queue (not manually stopped)
-   */
-  resume(): void {
-    if (!this.isPausedByTaskQueue) {
-      return
-    }
-
-    console.log('[LiveMonitoring] Resuming after task queue - restarting timers')
+  async resume(): Promise<void> {
+    if (!this.isPausedByTaskQueue) return
+    getLoggingService().info('[LiveMonitoringService]', 'Resuming after scan')
     this.emitDebugEvent('info', 'Monitoring resumed after scan')
-
-    // Clear any accumulated file changes to avoid flooding
     this.pendingFileChanges.clear()
-
     this.isPausedByTaskQueue = false
-
-    // Restart monitoring
-    this.start()
+    await this.start()
   }
 
-  /**
-   * Check if monitoring is currently active (for TaskQueueService to check before pausing)
-   */
   isActiveAndEnabled(): boolean {
     return this.isActive && this.config.enabled
   }
 
-  /**
-   * Start monitoring a specific source
-   */
-  private startMonitoringSource(sourceId: string, sourceType: ProviderType, connectionConfig: string): void {
-    const isLocalSource = sourceType === 'local' || sourceType === 'kodi-local'
-
+  private async startMonitoringSource(
+    sourceId: string,
+    sourceType: ProviderType,
+    connectionConfig: string
+  ): Promise<void> {
+    const isLocalSource = sourceType === ProviderType.Local || sourceType === ProviderType.KodiLocal
     if (isLocalSource) {
-      this.startFileWatcher(sourceId, sourceType, connectionConfig)
+      await this.startFileWatcher(sourceId, sourceType, connectionConfig)
     } else {
       this.startPolling(sourceId, sourceType)
     }
   }
 
-  /**
-   * Start file system watching for a local source using chokidar
-   * Uses polling for network paths to ensure reliability
-   */
-  private startFileWatcher(sourceId: string, sourceType: ProviderType, connectionConfig: string): void {
+  private async startFileWatcher(
+    sourceId: string,
+    sourceType: ProviderType,
+    connectionConfig: string
+  ): Promise<void> {
     try {
       const config = JSON.parse(connectionConfig)
-      let watchPath: string | undefined
+      const watchPath = sourceType === ProviderType.Local ? config.folderPath : config.databasePath
+      if (!watchPath) return
 
-      if (sourceType === 'local') {
-        watchPath = config.folderPath
-      } else if (sourceType === 'kodi-local') {
-        // For kodi-local, we watch the database file for changes
-        watchPath = config.databasePath
-      }
-
-      if (!watchPath) {
-        console.log(`[LiveMonitoring] No path to watch for ${sourceId}`)
-        return
-      }
-
-      // Get source display name for debug output
       const db = getDatabase()
-      const source = db.getMediaSourceById(sourceId)
-      const sourceName = source?.display_name || config.name || sourceId
-
-      // Determine if we should use polling (for network paths)
+      const source = await db.sources.getSourceById(sourceId)
+      const sourceName = source?.display_name || sourceId
       const usePolling = isNetworkPath(watchPath)
 
-      console.log(`[LiveMonitoring] Starting file watcher for ${sourceName} (usePolling: ${usePolling})`)
-      this.emitDebugEvent('info', `Starting file watcher: ${sourceName} (${usePolling ? 'polling' : 'native'})`)
+      getLoggingService().info(
+        '[LiveMonitoring]',
+        `Watching ${sourceName} (usePolling: ${usePolling})`
+      )
+      this.emitDebugEvent('info', `Starting watcher: ${sourceName}`)
 
-      const watcher = chokidar.watch(watchPath, {
-        ignored: /(^|[/\\])\./, // Ignore hidden files (starting with dot)
-        persistent: true,
-        ignoreInitial: true,
-        awaitWriteFinish: {
-          stabilityThreshold: LiveMonitoringService.WRITE_STABILITY_THRESHOLD_MS,
-          pollInterval: LiveMonitoringService.CHOKIDAR_POLL_INTERVAL_MS,
-        },
-        usePolling,
-        interval: usePolling ? LiveMonitoringService.NETWORK_POLL_INTERVAL_MS : undefined,
-        binaryInterval: usePolling ? LiveMonitoringService.NETWORK_POLL_INTERVAL_MS : undefined,
-      })
-
-      watcher.on('add', (filePath) => {
+      const watcher = fs.watch(watchPath, { recursive: true }, async (_eventType, filename) => {
+        if (!filename || /(^|[/\\])\./.test(filename)) return
+        const fullPath = path.join(watchPath, filename)
+        if (!this.isMediaFile(fullPath)) return
+        getLoggingService().debug('[LiveMonitoring]', `File event: ${filename} for ${sourceName}`)
+        let action: 'change' | 'unlink'
         try {
-          if (this.isMediaFile(filePath)) {
-            this.handleFileChange(sourceId, 'add', filePath)
-          }
-        } catch (error) {
-          console.error(`[LiveMonitoring] Error handling file add for ${sourceName}:`, error)
+          await fs.promises.access(fullPath, fs.constants.F_OK)
+          action = 'change'
+        } catch {
+          action = 'unlink'
         }
-      })
-
-      watcher.on('change', (filePath) => {
-        try {
-          if (this.isMediaFile(filePath)) {
-            this.handleFileChange(sourceId, 'change', filePath)
-          }
-        } catch (error) {
-          console.error(`[LiveMonitoring] Error handling file change for ${sourceName}:`, error)
-        }
-      })
-
-      watcher.on('unlink', (filePath) => {
-        try {
-          if (this.isMediaFile(filePath)) {
-            this.handleFileChange(sourceId, 'unlink', filePath)
-          }
-        } catch (error) {
-          console.error(`[LiveMonitoring] Error handling file unlink for ${sourceName}:`, error)
-        }
+        this.handleFileChange(sourceId, action, fullPath)
       })
 
       watcher.on('error', (error) => {
-        console.error(`[LiveMonitoring] Watcher error for ${sourceName}:`, error)
-        this.emitDebugEvent('error', `[${sourceName}] Watcher error: ${getErrorMessage(error) || error}`)
-        try {
-          this.handleWatcherError(sourceId, sourceType, watchPath!)
-        } catch (handlerError) {
-          console.error(`[LiveMonitoring] Error in watcher error handler for ${sourceName}:`, handlerError)
-        }
-      })
-
-      watcher.on('ready', () => {
-        console.log(`[LiveMonitoring] Watcher ready for ${sourceName}`)
-        this.emitDebugEvent('info', `[${sourceName}] File watcher ready`)
+        getLoggingService().error('[LiveMonitoring]', `Watcher error ${sourceName}:`, error)
+        this.handleWatcherError(sourceId, sourceType, watchPath)
       })
 
       this.fileWatchers.set(sourceId, watcher)
     } catch (error) {
-      console.error(`[LiveMonitoring] Failed to start watcher for ${sourceId}:`, error)
+      getLoggingService().error('[LiveMonitoring]', `Failed watcher for ${sourceId}:`, error)
     }
   }
 
-  /**
-   * Check if a file is a media file based on extension
-   */
   private isMediaFile(filePath: string): boolean {
-    const ext = path.extname(filePath).toLowerCase()
-    return MEDIA_EXTENSIONS.has(ext)
+    return MEDIA_EXTENSIONS.has(path.extname(filePath).toLowerCase())
   }
 
-  /**
-   * Handle watcher error by falling back to polling
-   */
   private handleWatcherError(sourceId: string, sourceType: ProviderType, _watchPath: string): void {
-    // Close the failed watcher (fire-and-forget with error logging)
     const watcher = this.fileWatchers.get(sourceId)
     if (watcher) {
-      this.fileWatchers.delete(sourceId) // Remove from map first to prevent double-close
-      watcher.close().catch((err) => {
-        console.error(`[LiveMonitoring] Error closing failed watcher for ${sourceId}:`, err)
-      })
+      this.fileWatchers.delete(sourceId)
+      try {
+        watcher.close()
+      } catch (err) {
+        getLoggingService().error('[LiveMonitoring]', `Error closing watcher for ${sourceId}:`, err)
+      }
     }
-
-    // Clear any pending debounce timer for this source
     const debounceTimer = this.fileChangeDebounce.get(sourceId)
-    if (debounceTimer) {
-      clearTimeout(debounceTimer)
-      this.fileChangeDebounce.delete(sourceId)
-    }
+    if (debounceTimer) clearTimeout(debounceTimer)
+    this.fileChangeDebounce.delete(sourceId)
     this.pendingFileChanges.delete(sourceId)
-
-    console.log(`[LiveMonitoring] Watcher failed for ${sourceId}, falling back to polling`)
-
-    // Fall back to polling for this source
     this.startPolling(sourceId, sourceType)
   }
 
-  /**
-   * Handle a file system change event
-   */
-  private handleFileChange(sourceId: string, event: 'add' | 'change' | 'unlink', filePath: string): void {
-    // Skip all file changes during manual scan to avoid interference
-    if (this.shouldPause()) {
-      return
+  private async handleFileChange(
+    sourceId: string,
+    event: 'add' | 'change' | 'unlink',
+    filePath: string
+  ): Promise<void> {
+    try {
+      if (this.shouldPause()) return
+
+      const db = getDatabase()
+      const source = await db.sources.getSourceById(sourceId)
+      const sourceName = source?.display_name || sourceId
+
+      getLoggingService().info('[LiveMonitoring]', `File ${event}: ${path.basename(filePath)}`)
+      this.emitDebugEvent(
+        event === 'unlink' ? 'removed' : 'info',
+        `[${sourceName}] File ${event}: ${path.basename(filePath)}`
+      )
+
+      if (!this.pendingFileChanges.has(sourceId)) this.pendingFileChanges.set(sourceId, new Set())
+      this.pendingFileChanges.get(sourceId)!.add(filePath)
+
+      if (this.fileChangeDebounce.has(sourceId))
+        clearTimeout(this.fileChangeDebounce.get(sourceId)!)
+      this.fileChangeDebounce.set(
+        sourceId,
+        setTimeout(() => {
+          this.processFileChanges(sourceId).catch((err) => {
+            getLoggingService().error(
+              '[LiveMonitoring]',
+              `Error in processFileChanges for ${sourceId}:`,
+              err
+            )
+          })
+        }, LiveMonitoringService.FILE_CHANGE_DEBOUNCE_MS)
+      )
+    } catch (error) {
+      getLoggingService().error(
+        '[LiveMonitoring]',
+        `Error in handleFileChange for ${sourceId}:`,
+        error
+      )
     }
-
-    // Get source name for debug output
-    const db = getDatabase()
-    const source = db.getMediaSourceById(sourceId)
-    const sourceName = source?.display_name || sourceId
-
-    console.log(`[LiveMonitoring] File ${event}: ${path.basename(filePath)}`)
-    const fileName = path.basename(filePath)
-    this.emitDebugEvent(event === 'unlink' ? 'removed' : 'info', `[${sourceName}] File ${event}: ${fileName}`)
-
-    // Track pending changes
-    if (!this.pendingFileChanges.has(sourceId)) {
-      this.pendingFileChanges.set(sourceId, new Set())
-    }
-    this.pendingFileChanges.get(sourceId)!.add(filePath)
-
-    // Debounce - wait for changes to settle
-    if (this.fileChangeDebounce.has(sourceId)) {
-      clearTimeout(this.fileChangeDebounce.get(sourceId)!)
-    }
-
-    this.fileChangeDebounce.set(
-      sourceId,
-      setTimeout(() => this.processFileChanges(sourceId), LiveMonitoringService.FILE_CHANGE_DEBOUNCE_MS)
-    )
   }
 
-  /**
-   * Process accumulated file changes for a source
-   */
   private async processFileChanges(sourceId: string): Promise<void> {
     const changes = this.pendingFileChanges.get(sourceId)
     if (!changes || changes.size === 0) return
 
-    // Clear pending changes immediately to prevent re-processing
     const changedFiles = Array.from(changes)
     this.pendingFileChanges.delete(sourceId)
     this.fileChangeDebounce.delete(sourceId)
 
+    if (this.shouldPause() || changedFiles.length > LiveMonitoringService.MAX_REASONABLE_CHANGES)
+      return
+
     try {
-      // Check if manual scan is in progress
-      if (this.shouldPause()) {
-        console.log(`[LiveMonitoring] Manual scan in progress, discarding ${changedFiles.length} file changes for ${sourceId}`)
-        return
-      }
-
-      // Safety check: if too many files changed at once, it's probably from scan interference
-      // Normal user operations would be adding/removing a few files at a time
-      if (changedFiles.length > LiveMonitoringService.MAX_REASONABLE_CHANGES) {
-        console.log(`[LiveMonitoring] Too many file changes (${changedFiles.length}), likely scan interference - skipping`)
-        return
-      }
-
-      console.log(`[LiveMonitoring] Processing ${changedFiles.length} file changes for ${sourceId}`)
-      getLoggingService().verbose('[LiveMonitoring]',
-        `Processing file changes for ${sourceId}`,
-        changedFiles.map(f => path.basename(f)).join(', '))
-
-      // Use targeted file scanning (much faster than full scan)
       await this.checkSourceWithTargetedFiles(sourceId, changedFiles)
     } catch (error) {
-      console.error(`[LiveMonitoring] Error processing file changes for ${sourceId}:`, error)
+      getLoggingService().error(
+        '[LiveMonitoring]',
+        `Error processing file changes for ${sourceId}:`,
+        error
+      )
     }
   }
 
-  /**
-   * Check a source using targeted file scanning (for file watcher changes)
-   */
-  private async checkSourceWithTargetedFiles(sourceId: string, filePaths: string[]): Promise<SourceChangeEvent[]> {
-    const scanStartedAt = new Date().toISOString()
+  private async checkSourceWithTargetedFiles(
+    sourceId: string,
+    filePaths: string[]
+  ): Promise<SourceChangeEvent[]> {
     const sourceManager = getSourceManager()
     const db = getDatabase()
 
-    // Get source info
-    const source = db.getMediaSourceById(sourceId)
-    if (!source) {
-      console.log(`[LiveMonitoring] Source ${sourceId} not found`)
-      return []
-    }
+    const source = await db.sources.getSourceById(sourceId)
+    if (!source) return []
 
-    // Get libraries for this source
-    type LibraryInfo = { libraryId: string; libraryName: string; libraryType: string; isEnabled: boolean; lastScanAt: string | null; itemsScanned: number }
-    const libraries = db.getSourceLibraries(sourceId) as LibraryInfo[]
-    const enabledLibraries = libraries.filter((lib: LibraryInfo) => lib.isEnabled)
-
+    const libraries = await db.sources.getSourceLibraries(sourceId)
+    const enabledLibraries = libraries.filter((lib: SourceLibrary) => lib.isEnabled)
     const events: SourceChangeEvent[] = []
 
-    // Determine which library the files belong to (for local sources, usually just one library)
     for (const library of enabledLibraries) {
       try {
-        // Run targeted scan with specific files
         const result = await sourceManager.scanTargetedFiles(
           sourceId,
           library.libraryId,
           filePaths,
-          () => {} // Silent progress
+          () => {}
         )
-
-        console.log(`[LiveMonitoring] Scan result for ${library.libraryId}: success=${result.success}, added=${result.itemsAdded}, updated=${result.itemsUpdated}, removed=${result.itemsRemoved}`)
-
-        // Check for changes
-        if (result.success && (result.itemsAdded > 0 || result.itemsUpdated > 0 || result.itemsRemoved > 0)) {
-          // Build list of changed items
+        if (
+          result.success &&
+          (result.itemsAdded > 0 || result.itemsUpdated > 0 || result.itemsRemoved > 0)
+        ) {
           const changedItems: ChangedItem[] = []
-
-          // Look up the actual items that were changed by their file paths
           if (result.itemsAdded > 0 || result.itemsUpdated > 0) {
-            // Determine if this is a music library
-            const libraryType = library.libraryId.split(':')[0]
-            const isMusic = libraryType === 'music'
-
-            // Only look up files that still exist (added/updated, not deleted)
-            const existingFiles = filePaths.filter(filePath => fs.existsSync(filePath))
+            const isMusic = library.libraryId.split(':')[0] === 'music'
+            const existingFiles = filePaths.filter((fp) => fs.existsSync(fp))
 
             if (isMusic) {
-              // Look up each track by its file path
-              for (const filePath of existingFiles) {
-                const track = db.getMusicTrackByPath(filePath)
-                if (track) {
-                  // Get album artwork if available
-                  let posterUrl: string | undefined
-                  if (track.album_id) {
-                    const album = db.getMusicAlbumById(track.album_id)
-                    posterUrl = album?.thumb_url || undefined
-                  }
-
-                  changedItems.push({
-                    id: track.id?.toString() || '',
-                    title: track.title,
-                    type: 'track',
-                    artistName: track.artist_name || undefined,
-                    posterUrl,
-                  })
-                }
+              const albumIds = new Set<number>()
+              const tracks = await db.music.getTracksByPaths(existingFiles)
+              for (const t of tracks) {
+                if (t.album_id) albumIds.add(t.album_id)
+              }
+              const albumMap = new Map()
+              if (albumIds.size > 0) {
+                const albums = await db.music.getAlbumsByIds(Array.from(albumIds))
+                for (const a of albums) albumMap.set(a.id, a)
+              }
+              for (const t of tracks) {
+                const a = t.album_id ? albumMap.get(t.album_id) : undefined
+                changedItems.push({
+                  id: t.id!.toString(),
+                  title: t.title,
+                  type: 'track',
+                  artistName: t.artist_name,
+                  posterUrl: a?.thumb_url,
+                })
               }
             } else {
-              // Look up each video item by its file path
-              for (const filePath of existingFiles) {
-                const item = db.getMediaItemByPath(filePath)
-                if (item) {
-                  changedItems.push({
-                    id: item.id?.toString() || '',
-                    title: item.title,
-                    type: item.type as 'movie' | 'episode',
-                    year: item.year || undefined,
-                    posterUrl: item.poster_url || undefined,
-                    seriesTitle: item.series_title || undefined,
-                  })
-                }
+              const items = await db.media.getItemsByPaths(existingFiles)
+              for (const it of items) {
+                changedItems.push({
+                  id: it.id!.toString(),
+                  title: it.title,
+                  type: it.type,
+                  year: it.year || undefined,
+                  posterUrl: it.poster_url || undefined,
+                  seriesTitle: it.series_title || undefined,
+                })
               }
             }
           }
 
-          // Determine change type
-          let changeType: 'added' | 'updated' | 'removed' | 'mixed' = 'added'
-          if (result.itemsRemoved > 0 && result.itemsAdded === 0 && result.itemsUpdated === 0) {
-            changeType = 'removed'
-          } else if (result.itemsAdded > 0 && result.itemsUpdated > 0) {
-            changeType = 'mixed'
-          } else if (result.itemsUpdated > 0) {
-            changeType = 'updated'
-          }
+          let changeType = ChangeType.Added
+          if (result.itemsRemoved > 0 && result.itemsAdded === 0 && result.itemsUpdated === 0)
+            changeType = ChangeType.Removed
+          else if (result.itemsAdded > 0 && result.itemsUpdated > 0) changeType = ChangeType.Mixed
+          else if (result.itemsUpdated > 0) changeType = ChangeType.Updated
 
-          const totalChanges = result.itemsAdded + result.itemsUpdated + result.itemsRemoved
-
-          const event: SourceChangeEvent = {
+          events.push({
             sourceId,
             sourceName: source.display_name,
-            sourceType: source.source_type as ProviderType,
+            sourceType: source.source_type,
             libraryId: library.libraryId,
             libraryName: library.libraryName,
             changeType,
-            itemCount: totalChanges,
+            itemCount: result.itemsAdded + result.itemsUpdated + result.itemsRemoved,
             items: changedItems,
             detectedAt: new Date().toISOString(),
-          }
+          })
 
-          events.push(event)
-
-          // Build notification message
-          const parts: string[] = []
-          if (result.itemsAdded > 0) {
-            parts.push(`${result.itemsAdded} new`)
-          }
-          if (result.itemsUpdated > 0) {
-            parts.push(`${result.itemsUpdated} updated`)
-          }
-          if (result.itemsRemoved > 0) {
-            parts.push(`${result.itemsRemoved} removed`)
-          }
-          const changeDescription = parts.join(', ')
-
-          // Emit debug events for detected changes
-          if (result.itemsAdded > 0) {
-            for (const item of changedItems.slice(0, result.itemsAdded)) {
-              this.emitDebugEvent('added', `[${source.display_name}] Added: ${item.title}`)
-            }
-          }
-          if (result.itemsUpdated > 0) {
-            this.emitDebugEvent('info', `[${source.display_name}] ${result.itemsUpdated} item(s) updated in ${library.libraryName}`)
-          }
-          if (result.itemsRemoved > 0) {
-            this.emitDebugEvent('removed', `[${source.display_name}] ${result.itemsRemoved} item(s) removed from ${library.libraryName}`)
-          }
-
-          console.log(`[LiveMonitoring] Targeted scan complete for ${library.libraryName}: ${changeDescription}`)
-
-          // Create notification for library changes
-          if (totalChanges > 0) {
-            try {
-              getDatabase().createNotification({
-                type: 'source_change',
-                title: 'Library updated',
-                message: `${source.display_name}: ${changeDescription}`,
-                sourceId,
-                sourceName: source.display_name,
-                itemCount: totalChanges,
-              })
-              emitNotificationCreated()
-            } catch (error) {
-              getLoggingService().warn('[LiveMonitoring]', `Library-change notification could not be created for ${library.libraryName}:`, error)
-            }
-          }
+          await db.notifications.createNotification({
+            type: 'info',
+            title: 'Library updated',
+            message: `${source.display_name}: Updated`,
+            reference_id: sourceId,
+          })
+          this.sendToRenderer('library:updated', { sourceId })
         }
       } catch (error) {
-        console.error(`[LiveMonitoring] Error in targeted scan for library ${library.libraryId}:`, error)
+        getLoggingService().error(
+          '[LiveMonitoring]',
+          `Targeted scan error ${library.libraryId}:`,
+          error
+        )
       }
     }
 
-    // Emit library:updated for each event type so Dashboard/MediaBrowser refresh
-    if (events.length > 0) {
-      const hasMusicChanges = events.some(e => {
-        const libType = e.libraryId?.split(':')[0]
-        return libType === 'music'
-      })
-      const hasMediaChanges = events.some(e => {
-        const libType = e.libraryId?.split(':')[0]
-        return libType !== 'music'
-      })
-      if (hasMediaChanges) {
-        this.sendToRenderer('library:updated', { type: 'media' })
-      }
-      if (hasMusicChanges) {
-        this.sendToRenderer('library:updated', { type: 'music' })
-      }
-    }
-
-    // Notify renderer
-    this.sendToRenderer('monitoring:sourceChecked', {
-      sourceId,
-      hasChanges: events.length > 0,
-    })
-
-    this.notifyQualityUpgrades(sourceId, source.display_name, events, scanStartedAt)
-
-    // Check wishlist for auto-completion after items were added or updated
-    if (events.some((e) => e.changeType === 'added' || e.changeType === 'updated' || e.changeType === 'mixed')) {
-      getWishlistCompletionService().checkAndComplete().catch((err) => {
-        console.error('[LiveMonitoring] Wishlist completion check failed:', getErrorMessage(err))
-      })
-    }
-
-    // Auto-analyze affected series/collections after changes detected
-    if (events.length > 0) {
-      this.autoAnalyzeCompleteness(sourceId, events)
-    }
-
+    this.sendToRenderer('monitoring:sourceChecked', { sourceId, hasChanges: events.length > 0 })
     return events
   }
 
-  /**
-   * Start polling for a remote source
-   */
-  private notifyQualityUpgrades(sourceId: string, sourceName: string, events: SourceChangeEvent[], scanStartedAt: string): void {
-    const updated = events.filter(event => event.changeType === 'updated' || event.changeType === 'mixed')
-    if (updated.length === 0) return
-    const db = getDatabase()
-    const since = Math.floor(Date.parse(scanStartedAt) / 1000) * 1000
-    const recent = (timestamp: string) => Date.parse(timestamp.includes(' ')
-      ? timestamp.replace(' ', 'T') + 'Z' : timestamp) >= since
-    const video = db.getRecentlyUpgraded(1, sourceId)
-      .filter(item => recent(item.upgraded_at))
-      .map(item => `${item.title}: ${item.previous_quality_tier} → ${item.quality_tier}`)
-    const music = db.getRecentlyUpgradedMusic(1, sourceId)
-      .filter(item => recent(item.upgraded_at))
-      .map(item => `${item.title} (${item.artist_name}): ${item.previous_quality_tier} → ${item.quality_tier}`)
-    const upgrades = [...video, ...music]
-    if (upgrades.length === 0) return
-    db.createNotification({
-      type: 'info',
-      title: `${upgrades.length} quality upgrade${upgrades.length === 1 ? '' : 's'} detected`,
-      message: upgrades.slice(0, 5).join(', ') + (upgrades.length > 5 ? ` +${upgrades.length - 5} more` : ''),
-      sourceId, sourceName, itemCount: upgrades.length,
-    })
-    emitNotificationCreated()
-  }
-
   private startPolling(sourceId: string, sourceType: ProviderType): void {
-    const interval = this.config.pollingIntervals[sourceType] || DEFAULT_MONITORING_CONFIG.pollingIntervals[sourceType] || 300000
-
-    console.log(`[LiveMonitoring] Starting polling for ${sourceId} (${sourceType}) every ${interval / 1000}s`)
-
-    // Schedule first check after a short delay
-    const timer = setTimeout(() => this.pollSource(sourceId, sourceType), LiveMonitoringService.FIRST_POLL_DELAY_MS)
-    this.pollingTimers.set(sourceId, timer)
+    this.pollingTimers.set(
+      sourceId,
+      setTimeout(
+        () => this.pollSource(sourceId, sourceType),
+        LiveMonitoringService.FIRST_POLL_DELAY_MS
+      )
+    )
   }
 
-  /**
-   * Poll a source for changes
-   */
   private async pollSource(sourceId: string, sourceType: ProviderType): Promise<void> {
     try {
-      // Check if we should pause
-      if (this.shouldPause()) {
-        console.log(`[LiveMonitoring] Manual scan in progress, skipping poll for ${sourceId}`)
+      if (this.shouldPause() || !this.isActive) {
         this.scheduleNextPoll(sourceId, sourceType)
         return
       }
 
-      if (!this.isActive) return
-
-      // Get source name for debug output
       const db = getDatabase()
-      const source = db.getMediaSourceById(sourceId)
-      const sourceName = source?.display_name || sourceId
+      const source = await db.sources.getSourceById(sourceId)
+      if (!source) return
 
-      console.log(`[LiveMonitoring] Polling ${sourceName}...`)
-      this.emitDebugEvent('poll', `Polling: ${sourceName}`)
+      this.emitDebugEvent('poll', `Polling: ${source.display_name}`)
       this.lastCheckTimes.set(sourceId, new Date())
 
-      const pollStart = Date.now()
       await Promise.race([
         this.checkSource(sourceId),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`Poll timed out for ${sourceName}`)), LiveMonitoringService.POLL_TIMEOUT_MS)
+          setTimeout(() => reject(new Error('Timeout')), LiveMonitoringService.POLL_TIMEOUT_MS)
         ),
       ])
-      getLoggingService().verbose('[LiveMonitoring]',
-        `Poll complete: "${sourceName}" in ${((Date.now() - pollStart) / 1000).toFixed(1)}s`)
     } catch (error) {
-      console.error(`[LiveMonitoring] Error polling ${sourceId}:`, error)
-      this.emitDebugEvent('error', `Polling error: ${sourceId}`)
+      getLoggingService().error('[LiveMonitoring]', `Poll error ${sourceId}:`, error)
     } finally {
-      // Always schedule next poll, even if this one failed
-      if (this.isActive) {
-        this.scheduleNextPoll(sourceId, sourceType)
-      }
+      if (this.isActive) this.scheduleNextPoll(sourceId, sourceType)
     }
   }
 
-  /**
-   * Schedule the next poll for a source
-   */
   private scheduleNextPoll(sourceId: string, sourceType: ProviderType): void {
     if (!this.isActive) return
-
-    // Clear any existing timer to prevent accumulation
-    const existingTimer = this.pollingTimers.get(sourceId)
-    if (existingTimer) {
-      clearTimeout(existingTimer)
-    }
-
-    const interval = this.config.pollingIntervals[sourceType] || DEFAULT_MONITORING_CONFIG.pollingIntervals[sourceType] || 300000
-    const timer = setTimeout(() => this.pollSource(sourceId, sourceType), interval)
-    this.pollingTimers.set(sourceId, timer)
+    if (this.pollingTimers.has(sourceId)) clearTimeout(this.pollingTimers.get(sourceId)!)
+    const interval =
+      this.config.pollingIntervals[sourceType] ||
+      DEFAULT_MONITORING_CONFIG.pollingIntervals[sourceType]
+    this.pollingTimers.set(
+      sourceId,
+      setTimeout(() => this.pollSource(sourceId, sourceType), interval)
+    )
   }
 
-  /**
-   * Check a source for changes using incremental scan
-   */
   private async checkSource(sourceId: string): Promise<SourceChangeEvent[]> {
-    const scanStartedAt = new Date().toISOString()
     const sourceManager = getSourceManager()
     const db = getDatabase()
 
-    // Get source info
-    const source = db.getMediaSourceById(sourceId)
-    if (!source) {
-      console.log(`[LiveMonitoring] Source ${sourceId} not found`)
-      return []
-    }
+    const source = await db.sources.getSourceById(sourceId)
+    if (!source) return []
 
-    // Get libraries for this source
-    type LibraryInfo = { libraryId: string; libraryName: string; libraryType: string; isEnabled: boolean; lastScanAt: string | null; itemsScanned: number }
-    const libraries = db.getSourceLibraries(sourceId) as LibraryInfo[]
-    const enabledLibraries = libraries.filter((lib: LibraryInfo) => lib.isEnabled)
-
+    const libraries = await db.sources.getSourceLibraries(sourceId)
+    const enabledLibraries = libraries.filter((lib: SourceLibrary) => lib.isEnabled)
     const events: SourceChangeEvent[] = []
 
-    let sourceUnreachable = false
-
     for (const library of enabledLibraries) {
-      // If a previous library failed with a connection error, skip remaining libraries
-      // (they'll all fail the same way since the server is down)
-      if (sourceUnreachable) continue
-
       try {
-        let result: ScanResult
-
-        if (library.libraryType === 'music') {
-          // Music libraries: check if track count changed before doing expensive full scan
-          const needsScan = await this.musicLibraryHasChanges(sourceId, library.libraryId, source.source_type as ProviderType)
-          if (!needsScan) continue
-          result = await this.scanMusicLibrary(sourceId, library.libraryId, source.source_type as ProviderType)
-        } else {
-          // Run incremental scan for video libraries
-          result = await sourceManager.scanLibraryIncremental(
-            sourceId,
-            library.libraryId,
-            () => {} // Silent progress
-          )
-        }
-
-        // Check for both added AND updated items
+        const result = await sourceManager.scanLibraryIncremental(
+          sourceId,
+          library.libraryId,
+          () => {}
+        )
         if (result.success && (result.itemsAdded > 0 || result.itemsUpdated > 0)) {
-          // Get recently changed items from THIS library (sorted by updated_at)
-          const recentItems = db.getMediaItems({
+          const recentItems = await db.media.getItems({
             sourceId,
             libraryId: library.libraryId,
             sortBy: 'updated_at',
             sortOrder: 'desc',
             limit: result.itemsAdded + result.itemsUpdated,
-          }) as Array<{ id?: number; title: string; type: string; year?: number; poster_url?: string; series_title?: string }>
-
-          const changedItems: ChangedItem[] = recentItems.map((item: typeof recentItems[0]) => ({
-            id: item.id?.toString() || '',
-            title: item.title,
-            type: item.type as 'movie' | 'episode',
-            year: item.year || undefined,
-            posterUrl: item.poster_url || undefined,
-            seriesTitle: item.series_title || undefined,
+          })
+          const changedItems: ChangedItem[] = recentItems.map((it: MediaItem) => ({
+            id: it.id!.toString(),
+            title: it.title,
+            type: it.type,
+            year: it.year || undefined,
+            posterUrl: it.poster_url || undefined,
+            seriesTitle: it.series_title || undefined,
           }))
 
-          // Determine change type
-          let changeType: 'added' | 'updated' | 'mixed' = 'added'
-          if (result.itemsAdded > 0 && result.itemsUpdated > 0) {
-            changeType = 'mixed'
-          } else if (result.itemsUpdated > 0) {
-            changeType = 'updated'
-          }
+          let changeType = ChangeType.Added
+          if (result.itemsAdded > 0 && result.itemsUpdated > 0) changeType = ChangeType.Mixed
+          else if (result.itemsUpdated > 0) changeType = ChangeType.Updated
 
-          const event: SourceChangeEvent = {
+          events.push({
             sourceId,
             sourceName: source.display_name,
-            sourceType: source.source_type as ProviderType,
+            sourceType: source.source_type,
             libraryId: library.libraryId,
             libraryName: library.libraryName,
             changeType,
             itemCount: result.itemsAdded + result.itemsUpdated,
             items: changedItems,
             detectedAt: new Date().toISOString(),
-          }
-
-          events.push(event)
-
-          // Emit debug events for detected changes
-          if (result.itemsAdded > 0) {
-            for (const item of changedItems.slice(0, result.itemsAdded)) {
-              this.emitDebugEvent('added', `[${source.display_name}] Added: ${item.title}${item.seriesTitle ? ` (${item.seriesTitle})` : ''}`)
-            }
-          }
-          if (result.itemsUpdated > 0) {
-            this.emitDebugEvent('info', `[${source.display_name}] ${result.itemsUpdated} item(s) updated in ${library.libraryName}`)
-          }
-
-          const changeDescription = result.itemsAdded > 0 && result.itemsUpdated > 0
-            ? `${result.itemsAdded} new, ${result.itemsUpdated} updated`
-            : result.itemsAdded > 0 ? `${result.itemsAdded} new` : `${result.itemsUpdated} updated`
-
-          console.log(`[LiveMonitoring] Detected changes in ${library.libraryName}: ${changeDescription}`)
+          })
+          this.sendToRenderer('library:updated', {})
         }
-
-        // Handle removed items
         if (result.success && result.itemsRemoved > 0) {
-          const event: SourceChangeEvent = {
+          events.push({
             sourceId,
             sourceName: source.display_name,
-            sourceType: source.source_type as ProviderType,
+            sourceType: source.source_type,
             libraryId: library.libraryId,
             libraryName: library.libraryName,
-            changeType: 'removed',
+            changeType: ChangeType.Removed,
             itemCount: result.itemsRemoved,
             items: [],
             detectedAt: new Date().toISOString(),
-          }
-          events.push(event)
-
-          // Emit debug event for removals
-          this.emitDebugEvent('removed', `[${source.display_name}] ${result.itemsRemoved} item(s) removed from ${library.libraryName}`)
-
-          console.log(`[LiveMonitoring] Detected ${result.itemsRemoved} removed items in ${library.libraryName}`)
+          })
         }
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error)
-        // Detect connection-level failures (server down, network error)
-        if (msg.includes('fetch failed') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT') || msg.includes('ENOTFOUND')) {
-          console.warn(`[LiveMonitoring] ${source.display_name} unreachable, skipping remaining libraries (${msg})`)
-          sourceUnreachable = true
-        } else {
-          console.error(`[LiveMonitoring] Error checking library ${library.libraryId}:`, error)
-        }
+        getLoggingService().error('[LiveMonitoring]', `Check error ${library.libraryId}:`, error)
       }
     }
 
-    // Create batched notification for polling changes
     if (events.length > 0) {
-      const totalAdded = events.filter(e => e.changeType === 'added').reduce((sum, e) => sum + e.itemCount, 0)
-      const totalRemoved = events.filter(e => e.changeType === 'removed').reduce((sum, e) => sum + e.itemCount, 0)
-      const totalUpdated = events.filter(e => e.changeType === 'updated').reduce((sum, e) => sum + e.itemCount, 0)
-      const parts: string[] = []
-      if (totalAdded > 0) parts.push(`${totalAdded} added`)
-      if (totalUpdated > 0) parts.push(`${totalUpdated} updated`)
-      if (totalRemoved > 0) parts.push(`${totalRemoved} removed`)
-      try {
-        getDatabase().createNotification({
-          type: 'source_change',
-          title: 'Library updated',
-          message: `${source.display_name}: ${parts.join(', ')}`,
-          sourceId,
-          sourceName: source.display_name,
-          itemCount: totalAdded + totalUpdated + totalRemoved,
-        })
-        emitNotificationCreated()
-      } catch (error) {
-        getLoggingService().warn('[LiveMonitoring]', `Library-change notification could not be created for ${source.display_name}:`, error)
-      }
-    }
-
-    // Emit library:updated for each event type so Dashboard/MediaBrowser refresh
-    if (events.length > 0) {
-      const libraryTypes = new Set(
-        enabledLibraries
-          .filter(l => events.some(e => e.libraryId === l.libraryId))
-          .map(l => l.libraryType)
-      )
-      if (libraryTypes.has('movie') || libraryTypes.has('show')) {
-        this.sendToRenderer('library:updated', { type: 'media' })
-      }
-      if (libraryTypes.has('music')) {
-        this.sendToRenderer('library:updated', { type: 'music' })
-      }
-      // Fallback: if we can't determine type, emit media
-      if (!libraryTypes.has('movie') && !libraryTypes.has('show') && !libraryTypes.has('music')) {
-        this.sendToRenderer('library:updated', { type: 'media' })
-      }
-    }
-
-    // Notify renderer of source check completion
-    this.sendToRenderer('monitoring:sourceChecked', {
-      sourceId,
-      hasChanges: events.length > 0,
-    })
-
-    this.notifyQualityUpgrades(sourceId, source.display_name, events, scanStartedAt)
-
-    // Check wishlist for auto-completion after items were added or updated
-    if (events.some((e) => e.changeType === 'added' || e.changeType === 'updated' || e.changeType === 'mixed')) {
-      getWishlistCompletionService().checkAndComplete().catch((err) => {
-        console.error('[LiveMonitoring] Wishlist completion check failed:', getErrorMessage(err))
+      await db.notifications.createNotification({
+        type: 'info',
+        title: 'Library updated',
+        message: `${source.display_name}: Changes detected`,
+        reference_id: sourceId,
       })
     }
 
-    // Auto-analyze affected series/collections after changes detected
-    if (events.length > 0) {
-      this.autoAnalyzeCompleteness(sourceId, events)
-    }
-
+    this.sendToRenderer('monitoring:sourceChecked', { sourceId, hasChanges: events.length > 0 })
     return events
   }
 
-  /**
-   * Check if monitoring should pause (during manual scan)
-   */
   private shouldPause(): boolean {
     if (!this.config.pauseDuringManualScan) return false
-
-    const sourceManager = getSourceManager()
-    return sourceManager.isManualScanInProgress()
+    return getSourceManager().isManualScanInProgress()
   }
 
-  /**
-   * Send status update to renderer
-   */
+  notifyLibraryUpdated(sourceId?: string): void {
+    this.sendToRenderer('library:updated', { sourceId })
+  }
+
   private sendStatusUpdate(): void {
     this.sendToRenderer('monitoring:statusChanged', {
       isActive: this.isActive,
-      lastCheck: this.lastCheckTimes.size > 0
-        ? Array.from(this.lastCheckTimes.values()).sort((a, b) => b.getTime() - a.getTime())[0]?.toISOString()
-        : undefined,
+      lastCheck:
+        this.lastCheckTimes.size > 0
+          ? Array.from(this.lastCheckTimes.values())
+              .sort((a, b) => b.getTime() - a.getTime())[0]
+              ?.toISOString()
+          : undefined,
     })
-    // Also send to the debug panel's expected channel
     this.sendToRenderer('monitoring:status', { isActive: this.isActive })
-    // Emit info event about status change
-    this.emitDebugEvent('info', this.isActive ? 'Monitoring started' : 'Monitoring stopped')
   }
 
-  /**
-   * Send event to renderer process
-   */
-  /**
-   * Lightweight check: compare Plex music library item count against DB track count.
-   * Returns true if counts differ (scan needed), false if unchanged.
-   */
-  private async musicLibraryHasChanges(sourceId: string, libraryId: string, sourceType: ProviderType): Promise<boolean> {
-    const db = getDatabase()
-    const dbTrackCount = db.countMusicTracks({ sourceId })
-
-    // For Plex, query the library section to get total track count
-    if (sourceType === 'plex') {
-      const provider = getSourceManager().getProvider(sourceId)
-      if (!(provider instanceof PlexProvider)) throw new Error(`Plex provider is unavailable for source ${sourceId}`)
-
-      const plexTrackCount = await provider.getMusicTrackCount(libraryId)
-      if (plexTrackCount !== dbTrackCount) {
-        console.log(`[LiveMonitoring] Music library track count changed: Plex=${plexTrackCount}, DB=${dbTrackCount}`)
-        return true
-      }
-      return false
-    }
-
-    // For other providers, always scan (no lightweight check available)
-    return true
+  public sendToRenderer(channel: string, data: unknown): void {
+    if (this.mainWindow) safeSend(this.mainWindow, channel, data)
   }
 
-  /**
-   * Scan a music library using the provider-specific music scanning method.
-   * Routes to the correct scan method based on provider type.
-   */
-  private async scanMusicLibrary(sourceId: string, libraryId: string, sourceType: ProviderType): Promise<ScanResult> {
-    const sourceManager = getSourceManager()
-    const provider = sourceManager.getProvider(sourceId)
-    if (!provider) {
-      return { success: false, itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, errors: ['Provider not found'], durationMs: 0 }
-    }
-
-    if (sourceType === 'plex') {
-      if (provider instanceof PlexProvider) {
-        return provider.scanMusicLibrary(libraryId)
-      }
-    } else if (sourceType === 'jellyfin' || sourceType === 'emby') {
-      if (provider instanceof JellyfinEmbyBase) {
-        return provider.scanMusicLibrary(libraryId)
-      }
-    } else if (sourceType === 'kodi') {
-      if (provider instanceof KodiProvider) {
-        return provider.scanMusicLibrary()
-      }
-    } else if (sourceType === 'kodi-local') {
-      if (provider instanceof KodiLocalProvider) {
-        return provider.scanMusicLibrary()
-      }
-    } else if (sourceType === 'local' || sourceType === 'mediamonkey') {
-      return provider.scanLibrary(libraryId)
-    }
-
-    return { success: false, itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, errors: [`Music scanning not supported for ${sourceType}`], durationMs: 0 }
-  }
-
-  /**
-   * Auto-analyze completeness for series/collections/music affected by live monitoring changes.
-   * For 'show' libraries: analyzes only the specific series that changed (requires TMDB).
-   * For 'movie' libraries: queues a scoped collection-completeness task (requires TMDB).
-   * For 'music' libraries: runs music quality analysis.
-   */
-  private autoAnalyzeCompleteness(sourceId: string, events: SourceChangeEvent[]): void {
-    const db = getDatabase()
-    const tmdbApiKey = db.getSetting('tmdb_api_key')
-
-    const libraries = db.getSourceLibraries(sourceId) as Array<{
-      libraryId: string; libraryName: string; libraryType: string; isEnabled: boolean
-    }>
-    const libraryMap = new Map(libraries.map(l => [l.libraryId, l]))
-
-    for (const event of events) {
-      if (!event.libraryId) continue
-      const lib = libraryMap.get(event.libraryId)
-      if (!lib) continue
-
-      if (lib.libraryType === 'show' && tmdbApiKey) {
-        this.analyzeAffectedSeries(sourceId, lib.libraryId, lib.libraryName)
-      } else if (lib.libraryType === 'movie' && tmdbApiKey) {
-        getTaskQueueService().addTask({
-          type: 'collection-completeness',
-          label: `Collection completeness: ${lib.libraryName}`,
-          sourceId,
-          libraryId: lib.libraryId,
-        })
-      } else if (lib.libraryType === 'music') {
-        this.autoRunMusicQualityAnalysis(sourceId, lib.libraryName)
-      }
-    }
-  }
-
-  /**
-   * Run music quality analysis after live monitoring detects music library changes.
-   */
-  private autoRunMusicQualityAnalysis(sourceId: string, libraryName: string): void {
-    const doAnalysis = async () => {
-      const db = getDatabase()
-      console.log(`[LiveMonitoring] Auto-analyzing music quality for ${libraryName}...`)
-      await analyzeAlbumQuality(db, sourceId)
-
-      // Sync completeness — remove newly-owned items from missing lists (no API calls)
-      const artistsSynced = db.syncArtistCompletenessAfterScan(sourceId)
-      const albumsSynced = db.syncAlbumCompletenessAfterScan(sourceId)
-      if (artistsSynced > 0 || albumsSynced > 0) {
-        console.log(`[LiveMonitoring] Updated completeness for ${artistsSynced} artists, ${albumsSynced} albums in ${libraryName}`)
-      }
-
-      console.log(`[LiveMonitoring] Music quality analysis complete for ${libraryName}`)
-      this.sendToRenderer('library:updated', { type: 'music' })
-    }
-
-    doAnalysis().catch(err => {
-      console.error('[LiveMonitoring] Auto music quality analysis failed:', getErrorMessage(err))
-    })
-  }
-
-  /**
-   * Analyze only series whose episode counts changed.
-   * Removes completeness records for series with no remaining episodes.
-   */
-  private analyzeAffectedSeries(sourceId: string, libraryId: string, libraryName: string): void {
-    const doAnalysis = async () => {
-      const db = getDatabase()
-      const service = getSeriesCompletenessService()
-
-      // Get distinct series in this library from media_items
-      const episodes = db.getMediaItems({ type: 'episode' as const, sourceId, libraryId }) as Array<{ series_title?: string; series_identity_key?: string | null }>
-      const currentSeries = new Map<string, { title: string; count: number }>()
-      for (const ep of episodes) {
-        const identityKey = ep.series_identity_key
-        if (!identityKey) throw new Error('Episode is missing its canonical series identity key')
-        const series = currentSeries.get(identityKey)
-        currentSeries.set(identityKey, { title: ep.series_title || identityKey, count: (series?.count || 0) + 1 })
-      }
-
-      // Get existing completeness records for this library
-      const existing = db.getAllSeriesCompleteness(sourceId, libraryId)
-      const existingMap = new Map<string, { owned_episodes: number }>(
-        existing.filter(sc => sc.series_identity_key).map(sc => [sc.series_identity_key!, { owned_episodes: sc.owned_episodes }])
-      )
-
-      // Find affected series
-      const affectedSeries: Array<{ identityKey: string; title: string }> = []
-      for (const [identityKey, { title, count }] of currentSeries) {
-        const record = existingMap.get(identityKey)
-        if (!record || record.owned_episodes !== count) {
-          affectedSeries.push({ identityKey, title })
-        }
-      }
-
-      // Removed series — delete completeness records
-      for (const sc of existing) {
-        if (sc.series_identity_key && !currentSeries.has(sc.series_identity_key) && sc.id) {
-          db.deleteSeriesCompleteness(sc.id)
-          console.log(`[LiveMonitoring] Removed completeness for deleted series: ${sc.series_title}`)
-        }
-      }
-
-      if (affectedSeries.length === 0) {
-        console.log(`[LiveMonitoring] No series changes detected in ${libraryName}`)
-        return
-      }
-
-      console.log(`[LiveMonitoring] Analyzing ${affectedSeries.length} affected series in ${libraryName}: ${affectedSeries.map(series => series.title).join(', ')}`)
-
-      const tmdb = getTMDBService()
-      await tmdb.initialize()
-
-      for (const { identityKey, title } of affectedSeries) {
-        try {
-          await service.analyzeSeries(identityKey, sourceId, libraryId)
-          console.log(`[LiveMonitoring] Completed series analysis: ${title}`)
-        } catch (err) {
-          console.error(`[LiveMonitoring] Failed to analyze series "${title}":`, getErrorMessage(err))
-        }
-      }
-
-      // Emit library updated so dashboard refreshes
-      this.sendToRenderer('library:updated', { type: 'media' })
-    }
-
-    doAnalysis().catch(err => {
-      console.error('[LiveMonitoring] Auto-analyze affected series failed:', getErrorMessage(err))
-    })
-  }
-
-  private sendToRenderer(channel: string, data: unknown): void {
-    if (this.mainWindow) {
-      safeSend(this.mainWindow, channel, data)
-    }
-  }
-
-  /**
-   * Emit a debug event to the monitoring panel
-   */
-  private emitDebugEvent(type: 'poll' | 'added' | 'removed' | 'error' | 'info', message: string): void {
+  private emitDebugEvent(
+    type: 'poll' | 'added' | 'removed' | 'error' | 'info',
+    message: string
+  ): void {
     this.sendToRenderer('monitoring:event', { type, message })
   }
 
-  /**
-   * Get current monitoring status
-   */
   getStatus(): { isActive: boolean } {
     return { isActive: this.isActive }
   }
 
-  /**
-   * Force check a specific source immediately
-   */
-  async forceCheck(sourceId: string): Promise<SourceChangeEvent[]> {
-    if (this.shouldPause()) {
-      console.log(`[LiveMonitoring] Manual scan in progress, cannot force check`)
-      return []
+  async forceCheckAllLazySources(): Promise<void> {
+    if (!this.isActive || this.shouldPause()) return
+    const db = getDatabase()
+    const sources = await db.sources.getEnabledSources()
+    for (const source of sources) {
+      const isRemote =
+        source.source_type !== ProviderType.Local && source.source_type !== ProviderType.KodiLocal
+      if (isRemote) {
+        const lastCheck = this.lastCheckTimes.get(source.source_id)
+        const now = new Date()
+        if (!lastCheck || now.getTime() - lastCheck.getTime() > 30000) {
+          this.checkSource(source.source_id).catch(() => {})
+          this.lastCheckTimes.set(source.source_id, now)
+        }
+      }
     }
+  }
 
-    console.log(`[LiveMonitoring] Force checking ${sourceId}...`)
+  async forceCheck(sourceId: string): Promise<SourceChangeEvent[]> {
+    if (this.shouldPause()) return []
     return this.checkSource(sourceId)
   }
 
-  /**
-   * Add a new source to monitoring (when source is added)
-   */
-  addSource(sourceId: string, sourceType: ProviderType, connectionConfig: string): void {
+  async addSource(
+    sourceId: string,
+    sourceType: ProviderType,
+    connectionConfig: string
+  ): Promise<void> {
     if (!this.isActive) return
-
-    this.startMonitoringSource(sourceId, sourceType, connectionConfig)
+    await this.startMonitoringSource(sourceId, sourceType, connectionConfig)
   }
 
-  /**
-   * Remove a source from monitoring (when source is removed)
-   */
   removeSource(sourceId: string): void {
-    console.log(`[LiveMonitoring] Removing source ${sourceId} from monitoring`)
-
-    // Stop polling timer
     const timer = this.pollingTimers.get(sourceId)
-    if (timer) {
-      clearTimeout(timer)
-      this.pollingTimers.delete(sourceId)
-    }
-
-    // Stop file watcher (fire-and-forget with error logging)
+    if (timer) clearTimeout(timer)
+    this.pollingTimers.delete(sourceId)
     const watcher = this.fileWatchers.get(sourceId)
     if (watcher) {
-      this.fileWatchers.delete(sourceId) // Remove from map first to prevent double-close
-      watcher.close().catch((err) => {
-        console.error(`[LiveMonitoring] Error closing watcher for removed source ${sourceId}:`, err)
-      })
+      this.fileWatchers.delete(sourceId)
+      try {
+        watcher.close()
+      } catch (err) {
+        getLoggingService().error('[LiveMonitoring]', `Error closing watcher for ${sourceId}:`, err)
+      }
     }
-
-    // Clear debounce timer
     const debounce = this.fileChangeDebounce.get(sourceId)
-    if (debounce) {
-      clearTimeout(debounce)
-      this.fileChangeDebounce.delete(sourceId)
-    }
-
-    // Clear pending changes and check times
+    if (debounce) clearTimeout(debounce)
+    this.fileChangeDebounce.delete(sourceId)
     this.pendingFileChanges.delete(sourceId)
     this.lastCheckTimes.delete(sourceId)
   }
 }
 
-// ==========================================================================
-// Singleton Export
-// ==========================================================================
-
 let liveMonitoringService: LiveMonitoringService | null = null
-
 export function getLiveMonitoringService(): LiveMonitoringService {
-  if (!liveMonitoringService) {
-    liveMonitoringService = new LiveMonitoringService()
-  }
+  if (!liveMonitoringService) liveMonitoringService = new LiveMonitoringService()
   return liveMonitoringService
+}
+
+export function resetLiveMonitoringServiceForTesting(): void {
+  if (liveMonitoringService) liveMonitoringService.stop()
+  liveMonitoringService = null
 }

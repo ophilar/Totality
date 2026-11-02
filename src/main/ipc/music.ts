@@ -1,753 +1,216 @@
-import { IPC_CHANNELS } from '../../shared/ipcChannels'
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 /**
  * Music IPC Handlers
- *
- * Handles IPC communication for music library operations.
  */
 
-import { getDatabase } from '../database/getDatabase'
-import { createIpcHandler, createIpcHandlerWithEvent, createValidatedIpcHandler } from './utils/createHandler'
-import { getMusicBrainzService, MusicBrainzReleaseDataNotFoundError } from '../services/MusicBrainzService'
-import { getSourceManager } from '../services/SourceManager'
-import { PlexProvider } from '../providers/plex/PlexProvider'
-import { LocalFolderProvider } from '../providers/local/LocalFolderProvider'
-import { JellyfinEmbyBase } from '../providers/jellyfin-emby/JellyfinEmbyBase'
-import { KodiProvider } from '../providers/kodi/KodiProvider'
-import { KodiLocalProvider } from '../providers/kodi/KodiLocalProvider'
-import type { MusicTrack } from '../types/database'
-import { safeSend, getWindowFromEvent } from './utils/safeSend'
-import { createProgressUpdater } from './utils/progressUpdater'
-import { validateInput, PositiveIntSchema, NonEmptyStringSchema, OptionalSourceIdSchema, SourceIdSchema, LibraryIdSchema, MusicFiltersSchema } from '../validation/schemas'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getMusicBrainzService } from '@main/services/MusicBrainzService'
+import { getSourceManager } from '@main/services/SourceManager'
+import { createProgressUpdater } from '@main/ipc/utils/progressUpdater'
+import { createValidatedIpcHandler, createIpcHandler, createValidatedIpcHandlerWithEvent, createIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
+import {
+  PositiveIntSchema,
+  NonEmptyStringSchema,
+  SourceIdSchema,
+  LibraryIdSchema,
+  MusicFiltersSchema,
+} from '@main/validation/schemas'
 import { z } from 'zod'
-import { getTaskQueueService } from '../services/TaskQueueService'
-import { analyzeAlbumQuality } from '../services/MusicQualityAnalyzer'
-import { getArtistAlbumsCombined } from '../services/utils/musicUtils'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getWindowFromEvent } from '@main/ipc/utils/safeSend'
+
+import { registerListHandlers } from '@main/ipc/utils/genericHandlers'
+import { MusicAlbum, MusicTrack } from '@main/types/database'
+
+import { getStatsCacheService } from '@main/services/StatsCacheService'
 
 export function registerMusicHandlers(): void {
+  const db = getDatabase()
+  const manager = getSourceManager()
+
+  // Register generic list/count handlers
+  registerListHandlers('music:artists', (f) => db.music.getArtists(f), (f) => db.music.countMusicArtists(f), MusicFiltersSchema)
+  registerListHandlers('music:albums', (f) => db.music.getAlbums(f), (f) => db.music.countMusicAlbums(f), MusicFiltersSchema)
+  registerListHandlers('music:tracks', (f) => db.music.getTracks(f), (f) => db.music.countMusicTracks(f), MusicFiltersSchema)
+
   // ============================================================================
   // MUSIC LIBRARY SCANNING
   // ============================================================================
 
-  /**
-   * Scan a music library from a source
-   */
-  createIpcHandlerWithEvent(IPC_CHANNELS.musicScanLibrary, async (_event, sourceId: unknown, libraryId: unknown) => {
-    const validSourceId = validateInput(SourceIdSchema, sourceId, 'music:scanLibrary')
-    const validLibraryId = validateInput(LibraryIdSchema, libraryId, 'music:scanLibrary')
-
-    // Guard: prevent concurrent scans for the same library
-    if (getTaskQueueService().hasActiveTask('music-scan', validSourceId, validLibraryId)) {
-      throw new Error('A scan is already in progress for this library')
-    }
-
-    console.log(`[music:scanLibrary] Starting scan for source=${validSourceId}, library=${validLibraryId}`)
-
-    const manager = getSourceManager()
-    const provider = manager.getProvider(validSourceId)
-
-    console.log(`[music:scanLibrary] Provider found: ${provider ? provider.providerType : 'none'}`)
-
-    if (!provider) {
-      throw new Error(`Source not found: ${validSourceId}`)
-    }
-
-    const win = getWindowFromEvent(_event)
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.MUSIC.SCAN_LIBRARY, z.tuple([SourceIdSchema, LibraryIdSchema]), async (event, sourceId, libraryId) => {
+    const win = getWindowFromEvent(event)
     const { onProgress, flush } = createProgressUpdater(win, 'music:scanProgress', 'music')
-
-    const progressCallback = (progress: { current: number; total: number; currentItem?: string; percentage?: number }) => {
-      onProgress(progress, { sourceId: validSourceId, libraryId: validLibraryId })
-    }
-
     try {
-      let result
-
-      // Get library info first (for timestamp recording)
-      const libraries = await provider.getLibraries()
-      const library = libraries.find(lib => lib.id === validLibraryId)
-
-      if (provider.providerType === 'plex') {
-        // Plex provider
-        const plexProvider = provider as PlexProvider
-        console.log(`[music:scanLibrary] Plex provider - has selected server: ${plexProvider.hasSelectedServer()}`)
-
-        if (!plexProvider.hasSelectedServer()) {
-          throw new Error('Plex provider has no selected server. Please reconnect to your Plex server.')
-        }
-
-        result = await plexProvider.scanMusicLibrary(validLibraryId, progressCallback)
-      } else if (provider.providerType === 'local') {
-        // Local folder provider
-        const localProvider = provider as LocalFolderProvider
-        console.log(`[music:scanLibrary] Local folder provider`)
-
-        // Local folder uses scanLibrary which routes to scanMusicLibrary internally
-        result = await localProvider.scanLibrary(validLibraryId, { onProgress: progressCallback })
-      } else if (provider.providerType === 'jellyfin' || provider.providerType === 'emby') {
-        // Jellyfin/Emby provider
-        const jellyfinProvider = provider as JellyfinEmbyBase
-        console.log(`[music:scanLibrary] ${provider.providerType} provider`)
-
-        result = await jellyfinProvider.scanMusicLibrary(validLibraryId, progressCallback)
-      } else if (provider.providerType === 'kodi') {
-        // Kodi JSON-RPC provider
-        const kodiProvider = provider as KodiProvider
-        console.log(`[music:scanLibrary] Kodi JSON-RPC provider`)
-
-        result = await kodiProvider.scanMusicLibrary(progressCallback)
-      } else if (provider.providerType === 'kodi-local') {
-        // Kodi-Local SQLite provider
-        const kodiLocalProvider = provider as KodiLocalProvider
-        console.log(`[music:scanLibrary] Kodi-Local provider`)
-
-        result = await kodiLocalProvider.scanMusicLibrary(progressCallback)
-      } else if (provider.providerType === 'mediamonkey') {
-        // MediaMonkey SQLite provider
-        console.log(`[music:scanLibrary] MediaMonkey provider`)
-        result = await provider.scanLibrary('music', { onProgress: progressCallback })
-      } else {
-        throw new Error(`Music scanning is not supported for provider type: ${provider.providerType}`)
-      }
-
-      console.log(`[music:scanLibrary] Scan result:`, JSON.stringify(result, null, 2))
-
-      // Analyze quality for all albums
-      const db = getDatabase()
-      await analyzeAlbumQuality(db, validSourceId)
-
-      // Update library scan timestamp if successful
-      if (result.success && library) {
-        await db.updateLibraryScanTime(
-          validSourceId,
-          validLibraryId,
-          library.name,
-          library.type,
-          result.itemsScanned
-        )
-        console.log(`[music:scanLibrary] Updated scan timestamp for library ${library.name}`)
-      }
-
-      return result
-    } catch (error: unknown) {
-      console.error('[music:scanLibrary] Error:', error)
-      throw error
-    } finally {
-      flush()
-    }
+      const res = await manager.scanLibrary(sourceId, libraryId, (p) => onProgress(p, { sourceId, libraryId }))
+      getStatsCacheService().invalidate()
+      return res
+    } finally { flush() }
   })
 
-  // ============================================================================
-  // MUSIC DATA RETRIEVAL
-  // ============================================================================
-
-  /**
-   * Get all music artists
-   */
-  createIpcHandler(IPC_CHANNELS.musicGetArtists, async (filters?: unknown) => {
-    try {
-      const validFilters = validateInput(MusicFiltersSchema, filters, 'music:getArtists')
-      const db = getDatabase()
-      return db.getMusicArtists(validFilters)
-    } catch (error: unknown) {
-      console.error('[music:getArtists] Error:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Get a music artist by ID
-   */
-  createIpcHandler(IPC_CHANNELS.musicGetArtistById, async (id: unknown) => {
-    try {
-      const validId = validateInput(PositiveIntSchema, id, 'music:getArtistById')
-      const db = getDatabase()
-      return db.getMusicArtistById(validId)
-    } catch (error: unknown) {
-      console.error('[music:getArtistById] Error:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Get all music albums
-   */
-  createIpcHandler(IPC_CHANNELS.musicGetAlbums, async (filters?: unknown) => {
-    try {
-      const validFilters = validateInput(MusicFiltersSchema, filters, 'music:getAlbums')
-      const db = getDatabase()
-      return db.getMusicAlbums(validFilters)
-    } catch (error: unknown) {
-      console.error('[music:getAlbums] Error:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Get albums for a specific artist
-   */
-  createIpcHandler(IPC_CHANNELS.musicGetAlbumsByArtist, async (artistId: unknown) => {
-    try {
-      const validArtistId = validateInput(PositiveIntSchema, artistId, 'music:getAlbumsByArtist')
-      const db = getDatabase()
-      return db.getMusicAlbums({ artistId: validArtistId })
-    } catch (error: unknown) {
-      console.error('[music:getAlbumsByArtist] Error:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Get a music album by ID
-   */
-  createIpcHandler(IPC_CHANNELS.musicGetAlbumById, async (id: unknown) => {
-    try {
-      const validId = validateInput(PositiveIntSchema, id, 'music:getAlbumById')
-      const db = getDatabase()
-      return db.getMusicAlbumById(validId)
-    } catch (error: unknown) {
-      console.error('[music:getAlbumById] Error:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Get all music tracks
-   */
-  createIpcHandler(IPC_CHANNELS.musicGetTracks, async (filters?: unknown) => {
-    try {
-      const validFilters = validateInput(MusicFiltersSchema, filters, 'music:getTracks')
-      const db = getDatabase()
-      return db.getMusicTracks(validFilters)
-    } catch (error: unknown) {
-      console.error('[music:getTracks] Error:', error)
-      throw error
-    }
-  })
-
-  createValidatedIpcHandler(IPC_CHANNELS.musicGetTrackById, PositiveIntSchema, async id =>
-    getDatabase().getMusicTrackById(id)
-  )
-
-  /**
-   * Count music items (for pagination)
-   */
-  createIpcHandler(IPC_CHANNELS.musicCountArtists, async (filters?: unknown) => {
-    try {
-      const validFilters = validateInput(MusicFiltersSchema, filters, 'music:countArtists')
-      const db = getDatabase()
-      return db.countMusicArtists(validFilters)
-    } catch (error: unknown) {
-      console.error('[music:countArtists] Error:', error)
-      throw error
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.musicCountAlbums, async (filters?: unknown) => {
-    try {
-      const validFilters = validateInput(MusicFiltersSchema, filters, 'music:countAlbums')
-      const db = getDatabase()
-      return db.countMusicAlbums(validFilters)
-    } catch (error: unknown) {
-      console.error('[music:countAlbums] Error:', error)
-      throw error
-    }
-  })
-
-  createIpcHandler(IPC_CHANNELS.musicCountTracks, async (filters?: unknown) => {
-    try {
-      const validFilters = validateInput(MusicFiltersSchema, filters, 'music:countTracks')
-      const db = getDatabase()
-      return db.countMusicTracks(validFilters)
-    } catch (error: unknown) {
-      console.error('[music:countTracks] Error:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Get tracks for a specific album
-   */
-  createIpcHandler(IPC_CHANNELS.musicGetTracksByAlbum, async (albumId: unknown) => {
-    try {
-      const validAlbumId = validateInput(PositiveIntSchema, albumId, 'music:getTracksByAlbum')
-      const db = getDatabase()
-      return db.getMusicTracks({ albumId: validAlbumId })
-    } catch (error: unknown) {
-      console.error('[music:getTracksByAlbum] Error:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Get music library statistics
-   */
-  createIpcHandler(IPC_CHANNELS.musicGetStats, async (sourceId?: unknown) => {
-    try {
-      const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'music:getStats') : undefined
-      const db = getDatabase()
-      return db.getMusicStats(validSourceId)
-    } catch (error: unknown) {
-      console.error('[music:getStats] Error:', error)
-      throw error
-    }
-  })
-
-  // ============================================================================
-  // QUALITY ANALYSIS
-  // ============================================================================
-
-  /**
-   * Get quality score for an album
-   */
-  createIpcHandler(IPC_CHANNELS.musicGetAlbumQuality, async (albumId: unknown) => {
-    try {
-      const validAlbumId = validateInput(PositiveIntSchema, albumId, 'music:getAlbumQuality')
-      const db = getDatabase()
-      return db.getMusicQualityScore(validAlbumId)
-    } catch (error: unknown) {
-      console.error('[music:getAlbumQuality] Error:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Get albums that need quality upgrades
-   */
-  createIpcHandler(IPC_CHANNELS.musicGetAlbumsNeedingUpgrade, async (options?: unknown) => {
-    try {
-      const parsed = validateInput(z.object({ limit: z.number().int().positive().optional(), sourceId: OptionalSourceIdSchema }).strict(), options ?? {}, 'music:getAlbumsNeedingUpgrade')
-      const db = getDatabase()
-      return db.getAlbumsNeedingUpgrade(parsed.limit, parsed.sourceId)
-    } catch (error: unknown) {
-      console.error('[music:getAlbumsNeedingUpgrade] Error:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Analyze quality for all albums
-   */
-  createIpcHandlerWithEvent(IPC_CHANNELS.musicAnalyzeAllQuality, async (event, sourceId?: unknown) => {
-    const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'music:analyzeAllQuality') : undefined
-    const db = getDatabase()
+  createIpcHandlerWithEvent('music:scanAll', async (event) => {
     const win = getWindowFromEvent(event)
-    const { onProgress, flush } = createProgressUpdater(win, 'music:qualityProgress', 'music')
-
+    const { onProgress, flush } = createProgressUpdater(win, 'music:scanProgress', 'music')
     try {
-      let totalAnalyzed = 0
-      await analyzeAlbumQuality(db, validSourceId, (current, total) => {
-        totalAnalyzed = total
-        onProgress({
-          current,
-          total,
-          currentItem: `Analyzing album ${current}/${total}`,
-          percentage: (current / total) * 100,
-        })
-      })
-
-      return { success: true, analyzed: totalAnalyzed }
-    } catch (error: unknown) {
-      console.error('[music:analyzeAllQuality] Error:', error)
-      throw error
-    } finally {
-      flush()
-    }
+      const results = await manager.scanAllSources((sId, sName, p) => onProgress(p, { sourceId: sId, sourceName: sName }))
+      getStatsCacheService().invalidate()
+      return Array.from(results.entries()).map(([key, value]) => ({ key, ...value }))
+    } finally { flush() }
   })
 
   // ============================================================================
-  // UNIFIED MUSICBRAINZ COMPLETENESS ANALYSIS
+  // MUSIC METADATA & UTILS
   // ============================================================================
 
-  /**
-   * Analyze completeness for all artists AND all albums in one pass
-   * Uses the public MusicBrainz API
-   * For local sources (kodi-local, local), also fetches artwork from Cover Art Archive
-   *
-   * @param sourceId Optional source ID to scope analysis
-   */
-  createIpcHandlerWithEvent(IPC_CHANNELS.musicAnalyzeAll, async (event, sourceId?: unknown) => {
-    const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'music:analyzeAll') : undefined
-    const mbService = getMusicBrainzService()
-    const win = getWindowFromEvent(event)
-    const { onProgress, flush } = createProgressUpdater(win, 'music:analysisProgress', 'music')
-
-    try {
-      const result = await mbService.analyzeAllMusic((progress) => {
-        onProgress(progress)
-      }, validSourceId)
-
-      return { success: result.completed, ...result }
-    } catch (error: unknown) {
-      console.error('[music:analyzeAll] Error:', error)
-      throw error
-    } finally {
-      flush()
-    }
+  createValidatedIpcHandler('music:getArtist', PositiveIntSchema, async (id) => {
+    return await db.music.getArtistById(id)
   })
 
-  /**
-   * Cancel the current music analysis
-   */
-  createIpcHandler(IPC_CHANNELS.musicCancelAnalysis, async () => {
-    try {
-      const mbService = getMusicBrainzService()
-      mbService.cancel()
-      return { success: true }
-    } catch (error: unknown) {
-      console.error('[music:cancelAnalysis] Error:', error)
-      throw error
-    }
+  createValidatedIpcHandler('music:getAlbum', PositiveIntSchema, async (id) => {
+    return await db.music.getAlbumById(id)
   })
 
-  /**
-   * Search for an artist in MusicBrainz
-   */
-  createIpcHandler(IPC_CHANNELS.musicSearchMusicBrainzArtist, async (name: unknown) => {
-    try {
-      const validName = validateInput(NonEmptyStringSchema, name, 'music:searchMusicBrainzArtist')
-      const mbService = getMusicBrainzService()
-      return await mbService.searchArtist(validName)
-    } catch (error: unknown) {
-      console.error('[music:searchMusicBrainzArtist] Error:', error)
-      throw error
-    }
+  createValidatedIpcHandler('music:getTrack', PositiveIntSchema, async (id) => {
+    return await db.music.getTrackById(id)
   })
 
-  /**
-   * Analyze completeness for a specific artist
-   */
-  createIpcHandler(IPC_CHANNELS.musicAnalyzeArtistCompleteness, async (artistId: unknown) => {
-    try {
-      const validArtistId = validateInput(PositiveIntSchema, artistId, 'music:analyzeArtistCompleteness')
-      const db = getDatabase()
-      const mbService = getMusicBrainzService()
-
-      const artist = db.getMusicArtistById(validArtistId)
-      if (!artist) {
-        throw new Error(`Artist not found: ${validArtistId}`)
-      }
-
-      // Get albums by artist_id AND by artist_name to catch all albums
-      const albums = getArtistAlbumsCombined(db, validArtistId, artist.name)
-
-      const ownedTitles = albums.map(a => a.title)
-      const ownedMbIds = albums.filter(a => a.musicbrainz_id).map(a => a.musicbrainz_id!)
-
-      const completeness = await mbService.analyzeArtistCompleteness(
-        artist.name,
-        artist.musicbrainz_id,
-        ownedTitles,
-        ownedMbIds
-      )
-
-      await db.upsertArtistCompleteness(completeness)
-
-      // Also analyze track completeness for all owned albums
-      console.log(`[music:analyzeArtistCompleteness] Analyzing track completeness for ${albums.length} albums...`)
-      for (const album of albums) {
-        if (!album.id) continue
-        try {
-          const tracks = db.getMusicTracks({ albumId: album.id }) as MusicTrack[]
-          const trackTitles = tracks.map((t: MusicTrack) => t.title)
-
-          const albumCompleteness = await mbService.analyzeAlbumTrackCompleteness(
-            album.id,
-            album.artist_name,
-            album.title,
-            album.musicbrainz_id,
-            trackTitles
-          )
-
-          if (albumCompleteness) {
-            await db.upsertAlbumCompleteness(albumCompleteness)
-            console.log(`[music:analyzeArtistCompleteness] ${album.title}: ${albumCompleteness.owned_tracks}/${albumCompleteness.total_tracks} tracks`)
-          }
-        } catch (albumError) {
-          if (albumError instanceof MusicBrainzReleaseDataNotFoundError) {
-            console.info(`[music:analyzeArtistCompleteness] No MusicBrainz track data for album "${album.title}"; skipped track completeness.`)
-          } else {
-            console.warn(`[music:analyzeArtistCompleteness] Failed to analyze album "${album.title}":`, albumError)
-          }
-        }
-      }
-
-      return completeness
-    } catch (error: unknown) {
-      console.error('[music:analyzeArtistCompleteness] Error:', error)
-      throw error
-    }
+  createValidatedIpcHandler('music:getAlbumTracks', PositiveIntSchema, async (albumId) => {
+    return await db.music.getTracks({ albumId, limit: 1000 })
   })
 
-  /**
-   * Get artist completeness data
-   */
-  createIpcHandler(IPC_CHANNELS.musicGetArtistCompleteness, async (artistName: unknown) => {
-    try {
-      const validArtistName = validateInput(NonEmptyStringSchema, artistName, 'music:getArtistCompleteness')
-      const db = getDatabase()
-      return db.getArtistCompleteness(validArtistName)
-    } catch (error: unknown) {
-      console.error('[music:getArtistCompleteness] Error:', error)
-      throw error
-    }
+  createValidatedIpcHandler('music:getArtistAlbums', PositiveIntSchema, async (artistId) => {
+    return await db.music.getAlbums({ artistId, limit: 1000 })
   })
 
-  /**
-   * Get all artist completeness data
-   */
-  createIpcHandler(IPC_CHANNELS.musicGetAllArtistCompleteness, async (sourceId?: unknown) => {
-    try {
-      const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'music:getAllArtistCompleteness') : undefined
-      const db = getDatabase()
-      return db.getAllArtistCompleteness(validSourceId)
-    } catch (error: unknown) {
-      console.error('[music:getAllArtistCompleteness] Error:', error)
-      throw error
-    }
+  createValidatedIpcHandler('music:searchArtists', NonEmptyStringSchema, async (query) => {
+    return await db.music.getArtists({ searchQuery: query })
   })
 
-  /**
-   * Analyze track completeness for a single album
-   */
-  createIpcHandler(IPC_CHANNELS.musicAnalyzeAlbumTrackCompleteness, async (albumId: unknown) => {
-    try {
-      const validAlbumId = validateInput(PositiveIntSchema, albumId, 'music:analyzeAlbumTrackCompleteness')
-      const db = getDatabase()
-      const mbService = getMusicBrainzService()
-
-      const album = db.getMusicAlbumById(validAlbumId)
-      if (!album) {
-        throw new Error(`Album not found: ${validAlbumId}`)
-      }
-
-      console.log(`[music:analyzeAlbumTrackCompleteness] Analyzing: ${album.artist_name} - ${album.title} (id=${validAlbumId}, mbid=${album.musicbrainz_id || 'none'})`)
-
-      const tracks = db.getMusicTracks({ albumId: validAlbumId }) as MusicTrack[]
-      const ownedTrackTitles = tracks.map((t: MusicTrack) => t.title)
-      console.log(`[music:analyzeAlbumTrackCompleteness] Owned tracks: ${ownedTrackTitles.length}`)
-
-      const completeness = await mbService.analyzeAlbumTrackCompleteness(
-        album.id!,
-        album.artist_name,
-        album.title,
-        album.musicbrainz_id,
-        ownedTrackTitles
-      )
-
-      if (completeness) {
-        console.log(`[music:analyzeAlbumTrackCompleteness] Found completeness: ${completeness.owned_tracks}/${completeness.total_tracks} tracks, missing: ${completeness.total_tracks - completeness.owned_tracks}`)
-        await db.upsertAlbumCompleteness(completeness)
-      } else {
-        console.log(`[music:analyzeAlbumTrackCompleteness] No completeness data found (album not in MusicBrainz?)`)
-      }
-
-      return completeness
-    } catch (error: unknown) {
-      console.error('[music:analyzeAlbumTrackCompleteness] Error:', error)
-      throw error
-    }
+  createValidatedIpcHandler('music:searchAlbums', NonEmptyStringSchema, async (query) => {
+    return await db.music.getAlbums({ searchQuery: query })
   })
 
-  /**
-   * Get album completeness data
-   */
-  createIpcHandler(IPC_CHANNELS.musicGetAlbumCompleteness, async (albumId: unknown) => {
-    try {
-      const validAlbumId = validateInput(PositiveIntSchema, albumId, 'music:getAlbumCompleteness')
-      const db = getDatabase()
-      return db.getAlbumCompleteness(validAlbumId)
-    } catch (error: unknown) {
-      console.error('[music:getAlbumCompleteness] Error:', error)
-      throw error
-    }
+  createValidatedIpcHandler('music:searchTracks', NonEmptyStringSchema, async (query) => {
+    return await db.music.getTracks({ searchQuery: query })
   })
 
-  /**
-   * Get all album completeness data
-   */
-  createIpcHandler(IPC_CHANNELS.musicGetAllAlbumCompleteness, async () => {
-    try {
-      const db = getDatabase()
-      return db.getAllAlbumCompleteness()
-    } catch (error: unknown) {
-      console.error('[music:getAllAlbumCompleteness] Error:', error)
-      throw error
-    }
+  createIpcHandler('music:getGenres', async () => {
+    return await db.music.getTracks({ limit: 10000 })
   })
 
-  /**
-   * Get incomplete albums (albums with missing tracks)
-   */
-  createIpcHandler(IPC_CHANNELS.musicGetIncompleteAlbums, async () => {
-    try {
-      const db = getDatabase()
-      return db.getIncompleteAlbums()
-    } catch (error: unknown) {
-      console.error('[music:getIncompleteAlbums] Error:', error)
-      throw error
-    }
+  createIpcHandler('music:getStats', async (sourceId?: string) => {
+    return await db.stats.getMusicLibraryStats(sourceId)
+  })
+
+  createIpcHandler('music:getAlbumsNeedingUpgrade', async (limit?: number, sourceId?: string) => {
+    return await db.music.getAlbumsNeedingUpgrade(limit, sourceId)
+  })
+
+  createIpcHandler(IPC_CHANNELS.MUSIC.GET_ALL_ARTIST_COMPLETENESS, async (sourceId?: string) => {
+    const epsVal = await db.config.getSetting('completeness_include_eps')
+    const singlesVal = await db.config.getSetting('completeness_include_singles')
+    const epsEnabled = epsVal !== 'false'
+    const singlesEnabled = singlesVal !== 'false'
+    const cacheKey = `${sourceId || 'all'}-${epsEnabled}-${singlesEnabled}`
+    return await getStatsCacheService().getMusicCompleteness(cacheKey, () =>
+      db.music.getAllArtistCompleteness(sourceId, epsEnabled, singlesEnabled)
+    )
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.GET_ALBUM_COMPLETENESS, PositiveIntSchema, async (albumId) => {
+    return await db.music.getAlbumCompleteness(albumId)
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.ANALYZE_ARTIST, PositiveIntSchema, async (artistId) => {
+    // Analysis is now handled by completeness background jobs, but we trigger a refresh
+    const artist = await db.music.getArtistById(artistId)
+    return artist ? await db.music.getArtistCompleteness(artist.id!) : null
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.ANALYZE_ALBUM, PositiveIntSchema, async (albumId) => {
+    return await db.music.getAlbumCompleteness(albumId)
   })
 
   // ============================================================================
-  // CANCELLATION
+  // MUSICBRAINZ & SYNC
   // ============================================================================
 
-  /**
-   * Cancel music library scan
-   */
-  createIpcHandler(IPC_CHANNELS.musicCancelScan, async (sourceId: unknown) => {
-    try {
-      const validSourceId = validateInput(SourceIdSchema, sourceId, 'music:cancelScan')
-      const manager = getSourceManager()
-      const provider = manager.getProvider(validSourceId)
-
-      if (!provider) {
-        throw new Error(`Source not found: ${validSourceId}`)
-      }
-
-      // Call cancelMusicScan on the appropriate provider
-      if (provider.providerType === 'plex') {
-        const plexProvider = provider as PlexProvider
-        plexProvider.cancelMusicScan()
-      } else if (provider.providerType === 'jellyfin' || provider.providerType === 'emby') {
-        const jellyfinProvider = provider as JellyfinEmbyBase
-        jellyfinProvider.cancelMusicScan()
-      } else if (provider.providerType === 'kodi') {
-        const kodiProvider = provider as KodiProvider
-        kodiProvider.cancelMusicScan()
-      } else if (provider.providerType === 'kodi-local') {
-        const kodiLocalProvider = provider as KodiLocalProvider
-        kodiLocalProvider.cancelMusicScan()
-      } else if (provider.providerType === 'mediamonkey') {
-        const mmProvider = provider as import('../providers/mediamonkey/MediaMonkeyProvider').MediaMonkeyProvider
-        mmProvider.cancelScan()
-      } else {
-        throw new Error(`Music scan cancellation is not supported for provider type: ${provider.providerType}`)
-      }
-
-      return { success: true }
-    } catch (error: unknown) {
-      console.error('[music:cancelScan] Error:', error)
-      throw error
+  createValidatedIpcHandler('music:searchMusicBrainz', z.tuple([z.string(), z.enum(['artist', 'release', 'recording', 'release-group'])]), async (query, type) => {
+    const mb = getMusicBrainzService()
+    if (type === 'artist') return await mb.searchArtist(query)
+    if (type === 'release') {
+       const parts = query.split(' - ')
+       const artist = parts[0] || query
+       const album = parts[1] || query
+       return await mb.searchRelease(artist, album)
     }
+    return []
   })
 
-  // ============================================================================
-  // MATCH FIXING - Fix incorrect MusicBrainz matches for artists/albums
-  // ============================================================================
-
-  /**
-   * Fix the MusicBrainz match for an artist
-   * Updates the artist's musicbrainz_id and re-runs completeness analysis
-   */
-  createIpcHandlerWithEvent(IPC_CHANNELS.musicFixArtistMatch, async (event, artistId: unknown, musicbrainzId: unknown) => {
-    try {
-      const validArtistId = validateInput(PositiveIntSchema, artistId, 'music:fixArtistMatch')
-      const validMusicbrainzId = validateInput(NonEmptyStringSchema, musicbrainzId, 'music:fixArtistMatch')
-      const db = getDatabase()
-      const mbService = getMusicBrainzService()
-      const win = getWindowFromEvent(event)
-
-      // Get the artist
-      const artist = db.getMusicArtistById(validArtistId)
-      if (!artist) {
-        throw new Error(`Artist not found: ${validArtistId}`)
-      }
-
-      // Update the artist with the new MusicBrainz ID
-      await db.updateArtistMatch(validArtistId, validMusicbrainzId)
-
-      // Get albums for re-analysis
-      const albums = getArtistAlbumsCombined(db, validArtistId, artist.name)
-
-      const ownedTitles = albums.map(a => a.title)
-      const ownedMbIds = albums.filter(a => a.musicbrainz_id).map(a => a.musicbrainz_id!)
-
-      // Re-analyze with the new MusicBrainz ID
-      const completeness = await mbService.analyzeArtistCompleteness(
-        artist.name,
-        validMusicbrainzId,
-        ownedTitles,
-        ownedMbIds
-      )
-
-      await db.upsertArtistCompleteness(completeness)
-
-      // Send library update for live refresh
-      safeSend(win, IPC_CHANNELS.libraryUpdated, { type: 'music' })
-
-      return {
-        success: true,
-        completeness,
-      }
-    } catch (error: unknown) {
-      console.error('[music:fixArtistMatch] Error:', error)
-      throw error
-    }
+  createValidatedIpcHandler('music:getMusicBrainzArtist', z.string(), async (mbid) => {
+    return await getMusicBrainzService().getArtistDetails(mbid)
   })
 
-  /**
-   * Search MusicBrainz for releases (albums) to fix a match
-   */
-  createIpcHandler(IPC_CHANNELS.musicSearchMusicBrainzRelease, async (artistName: unknown, albumTitle: unknown) => {
-    try {
-      const validArtistName = validateInput(NonEmptyStringSchema, artistName, 'music:searchMusicBrainzRelease')
-      const validAlbumTitle = validateInput(NonEmptyStringSchema, albumTitle, 'music:searchMusicBrainzRelease')
-      const mbService = getMusicBrainzService()
-      return await mbService.searchRelease(validArtistName, validAlbumTitle)
-    } catch (error: unknown) {
-      console.error('[music:searchMusicBrainzRelease] Error:', error)
-      throw error
-    }
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.SEARCH_MB_ARTIST, z.string(), async (name) => {
+    return await getMusicBrainzService().searchArtist(name)
   })
 
-  /**
-   * Fix the MusicBrainz match for an album
-   * Updates the album's musicbrainz_id and re-runs track completeness analysis
-   */
-  createIpcHandlerWithEvent(IPC_CHANNELS.musicFixAlbumMatch, async (event, albumId: unknown, musicbrainzReleaseGroupId: unknown) => {
-    try {
-      const validAlbumId = validateInput(PositiveIntSchema, albumId, 'music:fixAlbumMatch')
-      const validMusicbrainzReleaseGroupId = validateInput(NonEmptyStringSchema, musicbrainzReleaseGroupId, 'music:fixAlbumMatch')
-      const db = getDatabase()
-      const mbService = getMusicBrainzService()
-      const win = getWindowFromEvent(event)
-
-      // Get the album
-      const album = db.getMusicAlbumById(validAlbumId)
-      if (!album) {
-        throw new Error(`Album not found: ${validAlbumId}`)
-      }
-
-      // Update the album with the new MusicBrainz ID
-      await db.updateAlbumMatch(validAlbumId, validMusicbrainzReleaseGroupId)
-
-      // Get tracks for re-analysis
-      const tracks = db.getMusicTracks({ albumId: validAlbumId }) as MusicTrack[]
-      const ownedTrackTitles = tracks.map((t: MusicTrack) => t.title)
-
-      // Re-analyze track completeness with the new MusicBrainz ID
-      const completeness = await mbService.analyzeAlbumTrackCompleteness(
-        validAlbumId,
-        album.artist_name,
-        album.title,
-        validMusicbrainzReleaseGroupId,
-        ownedTrackTitles
-      )
-
-      if (completeness) {
-        await db.upsertAlbumCompleteness(completeness)
-      }
-
-      // Send library update for live refresh
-      safeSend(win, IPC_CHANNELS.libraryUpdated, { type: 'music' })
-
-      return {
-        success: true,
-        completeness,
-      }
-    } catch (error: unknown) {
-      console.error('[music:fixAlbumMatch] Error:', error)
-      throw error
-    }
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.SEARCH_MB_RELEASE, z.tuple([z.string(), z.string()]), async (artistName, albumTitle) => {
+    return await getMusicBrainzService().searchRelease(artistName, albumTitle)
   })
+
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.GET_ARTIST_COMPLETENESS, PositiveIntSchema, async (artistId) => {
+    return await db.music.getArtistCompleteness(artistId)
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.ANALYZE_ARTIST_COMPLETENESS, PositiveIntSchema, async (artistId) => {
+    const artist = await db.music.getArtistById(artistId)
+    if (!artist) throw new Error(`Artist with ID ${artistId} not found`)
+    const albums = await db.music.getAlbums({ artistId, sourceId: artist.source_id, libraryId: artist.library_id, limit: 1000 })
+    const ownedTitles = albums.map((a: MusicAlbum) => a.title)
+    const ownedMbIds = albums.map((a: MusicAlbum) => a.musicbrainz_id).filter((id: string | undefined): id is string => !!id)
+    const completeness = await getMusicBrainzService().analyzeArtistCompleteness(
+      artist.name,
+      artist.musicbrainz_id || undefined,
+      ownedTitles,
+      ownedMbIds
+    )
+    await db.music.upsertArtistCompleteness({ ...completeness, artist_id: artistId, source_id: artist.source_id, library_id: artist.library_id })
+    getStatsCacheService().invalidate()
+    return completeness
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.ANALYZE_ALBUM_TRACK_COMPLETENESS, PositiveIntSchema, async (albumId) => {
+    const album = await db.music.getAlbumById(albumId)
+    if (!album) throw new Error(`Album with ID ${albumId} not found`)
+    const tracks = await db.music.getTracks({ albumId, limit: 1000 })
+    const ownedTrackTitles = tracks.map((t: MusicTrack) => t.title)
+    const completeness = await getMusicBrainzService().analyzeAlbumTrackCompleteness(
+      albumId,
+      album.artist_name,
+      album.title,
+      album.musicbrainz_release_group_id || album.musicbrainz_id || undefined,
+      ownedTrackTitles
+    )
+    if (completeness) {
+      await db.music.upsertAlbumCompleteness(completeness)
+    }
+    getStatsCacheService().invalidate()
+    return completeness
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.FIX_ARTIST_MATCH, z.tuple([PositiveIntSchema, NonEmptyStringSchema]), async (artistId, musicbrainzId) => {
+    await db.music.fixArtistMatch(artistId, musicbrainzId)
+    await db.identities.upsertIdentity({ entityType: 'artist', entityId: artistId, provider: 'musicbrainz', externalId: musicbrainzId, locked: true, lockSource: 'manual' })
+    getStatsCacheService().invalidate()
+    return { success: true }
+  })
+
+  createValidatedIpcHandler('music:fixAlbumMatch', z.tuple([PositiveIntSchema, NonEmptyStringSchema]), async (albumId, musicbrainzReleaseGroupId) => {
+    await db.music.fixAlbumMatch(albumId, musicbrainzReleaseGroupId)
+    await db.identities.upsertIdentity({ entityType: 'album', entityId: albumId, provider: 'musicbrainz', externalId: musicbrainzReleaseGroupId, locked: true, lockSource: 'manual' })
+    getStatsCacheService().invalidate()
+    return { success: true }
+  })
+
+  getLoggingService().info('[music]', 'Music IPC handlers registered')
 }

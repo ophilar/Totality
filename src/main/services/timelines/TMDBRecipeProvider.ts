@@ -1,7 +1,7 @@
-
 import type { ITimelineRecipeProvider, TimelineDefinition, TimelineItem, TimelineRecipeSummary, TimelineFetchOptions } from './ITimelineRecipeProvider'
-import { getTMDBService, TMDBService } from '../TMDBService'
-import { getDatabase } from '../../database/getDatabase'
+import { getTMDBService, TMDBService } from '@main/services/TMDBService'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { movieCollections } from '@main/database/drizzleSchema'
 import { getTimelineCacheService, TimelineCacheService } from './TimelineCacheService'
 
 export class TMDBRecipeProvider implements ITimelineRecipeProvider {
@@ -24,16 +24,17 @@ export class TMDBRecipeProvider implements ITimelineRecipeProvider {
 
     try {
       // Discover collections present in the user's database
-      const localCollections = getDatabase().getMovieCollections()
+      const db = getDatabase().drizzle
+      const localCollections = await db.select().from(movieCollections)
       for (const col of localCollections) {
-        if (col.tmdb_collection_id && !seenIds.has(col.tmdb_collection_id)) {
-          seenIds.add(col.tmdb_collection_id)
+        if (col.tmdbCollectionId && !seenIds.has(col.tmdbCollectionId)) {
+          seenIds.add(col.tmdbCollectionId)
           recipes.push({
-            id: `tmdb-collection-${col.tmdb_collection_id}`,
-            name: col.collection_name,
-            franchise: col.collection_name,
-            description: `Official TMDB Collection (${col.total_movies} films)`,
-            totalItems: col.total_movies,
+            id: `tmdb-collection-${col.tmdbCollectionId}`,
+            name: col.collectionName,
+            franchise: col.collectionName,
+            description: `Official TMDB Collection (${col.totalMovies} films)`,
+            totalItems: col.totalMovies,
             sourceType: 'remote',
             granularity: 'release-order',
           })

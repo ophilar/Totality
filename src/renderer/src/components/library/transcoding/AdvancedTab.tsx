@@ -1,24 +1,23 @@
 import { useState, useEffect } from 'react'
-import {
-  Sliders,
-  Settings2,
-  Bookmark,
-  Save,
-  Trash2,
-  Copy,
+import { 
+  Sliders, 
+  Settings2, 
+  Bookmark, 
+  Save, 
+  Trash2, 
+  Copy, 
   Layers,
   Sparkles
 } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
-import type { TranscodeOptions, TranscodingParams, Availability, PresetTemplate } from './types'
-import { TranscodeOptionsSchema } from '@main/validation/schemas'
-import { migrateTemplateOptions, readTemplates } from './templateMigration'
-import { OPTIMIZATION_VIDEO_FORMATS } from './optimizationOptions'
+import type { TranscodeOptions, TranscodingParams, GpuInfo, Availability, PresetTemplate } from './types'
+import { TranscodingDeviceSelector } from './TranscodingDeviceSelector'
 
 export interface AdvancedTabProps {
   options: TranscodeOptions
   setOptions: React.Dispatch<React.SetStateAction<TranscodeOptions>>
   params: TranscodingParams | null
+  gpus: GpuInfo[]
   availability: Availability | null
 }
 
@@ -28,35 +27,30 @@ export function AdvancedTab({
   options,
   setOptions,
   params,
-  availability,
+  gpus,
+  availability
 }: AdvancedTabProps) {
   const { addToast } = useToast()
   const [templates, setTemplates] = useState<PresetTemplate[]>([])
   const [selectedTemplateName, setSelectedTemplateName] = useState<string>('')
   const [newTemplateName, setNewTemplateName] = useState<string>('')
   const [showSaveInput, setShowSaveInput] = useState(false)
-  const [templateError, setTemplateError] = useState<string | null>(null)
 
   // Load saved templates from localStorage
   useEffect(() => {
     try {
       const stored = localStorage.getItem(TEMPLATES_STORAGE_KEY)
       if (stored) {
-        const parsed = readTemplates(JSON.parse(stored))
-        setTemplates(parsed.templates)
-        if (parsed.migrated) {
-          localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(parsed.templates.map(({ name, options }) => ({ name, options }))))
-        }
+        queueMicrotask(() => { setTemplates(JSON.parse(stored)) })
       }
     } catch (e) {
       console.error('Failed to load templates:', e)
-      setTemplateError(e instanceof Error ? e.message : String(e))
     }
   }, [])
 
   const saveTemplatesToStorage = (updated: PresetTemplate[]) => {
     setTemplates(updated)
-    localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(updated.map(({ name, options }) => ({ name, options }))))
+    localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(updated))
   }
 
   const handleSaveTemplate = () => {
@@ -67,7 +61,7 @@ export function AdvancedTab({
     const name = newTemplateName.trim()
     const existingIndex = templates.findIndex(t => t.name.toLowerCase() === name.toLowerCase())
     const newTemplate: PresetTemplate = { name, options: { ...options } }
-
+    
     let updated: PresetTemplate[]
     if (existingIndex >= 0) {
       updated = [...templates]
@@ -87,18 +81,7 @@ export function AdvancedTab({
     setSelectedTemplateName(name)
     const found = templates.find(t => t.name === name)
     if (found) {
-      const migrated = migrateTemplateOptions(found.options)
-      const parsed = TranscodeOptionsSchema.unwrap().safeParse(migrated.options)
-      if (!parsed.success) {
-        setTemplateError(found.error ?? `Template "${name}" has unsupported settings. Reselect them before using this template.`)
-        return
-      }
-      setTemplateError(null)
-      if (migrated.changed) {
-        const updated = templates.map(template => template.name === name ? { name, options: parsed.data } : template)
-        saveTemplatesToStorage(updated)
-      }
-      setOptions(parsed.data as TranscodeOptions)
+      setOptions({ ...found.options })
       addToast({ title: `Loaded template "${name}"`, type: 'info' })
     }
   }
@@ -173,7 +156,6 @@ export function AdvancedTab({
           </div>
         )}
 
-        {templateError && <p role="alert" className="text-xs text-destructive">{templateError}</p>}
         {templates.length > 0 ? (
           <div className="flex items-center gap-2">
             <select
@@ -183,7 +165,7 @@ export function AdvancedTab({
             >
               <option value="">Select a saved template…</option>
               {templates.map(t => (
-                <option key={t.name} value={t.name}>{t.name}{t.error ? ' · correction required' : ''}</option>
+                <option key={t.name} value={t.name}>{t.name}</option>
               ))}
             </select>
             {selectedTemplateName && (
@@ -210,12 +192,12 @@ export function AdvancedTab({
             <Settings2 className="w-3.5 h-3.5 text-primary" />
             Transcoding Engine
           </label>
-          <select
+          <select 
             value={options.transcodingEngine}
             onChange={(e) => setOptions(prev => ({ ...prev, transcodingEngine: e.target.value as TranscodeOptions['transcodingEngine'] }))}
             className="w-full bg-muted border border-border/50 rounded-xl p-2.5 text-sm font-medium outline-hidden focus:border-primary transition-all"
           >
-            {availability?.ffmpeg && <option value="ffmpeg">FFmpeg</option>}
+            {availability?.ffmpeg && <option value="ffmpeg">FFmpeg (Zero-Copy VRAM Pipeline)</option>}
           </select>
         </div>
 
@@ -223,42 +205,50 @@ export function AdvancedTab({
         <div className="space-y-2">
           <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70 flex items-center gap-1.5">
             <Layers className="w-3.5 h-3.5 text-primary" />
-            Video format
+            Target Codec
           </label>
-          <select
-            value={options.targetCodec ?? ''}
-            onChange={(e) => setOptions(prev => ({ ...prev, targetCodec: e.target.value ? e.target.value as NonNullable<TranscodeOptions['targetCodec']> : undefined }))}
+          <select 
+            value={options.targetCodec}
+            onChange={(e) => setOptions(prev => ({ ...prev, targetCodec: e.target.value as TranscodeOptions['targetCodec'] }))}
             className="w-full bg-muted border border-border/50 rounded-xl p-2.5 text-sm font-medium outline-hidden focus:border-primary transition-all"
           >
-            <option value="">Choose format</option>
-            {OPTIMIZATION_VIDEO_FORMATS.map(format => <option key={format.value} value={format.value}>{format.label}</option>)}
+            <option value="av1">AV1</option>
+            <option value="hevc">HEVC (H.265)</option>
           </select>
         </div>
       </div>
+
+      {/* Canonical Transcoding Device Selector */}
+      <TranscodingDeviceSelector
+        useGpu={options.useGpu}
+        onUseGpuChange={(useGpu) => setOptions(prev => ({ ...prev, useGpu }))}
+        selectedGpuId={options.gpuId}
+        onSelectedGpuIdChange={(gpuId) => setOptions(prev => ({ ...prev, gpuId, useGpu: Boolean(gpuId) }))}
+        gpus={gpus}
+        variant="expanded"
+      />
 
       {/* Quality CQ Slider with Visual Feedback */}
       <div className="space-y-3 p-4 bg-muted/20 border border-border/40 rounded-2xl">
         <div className="flex items-center justify-between">
           <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
             <Sliders className="w-3.5 h-3.5 text-primary" />
-            Constant Quality Target (CQ / CRF{options.crf === undefined ? '' : `: ${options.crf}`})
+            Constant Quality Target (CQ / CRF: {options.crf})
           </label>
           <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${qualityInfo.badgeBg} ${qualityInfo.color}`}>
             {qualityInfo.text}
           </span>
         </div>
 
-        {options.crf === undefined
-          ? <p role="status" className="text-xs text-muted-foreground">No CQ/CRF value is available yet. Prepare encoding settings to load measured encoder settings.</p>
-          : <input
-            type="range"
-            min={10}
-            max={35}
-            step={1}
-            value={options.crf}
-            onChange={(e) => setOptions(prev => ({ ...prev, crf: parseInt(e.target.value) }))}
-            className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-          />}
+        <input 
+          type="range"
+          min={10}
+          max={35}
+          step={1}
+          value={options.crf}
+          onChange={(e) => setOptions(prev => ({ ...prev, crf: parseInt(e.target.value) }))}
+          className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+        />
 
         <div className="flex justify-between text-[10px] text-muted-foreground/70 font-mono">
           <span>CQ 10 (Archival / Large)</span>
@@ -272,14 +262,14 @@ export function AdvancedTab({
         <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">
           Hardware Encoding Preset
         </label>
-        <select
+        <select 
           value={options.preset}
           onChange={(e) => setOptions(prev => ({ ...prev, preset: e.target.value }))}
           className="w-full bg-muted border border-border/50 rounded-xl p-2.5 text-sm font-medium outline-hidden focus:border-primary"
         >
           <optgroup label="NVIDIA NVENC Presets">
             <option value="p7">P7 (Slowest / Highest Quality)</option>
-            <option value="p6">P6 (High quality)</option>
+            <option value="p6">P6 (Recommended HQ)</option>
             <option value="p5">P5 (Medium / Balanced)</option>
             <option value="p4">P4 (Fast)</option>
             <option value="p3">P3 (Faster)</option>
@@ -295,12 +285,59 @@ export function AdvancedTab({
         </select>
       </div>
 
+      {/* Output Mode Selection */}
+      <div className="space-y-2">
+        <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">
+          Output Mode
+        </label>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <button
+            type="button"
+            onClick={() => setOptions(prev => ({ ...prev, outputMode: 'replace' }))}
+            className={`p-3 rounded-xl border text-left transition-all ${
+              options.outputMode === 'replace'
+                ? 'bg-primary/10 border-primary shadow-sm ring-1 ring-primary'
+                : 'bg-muted/30 border-border/40 text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <span className="text-xs font-bold text-foreground block mb-0.5">Direct Replace</span>
+            <p className="text-[11px] text-muted-foreground leading-snug">In-place replacement with zero residual storage footprint.</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setOptions(prev => ({ ...prev, outputMode: 'quarantine-replace' }))}
+            className={`p-3 rounded-xl border text-left transition-all ${
+              options.outputMode === 'quarantine-replace'
+                ? 'bg-primary/10 border-primary shadow-sm ring-1 ring-primary'
+                : 'bg-muted/30 border-border/40 text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <span className="text-xs font-bold text-foreground block mb-0.5">Quarantine & Replace</span>
+            <p className="text-[11px] text-muted-foreground leading-snug">Replaces original and retains timestamped backup.</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setOptions(prev => ({ ...prev, outputMode: 'copy' }))}
+            className={`p-3 rounded-xl border text-left transition-all ${
+              options.outputMode === 'copy'
+                ? 'bg-primary/10 border-primary shadow-sm ring-1 ring-primary'
+                : 'bg-muted/30 border-border/40 text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <span className="text-xs font-bold text-foreground block mb-0.5">Create Sibling Copy</span>
+            <p className="text-[11px] text-muted-foreground leading-snug">Outputs alongside original file as a duplicate.</p>
+          </button>
+        </div>
+      </div>
+
       {/* Custom FFmpeg Arguments */}
       <div className="space-y-2">
         <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">
           Custom Additional FFmpeg Arguments
         </label>
-        <input
+        <input 
           type="text"
           placeholder="e.g. -tune hq -spatial-aq 1"
           value={options.customArgs}

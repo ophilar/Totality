@@ -1,208 +1,106 @@
-/**
- * IPC Handler Registration & Integration Tests
- *
- * Tests that IPC handlers are registered correctly, validate inputs,
- * and handle errors gracefully. Uses the mocked ipcMain from setup.ts.
- */
-
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ipcMain } from 'electron'
+import { setupTestDb, cleanupTestDb, createAuthorizedIpcEvent } from '@tests/TestUtils'
+import { registerDatabaseHandlers } from '@main/ipc/database'
+import { registerListHandlers } from '@main/ipc/utils/genericHandlers'
+import { getLoggingService } from '@main/services/LoggingService'
+import { z } from 'zod'
 
 // Track registered handlers
-const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>()
+type IpcHandler = Parameters<typeof ipcMain.handle>[1]
+const handlers = new Map<string, IpcHandler>()
 
-// Override ipcMain.handle to capture registrations
-vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: (...args: unknown[]) => Promise<unknown>) => {
+// Override ipcMain.handle/removeHandler to capture registrations
+vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: IpcHandler) => {
+  if (handlers.has(channel)) {
+    throw new Error(`Attempted to register a second handler for '${channel}'`)
+  }
   handlers.set(channel, handler)
   return undefined as never
 })
 
-// Shared mock database — same instance returned every call
-const sharedMockDb = {
-  getMediaItems: vi.fn(() => []),
-  countMediaItems: vi.fn(() => 0),
-  getTVShows: vi.fn(() => []),
-  countTVShows: vi.fn(() => 0),
-  countTVEpisodes: vi.fn(() => 0),
-  getMediaItemById: vi.fn(() => null),
-  upsertMediaItem: vi.fn(() => 1),
-  deleteMediaItem: vi.fn(),
-  getMediaItemVersions: vi.fn(() => []),
-  getQualityScores: vi.fn(() => []),
-  getQualityScoreByMediaId: vi.fn(() => null),
-  upsertQualityScore: vi.fn(() => 1),
-  getSetting: vi.fn(() => null),
-  setSetting: vi.fn(),
-  getMediaSources: vi.fn(() => []),
-  getAggregatedSourceStats: vi.fn(() => ({ totalSources: 0, enabledSources: 0, totalItems: 0, bySource: [] })),
-  getLetterOffset: vi.fn(() => 0),
-  getExclusions: vi.fn(() => []),
-  addExclusion: vi.fn(() => 1),
-  removeExclusion: vi.fn(),
-  exportData: vi.fn(() => ({})),
-  importData: vi.fn(() => ({ imported: 0, errors: [] })),
-  resetDatabase: vi.fn(),
-  getDbSize: vi.fn(() => 1024),
-  getDbPath: vi.fn(() => '/mock/path/totality.db'),
-}
-
-// Mock all service dependencies
-vi.mock('../../src/main/database/getDatabase', () => ({
-  getDatabase: vi.fn(() => sharedMockDb),
-}))
-
-vi.mock('../../src/main/services/QualityAnalyzer', () => ({
-  getQualityAnalyzer: vi.fn(() => ({
-    invalidateThresholdsCache: vi.fn(),
-    getQualityDistribution: vi.fn(() => ({})),
-  })),
-}))
-
-vi.mock('../../src/main/services/TMDBService', () => ({
-  getTMDBService: vi.fn(() => ({
-    refreshApiKey: vi.fn(),
-  })),
-}))
-
-vi.mock('../../src/main/services/GeminiService', () => ({
-  getGeminiService: vi.fn(() => ({
-    refreshApiKey: vi.fn(),
-  })),
-}))
-
-vi.mock('../../src/main/providers/kodi/KodiDatabaseSchema', () => ({
-  invalidateNfsMappingsCache: vi.fn(),
-}))
-
-vi.mock('fs/promises', () => ({
-  default: {
-    readFile: vi.fn(),
-    writeFile: vi.fn(),
-    mkdir: vi.fn(),
-    access: vi.fn(),
-    stat: vi.fn(() => ({ size: 1024 })),
-  },
-}))
-
-// Import AFTER mocks
-const { registerDatabaseHandlers } = await import('../../src/main/ipc/database')
-
-describe('IPC Handler Registration', () => {
-  beforeEach(() => {
-    handlers.clear()
-    vi.mocked(ipcMain.handle).mockClear()
-  })
-
-  describe('registerDatabaseHandlers', () => {
-    beforeEach(() => {
-      registerDatabaseHandlers()
-    })
-
-    it('registers all expected database handlers', () => {
-      const expectedHandlers = [
-        'db:getMediaItems',
-        'db:countMediaItems',
-        'db:getTVShows',
-        'db:countTVShows',
-        'db:countTVEpisodes',
-        'db:getMediaItemById',
-        'db:upsertMediaItem',
-        'db:deleteMediaItem',
-        'db:getMediaItemVersions',
-        'db:getQualityScores',
-        'db:getQualityScoreByMediaId',
-        'db:upsertQualityScore',
-        'db:getSetting',
-        'db:setSetting',
-      ]
-
-      for (const channel of expectedHandlers) {
-        expect(handlers.has(channel), `Handler '${channel}' should be registered`).toBe(true)
-      }
-    })
-
-    it('db:getMediaItemById rejects non-positive integer', async () => {
-      const handler = handlers.get('db:getMediaItemById')!
-      await expect(handler({ senderFrame: { url: 'file:///test' } } as never, -1)).rejects.toThrow('Validation failed')
-      await expect(handler({ senderFrame: { url: 'file:///test' } } as never, 'abc')).rejects.toThrow('Validation failed')
-      await expect(handler({ senderFrame: { url: 'file:///test' } } as never, 0)).rejects.toThrow('Validation failed')
-    })
-
-    it('db:getMediaItemById accepts valid id', async () => {
-      const handler = handlers.get('db:getMediaItemById')!
-      const result = await handler({ senderFrame: { url: 'file:///test' } } as never, 42)
-      expect(result).toBeNull() // mock returns null
-    })
-
-    it('db:getSetting rejects empty key', async () => {
-      const handler = handlers.get('db:getSetting')!
-      await expect(handler({ senderFrame: { url: 'file:///test' } } as never, '')).rejects.toThrow('Validation failed')
-    })
-
-    it('db:getSetting accepts valid key', async () => {
-      const handler = handlers.get('db:getSetting')!
-      const result = await handler({ senderFrame: { url: 'file:///test' } } as never, 'tmdb_api_key')
-      expect(result).toBeNull() // mock returns null
-    })
-
-    it('db:setSetting rejects key exceeding max length', async () => {
-      const handler = handlers.get('db:setSetting')!
-      const mockEvent = { sender: { id: 1 }, senderFrame: { url: 'file:///test' } } as never
-      await expect(handler(mockEvent, 'a'.repeat(201), 'value')).rejects.toThrow('Validation failed')
-    })
-
-    it('db:deleteMediaItem rejects non-integer id', async () => {
-      const handler = handlers.get('db:deleteMediaItem')!
-      await expect(handler({ senderFrame: { url: 'file:///test' } } as never, 'not-a-number')).rejects.toThrow('Validation failed')
-    })
-
-    it('db:getMediaItems accepts undefined filters', async () => {
-      const handler = handlers.get('db:getMediaItems')!
-      const result = await handler({ senderFrame: { url: 'file:///test' } } as never, undefined)
-      expect(Array.isArray(result)).toBe(true)
-    })
-
-    it('db:getTVShows rejects invalid sortBy', async () => {
-      const handler = handlers.get('db:getTVShows')!
-      await expect(handler({ senderFrame: { url: 'file:///test' } } as never, { sortBy: 'DROP TABLE' })).rejects.toThrow('Validation failed')
-    })
-
-    it('db:countMediaItems rejects invalid filter type', async () => {
-      const handler = handlers.get('db:countMediaItems')!
-      await expect(handler({ senderFrame: { url: 'file:///test' } } as never, { type: 'invalid' })).rejects.toThrow('Validation failed')
-    })
-
-    it('db:getLetterOffset validates required params', async () => {
-      const handler = handlers.get('db:getLetterOffset')!
-      await expect(handler({ senderFrame: { url: 'file:///test' } } as never, {})).rejects.toThrow('Validation failed')
-    })
-  })
+vi.mocked(ipcMain.removeHandler).mockImplementation((channel: string) => {
+  handlers.delete(channel)
+  return undefined as never
 })
 
-describe('IPC Handler Error Handling', () => {
-  beforeEach(() => {
+describe('IPC Handler Registration', () => {
+  let db: Awaited<ReturnType<typeof setupTestDb>>
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
     handlers.clear()
-    vi.mocked(ipcMain.handle).mockClear()
+    db = await setupTestDb()
+    getLoggingService().setDatabaseGetter(() => db)
     registerDatabaseHandlers()
   })
 
-  it('handlers throw errors with context for invalid input', async () => {
-    const handler = handlers.get('db:getMediaItemById')!
-    try {
-      await handler({ senderFrame: { url: 'file:///test' } } as never, 'invalid')
-      expect.fail('should throw')
-    } catch (error) {
-      expect((error as Error).message).toContain('db:getMediaItemById')
+  afterEach(() => {
+    cleanupTestDb()
+  })
+
+  it('registers expected database handlers', () => {
+    const expected = [
+      'db:media:list',
+      'db:media:count',
+      'db:tvshows:list',
+      'db:tvshows:count',
+      'db:media:getItem',
+      'db:getSetting',
+      'db:setSetting',
+    ]
+    for (const channel of expected) {
+      expect(handlers.has(channel), `Missing channel: ${channel}`).toBe(true)
     }
   })
 
-  it('handlers propagate service errors', async () => {
-    // Temporarily make the shared mock throw
-    sharedMockDb.getMediaItemById.mockImplementationOnce(() => {
-      throw new Error('Database connection lost')
-    })
+  it('db:media:getItem validates input', async () => {
+    const handler = handlers.get('db:media:getItem')!
+    await expect(handler(createAuthorizedIpcEvent(), -1)).rejects.toThrow()
+  })
 
-    const handler = handlers.get('db:getMediaItemById')!
-    await expect(handler({ senderFrame: { url: 'file:///test' } } as never, 1)).rejects.toThrow('Database connection lost')
+  it('db:getSetting validates input', async () => {
+    const handler = handlers.get('db:getSetting')!
+    await expect(handler(createAuthorizedIpcEvent(), '')).rejects.toThrow()
+  })
+
+  it('db:setSetting persists value to real database', async () => {
+    const handler = handlers.get('db:setSetting')!
+    await handler(createAuthorizedIpcEvent(), 'test_setting', 'test_value')
+
+    expect(await db.config.getSetting('test_setting')).toBe('test_value')
+
+  })
+
+  it('requires a security PIN before protecting a library', async () => {
+    const handler = handlers.get('db:setLibraryProtected')!
+    await expect(handler(createAuthorizedIpcEvent(), 'source-1', 'library-1', true))
+      .rejects.toThrow('Set a security PIN before protecting a library')
+  })
+
+  it('accepts only 4 to 8 digit security PINs', async () => {
+    const handler = handlers.get('db:setPin')!
+    await expect(handler(createAuthorizedIpcEvent(), '12')).rejects.toThrow()
+    await expect(handler(createAuthorizedIpcEvent(), '12ab')).rejects.toThrow()
+    await handler(createAuthorizedIpcEvent(), '1234')
+    expect(await db.config.hasPin()).toBe(true)
+  })
+
+  it('registerListHandlers registers canonical list and count channels', () => {
+    const base = 'test:resource'
+    const schema = z.unknown()
+    
+    registerListHandlers(
+      base,
+      () => [],
+      () => 0,
+      schema
+    )
+
+    expect(handlers.has('test:resource:list')).toBe(true)
+    expect(handlers.has('test:resource:count')).toBe(true)
   })
 })
+
+
+

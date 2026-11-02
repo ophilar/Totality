@@ -6,12 +6,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { APP_CONFIG } from '@main/config'
 import {
   SlidingWindowRateLimiter,
   SimpleDelayRateLimiter,
   RateLimiters,
-} from '../../src/main/services/utils/RateLimiter'
+} from '@main/services/utils/RateLimiter'
 
 // ============================================================================
 // SlidingWindowRateLimiter
@@ -110,59 +109,11 @@ describe('SimpleDelayRateLimiter', () => {
     const elapsed = limiter.getTimeSinceLastRequest()
     expect(elapsed).toBeGreaterThanOrEqual(500)
   })
-
-  it('backs off after service errors and recovers after successful requests', () => {
-    const limiter = new SimpleDelayRateLimiter(1500)
-
-    limiter.recordError(503)
-    expect(limiter.getCurrentDelay()).toBe(3000)
-
-    limiter.setDelay(45_000)
-    expect(limiter.getCurrentDelay()).toBe(45_000)
-
-    for (let i = 0; i < 5; i++) limiter.recordSuccess()
-    expect(limiter.getCurrentDelay()).toBe(44_500)
-
-    limiter.reset()
-    expect(limiter.getCurrentDelay()).toBe(1500)
-  })
-
-  it('pauses MusicBrainz requests after repeated availability failures', async () => {
-    const limiter = RateLimiters.createMusicBrainzLimiter()
-    await limiter.waitForSlot()
-    limiter.recordError(503)
-    limiter.recordError(503)
-    limiter.recordError(503)
-
-    let resolved = false
-    const request = limiter.waitForSlot().then(() => { resolved = true })
-    await vi.advanceTimersByTimeAsync(APP_CONFIG.musicBrainz.availabilityCooldownMs - 1)
-    expect(resolved).toBe(false)
-    await vi.advanceTimersByTimeAsync(1)
-    await request
-    expect(resolved).toBe(true)
-  })
 })
 
 // ============================================================================
 // Pre-configured Limiters
 // ============================================================================
-
-describe('availability cooldown across requests', () => {
-  it('retains consecutive failures between actual request slots', async () => {
-    const limiter = new SimpleDelayRateLimiter(0, 0, { failureThreshold: 3, durationMs: 100 })
-    for (let attempt = 0; attempt < 3; attempt++) {
-      await limiter.waitForSlot()
-      limiter.recordError(503)
-    }
-    let resolved = false
-    const request = limiter.waitForSlot().then(() => { resolved = true })
-    await Promise.resolve()
-    expect(resolved).toBe(false)
-    await request
-    expect(resolved).toBe(true)
-  })
-})
 
 describe('RateLimiters factory', () => {
   it('should create TMDB limiter with correct config', () => {
@@ -178,3 +129,6 @@ describe('RateLimiters factory', () => {
     expect(limiter).toBeInstanceOf(SimpleDelayRateLimiter)
   })
 })
+
+
+

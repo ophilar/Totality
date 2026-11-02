@@ -1,2104 +1,518 @@
-import { getErrorMessage, isHttpError, isNodeError } from '../../services/utils/errorUtils'
-import { parseDolbyVisionProfile } from '../../services/utils/dolbyVision'
-import { retryWithBackoff } from '../../services/utils/retryWithBackoff'
-/**
- * JellyfinEmbyBase
- *
- * Shared base class for Jellyfin and Emby providers.
- * Both servers share a very similar API since Jellyfin forked from Emby.
- */
-
-import * as path from 'node:path'
-import { fetchJSON, fetchWithTimeout, buildUrl } from '../../services/utils/httpClient'
-import { getDatabase } from '../../database/getDatabase'
-import { getQualityAnalyzer } from '../../services/QualityAnalyzer'
-import { getMovieCollectionService } from '../../services/MovieCollectionService'
-import { getTMDBService } from '../../services/TMDBService'
+import { JellyfinApiClient } from '@main/providers/jellyfin-emby/JellyfinApiClient'
+import { JellyfinItemMapper } from '@main/providers/jellyfin-emby/JellyfinItemMapper'
 import {
-  normalizeVideoCodec,
-  normalizeAudioCodec,
-  normalizeResolution,
-  normalizeHdrFormat,
-  normalizeBitrate,
-  normalizeFrameRate,
-  normalizeAudioChannels,
-  normalizeSampleRate,
-  normalizeContainer,
-  hasObjectAudio,
-} from '../../services/MediaNormalizer'
-import { groupByMediaIdentity, selectBestAudioTrack, scoreVersion } from '../utils/ProviderUtils'
-import { getFileNameParser } from '../../services/FileNameParser'
-import { extractVersionNames } from '../utils/VersionNaming'
-import type {
-  MediaProvider,
-  ProviderType,
+  BaseMediaProvider,
   ProviderCredentials,
   AuthResult,
-  ConnectionTestResult,
   MediaLibrary,
   MediaMetadata,
   ScanResult,
   ScanOptions,
   SourceConfig,
-} from '../base/MediaProvider'
-import type { MediaItem, MediaItemVersion, AudioTrack, SubtitleTrack, MusicArtist, MusicAlbum, MusicTrack, MissingMovie } from '../../types/database'
+  ProgressCallback,
+} from '@main/providers/base/MediaProvider'
+import { LibraryType, ProviderType, MediaItemType } from '@main/types/database'
+import type { ConnectionTestResult } from '@main/types/ipc'
+import type { MediaItem, MediaItemVersion, MusicTrack } from '@main/types/database'
 import {
-  isLosslessCodec,
-  isHiRes,
-  extractMusicBrainzId,
   calculateAlbumStats,
-  MUSICBRAINZ_ARTIST_KEYS,
-  MUSICBRAINZ_ALBUM_KEYS,
-  MUSICBRAINZ_TRACK_KEYS,
-} from '../base/MusicScannerUtils'
-import { getMediaFileAnalyzer } from '../../services/MediaFileAnalyzer'
-import * as fs from 'fs'
+} from '@main/providers/base/MusicScannerUtils'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
+import { getTMDBService } from '@main/services/TMDBService'
+import { calculateVersionScore } from '@main/providers/utils/ProviderUtils'
+import { extractVersionNames } from '@main/providers/utils/VersionNaming'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
+import { MediaTransformer, IncompleteMetadataError } from '@main/providers/base/MediaTransformer'
+import type { JellyfinAuthResponse, JellyfinLibrary, JellyfinMediaItem, JellyfinMusicArtist, JellyfinMusicAlbum, JellyfinMusicTrack } from '@main/providers/jellyfin-emby/JellyfinTypes'
+import { getMovieCollectionService } from '@main/services/MovieCollectionService'
 
-// Helper type for Jellyfin/Emby error responses
-interface JellyfinErrorResponse {
-  message?: string
-  Message?: string
-}
+// Backward-compatible type exports for provider utilities.
+export type { JellyfinMediaItem, JellyfinMediaSource, JellyfinMediaStream, JellyfinMusicArtist, JellyfinMusicAlbum, JellyfinMusicTrack } from '@main/providers/jellyfin-emby/JellyfinTypes'
 
-// Jellyfin/Emby API response types
-export interface JellyfinAuthResponse {
-  User: {
-    Id: string
-    Name: string
-    ServerId: string
-  }
-  AccessToken: string
-  ServerId: string
-}
+export abstract class JellyfinEmbyBase extends BaseMediaProvider {
+  abstract override readonly providerType: ProviderType.Jellyfin | ProviderType.Emby
+  private _client: JellyfinApiClient | null = null
+  private _mapper: JellyfinItemMapper | null = null
 
-export interface JellyfinLibrary {
-  Id: string
-  Name: string
-  CollectionType?: string
-  ItemCount?: number
-  // VirtualFolders uses ItemId instead of Id
-  ItemId?: string
-}
-
-export interface JellyfinMediaItem {
-  Id: string
-  Name: string
-  Type: string
-  ProductionYear?: number
-  SeriesName?: string
-  ParentIndexNumber?: number
-  IndexNumber?: number
-  Path?: string
-  Overview?: string
-  MediaSources?: JellyfinMediaSource[]
-  ProviderIds?: {
-    Imdb?: string
-    Tmdb?: string
-  }
-  ImageTags?: {
-    Primary?: string
-    Thumb?: string
-    Screenshot?: string
-  }
-  // For episodes: parent/grandparent references
-  SeriesId?: string
-  SeasonId?: string
-  SeriesPrimaryImageTag?: string // Show poster tag
-  ParentPrimaryImageTag?: string // Season poster tag
-  ParentPrimaryImageItemId?: string // Season ID for primary image
-  ParentThumbItemId?: string // ID for thumb image (usually episode thumb)
-  ParentThumbImageTag?: string // Thumb tag
-  ParentBackdropItemId?: string
-  ParentBackdropImageTags?: string[]
-  // Series-level provider IDs (fetched separately for episodes)
-  SeriesProviderIds?: {
-    Imdb?: string
-    Tmdb?: string
-  }
-  // Date metadata
-  DateCreated?: string
-  PremiereDate?: string
-  // Sort title
-  SortName?: string
-  // Rating
-  CommunityRating?: number
-  // Watch history
-  UserData?: {
-    PlayCount?: number
-    LastPlayedDate?: string
-  }
-}
-
-export interface JellyfinMediaSource {
-  Id: string
-  Path?: string
-  Size?: number
-  Container?: string
-  RunTimeTicks?: number
-  Bitrate?: number
-  MediaStreams?: JellyfinMediaStream[]
-}
-
-export interface JellyfinMediaStream {
-  Type: 'Video' | 'Audio' | 'Subtitle'
-  Index: number
-  Codec?: string
-  CodecTag?: string
-  Language?: string
-  Title?: string
-  DisplayTitle?: string
-  IsDefault?: boolean
-  // Video properties
-  Width?: number
-  Height?: number
-  BitRate?: number
-  RealFrameRate?: number
-  BitDepth?: number
-  VideoRange?: string
-  ColorSpace?: string
-  Profile?: string
-  Level?: number
-  // Audio properties
-  Channels?: number
-  SampleRate?: number
-  ChannelLayout?: string
-  // Subtitle properties
-  IsForced?: boolean
-}
-
-// Music-specific types for Jellyfin/Emby
-export interface JellyfinMusicArtist {
-  Id: string
-  Name: string
-  Overview?: string
-  ProviderIds?: Record<string, string>
-  ImageTags?: { Primary?: string; Thumb?: string }
-  PrimaryImageTag?: string  // Direct field for primary image
-  Genres?: string[]
-  SortName?: string
-}
-
-export interface JellyfinMusicAlbum {
-  Id: string
-  Name: string
-  AlbumArtists?: Array<{ Id: string; Name: string }>
-  AlbumArtist?: string
-  Artists?: string[]
-  ProductionYear?: number
-  ProviderIds?: Record<string, string>
-  ImageTags?: { Primary?: string; Thumb?: string }
-  PrimaryImageTag?: string  // Direct field for primary image
-  PrimaryImageAspectRatio?: number
-  Genres?: string[]
-  ChildCount?: number
-  RunTimeTicks?: number
-  SortName?: string
-}
-
-export interface JellyfinMusicTrack {
-  Id: string
-  Name: string
-  AlbumId?: string
-  Album?: string
-  AlbumArtist?: string
-  Artists?: string[]
-  ArtistItems?: Array<{ Id: string; Name: string }>
-  IndexNumber?: number      // Track number
-  ParentIndexNumber?: number // Disc number
-  RunTimeTicks?: number     // Duration in ticks (divide by 10,000,000 for seconds)
-  MediaSources?: JellyfinMediaSource[]
-  Path?: string
-  ProviderIds?: Record<string, string>
-  ImageTags?: { Primary?: string; Thumb?: string }
-  PrimaryImageTag?: string
-}
-
-export abstract class JellyfinEmbyBase implements MediaProvider {
-  abstract readonly providerType: ProviderType
-  readonly sourceId: string
-
-  protected serverUrl: string = ''
-  protected apiKey: string = ''
-  protected userId: string = ''
-  protected accessToken: string = ''
-  protected config: SourceConfig
-
-  // Cancellation support
   protected scanCancelled = false
   protected musicScanCancelled = false
 
-  cancelScan(): void { this.scanCancelled = true }
-  cancelMusicScan(): void { this.musicScanCancelled = true }
-  isScanCancelled(): boolean { return this.scanCancelled }
-  isMusicScanCancelled(): boolean { return this.musicScanCancelled }
-
-  // Subclasses must define their auth header name
-  protected abstract authHeaderName: string
-  protected abstract clientName: string
-  protected abstract clientVersion: string
+  protected abstract readonly authHeaderName: string
+  protected abstract readonly clientName: string
+  protected abstract readonly clientVersion: string
 
   constructor(config: SourceConfig) {
-    this.sourceId = config.sourceId || this.generateSourceId()
-    this.config = { ...config, sourceId: this.sourceId }
+    super(config)
+  }
 
-    // Load from connection config if provided
-    if (config.connectionConfig) {
-      this.serverUrl = (config.connectionConfig.serverUrl as string) || ''
-      this.apiKey = (config.connectionConfig.apiKey as string) || ''
-      this.accessToken = (config.connectionConfig.accessToken as string) || ''
-      this.userId = (config.connectionConfig.userId as string) || ''
+  protected get client(): JellyfinApiClient {
+    if (!this._client) {
+      const conn = this.config.connectionConfig
+      this._client = new JellyfinApiClient({
+        serverUrl: (conn.serverUrl as string) || '',
+        sourceId: this.sourceId,
+        providerType: this.providerType,
+        authHeaderName: this.authHeaderName,
+        clientName: this.clientName,
+        clientVersion: this.clientVersion,
+        accessToken: (conn.accessToken as string) || '',
+        apiKey: (conn.apiKey as string) || '',
+        userId: (conn.userId as string) || '',
+      })
     }
-
+    return this._client
   }
 
-  protected generateSourceId(): string {
-    return `${this.providerType}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  protected getAuthHeaders(): Record<string, string> {
-    const headers: Record<string, string> = {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
+  protected get mapper(): JellyfinItemMapper {
+    if (!this._mapper) {
+      this._mapper = new JellyfinItemMapper(this.sourceId, this.providerType, this.client)
     }
-
-    if (this.accessToken) {
-      headers[this.authHeaderName] = this.buildAuthHeader()
-      console.log(`[${this.providerType}] Using access token auth header: ${this.authHeaderName}`)
-    } else if (this.apiKey) {
-      headers['X-Emby-Token'] = this.apiKey
-      console.log(`[${this.providerType}] Using API key auth`)
-    } else {
-      console.warn(`[${this.providerType}] No authentication credentials available!`)
-    }
-
-    return headers
+    return this._mapper
   }
-
-  protected buildAuthHeader(): string {
-    const parts = [
-      `MediaBrowser Client="${this.clientName}"`,
-      `Device="Totality"`,
-      `DeviceId="${this.sourceId}"`,
-      `Version="${this.clientVersion}"`,
-    ]
-
-    if (this.accessToken) {
-      parts.push(`Token="${this.accessToken}"`)
-    }
-
-    return parts.join(', ')
-  }
-
-  /**
-   * Build an image URL for Jellyfin/Emby
-   * @param itemId The item ID to get the image for
-   * @param imageType The image type (Primary, Thumb, Banner, etc.)
-   * @param imageTag Optional image tag for cache busting
-   */
-  protected buildImageUrl(itemId: string, imageType: string, imageTag?: string): string {
-    if (!this.serverUrl || !itemId) return ''
-
-    // Emby uses /emby prefix, Jellyfin does not
-    const pathPrefix = this.providerType === 'emby' ? '/emby' : ''
-    let url = `${this.serverUrl}${pathPrefix}/Items/${itemId}/Images/${imageType}`
-
-    // Add auth token so images load even when server requires authentication
-    // (Plex already does this with X-Plex-Token in image URLs)
-    const token = this.apiKey || this.accessToken
-    return buildUrl(url, { tag: imageTag || undefined, api_key: token || undefined })
-  }
-
-  /**
-   * Make an API request with retry logic and exponential backoff
-   * Use this for critical API calls that should be resilient to transient failures
-   */
-  protected async requestWithRetry<T>(
-    requestFn: () => Promise<T>,
-    context?: string
-  ): Promise<T> {
-    return retryWithBackoff(
-      requestFn,
-      {
-        maxDelay: 15000,
-        onRetry: (attempt, error, delay) => {
-          console.warn(`[${this.providerType}] ${context || 'Request'} - Retry ${attempt}/3 after ${delay}ms: ${error.message}`)
-        }
-      }
-    )
-  }
-
-  // ============================================================================
-  // AUTHENTICATION
-  // ============================================================================
 
   async authenticate(credentials: ProviderCredentials): Promise<AuthResult> {
     try {
-      if (!credentials.serverUrl) {
-        return { success: false, error: 'Server URL is required' }
-      }
+      if (!credentials.serverUrl) return { success: false, error: 'Server URL is required' }
+      this.client.setServerUrl(credentials.serverUrl)
 
-      this.serverUrl = credentials.serverUrl.replace(/\/$/, '') // Remove trailing slash
-
-      // Option 1: API Key authentication
       if (credentials.apiKey) {
-        this.apiKey = credentials.apiKey
+        this.client.setApiKey(credentials.apiKey)
         const testResult = await this.testConnection()
-
-        if (testResult.success) {
-          return {
-            success: true,
-            apiKey: credentials.apiKey,
-            serverName: testResult.serverName,
-          }
-        }
-
+        if (testResult.success) return { success: true, apiKey: credentials.apiKey, serverName: testResult.serverName }
         return { success: false, error: testResult.error || 'Invalid API key' }
       }
 
-      // Option 2: Username/Password authentication
       if (credentials.username && credentials.password) {
-        const data = await fetchJSON<JellyfinAuthResponse>(
-          `${this.serverUrl}/Users/AuthenticateByName`,
-          {
-            method: 'POST',
-            headers: { ...this.getAuthHeaders(), 'X-Emby-Authorization': this.buildAuthHeader() },
-            body: JSON.stringify({ Username: credentials.username, Pw: credentials.password }),
-          }
+        const response = await this.client.post<JellyfinAuthResponse>(
+          '/Users/AuthenticateByName',
+          { Username: credentials.username, Pw: credentials.password },
+          { 'X-Emby-Authorization': this.client.buildAuthHeader() }
         )
 
-        if (data.AccessToken) {
-          this.accessToken = data.AccessToken
-          this.userId = data.User.Id
-
+        if (response.AccessToken) {
+          this.client.setAccessToken(response.AccessToken, response.User.Id)
           return {
             success: true,
-            token: data.AccessToken,
-            userId: data.User.Id,
-            userName: data.User.Name,
-            serverName: data.ServerId,
+            token: response.AccessToken,
+            userId: response.User.Id,
+            userName: response.User.Name,
+            serverName: response.ServerId,
           }
         }
       }
-
       return { success: false, error: 'Invalid credentials' }
     } catch (error: unknown) {
-      console.error(`${this.providerType} authentication failed:`, error)
-      return {
-        success: false,
-        error: (isHttpError(error) ? (error.data as JellyfinErrorResponse)?.message : undefined) || getErrorMessage(error) || 'Authentication failed',
-      }
+      getLoggingService().error('[JellyfinEmbyBase]', `${this.providerType} authentication failed:`, error)
+      return { success: false, error: getErrorMessage(error) }
     }
   }
 
   async isAuthenticated(): Promise<boolean> {
-    return !!(this.accessToken || this.apiKey)
+    return !!(this.client.getAccessToken() || this.client.getApiKey())
   }
 
   async disconnect(): Promise<void> {
-    this.accessToken = ''
-    this.apiKey = ''
-    this.userId = ''
+    this.client.setAccessToken('', '')
+    this.client.setApiKey('')
   }
 
-  // ============================================================================
-  // QUICK CONNECT
-  // ============================================================================
-
-  /**
-   * Check if Quick Connect is enabled on the server
-   */
-  async isQuickConnectEnabled(): Promise<boolean> {
-    if (!this.serverUrl) return false
-
-    try {
-      const response = await fetchWithTimeout(`${this.serverUrl}/QuickConnect/Enabled`, {}, 5000)
-      if (!response.ok) {
-        if (response.status !== 404) {
-          console.warn(`[${this.providerType}] Quick Connect availability check returned HTTP ${response.status}`)
-        }
-        return false
-      }
-      const data = await response.json()
-      return data === true
-    } catch (error) {
-      console.warn(`[${this.providerType}] Quick Connect availability check failed:`, error)
-      return false
-    }
-  }
-
-  /**
-   * Initiate Quick Connect - returns a code for user to enter in another client
-   */
-  async initiateQuickConnect(): Promise<{ secret: string; code: string } | null> {
-    if (!this.serverUrl) {
-      throw new Error('Server URL not configured')
-    }
-
-    try {
-      const data = await fetchJSON<{ Secret: string; Code: string }>(
-        `${this.serverUrl}/QuickConnect/Initiate`,
-        { method: 'POST', headers: { 'X-Emby-Authorization': this.buildAuthHeader() } }
-      )
-
-      return { secret: data.Secret, code: data.Code }
-    } catch (error: unknown) {
-      console.error('Failed to initiate Quick Connect:', error)
-      throw new Error((isHttpError(error) ? (error.data as JellyfinErrorResponse)?.message : undefined) || 'Failed to initiate Quick Connect')
-    }
-  }
-
-  /**
-   * Check Quick Connect status - poll until authenticated
-   */
-  async checkQuickConnectStatus(secret: string): Promise<{
-    authenticated: boolean
-    error?: string
-  }> {
-    if (!this.serverUrl) {
-      return { authenticated: false, error: 'Server URL not configured' }
-    }
-
-    try {
-      const data = await fetchJSON<{ Authenticated: boolean }>(
-        buildUrl(`${this.serverUrl}/QuickConnect/Connect`, { Secret: secret }),
-        { headers: { 'X-Emby-Authorization': this.buildAuthHeader() } }
-      )
-
-      return { authenticated: data.Authenticated === true }
-    } catch (error: unknown) {
-      return {
-        authenticated: false,
-        error: (isHttpError(error) ? (error.data as JellyfinErrorResponse)?.message : undefined) || getErrorMessage(error),
-      }
-    }
-  }
-
-  /**
-   * Complete Quick Connect authentication - exchange secret for access token
-   */
-  async completeQuickConnect(secret: string): Promise<AuthResult> {
-    if (!this.serverUrl) {
-      return { success: false, error: 'Server URL not configured' }
-    }
-
-    try {
-      const data = await fetchJSON<JellyfinAuthResponse>(
-        `${this.serverUrl}/Users/AuthenticateWithQuickConnect`,
-        {
-          method: 'POST',
-          headers: { ...this.getAuthHeaders(), 'X-Emby-Authorization': this.buildAuthHeader() },
-          body: JSON.stringify({ Secret: secret }),
-        }
-      )
-
-      if (data.AccessToken) {
-        this.accessToken = data.AccessToken
-        this.userId = data.User.Id
-
-        return {
-          success: true,
-          token: data.AccessToken,
-          userId: data.User.Id,
-          userName: data.User.Name,
-        }
-      }
-
-      return { success: false, error: 'No access token received' }
-    } catch (error: unknown) {
-      console.error('Quick Connect authentication failed:', error)
-      return {
-        success: false,
-        error: (isHttpError(error) ? (error.data as JellyfinErrorResponse)?.message : undefined) || getErrorMessage(error) || 'Quick Connect failed',
-      }
-    }
-  }
-
-  // ============================================================================
-  // CONNECTION TESTING
-  // ============================================================================
+  async isQuickConnectEnabled(): Promise<boolean> { return this.client.isQuickConnectEnabled() }
+  async initiateQuickConnect(): Promise<{ secret: string; code: string } | null> { return this.client.initiateQuickConnect() }
+  async checkQuickConnectStatus(secret: string): Promise<{ authenticated: boolean; error?: string }> { return this.client.checkQuickConnectStatus(secret) }
+  async completeQuickConnect(secret: string): Promise<AuthResult> { return this.client.completeQuickConnect(secret) }
 
   async testConnection(): Promise<ConnectionTestResult> {
-    if (!this.serverUrl) {
-      return { success: false, error: 'Server URL not configured' }
-    }
-
+    if (!this.client.getServerUrl()) return { success: false, error: 'Server URL not configured' }
     try {
       const startTime = Date.now()
-      const data = await fetchJSON<{ ServerName: string; Version: string }>(
-        `${this.serverUrl}/System/Info/Public`,
-        { headers: this.getAuthHeaders(), timeoutMs: 10_000 }
-      )
-      const latencyMs = Date.now() - startTime
-
-      return {
-        success: true,
-        serverName: data.ServerName,
-        serverVersion: data.Version,
-        latencyMs,
-      }
-    } catch (error: unknown) {
-      // Provide more helpful error messages
-      const status = (isHttpError(error) ? error.status : undefined)
-      if (status === 401) {
-        return {
-          success: false,
-          error: 'Authentication failed (401): Access token is invalid or expired',
-        }
-      } else if (status === 403) {
-        return {
-          success: false,
-          error: 'Access denied (403): You do not have permission to access this server',
-        }
-      } else if (isNodeError(error) && error.code === 'ECONNREFUSED') {
-        return {
-          success: false,
-          error: 'Connection refused: The server is not running or not accepting connections',
-        }
-      } else if (isNodeError(error) && (error.code === 'ETIMEDOUT' || error.code === 'ESOCKETTIMEDOUT')) {
-        return {
-          success: false,
-          error: 'Connection timed out: The server took too long to respond',
-        }
-      } else if (isNodeError(error) && error.code === 'ENOTFOUND') {
-        return {
-          success: false,
-          error: 'Server not found: The hostname could not be resolved',
-        }
-      }
-
-      return {
-        success: false,
-        error: getErrorMessage(error) || 'Connection failed',
-      }
-    }
+      const response = await this.client.get<{ ServerName: string; Version: string }>('/System/Info/Public')
+      return { success: true, serverName: response.ServerName, serverVersion: response.Version, latencyMs: Date.now() - startTime }
+    } catch (error: unknown) { return { success: false, error: getErrorMessage(error) } }
   }
 
-  // ============================================================================
-  // LIBRARY OPERATIONS
-  // ============================================================================
-
   async getLibraries(): Promise<MediaLibrary[]> {
-    if (!this.serverUrl) {
-      throw new Error('Not connected to server')
-    }
-
-    console.log(`[${this.providerType}] getLibraries: hasServerUrl=${!!this.serverUrl}, hasUserId=${!!this.userId}, hasToken=${!!this.accessToken}, hasApiKey=${!!this.apiKey}`)
-
+    if (!this.client.getServerUrl()) throw new Error('Not connected to server')
+    const userId = this.client.getUserId()
     try {
-      // First try to get user views (works for all users)
-      if (this.userId) {
-        try {
-          console.log(`[${this.providerType}] Fetching user views for userId: ${this.userId}`)
-          const viewsData = await fetchJSON<{ Items: JellyfinLibrary[] }>(
-            `${this.serverUrl}/Users/${this.userId}/Views`,
-            { headers: this.getAuthHeaders() }
-          )
-
-          console.log(`[${this.providerType}] Got ${viewsData.Items?.length || 0} views`)
-
-          // Filter for supported library types (video + music)
-          const mediaTypes = ['movies', 'tvshows', 'homevideos', 'musicvideos', 'mixed', 'boxsets', 'music']
-          const libraries = viewsData.Items
-            .filter(lib => {
-              const collType = (lib.CollectionType || '').toLowerCase()
-              // Include if it's a known media type, or if CollectionType is empty (might be a media folder)
-              return mediaTypes.includes(collType) || !lib.CollectionType
-            })
-            .map(lib => ({
-              id: lib.Id,
-              name: lib.Name,
-              type: this.mapLibraryType(lib.CollectionType),
-              collectionType: (lib.CollectionType || '').toLowerCase(),
-              itemCount: lib.ItemCount,
-            }))
-
-          if (libraries.length > 0) {
-            console.log(`[${this.providerType}] Returning ${libraries.length} libraries from user views`)
-            return libraries
-          }
-
-          console.log(`[${this.providerType}] No video libraries found in views, trying VirtualFolders`)
-        } catch (viewsError: unknown) {
-          const status = isHttpError(viewsError) ? viewsError.status : undefined
-          const errData = isHttpError(viewsError) ? viewsError.data : undefined
-          console.warn(`[${this.providerType}] Failed to get user views:`, status, errData || getErrorMessage(viewsError))
-        }
+      if (userId) {
+        const response = await this.client.get<{ Items: JellyfinLibrary[] }>(`/Users/${userId}/Views`)
+        const mediaTypes = ['movies', 'tvshows', 'homevideos', 'musicvideos', 'mixed', 'boxsets', 'music']
+        return (response.Items || [])
+          .filter(lib => {
+            const collType = (lib.CollectionType || '').toLowerCase()
+            return mediaTypes.includes(collType) || !lib.CollectionType
+          })
+          .map(lib => ({
+            id: lib.Id,
+            name: lib.Name,
+            type: this.mapper.mapLibraryType(lib.CollectionType),
+            collectionType: (lib.CollectionType || '').toLowerCase(),
+            itemCount: lib.ItemCount,
+          }))
       }
-
-      // Fallback to VirtualFolders (requires admin or API key)
-      console.log(`[${this.providerType}] Fetching VirtualFolders`)
-      const foldersData = await fetchJSON<JellyfinLibrary[] | { Items?: JellyfinLibrary[] }>(
-        `${this.serverUrl}/Library/VirtualFolders`,
-        { headers: this.getAuthHeaders() }
-      )
-
-      const folders = Array.isArray(foldersData) ? foldersData : (foldersData as { Items?: JellyfinLibrary[] }).Items || []
-      console.log(`[${this.providerType}] Got ${folders.length} virtual folders`)
-
+      const response = await this.client.get<JellyfinLibrary[] | { Items: JellyfinLibrary[] }>('/Library/VirtualFolders')
+      const folders = Array.isArray(response) ? response : response.Items || []
       const mediaTypes = ['movies', 'tvshows', 'homevideos', 'musicvideos', 'music', 'boxsets']
       return folders
         .filter((lib: JellyfinLibrary) => mediaTypes.includes((lib.CollectionType || '').toLowerCase()))
-        .map((lib: JellyfinLibrary) => ({
-          id: lib.ItemId || lib.Id, // VirtualFolders uses ItemId
-          name: lib.Name,
-          type: this.mapLibraryType(lib.CollectionType),
-          collectionType: (lib.CollectionType || '').toLowerCase(),
-          itemCount: lib.ItemCount,
-        }))
-    } catch (error: unknown) {
-      const status = isHttpError(error) ? error.status : undefined
-      console.error(`[${this.providerType}] Failed to get libraries:`, status, isHttpError(error) ? error.data : getErrorMessage(error))
-
-      if (status === 401) {
-        throw new Error('Authentication failed (401): Access token is invalid or expired. Please re-authenticate this source.')
-      } else if (status === 403) {
-        throw new Error('Access denied (403): You do not have permission to access this server.')
-      } else if (isNodeError(error) && error.code === 'ECONNREFUSED') {
-        throw new Error('Connection refused: The server is not running or not accepting connections.')
-      } else if (isNodeError(error) && (error.code === 'ETIMEDOUT' || error.code === 'ESOCKETTIMEDOUT')) {
-        throw new Error('Connection timed out: The server took too long to respond.')
-      } else if (isNodeError(error) && error.code === 'ENOTFOUND') {
-        throw new Error('Server not found: The hostname could not be resolved.')
-      }
-
-      throw new Error(`Failed to fetch libraries: ${(isHttpError(error) ? (error.data as JellyfinErrorResponse)?.Message : undefined) || getErrorMessage(error)}`)
-    }
-  }
-
-  protected mapLibraryType(collectionType?: string): 'movie' | 'show' | 'music' | 'unknown' {
-    switch (collectionType) {
-      case 'movies':
-      case 'homevideos':
-      case 'musicvideos':
-      case 'boxsets':
-        return 'movie'
-      case 'tvshows':
-        return 'show'
-      case 'music':
-        return 'music'
-      default:
-        return 'unknown'
-    }
+        .map((lib: JellyfinLibrary) => ({ id: lib.ItemId || lib.Id, name: lib.Name, type: this.mapper.mapLibraryType(lib.CollectionType), collectionType: (lib.CollectionType || '').toLowerCase(), itemCount: lib.ItemCount }))
+    } catch (error: unknown) { throw new Error(`Failed to fetch libraries: ${getErrorMessage(error)}`) }
   }
 
   async getLibraryItems(libraryId: string, offset = 0, limit = 100): Promise<MediaMetadata[]> {
-    if (!this.serverUrl) {
-      throw new Error('Not connected to server')
-    }
-
+    if (!this.client.getServerUrl()) throw new Error('Not connected to server')
     try {
-      const data = await fetchJSON<{ Items: JellyfinMediaItem[] }>(
-        buildUrl(`${this.serverUrl}/Items`, {
-          ParentId: libraryId,
-          Recursive: true,
-          IncludeItemTypes: 'Movie,Episode',
-          Fields: 'Path,MediaSources,ProviderIds,Overview,UserData',
-          UserId: this.userId || undefined,
-          StartIndex: offset,
-          Limit: limit,
-        }),
-        { headers: this.getAuthHeaders() }
-      )
-
-      return data.Items.map(item => this.convertToMediaMetadata(item))
-    } catch (error: unknown) {
-      console.error('Failed to get library items:', error)
-      throw new Error('Failed to fetch library items')
-    }
+      const response = await this.client.get<{ Items: JellyfinMediaItem[] }>('/Items', { ParentId: libraryId, Recursive: true, IncludeItemTypes: 'Movie,Episode', Fields: 'Path,MediaSources,ProviderIds,Overview', StartIndex: offset, Limit: limit })
+      return response.Items.map(item => this.mapper.convertToMediaMetadata(item))
+    } catch (error: unknown) { throw new Error(`Failed to fetch library items: ${getErrorMessage(error)}`) }
   }
 
   async getItemMetadata(itemId: string): Promise<MediaMetadata> {
-    if (!this.serverUrl) {
-      throw new Error('Not connected to server')
-    }
-
+    if (!this.client.getServerUrl()) throw new Error('Not connected to server')
     try {
-      const data = await fetchJSON<JellyfinMediaItem>(
-        buildUrl(`${this.serverUrl}/Items/${itemId}`, { Fields: 'Path,MediaSources,ProviderIds,Overview' }),
-        { headers: this.getAuthHeaders() }
-      )
-
-      return this.convertToMediaMetadata(data)
-    } catch (error: unknown) {
-      console.error('Failed to get item metadata:', error)
-      throw error
-    }
+      const response = await this.client.get<JellyfinMediaItem>(`/Items/${itemId}`, { Fields: 'Path,MediaSources,ProviderIds,Overview' })
+      return this.mapper.convertToMediaMetadata(response)
+    } catch (error: unknown) { throw new Error(`Failed to fetch item metadata: ${getErrorMessage(error)}`) }
   }
-
-  // ============================================================================
-  // SCANNING
-  // ============================================================================
 
   async scanLibrary(libraryId: string, options?: ScanOptions): Promise<ScanResult> {
     this.scanCancelled = false
     const { onProgress, sinceTimestamp, forceFullScan } = options || {}
     const isIncremental = !!sinceTimestamp && !forceFullScan
-
     const startTime = Date.now()
-    const result: ScanResult = {
-      success: false,
-      itemsScanned: 0,
-      itemsAdded: 0,
-      itemsUpdated: 0,
-      itemsRemoved: 0,
-      errors: [],
-      durationMs: 0,
-      cancelled: false,
-    }
-
+    const result: ScanResult = { success: false, itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, errors: [], durationMs: 0, cancelled: false }
     try {
-      // Get library info to determine type
       const libraries = await this.getLibraries()
       const library = libraries.find(l => l.id === libraryId)
-      const libraryType = library?.type || 'movie'
-      const isBoxsets = library?.collectionType === 'boxsets'
+      const libraryType = library?.type || LibraryType.Movie
 
-      // Get all items in library
-      const allItems: JellyfinMediaItem[] = []
-      const batchSize = 100
-
-      // Log incremental scan info
-      if (isIncremental) {
-        console.log(`[${this.providerType}Provider ${this.sourceId}] Incremental scan: fetching items modified after ${sinceTimestamp!.toISOString()}`)
+      if (libraryType === LibraryType.Music) {
+        return this.scanMusicLibrary(libraryId, onProgress)
       }
 
+      const isBoxsets = library?.collectionType === 'boxsets'
+      const allItems: JellyfinMediaItem[] = []
+      const batchSize = 100
       const fieldsParam = 'Path,MediaSources,ProviderIds,DateCreated,PremiereDate,ParentId,SeriesId,SeasonId,ImageTags,SeriesPrimaryImageTag,ParentPrimaryImageItemId,ParentPrimaryImageTag,ParentThumbItemId,ParentThumbImageTag,ParentBackdropItemId,ParentBackdropImageTags,SortName,Overview'
 
       if (isBoxsets) {
-        // Two-phase scan for BoxSets/Collections libraries
-        console.log(`[${this.providerType}Provider ${this.sourceId}] Scanning BoxSets/Collections library...`)
-
-        // Phase 1: Fetch all BoxSet containers from the library
-        const boxsets: JellyfinMediaItem[] = []
         let boxsetOffset = 0
         let hasMoreBoxsets = true
-
         while (hasMoreBoxsets) {
-          const boxsetResponse = await fetchJSON<{ Items: JellyfinMediaItem[]; TotalRecordCount: number }>(
-            buildUrl(`${this.serverUrl}/Items`, {
-              ParentId: libraryId,
-              Recursive: true,
-              IncludeItemTypes: 'BoxSet',
-              Fields: 'ProviderIds,ImageTags',
-              EnableTotalRecordCount: true,
-              StartIndex: boxsetOffset,
-              Limit: batchSize,
-            }),
-            { headers: this.getAuthHeaders() }
-          )
-          boxsets.push(...boxsetResponse.Items)
-          if (boxsets.length >= boxsetResponse.TotalRecordCount || boxsetResponse.Items.length === 0) {
-            hasMoreBoxsets = false
-          } else {
-            boxsetOffset += batchSize
-          }
-        }
-
-        console.log(`[${this.providerType}Provider ${this.sourceId}] Found ${boxsets.length} BoxSets in collections library`)
-
-        // Phase 2: For each BoxSet, fetch its child movies
-        for (const boxset of boxsets) {
-          const movieResponse = await fetchJSON<{ Items: JellyfinMediaItem[]; TotalRecordCount: number }>(
-            buildUrl(`${this.serverUrl}/Items`, {
-              ParentId: boxset.Id,
-              Recursive: true,
-              IncludeItemTypes: 'Movie',
-              Fields: fieldsParam,
-              EnableImageTypes: 'Primary,Thumb,Screenshot,Banner,Backdrop',
-              EnableTotalRecordCount: true,
-              StartIndex: 0,
-              Limit: 1000,
-            }),
-            { headers: this.getAuthHeaders() }
-          )
-          allItems.push(...movieResponse.Items)
-
-          // Create a collection entry for this BoxSet
-          const ownedTmdbIds = movieResponse.Items
-            .map(m => m.ProviderIds?.Tmdb)
-            .filter(Boolean) as string[]
-
-          if (ownedTmdbIds.length > 0) {
-            let resolvedTmdbCollectionId = boxset.ProviderIds?.Tmdb
-
-            const boxsetPosterUrl = boxset.ImageTags?.Primary
-              ? this.buildImageUrl(boxset.Id, 'Primary', boxset.ImageTags.Primary)
-              : undefined
-
-            // Fallback: use first child movie's poster if BoxSet has no poster
-            const firstMoviePosterUrl = movieResponse.Items[0]?.ImageTags?.Primary
-              ? this.buildImageUrl(movieResponse.Items[0].Id, 'Primary', movieResponse.Items[0].ImageTags.Primary)
-              : undefined
-
-            let totalMovies = ownedTmdbIds.length
-            let ownedCount = ownedTmdbIds.length
-            let missingMovies: MissingMovie[] = []
-            let completenessPercentage = 100
-            let collectionPosterUrl = boxsetPosterUrl || firstMoviePosterUrl
-            let collectionBackdropUrl: string | undefined
-
-            // If BoxSet doesn't have a TMDB collection ID, try to derive it from owned movies
-            if (!resolvedTmdbCollectionId && ownedTmdbIds.length > 0) {
-              try {
-                const tmdb = getTMDBService()
-                const movieDetails = await tmdb.getMovieDetails(ownedTmdbIds[0])
-                if (movieDetails?.belongs_to_collection?.id) {
-                  resolvedTmdbCollectionId = movieDetails.belongs_to_collection.id.toString()
-                  console.log(`[${this.providerType}Provider] Derived TMDB collection ID ${resolvedTmdbCollectionId} for BoxSet "${boxset.Name}" from movie ${ownedTmdbIds[0]}`)
-                }
-              } catch (error) {
-                console.warn(`[${this.providerType}Provider] Failed to derive TMDB collection ID for BoxSet "${boxset.Name}":`, error)
+          const res = await this.client.get<{ Items: JellyfinMediaItem[]; TotalRecordCount: number }>('/Items', { ParentId: libraryId, Recursive: true, IncludeItemTypes: 'BoxSet', Fields: 'ProviderIds,ImageTags', EnableTotalRecordCount: true, StartIndex: boxsetOffset, Limit: batchSize })
+          const boxsets = res.Items || []
+          for (const boxset of boxsets) {
+            const movieRes = await this.client.get<{ Items: JellyfinMediaItem[] }>('/Items', { ParentId: boxset.Id, Recursive: true, IncludeItemTypes: 'Movie', Fields: fieldsParam, EnableImageTypes: 'Primary,Thumb,Screenshot,Banner,Backdrop', StartIndex: 0, Limit: 1000 })
+            allItems.push(...movieRes.Items)
+            const ownedTmdbIds = movieRes.Items.map(m => m.ProviderIds?.Tmdb).filter(Boolean) as string[]
+            if (ownedTmdbIds.length > 0) {
+              let resolvedTmdbCollectionId = boxset.ProviderIds?.Tmdb
+              if (!resolvedTmdbCollectionId) {
+                try {
+                  const tmdb = getTMDBService()
+                  const movieDetails = await tmdb.getMovieDetails(ownedTmdbIds[0])
+                  if (movieDetails?.belongs_to_collection?.id) resolvedTmdbCollectionId = movieDetails.belongs_to_collection.id.toString()
+                } catch { /* ignore */ }
+              }
+              if (resolvedTmdbCollectionId) {
+                try {
+                  const collectionService = getMovieCollectionService()
+                  const res = await collectionService.lookupCollectionCompleteness(resolvedTmdbCollectionId, ownedTmdbIds)
+                  if (res) {
+                    await getDatabase().movieCollections.upsertCollection({
+                      tmdb_collection_id: resolvedTmdbCollectionId, collection_name: boxset.Name, source_id: this.sourceId, library_id: libraryId, total_movies: res.totalMovies, owned_movies: res.ownedMovies, missing_movies: JSON.stringify(res.missingMovies), owned_movie_ids: JSON.stringify(ownedTmdbIds), completeness_percentage: res.completenessPercentage, poster_url: res.posterUrl, backdrop_url: res.backdropUrl
+                    })
+                  }
+                } catch { /* ignore */ }
               }
             }
-
-            // If we have a TMDB collection ID (direct or derived), look up full membership
-            if (resolvedTmdbCollectionId) {
-              try {
-                const collectionService = getMovieCollectionService()
-                const result = await collectionService.lookupCollectionCompleteness(
-                  resolvedTmdbCollectionId,
-                  ownedTmdbIds,
-                )
-                if (result) {
-                  totalMovies = result.totalMovies
-                  ownedCount = result.ownedMovies
-                  missingMovies = result.missingMovies
-                  completenessPercentage = result.completenessPercentage
-                  collectionPosterUrl = result.posterUrl || boxsetPosterUrl || firstMoviePosterUrl
-                  collectionBackdropUrl = result.backdropUrl
-                }
-              } catch (error) {
-                console.warn(`[${this.providerType}Provider] Failed TMDB lookup for BoxSet "${boxset.Name}":`, error)
-              }
-            }
-
-            const tmdbCollectionId = resolvedTmdbCollectionId
-              || `${this.providerType}-boxset-${boxset.Id}`
-
-            const db = getDatabase()
-            await db.upsertMovieCollection({
-              tmdb_collection_id: tmdbCollectionId,
-              collection_name: boxset.Name,
-              source_id: this.sourceId,
-              library_id: libraryId,
-              total_movies: totalMovies,
-              owned_movies: ownedCount,
-              missing_movies: missingMovies,
-              owned_movie_ids: ownedTmdbIds,
-              completeness_percentage: completenessPercentage,
-              poster_url: collectionPosterUrl,
-              backdrop_url: collectionBackdropUrl,
-            })
           }
-
-          if (onProgress) {
-            onProgress({ current: allItems.length, total: 0, phase: 'fetching', percentage: 0 })
-          }
+          if (boxsets.length === 0 || allItems.length >= res.TotalRecordCount) hasMoreBoxsets = false
+          else boxsetOffset += batchSize
         }
-
-        console.log(`[${this.providerType}Provider ${this.sourceId}] Found ${allItems.length} movies across ${boxsets.length} BoxSets, created ${boxsets.length} collection(s)`)
       } else {
-        // Standard fetch with pagination for normal libraries
         let offset = 0
         let hasMoreItems = true
-
         while (hasMoreItems) {
-          // Build params with optional timestamp filter for incremental scan
-          const params: Record<string, unknown> = {
-            ParentId: libraryId,
-            Recursive: true,
-            IncludeItemTypes: libraryType === 'show' ? 'Episode' : 'Movie',
-            Fields: fieldsParam,
-            EnableImageTypes: 'Primary,Thumb,Screenshot,Banner,Backdrop',
-            EnableTotalRecordCount: true,
-            StartIndex: offset,
-            Limit: batchSize,
-          }
-
-          // Add timestamp filter for incremental scans
-          if (isIncremental && sinceTimestamp) {
-            params.MinDateLastSaved = sinceTimestamp.toISOString()
-          }
-
-          const response = await fetchJSON<{ Items: JellyfinMediaItem[]; TotalRecordCount: number }>(
-            buildUrl(`${this.serverUrl}/Items`, params as Record<string, string | number | boolean | null | undefined>),
-            { headers: this.getAuthHeaders() }
-          )
-
+          const params: Record<string, unknown> = { ParentId: libraryId, Recursive: true, IncludeItemTypes: libraryType === LibraryType.Show ? 'Episode' : 'Movie', Fields: fieldsParam, EnableImageTypes: 'Primary,Thumb,Screenshot,Banner,Backdrop', EnableTotalRecordCount: true, StartIndex: offset, Limit: batchSize }
+          if (isIncremental && sinceTimestamp) params.MinDateLastSaved = sinceTimestamp.toISOString()
+          const response = await this.client.get<{ Items: JellyfinMediaItem[]; TotalRecordCount: number }>('/Items', params)
           allItems.push(...response.Items)
-
-          if (allItems.length >= response.TotalRecordCount || response.Items.length === 0) {
-            hasMoreItems = false
-          } else {
-            offset += batchSize
-          }
+          if (allItems.length >= response.TotalRecordCount || response.Items.length === 0) hasMoreItems = false
+          else offset += batchSize
         }
       }
 
-      const totalItems = allItems.length
-      if (isIncremental) {
-        console.log(`[${this.providerType}Provider ${this.sourceId}] Incremental scan found ${totalItems} new/updated items`)
-      } else {
-        console.log(`[${this.providerType}Provider ${this.sourceId}] Processing ${totalItems} items...`)
-      }
-
-      // For TV episodes, batch-fetch series metadata to get series TMDB IDs and image tags
-      const seriesMetadataMap = new Map<string, {
-        providerIds?: { Imdb?: string; Tmdb?: string }
-        primaryImageTag?: string
-        sortName?: string
-      }>()
-      if (libraryType === 'show') {
-        // Collect unique series IDs
-        const uniqueSeriesIds = new Set<string>()
-        for (const item of allItems) {
+      if (libraryType === LibraryType.Show) {
+        const episodesBySeries = new Map<string, JellyfinMediaItem[]>()
+        allItems.forEach(item => {
           if (item.SeriesId) {
-            uniqueSeriesIds.add(item.SeriesId)
+            if (!episodesBySeries.has(item.SeriesId)) episodesBySeries.set(item.SeriesId, [])
+            episodesBySeries.get(item.SeriesId)!.push(item)
           }
-        }
+        })
 
-        console.log(`[${this.providerType}Provider ${this.sourceId}] Fetching metadata for ${uniqueSeriesIds.size} series...`)
-
-        // Batch fetch series metadata including image tags
-        const seriesIds = Array.from(uniqueSeriesIds)
+        const seriesIds = Array.from(episodesBySeries.keys())
         for (let i = 0; i < seriesIds.length; i += 50) {
           const batchIds = seriesIds.slice(i, i + 50)
           try {
-            const seriesResponse = await fetchJSON<{ Items: JellyfinMediaItem[] }>(
-              buildUrl(`${this.serverUrl}/Items`, { Ids: batchIds.join(','), Fields: 'ProviderIds,ImageTags,SortName' }),
-              { headers: this.getAuthHeaders() }
-            )
-
+            const seriesResponse = await this.client.get<{ Items: JellyfinMediaItem[] }>('/Items', { Ids: batchIds.join(','), Fields: 'ProviderIds,ImageTags,SortName' })
             for (const series of seriesResponse.Items) {
-              seriesMetadataMap.set(series.Id, {
-                providerIds: series.ProviderIds,
-                primaryImageTag: series.ImageTags?.Primary,
-                sortName: series.SortName,
+              const seriesEpisodes = episodesBySeries.get(series.Id) || []
+              const ownedEpisodes = seriesEpisodes.length
+              const ownedSeasons = new Set(seriesEpisodes.map(e => e.ParentIndexNumber).filter(n => n !== undefined)).size
+
+              const seriesTmdbId = series.ProviderIds?.Tmdb
+              const seriesPoster = series.ImageTags?.Primary ? this.client.buildImageUrl(series.Id, 'Primary', series.ImageTags.Primary) : undefined
+
+              await getDatabase().tvShows.upsertCompleteness({
+                series_title: series.Name,
+                source_id: this.sourceId,
+                library_id: libraryId,
+                total_seasons: ownedSeasons,
+                total_episodes: ownedEpisodes,
+                owned_seasons: ownedSeasons,
+                owned_episodes: ownedEpisodes,
+                missing_seasons: '[]',
+                missing_episodes: '[]',
+                completeness_percentage: 100, // Default to 100% until TMDB analysis
+                tmdb_id: seriesTmdbId,
+                poster_url: seriesPoster,
+                status: 'Continuing',
+              })
+
+              seriesEpisodes.forEach(item => {
+                item.SeriesProviderIds = series.ProviderIds
+                if (!item.SeriesPrimaryImageTag && series.ImageTags?.Primary) item.SeriesPrimaryImageTag = series.ImageTags.Primary
+                if (series.SortName) item._seriesSortName = series.SortName
               })
             }
-          } catch (error) {
-            console.warn(`[${this.providerType}Provider] Failed to fetch series batch:`, error)
-          }
-        }
-
-        console.log(`[${this.providerType}Provider ${this.sourceId}] Fetched ${seriesMetadataMap.size} series metadata`)
-
-        // Attach series provider IDs and image tags to episodes
-        for (const item of allItems) {
-          if (item.SeriesId && seriesMetadataMap.has(item.SeriesId)) {
-            const seriesData = seriesMetadataMap.get(item.SeriesId)!
-            item.SeriesProviderIds = seriesData.providerIds
-            // If episode doesn't have SeriesPrimaryImageTag, use the one from series metadata
-            if (!item.SeriesPrimaryImageTag && seriesData.primaryImageTag) {
-              item.SeriesPrimaryImageTag = seriesData.primaryImageTag
-            }
-            // Attach series sort name for sort_title
-            if (seriesData.sortName) {
-              ;(item as JellyfinMediaItem & { _seriesSortName?: string })._seriesSortName = seriesData.sortName
-            }
-          }
+          } catch { /* ignore */ }
+          // Yield between batches
+          await new Promise(r => setTimeout(r, 0))
         }
       }
 
       const db = getDatabase()
       const analyzer = getQualityAnalyzer()
       await analyzer.loadThresholdsFromDatabase()
-
       const scannedProviderIds = new Set<string>()
-
-      // Start batch mode
-      db.startBatch()
-
-      // Group movie items by TMDB ID so multiple versions of the same movie
-      // (e.g. colorized vs B&W) become one media_items record with multiple versions.
-      const groups = this.groupMovieVersions(allItems, libraryType)
-      const multiVersionGroups = groups.filter(g => g.length > 1).length
-      if (multiVersionGroups > 0) {
-        console.log(`[${this.providerType}Provider ${this.sourceId}] Grouped ${totalItems} items into ${groups.length} entries (${multiVersionGroups} with multiple versions)`)
-      }
-
+      
+      const groups = this.mapper.groupMovieVersions(allItems, libraryType)
+      const totalItems = allItems.length
+      const BATCH_SIZE = 50
+      
       try {
-        type VersionData = Omit<MediaItemVersion, 'id' | 'media_item_id'>
         let itemIndex = 0
-
-        for (const group of groups) {
-          if (this.scanCancelled) {
-            result.cancelled = true
-            break
-          }
-
-          try {
-            // Convert each item in the group, collecting all versions
-            const allVersions: VersionData[] = []
-            let canonicalItem: MediaItem | null = null
-
-            for (const item of group) {
-              if (!item.MediaSources || item.MediaSources.length === 0) {
-                console.warn(`[${this.providerType}Provider ${this.sourceId}] Skipping ${item.Name}: no media sources`)
-                continue
+        for (let i = 0; i < groups.length; i += BATCH_SIZE) {
+          if (this.scanCancelled) break
+          const batch = groups.slice(i, i + BATCH_SIZE)
+          
+          // STEP 1: Prepare data outside transaction
+          const preparedBatch = await Promise.all(batch.map(async (group) => {
+            try {
+              const allVersions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] = []
+              let canonicalItem: MediaItem | null = null
+              for (const item of group) {
+                try {
+                  const res = MediaTransformer.fromJellyfin(item, this.sourceId, this.providerType, (id, t, tag) => this.client.buildImageUrl(id, t, tag))
+                  if (!canonicalItem) canonicalItem = res.mediaItem
+                  allVersions.push(...res.versions)
+                } catch (e) {
+                  if (e instanceof IncompleteMetadataError) getLoggingService().warn(`[${this.providerType}]`, e.message)
+                  else throw e
+                }
               }
 
-              const converted = await this.convertToMediaItem(item)
-              if (!converted) continue
-
-              if (!canonicalItem) {
-                canonicalItem = converted.mediaItem
+              if (canonicalItem && allVersions.length > 0) {
+                if (allVersions.length > 1) {
+                  extractVersionNames(allVersions)
+                  const best = allVersions.reduce((a, b) => calculateVersionScore(b) > calculateVersionScore(a) ? b : a)
+                  Object.assign(canonicalItem, best)
+                }
+                canonicalItem.version_count = allVersions.length
+                canonicalItem.source_id = this.sourceId
+                canonicalItem.source_type = this.providerType
+                canonicalItem.library_id = libraryId
+                
+                const qualityScore = await analyzer.analyzeMediaItem(canonicalItem)
+                const scoredVersions = allVersions.map(v => ({ ...v, ...analyzer.analyzeVersion(v as MediaItemVersion) }))
+                
+                return { canonicalItem, qualityScore, scoredVersions, name: group[0].Name, groupSize: group.length }
               }
-              allVersions.push(...converted.versions)
+            } catch (e) {
+              result.errors.push(`Failed to prepare ${group[0]?.Name}: ${getErrorMessage(e)}`)
             }
+            return null
+          }))
 
-            if (canonicalItem && allVersions.length > 0) {
-              // Re-run version naming across all merged versions
-              if (allVersions.length > 1) {
-                extractVersionNames(allVersions)
-
-                // Pick best version for parent item fields
-                const best = allVersions.reduce((a, b) => scoreVersion(b) > scoreVersion(a) ? b : a)
-                canonicalItem.file_path = best.file_path
-                canonicalItem.file_size_bytes = best.file_size_bytes
-                canonicalItem.duration_ms = best.duration_ms
-                canonicalItem.resolution = best.resolution
-                canonicalItem.width = best.width
-                canonicalItem.height = best.height
-                canonicalItem.video_codec = best.video_codec
-                canonicalItem.video_bitrate_kbps = best.video_bitrate_kbps
-                canonicalItem.audio_codec = best.audio_codec
-                canonicalItem.audio_channels = best.audio_channels
-                canonicalItem.audio_bitrate_kbps = best.audio_bitrate_kbps
-                canonicalItem.video_frame_rate = best.video_frame_rate
-                canonicalItem.color_bit_depth = best.color_bit_depth
-                canonicalItem.hdr_format = best.hdr_format
-                canonicalItem.color_space = best.color_space
-                canonicalItem.video_profile = best.video_profile
-                canonicalItem.video_level = best.video_level
-                canonicalItem.audio_profile = best.audio_profile
-                canonicalItem.audio_sample_rate = best.audio_sample_rate
-                canonicalItem.has_object_audio = best.has_object_audio
-                canonicalItem.audio_tracks = best.audio_tracks
-                canonicalItem.subtitle_tracks = best.subtitle_tracks
-                canonicalItem.container = best.container
-              }
-              canonicalItem.version_count = allVersions.length
-
-              canonicalItem.source_id = this.sourceId
-              canonicalItem.source_type = this.providerType
-              canonicalItem.library_id = libraryId
-
-              const id = await db.upsertMediaItem(canonicalItem)
-              scannedProviderIds.add(canonicalItem.plex_id)
-
-              // Sync versions: delete stale, upsert current, update best version
-              const scoredVersions = allVersions.map(version => {
-                const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
-                return { ...version, media_item_id: id, ...vScore } as MediaItemVersion
-              })
-              db.syncMediaItemVersions(id, scoredVersions)
-
-              // Analyze quality (parent item)
-              canonicalItem.id = id
-              const qualityScore = await analyzer.analyzeMediaItem(canonicalItem)
-              await db.upsertQualityScore(qualityScore)
-
+          // STEP 2: Write to DB synchronously
+          for (const data of preparedBatch) {
+              if (!data) continue
+              
+              itemIndex += data.groupSize
+              const id = await db.media.upsertItem(data.canonicalItem)
+              scannedProviderIds.add(data.canonicalItem.plex_id)
+              
+              await db.media.syncItemVersions(id, data.scoredVersions.map(v => ({ ...v, media_item_id: id })))
+              
+              data.qualityScore.media_item_id = id
+              await db.media.upsertQualityScore(data.qualityScore)
+              
               result.itemsScanned++
-            }
-          } catch (error: unknown) {
-            const names = group.map(g => g.Name).join(', ')
-            result.errors.push(`Failed to process ${names}: ${getErrorMessage(error)}`)
-          }
-
-          // Report progress for each item in the group
-          for (const item of group) {
-            itemIndex++
-            if (onProgress) {
-              onProgress({
-                current: itemIndex,
-                total: totalItems,
-                phase: 'processing',
-                currentItem: item.Name,
-                percentage: (itemIndex / totalItems) * 100,
-              })
-            }
-          }
-
-          // Periodic checkpoint
-          if (result.itemsScanned % 50 === 0 && result.itemsScanned > 0) {
-            await db.forceSave()
-          }
-        }
-      } finally {
-        await db.endBatch()
-      }
-
-      // Remove stale items (only for full scans, not incremental)
-      if (!isIncremental) {
-        const itemType = libraryType === 'show' ? 'episode' : 'movie'
-        const items = db.getMediaItems({ type: itemType, sourceId: this.sourceId, libraryId })
-
-        // Safety guard: refuse deletion when API returned 0 IDs but DB has items
-        if (scannedProviderIds.size === 0 && items.length > 0) {
-          console.warn(`[${this.providerType}Provider ${this.sourceId}] API returned 0 IDs but DB has ${items.length} — skipping deletion (possible API failure)`)
-        } else if (scannedProviderIds.size > 0) {
-          for (const item of items) {
-            if (!scannedProviderIds.has(item.plex_id)) {
-              if (item.id) {
-                await db.deleteMediaItem(item.id)
-                result.itemsRemoved++
+              if (onProgress && itemIndex % 10 === 0) {
+                onProgress({ current: itemIndex, total: totalItems, phase: 'processing', currentItem: data.name, percentage: (itemIndex / totalItems) * 100 })
               }
             }
-          }
+          
+          // Yield to keep UI responsive
+          await new Promise(r => setTimeout(r, 0))
         }
+      } catch (e: unknown) {
+        result.errors.push(`Scan failed during processing: ${getErrorMessage(e)}`)
       }
 
-      // Update scan time
-      await db.updateSourceScanTime(this.sourceId)
-
+      result.cancelled = this.scanCancelled
+      if (!isIncremental && !result.cancelled) {
+        const itemType = libraryType === LibraryType.Show ? MediaItemType.Episode : MediaItemType.Movie
+        const removed = await db.media.removeStaleProviderItems(this.sourceId, libraryId, itemType, scannedProviderIds)
+        result.itemsRemoved = removed
+      }      await db.sources.updateSourceScanTime(this.sourceId)
       result.success = true
-      result.durationMs = Date.now() - startTime
-
-      console.log(`[${this.providerType}Provider ${this.sourceId}] Scan complete: ${result.itemsScanned} scanned, ${result.itemsAdded} added, ${result.itemsRemoved} removed, ${result.errors.length} errors (${(result.durationMs / 1000).toFixed(1)}s)`)
-
-      return result
-    } catch (error: unknown) {
-      result.errors.push(getErrorMessage(error))
-      result.durationMs = Date.now() - startTime
-      console.error(`[${this.providerType}Provider ${this.sourceId}] Scan failed after ${(result.durationMs / 1000).toFixed(1)}s: ${getErrorMessage(error)}`)
-      return result
-    }
+    } catch (error: unknown) { result.errors.push(getErrorMessage(error)); }
+    result.durationMs = Date.now() - startTime
+    return result
   }
 
-  // ============================================================================
-  // CONVERSION HELPERS
-  // ============================================================================
-
-  protected convertToMediaMetadata(item: JellyfinMediaItem): MediaMetadata {
-    const mediaSource = item.MediaSources?.[0]
-    const videoStream = mediaSource?.MediaStreams?.find(s => s.Type === 'Video')
-    const audioStream = mediaSource?.MediaStreams?.find(s => s.Type === 'Audio')
-    const isEpisode = item.Type === 'Episode'
-
-    // Build poster URL
-    // For movies: the movie's primary image
-    // For episodes: the series poster (show artwork)
-    let posterUrl: string | undefined
-    if (isEpisode) {
-      if (item.SeriesId && item.SeriesPrimaryImageTag) {
-        posterUrl = this.buildImageUrl(item.SeriesId, 'Primary', item.SeriesPrimaryImageTag)
-      } else if (item.SeriesId) {
-        posterUrl = this.buildImageUrl(item.SeriesId, 'Primary')
-      }
-    } else {
-      if (item.ImageTags?.Primary) {
-        posterUrl = this.buildImageUrl(item.Id, 'Primary', item.ImageTags.Primary)
-      }
-    }
-
-    // Normalize video/audio properties using shared normalizer
-    const width = videoStream?.Width || 0
-    const height = videoStream?.Height || 0
-
-    // Calculate fallback audio bitrate for lossless codecs that don't report BitRate
-    let audioBitrate = audioStream?.BitRate
-    if (!audioBitrate && mediaSource?.Bitrate && videoStream?.BitRate) {
-      // Single audio stream: estimate as total minus video
-      audioBitrate = mediaSource.Bitrate - videoStream.BitRate
-    } else if (!audioBitrate && audioStream) {
-      // Estimate based on codec type for lossless formats
-      const codecLower = (audioStream.Codec || '').toLowerCase()
-      const channels = audioStream.Channels || 6
-      if (codecLower.includes('truehd') || codecLower.includes('mlp')) {
-        audioBitrate = channels * 500 * 1000 // ~500 kbps per channel in bps
-      } else if (codecLower.includes('dts') && (codecLower.includes('hd') || codecLower.includes('ma') || codecLower.includes('x'))) {
-        audioBitrate = channels * 400 * 1000 // ~400 kbps per channel in bps
-      } else if (codecLower === 'flac') {
-        audioBitrate = channels * 200 * 1000 // ~200 kbps per channel in bps
-      }
-    }
-
-    return {
-      providerId: this.sourceId,
-      providerType: this.providerType,
-      itemId: item.Id,
-      title: item.Name,
-      sortTitle: item.SortName,
-      type: isEpisode ? 'episode' : 'movie',
-      year: item.ProductionYear,
-      seriesTitle: item.SeriesName,
-      seasonNumber: item.ParentIndexNumber,
-      episodeNumber: item.IndexNumber,
-      imdbId: item.ProviderIds?.Imdb,
-      tmdbId: item.ProviderIds?.Tmdb ? parseInt(item.ProviderIds.Tmdb, 10) : undefined,
-      filePath: mediaSource?.Path,
-      fileSize: mediaSource?.Size,
-      duration: mediaSource?.RunTimeTicks ? Math.floor(mediaSource.RunTimeTicks / 10000) : undefined,
-      container: normalizeContainer(mediaSource?.Container),
-      resolution: normalizeResolution(width, height),
-      width,
-      height,
-      videoCodec: normalizeVideoCodec(videoStream?.Codec),
-      // Jellyfin returns BitRate in bps - prefer videoStream.BitRate (video only) over mediaSource.Bitrate (container total)
-      videoBitrate: normalizeBitrate(videoStream?.BitRate || mediaSource?.Bitrate, 'bps'),
-      videoFrameRate: normalizeFrameRate(videoStream?.RealFrameRate),
-      colorBitDepth: videoStream?.BitDepth,
-      dolbyVisionProfile: parseDolbyVisionProfile(videoStream?.Profile, videoStream?.DisplayTitle, videoStream?.Title),
-      hdrFormat: normalizeHdrFormat(
-        videoStream?.VideoRange,
-        undefined,
-        undefined,
-        videoStream?.BitDepth,
-        videoStream?.Profile
-      ),
-      colorSpace: videoStream?.ColorSpace,
-      videoProfile: videoStream?.Profile,
-      audioCodec: normalizeAudioCodec(audioStream?.Codec, audioStream?.Profile),
-      audioChannels: normalizeAudioChannels(audioStream?.Channels, audioStream?.ChannelLayout),
-      audioBitrate: normalizeBitrate(audioBitrate, 'bps'),
-      audioSampleRate: normalizeSampleRate(audioStream?.SampleRate),
-      hasObjectAudio: hasObjectAudio(
-        audioStream?.Codec,
-        audioStream?.Profile,
-        audioStream?.DisplayTitle || audioStream?.Title,
-        audioStream?.ChannelLayout
-      ),
-      posterUrl,
-    }
-  }
-
-  protected async convertToMediaItem(item: JellyfinMediaItem): Promise<{ mediaItem: MediaItem; versions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] } | null> {
-    const allSources = item.MediaSources || []
-    if (allSources.length === 0) return null
-
-    // Build version data for each MediaSource entry
-    type VersionData = Omit<MediaItemVersion, 'id' | 'media_item_id'>
-    const versions: VersionData[] = []
-
-    for (const mediaSource of allSources) {
-      const videoStream = mediaSource.MediaStreams?.find(s => s.Type === 'Video')
-      const audioStreams = mediaSource.MediaStreams?.filter(s => s.Type === 'Audio') || []
-      const subtitleStreams = mediaSource.MediaStreams?.filter(s => s.Type === 'Subtitle') || []
-
-      if (!videoStream || audioStreams.length === 0) continue
-
-      // Build audio tracks array with normalized values
-      // Note: Jellyfin returns BitRate in bps
-      // For advanced codecs (TrueHD, DTS-HD MA, Atmos), Jellyfin often doesn't report stream-level BitRate
-      const totalBitrate = mediaSource.Bitrate || 0
-      const videoBitrate = videoStream.BitRate || 0
-
-      // Check if any audio streams are missing bitrate - if so, try FFprobe first
-      const hasMissingBitrate = audioStreams.some(s => !s.BitRate)
-      let ffprobeBitrates: Map<number, number> | null = null
-
-      if (hasMissingBitrate && mediaSource.Path) {
-        // Try FFprobe as backup for missing bitrates (works if file is locally accessible)
-        ffprobeBitrates = await this.getAudioBitratesViaFFprobe(mediaSource.Path)
-      }
-
-      const audioTracks: AudioTrack[] = audioStreams.map((stream, index) => {
-        // Try stream BitRate first
-        let streamBitrate = stream.BitRate
-
-        // If missing, try FFprobe data
-        if (!streamBitrate && ffprobeBitrates) {
-          const ffprobeBitrate = ffprobeBitrates.get(stream.Index)
-          if (ffprobeBitrate) {
-            // FFprobe returns kbps, convert to bps for consistency with Jellyfin data
-            streamBitrate = ffprobeBitrate * 1000
-          }
-        }
-
-        // If still missing, fall back to estimates
-        if (!streamBitrate && totalBitrate > videoBitrate && audioStreams.length === 1) {
-          // Single audio track: estimate as total minus video
-          streamBitrate = totalBitrate - videoBitrate
-        } else if (!streamBitrate && totalBitrate > videoBitrate && audioStreams.length > 1) {
-          // Multiple audio tracks: estimate based on codec type for lossless formats
-          const codecLower = (stream.Codec || '').toLowerCase()
-          const channels = stream.Channels || 6
-          if (codecLower.includes('truehd') || codecLower.includes('mlp')) {
-            // TrueHD: ~400-600 kbps per channel typical, convert to bps
-            streamBitrate = channels * 500 * 1000
-          } else if (codecLower.includes('dts') && (codecLower.includes('hd') || codecLower.includes('ma') || codecLower.includes('x'))) {
-            // DTS-HD MA / DTS:X: ~300-500 kbps per channel typical, convert to bps
-            streamBitrate = channels * 400 * 1000
-          } else if (codecLower === 'flac') {
-            // FLAC: ~150-300 kbps per channel typical, convert to bps
-            streamBitrate = channels * 200 * 1000
-          }
-        }
-
-        return {
-          index,
-          streamIndex: stream.Index,
-          codec: normalizeAudioCodec(stream.Codec, stream.Profile),
-          channels: normalizeAudioChannels(stream.Channels, stream.ChannelLayout),
-          bitrate: normalizeBitrate(streamBitrate, 'bps'),
-          language: stream.Language,
-          title: stream.DisplayTitle || stream.Title,
-          profile: stream.Profile,
-          sampleRate: normalizeSampleRate(stream.SampleRate),
-          isDefault: stream.IsDefault,
-          hasObjectAudio: hasObjectAudio(
-            stream.Codec,
-            stream.Profile,
-            stream.DisplayTitle || stream.Title,
-            stream.ChannelLayout
-          ),
-        }
-      })
-
-      // Build subtitle tracks array
-      const subtitleTracks: SubtitleTrack[] = subtitleStreams.map((stream, index) => ({
-        index,
-        codec: stream.Codec || 'unknown',
-        language: stream.Language,
-        title: stream.DisplayTitle || stream.Title,
-        isDefault: stream.IsDefault,
-        isForced: stream.IsForced,
-      }))
-
-      // Detect external subtitle files that Emby's bulk API may not include in MediaStreams
-      if (mediaSource.Path) {
-        try {
-          const videoDir = path.dirname(mediaSource.Path)
-          const videoBaseName = path.basename(mediaSource.Path, path.extname(mediaSource.Path))
-          const dirFiles = fs.readdirSync(videoDir)
-          const subExtensions = ['.srt', '.sub', '.ass', '.ssa', '.vtt', '.sup']
-
-          for (const file of dirFiles) {
-            const ext = path.extname(file).toLowerCase()
-            if (!subExtensions.includes(ext)) continue
-            if (!file.startsWith(videoBaseName)) continue
-
-            // Extract language from filename: "Movie.sv.srt" → "sv"
-            const stripped = path.basename(file, ext)
-            const parts = stripped.substring(videoBaseName.length).split('.')
-            const langCode = parts.filter(p => p.length >= 2 && p.length <= 3).pop()
-
-            // Skip if already present from API-provided subtitles
-            const codec = ext.slice(1)
-            const alreadyPresent = subtitleTracks.some(t =>
-              t.language === langCode && t.codec === codec
-            )
-            if (!alreadyPresent) {
-              subtitleTracks.push({
-                index: subtitleTracks.length,
-                codec,
-                language: langCode,
-                title: file,
-                isDefault: false,
-                isForced: file.toLowerCase().includes('.forced.'),
-              })
-            }
-          }
-        } catch {
-          // Path not accessible (remote server) — skip external subtitle detection
-        }
-      }
-
-      // Find best audio track using shared utility
-      const bestAudioTrack = selectBestAudioTrack(audioTracks)!
-      const audioStream = audioStreams[bestAudioTrack.index]
-
-      const width = videoStream.Width || 0
-      const height = videoStream.Height || 0
-      const resolution = normalizeResolution(width, height)
-      const hdrFormat = normalizeHdrFormat(
-        videoStream.VideoRange,
-        undefined,
-        undefined,
-        videoStream.BitDepth,
-        videoStream.Profile
-      ) || 'None'
-
-      // Extract edition and source type from file path
-      const filePath = mediaSource.Path || ''
-      const parsed = filePath ? getFileNameParser().parse(filePath) : null
-      const edition = (parsed?.type === 'movie' ? parsed.edition : undefined) || undefined
-      const source = parsed?.type !== 'music' ? parsed?.source : undefined
-      const sourceType = source && /remux/i.test(source) ? 'REMUX'
-        : source && /web-dl|webdl/i.test(source) ? 'WEB-DL'
-        : undefined
-
-      // Generate label: "4K Dolby Vision REMUX", "1080p WEB-DL", etc.
-      const labelParts = [resolution]
-      if (hdrFormat !== 'None') labelParts.push(hdrFormat)
-      if (sourceType) labelParts.push(sourceType)
-      if (edition) labelParts.push(edition)
-      const label = labelParts.join(' ')
-
-      // Emby/Jellyfin videoStream.BitRate often reports the container bitrate
-      // (video + audio) rather than the video-only bitrate. Detect this by
-      // comparing against mediaSource.Bitrate and subtract audio when needed.
-      const containerBps = mediaSource.Bitrate || 0
-      const streamVideoBps = videoStream.BitRate || 0
-      const totalAudioBps = audioTracks.reduce((sum, t) => sum + ((t.bitrate || 0) * 1000), 0)
-
-      let videoBps: number
-      if (streamVideoBps > 0 && containerBps > 0 && streamVideoBps < containerBps * 0.85) {
-        // Stream bitrate is well below container — it's the actual video bitrate
-        videoBps = streamVideoBps
-      } else if (containerBps > 0 && totalAudioBps > 0) {
-        // Stream bitrate matches container or is missing — subtract audio
-        videoBps = Math.max(0, (streamVideoBps || containerBps) - totalAudioBps)
-      } else {
-        videoBps = streamVideoBps || containerBps
-      }
-
-      versions.push({
-        version_source: `jellyfin_source_${mediaSource.Id}`,
-        edition,
-        source_type: sourceType,
-        label,
-        file_path: mediaSource.Path || '',
-        file_size_bytes: mediaSource.Size || 0,
-        duration_ms: mediaSource.RunTimeTicks ? Math.floor(mediaSource.RunTimeTicks / 10000) : 0,
-        resolution,
-        width,
-        height,
-        video_codec: normalizeVideoCodec(videoStream.Codec),
-        video_bitrate_kbps: normalizeBitrate(videoBps, 'bps'),
-        audio_codec: normalizeAudioCodec(audioStream.Codec, audioStream.Profile),
-        audio_channels: normalizeAudioChannels(audioStream.Channels, audioStream.ChannelLayout),
-        audio_bitrate_kbps: bestAudioTrack.bitrate,
-        video_frame_rate: normalizeFrameRate(videoStream.RealFrameRate),
-        color_bit_depth: videoStream.BitDepth,
-        hdr_format: hdrFormat,
-        color_space: videoStream.ColorSpace,
-        video_profile: videoStream.Profile,
-        video_level: videoStream.Level,
-        audio_profile: audioStream.Profile,
-        audio_sample_rate: normalizeSampleRate(audioStream.SampleRate),
-        has_object_audio: hasObjectAudio(
-          audioStream.Codec,
-          audioStream.Profile,
-          audioStream.DisplayTitle || audioStream.Title,
-          audioStream.ChannelLayout
-        ),
-        audio_tracks: JSON.stringify(audioTracks),
-        subtitle_tracks: subtitleTracks.length > 0 ? JSON.stringify(subtitleTracks) : undefined,
-        container: normalizeContainer(mediaSource.Container),
-      })
-    }
-
-    if (versions.length === 0) return null
-
-    // Post-process: compare filenames across versions to extract edition names
-    if (versions.length > 1) {
-      extractVersionNames(versions)
-    }
-
-    // Pick the best version for parent MediaItem (highest resolution tier, then HDR, then bitrate)
-    const best = versions.reduce((a, b) => scoreVersion(b) > scoreVersion(a) ? b : a)
-    const bestVideoStream = item.MediaSources?.find(source => source.Path === best.file_path)?.MediaStreams?.find(stream => stream.Type === 'Video')
-    const dolbyVisionProfile = parseDolbyVisionProfile(bestVideoStream?.Profile, bestVideoStream?.DisplayTitle, bestVideoStream?.Title)
-
-    const isEpisode = item.Type === 'Episode'
-
-    // Build poster URL
-    let posterUrl: string | undefined
-    if (isEpisode) {
-      if (item.SeriesId && item.SeriesPrimaryImageTag) {
-        posterUrl = this.buildImageUrl(item.SeriesId, 'Primary', item.SeriesPrimaryImageTag)
-      } else if (item.SeriesId) {
-        posterUrl = this.buildImageUrl(item.SeriesId, 'Primary')
-      }
-    } else {
-      if (item.ImageTags?.Primary) {
-        posterUrl = this.buildImageUrl(item.Id, 'Primary', item.ImageTags.Primary)
-      }
-    }
-
-    // Build episode thumbnail URL
-    let episodeThumbUrl: string | undefined
-    if (isEpisode) {
-      if (item.ImageTags?.Primary) {
-        episodeThumbUrl = this.buildImageUrl(item.Id, 'Primary', item.ImageTags.Primary)
-      } else if (item.ImageTags?.Screenshot) {
-        episodeThumbUrl = this.buildImageUrl(item.Id, 'Screenshot', item.ImageTags.Screenshot)
-      } else if (item.ImageTags?.Thumb) {
-        episodeThumbUrl = this.buildImageUrl(item.Id, 'Thumb', item.ImageTags.Thumb)
-      } else if (item.ParentThumbItemId && item.ParentThumbImageTag) {
-        episodeThumbUrl = this.buildImageUrl(item.ParentThumbItemId, 'Thumb', item.ParentThumbImageTag)
-      } else {
-        episodeThumbUrl = this.buildImageUrl(item.Id, 'Primary')
-      }
-    }
-
-    // Build season poster URL
-    let seasonPosterUrl: string | undefined
-    if (isEpisode && item.SeasonId) {
-      if (item.ParentPrimaryImageItemId && item.ParentPrimaryImageTag) {
-        seasonPosterUrl = this.buildImageUrl(item.ParentPrimaryImageItemId, 'Primary', item.ParentPrimaryImageTag)
-      } else if (item.ParentPrimaryImageTag) {
-        seasonPosterUrl = this.buildImageUrl(item.SeasonId, 'Primary', item.ParentPrimaryImageTag)
-      } else {
-        seasonPosterUrl = this.buildImageUrl(item.SeasonId, 'Primary')
-      }
-    }
-
-    // Get series TMDB ID for episodes
-    const seriesTmdbId = isEpisode ? item.SeriesProviderIds?.Tmdb : undefined
-
-    return {
-      mediaItem: {
-        plex_id: item.Id,
-        title: item.Name,
-        sort_title: isEpisode
-          ? ((item as JellyfinMediaItem & { _seriesSortName?: string })._seriesSortName || undefined)
-          : (item.SortName || undefined),
-        year: item.ProductionYear,
-        type: isEpisode ? 'episode' : 'movie',
-        series_title: item.SeriesName,
-        season_number: item.ParentIndexNumber,
-        episode_number: item.IndexNumber,
-        file_path: best.file_path,
-        file_size_bytes: best.file_size_bytes,
-        duration_ms: best.duration_ms,
-        resolution: best.resolution,
-        width: best.width,
-        height: best.height,
-        video_codec: best.video_codec,
-        video_bitrate_kbps: best.video_bitrate_kbps,
-        audio_codec: best.audio_codec,
-        audio_channels: best.audio_channels,
-        audio_bitrate_kbps: best.audio_bitrate_kbps,
-        video_frame_rate: best.video_frame_rate,
-        color_bit_depth: best.color_bit_depth,
-        hdr_format: best.hdr_format,
-        color_space: best.color_space,
-        video_profile: best.video_profile,
-        video_level: best.video_level,
-        dolby_vision_profile: dolbyVisionProfile,
-        audio_profile: best.audio_profile,
-        audio_sample_rate: best.audio_sample_rate,
-        has_object_audio: best.has_object_audio,
-        audio_tracks: best.audio_tracks,
-        subtitle_tracks: best.subtitle_tracks,
-        container: best.container,
-        version_count: versions.length,
-        imdb_id: item.ProviderIds?.Imdb,
-        tmdb_id: item.ProviderIds?.Tmdb,
-        series_tmdb_id: seriesTmdbId,
-        poster_url: posterUrl,
-        episode_thumb_url: episodeThumbUrl,
-        season_poster_url: seasonPosterUrl,
-        summary: item.Overview || undefined,
-        tmdb_rating: item.CommunityRating || undefined,
-        play_count: item.UserData?.PlayCount || 0,
-        last_watched_at: item.UserData?.LastPlayedDate || undefined,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      versions,
-    }
-  }
-
-  // scoreVersion extracted to ProviderUtils.scoreVersion
-
-  /**
-   * Group movie items by TMDB ID (or title+year fallback) so that multiple
-   * versions of the same movie (e.g. colorized vs B&W, Director's Cut vs Theatrical)
-   * become a single media_items record with multiple versions.
-   * Episodes are never grouped — each episode remains its own item.
-   */
-  private groupMovieVersions(items: JellyfinMediaItem[], libraryType: string): JellyfinMediaItem[][] {
-    if (libraryType === 'show') {
-      return items.map(item => [item])
-    }
-
-    return groupByMediaIdentity(items, item => ({
-      tmdbId: item.ProviderIds?.Tmdb,
-      imdbId: item.ProviderIds?.Imdb,
-      title: item.Name,
-      year: item.ProductionYear,
-    }))
-  }
-
-  // NOTE: normalizeResolution, detectHdrFormat, and detectObjectAudio are now
-  // imported from MediaNormalizer. The duplicate protected methods were removed.
-
-  /**
-   * Get audio bitrates from a file using FFprobe as a backup
-   * Only used when Jellyfin doesn't provide bitrate for certain codecs (TrueHD, DTS-HD, Atmos)
-   * @param filePath Path to the media file
-   * @returns Map of stream index to bitrate in kbps, or null if FFprobe unavailable/file inaccessible
-   */
-  protected async getAudioBitratesViaFFprobe(filePath: string): Promise<Map<number, number> | null> {
-    // Check if file is accessible locally
-    if (!filePath || !fs.existsSync(filePath)) {
-      return null
-    }
-
-    try {
-      const analyzer = getMediaFileAnalyzer()
-      if (!await analyzer.isAvailable()) {
-        return null
-      }
-
-      const result = await analyzer.analyzeFile(filePath)
-      if (!result.success || result.audioTracks.length === 0) {
-        return null
-      }
-
-      const bitrateMap = new Map<number, number>()
-      for (const track of result.audioTracks) {
-        if (track.bitrateKbps) {
-          bitrateMap.set(track.index, track.bitrateKbps)
-        }
-      }
-
-      if (bitrateMap.size > 0) {
-        console.log(`[${this.providerType}] Got audio bitrates via FFprobe for: ${path.basename(filePath)}`)
-      }
-
-      return bitrateMap.size > 0 ? bitrateMap : null
-    } catch (error) {
-      console.warn(`[${this.providerType}] FFprobe analysis failed for ${path.basename(filePath)}:`, error)
-      return null
-    }
-  }
-
-  // ============================================================================
-  // MUSIC LIBRARY SUPPORT
-  // ============================================================================
-
-  /**
-   * Get all music artists from a library (Album Artists only)
-   * Uses the /Artists/AlbumArtists endpoint which returns only artists with albums
-   */
   async getMusicArtists(libraryId: string): Promise<JellyfinMusicArtist[]> {
-    if (!this.serverUrl) {
-      throw new Error('Not connected to server')
-    }
-
     try {
       const allArtists: JellyfinMusicArtist[] = []
       let startIndex = 0
       const batchSize = 100
       let hasMore = true
-
       while (hasMore) {
-        // Use /Artists/AlbumArtists endpoint - this returns the actual album artists
-        // that appear in the Emby/Jellyfin UI, not all artist metadata entries
-        const response = await fetchJSON<{ Items: JellyfinMusicArtist[]; TotalRecordCount?: number }>(
-          buildUrl(`${this.serverUrl}/Artists/AlbumArtists`, {
-            ParentId: libraryId,
-            Fields: 'ProviderIds,Genres,Overview,ImageTags,SortName',
-            StartIndex: startIndex,
-            Limit: batchSize,
-            EnableTotalRecordCount: true,
-          }),
-          { headers: this.getAuthHeaders() }
-        )
-
-        const items = response.Items || []
+        const res = await this.client.get<{ Items: JellyfinMusicArtist[]; TotalRecordCount?: number }>('/Artists/AlbumArtists', { ParentId: libraryId, Fields: 'ProviderIds,Genres,Overview,ImageTags,SortName', StartIndex: startIndex, Limit: batchSize, EnableTotalRecordCount: true })
+        const items = res.Items || []
         allArtists.push(...items)
-
-        const total = response.TotalRecordCount || items.length
         startIndex += items.length
-        hasMore = startIndex < total && items.length === batchSize
+        hasMore = startIndex < (res.TotalRecordCount || 0) && items.length === batchSize
       }
-
-      console.log(`[${this.providerType}] getMusicArtists: Found ${allArtists.length} album artists`)
       return allArtists
-    } catch (error: unknown) {
-      console.error(`[${this.providerType}] Failed to get music artists:`, error)
-      throw new Error('Failed to fetch music artists')
-    }
+    } catch { throw new Error('Failed to fetch music artists') }
   }
 
-  /**
-   * Get music albums - optionally filtered by artist
-   */
   async getMusicAlbums(libraryId: string, artistId?: string): Promise<JellyfinMusicAlbum[]> {
-    if (!this.serverUrl) {
-      throw new Error('Not connected to server')
-    }
-
     try {
       const allAlbums: JellyfinMusicAlbum[] = []
       let startIndex = 0
       const batchSize = 100
       let hasMore = true
-
       while (hasMore) {
-        const params: Record<string, unknown> = {
-          IncludeItemTypes: 'MusicAlbum',
-          Recursive: true,
-          Fields: 'ProviderIds,Genres,ImageTags,ChildCount,RunTimeTicks,AlbumArtist,AlbumArtists,Artists,PrimaryImageAspectRatio',
-          EnableImages: true,
-          EnableImageTypes: 'Primary,Thumb',
-          StartIndex: startIndex,
-          Limit: batchSize,
-          EnableTotalRecordCount: true,
-        }
-
-        // If artistId provided, get albums by that artist; otherwise get all from library
-        if (artistId) {
-          params.AlbumArtistIds = artistId
-        } else {
-          params.ParentId = libraryId
-        }
-
-        const response = await fetchJSON<{ Items: JellyfinMusicAlbum[]; TotalRecordCount?: number }>(
-          buildUrl(`${this.serverUrl}/Items`, params as Record<string, string | number | boolean | null | undefined>),
-          { headers: this.getAuthHeaders() }
-        )
-
-        const items = response.Items || []
+        const params: Record<string, unknown> = { IncludeItemTypes: 'MusicAlbum', Recursive: true, Fields: 'ProviderIds,Genres,ImageTags,ChildCount,RunTimeTicks,AlbumArtist,AlbumArtists,Artists,PrimaryImageAspectRatio', EnableImages: true, EnableImageTypes: 'Primary,Thumb', StartIndex: startIndex, Limit: batchSize, EnableTotalRecordCount: true }
+        if (artistId) params.AlbumArtistIds = artistId; else params.ParentId = libraryId
+        const res = await this.client.get<{ Items: JellyfinMusicAlbum[]; TotalRecordCount?: number }>('/Items', params)
+        const items = res.Items || []
         allAlbums.push(...items)
-
-        const total = response.TotalRecordCount || items.length
         startIndex += items.length
-        hasMore = startIndex < total && items.length === batchSize
+        hasMore = startIndex < (res.TotalRecordCount || 0) && items.length === batchSize
       }
-
       return allAlbums
-    } catch (error: unknown) {
-      console.error(`[${this.providerType}] Failed to get music albums:`, error)
-      throw new Error('Failed to fetch music albums')
-    }
+    } catch { throw new Error('Failed to fetch music albums') }
   }
 
-  /**
-   * Get tracks for an album
-   */
   async getMusicTracks(albumId: string): Promise<JellyfinMusicTrack[]> {
-    if (!this.serverUrl) {
-      throw new Error('Not connected to server')
-    }
-
     try {
-      const response = await fetchJSON<{ Items: JellyfinMusicTrack[] }>(
-        buildUrl(`${this.serverUrl}/Items`, {
-          ParentId: albumId,
-          IncludeItemTypes: 'Audio',
-          Fields: 'MediaSources,Path,ProviderIds,Artists,ArtistItems,ImageTags,PrimaryImageTag',
-        }),
-        { headers: this.getAuthHeaders() }
-      )
-
-      return response.Items || []
-    } catch (error: unknown) {
-      console.error(`[${this.providerType}] Failed to get music tracks:`, error)
-      throw new Error('Failed to fetch music tracks')
-    }
+      const res = await this.client.get<{ Items: JellyfinMusicTrack[] }>('/Items', { ParentId: albumId, IncludeItemTypes: 'Audio', Fields: 'MediaSources,Path,ProviderIds,Artists,ArtistItems,ImageTags,PrimaryImageTag' })
+      return res.Items || []
+    } catch { throw new Error('Failed to fetch music tracks') }
   }
 
-  /**
-   * Convert Jellyfin artist to MusicArtist type
-   */
-  convertToMusicArtist(item: JellyfinMusicArtist, libraryId?: string): MusicArtist {
-    const musicbrainzId = extractMusicBrainzId(item.ProviderIds, ...MUSICBRAINZ_ARTIST_KEYS)
-
-    // Build artist image URL - only use ImageTags.Primary (not PrimaryImageTag which can be stale)
-    const thumbUrl = item.ImageTags?.Primary
-      ? this.buildImageUrl(item.Id, 'Primary', item.ImageTags.Primary)
-      : undefined
-
-    return {
-      source_id: this.sourceId,
-      source_type: this.providerType,
-      library_id: libraryId,
-      provider_id: item.Id,
-      name: item.Name,
-      sort_name: item.SortName,
-      musicbrainz_id: musicbrainzId,
-      genres: item.Genres ? JSON.stringify(item.Genres) : undefined,
-      biography: item.Overview,
-      thumb_url: thumbUrl,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-  }
-
-  /**
-   * Convert Jellyfin album to MusicAlbum type
-   */
-  convertToMusicAlbum(item: JellyfinMusicAlbum, artistId?: number, libraryId?: string): MusicAlbum {
-    const musicbrainzId = extractMusicBrainzId(item.ProviderIds, ...MUSICBRAINZ_ALBUM_KEYS)
-    const artistName = item.AlbumArtist || item.AlbumArtists?.[0]?.Name || item.Artists?.[0] || 'Unknown Artist'
-
-    // Build album art URL - ONLY use ImageTags.Primary (which is reliable)
-    // PrimaryImageTag is NOT reliable - Emby sets it for embedded artwork but doesn't serve the image
-    let thumbUrl: string | undefined
-    if (item.ImageTags?.Primary) {
-      thumbUrl = this.buildImageUrl(item.Id, 'Primary', item.ImageTags.Primary)
-    } else if (item.ImageTags?.Thumb) {
-      thumbUrl = this.buildImageUrl(item.Id, 'Thumb', item.ImageTags.Thumb)
-    }
-    // Note: Don't use PrimaryImageTag - it's often set but the image returns 404
-    // The scanMusicLibrary function will check track artwork as a fallback
-
-    return {
-      source_id: this.sourceId,
-      source_type: this.providerType,
-      library_id: libraryId,
-      provider_id: item.Id,
-      artist_id: artistId,
-      artist_name: artistName,
-      title: item.Name,
-      sort_title: item.SortName || undefined,
-      year: item.ProductionYear,
-      musicbrainz_id: musicbrainzId,
-      genres: item.Genres ? JSON.stringify(item.Genres) : undefined,
-      track_count: item.ChildCount,
-      total_duration: item.RunTimeTicks ? Math.floor(item.RunTimeTicks / 10000) : undefined, // ticks to ms
-      thumb_url: thumbUrl,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-  }
-
-  /**
-   * Convert Jellyfin track to MusicTrack type
-   */
-  convertToMusicTrack(
-    item: JellyfinMusicTrack,
-    albumId?: number,
-    artistId?: number,
-    libraryId?: string
-  ): MusicTrack | null {
-    const mediaSource = item.MediaSources?.[0]
-    const audioStream = mediaSource?.MediaStreams?.find(s => s.Type === 'Audio')
-
-    if (!mediaSource) {
-      console.warn(`[${this.providerType}] Skipping track "${item.Name}" - no MediaSource data`)
-      return null
-    }
-
-    const audioCodec = audioStream?.Codec || 'unknown'
-    const sampleRate = audioStream?.SampleRate || 44100
-    const bitDepth = audioStream?.BitDepth || 16
-    const lossless = isLosslessCodec(audioCodec)
-    const hiRes = isHiRes(sampleRate, bitDepth, lossless)
-
-    const musicbrainzId = extractMusicBrainzId(item.ProviderIds, ...MUSICBRAINZ_TRACK_KEYS)
-    const artistName = item.AlbumArtist || item.ArtistItems?.[0]?.Name || item.Artists?.[0] || 'Unknown Artist'
-
-    return {
-      source_id: this.sourceId,
-      source_type: this.providerType,
-      library_id: libraryId,
-      provider_id: item.Id,
-      album_id: albumId,
-      artist_id: artistId,
-      album_name: item.Album,
-      artist_name: artistName,
-      title: item.Name,
-      track_number: item.IndexNumber,
-      disc_number: item.ParentIndexNumber || 1,
-      duration: item.RunTimeTicks ? Math.floor(item.RunTimeTicks / 10000) : undefined, // ticks to ms
-      file_path: mediaSource.Path,
-      file_size: mediaSource.Size,
-      container: mediaSource.Container,
-      audio_codec: audioCodec,
-      audio_bitrate: normalizeBitrate(mediaSource.Bitrate, 'bps'), // Emby returns bps, convert to kbps
-      sample_rate: sampleRate,
-      bit_depth: bitDepth,
-      channels: audioStream?.Channels,
-      is_lossless: lossless,
-      is_hi_res: hiRes,
-      musicbrainz_id: musicbrainzId,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-  }
-
-  /**
-   * Scan a music library
-   */
-  async scanMusicLibrary(
-    libraryId: string,
-    onProgress?: (progress: { current: number; total: number; phase: string; currentItem?: string; percentage: number }) => void
-  ): Promise<ScanResult> {
-    // Reset cancellation flag
+  async scanMusicLibrary(libraryId: string, onProgress?: ProgressCallback): Promise<ScanResult> {
     this.musicScanCancelled = false
-
     const startTime = Date.now()
-    const result: ScanResult = {
-      success: false,
-      itemsScanned: 0,
-      itemsAdded: 0,
-      itemsUpdated: 0,
-      itemsRemoved: 0,
-      errors: [],
-      durationMs: 0,
-      cancelled: false,
-    }
-
+    const result: ScanResult = { success: false, itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, errors: [], durationMs: 0, cancelled: false }
     try {
       const db = getDatabase()
-
-      // Track scanned IDs for cleanup
-      const scannedArtistIds = new Set<string>()
       const scannedAlbumIds = new Set<string>()
-      const scannedTrackIds = new Set<string>()
-
-      // Helper to process an album
-      const processAlbum = async (
-        jellyfinAlbum: JellyfinMusicAlbum,
-        artistId: number | undefined,
-        artistName?: string
-      ): Promise<{ trackCount: number }> => {
-        const albumData = this.convertToMusicAlbum(jellyfinAlbum, artistId, libraryId)
-
-        // Override artist name if provided (for compilations)
-        if (artistName && !albumData.artist_name) {
-          albumData.artist_name = artistName
-        }
-
-        // Get all tracks for this album
-        const tracks = await this.getMusicTracks(jellyfinAlbum.Id)
-
-        // If album has no artwork, try to get it from the first track's embedded image
-        // Emby/Jellyfin expose embedded artwork on tracks via ImageTags.Primary
-        if (!albumData.thumb_url && tracks.length > 0) {
-          const firstTrack = tracks[0]
-          if (firstTrack.ImageTags?.Primary) {
-            albumData.thumb_url = this.buildImageUrl(firstTrack.Id, 'Primary', firstTrack.ImageTags.Primary)
-          }
-        }
-
-        // Convert and collect tracks
-        const trackDataList: MusicTrack[] = []
-        for (const jellyfinTrack of tracks) {
-          const trackData = this.convertToMusicTrack(jellyfinTrack, undefined, artistId, libraryId)
-          if (trackData) {
-            trackDataList.push(trackData)
-          }
-        }
-
-        // Calculate album stats from tracks
+      const processAlbum = async (jellyfinAlbum: JellyfinMusicAlbum, tracks: JellyfinMusicTrack[], artistId: number | undefined, artistName?: string) => {
+        const albumData = this.mapper.convertToMusicAlbum(jellyfinAlbum, artistId, libraryId)
+        if (artistName && !albumData.artist_name) albumData.artist_name = artistName
+        if (!albumData.thumb_url && tracks.length > 0 && tracks[0].ImageTags?.Primary) albumData.thumb_url = this.client.buildImageUrl(tracks[0].Id, 'Primary', tracks[0].ImageTags.Primary)
+        const trackDataList = tracks.map(t => this.mapper.convertToMusicTrack(t, undefined, artistId, libraryId)).filter(Boolean) as MusicTrack[]
         const stats = calculateAlbumStats(trackDataList)
-        albumData.track_count = stats.trackCount
-        albumData.total_duration = stats.totalDuration
-        albumData.total_size = stats.totalSize
-        albumData.best_audio_codec = stats.bestCodec
-        albumData.best_audio_bitrate = stats.bestBitrate
-        albumData.best_sample_rate = stats.bestSampleRate
-        albumData.best_bit_depth = stats.bestBitDepth
-        albumData.avg_audio_bitrate = stats.avgBitrate
-
-        // Upsert album
-        const albumId = await db.upsertMusicAlbum(albumData)
-        scannedAlbumIds.add(jellyfinAlbum.Id)
-
-        // Upsert tracks
-        for (const trackData of trackDataList) {
-          trackData.album_id = albumId
-          await db.upsertMusicTrack(trackData)
-          scannedTrackIds.add(trackData.provider_id)
-          result.itemsScanned++
-        }
-
-        return { trackCount: trackDataList.length }
+        Object.assign(albumData, { ...stats })
+        const albumId = await db.music.upsertAlbum(albumData)
+          scannedAlbumIds.add(jellyfinAlbum.Id)
+          for (const t of trackDataList) {
+            t.album_id = albumId
+          }
+          await db.music.bulkUpsertTracks(trackDataList)
+        result.itemsScanned += trackDataList.length
       }
 
-      // Phase 1: Get all artists and scan their albums (0-50% progress)
       const artists = await this.getMusicArtists(libraryId)
-      const totalArtists = artists.length
-
-      console.log(`[${this.providerType}Provider ${this.sourceId}] Scanning music library: ${totalArtists} artists`)
-
-      let processed = 0
-
-      for (const jellyfinArtist of artists) {
-        // Check for cancellation
-        if (this.musicScanCancelled) {
-          console.log(`[${this.providerType}Provider ${this.sourceId}] Music scan cancelled at artist ${processed}/${totalArtists}`)
-          result.cancelled = true
-          result.durationMs = Date.now() - startTime
-          return result
-        }
-
+      const chunkSize = 5
+      for (const [idx, artist] of artists.entries()) {
+        if (this.musicScanCancelled) { result.cancelled = true; break }
         try {
-          const artistData = this.convertToMusicArtist(jellyfinArtist, libraryId)
+          const artistId = await db.music.upsertArtist(this.mapper.convertToMusicArtist(artist, libraryId))
+          const albums = await this.getMusicAlbums(libraryId, artist.Id)
+          let [tc, ac] = [0, 0]
 
-          // Upsert artist
-          const artistId = await db.upsertMusicArtist(artistData)
-          scannedArtistIds.add(jellyfinArtist.Id)
+          for (let i = 0; i < albums.length; i += chunkSize) {
+            if (this.musicScanCancelled) { result.cancelled = true; break }
+            const chunk = albums.slice(i, i + chunkSize)
+            const chunkTracks = await Promise.all(chunk.map(a => this.getMusicTracks(a.Id).catch(e => {
+              result.errors.push(`Album tracks ${a.Name}: ${getErrorMessage(e)}`)
+              return []
+            })))
 
-          // Get all albums for this artist
-          const albums = await this.getMusicAlbums(libraryId, jellyfinArtist.Id)
-
-          let artistTrackCount = 0
-          let artistAlbumCount = 0
-
-          for (const jellyfinAlbum of albums) {
-            const { trackCount } = await processAlbum(jellyfinAlbum, artistId)
-            artistTrackCount += trackCount
-            artistAlbumCount++
+            for (let j = 0; j < chunk.length; j++) {
+              await processAlbum(chunk[j], chunkTracks[j], artistId)
+              ac++
+              tc += (chunk[j].ChildCount || 0)
+            }
           }
-
-          // Update artist counts
-          await db.updateMusicArtistCounts(artistId, artistAlbumCount, artistTrackCount)
-
-          processed++
-          if (onProgress) {
-            onProgress({
-              current: processed,
-              total: totalArtists,
-              phase: 'processing',
-              currentItem: jellyfinArtist.Name,
-              percentage: (processed / totalArtists) * 50, // First 50% for artists
-            })
-          }
-        } catch (error: unknown) {
-          result.errors.push(`Failed to process artist ${jellyfinArtist.Name}: ${getErrorMessage(error)}`)
-        }
+          await db.music.updateMusicArtistCounts(artistId, ac, tc)
+          if (onProgress) onProgress({ current: idx + 1, total: artists.length, phase: 'processing', currentItem: artist.Name, percentage: ((idx + 1) / artists.length) * 50 })
+        } catch (e: unknown) { result.errors.push(`Artist ${artist.Name}: ${getErrorMessage(e)}`) }
       }
 
-      // Phase 2: Get all albums directly to catch compilations and orphaned albums (50-100% progress)
-      console.log(`[${this.providerType}Provider ${this.sourceId}] Scanning for compilations and orphaned albums...`)
+      if (!result.cancelled) {
+        const allAlbums = await this.getMusicAlbums(libraryId)
+        const unprocessed = allAlbums.filter(a => !scannedAlbumIds.has(a.Id))
+        for (let i = 0; i < unprocessed.length; i += chunkSize) {
+          if (this.musicScanCancelled) { result.cancelled = true; break }
+          const chunk = unprocessed.slice(i, i + chunkSize)
+          const chunkTracks = await Promise.all(chunk.map(a => this.getMusicTracks(a.Id).catch(e => {
+            result.errors.push(`Album tracks ${a.Name}: ${getErrorMessage(e)}`)
+            return []
+          })))
 
-      const allAlbums = await this.getMusicAlbums(libraryId)
-      const unprocessedAlbums = allAlbums.filter(a => !scannedAlbumIds.has(a.Id))
-
-      console.log(`[${this.providerType}Provider ${this.sourceId}] Found ${unprocessedAlbums.length} additional albums (compilations/orphaned)`)
-
-      let compilationProcessed = 0
-      const totalCompilations = unprocessedAlbums.length
-
-      for (const jellyfinAlbum of unprocessedAlbums) {
-        // Check for cancellation
-        if (this.musicScanCancelled) {
-          console.log(`[${this.providerType}Provider ${this.sourceId}] Music scan cancelled at compilation ${compilationProcessed}/${totalCompilations}`)
-          result.cancelled = true
-          result.durationMs = Date.now() - startTime
-          return result
-        }
-
-        try {
-          const artistName = jellyfinAlbum.AlbumArtist || jellyfinAlbum.AlbumArtists?.[0]?.Name || 'Various Artists'
-          await processAlbum(jellyfinAlbum, undefined, artistName)
-
-          compilationProcessed++
-          if (onProgress) {
-            onProgress({
-              current: compilationProcessed,
-              total: totalCompilations,
-              phase: 'processing compilations',
-              currentItem: jellyfinAlbum.Name,
-              percentage: 50 + (compilationProcessed / Math.max(totalCompilations, 1)) * 50,
-            })
+          for (let j = 0; j < chunk.length; j++) {
+            const album = chunk[j]
+            try {
+              await processAlbum(album, chunkTracks[j], undefined, album.AlbumArtist || album.AlbumArtists?.[0]?.Name || 'Various Artists')
+            } catch (e: unknown) { result.errors.push(`Album ${album.Name}: ${getErrorMessage(e)}`) }
           }
-        } catch (error: unknown) {
-          result.errors.push(`Failed to process album ${jellyfinAlbum.Name}: ${getErrorMessage(error)}`)
+          if (onProgress) {
+            const currentIdx = Math.min(i + chunkSize, unprocessed.length)
+            onProgress({ current: currentIdx, total: unprocessed.length, phase: 'processing', currentItem: chunk[chunk.length - 1].Name, percentage: 50 + (currentIdx / unprocessed.length) * 50 })
+          }
         }
       }
-
       result.success = true
-      result.durationMs = Date.now() - startTime
+    } catch (e: unknown) { result.errors.push(getErrorMessage(e)) }
+    result.durationMs = Date.now() - startTime
+    return result
+  }
 
-      console.log(`[${this.providerType}Provider ${this.sourceId}] Music scan complete: ${result.itemsScanned} tracks scanned in ${result.durationMs}ms`)
+  cancelMusicScan(): void { this.musicScanCancelled = true }
 
-      return result
-    } catch (error: unknown) {
-      console.error(`[${this.providerType}Provider ${this.sourceId}] Music scan failed:`, error)
-      result.errors.push(getErrorMessage(error))
-      result.durationMs = Date.now() - startTime
-      return result
-    }
+  cancelScan(): void {
+    this.scanCancelled = true
+    this.musicScanCancelled = true
   }
 }

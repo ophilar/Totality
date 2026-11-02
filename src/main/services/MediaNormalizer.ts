@@ -1,4 +1,3 @@
-
 /**
  * MediaNormalizer Service
  *
@@ -10,6 +9,17 @@
 // ============================================================================
 // VIDEO CODEC NORMALIZATION
 // ============================================================================
+
+export function normalizeVideoLevel(codec: string, level: number | undefined): number | undefined {
+  if (level === undefined || level < 0) return undefined
+  if (codec === 'hevc') return level / 3
+  if (codec === 'av1') return (2 + Math.floor(level / 4)) * 10 + level % 4
+  return level
+}
+
+export function buildMediaLabel(parts: Array<string | null | undefined>): string {
+  return parts.map(part => part?.trim()).filter((part): part is string => Boolean(part && part !== 'None')).join(' ')
+}
 
 /**
  * Normalize video codec to a standard display name
@@ -112,23 +122,6 @@ export function normalizeVideoCodec(codec: string | null | undefined): string {
   return codec.toUpperCase()
 }
 
-/** Playback profiles store levels as decimal tenths; FFprobe reports HEVC general_level_idc. */
-export function normalizeVideoLevel(codec: string, level: number | undefined): number | undefined {
-  if (level === undefined) return undefined
-  if (normalizeVideoCodec(codec) !== 'HEVC') return level
-  if (!Number.isInteger(level) || level <= 0 || level % 3 !== 0) return undefined
-  return level / 3
-}
-
-export function normalizeSubtitleFormat(codec: string): string {
-  switch (codec.toLowerCase()) {
-    case 'subrip': return 'srt'
-    case 'hdmv_pgs_subtitle': return 'pgs'
-    case 'dvd_subtitle': return 'vobsub'
-    default: return codec.toLowerCase()
-  }
-}
-
 // ============================================================================
 // AUDIO CODEC NORMALIZATION
 // ============================================================================
@@ -137,11 +130,7 @@ export function normalizeSubtitleFormat(codec: string): string {
  * Normalize audio codec to a standard display name
  * Maps various codec identifiers to consistent names
  */
-export function normalizeAudioCodec(
-  codec: string | null | undefined,
-  profile?: string,
-  normalizationProfile: 'standard' | 'kodi' = 'standard'
-): string {
+export function normalizeAudioCodec(codec: string | null | undefined, profile?: string): string {
   if (!codec) return ''
 
   const codecLower = codec.toLowerCase().trim()
@@ -158,10 +147,6 @@ export function normalizeAudioCodec(
   // TrueHD (with or without Atmos)
   if (codecLower.includes('truehd')) {
     return 'TrueHD'
-  }
-
-  if (normalizationProfile === 'kodi' && codecLower.includes('atmos')) {
-    return 'TrueHD Atmos'
   }
 
   // DTS-HD Master Audio
@@ -206,7 +191,7 @@ export function normalizeAudioCodec(
     codecLower.includes('eac3') ||
     codecLower.includes('dolby digital plus')
   ) {
-    return normalizationProfile === 'kodi' ? 'E-AC-3' : 'EAC3'
+    return 'EAC3'
   }
 
   // AC-3 / Dolby Digital
@@ -216,7 +201,7 @@ export function normalizeAudioCodec(
     codecLower === 'a52' ||
     codecLower.includes('dolby digital')
   ) {
-    return normalizationProfile === 'kodi' ? 'AC-3' : 'AC3'
+    return 'AC3'
   }
 
   // AAC
@@ -346,21 +331,13 @@ export function normalizeResolution(
   return ''
 }
 
-export function normalizeKodiResolution(width: number | null, height: number | null): string {
-  return normalizeResolution(width, height) || 'SD'
-}
-
-export function normalizeKodiAudioCodec(codec: string | null, profile?: string): string {
-  return normalizeAudioCodec(codec, profile, 'kodi')
-}
-
 // ============================================================================
 // HDR FORMAT NORMALIZATION
 // ============================================================================
 
-/**
- * Normalize HDR format from various sources
- */
+import { detectHdrFormat, normalizeHdrFormatValue } from '@main/types/mediaContracts'
+
+/** Normalize HDR format from provider metadata through the shared contract. */
 export function normalizeHdrFormat(
   hdrType: string | null | undefined,
   colorTrc: string | null | undefined,
@@ -368,66 +345,11 @@ export function normalizeHdrFormat(
   bitDepth: number | null | undefined,
   profile: string | null | undefined
 ): string | undefined {
-  // Check explicit HDR type first (Kodi, some Jellyfin)
-  if (hdrType) {
-    const hdrLower = hdrType.toLowerCase()
-
-    if (hdrLower.includes('dolbyvision') || hdrLower.includes('dolby vision') || hdrLower.includes('dovi')) {
-      return 'Dolby Vision'
-    }
-    if (hdrLower.includes('hdr10+') || hdrLower.includes('hdr10plus')) {
-      return 'HDR10+'
-    }
-    if (hdrLower.includes('hdr10') || hdrLower === 'hdr') {
-      return 'HDR10'
-    }
-    if (hdrLower.includes('hlg')) {
-      return 'HLG'
-    }
-  }
-
-  // Check profile for Dolby Vision
-  if (profile) {
-    const profileLower = profile.toLowerCase()
-    if (profileLower.includes('dolby vision') || profileLower.includes('dovi')) {
-      return 'Dolby Vision'
-    }
-  }
-
-  // Check color primaries and transfer characteristics (Plex style)
-  const trcLower = (colorTrc || '').toLowerCase()
-  const primariesLower = (colorPrimaries || '').toLowerCase()
-
-  // Dolby Vision detection
-  if (trcLower.includes('dovi') || primariesLower.includes('dovi')) {
-    return 'Dolby Vision'
-  }
-
-  // HDR10+ detection
-  if (trcLower.includes('hdr10+') || trcLower.includes('smpte2094')) {
-    return 'HDR10+'
-  }
-
-  // HLG detection
-  if (trcLower.includes('hlg') || trcLower === 'arib-std-b67') {
-    return 'HLG'
-  }
-
-  // HDR10 detection (BT.2020 with PQ transfer)
-  if (
-    (primariesLower.includes('bt2020') || primariesLower.includes('rec2020')) &&
-    (trcLower.includes('smpte2084') || trcLower.includes('pq') || trcLower.includes('st2084'))
-  ) {
-    return 'HDR10'
-  }
-
-  // Generic HDR detection by bit depth
-  if (bitDepth && bitDepth >= 10) {
-    if (primariesLower.includes('bt2020') || primariesLower.includes('rec2020')) {
-      return 'HDR10'
-    }
-  }
-
+  const value = normalizeHdrFormatValue(hdrType || profile || null)
+  if (value !== 'SDR') return value
+  const detected = detectHdrFormat({ colorTransfer: colorTrc || undefined, colorPrimaries: colorPrimaries || undefined })
+  if (detected !== 'SDR') return detected
+  if (bitDepth && bitDepth >= 10 && (colorPrimaries || '').toLowerCase().includes('2020')) return 'HDR10'
   return undefined
 }
 
@@ -448,26 +370,26 @@ export function normalizeBitrate(
   const value = typeof bitrate === 'string' ? parseFloat(bitrate) : bitrate
   if (isNaN(value) || value <= 0) return 0
 
-  if (sourceUnit === 'bps') {
-    return Math.round(value / 1000)
+  switch (sourceUnit) {
+    case 'bps':
+      return Math.round(value / 1000)
+    case 'mbps':
+      return Math.round(value * 1000)
+    case 'kbps':
+      return Math.round(value)
+    case 'auto':
+    default:
+      // Auto-detect: if value > 100000, it's likely bps
+      if (value > 100000) {
+        return Math.round(value / 1000)
+      }
+      // If value < 100, it's likely Mbps
+      if (value < 100) {
+        return Math.round(value * 1000)
+      }
+      // Otherwise assume kbps
+      return Math.round(value)
   }
-  if (sourceUnit === 'mbps') {
-    return Math.round(value * 1000)
-  }
-  if (sourceUnit === 'kbps') {
-    return Math.round(value)
-  }
-
-  // Auto-detect: if value > 100000, it's likely bps
-  if (value > 100000) {
-    return Math.round(value / 1000)
-  }
-  // If value < 100, it's likely Mbps
-  if (value < 100) {
-    return Math.round(value * 1000)
-  }
-  // Otherwise assume kbps
-  return Math.round(value)
 }
 
 // ============================================================================
@@ -676,6 +598,8 @@ export interface RawMediaInfo {
 
   // Container
   container?: string | null
+  originalLanguage?: string | null
+  audioLanguage?: string | null
 }
 
 export interface NormalizedMediaInfo {
@@ -699,10 +623,12 @@ export interface NormalizedMediaInfo {
   audioBitrate: number
   audioSampleRate?: number
   audioProfile?: string
+  audioLanguage?: string
   hasObjectAudio: boolean
 
   // Container
   container: string
+  originalLanguage?: string
 }
 
 /**
@@ -753,5 +679,7 @@ export function normalizeMediaInfo(raw: RawMediaInfo): NormalizedMediaInfo {
 
     // Container
     container: normalizeContainer(raw.container),
+    originalLanguage: raw.originalLanguage || undefined,
+    audioLanguage: raw.audioLanguage || undefined,
   }
 }

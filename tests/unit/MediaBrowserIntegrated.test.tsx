@@ -1,0 +1,166 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
+import { MediaBrowser } from '@/components/library/MediaBrowser'
+import { SourceProvider } from '@/contexts/SourceContext'
+import { LibraryProvider } from '@/contexts/LibraryContext'
+import { WishlistProvider } from '@/contexts/WishlistContext'
+import { ToastProvider, useToast } from '@/contexts/ToastContext'
+import { ScrollMemoryProvider } from '@/contexts/ScrollMemoryContext'
+import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
+import React from 'react'
+type TestDb = Awaited<ReturnType<typeof setupTestDb>>
+
+function ToastProbe() {
+  const { toasts } = useToast()
+  return <>{toasts.map(toast => <div key={toast.id}>{toast.title}{toast.message ? `: ${toast.message}` : ''}</div>)}</>
+}
+
+describe('MediaBrowser (Integrated Stack)', () => {
+  let db: TestDb
+
+  beforeEach(async () => {
+    // Explicitly define window on global if missing
+    if (typeof window === 'undefined') {
+        Object.assign(globalThis, { window: globalThis })
+    }
+
+    db = await setupTestDb()
+    const bridge = setupRealIntegratedBridge()
+    
+    Object.assign(window, { electronAPI: bridge.api })
+    Object.assign(globalThis, { electronAPI: bridge.api })
+
+  })
+
+  afterEach(async () => {
+    // Ensure all timers are cleared to avoid async ReferenceErrors
+    vi.clearAllTimers()
+    await cleanupTestDb()
+  })
+
+  const renderBrowser = async () => {
+    let result: ReturnType<typeof render> | undefined
+    await act(async () => {
+        result = render(
+            <ToastProvider>
+                <ToastProbe />
+                <SourceProvider>
+                <LibraryProvider>
+                    <WishlistProvider>
+                        <ScrollMemoryProvider>
+                            <MediaBrowser onOpenSettings={() => {}} onNavigateHome={() => {}} />
+                        </ScrollMemoryProvider>
+                    </WishlistProvider>
+                </LibraryProvider>
+                </SourceProvider>
+            </ToastProvider>
+        )
+        await new Promise(r => setTimeout(r, 50))
+    })
+    return result
+  }
+
+  it('keeps app-wide search out of the library browser', async () => {
+    await renderBrowser()
+    
+    expect(screen.queryByPlaceholderText(/Search all libraries/i)).toBeNull()
+    expect(screen.getAllByText(/Movies/i).length).toBeGreaterThan(0)
+  })
+
+  it('should display real movies from the database', async () => {
+    // Add a source and a movie
+    await db.sources.upsertSource({ 
+        source_id: 's1', source_type: 'local', display_name: 'Local', is_enabled: 1, connection_config: JSON.stringify({ folderPath: '/data' })
+    })
+    
+    await db.sources.setLibrariesEnabled('s1', [
+        { id: '1', name: 'Movies', type: 'movie', enabled: true }
+    ])
+
+    await db.media.upsertItem({
+        source_id: 's1',
+        library_id: '1',
+        plex_id: 'm1',
+        title: 'Integrated Test Movie',
+        type: 'movie',
+        file_path: 'test.mkv'
+    })
+
+    await renderBrowser()
+
+    // Dashboard bootstrap sets total movie count
+    await waitFor(() => {
+        expect(screen.getByText('Integrated Test Movie')).toBeTruthy()
+    }, { timeout: 5000 })
+  })
+
+  it('should switch to TV Shows view when clicked', async () => {
+    // Setup source with TV library and an episode
+    await db.sources.upsertSource({ 
+        source_id: 's1', source_type: 'local', display_name: 'Local', is_enabled: 1, connection_config: JSON.stringify({ folderPath: '/data' })
+    })
+    
+    await db.sources.setLibrariesEnabled('s1', [
+        { id: '2', name: 'TV', type: 'show', enabled: true }
+    ])
+
+    // Important: we need a summary record for the count to be > 0 and the tab enabled
+    await db.tvShows.upsertCompleteness({
+        series_title: 'Test Show',
+        series_identity_key: 'unresolved:s1:2:test-show',
+        source_id: 's1',
+        library_id: '2',
+        plex_id: 's1-show',
+        total_seasons: 1,
+        total_episodes: 1,
+        owned_seasons: 1,
+        owned_episodes: 1,
+        completeness_percentage: 100
+    })
+
+    await db.media.upsertItem({
+        source_id: 's1', library_id: '2', plex_id: 'ep1', title: 'Ep 1', type: 'episode', series_title: 'Test Show', series_identity_key: 'unresolved:s1:2:test-show', file_path: 'e1.mkv'
+    })
+
+    await renderBrowser()
+    
+    await waitFor(() => {
+        const tvButton = screen.getByRole('button', { name: /TV Shows/i })
+        expect(tvButton.hasAttribute('disabled')).toBe(false)
+    }, { timeout: 5000 })
+
+    const tvButton = screen.getByRole('button', { name: /TV Shows/i })
+    await act(async () => {
+        fireEvent.click(tvButton)
+    })
+
+    await waitFor(() => {
+        // Look for the show count span in the TV shows view header
+        expect(screen.getByText(/1 shows/i)).toBeTruthy()
+        expect(screen.getByText('Test Show')).toBeTruthy()
+    })
+  })
+
+  it('surfaces malformed collection data instead of silently treating completeness as unavailable', async () => {
+    await db.movieCollections.upsertCollection({
+      tmdb_collection_id: 'corrupt-collection',
+      collection_name: 'Corrupt Collection',
+      source_id: 's1',
+      library_id: '1',
+      total_movies: 2,
+      owned_movies: 1,
+      completeness_percentage: 50,
+      missing_movies: 'not-json',
+      owned_movie_ids: '[]',
+    })
+
+    await renderBrowser()
+
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to load completeness data: Invalid missing_movies JSON array/i)).toBeTruthy()
+    }, { timeout: 5000 })
+  })
+})

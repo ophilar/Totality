@@ -1,165 +1,107 @@
-/**
- * GeminiService Core Unit Tests
- *
- * Tests the API key lifecycle, isConfigured state, rate limit detection,
- * and explanation caching. Does NOT test GeminiTools (covered separately).
- */
-
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-
-// vi.hoisted ensures these are defined before vi.mock() runs
-const mockGenerateContent = vi.hoisted(() => vi.fn())
-
-vi.mock('@google/genai', () => ({
-  // Use regular function (not arrow) so `new GoogleGenAI(...)` works
-  GoogleGenAI: vi.fn(function GoogleGenAI() {
-    return { models: { generateContent: mockGenerateContent } }
-  }),
-}))
-
-const mockGetSetting = vi.hoisted(() => vi.fn())
-vi.mock('../../src/main/database/getDatabase', () => ({
-  getDatabase: vi.fn(() => ({ getSetting: mockGetSetting })),
-}))
-
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { GeminiService, RateLimitError } from '../../src/main/services/GeminiService'
 
-function setKey(key: string | null, enabled = true) {
-  mockGetSetting.mockImplementation((k: string) => {
-    if (k === 'gemini_api_key') return key
-    if (k === 'ai_enabled') return enabled ? null : 'false'
-    return null
-  })
+type GeminiInternals = GeminiService & {
+  extractRetrySeconds: (headers: unknown) => number | null
+  handleApiError: (error: unknown) => never
+  checkRateLimit: () => void
 }
 
-describe('GeminiService — key lifecycle', () => {
+describe('GeminiService', () => {
+  let service: GeminiService
+
   beforeEach(() => {
-    vi.clearAllMocks()
+    service = new GeminiService()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2024-01-01T12:00:00Z'))
   })
 
-  it('isConfigured() returns false when no API key is set', () => {
-    setKey(null)
-    const svc = new GeminiService()
-    expect(svc.isConfigured()).toBe(false)
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
-  it('isConfigured() returns true when API key is present and AI enabled', () => {
-    setKey('test-key')
-    const svc = new GeminiService()
-    expect(svc.isConfigured()).toBe(true)
-  })
-
-  it('isConfigured() returns false when ai_enabled is "false"', () => {
-    setKey('test-key', false)
-    const svc = new GeminiService()
-    expect(svc.isConfigured()).toBe(false)
-  })
-
-  it('refreshApiKey() picks up newly set key', () => {
-    setKey(null)
-    const svc = new GeminiService()
-    expect(svc.isConfigured()).toBe(false)
-
-    setKey('new-key')
-    svc.refreshApiKey()
-    expect(svc.isConfigured()).toBe(true)
-  })
-
-  it('refreshApiKey() clears client when key is removed', () => {
-    setKey('existing-key')
-    const svc = new GeminiService()
-    expect(svc.isConfigured()).toBe(true)
-
-    setKey(null)
-    svc.refreshApiKey()
-    expect(svc.isConfigured()).toBe(false)
-  })
-})
-
-describe('GeminiService — rate limit detection', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockGenerateContent.mockReset()
-  })
-
-  it('getRateLimitInfo() returns not-limited by default', () => {
-    setKey('test-key')
-    const svc = new GeminiService()
-    const info = svc.getRateLimitInfo()
-    expect(info.limited).toBe(false)
-    expect(info.retryAfterSeconds).toBe(0)
-  })
-
-  it('throws RateLimitError when API returns 429', async () => {
-    setKey('test-key')
-    const svc = new GeminiService()
-    mockGenerateContent.mockRejectedValue({
-      status: 429,
-      message: 'Too Many Requests',
-      headers: { get: () => null },
+  describe('Rate Limit Parsing', () => {
+    it('should extract retry-after-ms correctly', () => {
+      const headers = { get: (name: string) => name === 'retry-after-ms' ? '2500' : null }
+      const result = (service as unknown as GeminiInternals).extractRetrySeconds(headers)
+      expect(result).toBe(3) // Math.ceil(2500 / 1000)
     })
 
-    await expect(
-      svc.sendMessage({ messages: [{ role: 'user', content: 'hello' }] })
-    ).rejects.toBeInstanceOf(RateLimitError)
-  })
-
-  it('getRateLimitInfo() returns limited after a 429 error', async () => {
-    setKey('test-key')
-    const svc = new GeminiService()
-    mockGenerateContent.mockRejectedValue({
-      status: 429,
-      message: 'Too Many Requests',
-      headers: { get: () => null },
+    it('should extract retry-after in seconds correctly', () => {
+      const headers = { get: (name: string) => name === 'retry-after' ? '30' : null }
+      const result = (service as unknown as GeminiInternals).extractRetrySeconds(headers)
+      expect(result).toBe(30)
     })
 
-    await expect(
-      svc.sendMessage({ messages: [{ role: 'user', content: 'hello' }] })
-    ).rejects.toBeInstanceOf(RateLimitError)
-
-    const info = svc.getRateLimitInfo()
-    expect(info.limited).toBe(true)
-    expect(info.retryAfterSeconds).toBeGreaterThan(0)
-  })
-
-  it('extracts retry-after-ms header when present', async () => {
-    setKey('test-key')
-    const svc = new GeminiService()
-    mockGenerateContent.mockRejectedValue({
-      status: 429,
-      message: 'Rate limited',
-      headers: { get: (name: string) => name === 'retry-after-ms' ? '60000' : null },
+    it('should extract retry-after in HTTP-date format correctly', () => {
+      const futureDate = new Date('2024-01-01T12:01:00Z').toUTCString()
+      const headers = { get: (name: string) => name === 'retry-after' ? futureDate : null }
+      const result = (service as unknown as GeminiInternals).extractRetrySeconds(headers)
+      expect(result).toBe(60) // 60 seconds diff
     })
 
-    try {
-      await svc.sendMessage({ messages: [{ role: 'user', content: 'hi' }] })
-    } catch (e) {
-      expect(e).toBeInstanceOf(RateLimitError)
-      expect((e as RateLimitError).retryAfterSeconds).toBe(60)
-    }
-  })
-})
-
-describe('GeminiService — explanation cache', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockGenerateContent.mockReset()
+    it('should return null for missing or invalid headers', () => {
+      expect((service as unknown as GeminiInternals).extractRetrySeconds(null)).toBeNull()
+      expect((service as unknown as GeminiInternals).extractRetrySeconds({})).toBeNull()
+      const headersInvalid = { get: (name: string) => name === 'retry-after' ? 'invalid' : null }
+      expect((service as unknown as GeminiInternals).extractRetrySeconds(headersInvalid)).toBeNull()
+    })
   })
 
-  it('returns cached result on second call for same item', async () => {
-    setKey('test-key')
-    const svc = new GeminiService()
-    mockGenerateContent.mockResolvedValue({
-      text: 'This is a great 1080p encode.',
-      usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 20 },
+  describe('Rate Limiting State', () => {
+    it('should set rate limit state and throw RateLimitError on 429 status', () => {
+      const headers = { get: (name: string) => name === 'retry-after' ? '120' : null }
+      const error429 = { status: 429, headers }
+
+      expect(() => (service as unknown as GeminiInternals).handleApiError(error429)).toThrow(RateLimitError)
+
+      const limitInfo = service.getRateLimitInfo()
+      expect(limitInfo.limited).toBe(true)
+      expect(limitInfo.retryAfterSeconds).toBe(120)
     })
 
-    const params = { title: 'Test Movie', resolution: '1080p', videoCodec: 'H.264' }
-    const result1 = await svc.explainQualityScore(params)
-    const result2 = await svc.explainQualityScore(params)
+    it('should clear rate limit after the specified time passes', () => {
+      const headers = { get: (name: string) => name === 'retry-after' ? '10' : null }
+      const error429 = { status: 429, headers }
 
-    // SDK called only once — second call served from cache
-    expect(mockGenerateContent).toHaveBeenCalledTimes(1)
-    expect(result1).toBe(result2)
+      try { (service as unknown as GeminiInternals).handleApiError(error429) } catch { /* expected rate-limit exception */ }
+
+      expect(service.getRateLimitInfo().limited).toBe(true)
+
+      vi.advanceTimersByTime(11000) // Advance by 11 seconds
+
+      expect(service.getRateLimitInfo().limited).toBe(false)
+      expect(service.getRateLimitInfo().retryAfterSeconds).toBe(0)
+    })
+
+    it('should prevent requests via checkRateLimit when rate limited', () => {
+      const headers = { get: (name: string) => name === 'retry-after' ? '30' : null }
+      const error429 = { status: 429, headers }
+
+      try { (service as unknown as GeminiInternals).handleApiError(error429) } catch { /* expected rate-limit exception */ }
+
+      expect(() => (service as unknown as GeminiInternals).checkRateLimit()).toThrow(RateLimitError)
+
+      vi.advanceTimersByTime(31000)
+
+      expect(() => (service as unknown as GeminiInternals).checkRateLimit()).not.toThrow()
+    })
+
+    it('should handle fallback to 15 seconds if retry-after is missing', () => {
+       const error429 = { status: 429 }
+       try { (service as unknown as GeminiInternals).handleApiError(error429) } catch { /* expected rate-limit exception */ }
+       const limitInfo = service.getRateLimitInfo()
+       expect(limitInfo.retryAfterSeconds).toBe(15)
+    })
+
+    it('should throw RateLimitError when error message contains RESOURCE_EXHAUSTED', () => {
+       const errorExhausted = new Error('Some RESOURCE_EXHAUSTED error from sdk')
+       const errorWithHeaders = Object.assign(errorExhausted, { headers: { get: (name: string) => name === 'retry-after' ? '25' : null } })
+
+       expect(() => (service as unknown as GeminiInternals).handleApiError(errorWithHeaders)).toThrow(RateLimitError)
+
+       const limitInfo = service.getRateLimitInfo()
+       expect(limitInfo.retryAfterSeconds).toBe(25)
+    })
   })
 })

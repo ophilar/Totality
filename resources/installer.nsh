@@ -1,25 +1,33 @@
-; Custom NSIS uninstall script for Totality
-; Offer a database reset during interactive upgrades while preserving playback targets.
-; Offer full app-data removal only during an explicit interactive uninstall.
+; Custom NSIS installer macro script for Totality
+; Provides standard installation lifecycle hooks for database retention prompt during setup and uninstall cleanup.
 
 !macro customInstall
-  ${ifNot} ${Silent}
-    ${if} ${FileExists} "$APPDATA\totality\totality-v2.db"
-      MessageBox MB_YESNO|MB_ICONEXCLAMATION|MB_DEFBUTTON2 "Do you want to reset your Totality database during this upgrade?$\n$\nThis removes your library, settings, sources, and scan history.$\nPlayback target profiles will be kept.$\nThis action cannot be undone." IDNO keepDatabase
-      Delete "$APPDATA\totality\totality-v2.db"
-      Delete "$APPDATA\totality\totality-v2.db-wal"
-      Delete "$APPDATA\totality\totality-v2.db-shm"
-      keepDatabase:
-    ${endIf}
-  ${endIf}
+  ; Skip asking if running in silent installation mode
+  IfSilent skipFreshPrompt
+
+  ; Check if an existing database directory already exists from a prior installation
+  IfFileExists "$APPDATA\totality\*.*" 0 skipFreshPrompt
+    MessageBox MB_YESNO|MB_ICONQUESTION "An existing Totality database and application configuration was detected.$\n$\nWould you like to perform a FRESH install (erase existing database and settings)?$\n$\nSelect 'Yes' to start fresh with a clean database.$\nSelect 'No' to keep your existing media library database and settings." IDYES cleanAppData IDNO skipFreshPrompt
+
+  cleanAppData:
+    RMDir /r "$APPDATA\totality"
+
+  skipFreshPrompt:
 !macroend
 
 !macro customUnInstall
-  ${ifNot} ${isUpdated}
-    ${ifNot} ${Silent}
-      MessageBox MB_YESNO|MB_ICONEXCLAMATION|MB_DEFBUTTON2 "Do you want to PERMANENTLY DELETE your Totality data?$\n$\nThis will remove your database, settings, and all scan history.$\nThis action cannot be undone.$\n$\nLocation: $APPDATA\totality" IDNO keepAppData
-      RMDir /r "$APPDATA\totality"
-      keepAppData:
-    ${endIf}
-  ${endIf}
+  ; Ask user if they want to delete app data BEFORE removing install dir
+  ; Skip asking if it's a silent uninstall (e.g., during an update)
+  IfSilent skipDelete
+
+  ; Only ask if the data directory actually exists
+  IfFileExists "$APPDATA\totality\*.*" 0 skipDelete
+    MessageBox MB_YESNO|MB_ICONQUESTION "Do you also want to delete your Totality data (database, settings)?$\n$\nLocation: $APPDATA\totality" IDYES deleteAppData IDNO skipDelete
+
+  deleteAppData:
+    RMDir /r "$APPDATA\totality"
+
+  skipDelete:
+    ; Remove installation directory completely (fixes leftover files issue)
+    RMDir /r "$INSTDIR"
 !macroend
