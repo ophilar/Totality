@@ -1,0 +1,28 @@
+name: Audit Totality 0.5 timeline extraction
+on:
+  push:
+    branches: [automation/rebase-v05-onto-v043-runner]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v0.5.0-clean
+          fetch-depth: 0
+      - name: Timeline references outside dedicated timeline directories
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== Timeline paths ==='
+          git ls-files | grep -Ei 'timeline|release.order|viewing.order' || true
+          echo '=== Timeline references in integration files ==='
+          git grep -n -i -E 'timeline|playlistSync' -- src/main src/preload src/renderer tests | grep -v -E '(/timelines/|TimelinesView|/fixtures/timeline|/services/timelines/)' | head -240 || true
+          echo '=== Timeline references in configuration ==='
+          git grep -n -i -E 'timeline' -- package.json src/main/config src/main/database | head -140 || true
+          echo '=== Timeline source-side commits ==='
+          git log --format='%h %s' -- src/main/services/timelines src/renderer/src/components/timelines | head -35
+          echo '=== Existing test scripts ==='
+          node -e 'console.log(JSON.stringify(require("./package.json").scripts))'
