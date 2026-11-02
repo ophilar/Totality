@@ -1,0 +1,26 @@
+{
+  "id": "alien-predator",
+  "name": "Alien and Predator Timeline",
+  "franchise": "Alien & Predator",
+  "description": "Combined chronological guide to the Alien and Predator screen franchises.",
+  "sourceUrl": "https://www.avpcentral.com/alien-vs-predator-timeline",
+  "attribution": "AvP Central, Alien vs. Predator timeline",
+  "groupings": [],
+  "orders": [
+    {
+      "id": "chronological",
+      "name": "Alien & Predator — Chronological Order",
+      "description": "The guide's current timeline. Standalone chapters from the Killer of Killers anthology are omitted because they are not separate playable titles.",
+      "order": {
+        "kind": "list",
+        "listSelector": "ol.contents-list",
+        "itemSelector": ":scope > li",
+        "format": "title-era-list",
+        "minimumItems": 15,
+        "defaultType": "movie",
+        "showMarkers": ["alien: earth"],
+        "excludedText": ["The Shield:", "The Sword:", "The Bullet:"]
+      }
+    }
+  ]
+}
