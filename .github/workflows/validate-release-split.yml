@@ -32,6 +32,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           python3 ../tooling/scripts/release-timelines.py
+          nl -ba src/main/services/timelines/TimelineResolutionEngine.ts | sed -n '218,245p'
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund
           git add -A
           git diff --cached --check
