@@ -1,0 +1,51 @@
+name: Validate standalone v0.5 Timelines on fixes
+on:
+  push:
+    branches:
+      - automation/release-split-validation
+permissions:
+  contents: read
+jobs:
+  timelines:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: automation/release-split-validation
+          path: tooling
+      - uses: actions/checkout@v4
+        with:
+          ref: fixes
+          fetch-depth: 0
+          path: repo
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: repo/package-lock.json
+      - name: Build v0.5 Timelines from the 0.4.4 fixes base
+        working-directory: repo
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 ../tooling/scripts/release-timelines.py
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          git add -A
+          git diff --cached --check
+          git commit -m "feat(v0.5): add standalone viewing timelines on 0.4.4 fixes"
+          git diff --stat fixes HEAD | tail -30
+      - name: Install
+        working-directory: repo
+        run: npm ci
+      - name: Typecheck
+        working-directory: repo
+        run: npx tsc --noEmit
+      - name: Test
+        working-directory: repo
+        run: npm run test:run
+      - name: Build
+        working-directory: repo
+        run: npx vite build
