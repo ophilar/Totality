@@ -26,7 +26,7 @@ jobs:
           test "$target" = b351f160d3d581cd035097050b311c166ec17681
           test "$(git rev-parse HEAD)" = cc31fb285cafbbc9291d544d8eb60f0736d72472
           git switch -c integration/rebase-v05-onto-upstream-v043
-          if ! GIT_EDITOR=true git rebase --onto "$target" 551adda858fc3c3acadd313b3dba082eb698f677; then
+          if ! GIT_EDITOR=true git rebase -X theirs --onto "$target" 551adda858fc3c3acadd313b3dba082eb698f677; then
             echo "::error::Rebase has a conflict; original 0.5 branch remains untouched"
             git status --short
             git diff --name-only --diff-filter=U
