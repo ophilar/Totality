@@ -1019,7 +1019,7 @@ export class PlexProvider implements MediaProvider {
       )
       return seasonResult?.MediaContainer?.Metadata?.[0] || null
     } catch (error) {
-      console.debug(`[PlexProvider ${this.sourceId}] Failed to load season metadata ${seasonKey}:`, error)
+      console.warn(`[PlexProvider ${this.sourceId}] Failed to load season metadata ${seasonKey}:`, getErrorMessage(error))
       return null
     }
   }

@@ -2330,18 +2330,15 @@ const TrackListItem = memo(({ track, index, artistName, albumTitle, columnWidths
   )
 })
 
-// Avoid repeated failed Cover Art Archive requests across album-card remounts.
-const failedCoverArtIds = new Set<string>()
-
 const MissingAlbumCard = memo(({ album, artistName, onDismiss }: {
   album: MissingAlbum
   artistName: string
   onDismiss?: () => void
 }) => {
-  const [imageError, setImageError] = useState(() => album.musicbrainz_id ? failedCoverArtIds.has(album.musicbrainz_id) : false)
+  const [imageError, setImageError] = useState(false)
 
   // Cover Art Archive URL for release group
-  const coverUrl = album.musicbrainz_id && !imageError
+  const coverUrl = album.musicbrainz_id
     ? `https://coverartarchive.org/release-group/${album.musicbrainz_id}/front-250`
     : null
 
@@ -2363,7 +2360,7 @@ const MissingAlbumCard = memo(({ album, artistName, onDismiss }: {
             alt={album.title}
             loading="lazy"
             className="w-full h-full object-cover"
-            onError={() => { if (album.musicbrainz_id) failedCoverArtIds.add(album.musicbrainz_id); setImageError(true) }}
+            onError={() => setImageError(true)}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-muted/80">
@@ -2410,10 +2407,10 @@ const MissingAlbumListItem = memo(({ album, artistName, onDismiss }: {
   artistName: string
   onDismiss?: () => void
 }) => {
-  const [imageError, setImageError] = useState(() => album.musicbrainz_id ? failedCoverArtIds.has(album.musicbrainz_id) : false)
+  const [imageError, setImageError] = useState(false)
 
   // Cover Art Archive URL for release group
-  const coverUrl = album.musicbrainz_id && !imageError
+  const coverUrl = album.musicbrainz_id
     ? `https://coverartarchive.org/release-group/${album.musicbrainz_id}/front-250`
     : null
 
@@ -2427,7 +2424,7 @@ const MissingAlbumListItem = memo(({ album, artistName, onDismiss }: {
             alt={album.title}
             loading="lazy"
             className="w-full h-full object-cover"
-            onError={() => { if (album.musicbrainz_id) failedCoverArtIds.add(album.musicbrainz_id); setImageError(true) }}
+            onError={() => setImageError(true)}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
