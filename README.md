@@ -66,8 +66,22 @@ Automatically analyzes your movies and TV shows for:
 
 Items are scored within tiers (SD/720p/1080p/4K) as LOW, MEDIUM, or HIGH based on:
 - Video bitrate relative to resolution
-- Codec efficiency (AV1 > HEVC > H.264)
-- Audio codec quality ranking
+- Configurable codec efficiency multipliers and video/audio bitrate thresholds
+- A configurable video/audio contribution weight
+
+This is a metadata-based media quality rating. It does not compare the encoded picture with the source, so an approved transcode still requires a measured sample and quality review.
+
+Video bitrate depends on resolution, frame rate, color depth, codec, encoding parameters, and scene complexity ([IETF RFC 9317](https://datatracker.ietf.org/doc/html/rfc9317)). FFmpeg exposes both target-bitrate and constant-quality controls for x265 ([FFmpeg documentation](https://www.ffmpeg.org/ffmpeg-all.html#libx265)). Perceptual comparison tools such as Netflix VMAF compare a reference and encoded output ([VMAF](https://github.com/Netflix/vmaf)).
+
+### Estimated Storage Savings
+
+Library views show estimated savings before encode sampling, combining video codec migration with removable audio and subtitles. Candidate discovery uses scanned metadata: every H.264 file is a video candidate, HEVC files are AV1 candidates when a local hardware AV1 encoder is available (independent of the playback profile), and preferred-language pruning identifies removable audio and subtitle streams while retaining protected tracks. Dolby Vision Profile 5 files outside MP4 are remux candidates. These savings are provisional until review sampling; playback compatibility is checked separately before execution. Lossy audio conversion is included only when selected in a reviewed plan. Keeping the same codec or moving to a less efficient codec receives no automatic video savings. Dynamic HDR is preserved under the automatic policy.
+
+The video model applies the configured relative codec efficiencies to video stream bytes, using packet byte counts when available or video bitrate and duration from metadata. It applies neither an H.264 reduction twice to HEVC nor quality-rating bitrate thresholds as recompression targets. These predictions have low confidence: encoder, preset, grain, motion, resolution, and frame rate affect actual savings. The factors are configurable priors, not guaranteed savings for a file. [RFC 9317](https://datatracker.ietf.org/doc/html/rfc9317#section-3.1.1) explains bitrate dependencies; [AOMedia](https://aomedia.org/av1-features/) describes AV1 efficiency gains, while [SVT-AV1 guidance](https://gitlab.com/AOMediaCodec/SVT-AV1/-/blob/master/Docs/CommonQuestions.md) explains preset and content tradeoffs. Both codecs are compared at equivalent quality in such benchmarks; re-encoding an already compressed file still needs validation.
+
+Valid cached samples replace the entire modeled plan total, including measured zero savings. If the measured candidates do not meet the selected quality or playback requirements, the model does not replace that outcome with another optimistic prediction. Threshold changes reevaluate cached candidate metrics; changes to the source or target profile invalidate the applicable measurement evidence.
+
+Copy and quarantine modes retain the original file, so they do not reclaim disk space until the original is removed. Encoding reads the original and writes a temporary output for verification before replacement, which requires free space for that temporary output. Stream-copy pruning also writes a replacement output in the current workflow.
 
 ### Music Quality Analysis
 

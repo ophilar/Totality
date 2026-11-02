@@ -1,3 +1,4 @@
+
 /**
  * WebServerService
  *
@@ -17,9 +18,8 @@
 import http from 'http'
 import https from 'https'
 import fs from 'fs'
-import path from 'path'
+import path from 'node:path'
 import crypto from 'crypto'
-import zlib from 'zlib'
 import os from 'os'
 import { app } from 'electron'
 import selfsigned from 'selfsigned'
@@ -29,6 +29,7 @@ import { getDatabase } from '../database/getDatabase'
 import { getCredentialEncryptionService } from './CredentialEncryptionService'
 import { SETTING_KEYS } from '../../shared/settingKeys'
 import { getLoggingService } from './LoggingService'
+import { createAuthenticatedWebRpcEvent, type AuthenticatedWebRpcEvent } from '../ipc/utils/createHandler'
 
 // Types
 interface RpcMessage {
@@ -47,12 +48,14 @@ interface AuthMessage {
 interface Session {
   expiresAt: number
   ip: string
+  pinFingerprint: string
 }
 
 interface RateLimitEntry {
   failures: number
   lockedUntil: number
   lockoutCount: number
+  lastAttemptAt: number
 }
 
 type WebMessage = RpcMessage | AuthMessage
@@ -106,11 +109,11 @@ const PROTECTED_SETTINGS: Set<string> = new Set([
   SETTING_KEYS.web_access_enabled,
   SETTING_KEYS.web_access_port,
   SETTING_KEYS.web_access_session_timeout,
+  SETTING_KEYS.web_access_ip_allowlist,
   SETTING_KEYS.gemini_api_key,
   SETTING_KEYS.tmdb_api_key,
   SETTING_KEYS.musicbrainz_api_token,
   SETTING_KEYS.plex_token,
-  SETTING_KEYS.web_access_ip_allowlist,
 ])
 
 export class WebServerService {
@@ -122,21 +125,17 @@ export class WebServerService {
   private rateLimits = new Map<string, RateLimitEntry>()
   private artworkRateLimits = new Map<string, { count: number; windowStart: number }>()
   private sessionCleanupTimer: ReturnType<typeof setInterval> | null = null
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  private cachePruneTimer: ReturnType<typeof setInterval> | null = null
+  private readonly imageCacheDir = path.join(app.getPath('userData'), 'image-cache')
+  private readonly imageCacheMaxBytes = 500 * 1024 * 1024
+  private readonly imageCacheMaxAgeMs = 7 * 24 * 60 * 60 * 1000
+  private readonly maxCachedImageBytes = 2 * 1024 * 1024
   private port = DEFAULT_PORT
   private staticRoot: string
   private devServerUrl: string | null = null
   private artworkBasePath: string
   private tlsDir: string
-  private eventThrottles = new Map<WebSocket, Map<string, number>>()
-  private heartbeatTimer: ReturnType<typeof setInterval> | null = null
-  private cachePruneTimer: ReturnType<typeof setInterval> | null = null
-
-  private readonly THROTTLED_EVENTS = new Set([
-    'library:updated', 'quality:analysisProgress', 'music:scanProgress',
-    'music:qualityProgress', 'music:completenessProgress', 'sources:scanProgress',
-    'series:progress', 'collections:progress',
-  ])
-  private readonly EVENT_THROTTLE_MS = 1000
 
   constructor(handlerMap: Map<string, Function>, devServerUrl?: string) {
     this.handlerMap = handlerMap
@@ -144,36 +143,6 @@ export class WebServerService {
     this.staticRoot = path.join(__dirname, '../../dist')
     this.artworkBasePath = path.join(app.getPath('userData'), 'artwork')
     this.tlsDir = path.join(app.getPath('userData'), 'tls')
-  }
-
-  /** Load persisted sessions from database (survive app restarts) */
-  private loadPersistedSessions(): void {
-    try {
-      const db = getDatabase()
-      const raw = db.getSetting('web_sessions')
-      if (!raw) return
-      const entries = JSON.parse(raw) as Array<[string, Session]>
-      const now = Date.now()
-      for (const [token, session] of entries) {
-        if (session.expiresAt > now) {
-          this.sessions.set(token, session)
-        }
-      }
-      getLoggingService().verbose('WebServer', `Restored ${this.sessions.size} persisted sessions`)
-    } catch (err) {
-      console.warn('[WebServer] Failed to restore sessions:', (err as Error).message)
-    }
-  }
-
-  /** Save current sessions to database */
-  private persistSessions(): void {
-    try {
-      const db = getDatabase()
-      const entries = Array.from(this.sessions.entries())
-      db.setSetting('web_sessions', JSON.stringify(entries))
-    } catch (err) {
-      console.warn('[WebServer] Failed to persist sessions:', (err as Error).message)
-    }
   }
 
   async start(port?: number): Promise<void> {
@@ -200,11 +169,7 @@ export class WebServerService {
     this.wss = new WebSocketServer({
       server: this.httpServer,
       maxPayload: MAX_WS_MESSAGE_SIZE,
-      perMessageDeflate: {
-        zlibDeflateOptions: { chunkSize: 1024, memLevel: 7, level: 3 },
-        zlibInflateOptions: { chunkSize: 10 * 1024 },
-        threshold: 1024, // Only compress messages > 1KB
-      },
+      perMessageDeflate: { threshold: 1024 },
     })
 
     this.wss.on('connection', (ws: AuthenticatedWebSocket, req) => {
@@ -227,41 +192,22 @@ export class WebServerService {
       }
 
       ws.clientIp = req.socket.remoteAddress || 'unknown'
-
-      // IP allowlist check
       if (!this.isIpAllowed(ws.clientIp)) {
-        console.warn(`[WebServer] Rejected WebSocket from non-allowlisted IP: ${ws.clientIp}`)
         ws.close(4003, 'IP not allowed')
         return
       }
-
-      getLoggingService().verbose('WebServer', `WebSocket connected from ${ws.clientIp} (clients: ${this.wss!.clients.size})`)
       ws.isAlive = true
-
       ws.on('pong', () => { ws.isAlive = true })
+      getLoggingService().verbose('WebServer', `WebSocket connected from ${ws.clientIp}`)
+
       ws.on('message', (data) => this.handleWebSocket(ws, data))
-      ws.on('close', (code, reason) => {
-        this.eventThrottles.delete(ws)
-        getLoggingService().verbose('WebServer', `WebSocket disconnected from ${ws.clientIp} (code: ${code}, reason: ${reason || 'none'}, clients: ${this.wss!.clients.size})`)
+      ws.on('close', () => {
+        getLoggingService().verbose('WebServer', `WebSocket disconnected from ${ws.clientIp}`)
       })
       ws.on('error', (err) => {
         console.error('[WebServer] WebSocket error:', err.message)
       })
     })
-
-    // Heartbeat: ping every 30s, terminate unresponsive clients
-    this.heartbeatTimer = setInterval(() => {
-      if (!this.wss) return
-      for (const client of this.wss.clients) {
-        const ws = client as AuthenticatedWebSocket
-        if (ws.isAlive === false) {
-          ws.terminate()
-          continue
-        }
-        ws.isAlive = false
-        ws.ping()
-      }
-    }, 30_000)
 
     return new Promise((resolve, reject) => {
       let settled = false
@@ -283,12 +229,20 @@ export class WebServerService {
 
       this.httpServer!.listen(this.port, '0.0.0.0', () => {
         settled = true
+      this.heartbeatTimer = setInterval(() => {
+        for (const client of this.wss?.clients ?? []) {
+          const ws = client as AuthenticatedWebSocket
+          if (ws.isAlive === false) {
+            ws.terminate()
+            continue
+          }
+          ws.isAlive = false
+          ws.ping()
+        }
+      }, 30_000)
+
         const proto = useHttps ? 'https' : 'http'
         console.log(`[WebServer] Listening on ${proto}://0.0.0.0:${this.port}`)
-
-        // Prune stale image cache on startup and periodically (every hour)
-        this.pruneImageCache()
-        this.cachePruneTimer = setInterval(() => this.pruneImageCache(), 60 * 60 * 1000)
 
         // When HTTPS is enabled, start an HTTP companion on port+1 for cert download + redirect
         if (useHttps) {
@@ -314,19 +268,25 @@ export class WebServerService {
           })
         }
 
-        // Periodic cleanup of expired sessions and rate limit entries
+        void this.pruneImageCache().catch(error => getLoggingService().warn('WebServer', 'Image cache pruning failed', error))
+        this.cachePruneTimer = setInterval(() => {
+          void this.pruneImageCache().catch(error => getLoggingService().warn('WebServer', 'Image cache pruning failed', error))
+        }, 60 * 60 * 1000)
+
+        // Periodic cleanup of expired sessions
         this.sessionCleanupTimer = setInterval(() => {
           const now = Date.now()
-          let cleaned = false
+          let expired = false
           for (const [token, session] of this.sessions.entries()) {
-            if (session.expiresAt < now) { this.sessions.delete(token); cleaned = true }
+            if (session.expiresAt < now) {
+              this.sessions.delete(token)
+              expired = true
+            }
           }
-          if (cleaned) this.persistSessions()
-          // Evict expired rate limit entries
+          if (expired) this.persistSessions()
           for (const [ip, entry] of this.rateLimits.entries()) {
-            if (entry.lockedUntil < now && entry.failures === 0) this.rateLimits.delete(ip)
+            if (now - entry.lastAttemptAt > 24 * 60 * 60 * 1000) this.rateLimits.delete(ip)
           }
-          // Evict stale artwork rate limit entries (older than 2x window)
           for (const [ip, entry] of this.artworkRateLimits.entries()) {
             if (now - entry.windowStart > ARTWORK_RATE_WINDOW_MS * 2) this.artworkRateLimits.delete(ip)
           }
@@ -342,13 +302,13 @@ export class WebServerService {
       clearInterval(this.heartbeatTimer)
       this.heartbeatTimer = null
     }
-    if (this.sessionCleanupTimer) {
-      clearInterval(this.sessionCleanupTimer)
-      this.sessionCleanupTimer = null
-    }
     if (this.cachePruneTimer) {
       clearInterval(this.cachePruneTimer)
       this.cachePruneTimer = null
+    }
+    if (this.sessionCleanupTimer) {
+      clearInterval(this.sessionCleanupTimer)
+      this.sessionCleanupTimer = null
     }
     if (this.wss) {
       for (const client of this.wss.clients) {
@@ -386,34 +346,11 @@ export class WebServerService {
     if (!this.wss) return
 
     const message = JSON.stringify({ type: 'event', channel, args })
-    const now = Date.now()
-    const isThrottled = this.THROTTLED_EVENTS.has(channel)
-    let sent = 0
-    let throttled = 0
-
     for (const client of this.wss.clients) {
       const ws = client as AuthenticatedWebSocket
       if (ws.readyState === WebSocket.OPEN && ws.sessionToken && this.sessions.has(ws.sessionToken)) {
-        if (isThrottled) {
-          let clientThrottles = this.eventThrottles.get(ws)
-          if (!clientThrottles) {
-            clientThrottles = new Map()
-            this.eventThrottles.set(ws, clientThrottles)
-          }
-          const lastSent = clientThrottles.get(channel) || 0
-          if (now - lastSent < this.EVENT_THROTTLE_MS) {
-            throttled++
-            continue
-          }
-          clientThrottles.set(channel, now)
-        }
         ws.send(message)
-        sent++
       }
-    }
-
-    if (sent > 0 || throttled > 0) {
-      getLoggingService().verbose('WebServer', `Broadcast ${channel}: sent=${sent} throttled=${throttled} size=${(message.length / 1024).toFixed(1)}KB`)
     }
   }
 
@@ -438,15 +375,14 @@ export class WebServerService {
     try {
     this.setSecurityHeaders(res)
 
-    // IP allowlist check
+    const url = new URL(req.url || '/', `http://${req.headers.host}`)
+
     const clientIp = req.socket.remoteAddress || 'unknown'
     if (!this.isIpAllowed(clientIp)) {
-      res.writeHead(403, { 'Content-Type': 'text/plain' })
-      res.end('Forbidden')
+      res.writeHead(403)
+      res.end('IP not allowed')
       return
     }
-
-    const url = new URL(req.url || '/', `http://${req.headers.host}`)
 
     // Image proxy — serves Plex/Jellyfin artwork through Totality to avoid mixed content
     if (url.pathname === '/api/proxy-image') {
@@ -484,7 +420,7 @@ export class WebServerService {
     }
 
     // Serve static files from dist/
-    this.serveStatic(url.pathname, req, res)
+    this.serveStatic(url.pathname, res)
     } catch (err) {
       console.error('[WebServer] HTTP handler error:', err)
       if (!res.headersSent) {
@@ -551,10 +487,6 @@ export class WebServerService {
     })
   }
 
-  private imageCacheDir = path.join(app.getPath('userData'), 'image-cache')
-  private imageCacheMaxBytes = 500 * 1024 * 1024 // 500MB
-  private imageCacheMaxAge = 7 * 24 * 60 * 60 * 1000 // 7 days
-
   private handleProxyImage(url: URL, res: http.ServerResponse): void {
     const imageUrl = url.searchParams.get('url')
     if (!imageUrl) {
@@ -563,7 +495,6 @@ export class WebServerService {
       return
     }
 
-    // Only proxy URLs from local/private networks or known media services
     let parsedUrl: URL
     try {
       parsedUrl = new URL(imageUrl)
@@ -573,151 +504,108 @@ export class WebServerService {
       return
     }
 
-    // Allow: private IPs, Plex domains, TMDB, Jellyfin/Emby local servers
     const hostname = parsedUrl.hostname
-    const isAllowed = hostname === 'localhost' || hostname === '127.0.0.1' ||
+    const privateHost = hostname === 'localhost' || hostname === '127.0.0.1' ||
       hostname.startsWith('192.168.') || hostname.startsWith('10.') ||
-      hostname.match(/^172\.(1[6-9]|2[0-9]|3[01])\./) ||
-      hostname.endsWith('.plex.direct') ||
-      hostname === 'image.tmdb.org' ||
-      hostname === 'coverartarchive.org' ||
-      parsedUrl.searchParams.has('X-Plex-Token')
-
-    if (!isAllowed) {
+      /^172\\.(1[6-9]|2[0-9]|3[01])\\./.test(hostname)
+    const trustedHost = privateHost || hostname.endsWith('.plex.direct') ||
+      hostname === 'image.tmdb.org' || hostname === 'coverartarchive.org'
+    if (!['http:', 'https:'].includes(parsedUrl.protocol) || !trustedHost) {
       res.writeHead(403)
       res.end('URL not allowed')
       return
     }
 
-    // Add thumbnail sizing to reduce bandwidth for mobile clients
-    const isPlexUrl = hostname.startsWith('192.168.') || hostname.startsWith('10.') ||
-      hostname.endsWith('.plex.direct') || parsedUrl.searchParams.has('X-Plex-Token')
-    if (isPlexUrl) {
-      const existingWidth = Number(parsedUrl.searchParams.get('width') || 0)
-      // Cap at 300×450 — always override if larger or unset
-      if (!existingWidth || existingWidth > 450) {
-        parsedUrl.searchParams.set('width', '300')
-        parsedUrl.searchParams.set('height', '450')
-      }
+    const isPlex = hostname.endsWith('.plex.direct') || (privateHost && parsedUrl.searchParams.has('X-Plex-Token'))
+    if (isPlex && !parsedUrl.searchParams.has('width')) {
+      parsedUrl.searchParams.set('width', '300')
+      parsedUrl.searchParams.set('height', '450')
     }
-    // Jellyfin/Emby: add maxWidth if not already specified (API supports it natively)
-    const isJellyfinEmby = parsedUrl.pathname.includes('/Items/') && parsedUrl.pathname.includes('/Images/')
-    if (isJellyfinEmby && !parsedUrl.searchParams.has('maxWidth')) {
+    if (parsedUrl.pathname.includes('/Items/') && parsedUrl.pathname.includes('/Images/') && !parsedUrl.searchParams.has('maxWidth')) {
       parsedUrl.searchParams.set('maxWidth', '600')
-      parsedUrl.searchParams.set('quality', '80')
     }
-    const finalUrl = parsedUrl.toString()
 
-    // Build cache key without auth tokens so cache survives across sessions
-    const cacheUrl = new URL(finalUrl)
-    cacheUrl.searchParams.delete('X-Plex-Token')
-    cacheUrl.searchParams.delete('api_key')
-    cacheUrl.searchParams.delete('ApiKey')
-
-    // Check disk cache first
-    const proxyStart = Date.now()
-    const cacheKey = crypto.createHash('sha256').update(cacheUrl.toString()).digest('hex')
-    const cachePath = path.join(this.imageCacheDir, `${cacheKey}.img`)
-
+    const requestUrl = parsedUrl.toString()
+    const cacheKey = crypto.createHash('sha256').update(requestUrl).digest('hex')
+    const cachePath = path.join(this.imageCacheDir, `${cacheKey}.jpg`)
     try {
       const stat = fs.statSync(cachePath)
-      if (Date.now() - stat.mtimeMs < this.imageCacheMaxAge) {
-        // Serve from cache
-        res.writeHead(200, {
-          'Content-Type': 'image/jpeg',
-          'Cache-Control': 'public, max-age=604800',
-          'Content-Length': String(stat.size),
+      if (stat.isFile() && Date.now() - stat.mtimeMs < this.imageCacheMaxAgeMs) {
+        res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': String(stat.size), 'Cache-Control': 'private, max-age=86400' })
+        const stream = fs.createReadStream(cachePath)
+        stream.on('error', error => {
+          getLoggingService().warn('WebServer', 'Image cache read failed', error)
+          res.destroy(error)
         })
-        fs.createReadStream(cachePath).pipe(res)
-        getLoggingService().verbose('WebServer', `Image proxy HIT: ${(stat.size / 1024).toFixed(0)}KB in ${Date.now() - proxyStart}ms`)
+        stream.pipe(res)
         return
       }
-    } catch {
-      // Cache miss — fetch from source
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
 
-    const fetchOptions = parsedUrl.protocol === 'https:'
-      ? { rejectUnauthorized: false } as https.RequestOptions
-      : {}
     const fetcher = parsedUrl.protocol === 'https:' ? https : http
-    const proxyReq = fetcher.get(finalUrl, fetchOptions, (proxyRes) => {
-      if (proxyRes.statusCode !== 200) {
-        res.writeHead(proxyRes.statusCode || 502)
-        res.end()
-        return
-      }
-
-      const contentType = proxyRes.headers['content-type'] || 'image/jpeg'
-      const contentLength = proxyRes.headers['content-length']
-      const sizeKb = contentLength ? Number(contentLength) / 1024 : 0
-      res.writeHead(200, {
+    const options = parsedUrl.protocol === 'https:' ? { rejectUnauthorized: false } : {}
+    const proxyReq = fetcher.get(requestUrl, options, proxyRes => {
+      const contentType = proxyRes.headers['content-type'] || 'application/octet-stream'
+      res.writeHead(proxyRes.statusCode || 502, {
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=604800',
+        'Cache-Control': 'private, max-age=86400',
       })
-      getLoggingService().verbose('WebServer', `Image proxy MISS: ${sizeKb ? sizeKb.toFixed(0) + 'KB' : '?KB'} in ${Date.now() - proxyStart}ms (${hostname})`)
-      if (sizeKb > 2048) {
-        console.warn(`[WebServer] Oversized image (${sizeKb.toFixed(0)}KB): ${parsedUrl.pathname}`)
-      }
-
-      // Write to cache and response simultaneously
-      try {
-        fs.mkdirSync(this.imageCacheDir, { recursive: true })
-        const cacheStream = fs.createWriteStream(cachePath)
-        proxyRes.pipe(cacheStream)
-        proxyRes.pipe(res)
-        cacheStream.on('error', () => {
-          try { fs.unlinkSync(cachePath) } catch { /* ignore */ }
-        })
-      } catch {
-        // Cache write failed — still serve response
-        proxyRes.pipe(res)
-      }
+      const chunks: Buffer[] = []
+      let bytes = 0
+      const cacheable = proxyRes.statusCode === 200 && contentType.toLowerCase().startsWith('image/jpeg')
+      proxyRes.on('data', (chunk: Buffer) => {
+        bytes += chunk.length
+        if (cacheable && bytes <= this.maxCachedImageBytes) chunks.push(chunk)
+      })
+      proxyRes.on('end', () => {
+        if (!cacheable || bytes > this.maxCachedImageBytes) return
+        const tempPath = `${cachePath}.${crypto.randomUUID()}.tmp`
+        void fs.promises.mkdir(this.imageCacheDir, { recursive: true })
+          .then(() => fs.promises.writeFile(tempPath, Buffer.concat(chunks)))
+          .then(() => fs.promises.rename(tempPath, cachePath))
+          .catch(error => {
+            getLoggingService().warn('WebServer', 'Image cache write failed', error)
+            void fs.promises.rm(tempPath, { force: true }).catch(cleanupError =>
+              getLoggingService().warn('WebServer', 'Image cache cleanup failed', cleanupError))
+          })
+      })
+      proxyRes.on('error', error => {
+        getLoggingService().warn('WebServer', 'Upstream image stream failed', error)
+        res.destroy(error)
+      })
+      proxyRes.pipe(res)
     })
-    proxyReq.on('error', () => {
+    proxyReq.on('error', error => {
+      getLoggingService().warn('WebServer', 'Image proxy request failed', error)
       if (!res.headersSent) {
         res.writeHead(502)
         res.end('Failed to fetch image')
-      } else {
-        res.end()
-      }
+      } else res.destroy(error)
     })
-    proxyReq.setTimeout(30000, () => {
-      proxyReq.destroy()
-      if (!res.headersSent) {
-        res.writeHead(504)
-        res.end('Timeout')
-      } else {
-        res.end()
-      }
-    })
+    proxyReq.setTimeout(30000, () => proxyReq.destroy(new Error('Image request timed out')))
   }
 
-  /** Prune image cache if it exceeds max size */
-  pruneImageCache(): void {
+  private async pruneImageCache(): Promise<void> {
+    let names: string[]
     try {
-      if (!fs.existsSync(this.imageCacheDir)) return
-      const files = fs.readdirSync(this.imageCacheDir)
-        .map(f => {
-          const fp = path.join(this.imageCacheDir, f)
-          try { const s = fs.statSync(fp); return { path: fp, size: s.size, mtime: s.mtimeMs } }
-          catch { return null }
-        })
-        .filter(Boolean) as { path: string; size: number; mtime: number }[]
-
-      const totalSize = files.reduce((sum, f) => sum + f.size, 0)
-      if (totalSize <= this.imageCacheMaxBytes) return
-
-      // Remove oldest files until under limit
-      files.sort((a, b) => a.mtime - b.mtime)
-      let freed = 0
-      const target = totalSize - this.imageCacheMaxBytes
-      for (const file of files) {
-        try { fs.unlinkSync(file.path); freed += file.size }
-        catch { /* ignore */ }
-        if (freed >= target) break
-      }
-      console.log(`[WebServer] Pruned image cache: freed ${Math.round(freed / 1024 / 1024)}MB`)
-    } catch { /* ignore */ }
+      names = await fs.promises.readdir(this.imageCacheDir)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+      throw error
+    }
+    const files = await Promise.all(names.map(async name => {
+      const filePath = path.join(this.imageCacheDir, name)
+      const stat = await fs.promises.stat(filePath)
+      return { filePath, size: stat.size, age: stat.mtimeMs }
+    }))
+    let total = files.reduce((sum, file) => sum + file.size, 0)
+    for (const file of files.sort((a, b) => a.age - b.age)) {
+      if (Date.now() - file.age <= this.imageCacheMaxAgeMs && total <= this.imageCacheMaxBytes) break
+      await fs.promises.rm(file.filePath)
+      total -= file.size
+    }
   }
 
   private proxyToDevServer(req: http.IncomingMessage, res: http.ServerResponse): void {
@@ -742,12 +630,7 @@ export class WebServerService {
     req.pipe(proxyReq)
   }
 
-  private static readonly COMPRESSIBLE_EXTS = new Set([
-    '.html', '.js', '.css', '.json', '.svg', '.map',
-  ])
-  private static readonly GZIP_MIN_SIZE = 1024 // Only compress files > 1KB
-
-  private serveStatic(pathname: string, req: http.IncomingMessage, res: http.ServerResponse): void {
+  private serveStatic(pathname: string, res: http.ServerResponse): void {
     let filePath = path.join(this.staticRoot, pathname === '/' ? 'index.html' : pathname)
 
     // Security: prevent path traversal
@@ -766,19 +649,8 @@ export class WebServerService {
             res.end('Not found')
             return
           }
-          const acceptEncoding = req.headers['accept-encoding'] || ''
-          const useGzip = typeof acceptEncoding === 'string'
-            && acceptEncoding.includes('gzip')
-            && data.length > WebServerService.GZIP_MIN_SIZE
-          if (useGzip) {
-            res.writeHead(200, { 'Content-Type': 'text/html', 'Content-Encoding': 'gzip' })
-            const gzipStream = zlib.createGzip()
-            gzipStream.pipe(res)
-            gzipStream.end(data)
-          } else {
-            res.writeHead(200, { 'Content-Type': 'text/html' })
-            res.end(data)
-          }
+          res.writeHead(200, { 'Content-Type': 'text/html' })
+          res.end(data)
         })
         return
       }
@@ -790,41 +662,18 @@ export class WebServerService {
         ? 'public, max-age=31536000, immutable'
         : 'public, max-age=0, must-revalidate'
 
-      const acceptEncoding = req.headers['accept-encoding'] || ''
-      const canGzip = typeof acceptEncoding === 'string'
-        && acceptEncoding.includes('gzip')
-        && WebServerService.COMPRESSIBLE_EXTS.has(ext)
-        && stats.size > WebServerService.GZIP_MIN_SIZE
-
-      if (canGzip) {
+      fs.readFile(filePath, (err2, data) => {
+        if (err2) {
+          res.writeHead(500)
+          res.end('Internal Server Error')
+          return
+        }
         res.writeHead(200, {
           'Content-Type': contentType,
           'Cache-Control': cacheControl,
-          'Content-Encoding': 'gzip',
         })
-        const fileStream = fs.createReadStream(filePath)
-        const gzipStream = zlib.createGzip()
-        fileStream.pipe(gzipStream).pipe(res)
-        fileStream.on('error', () => {
-          if (!res.headersSent) {
-            res.writeHead(500)
-          }
-          res.end()
-        })
-      } else {
-        fs.readFile(filePath, (err2, data) => {
-          if (err2) {
-            res.writeHead(500)
-            res.end('Internal Server Error')
-            return
-          }
-          res.writeHead(200, {
-            'Content-Type': contentType,
-            'Cache-Control': cacheControl,
-          })
-          res.end(data)
-        })
-      }
+        res.end(data)
+      })
     })
   }
 
@@ -842,7 +691,12 @@ export class WebServerService {
     }
 
     if (msg.type === 'auth') {
-      await this.handleAuth(ws, msg as AuthMessage)
+      try {
+        await this.handleAuth(ws, msg as AuthMessage)
+      } catch (error) {
+        console.error('[WebServer] Failed to process authentication:', error)
+        ws.send(JSON.stringify({ type: 'auth', success: false, error: 'Web access authentication is unavailable' }))
+      }
       return
     }
 
@@ -855,6 +709,7 @@ export class WebServerService {
         return
       }
 
+      ws.sessionToken = rpc.token
       await this.handleRpc(ws, rpc)
       return
     }
@@ -862,16 +717,40 @@ export class WebServerService {
     ws.send(JSON.stringify({ type: 'error', error: 'Unknown message type' }))
   }
 
-  /** Check if an IP is allowed by the allowlist (empty = allow all) */
   private isIpAllowed(ip: string): boolean {
-    const db = getDatabase()
-    const allowlist = db.getSetting(SETTING_KEYS.web_access_ip_allowlist)
-    if (!allowlist) return true // empty = allow all
-    const allowed = allowlist.split(',').map(s => s.trim()).filter(Boolean)
-    if (allowed.length === 0) return true
-    // Normalize IPv6-mapped IPv4 (::ffff:192.168.1.1 → 192.168.1.1)
-    const normalizedIp = ip.replace(/^::ffff:/, '')
-    return allowed.some(a => a === normalizedIp || a === ip)
+    const setting = getDatabase().getSetting(SETTING_KEYS.web_access_ip_allowlist)
+    if (!setting?.trim()) return true
+    const normalized = ip.replace(/^::ffff:/, '')
+    return setting.split(',').map(value => value.trim()).filter(Boolean).includes(normalized)
+  }
+
+  private loadPersistedSessions(): void {
+    const stored = getDatabase().getSetting('web_sessions')
+    if (!stored) return
+    if (!getCredentialEncryptionService().isEncrypted(stored)) {
+      // 0.4.2 persisted bearer tokens as plaintext. Revoke them on upgrade;
+      // do not load or re-encrypt previously exposed authentication sessions.
+      getDatabase().deleteSetting('web_sessions')
+      console.warn('[WebServer] Revoked unencrypted legacy web sessions during upgrade')
+      return
+    }
+    const plain = getCredentialEncryptionService().decrypt(stored)
+    if (!plain) throw new Error('Persisted web sessions cannot be decrypted')
+    const sessions = JSON.parse(plain) as Array<[string, Session]>
+    const now = Date.now()
+    for (const [token, session] of sessions) {
+      if (session.expiresAt > now && session.pinFingerprint === this.getPinFingerprint()) this.sessions.set(token, session)
+    }
+  }
+
+  private persistSessions(): void {
+    const serialized = JSON.stringify(Array.from(this.sessions.entries()))
+    getDatabase().setSetting('web_sessions', getCredentialEncryptionService().encrypt(serialized))
+  }
+
+  private getPinFingerprint(): string {
+    const encryptedPin = getDatabase().getSetting(SETTING_KEYS.web_access_pin)
+    return crypto.createHash('sha256').update(encryptedPin || '').digest('hex')
   }
 
   private async handleAuth(ws: AuthenticatedWebSocket, msg: AuthMessage): Promise<void> {
@@ -888,19 +767,16 @@ export class WebServerService {
     // Validate PIN (always required) — uses constant-time comparison
     const storedPin = this.getStoredPin()
     if (!storedPin || !timingSafeCompare(msg.pin, storedPin)) {
-      const entry = this.rateLimits.get(ip) || { failures: 0, lockedUntil: 0, lockoutCount: 0 }
+      const entry = this.rateLimits.get(ip) || { failures: 0, lockedUntil: 0, lockoutCount: 0, lastAttemptAt: Date.now() }
+      entry.lastAttemptAt = Date.now()
       entry.failures++
       if (entry.failures >= MAX_AUTH_FAILURES) {
         entry.lockoutCount++
-        const lockoutDuration = entry.lockoutCount >= 3
-          ? 24 * 60 * 60 * 1000   // 24 hours after 3rd lockout
-          : entry.lockoutCount >= 2
-          ? 15 * 60 * 1000         // 15 minutes after 2nd lockout
-          : AUTH_LOCKOUT_MS        // 60 seconds after 1st lockout
+        const lockoutDuration = entry.lockoutCount >= 3 ? 24 * 60 * 60 * 1000
+          : entry.lockoutCount === 2 ? 15 * 60 * 1000 : AUTH_LOCKOUT_MS
         entry.lockedUntil = Date.now() + lockoutDuration
         entry.failures = 0
-        const durationLabel = lockoutDuration >= 86400000 ? '24 hours' : lockoutDuration >= 900000 ? '15 minutes' : '60 seconds'
-        console.warn(`[WebServer] Auth lockout #${entry.lockoutCount} for IP ${ip} — locked for ${durationLabel}`)
+        console.warn(`[WebServer] Auth lockout for IP ${ip} — ${MAX_AUTH_FAILURES} failed attempts`)
       }
       this.rateLimits.set(ip, entry)
       ws.send(JSON.stringify({ type: 'auth', success: false, error: 'Invalid PIN' }))
@@ -929,9 +805,9 @@ export class WebServerService {
       this.sessions.delete(ipSessions[0][0])
     }
 
-    // Issue token
+    // Issue IP-bound token
     const token = crypto.randomUUID()
-    this.sessions.set(token, { expiresAt: Date.now() + this.getSessionTimeout(), ip })
+    this.sessions.set(token, { expiresAt: Date.now() + this.getSessionTimeout(), ip, pinFingerprint: this.getPinFingerprint() })
     this.persistSessions()
     ws.sessionToken = token
     ws.send(JSON.stringify({ type: 'auth', success: true, token }))
@@ -940,7 +816,6 @@ export class WebServerService {
 
   private async handleRpc(ws: AuthenticatedWebSocket, msg: RpcMessage): Promise<void> {
     const { id, channel, args } = msg
-    const rpcStart = Date.now()
 
     // Check denylist
     if (WEB_DENIED_CHANNELS.has(channel)) {
@@ -965,8 +840,7 @@ export class WebServerService {
         try {
           const handler = this.handlerMap.get(channel)
           if (handler) {
-            const syntheticEvent = { sender: { send: () => {}, isDestroyed: () => false } }
-            const val = await handler(syntheticEvent, ...args)
+            const val = await handler(this.createRpcEvent(ws), ...args)
             ws.send(JSON.stringify({ type: 'response', id, result: val ? '__set__' : null }))
             return
           }
@@ -985,49 +859,42 @@ export class WebServerService {
     }
 
     try {
-      const syntheticEvent = {
-        sender: {
-          send: (eventChannel: string, ...eventArgs: unknown[]) => {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: 'event', channel: eventChannel, args: eventArgs }))
-            }
-          },
-          isDestroyed: () => ws.readyState !== WebSocket.OPEN,
-        },
-      }
-
-      let result = await handler(syntheticEvent, ...args)
+      const result = await handler(this.createRpcEvent(ws), ...args)
 
       // Strip connection_config from source responses (contains passwords/tokens)
+      let sanitizedResult = result
       if (channel === 'sources:list' || channel === 'sources:getEnabled') {
-        if (Array.isArray(result)) {
-          result = result.map((s: Record<string, unknown>) => ({ ...s, connection_config: '{}' }))
+        if (Array.isArray(sanitizedResult)) {
+          sanitizedResult = sanitizedResult.map((source: Record<string, unknown>) => ({ ...source, connection_config: '{}' }))
         }
       }
 
       // Strip sensitive settings from getAllSettings response
-      if (channel === 'db:getAllSettings' && result && typeof result === 'object') {
-        const filtered = { ...(result as Record<string, string>) }
+      if (channel === 'db:getAllSettings' && sanitizedResult && typeof sanitizedResult === 'object') {
+        const filtered = { ...(sanitizedResult as Record<string, string>) }
         for (const key of WEB_SENSITIVE_SETTINGS) {
           if (key in filtered) filtered[key] = ''
         }
-        result = filtered
+        sanitizedResult = filtered
       }
 
-      const responseJson = JSON.stringify({ type: 'response', id, result })
-      const rpcMs = Date.now() - rpcStart
-      const responseKb = (responseJson.length / 1024).toFixed(1)
-      ws.send(responseJson)
-      getLoggingService().verbose('WebServer', `RPC ${channel} → ${rpcMs}ms, ${responseKb}KB (${ws.clientIp})`)
-      if (rpcMs > 1000) {
-        console.warn(`[WebServer] Slow RPC: ${channel} took ${rpcMs}ms (${responseKb}KB)`)
-      }
+      ws.send(JSON.stringify({ type: 'response', id, result: sanitizedResult }))
     } catch (err) {
-      const rpcMs = Date.now() - rpcStart
       // Sanitize error — never expose stack traces or internal details to web clients
-      console.error(`[WebServer] RPC error on ${channel} after ${rpcMs}ms:`, err)
+      console.error(`[WebServer] RPC error on ${channel}:`, err)
       ws.send(JSON.stringify({ type: 'response', id, error: 'Internal error' }))
     }
+  }
+
+  private createRpcEvent(ws: AuthenticatedWebSocket): AuthenticatedWebRpcEvent {
+    return createAuthenticatedWebRpcEvent({
+      send: (eventChannel: string, ...eventArgs: unknown[]) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'event', channel: eventChannel, args: eventArgs }))
+        }
+      },
+      isDestroyed: () => ws.readyState !== WebSocket.OPEN,
+    })
   }
 
   // ---------------------------------------------------------------------------
@@ -1035,119 +902,61 @@ export class WebServerService {
   // ---------------------------------------------------------------------------
 
   private isPinRequired(): boolean {
-    try {
-      const pin = getDatabase().getSetting(SETTING_KEYS.web_access_pin)
-      return !!pin && pin.trim().length > 0
-    } catch {
-      return false
-    }
+    const pin = getDatabase().getSetting(SETTING_KEYS.web_access_pin)
+    return !!pin && pin.trim().length > 0
   }
 
   private getStoredPin(): string | null {
-    try {
-      const pin = getDatabase().getSetting(SETTING_KEYS.web_access_pin)
-      if (!pin) return null
-      return getCredentialEncryptionService().decryptSetting(SETTING_KEYS.web_access_pin, pin)
-    } catch {
-      return null
-    }
+    const pin = getDatabase().getSetting(SETTING_KEYS.web_access_pin)
+    if (!pin) return null
+    return getCredentialEncryptionService().decryptSetting(SETTING_KEYS.web_access_pin, pin)
   }
 
   private getConfiguredPort(): number {
-    try {
-      const port = getDatabase().getSetting(SETTING_KEYS.web_access_port)
-      const parsed = port ? parseInt(port, 10) : NaN
-      return parsed > 0 && parsed < 65536 ? parsed : DEFAULT_PORT
-    } catch {
-      return DEFAULT_PORT
-    }
+    const port = getDatabase().getSetting(SETTING_KEYS.web_access_port)
+    const parsed = port ? parseInt(port, 10) : NaN
+    return parsed > 0 && parsed < 65536 ? parsed : DEFAULT_PORT
   }
 
   private getSessionTimeout(): number {
-    try {
-      const timeout = getDatabase().getSetting(SETTING_KEYS.web_access_session_timeout)
-      const parsed = timeout ? parseInt(timeout, 10) : NaN
-      return parsed > 0 ? parsed : DEFAULT_SESSION_TIMEOUT_MS
-    } catch {
-      return DEFAULT_SESSION_TIMEOUT_MS
-    }
+    const timeout = getDatabase().getSetting(SETTING_KEYS.web_access_session_timeout)
+    const parsed = timeout ? parseInt(timeout, 10) : NaN
+    return parsed > 0 ? parsed : DEFAULT_SESSION_TIMEOUT_MS
   }
 
-  private isValidSession(token: string, _clientIp?: string): boolean {
+  private isValidSession(token: string, clientIp?: string): boolean {
     const session = this.sessions.get(token)
     if (!session) return false
-    if (session.expiresAt < Date.now()) {
+    if (session.expiresAt < Date.now() || session.pinFingerprint !== this.getPinFingerprint()) {
       this.sessions.delete(token)
+      this.persistSessions()
+      return false
+    }
+    // Verify token is being used from the same IP it was issued to
+    if (clientIp && session.ip !== clientIp) {
+      console.warn(`[WebServer] Session token used from different IP: issued to ${session.ip}, used from ${clientIp}`)
+      this.sessions.delete(token)
+      this.persistSessions()
       return false
     }
     return true
   }
 
   private isHttpsEnabled(): boolean {
-    try {
-      const setting = getDatabase().getSetting(SETTING_KEYS.web_access_https)
-      return setting !== 'false' // Default to true
-    } catch {
-      return true
-    }
-  }
-
-  /**
-   * Check if the existing cert's SANs cover all current network IPs
-   */
-  private certSansMatchCurrentIps(certPem: string): boolean {
-    try {
-      const cert = new crypto.X509Certificate(certPem)
-      const sanText = cert.subjectAltName || ''
-      // Parse "IP Address:192.168.1.5, IP Address:127.0.0.1, DNS:localhost" format
-      const certIps = new Set(
-        sanText.split(',')
-          .map(s => s.trim())
-          .filter(s => s.startsWith('IP Address:'))
-          .map(s => s.replace('IP Address:', ''))
-      )
-
-      // Get current non-internal IPv4 addresses
-      const interfaces = os.networkInterfaces()
-      for (const name of Object.keys(interfaces)) {
-        for (const iface of interfaces[name] || []) {
-          if (iface.family === 'IPv4' && !iface.internal && !certIps.has(iface.address)) {
-            console.log(`[WebServer] Current IP ${iface.address} not in cert SANs`)
-            return false
-          }
-        }
-      }
-      return true
-    } catch {
-      // If cert parsing fails, regenerate
-      return false
-    }
+    const setting = getDatabase().getSetting(SETTING_KEYS.web_access_https)
+    return setting !== 'false' // Default to true
   }
 
   private async ensureTlsCertificate(): Promise<{ key: string; cert: string }> {
     const keyPath = path.join(this.tlsDir, 'key.pem')
     const certPath = path.join(this.tlsDir, 'cert.pem')
 
-    // Priority 1: User-provided custom certificate (for reverse proxies, real SSL)
-    const customCertPath = path.join(this.tlsDir, 'custom-cert.pem')
-    const customKeyPath = path.join(this.tlsDir, 'custom-key.pem')
-    if (fs.existsSync(customCertPath) && fs.existsSync(customKeyPath)) {
-      console.log('[WebServer] Using custom TLS certificate from', this.tlsDir)
-      return {
-        key: fs.readFileSync(customKeyPath, 'utf-8'),
-        cert: fs.readFileSync(customCertPath, 'utf-8'),
-      }
-    }
-
-    // Priority 2: Reuse existing self-signed certificate if IPs still match
+    // Reuse existing certificate if it exists
     if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
-      const certPem = fs.readFileSync(certPath, 'utf-8')
-      if (this.certSansMatchCurrentIps(certPem)) {
-        return { key: fs.readFileSync(keyPath, 'utf-8'), cert: certPem }
+      return {
+        key: fs.readFileSync(keyPath, 'utf-8'),
+        cert: fs.readFileSync(certPath, 'utf-8'),
       }
-      console.log('[WebServer] Network IPs changed — regenerating self-signed certificate')
-      fs.unlinkSync(keyPath)
-      fs.unlinkSync(certPath)
     }
 
     console.log('[WebServer] Generating self-signed TLS certificate...')

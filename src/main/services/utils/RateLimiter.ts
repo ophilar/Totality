@@ -1,5 +1,5 @@
 
-import { APP_CONFIG } from '../../config'
+import { APP_CONFIG } from '@main/config'
 
 /**
  * RateLimiter Utilities

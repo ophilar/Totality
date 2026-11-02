@@ -8,5 +8,5 @@
     "strict": true,
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "electron-builder.yml"]
+  "include": ["vite.config.mts", "vitest.config.mts"]
 }

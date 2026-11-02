@@ -1,3 +1,4 @@
+
 import { getErrorMessage } from './utils/errorUtils'
 /**
  * LiveMonitoringService - Background service for detecting media library changes
@@ -13,9 +14,9 @@ import { getErrorMessage } from './utils/errorUtils'
 
 import { BrowserWindow } from 'electron'
 import * as chokidar from 'chokidar'
-import * as path from 'path'
+import * as path from 'node:path'
 import * as fs from 'fs'
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { getDatabase } from '../database/getDatabase'
 import { getSourceManager } from './SourceManager'
@@ -24,6 +25,12 @@ import { getSeriesCompletenessService } from './SeriesCompletenessService'
 import { getTMDBService } from './TMDBService'
 import { getTaskQueueService } from './TaskQueueService'
 import { getWishlistCompletionService } from './WishlistCompletionService'
+import { analyzeAlbumQuality } from './MusicQualityAnalyzer'
+import { PlexProvider } from '../providers/plex/PlexProvider'
+import { JellyfinEmbyBase } from '../providers/jellyfin-emby/JellyfinEmbyBase'
+import { KodiProvider } from '../providers/kodi/KodiProvider'
+import { KodiLocalProvider } from '../providers/kodi/KodiLocalProvider'
+import { getSupportedProviders } from '../providers/ProviderFactory'
 import type { ScanResult } from '../providers/base/MediaProvider'
 import { safeSend } from '../ipc/utils/safeSend'
 import { emitNotificationCreated } from '../ipc/utils/notificationEmitter'
@@ -43,50 +50,46 @@ const MEDIA_EXTENSIONS = new Set([
   '.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav', '.wma', '.alac', '.aiff', '.opus',
 ])
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
-/**
- * Cache of Windows network drive letters, detected once at startup via wmic.
- * DriveType 4 = "Network Drive" in Win32_LogicalDisk.
- */
+/** Cache of mapped Windows network drives, detected once at startup. */
 let networkDriveLetters: Set<string> = new Set()
+let networkDriveDetectionError: unknown = null
 
 async function detectWindowsNetworkDrivesAsync(): Promise<void> {
   if (process.platform !== 'win32') return
   try {
-    const { stdout } = await execAsync('wmic logicaldisk get DeviceID,DriveType', {
-      encoding: 'utf-8',
-      timeout: 5000,
-      windowsHide: true,
-    })
-    // Output looks like:
-    // DeviceID  DriveType
-    // C:        3
-    // Z:        4
-    const detected = new Set<string>()
-    for (const line of stdout.split('\n')) {
-      const match = line.match(/^([A-Z]):?\s+(\d+)/)
-      if (match && match[2] === '4') {
-        detected.add(match[1])
-      }
-    }
-    networkDriveLetters = detected
-  } catch {
-    // wmic unavailable or timed out — fall back to empty set (treat all drives as local)
+    const { stdout } = await execFileAsync('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      'Get-PSDrive -PSProvider FileSystem | Select-Object -Property Name,DisplayRoot | ConvertTo-Json -Compress',
+    ], { encoding: 'utf-8', timeout: 5000, windowsHide: true })
+    const drives = JSON.parse(stdout) as Array<{ Name: string; DisplayRoot: string | null }> | { Name: string; DisplayRoot: string | null }
+    networkDriveLetters = new Set((Array.isArray(drives) ? drives : [drives])
+      .filter(drive => Boolean(drive.DisplayRoot))
+      .map(drive => drive.Name.toUpperCase()))
+    networkDriveDetectionError = null
+  } catch (error) {
+    networkDriveDetectionError = error
+    getLoggingService().warn('[LiveMonitoring]', 'Could not determine Windows drive types; drive-letter sources will not be watched until detection succeeds:', error)
   }
 }
 
 /**
  * Detect if a path is likely a network/NAS path where native watchers are unreliable.
- * On Windows, uses wmic to detect actual mapped network drives instead of guessing by letter.
+ * On Windows, uses the current user session's mapped filesystem drives.
  */
 export function isNetworkPath(filePath: string): boolean {
   // Windows UNC paths: \\server\share
   if (filePath.startsWith('\\\\')) return true
 
-  // Windows mapped drives — check actual drive type from cached wmic result
+  // Windows mapped drives — check actual drive type from cached CIM result
   if (process.platform === 'win32') {
     const driveLetter = filePath.match(/^([A-Za-z]):/)?.[1]?.toUpperCase()
+    if (driveLetter && networkDriveDetectionError) {
+      throw new Error(`Cannot classify Windows drive ${driveLetter}: while drive type detection is unavailable`)
+    }
     if (driveLetter && networkDriveLetters.has(driveLetter)) {
       return true
     }
@@ -146,8 +149,7 @@ export class LiveMonitoringService {
     this.config.pauseDuringManualScan = pauseDuringManualScan !== 'false' // Default true
 
     // Load per-provider intervals
-    const providerTypes: ProviderType[] = ['plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey']
-    for (const provider of providerTypes) {
+    for (const provider of getSupportedProviders()) {
       const interval = db.getSetting(`monitoring_interval_${provider}`)
       if (interval) {
         const parsed = parseInt(interval, 10)
@@ -585,6 +587,7 @@ export class LiveMonitoringService {
    * Check a source using targeted file scanning (for file watcher changes)
    */
   private async checkSourceWithTargetedFiles(sourceId: string, filePaths: string[]): Promise<SourceChangeEvent[]> {
+    const scanStartedAt = new Date().toISOString()
     const sourceManager = getSourceManager()
     const db = getDatabase()
 
@@ -627,13 +630,7 @@ export class LiveMonitoringService {
             const isMusic = libraryType === 'music'
 
             // Only look up files that still exist (added/updated, not deleted)
-            const existingFiles = filePaths.filter(fp => {
-              try {
-                return fs.existsSync(fp)
-              } catch {
-                return false
-              }
-            })
+            const existingFiles = filePaths.filter(filePath => fs.existsSync(filePath))
 
             if (isMusic) {
               // Look up each track by its file path
@@ -731,28 +728,18 @@ export class LiveMonitoringService {
           // Create notification for library changes
           if (totalChanges > 0) {
             try {
-              // Build detailed message with item names
-              const itemNames = changedItems.slice(0, 3).map(item => {
-                if (item.type === 'episode' && item.seriesTitle) {
-                  return `${item.seriesTitle} — ${item.title}`
-                }
-                return item.title
-              })
-              const detailSuffix = changedItems.length > 3 ? ` and ${changedItems.length - 3} more` : ''
-              const detailMessage = itemNames.length > 0
-                ? `${source.display_name}: ${changeDescription} — ${itemNames.join(', ')}${detailSuffix}`
-                : `${source.display_name}: ${changeDescription}`
-
               getDatabase().createNotification({
                 type: 'source_change',
                 title: 'Library updated',
-                message: detailMessage,
+                message: `${source.display_name}: ${changeDescription}`,
                 sourceId,
                 sourceName: source.display_name,
                 itemCount: totalChanges,
               })
               emitNotificationCreated()
-            } catch { /* ignore */ }
+            } catch (error) {
+              getLoggingService().warn('[LiveMonitoring]', `Library-change notification could not be created for ${library.libraryName}:`, error)
+            }
           }
         }
       } catch (error) {
@@ -784,39 +771,7 @@ export class LiveMonitoringService {
       hasChanges: events.length > 0,
     })
 
-    // Check for quality upgrades after items were updated
-    if (events.some((e) => e.changeType === 'updated' || e.changeType === 'mixed')) {
-      try {
-        const db = getDatabase()
-        const scanStart = events.reduce((earliest, e) => e.detectedAt < earliest ? e.detectedAt : earliest, events[0].detectedAt)
-        const videoUpgrades = db.getRecentlyUpgraded(1)
-          .filter((u: { upgraded_at: string }) => u.upgraded_at >= scanStart)
-          .map((u: { title: string; previous_quality_tier: string; quality_tier: string }) =>
-            `${u.title}: ${u.previous_quality_tier} → ${u.quality_tier}`)
-        const musicUpgrades = db.getRecentlyUpgradedMusic(1)
-          .filter((u: { upgraded_at: string }) => u.upgraded_at >= scanStart)
-          .map((u: { title: string; artist_name: string; previous_quality_tier: string; quality_tier: string }) =>
-            `${u.title} (${u.artist_name}): ${u.previous_quality_tier} → ${u.quality_tier}`)
-        const allUpgrades = [...videoUpgrades, ...musicUpgrades]
-        if (allUpgrades.length > 0) {
-          const summaries = allUpgrades.slice(0, 5)
-          const message = allUpgrades.length <= 5
-            ? summaries.join(', ')
-            : `${summaries.join(', ')} + ${allUpgrades.length - 5} more`
-          db.createNotification({
-            type: 'info',
-            title: `${allUpgrades.length} quality upgrade${allUpgrades.length !== 1 ? 's' : ''} detected`,
-            message,
-            sourceId,
-            sourceName: source.display_name,
-            itemCount: allUpgrades.length,
-          })
-          emitNotificationCreated()
-        }
-      } catch (err) {
-        console.error('[LiveMonitoring] Failed to check upgrades:', err)
-      }
-    }
+    this.notifyQualityUpgrades(sourceId, source.display_name, events, scanStartedAt)
 
     // Check wishlist for auto-completion after items were added or updated
     if (events.some((e) => e.changeType === 'added' || e.changeType === 'updated' || e.changeType === 'mixed')) {
@@ -836,6 +791,30 @@ export class LiveMonitoringService {
   /**
    * Start polling for a remote source
    */
+  private notifyQualityUpgrades(sourceId: string, sourceName: string, events: SourceChangeEvent[], scanStartedAt: string): void {
+    const updated = events.filter(event => event.changeType === 'updated' || event.changeType === 'mixed')
+    if (updated.length === 0) return
+    const db = getDatabase()
+    const since = Math.floor(Date.parse(scanStartedAt) / 1000) * 1000
+    const recent = (timestamp: string) => Date.parse(timestamp.includes(' ')
+      ? timestamp.replace(' ', 'T') + 'Z' : timestamp) >= since
+    const video = db.getRecentlyUpgraded(1, sourceId)
+      .filter(item => recent(item.upgraded_at))
+      .map(item => `${item.title}: ${item.previous_quality_tier} → ${item.quality_tier}`)
+    const music = db.getRecentlyUpgradedMusic(1, sourceId)
+      .filter(item => recent(item.upgraded_at))
+      .map(item => `${item.title} (${item.artist_name}): ${item.previous_quality_tier} → ${item.quality_tier}`)
+    const upgrades = [...video, ...music]
+    if (upgrades.length === 0) return
+    db.createNotification({
+      type: 'info',
+      title: `${upgrades.length} quality upgrade${upgrades.length === 1 ? '' : 's'} detected`,
+      message: upgrades.slice(0, 5).join(', ') + (upgrades.length > 5 ? ` +${upgrades.length - 5} more` : ''),
+      sourceId, sourceName, itemCount: upgrades.length,
+    })
+    emitNotificationCreated()
+  }
+
   private startPolling(sourceId: string, sourceType: ProviderType): void {
     const interval = this.config.pollingIntervals[sourceType] || DEFAULT_MONITORING_CONFIG.pollingIntervals[sourceType] || 300000
 
@@ -910,6 +889,7 @@ export class LiveMonitoringService {
    * Check a source for changes using incremental scan
    */
   private async checkSource(sourceId: string): Promise<SourceChangeEvent[]> {
+    const scanStartedAt = new Date().toISOString()
     const sourceManager = getSourceManager()
     const db = getDatabase()
 
@@ -1052,31 +1032,18 @@ export class LiveMonitoringService {
       if (totalUpdated > 0) parts.push(`${totalUpdated} updated`)
       if (totalRemoved > 0) parts.push(`${totalRemoved} removed`)
       try {
-        // Collect item names from events that have them
-        const itemNames = events
-          .flatMap(e => (e.items || []).map((item: { title?: string; seriesTitle?: string; type?: string }) => {
-            if (item.type === 'episode' && item.seriesTitle) return `${item.seriesTitle} — ${item.title}`
-            return item.title || ''
-          }))
-          .filter(Boolean)
-          .slice(0, 3)
-        const detailSuffix = events.flatMap(e => e.items || []).length > 3
-          ? ` and ${events.flatMap(e => e.items || []).length - 3} more`
-          : ''
-        const detailMessage = itemNames.length > 0
-          ? `${source.display_name}: ${parts.join(', ')} — ${itemNames.join(', ')}${detailSuffix}`
-          : `${source.display_name}: ${parts.join(', ')}`
-
         getDatabase().createNotification({
           type: 'source_change',
           title: 'Library updated',
-          message: detailMessage,
+          message: `${source.display_name}: ${parts.join(', ')}`,
           sourceId,
           sourceName: source.display_name,
           itemCount: totalAdded + totalUpdated + totalRemoved,
         })
         emitNotificationCreated()
-      } catch { /* ignore */ }
+      } catch (error) {
+        getLoggingService().warn('[LiveMonitoring]', `Library-change notification could not be created for ${source.display_name}:`, error)
+      }
     }
 
     // Emit library:updated for each event type so Dashboard/MediaBrowser refresh
@@ -1104,39 +1071,7 @@ export class LiveMonitoringService {
       hasChanges: events.length > 0,
     })
 
-    // Check for quality upgrades after items were updated
-    if (events.some((e) => e.changeType === 'updated' || e.changeType === 'mixed')) {
-      try {
-        const db = getDatabase()
-        const scanStart = events.reduce((earliest, e) => e.detectedAt < earliest ? e.detectedAt : earliest, events[0].detectedAt)
-        const videoUpgrades = db.getRecentlyUpgraded(1)
-          .filter((u: { upgraded_at: string }) => u.upgraded_at >= scanStart)
-          .map((u: { title: string; previous_quality_tier: string; quality_tier: string }) =>
-            `${u.title}: ${u.previous_quality_tier} → ${u.quality_tier}`)
-        const musicUpgrades = db.getRecentlyUpgradedMusic(1)
-          .filter((u: { upgraded_at: string }) => u.upgraded_at >= scanStart)
-          .map((u: { title: string; artist_name: string; previous_quality_tier: string; quality_tier: string }) =>
-            `${u.title} (${u.artist_name}): ${u.previous_quality_tier} → ${u.quality_tier}`)
-        const allUpgrades = [...videoUpgrades, ...musicUpgrades]
-        if (allUpgrades.length > 0) {
-          const summaries = allUpgrades.slice(0, 5)
-          const message = allUpgrades.length <= 5
-            ? summaries.join(', ')
-            : `${summaries.join(', ')} + ${allUpgrades.length - 5} more`
-          db.createNotification({
-            type: 'info',
-            title: `${allUpgrades.length} quality upgrade${allUpgrades.length !== 1 ? 's' : ''} detected`,
-            message,
-            sourceId,
-            sourceName: source.display_name,
-            itemCount: allUpgrades.length,
-          })
-          emitNotificationCreated()
-        }
-      } catch (err) {
-        console.error('[LiveMonitoring] Failed to check upgrades:', err)
-      }
-    }
+    this.notifyQualityUpgrades(sourceId, source.display_name, events, scanStartedAt)
 
     // Check wishlist for auto-completion after items were added or updated
     if (events.some((e) => e.changeType === 'added' || e.changeType === 'updated' || e.changeType === 'mixed')) {
@@ -1187,33 +1122,24 @@ export class LiveMonitoringService {
    * Returns true if counts differ (scan needed), false if unchanged.
    */
   private async musicLibraryHasChanges(sourceId: string, libraryId: string, sourceType: ProviderType): Promise<boolean> {
-    try {
-      const db = getDatabase()
-      const dbTrackCount = db.countMusicTracks({ sourceId })
+    const db = getDatabase()
+    const dbTrackCount = db.countMusicTracks({ sourceId })
 
-      // For Plex, query the library section to get total track count
-      if (sourceType === 'plex') {
-        const sourceManager = getSourceManager()
-        const provider = sourceManager.getProvider(sourceId)
-        if (!provider) return false
+    // For Plex, query the library section to get total track count
+    if (sourceType === 'plex') {
+      const provider = getSourceManager().getProvider(sourceId)
+      if (!(provider instanceof PlexProvider)) throw new Error(`Plex provider is unavailable for source ${sourceId}`)
 
-        const { PlexProvider } = await import('../providers/plex/PlexProvider')
-        if (provider instanceof PlexProvider) {
-          const plexTrackCount = await provider.getMusicTrackCount(libraryId)
-          if (plexTrackCount !== dbTrackCount) {
-            console.log(`[LiveMonitoring] Music library track count changed: Plex=${plexTrackCount}, DB=${dbTrackCount}`)
-            return true
-          }
-          return false
-        }
+      const plexTrackCount = await provider.getMusicTrackCount(libraryId)
+      if (plexTrackCount !== dbTrackCount) {
+        console.log(`[LiveMonitoring] Music library track count changed: Plex=${plexTrackCount}, DB=${dbTrackCount}`)
+        return true
       }
-
-      // For other providers, always scan (no lightweight check available)
-      return true
-    } catch {
-      // On error, skip scan rather than doing expensive full scan
       return false
     }
+
+    // For other providers, always scan (no lightweight check available)
+    return true
   }
 
   /**
@@ -1228,22 +1154,18 @@ export class LiveMonitoringService {
     }
 
     if (sourceType === 'plex') {
-      const { PlexProvider } = await import('../providers/plex/PlexProvider')
       if (provider instanceof PlexProvider) {
         return provider.scanMusicLibrary(libraryId)
       }
     } else if (sourceType === 'jellyfin' || sourceType === 'emby') {
-      const { JellyfinEmbyBase } = await import('../providers/jellyfin-emby/JellyfinEmbyBase')
       if (provider instanceof JellyfinEmbyBase) {
         return provider.scanMusicLibrary(libraryId)
       }
     } else if (sourceType === 'kodi') {
-      const { KodiProvider } = await import('../providers/kodi/KodiProvider')
       if (provider instanceof KodiProvider) {
         return provider.scanMusicLibrary()
       }
     } else if (sourceType === 'kodi-local') {
-      const { KodiLocalProvider } = await import('../providers/kodi/KodiLocalProvider')
       if (provider instanceof KodiLocalProvider) {
         return provider.scanMusicLibrary()
       }
@@ -1294,7 +1216,6 @@ export class LiveMonitoringService {
    */
   private autoRunMusicQualityAnalysis(sourceId: string, libraryName: string): void {
     const doAnalysis = async () => {
-      const { analyzeAlbumQuality } = await import('./MusicQualityAnalyzer')
       const db = getDatabase()
       console.log(`[LiveMonitoring] Auto-analyzing music quality for ${libraryName}...`)
       await analyzeAlbumQuality(db, sourceId)
@@ -1325,31 +1246,33 @@ export class LiveMonitoringService {
       const service = getSeriesCompletenessService()
 
       // Get distinct series in this library from media_items
-      const episodes = db.getMediaItems({ type: 'episode' as const, sourceId, libraryId }) as Array<{ series_title?: string }>
-      const currentSeries = new Map<string, number>()
+      const episodes = db.getMediaItems({ type: 'episode' as const, sourceId, libraryId }) as Array<{ series_title?: string; series_identity_key?: string | null }>
+      const currentSeries = new Map<string, { title: string; count: number }>()
       for (const ep of episodes) {
-        if (!ep.series_title) continue
-        currentSeries.set(ep.series_title, (currentSeries.get(ep.series_title) || 0) + 1)
+        const identityKey = ep.series_identity_key
+        if (!identityKey) throw new Error('Episode is missing its canonical series identity key')
+        const series = currentSeries.get(identityKey)
+        currentSeries.set(identityKey, { title: ep.series_title || identityKey, count: (series?.count || 0) + 1 })
       }
 
       // Get existing completeness records for this library
       const existing = db.getAllSeriesCompleteness(sourceId, libraryId)
       const existingMap = new Map<string, { owned_episodes: number }>(
-        existing.map((sc: { series_title: string; owned_episodes: number }) => [sc.series_title, { owned_episodes: sc.owned_episodes }])
+        existing.filter(sc => sc.series_identity_key).map(sc => [sc.series_identity_key!, { owned_episodes: sc.owned_episodes }])
       )
 
       // Find affected series
-      const affectedSeries: string[] = []
-      for (const [title, count] of currentSeries) {
-        const record = existingMap.get(title)
+      const affectedSeries: Array<{ identityKey: string; title: string }> = []
+      for (const [identityKey, { title, count }] of currentSeries) {
+        const record = existingMap.get(identityKey)
         if (!record || record.owned_episodes !== count) {
-          affectedSeries.push(title)
+          affectedSeries.push({ identityKey, title })
         }
       }
 
       // Removed series — delete completeness records
       for (const sc of existing) {
-        if (!currentSeries.has(sc.series_title) && sc.id) {
+        if (sc.series_identity_key && !currentSeries.has(sc.series_identity_key) && sc.id) {
           db.deleteSeriesCompleteness(sc.id)
           console.log(`[LiveMonitoring] Removed completeness for deleted series: ${sc.series_title}`)
         }
@@ -1360,14 +1283,14 @@ export class LiveMonitoringService {
         return
       }
 
-      console.log(`[LiveMonitoring] Analyzing ${affectedSeries.length} affected series in ${libraryName}: ${affectedSeries.join(', ')}`)
+      console.log(`[LiveMonitoring] Analyzing ${affectedSeries.length} affected series in ${libraryName}: ${affectedSeries.map(series => series.title).join(', ')}`)
 
       const tmdb = getTMDBService()
       await tmdb.initialize()
 
-      for (const title of affectedSeries) {
+      for (const { identityKey, title } of affectedSeries) {
         try {
-          await service.analyzeSeries(title, sourceId, libraryId)
+          await service.analyzeSeries(identityKey, sourceId, libraryId)
           console.log(`[LiveMonitoring] Completed series analysis: ${title}`)
         } catch (err) {
           console.error(`[LiveMonitoring] Failed to analyze series "${title}":`, getErrorMessage(err))

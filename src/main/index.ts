@@ -1,5 +1,8 @@
 import { app, BrowserWindow, ipcMain, protocol, net, dialog, Tray, Menu, nativeImage, session } from 'electron'
+import { IPC_CHANNELS } from '../shared/ipcChannels'
+import { createSyncHandler, validateSenderFrame } from './ipc/utils/createHandler'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import * as os from 'os'
 import * as fs from 'fs'
 
@@ -48,8 +51,9 @@ protocol.registerSchemesAsPrivileged([
     },
   },
 ])
-import { getDatabaseServiceAsync, getDatabaseServiceSync } from './database/DatabaseFactory'
+import { getDatabaseServiceSync } from './database/DatabaseFactory'
 import { getDatabase } from './database/getDatabase'
+import { ApplicationShutdown } from './services/ApplicationShutdown'
 import { getSourceManager } from './services/SourceManager'
 import { registerDatabaseHandlers } from './ipc/database'
 import { registerQualityHandlers } from './ipc/quality'
@@ -62,17 +66,22 @@ import { registerWishlistHandlers } from './ipc/wishlist'
 import { registerMonitoringHandlers } from './ipc/monitoring'
 import { registerNotificationHandlers } from './ipc/notifications'
 import { registerTaskQueueHandlers } from './ipc/taskQueue'
-import { registerTimelinesHandlers } from './ipc/timelines'
 import { registerLoggingHandlers } from './ipc/logging'
 import { registerAutoUpdateHandlers } from './ipc/autoUpdate'
 import { registerGeminiHandlers } from './ipc/gemini'
 import { registerMoodHandlers, setMoodMainWindow } from './ipc/mood'
+import { registerTimelinesHandlers } from './ipc/timelines'
+import { registerTranscodingHandlers, resumeBackgroundPreflights } from './ipc/transcoding'
+import { registerDuplicateHandlers } from './ipc/duplicates'
+import { registerPlaybackTargetProfileHandlers } from './ipc/playbackTargetProfiles'
+import { registerPlaybackCompatibilityHandlers } from './ipc/playbackCompatibility'
+import { registerOptimizationHandlers } from './ipc/optimization'
 import { getLiveMonitoringService } from './services/LiveMonitoringService'
 import { getTaskQueueService } from './services/TaskQueueService'
 import { getLoggingService } from './services/LoggingService'
 import { getAutoUpdateService } from './services/AutoUpdateService'
 import { getWishlistCompletionService } from './services/WishlistCompletionService'
-import { initWebServerService } from './services/WebServerService'
+import { getWebServerService, initWebServerService } from './services/WebServerService'
 import { registerWebAccessHandlers } from './ipc/webAccess'
 import { SETTING_KEYS } from '../shared/settingKeys'
 
@@ -87,7 +96,7 @@ process.on('uncaughtException', (error) => {
   try {
     const db = getDatabaseServiceSync()
     if (db.isInitialized) {
-      try { db.endBatch() } catch { /* ignore */ }
+      db.endBatch()
       console.log('[CRASH] better-sqlite3 data already persisted (WAL mode)')
     }
   } catch (e) {
@@ -101,7 +110,7 @@ process.on('unhandledRejection', (reason, promise) => {
   try {
     const db = getDatabaseServiceSync()
     if (db.isInitialized) {
-      try { db.endBatch() } catch { /* ignore */ }
+      db.endBatch()
       // better-sqlite3: no action needed, WAL mode auto-persists
     }
   } catch (e) {
@@ -156,13 +165,14 @@ function createWindow() {
 
   // Show window when React signals it's ready (via IPC)
   const fallbackTimer = setTimeout(() => win?.show(), 3000)
-  ipcMain.once('app:ready', () => {
+  ipcMain.once(IPC_CHANNELS.appReady, (event) => {
+    validateSenderFrame(event, IPC_CHANNELS.appReady)
     clearTimeout(fallbackTimer)
     win?.show()
   })
 
   // App version handler
-  ipcMain.handle('app:getVersion', () => app.getVersion())
+  createSyncHandler(IPC_CHANNELS.appGetVersion, () => app.getVersion())
 
   // Disable default menu
   win.removeMenu()
@@ -271,9 +281,6 @@ let isClosing = false
 // Quit when all windows are closed, except on macOS
 app.on('window-all-closed', async () => {
   if (process.platform !== 'darwin' && !isClosing) {
-    isClosing = true
-    const db = getDatabaseServiceSync()
-    await db.close()
     app.quit()
     win = null
   }
@@ -287,32 +294,43 @@ app.on('before-quit', async (event) => {
   isClosing = true
 
   // Stop web server
-  const { getWebServerService } = await import('./services/WebServerService')
   getWebServerService()?.stop()
-
-  // Stop live monitoring (close file watchers and polling timers)
-  getLiveMonitoringService().stop()
-
-  // Cleanup auto-update timers
-  getAutoUpdateService().cleanup()
-
-  // Shutdown FFprobe worker pool (terminate workers before closing DB)
-  try {
-    const { getFFprobeWorkerPool } = await import('./services/FFprobeWorkerPool')
-    await getFFprobeWorkerPool().shutdown()
-  } catch {
-    // Pool may not have been initialized
-  }
-
-  // Flush log buffer to disk
-  await getLoggingService().shutdown()
-
-  // Persist any in-flight tasks as interrupted
-  getTaskQueueService().persistInterruptedTasks()
-
-  // Close database
   const db = getDatabaseServiceSync()
-  await db.close()
+  const shutdown = new ApplicationShutdown({
+    stopAcceptingWork: async () => {
+      getLiveMonitoringService().stop()
+      getAutoUpdateService().cleanup()
+    },
+    pauseTaskQueue: async () => {
+      await getTaskQueueService().stopForShutdown()
+    },
+    shutdownWorkerPool: async () => {
+      try {
+        const { getFFprobeWorkerPool } = await import('./services/FFprobeWorkerPool')
+        await getFFprobeWorkerPool().shutdown()
+      } catch {
+        // Pool may not have been initialized
+      }
+    },
+    persistInterruptedTasks: async () => {
+      getTaskQueueService().persistInterruptedTasks()
+    },
+    checkpointWal: async () => {
+      // WAL checkpoint
+    },
+    closeDatabase: async () => {
+      await db.close()
+    },
+    shutdownLogging: async () => {
+      await getLoggingService().shutdown()
+    },
+  })
+
+  try {
+    await shutdown.execute()
+  } catch (error) {
+    console.error('[App] Shutdown encountered error:', error)
+  }
 
   app.exit()
 })
@@ -359,16 +377,7 @@ app.whenReady().then(async () => {
 
         const fileExists = await fs.promises.access(filePath).then(() => true).catch(() => false)
         if (fileExists) {
-          // Handle Windows UNC paths
-          if (filePath.startsWith('\\\\')) {
-            return net.fetch(`file:${filePath.replace(/\\/g, '/')}`)
-          }
-          // Handle Windows drive letters
-          if (/^[A-Za-z]:/.test(filePath)) {
-            return net.fetch(`file:///${filePath.replace(/\\/g, '/')}`)
-          }
-          // Handle Unix paths
-          return net.fetch(`file://${filePath}`)
+          return net.fetch(pathToFileURL(filePath).href)
         }
         return new Response('Not found', { status: 404 })
       }
@@ -404,15 +413,12 @@ app.whenReady().then(async () => {
       }
 
       // Serve the file
-      if (process.platform === 'win32') {
-        return net.fetch(`file:///${filePath.replace(/\\/g, '/')}`)
-      }
-      return net.fetch(`file://${filePath}`)
+      return net.fetch(pathToFileURL(filePath).href)
     })
     console.log('Local artwork protocol registered')
 
     // Initialize database
-    const db = await getDatabaseServiceAsync()
+    const db = getDatabaseServiceSync()
     await db.initialize()
     console.log('Database initialized successfully (better-sqlite3)')
 
@@ -450,11 +456,16 @@ app.whenReady().then(async () => {
     registerMonitoringHandlers()
     registerNotificationHandlers()
     registerTaskQueueHandlers()
-    registerTimelinesHandlers()
     registerLoggingHandlers()
     registerAutoUpdateHandlers()
     registerGeminiHandlers()
     registerMoodHandlers()
+    registerTimelinesHandlers()
+    registerTranscodingHandlers()
+    registerDuplicateHandlers()
+    registerPlaybackTargetProfileHandlers()
+    registerPlaybackCompatibilityHandlers()
+    registerOptimizationHandlers()
     registerWebAccessHandlers()
 
     // Restore ipcMain.handle to original (interception complete)
@@ -508,6 +519,14 @@ app.whenReady().then(async () => {
 
     // Load persisted history and re-enqueue any tasks that were pending at last quit
     taskQueueService.loadPersistedHistory()
+    resumeBackgroundPreflights()
+    const database = getDatabase()
+    if (database.getSetting('optimization.quality_reanalysis_pending') === 'true') {
+      taskQueueService.addTask({ type: 'quality-analysis', label: 'Refresh media quality' })
+    }
+    if (database.getSetting('optimization.savings_reanalysis_pending') === 'true') {
+      taskQueueService.addTask({ type: 'media-analysis', label: 'Measure media files', options: { completedMediaItemIds: [] } })
+    }
     console.log('Task queue service initialized')
 
   } catch (error) {

@@ -1,15 +1,13 @@
 import { useState, useCallback, useRef } from 'react'
-import { usePagination } from './usePagination'
+import { LIBRARY_PAGE_SIZE, usePagination } from './usePagination'
 import type { MediaItem, TVShowSummary } from '../types'
-
-export type TVShowSortBy = 'title' | 'play_count' | 'last_watched_at'
+import { getTVShowIdentity } from '../tv/showIdentity'
+import { getSortDirection, type TVShowSortBy } from '../sortDefinitions'
 
 interface UseTVShowPaginationOptions {
   activeSourceId: string | null
   activeLibraryId: string | null
   searchQuery: string
-  alphabetFilter: string | null
-  isMobile?: boolean
 }
 
 interface UseTVShowPaginationReturn {
@@ -25,7 +23,7 @@ interface UseTVShowPaginationReturn {
   selectedShowEpisodesLoading: boolean
   loadPaginatedShows: (reset?: boolean, startOffset?: number) => Promise<void>
   loadMoreShows: () => void
-  loadSelectedShowEpisodes: (showTitle: string) => Promise<void>
+  loadSelectedShowEpisodes: (showTitleOrSummary: string | TVShowSummary) => Promise<void>
 }
 
 /**
@@ -35,8 +33,6 @@ export function useTVShowPagination({
   activeSourceId,
   activeLibraryId,
   searchQuery,
-  alphabetFilter,
-  isMobile = false,
 }: UseTVShowPaginationOptions): UseTVShowPaginationReturn {
   const [totalEpisodeCount, setTotalEpisodeCount] = useState(0)
   const [tvSortBy, setTvSortByState] = useState<TVShowSortBy>('title')
@@ -49,12 +45,10 @@ export function useTVShowPagination({
   const [selectedShowEpisodesLoading, setSelectedShowEpisodesLoading] = useState(false)
 
   const { items, setItems, totalCount, loading, load, loadMore } = usePagination<TVShowSummary>({
-    pageSize: isMobile ? 50 : 200,
+    pageSize: LIBRARY_PAGE_SIZE,
     fetchItems: async (filters) => {
-      const [shows, , episodeCount] = await Promise.all([
+      const [shows, episodeCount] = await Promise.all([
         window.electronAPI.getTVShows(filters),
-        // Count is handled by usePagination via fetchCount
-        Promise.resolve(0),
         window.electronAPI.countTVEpisodes(filters),
       ])
       setTotalEpisodeCount(episodeCount as number)
@@ -63,21 +57,50 @@ export function useTVShowPagination({
     fetchCount: (filters) => window.electronAPI.countTVShows(filters) as Promise<number>,
     buildFilters: () => {
       const sortBy = tvSortByRef.current
-      const sortOrder = (sortBy === 'play_count' || sortBy === 'last_watched_at') ? 'desc' : 'asc'
+      const sortOrder = getSortDirection(sortBy)
       const filters: Record<string, unknown> = { sortBy, sortOrder }
       if (activeSourceId) filters.sourceId = activeSourceId
       if (activeLibraryId) filters.libraryId = activeLibraryId
       if (searchQuery.trim()) filters.searchQuery = searchQuery.trim()
-      if (alphabetFilter) filters.alphabetFilter = alphabetFilter
       return filters
     },
-    deps: [activeSourceId, activeLibraryId, searchQuery, alphabetFilter],
+    deps: [activeSourceId, activeLibraryId, searchQuery],
   })
 
-  const loadSelectedShowEpisodes = useCallback(async (showTitle: string) => {
+  const loadSelectedShowEpisodes = useCallback(async (showTitleOrSummary: string | TVShowSummary) => {
     setSelectedShowEpisodesLoading(true)
     try {
-      const episodes = await window.electronAPI.seriesGetEpisodes(showTitle, activeSourceId || undefined)
+      let summary: TVShowSummary | undefined
+      if (typeof showTitleOrSummary === 'object' && showTitleOrSummary !== null) {
+        summary = showTitleOrSummary
+      } else {
+        summary = items.find((s: TVShowSummary) => s.series_identity_key === showTitleOrSummary || s.series_title === showTitleOrSummary)
+      }
+
+      let episodes: unknown[]
+      if (summary?.series_identity_key) {
+        const { seriesIdentityKey, sourceId, libraryId } = getTVShowIdentity(summary)
+        episodes = await window.electronAPI.seriesGetEpisodesByIdentity(
+          summary.series_title,
+          sourceId,
+          seriesIdentityKey,
+          libraryId
+        )
+      } else if (
+        typeof showTitleOrSummary === 'string' &&
+        (showTitleOrSummary.startsWith('tmdb:') || showTitleOrSummary.startsWith('tvdb:') || showTitleOrSummary.startsWith('unresolved:'))
+      ) {
+        episodes = await window.electronAPI.seriesGetEpisodesByIdentity(
+          '',
+          activeSourceId || '',
+          showTitleOrSummary,
+          activeLibraryId || ''
+        )
+      } else {
+        throw new Error(
+          `Cannot load episodes without a canonical series identity key (received: "${typeof showTitleOrSummary === 'object' ? showTitleOrSummary?.series_title : showTitleOrSummary}"). Title-based lookups are not permitted.`
+        )
+      }
       setSelectedShowEpisodes(episodes as MediaItem[])
     } catch (err) {
       console.error('Error loading episodes for show:', err)
@@ -85,7 +108,7 @@ export function useTVShowPagination({
     } finally {
       setSelectedShowEpisodesLoading(false)
     }
-  }, [activeSourceId])
+  }, [activeSourceId, activeLibraryId, items])
 
   return {
     paginatedShows: items,

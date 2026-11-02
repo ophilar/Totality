@@ -19,12 +19,8 @@ function needsProxy(url: string): boolean {
   try {
     const u = new URL(url)
     const h = u.hostname
-    // In Electron (non-web mode), CDNs load directly — no proxy needed
-    // In web mode, proxy everything so images go through the 7-day disk cache
-    if (!isWebMode()) {
-      if (h === 'image.tmdb.org' || h.endsWith('.tmdb.org')) return false
-      if (h === 'coverartarchive.org') return false
-    }
+    // Don't proxy well-known public CDNs — they work directly from the browser
+    if (h === 'image.tmdb.org' || h.endsWith('.tmdb.org')) return false
     // Proxy everything else: Plex (*.plex.direct, local IPs), Jellyfin, Emby, Kodi, etc.
     return true
   } catch {
@@ -67,10 +63,7 @@ for (const [method, channel] of Object.entries(EVENT_CHANNEL_MAP)) {
 }
 
 let ws: WebSocket | null = null
-let connectPromise: Promise<void> | null = null
-let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let requestId = 0
-let reconnectAttempts = 0
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
 const eventListeners = new Map<string, Set<Function>>()
 let sessionToken: string | null = null
@@ -83,76 +76,53 @@ function getWsUrl(): string {
   return `${protocol}//${location.host}`
 }
 
-let isConnecting = false
-
 function connect(): Promise<void> {
-  // Guard: already connected
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    return Promise.resolve()
-  }
-  // Guard: connection in progress — return the existing promise
-  if (isConnecting && connectPromise) {
-    return connectPromise
-  }
-
-  // Cancel any pending reconnect
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer)
-    reconnectTimer = null
-  }
-
-  // Close any stale socket before creating a new one
-  if (ws) {
-    try { ws.onclose = null; ws.close() } catch { /* ignore */ }
-    ws = null
-  }
-
-  isConnecting = true
-
-  const promise = new Promise<void>((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     ws = new WebSocket(getWsUrl())
 
     ws.onopen = () => {
-      isConnecting = false
-      reconnectAttempts = 0
-      const stored = localStorage.getItem('web_session_token')
+      // Try to restore session
+      const stored = sessionStorage.getItem('web_session_token')
       if (stored) {
         sessionToken = stored
       }
       resolve()
+      if (sessionToken) {
+        void sendRpc('taskQueue:getState', []).then(state => {
+          dispatchEvent('taskQueue:updated', [state])
+        }).catch(error => {
+          console.error('[WebTransport] Failed to refresh task queue after reconnect:', error)
+        })
+      }
     }
 
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
         handleMessage(data)
-      } catch {
-        console.error('[WebTransport] Failed to parse message')
+      } catch (error) {
+        console.error('[WebTransport] Failed to parse message:', error)
       }
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       ws = null
-      isConnecting = false
-      connectPromise = null
-      // Reconnect with exponential backoff (1s, 1.5s, 2.25s, ... capped at 30s)
-      const delayMs = Math.min(30000, 1000 * Math.pow(1.5, reconnectAttempts))
-      reconnectAttempts++
-      reconnectTimer = setTimeout(() => {
-        reconnectTimer = null
-        connect().catch(() => {})
-      }, delayMs)
+      const error = new Error(`WebSocket connection closed (${event.code})`)
+      reject(error)
+      for (const request of pending.values()) request.reject(error)
+      pending.clear()
+      authPromise?.reject(error)
+      authPromise = null
+      // Reconnect after delay
+      setTimeout(() => {
+        connect().catch(error => console.error('[WebTransport] Reconnection failed:', error))
+      }, 3000)
     }
 
     ws.onerror = () => {
-      isConnecting = false
-      connectPromise = null
       reject(new Error('WebSocket connection failed'))
     }
   })
-
-  connectPromise = promise
-  return promise
 }
 
 function handleMessage(data: { type: string; [key: string]: unknown }): void {
@@ -173,23 +143,14 @@ function handleMessage(data: { type: string; [key: string]: unknown }): void {
     case 'event': {
       const channel = data.channel as string
       const args = data.args as unknown[]
-      const listeners = eventListeners.get(channel)
-      if (listeners) {
-        for (const cb of listeners) {
-          try {
-            cb(...args)
-          } catch (err) {
-            console.error('[WebTransport] Event listener error:', err)
-          }
-        }
-      }
+      dispatchEvent(channel, args)
       break
     }
 
     case 'auth': {
       if (data.success && data.token) {
         sessionToken = data.token as string
-        localStorage.setItem('web_session_token', sessionToken)
+        sessionStorage.setItem('web_session_token', sessionToken)
         authPromise?.resolve(sessionToken)
         authPromise = null
       } else {
@@ -201,19 +162,20 @@ function handleMessage(data: { type: string; [key: string]: unknown }): void {
   }
 }
 
-// Deduplication: identical RPC calls within 100ms share the same promise
-const rpcDedup = new Map<string, { promise: Promise<unknown>; timestamp: number }>()
-const RPC_DEDUP_WINDOW_MS = 500
+function dispatchEvent(channel: string, args: unknown[]): void {
+  const listeners = eventListeners.get(channel)
+  if (!listeners) return
+  for (const callback of listeners) {
+    try {
+      callback(...args)
+    } catch (error) {
+      console.error('[WebTransport] Event listener error:', error)
+    }
+  }
+}
 
 function sendRpc(channel: string, args: unknown[]): Promise<unknown> {
-  // Build dedup key from channel + args
-  const dedupKey = channel + ':' + JSON.stringify(args)
-  const existing = rpcDedup.get(dedupKey)
-  if (existing && Date.now() - existing.timestamp < RPC_DEDUP_WINDOW_MS) {
-    return existing.promise
-  }
-
-  const promise = new Promise<unknown>((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       reject(new Error('Not connected'))
       return
@@ -228,12 +190,6 @@ function sendRpc(channel: string, args: unknown[]): Promise<unknown> {
       token: sessionToken,
     }))
   })
-
-  rpcDedup.set(dedupKey, { promise, timestamp: Date.now() })
-  // Clean up after window expires
-  setTimeout(() => rpcDedup.delete(dedupKey), RPC_DEDUP_WINDOW_MS + 10)
-
-  return promise
 }
 
 export function authenticate(pin: string): Promise<string> {
@@ -271,10 +227,14 @@ export async function initWebTransport(): Promise<void> {
     try {
       await sendRpc('app:getVersion', [])
       // Token is valid
-    } catch {
-      // Token expired, clear it
-      sessionToken = null
-      localStorage.removeItem('web_session_token')
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Unauthorized') {
+        sessionToken = null
+        sessionStorage.removeItem('web_session_token')
+        console.info('[WebTransport] Stored web session expired; authentication is required')
+      } else {
+        console.error('[WebTransport] Failed to validate stored web session:', error)
+      }
     }
   }
 

@@ -2,8 +2,9 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import './styles/index.css'
+import { initWebTransport } from './services/webTransport'
 
-// Configure the viewport in the bundled renderer rather than an inline CSP-blocked script.
+// Retain the existing window-height handling without an inline HTML script.
 function updateWindowHeight(): void {
   document.documentElement.style.setProperty('--app-height', window.screen.height + 'px')
 }
@@ -14,7 +15,6 @@ window.addEventListener('resize', updateWindowHeight)
 async function boot() {
   // Detect web mode (no Electron preload) and install WebSocket transport
   if (typeof window.electronAPI === 'undefined') {
-    const { initWebTransport } = await import('./services/webTransport')
     await initWebTransport()
   }
 

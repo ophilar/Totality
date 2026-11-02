@@ -6,7 +6,6 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { X, Info, Heart, Scale } from 'lucide-react'
-import { Button } from './Button'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { useTheme } from '../../contexts/ThemeContext'
 import tmdbLogo from '../../assets/tmdb-logo.svg'
@@ -58,12 +57,18 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" role="dialog" aria-modal="true" aria-labelledby="about-modal-title">
-      <div ref={modalRef} className="bg-card border border-border rounded-2xl w-full max-w-lg mx-4 shadow-xl h-[80vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-150 p-4 overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="about-modal-title">
+      <div ref={modalRef} className="bg-card border border-border rounded-xl w-full max-w-lg shadow-xl max-h-[calc(100vh-2rem)] min-h-0 flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border/30">
-          <h2 id="about-modal-title" className="text-title font-semibold">About Totality</h2>
-          <Button variant="tertiary" size="icon-sm" onClick={onClose} icon={<X className="w-4 h-4" />} aria-label="Close" />
+        <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
+          <h2 id="about-modal-title" className="text-lg font-semibold">About Totality</h2>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-md hover:bg-muted transition-colors"
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Tabs */}
@@ -74,7 +79,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-3 text-label font-medium border-b-2 transition-colors ${
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === tab.id
                     ? 'border-primary text-primary'
                     : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -96,7 +101,12 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
 
         {/* Footer */}
         <div className="p-4 border-t border-border/30 flex justify-center">
-          <Button variant="secondary" onClick={onClose}>Close</Button>
+          <button
+            onClick={onClose}
+            className="px-6 py-2 text-sm bg-muted hover:bg-muted/80 rounded-md transition-colors"
+          >
+            Close
+          </button>
         </div>
       </div>
     </div>
@@ -117,34 +127,34 @@ function AboutTab() {
       {/* Logo and Version */}
       <div className="flex flex-col items-center">
         <img src={effectiveIsDark ? logoImage : logoBlackImage} alt="Totality" className="h-24 w-auto object-contain mb-3" />
-        <p className="text-label text-muted-foreground">Version {version}</p>
+        <p className="text-sm text-muted-foreground">Version {version}</p>
       </div>
 
       {/* Description */}
-      <p className="text-label text-muted-foreground">
+      <p className="text-sm text-muted-foreground text-center">
         Analyze media library quality, track completeness, and discover upgrades across your Plex, Jellyfin, Emby, Kodi, and local folder collections.
       </p>
 
       {/* Features */}
-      <div>
-        <h3 className="text-label font-semibold text-muted-foreground mb-3">
+      <div className="bg-muted/30 rounded-lg p-4">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
           Features
         </h3>
-        <ul className="list-disc list-inside text-label text-muted-foreground space-y-2">
-          <li>Multi-source library scanning (Plex, Jellyfin, Emby, Kodi, Local Folders, MediaMonkey)</li>
-          <li>Video and audio quality analysis with tier-based scoring and TMDB ratings</li>
-          <li>TV series, movie collection, music, and director/actor filmography completeness</li>
-          <li>AI-powered assistant with 29 tools for library insights and recommendations</li>
-          <li>Wishlist with Plex and Trakt watchlist sync</li>
-          <li>Storage analytics, codec migration tracking, and duplicate detection</li>
-          <li>Watch history tracking with smart upgrade priority</li>
-          <li>Tag sync (mood/genre) across Plex, MediaMonkey, and Kodi</li>
-          <li>Release alerts for upcoming wishlist items</li>
+        <ul className="text-sm text-muted-foreground space-y-2">
+          <li>• Multi-source library scanning (Plex, Jellyfin, Emby, Kodi, Local Folders, MediaMonkey)</li>
+          <li>• Video and audio quality analysis with tier-based scoring and TMDB ratings</li>
+          <li>• TV series, movie collection, music, and director/actor filmography completeness</li>
+          <li>• AI-powered assistant with 29 tools for library insights and recommendations</li>
+          <li>• Wishlist with Plex and Trakt watchlist sync</li>
+          <li>• Storage analytics, codec migration tracking, and duplicate detection</li>
+          <li>• Watch history tracking with smart upgrade priority</li>
+          <li>• Tag sync (mood/genre) across Plex, MediaMonkey, and Kodi</li>
+          <li>• Release alerts for upcoming wishlist items</li>
         </ul>
       </div>
 
       {/* Links */}
-      <div className="flex justify-center gap-4 text-label">
+      <div className="flex justify-center gap-4 text-sm">
         <ExtLink href="https://github.com/bbidwell85/totality">
           GitHub
         </ExtLink>
@@ -163,14 +173,14 @@ function CreditsTab() {
     <div className="space-y-6">
       {/* Data APIs */}
       <section>
-        <h3 className="text-label font-semibold text-muted-foreground mb-3">
-          Data sources
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">
+          Data Sources
         </h3>
 
         {/* TMDB - Required attribution per terms of use */}
-        <div className="flex items-start gap-3 mb-4">
+        <div className="flex items-start gap-3 mb-4 p-3 bg-muted/30 rounded-lg">
           <img src={tmdbLogo} alt="TMDB" className="h-5 mt-0.5 shrink-0" />
-          <div className="text-caption text-muted-foreground leading-relaxed">
+          <div className="text-xs text-muted-foreground leading-relaxed">
             <p className="font-medium text-foreground mb-1">The Movie Database (TMDB)</p>
             <p>
               This product uses the{' '}
@@ -183,9 +193,9 @@ function CreditsTab() {
         </div>
 
         {/* MusicBrainz - Required CC BY-SA attribution */}
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg">
           <img src={musicbrainzLogo} alt="MusicBrainz" className="h-5 mt-0.5 shrink-0" />
-          <div className="text-caption text-muted-foreground leading-relaxed">
+          <div className="text-xs text-muted-foreground leading-relaxed">
             <p className="font-medium text-foreground mb-1">MusicBrainz</p>
             <p>
               Music metadata provided by{' '}
@@ -208,74 +218,80 @@ function CreditsTab() {
 
       {/* Watchlist Services */}
       <section>
-        <h3 className="text-label font-semibold text-muted-foreground mb-3">
-          Watchlist services
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">
+          Watchlist Services
         </h3>
-        <div className="text-caption text-muted-foreground leading-relaxed">
-          <p className="font-medium text-foreground mb-1">Trakt</p>
-          <p>
-            Watchlist import powered by the{' '}
-            <ExtLink href="https://trakt.tv">
-              Trakt
-            </ExtLink>
-            {' '}API. Trakt is a platform for tracking movies and TV shows you watch.
-          </p>
+        <div className="p-3 bg-muted/30 rounded-lg">
+          <div className="text-xs text-muted-foreground leading-relaxed">
+            <p className="font-medium text-foreground mb-1">Trakt</p>
+            <p>
+              Watchlist import powered by the{' '}
+              <ExtLink href="https://trakt.tv">
+                Trakt
+              </ExtLink>
+              {' '}API. Trakt is a platform for tracking movies and TV shows you watch.
+            </p>
+          </div>
         </div>
       </section>
 
       {/* AI Assistant */}
       <section>
-        <h3 className="text-label font-semibold text-muted-foreground mb-3">
-          AI assistant
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">
+          AI Assistant
         </h3>
-        <div className="text-caption text-muted-foreground leading-relaxed">
-          <p className="font-medium text-foreground mb-1">Google Gemini</p>
-          <p>
-            AI chat and library analysis powered by{' '}
-            <ExtLink href="https://ai.google.dev">
-              Google Gemini
-            </ExtLink>
-            {' '}via the{' '}
-            <ExtLink href="https://www.npmjs.com/package/@google/genai">
-              @google/genai
-            </ExtLink>
-            {' '}SDK. Features include natural language library queries, quality and upgrade reports, completeness analysis, and personalized recommendations. Requires a personal Gemini API key.
-          </p>
+        <div className="p-3 bg-muted/30 rounded-lg">
+          <div className="text-xs text-muted-foreground leading-relaxed">
+            <p className="font-medium text-foreground mb-1">Google Gemini</p>
+            <p>
+              AI chat and library analysis powered by{' '}
+              <ExtLink href="https://ai.google.dev">
+                Google Gemini
+              </ExtLink>
+              {' '}via the{' '}
+              <ExtLink href="https://www.npmjs.com/package/@google/genai">
+                @google/genai
+              </ExtLink>
+              {' '}SDK. Features include natural language library queries, quality and upgrade reports, completeness analysis, and personalized recommendations. Requires a personal Gemini API key.
+            </p>
+          </div>
         </div>
       </section>
 
       {/* Media Analysis */}
       <section>
-        <h3 className="text-label font-semibold text-muted-foreground mb-3">
-          Media analysis
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">
+          Media Analysis
         </h3>
-        <div className="text-caption text-muted-foreground leading-relaxed">
-          <p className="font-medium text-foreground mb-1">FFmpeg / FFprobe</p>
-          <p>
-            Media file analysis powered by{' '}
-            <ExtLink href="https://ffmpeg.org">
-              FFmpeg
-            </ExtLink>
-            , a complete, cross-platform solution for recording, converting, and streaming audio and video.
-            FFmpeg is free software licensed under the{' '}
-            <ExtLink href="https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html">
-              LGPL v2.1
-            </ExtLink>
-            {' '}or later, with some optional components under{' '}
-            <ExtLink href="https://www.gnu.org/licenses/old-licenses/gpl-2.0.html">
-              GPL
-            </ExtLink>
-            . FFmpeg is a trademark of Fabrice Bellard. Totality does not bundle FFmpeg; it uses separately installed copies.
-          </p>
+        <div className="p-3 bg-muted/30 rounded-lg">
+          <div className="text-xs text-muted-foreground leading-relaxed">
+            <p className="font-medium text-foreground mb-1">FFmpeg / FFprobe</p>
+            <p>
+              Media file analysis powered by{' '}
+              <ExtLink href="https://ffmpeg.org">
+                FFmpeg
+              </ExtLink>
+              , a complete, cross-platform solution for recording, converting, and streaming audio and video.
+              FFmpeg is free software licensed under the{' '}
+              <ExtLink href="https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html">
+                LGPL v2.1
+              </ExtLink>
+              {' '}or later, with some optional components under{' '}
+              <ExtLink href="https://www.gnu.org/licenses/old-licenses/gpl-2.0.html">
+                GPL
+              </ExtLink>
+              . FFmpeg is a trademark of Fabrice Bellard. Totality does not bundle FFmpeg; it uses separately installed copies.
+            </p>
+          </div>
         </div>
       </section>
 
       {/* Open Source Technologies */}
       <section>
-        <h3 className="text-label font-semibold text-muted-foreground mb-3">
-          Built with open source
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">
+          Built With Open Source
         </h3>
-        <div className="grid grid-cols-2 gap-2 text-caption">
+        <div className="grid grid-cols-2 gap-2 text-xs">
           <TechLink name="Electron" url="https://www.electronjs.org" license="MIT" />
           <TechLink name="React" url="https://react.dev" license="MIT" />
           <TechLink name="TypeScript" url="https://www.typescriptlang.org" license="Apache 2.0" />
@@ -294,19 +310,19 @@ function CreditsTab() {
 
       {/* External Services */}
       <section>
-        <h3 className="text-label font-semibold text-muted-foreground mb-3">
-          External services
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">
+          External Services
         </h3>
-        <div className="text-caption text-muted-foreground leading-relaxed space-y-2">
+        <div className="text-xs text-muted-foreground leading-relaxed p-3 bg-muted/30 rounded-lg space-y-2">
           <p>
-            <span className="text-foreground font-semibold">Watchlist Sync:</span> Import watchlists from Plex and Trakt to track movies and shows you want to acquire.
+            <strong className="text-foreground">Watchlist Sync:</strong> Import watchlists from Plex and Trakt to track movies and shows you want to acquire.
           </p>
           <p>
-            <span className="text-foreground font-semibold">Store Links:</span> The wishlist provides convenience links to search for physical media on Amazon, eBay, Discogs, Bandcamp, and HDtracks.
+            <strong className="text-foreground">Store Links:</strong> The wishlist provides convenience links to search for physical media on Amazon, eBay, Discogs, Bandcamp, and HDtracks.
             Totality is not affiliated with these services and does not receive compensation for referrals.
           </p>
           <p>
-            <span className="text-foreground font-semibold">Updates:</span> Automatic updates delivered via GitHub Releases using electron-updater.
+            <strong className="text-foreground">Updates:</strong> Automatic updates delivered via GitHub Releases using electron-updater.
           </p>
         </div>
       </section>
@@ -317,54 +333,54 @@ function CreditsTab() {
 /** Legal Tab - Privacy, trademarks, disclaimer, license */
 function LegalTab() {
   return (
-    <div className="space-y-6 text-caption text-muted-foreground leading-relaxed">
+    <div className="space-y-6 text-xs text-muted-foreground leading-relaxed">
       {/* Privacy */}
       <section>
-        <h3 className="text-label font-semibold text-muted-foreground mb-3">
-          Privacy and data
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+          Privacy & Data
         </h3>
-        <div className="space-y-2">
+        <div className="p-3 bg-muted/30 rounded-lg space-y-2">
           <p>
-            <span className="text-foreground font-semibold">Local Storage:</span> All media library data is stored locally on your device in an SQLite database and is never transmitted to external servers.
+            <strong className="text-foreground">Local Storage:</strong> All media library data is stored locally on your device in an SQLite database and is never transmitted to external servers.
           </p>
           <p>
-            <span className="text-foreground font-semibold">API Communication:</span> Totality communicates with your configured media servers (Plex, Jellyfin, Emby, Kodi) and metadata APIs (TMDB, MusicBrainz) to retrieve library and metadata information. Watchlist sync connects to Plex and Trakt APIs.
+            <strong className="text-foreground">API Communication:</strong> Totality communicates with your configured media servers (Plex, Jellyfin, Emby, Kodi) and metadata APIs (TMDB, MusicBrainz) to retrieve library and metadata information. Watchlist sync connects to Plex and Trakt APIs.
           </p>
           <p>
-            <span className="text-foreground font-semibold">Credential Security:</span> Server credentials and API keys are encrypted using your operating system's secure storage (Windows DPAPI, macOS Keychain, or Linux Secret Service).
+            <strong className="text-foreground">Credential Security:</strong> Server credentials and API keys are encrypted using your operating system's secure storage (Windows DPAPI, macOS Keychain, or Linux Secret Service).
           </p>
           <p>
-            <span className="text-foreground font-semibold">AI Features:</span> When enabled, AI chat and reports send library metadata (titles, quality specs, statistics) to Google&apos;s Gemini API using your personal API key. No data passes through Totality&apos;s servers. Chat history is not saved to disk.
+            <strong className="text-foreground">AI Features:</strong> When enabled, AI chat and reports send library metadata (titles, quality specs, statistics) to Google&apos;s Gemini API using your personal API key. No data passes through Totality&apos;s servers. Chat history is not saved to disk.
           </p>
           <p>
-            <span className="text-foreground font-semibold">Auto-Updates:</span> Totality periodically checks GitHub Releases for new versions. No personal data is transmitted during update checks.
+            <strong className="text-foreground">Auto-Updates:</strong> Totality periodically checks GitHub Releases for new versions. No personal data is transmitted during update checks.
           </p>
           <p>
-            <span className="text-foreground font-semibold">No Analytics:</span> Totality does not collect usage analytics, telemetry, or personal information.
+            <strong className="text-foreground">No Analytics:</strong> Totality does not collect usage analytics, telemetry, or personal information.
           </p>
         </div>
       </section>
 
       {/* Trademarks */}
       <section>
-        <h3 className="text-label font-semibold text-muted-foreground mb-3">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
           Trademarks
         </h3>
-        <div className="space-y-2">
+        <div className="p-3 bg-muted/30 rounded-lg space-y-2">
           <p>
-            <span className="text-foreground font-semibold">Media Servers:</span> Plex is a trademark of Plex, Inc. Jellyfin is a trademark of the Jellyfin Contributors. Emby is a trademark of Emby LLC. Kodi is a trademark of the XBMC Foundation. MediaMonkey is a trademark of Ventis Media Inc.
+            <strong className="text-foreground">Media Servers:</strong> Plex is a trademark of Plex, Inc. Jellyfin is a trademark of the Jellyfin Contributors. Emby is a trademark of Emby LLC. Kodi is a trademark of the XBMC Foundation. MediaMonkey is a trademark of Ventis Media Inc.
           </p>
           <p>
-            <span className="text-foreground font-semibold">Sync:</span> Trakt is a trademark of Trakt, Inc.
+            <strong className="text-foreground">Sync:</strong> Trakt is a trademark of Trakt, Inc.
           </p>
           <p>
-            <span className="text-foreground font-semibold">Retailers:</span> Amazon, eBay, Discogs, Bandcamp, and HDtracks are trademarks of their respective owners.
+            <strong className="text-foreground">Retailers:</strong> Amazon, eBay, Discogs, Bandcamp, and HDtracks are trademarks of their respective owners.
           </p>
           <p>
-            <span className="text-foreground font-semibold">AI Services:</span> Google and Gemini are trademarks of Google LLC.
+            <strong className="text-foreground">AI Services:</strong> Google and Gemini are trademarks of Google LLC.
           </p>
           <p>
-            <span className="text-foreground font-semibold">Data Services:</span> TMDB and MusicBrainz are trademarks of their respective owners.
+            <strong className="text-foreground">Data Services:</strong> TMDB and MusicBrainz are trademarks of their respective owners.
           </p>
           <p className="text-muted-foreground/70 italic">
             This software is not affiliated with, endorsed by, or sponsored by any of the above organizations.
@@ -374,12 +390,12 @@ function LegalTab() {
 
       {/* Disclaimer */}
       <section>
-        <h3 className="text-label font-semibold text-muted-foreground mb-3">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
           Disclaimer
         </h3>
-        <div className="space-y-2">
+        <div className="p-3 bg-muted/30 rounded-lg space-y-2">
           <p>
-            This software is provided <span className="text-foreground font-semibold">"as is"</span> without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement.
+            This software is provided <strong className="text-foreground">"as is"</strong> without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement.
           </p>
           <p>
             In no event shall the authors or copyright holders be liable for any claim, damages, or other liability arising from the use of this software.
@@ -395,18 +411,18 @@ function LegalTab() {
 
       {/* License */}
       <section>
-        <h3 className="text-label font-semibold text-muted-foreground mb-3">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
           License
         </h3>
-        <div className="space-y-2">
-          <p>
+        <div className="p-3 bg-muted/30 rounded-lg">
+          <p className="text-center">
             Totality is open source software licensed under the{' '}
             <ExtLink href="https://opensource.org/licenses/MIT">
               MIT License
             </ExtLink>
             .
           </p>
-          <p className="text-muted-foreground/70">
+          <p className="text-center mt-3 text-muted-foreground/70">
             &copy; {new Date().getFullYear()} Brandon Bidwell. All rights reserved.
           </p>
         </div>
@@ -421,7 +437,7 @@ function ExtLink({ href, children, className }: { href: string; children: React.
     <a
       href={href}
       onClick={(e) => { e.preventDefault(); window.electronAPI.openExternal(href) }}
-      className={className ?? 'text-muted-foreground hover:text-foreground hover:underline transition-colors'}
+      className={className ?? 'text-accent hover:underline'}
     >
       {children}
     </a>
@@ -431,8 +447,8 @@ function ExtLink({ href, children, className }: { href: string; children: React.
 /** Technology link component */
 function TechLink({ name, url, license }: { name: string; url: string; license: string }) {
   return (
-    <div className="p-2">
-      <ExtLink href={url} className="text-muted-foreground hover:text-foreground hover:underline transition-colors font-medium">
+    <div className="p-2 bg-muted/30 rounded">
+      <ExtLink href={url} className="text-accent hover:underline font-medium">
         {name}
       </ExtLink>
       <span className="text-muted-foreground/60 ml-1">({license})</span>

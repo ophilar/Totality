@@ -1,5 +1,5 @@
-import defaults from './defaults.json'
-import aiPrompts from './ai_prompts.json'
+import defaults from '@main/config/defaults.json'
+import aiPrompts from '@main/config/ai_prompts.json'
 
 /**
  * Application Configuration

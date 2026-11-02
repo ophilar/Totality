@@ -1,3 +1,4 @@
+
 import { getErrorMessage } from './utils/errorUtils'
 /**
  * EmbyDiscoveryService
@@ -9,8 +10,8 @@ import { getErrorMessage } from './utils/errorUtils'
  * servers respond with JSON containing address, ID, and name.
  */
 
-import { discoverMediaServers, type DiscoveredMediaServer } from './MediaServerDiscovery'
 import { fetchWithTimeout } from './utils/httpClient'
+import { discoverMediaServers, type DiscoveredMediaServer } from './MediaServerDiscovery'
 
 export type DiscoveredEmbyServer = DiscoveredMediaServer
 
@@ -35,8 +36,6 @@ export class EmbyDiscoveryService {
     error?: string
   }> {
     try {
-
-      // Emby uses /emby prefix for API calls
       const response = await fetchWithTimeout(
         `${url.replace(/\/$/, '')}/emby/System/Info/Public`,
         { headers: { Accept: 'application/json' } },
@@ -52,27 +51,9 @@ export class EmbyDiscoveryService {
         version: data.Version,
       }
     } catch (error: unknown) {
-      // Fallback: try without /emby prefix (some Emby setups)
-      try {
-        const response = await fetchWithTimeout(
-          `${url.replace(/\/$/, '')}/System/Info/Public`,
-          { headers: { Accept: 'application/json' } },
-          5000
-        )
-        if (!response.ok) throw new Error(`HTTP ${response.status}`)
-        const data = await response.json() as { ServerName: string; Id: string; Version: string }
-
-        return {
-          success: true,
-          serverName: data.ServerName,
-          serverId: data.Id,
-          version: data.Version,
-        }
-      } catch {
-        return {
-          success: false,
-          error: getErrorMessage(error) || 'Failed to connect',
-        }
+      return {
+        success: false,
+        error: getErrorMessage(error) || 'Failed to connect',
       }
     }
   }
