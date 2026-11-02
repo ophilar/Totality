@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Search, Check, Star, Calendar, Loader2 } from 'lucide-react'
+import { X, Search, Check, Star, Calendar, User } from 'lucide-react'
+import { Button } from '../ui/Button'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 
 interface TMDBSearchResult {
@@ -246,7 +247,7 @@ export function MatchFixModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto"
+      className="fixed inset-0 z-200 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
@@ -292,18 +293,15 @@ export function MatchFixModal({
                 autoFocus
               />
             </div>
-            <button
+            <Button
               onClick={handleSearch}
               disabled={isSearching || !searchQuery.trim()}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              loading={isSearching}
+              size="sm"
+              icon={<Search className="w-4 h-4" />}
             >
-              {isSearching ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Search className="w-4 h-4" />
-              )}
               Search
-            </button>
+            </Button>
           </div>
 
           {error && (
@@ -348,8 +346,8 @@ export function MatchFixModal({
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">
-                        No Image
+                      <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                        {isArtistType ? <User className="w-6 h-6" /> : <span className="text-xs">No image</span>}
                       </div>
                     )}
                   </div>
@@ -359,11 +357,11 @@ export function MatchFixModal({
                     <div className="flex items-start justify-between gap-2">
                       <div className="font-medium truncate">{title}</div>
                       {isSelected && (
-                        <Check className="w-5 h-5 text-primary shrink-0" />
+                        <Check className="w-5 h-5 shrink-0" />
                       )}
                     </div>
 
-                    <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+                    <div className={`flex items-center gap-3 mt-1 text-sm ${isSelected ? 'opacity-70' : 'text-muted-foreground'}`}>
                       {year && (
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
@@ -372,7 +370,7 @@ export function MatchFixModal({
                       )}
                       {score > 0 && (
                         <span className="flex items-center gap-1">
-                          <Star className="w-3 h-3 text-yellow-500" />
+                          <Star className="w-3 h-3" />
                           {score.toFixed(1)}
                         </span>
                       )}
@@ -382,7 +380,7 @@ export function MatchFixModal({
                     </div>
 
                     {'overview' in result && result.overview && (
-                      <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                      <p className={`mt-1 text-xs line-clamp-2 ${isSelected ? 'opacity-70' : 'text-muted-foreground'}`}>
                         {result.overview}
                       </p>
                     )}
@@ -395,24 +393,12 @@ export function MatchFixModal({
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 p-4 border-t border-border/30">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-muted transition-colors"
-          >
+          <Button variant="tertiary" size="sm" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            onClick={handleFixMatch}
-            disabled={!selectedResult || isFixing}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            {isFixing ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Check className="w-4 h-4" />
-            )}
-            Apply Match
-          </button>
+          </Button>
+          <Button size="sm" onClick={handleFixMatch} disabled={!selectedResult || isFixing} loading={isFixing} icon={<Check className="w-4 h-4" />}>
+            Apply match
+          </Button>
         </div>
       </div>
     </div>,

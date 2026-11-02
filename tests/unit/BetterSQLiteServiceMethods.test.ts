@@ -205,6 +205,32 @@ describe('BetterSQLiteService — Media Items', () => {
     insertSource(service)
   })
 
+  it('global search identifies TV shows by series TMDB ID, not episode TMDB ID', () => {
+    service.upsertMediaItem(makeMediaItem({
+      plex_id: 'episode-1',
+      title: 'Pilot',
+      type: 'episode',
+      series_title: 'Arcadia',
+      season_number: 1,
+      episode_number: 1,
+      tmdb_id: '98123',
+      series_tmdb_id: '4201',
+    }))
+    service.upsertMediaItem(makeMediaItem({
+      plex_id: 'episode-2',
+      title: 'Second',
+      type: 'episode',
+      series_title: 'Arcadia',
+      season_number: 1,
+      episode_number: 2,
+      tmdb_id: '98124',
+      series_tmdb_id: '4201',
+    }))
+    const results = service.globalSearch('Arcadia')
+    expect(results.tvShows).toHaveLength(1)
+    expect(results.tvShows[0].tmdb_id).toBe('4201')
+  })
+
   it('projects movie cards without loading deep analysis or changing filters', () => {
     service.upsertMediaItem(makeMediaItem({ plex_id: 'card-a', title: 'Alpha' }))
     service.upsertMediaItem(makeMediaItem({ plex_id: 'card-b', title: 'Beta' }))
