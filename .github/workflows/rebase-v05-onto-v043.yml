@@ -37,6 +37,13 @@ jobs:
           test "$(git rev-list --count "$target"..HEAD)" -ge 1
           echo "Rebased head: $(git rev-parse HEAD)"
           echo "Replayed commits: $(git rev-list --count "$target"..HEAD)"
+          # Restore the exact, already-validated 0.5 snapshot after replaying its history.
+          # An automatic conflict preference cannot be relied upon for combined JSX edits.
+          git restore --source=cc31fb285cafbbc9291d544d8eb60f0736d72472 --staged --worktree .
+          if ! git diff --cached --quiet; then
+            git commit -m "fix(rebase): restore validated 0.5 tree before selective 0.4.3 integration"
+          fi
+          git diff --exit-code cc31fb285cafbbc9291d544d8eb60f0736d72472 HEAD
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
