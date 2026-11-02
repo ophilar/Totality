@@ -222,7 +222,6 @@ export interface MediaItem {
   video_savings_bytes?: number | null
   needs_upgrade?: boolean
   poster_url?: string
-  art_url?: string
   episode_thumb_url?: string
   season_poster_url?: string
   summary?: string
@@ -467,7 +466,6 @@ export interface TVShowSummary {
   episode_count: number
   season_count: number
   poster_url?: string
-  art_url?: string
   source_id?: string
   source_type?: string
   library_id?: string
@@ -807,7 +805,7 @@ export interface WishlistItem {
 }
 
 export interface WishlistFilters {
-  media_type?: WishlistMediaType | 'tv' | 'music'
+  media_type?: WishlistMediaType
   priority?: WishlistPriority
   reason?: WishlistReason
   status?: WishlistStatus

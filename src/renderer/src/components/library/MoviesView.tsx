@@ -70,9 +70,32 @@ export function MoviesView({
     return widthMap[gridScale] || widthMap[5]
   }, [gridScale])
 
+  const gridClassName = isMobile
+    ? 'grid grid-cols-3 gap-3 mt-4'
+    : isTablet
+      ? 'grid grid-cols-4 gap-4 mt-4'
+      : `grid gap-8 mt-4`
+
   const gridStyle = (!isMobile && !isTablet)
     ? { gridTemplateColumns: `repeat(auto-fill, ${posterMinWidth}px)` }
     : undefined
+
+  const movieSentinelRef = useRef<HTMLDivElement>(null)
+
+  // IntersectionObserver for movie grid infinite scroll (skip when collectionsOnly — all loaded)
+  useEffect(() => {
+    if (!movieSentinelRef.current || collectionsOnly) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          onLoadMoreMovies()
+        }
+      },
+      { rootMargin: '400px' }
+    )
+    observer.observe(movieSentinelRef.current)
+    return () => observer.disconnect()
+  }, [onLoadMoreMovies, collectionsOnly])
 
   // Track previous movies length to detect append vs reset
   const prevMoviesLenRef = useRef(0)
@@ -198,46 +221,16 @@ export function MoviesView({
     return result
   }, [movies, movieCollections, getCollectionForMovie, collectionsOnly, buildDisplayItems, movieSortBy])
 
-  const gridClassName = isMobile
-    ? 'grid grid-cols-3 gap-3 mt-4'
-    : isTablet
-      ? 'grid grid-cols-4 gap-4 mt-4'
-      : 'grid gap-6 mt-4'
-
-  // All hooks must be before any early returns (React rules of hooks)
-  const gridSentinelRef = useRef<HTMLDivElement>(null)
-  const listSentinelRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!gridSentinelRef.current || collectionsOnly) return
-    const observer = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting) onLoadMoreMovies() },
-      { rootMargin: '400px' }
-    )
-    observer.observe(gridSentinelRef.current)
-    return () => observer.disconnect()
-  }, [onLoadMoreMovies, collectionsOnly])
-
-  useEffect(() => {
-    if (!listSentinelRef.current || collectionsOnly) return
-    const observer = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting) onLoadMoreMovies() },
-      { rootMargin: '400px' }
-    )
-    observer.observe(listSentinelRef.current)
-    return () => observer.disconnect()
-  }, [onLoadMoreMovies, collectionsOnly])
-
   if (displayItems.length === 0) {
     if (moviesLoading) {
       return (
         <div
-          className={`grid mt-4 ${isMobile ? 'gap-3' : 'gap-6'}`}
+          className={`grid mt-4 ${isMobile ? 'gap-3' : 'gap-8'}`}
           style={gridStyle}
         >
           {Array.from({ length: 18 }).map((_, i) => (
             <div key={i}>
-              <div className="aspect-2/3 bg-muted/50 rounded-lg animate-pulse" />
+              <div className="aspect-2/3 bg-muted/50 rounded-md animate-pulse" />
               <div className="mt-2 h-3 bg-muted/50 rounded animate-pulse" />
               <div className="mt-1 h-3 w-2/3 bg-muted/40 rounded animate-pulse" />
             </div>
@@ -248,8 +241,8 @@ export function MoviesView({
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
         <MoviePlaceholder className="w-20 h-20 text-muted-foreground mb-4" />
-        <p className="text-muted-foreground text-title">No movies found</p>
-        <p className="text-label text-muted-foreground mt-2">
+        <p className="text-muted-foreground text-lg">No movies found</p>
+        <p className="text-sm text-muted-foreground mt-2">
           Scan a movie library from the sidebar to get started
         </p>
       </div>
@@ -266,7 +259,7 @@ export function MoviesView({
           <select
             value={movieSortBy}
             onChange={(e) => onMovieSortChange(e.target.value as MovieSortBy)}
-            className="bg-transparent text-caption text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground transition-colors"
+            className="bg-transparent text-xs text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground transition-colors"
           >
             {movieSortOptions.map(({ key, label }) => (
               <option key={key} value={key} className="bg-popover text-popover-foreground">
@@ -311,8 +304,8 @@ export function MoviesView({
             )
           })}
         </div>
-        <div ref={listSentinelRef} className="h-1" />
-        <div className="px-4 py-1.5 text-caption text-muted-foreground flex items-center gap-2">
+        <div ref={movieSentinelRef} className="h-1" />
+        <div className="px-4 py-1.5 text-xs text-muted-foreground flex items-center gap-2">
           {moviesLoading && <RefreshCw className="w-3 h-3 animate-spin" />}
           <span>
             {movies.length === totalMovieCount
@@ -324,11 +317,14 @@ export function MoviesView({
     )
   }
 
-  // Grid view — native CSS Grid, browser handles all sizing
+  // Grid view using standard grid (VirtualizedGrid doesn't support mixed item types well)
   return (
     <div>
       {statsBar}
-      <div className={gridClassName} style={gridStyle}>
+      <div
+        className={gridClassName}
+        style={gridStyle}
+      >
         {displayItems.map((item) => {
           if (item.type === 'collection') {
             return (
@@ -336,7 +332,7 @@ export function MoviesView({
                 <CollectionCard
                   collection={item.collection}
                   onClick={() => onSelectCollection(item.collection)}
-                />
+                                 />
               </div>
             )
           }
@@ -356,8 +352,8 @@ export function MoviesView({
           )
         })}
       </div>
-      <div ref={gridSentinelRef} className="h-1" />
-      <div className="py-1.5 text-caption text-muted-foreground flex items-center gap-2">
+      <div ref={movieSentinelRef} className="h-1" />
+      <div className="px-4 py-1.5 text-xs text-muted-foreground flex items-center gap-2">
         {moviesLoading && <RefreshCw className="w-3 h-3 animate-spin" />}
         <span>
           {movies.length === totalMovieCount
@@ -387,37 +383,44 @@ const CollectionCard = memo(({ collection, onClick }: { collection: MovieCollect
       }}
     >
       {/* Poster */}
-      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-lg shadow-lg shadow-black/30">
+      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
         {collection.poster_url ? (
           <img
             src={collection.poster_url}
             alt={collection.collection_name}
             loading="lazy"
-            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
             }}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-muted/50">
+          <div className="w-full h-full flex items-center justify-center text-4xl bg-linear-to-br from-purple-500/20 to-blue-500/20">
             <Layers className="w-12 h-12 text-muted-foreground" />
           </div>
         )}
-        {/* Completeness badge — over poster */}
-        <div className="absolute bottom-2 right-2 z-10">
-          <div className="bg-foreground text-background text-caption font-semibold px-1.5 py-0.5 rounded shadow-md">
-            {collection.owned_movies}/{collection.total_movies}
-          </div>
-        </div>
       </div>
 
-      {/* Title below poster */}
-      <div className="pt-2">
-        <h4 className="font-medium text-label truncate">{collection.collection_name}</h4>
-        <p className="text-caption text-muted-foreground">
-          {collection.owned_movies} of {collection.total_movies} movies
-        </p>
+      {/* Title and badge below poster */}
+      <div className="pt-2 flex gap-2 items-start">
+        <div className="flex-1 min-w-0">
+          <h4 className="font-medium text-sm truncate">{collection.collection_name}</h4>
+          <p className="text-xs text-muted-foreground">
+            {collection.owned_movies} of {collection.total_movies} movies
+          </p>
+        </div>
+        {/* Collection completion badge */}
+        <div
+          className={`shrink-0 text-xs font-bold px-2 py-1 rounded shadow-md flex items-center gap-1 ${
+            collection.completeness_percentage === 100
+              ? 'bg-green-500 text-white'
+              : 'bg-foreground text-background border border-border'
+          }`}
+          title={`${collection.owned_movies} of ${collection.total_movies} movies owned`}
+        >
+          <Layers className="w-3 h-3" />
+          <span>{collection.owned_movies}/{collection.total_movies}</span>
+        </div>
       </div>
     </div>
   )
@@ -436,7 +439,7 @@ function CollectionListItem({ collection, onClick }: { collection: MovieCollecti
     <div
       ref={cardRef}
       tabIndex={0}
-      className="group cursor-pointer rounded-lg bg-muted/20 hover:bg-muted/40 transition-colors duration-200 p-4 flex gap-4 items-center outline-hidden"
+      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center outline-hidden"
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -446,13 +449,12 @@ function CollectionListItem({ collection, onClick }: { collection: MovieCollecti
       }}
     >
       {/* Poster Thumbnail */}
-      <div className="w-16 h-24 bg-muted rounded-lg overflow-hidden shrink-0 relative shadow-md shadow-black/20">
+      <div className="w-16 h-24 bg-muted rounded-md overflow-hidden shrink-0 relative shadow-md shadow-black/20">
         {collection.poster_url ? (
           <img
             src={collection.poster_url}
             alt={collection.collection_name}
             loading="lazy"
-            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
@@ -467,10 +469,10 @@ function CollectionListItem({ collection, onClick }: { collection: MovieCollecti
 
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <h4 className="font-semibold text-label truncate">{collection.collection_name}</h4>
+        <h4 className="font-semibold text-sm truncate">{collection.collection_name}</h4>
         <div className="flex items-center gap-1 mt-0.5">
           <span
-            className="px-2 py-0.5 text-caption font-medium bg-foreground text-background rounded flex items-center gap-1"
+            className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded flex items-center gap-1"
             title={`${collection.owned_movies} of ${collection.total_movies} movies owned`}
           >
             <Layers className="w-3 h-3" />
@@ -534,7 +536,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
       }}
     >
       {/* Poster */}
-      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-lg shadow-lg shadow-black/30">
+      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
         {/* 3-dot menu button */}
         {showMenuButton && (
           <div ref={menuRef} className="absolute top-2 left-2 z-20">
@@ -582,7 +584,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
         {/* Version Count Badge */}
         {movie.version_count && movie.version_count > 1 && (
           <div
-            className="absolute top-2 right-2 z-10 bg-primary text-primary-foreground text-caption font-semibold px-1.5 py-0.5 rounded shadow-md"
+            className="absolute top-2 right-2 z-10 bg-primary text-primary-foreground text-[0.625rem] font-bold px-1.5 py-0.5 rounded shadow-md"
             title={`${movie.version_count} versions available`}
           >
             {movie.version_count}x
@@ -592,7 +594,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
         {/* Source Badge - show which provider this item is from */}
         {showSourceBadge && movie.source_type && (
           <div
-            className={`absolute bottom-2 left-2 ${providerColors[movie.source_type] || 'bg-gray-500'} text-white text-caption font-semibold px-1.5 py-0.5 rounded shadow-md`}
+            className={`absolute bottom-2 left-2 ${providerColors[movie.source_type] || 'bg-gray-500'} text-white text-xs font-bold px-1.5 py-0.5 rounded shadow-md`}
             title={movie.source_type.charAt(0).toUpperCase() + movie.source_type.slice(1)}
           >
             {movie.source_type.charAt(0).toUpperCase()}
@@ -604,7 +606,6 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
             src={movie.poster_url}
             alt={movie.title}
             loading="lazy"
-            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
@@ -626,7 +627,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
           {/* Collection Badge - shown when movie is part of a collection */}
           {collectionData && (
             <div
-              className={`text-caption font-semibold px-2 py-1 rounded shadow-md flex items-center gap-1 ${
+              className={`text-xs font-bold px-2 py-1 rounded shadow-md flex items-center gap-1 ${
                 collectionData.completeness_percentage === 100
                   ? 'bg-green-500 text-white'
                   : 'bg-foreground text-background border border-border'
@@ -640,7 +641,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
           {/* Quality Upgrade Badge */}
           {!!movie.needs_upgrade && (
             <div title="Quality upgrade recommended">
-              <CircleFadingArrowUp className="w-5 h-5 text-destructive" />
+              <CircleFadingArrowUp className="w-5 h-5 text-red-500" />
             </div>
           )}
         </div>
@@ -706,7 +707,7 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
     <div
       ref={cardRef}
       tabIndex={0}
-      className="group cursor-pointer rounded-lg bg-muted/20 hover:bg-muted/40 transition-colors duration-200 p-4 flex gap-4 items-center outline-hidden"
+      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center outline-hidden"
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -716,13 +717,12 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
       }}
     >
       {/* Poster Thumbnail */}
-      <div className="w-16 h-24 bg-muted rounded-lg overflow-hidden shrink-0 relative shadow-md shadow-black/20">
+      <div className="w-16 h-24 bg-muted rounded-md overflow-hidden shrink-0 relative shadow-md shadow-black/20">
         {movie.poster_url ? (
           <img
             src={movie.poster_url}
             alt={movie.title}
             loading="lazy"
-            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
@@ -734,7 +734,7 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
         {/* Source badge for list view */}
         {showSourceBadge && movie.source_type && (
           <div
-            className={`absolute bottom-0 right-0 ${providerColors[movie.source_type] || 'bg-gray-500'} text-white text-caption font-semibold px-1 py-0.5 rounded`}
+            className={`absolute bottom-0 right-0 ${providerColors[movie.source_type] || 'bg-gray-500'} text-white text-xs font-bold px-1 py-0.5 rounded`}
           >
             {movie.source_type.charAt(0).toUpperCase()}
           </div>
@@ -743,8 +743,8 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
 
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <h4 className="font-semibold text-label truncate">{movie.title}</h4>
-        <div className="flex items-center gap-1 mt-0.5 text-caption text-muted-foreground">
+        <h4 className="font-semibold text-sm truncate">{movie.title}</h4>
+        <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
           <span>
             {movie.year}{movie.year && movie.resolution ? ' • ' : ''}{movie.resolution}
             {movie.video_bitrate_kbps ? ` • ${(movie.video_bitrate_kbps / 1000).toFixed(1)} Mbps` : ''}
@@ -754,11 +754,11 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
           {needsUpgrade && (
             <>
               <span>•</span>
-              <span title="Quality upgrade recommended"><CircleFadingArrowUp className="w-4 h-4 text-destructive shrink-0" /></span>
+              <span title="Quality upgrade recommended"><CircleFadingArrowUp className="w-4 h-4 text-red-500 shrink-0" /></span>
             </>
           )}
           {collectionData && (
-            <span className="px-2 py-0.5 text-caption font-medium bg-foreground text-background rounded flex items-center gap-1 ml-1">
+            <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded flex items-center gap-1 ml-1">
               <Layers className="w-3 h-3" />
               {collectionData.owned_movies}/{collectionData.total_movies}
             </span>

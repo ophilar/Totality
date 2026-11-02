@@ -79,10 +79,10 @@ export function usePagination<T>({
   }, [...deps])
 
   const loadMore = useCallback(() => {
-    if (offsetRef.current < totalCount) {
+    if (offsetRef.current < totalCount && !loading) {
       load(false)
     }
-  }, [totalCount, load])
+  }, [totalCount, loading, load])
 
   return { items, setItems, totalCount, loading, load, loadMore }
 }

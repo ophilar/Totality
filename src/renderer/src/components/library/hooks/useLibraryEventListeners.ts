@@ -203,28 +203,22 @@ export function useLibraryEventListeners({
     const handleExclusionsChanged = () => {
       loadCompletenessData()
       loadMusicCompletenessData()
-      _loadStats(activeSourceId || undefined)
     }
     window.addEventListener('exclusions-changed', handleExclusionsChanged)
 
     // Listen for wishlist auto-completion
     const cleanupWishlistAutoCompleted = window.electronAPI.onWishlistAutoCompleted?.((items) => {
       if (items.length === 1) {
-        const item = items[0]
-        const message = item.reason === 'upgrade'
-          ? `"${item.title}" upgraded`
-          : `"${item.title}" found in your library`
-        addToast({ type: 'success', title: 'Wishlist item completed', message })
+        addToast({
+          type: 'success',
+          title: 'Wishlist item completed',
+          message: `"${items[0].title}" has been fulfilled`,
+        })
       } else if (items.length > 1) {
-        const found = items.filter((i) => i.reason !== 'upgrade')
-        const upgraded = items.filter((i) => i.reason === 'upgrade')
-        const parts: string[] = []
-        if (found.length > 0) parts.push(`${found.length} found in your library`)
-        if (upgraded.length > 0) parts.push(`${upgraded.length} upgraded`)
         addToast({
           type: 'success',
           title: `${items.length} wishlist items completed`,
-          message: `${parts.join(', ')} — ${items.map((i) => i.title).join(', ')}`,
+          message: items.map((i) => i.title).join(', '),
         })
       }
     })

@@ -1070,7 +1070,6 @@ interface ExistingElectronAPI {
     kodiRunning: boolean
   } | null>
   kodiIsRunning: () => Promise<boolean>
-  kodiSelectDatabase: () => Promise<string | null>
 
   // MediaMonkey Detection
   mediamonkeyDetectLocal: () => Promise<{
@@ -1548,10 +1547,9 @@ interface ExistingElectronAPI {
   musicGetAlbums: (filters?: unknown) => Promise<unknown[]>
   musicGetAlbumsByArtist: (artistId: number) => Promise<unknown[]>
   musicGetAlbumById: (id: number) => Promise<unknown | null>
-  musicGetTrackById: (id: number) => Promise<unknown | null>
   musicGetTracks: (filters?: unknown) => Promise<unknown[]>
   musicGetTracksByAlbum: (albumId: number) => Promise<unknown[]>
-  musicGetStats: (sourceId?: string, libraryId?: string) => Promise<{
+  musicGetStats: (sourceId?: string) => Promise<{
     totalArtists: number
     totalAlbums: number
     totalTracks: number
@@ -1579,7 +1577,6 @@ interface ExistingElectronAPI {
   musicAnalyzeArtistCompleteness: (artistId: number) => Promise<unknown>
   musicGetArtistCompleteness: (artistName: string) => Promise<unknown | null>
   musicGetAllArtistCompleteness: (sourceId?: string) => Promise<unknown[]>
-  musicGetCompletenessStats: (includeEps: boolean, includeSingles: boolean) => Promise<unknown>
 
   // Album Track Completeness
   musicAnalyzeAlbumTrackCompleteness: (albumId: number) => Promise<unknown | null>

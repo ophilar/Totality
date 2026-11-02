@@ -9,7 +9,6 @@ import { dialog, shell } from 'electron'
 import fs from 'fs/promises'
 import path from 'node:path'
 import { getSourceManager } from '../services/SourceManager'
-import { getWishlistCompletionService } from '../services/WishlistCompletionService'
 import { getDatabase } from '../database/getDatabase'
 import { getKodiLocalDiscoveryService } from '../services/KodiLocalDiscoveryService'
 import { getKodiMySQLConnectionService, type KodiMySQLConfig } from '../services/KodiMySQLConnectionService'
@@ -392,7 +391,6 @@ export function registerSourceHandlers(): void {
       })
 
       console.log(`[IPC sources:scanLibrary] Scan complete, sent ${progressCount} progress events`)
-      getWishlistCompletionService().checkAndComplete().catch(err => console.error('[sources:scanLibrary] Wishlist check failed:', err))
       return result
     } catch (error: unknown) {
       console.error('Error scanning library:', error)
@@ -465,7 +463,6 @@ export function registerSourceHandlers(): void {
       })
 
       console.log(`[IPC sources:scanItem] Scan complete: ${result.itemsScanned} items`)
-      getWishlistCompletionService().checkAndComplete().catch(err => console.error('[sources:scanItem] Wishlist check failed:', err))
       return result
     } catch (error: unknown) {
       console.error('Error scanning single item:', error)
@@ -491,7 +488,6 @@ export function registerSourceHandlers(): void {
       })
 
       console.log(`[IPC sources:scanLibraryIncremental] Scan complete: ${result.itemsScanned} items`)
-      getWishlistCompletionService().checkAndComplete().catch(err => console.error('[sources:scanLibraryIncremental] Wishlist check failed:', err))
       return result
     } catch (error: unknown) {
       console.error('Error in incremental library scan:', error)
@@ -515,7 +511,6 @@ export function registerSourceHandlers(): void {
       })
 
       console.log('[IPC sources:scanAllIncremental] Incremental scan complete')
-      getWishlistCompletionService().checkAndComplete().catch(err => console.error('[sources:scanAllIncremental] Wishlist check failed:', err))
 
       // Convert Map to array for IPC
       return Array.from(results.entries()).map(([key, value]) => ({
@@ -586,26 +581,6 @@ export function registerSourceHandlers(): void {
     } catch (error: unknown) {
       console.error('Error checking if Kodi is running:', error)
       return false
-    }
-  })
-
-  /**
-   * Open file picker for Kodi database (portable/non-standard installations)
-   */
-  ipcMain.handle('kodi:selectDatabase', async () => {
-    try {
-      const result = await dialog.showOpenDialog({
-        title: 'Select Kodi Video Database',
-        filters: [{ name: 'SQLite Database', extensions: ['db'] }],
-        properties: ['openFile'],
-      })
-      if (result.canceled || result.filePaths.length === 0) {
-        return null
-      }
-      return result.filePaths[0]
-    } catch (error: unknown) {
-      console.error('Error opening file dialog:', error)
-      return null
     }
   })
 

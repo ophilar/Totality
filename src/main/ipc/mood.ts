@@ -50,9 +50,8 @@ export function registerMoodHandlers() {
    */
   createIpcHandler(IPC_CHANNELS.moodCheckMediaMonkeyWrite, async (sourceId: string) => {
     try {
-      const validSourceId = validateInput(MoodSourceIdSchema, sourceId, 'mood:checkMediaMonkeyWrite')
       const manager = getSourceManager()
-      const provider = manager.getProvider(validSourceId)
+      const provider = manager.getProvider(sourceId)
       if (!provider) return { canWrite: false, reason: 'Source not found' }
 
       if (provider.providerType === 'mediamonkey') {

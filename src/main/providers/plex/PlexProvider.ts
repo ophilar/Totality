@@ -1272,9 +1272,8 @@ export class PlexProvider implements MediaProvider {
       }
     }
 
-    // Build poster and backdrop URLs
+    // Build poster URLs
     let posterUrl: string | undefined
-    let artUrl: string | undefined
     let episodeThumbUrl: string | undefined
     let seasonPosterUrl: string | undefined
 
@@ -1284,14 +1283,6 @@ export class PlexProvider implements MediaProvider {
           ? item.grandparentThumb
           : item.thumb
         posterUrl = `${this.selectedServer.uri}${thumbPath}?X-Plex-Token=${this.selectedServer.accessToken}`
-      }
-
-      // Plex `art` field — wide backdrop/fanart image
-      // For episodes: prefer grandparentArt (show-level background) over episode art
-      if (item.type === 'episode' && item.grandparentArt) {
-        artUrl = `${this.selectedServer.uri}${item.grandparentArt}?X-Plex-Token=${this.selectedServer.accessToken}`
-      } else if (item.art) {
-        artUrl = `${this.selectedServer.uri}${item.art}?X-Plex-Token=${this.selectedServer.accessToken}`
       }
 
       if (item.type === 'episode') {
@@ -1343,7 +1334,6 @@ export class PlexProvider implements MediaProvider {
         tmdb_id: tmdbId,
         series_tmdb_id: showTmdbId,
         poster_url: posterUrl,
-        art_url: artUrl,
         episode_thumb_url: episodeThumbUrl,
         season_poster_url: seasonPosterUrl,
         summary: item.summary || undefined,
@@ -2078,6 +2068,10 @@ export class PlexProvider implements MediaProvider {
             console.warn(`[PlexProvider ${this.sourceId}] Failed to remove stale music track ${track.id}:`, getErrorMessage(error))
           }
         }
+      }
+      if (musicRemoved > 0) {
+        result.itemsRemoved = musicRemoved
+        console.log(`[PlexProvider ${this.sourceId}] Removed ${musicRemoved} stale music tracks`)
       }
 
       // Clean up orphaned albums/artists

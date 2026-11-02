@@ -117,7 +117,7 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
         onClick={onClose}
       />
       <aside
-        className={`fixed top-[76px] bottom-4 right-4 w-80 bg-card rounded-2xl shadow-xl border border-border z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
+        className={`fixed top-[76px] bottom-4 right-4 w-80 bg-sidebar-gradient rounded-2xl shadow-xl z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
           isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
         onKeyDown={handleKeyDown}
@@ -130,31 +130,33 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
             <ListTodo className="w-4 h-4 text-muted-foreground" />
             <h2 className="text-sm font-semibold">Task Queue</h2>
             {pendingCount > 0 && (
-              <span className="px-1.5 py-0.5 text-caption font-medium bg-muted text-foreground rounded-full">
+              <span className="px-1.5 py-0.5 text-xs font-medium bg-primary/20 text-primary rounded-full">
                 {pendingCount}
               </span>
             )}
             {queueState.isPaused && (
-              <span className="text-caption font-medium text-amber-500">
+              <span className="px-1.5 py-0.5 text-xs font-medium bg-yellow-500/20 text-yellow-400 rounded-full">
                 Paused
               </span>
             )}
           </div>
           <div className="flex items-center gap-1">
-            <Button variant="tertiary" size="icon-sm" onClick={handlePauseResume}
-              icon={queueState.isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
-              title={queueState.isPaused ? 'Resume queue' : 'Pause queue'}
-            />
-            <Button ref={closeButtonRef} variant="tertiary" size="icon-sm" onClick={onClose}
-              icon={<X className="w-4 h-4" />}
-              aria-label="Close task queue panel" title="Close"
-            />
+            <button onClick={handlePauseResume}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary"
+              title={queueState.isPaused ? 'Resume queue' : 'Pause queue'}>
+              {queueState.isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+            </button>
+            <button ref={closeButtonRef} onClick={onClose}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary"
+              aria-label="Close task queue panel" title="Close">
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
         {/* Current Task */}
         {queueState.currentTask && (
-          <div className="p-4 border-b border-border/30">
+          <div className="p-4 border-b border-border/30 bg-muted/30">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-primary" />
@@ -183,20 +185,23 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
 
         {/* Queue */}
         <div className="flex-1 min-h-0 flex flex-col">
-          <div className="flex items-center justify-between px-4 py-2 shrink-0">
-            <span className="text-caption font-medium text-muted-foreground">
-              Queued{queueState.queue.length > 0 ? ` (${queueState.queue.length})` : ''}
-            </span>
+          <div className="flex items-center justify-between px-4 py-2 bg-muted/20 shrink-0">
+            <div className="flex items-center gap-2">
+              <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Queued {queueState.queue.length > 0 && `(${queueState.queue.length})`}
+              </span>
+            </div>
             {queueState.queue.length > 0 && (
-              <Button variant="tertiary" size="sm" onClick={handleClearQueue}>Clear</Button>
+              <button onClick={handleClearQueue} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Clear</button>
             )}
           </div>
           <div className="flex-1 overflow-y-auto min-h-0">
             {queueState.queue.length === 0 ? (
               <div className="py-8 text-center">
                 <Clock className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-                <p className="text-label text-muted-foreground">Queue empty</p>
-                <p className="text-caption text-muted-foreground/50 mt-1">Tasks will appear here when queued</p>
+                <p className="text-sm text-muted-foreground">Queue empty</p>
+                <p className="text-xs text-muted-foreground/50 mt-1">Tasks will appear here when queued</p>
               </div>
             ) : (
               <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={handleDragEnd}>
@@ -206,6 +211,7 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
                       <SortableQueueItem key={task.id} task={task} onRemove={handleRemoveTask} onOpenPreflight={handleOpenPreflight} />
                     ))}
                   </div>
+                  <p className="px-4 py-1.5 text-xs text-muted-foreground/60 italic border-t border-border/20">Drag to reorder</p>
                 </SortableContext>
               </DndContext>
             )}
@@ -215,8 +221,8 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
         {/* Recent completed tasks */}
         {queueState.completedTasks.length > 0 && (
           <div className="border-t border-border/30 max-h-40 overflow-y-auto">
-            <div className="px-4 py-2">
-              <span className="text-caption font-medium text-muted-foreground">Recent</span>
+            <div className="px-4 py-2 bg-muted/20">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Recent</span>
             </div>
             <div className="divide-y divide-border/10">
               {queueState.completedTasks.slice(0, 5).map((task) => (

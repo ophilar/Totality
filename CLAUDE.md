@@ -333,10 +333,8 @@ When items are deleted from a source and a rescan runs, cleanup is centralized i
 
 - **`deleteMediaItem()`**: Wrapped in SQLite transaction. For episodes: recounts `owned_episodes`/`owned_seasons`, updates `missing_episodes`/`missing_seasons` JSON (adds deleted episode to missing list), backdates `updated_at` to force re-analysis. For movies: updates `movie_collections` (removes TMDB ID from `owned_movie_ids`, adds to `missing_movies` JSON). Deletes associated versions, quality_scores, collections.
 - **`deleteMusicTrack()`**: Wrapped in transaction. Removes orphaned albums (0 tracks) and artists (0 tracks). Updates album `track_count` and artist `track_count`/`album_count`. When tracks are deleted: updates `album_completeness.missing_tracks` JSON. When albums become empty: adds album to `artist_completeness.missing_albums` JSON, updates owned counts.
-- **`cleanupOrphanedMediaData()`**: Belt-and-suspenders sweep after every scan. Validates collection ownership against actual media_items, updates series_completeness counts, removes orphaned music data. Uses LEFT JOIN pattern (not NOT IN) for performance.
-- **Safety guard**: `removeStaleItems()` refuses bulk deletion when Plex returns 0 IDs but DB has items (prevents API failure from wiping library). All 6 providers have this guard.
-- **Pre-migration backup**: Database file is copied before schema migrations run; backup deleted after success. Protects against mid-migration failures.
-- **Integrity check**: `PRAGMA integrity_check` runs on startup for existing databases.
+- **`cleanupOrphanedMediaData()`**: Belt-and-suspenders sweep after every scan. Validates collection ownership against actual media_items, updates series_completeness counts, removes orphaned music data.
+- **Safety guard**: `removeStaleItems()` refuses bulk deletion when Plex returns 0 IDs but DB has items (prevents API failure from wiping library).
 
 ### Auto-Completeness After Scans
 
@@ -350,7 +348,7 @@ After any scan (manual rescan or live monitoring) that adds, updates, or removes
 
 ### Dashboard & Library Live Refresh
 
-- **Dashboard** reloads via `loadDashboardData()` which makes ~30 parallel `Promise.allSettled` IPC calls in 3 tiers (settings → upgrades/completeness → analytics). Debounced (300ms). Triggers: `scan:completed`, `library:updated` (all types), `exclusions-changed`, `settings:changed`, `activeSourceId` change. Rejected promises are logged via `console.warn` (not silently swallowed). Loads `collection_theatrical_lag_days` setting for collection filtering. Debounce timer cleaned up on unmount.
+- **Dashboard** reloads via `loadDashboardData()` which makes ~29 parallel `Promise.allSettled` IPC calls (settings, upgrades, completeness, exclusions, bento card stats, quality distribution, wishlist counts). Debounced (300ms). Triggers: `scan:completed`, `library:updated` (all types), `exclusions-changed`, `settings:changed`, `activeSourceId` change. Bento cards (Library, Quality, Storage) rendered above the upgrade/completeness lists.
 - **Library view** (`useLibraryEventListeners`) reloads on `library:updated` events: `type: 'media'` → `loadMedia()` + `loadCompletenessData()`; `type: 'music'` → `loadMusicData()` + `loadMusicCompletenessData()`. Also reloads on `scan:completed` when items changed. Debounced (500ms).
 - **`loadMusicData()`** reloads stats, paginated artists, paginated albums, and refreshes `selectedArtist` to update track/album counts in subtitle.
 - **`sendLibraryUpdated(type)`** in TaskQueueService accepts `'media'` or `'music'` type to route refresh correctly. Music completeness tasks emit `'music'` type.
@@ -406,35 +404,6 @@ All setting keys are defined in `src/shared/settingKeys.ts` as `SETTING_KEYS` �
 - Current lint runner is oxlint (`.oxlintrc.json`). Do not rely on historical ESLint-specific rules or commands.
 - IPC handlers validate inputs with **Zod v4** schemas (`src/main/validation/schemas.ts`) using `validateInput(schema, input, 'context')` — note Zod v4 has different APIs from v3 (e.g., `z.object()` methods differ)
 - **Zod v4 `z.record(enum, value)` gotcha**: Unlike v3, Zod v4 treats enum-keyed records as requiring ALL enum keys. For partial records (e.g., `pollingIntervals` where only some providers are configured), use `z.record(enum, value.optional())` so missing keys pass validation as `undefined`
-
-## Design System
-
-**Authority:** `docs/SKILL.md` is the single source of truth for all UI design decisions. Every component, screen, modal, panel, and flow must follow its rules. The app is ~95% SKILL.md compliant.
-
-**Font:** Plus Jakarta Sans (variable weight, 400/500/600 only — no bold/700). Declared in `index.css` with `@font-face`.
-
-**Typography Scale** (defined in `index.css` `@layer utilities`): `text-display` (48px) · `text-h1` (32px) · `text-h2` (24px) · `text-h3` (20px) · `text-title` (17px) · `text-body-lg` (17px) · `text-body` (15px) · `text-label` (14px) · `text-caption` (13px) · `text-micro` (11px). Each includes line-height and letter-spacing. **Never use** `text-xs`, `text-sm`, `text-base`, `text-lg`, `text-xl`, `text-2xl` — use the named steps above.
-
-**Radius Scale:** `rounded` (4px, chips) · `rounded-lg` (8px, controls) · `rounded-2xl` (16px, cards/modals) · `rounded-full` (pills). **Never use** `rounded-md` (6px, off-scale).
-
-**Tokens:** `src/renderer/src/styles/design-tokens.ts` exports centralized constants for TYPE, SPACE, Z, DURATION, RADIUS, BUTTON_SIZE, CONTAINER, SHADOW.
-
-**Shared Components** (`src/renderer/src/components/ui/`): Button, Card, Input, Select, Badge, Modal. Always use these instead of inline button/input/select/card styling.
-
-### Hard Rules (enforced on all new and modified UI code)
-
-1. **No hardcoded colors.** Never write hex values or bare Tailwind color classes (`text-red-500`). Use semantic tokens: `text-foreground`, `text-destructive`, `text-muted-foreground`, etc. Exception: poster overlay badges on dark image backgrounds and provider brand colors.
-2. **No uppercase.** Sentence case everywhere. Use `font-medium` or `font-semibold` for emphasis.
-3. **No old font classes.** Never use `text-xs`, `text-sm`, `text-base`, `text-lg`, `text-xl`, `text-2xl`, `text-3xl`. Use `text-caption`, `text-label`, `text-body`, `text-title`, `text-h3`, `text-h2`, `text-h1`.
-4. **No `font-bold`.** Only weights 400 (`font-normal`), 500 (`font-medium`), 600 (`font-semibold`).
-5. **No `transition-all`.** Use `transition-colors`, `transition-opacity`, or specific `transition-[property]`.
-6. **No `rounded-md`.** Use `rounded-lg` (8px) for controls or `rounded` (4px) for chips.
-7. **No decorative boxes.** No `bg-muted/30 rounded-lg p-3` inner containers. Space groups content. `<Card variant="muted">` for top-level settings sections only.
-8. **No `bg-sidebar-gradient`.** Use `bg-card` for raised surfaces.
-9. **Selection state pattern.** Selected items use `bg-foreground text-background` (not `bg-primary`).
-10. **Color carries meaning, not mood.** Amber = warning/attention, red (`text-destructive`) = failure/destructive. Success is just `text-foreground` (the check icon IS the feedback).
-11. **Hover disabled on touch.** CSS `@media (hover: none)` handles this globally. The `.hover-scale` class is wrapped in `@media (hover: hover)`.
-12. **Shared components first.** Use `<Button>`, `<Card>`, `<Input>`, `<Select>`, `<Badge>`, `<Modal>` from `ui/`.
 
 ## Important Patterns
 
@@ -607,12 +576,6 @@ Components in `src/renderer/src/components/` organized by domain: `dashboard/`, 
 
 **Collections Display**: `MoviesView.tsx` uses append-aware `displayItems` logic to prevent scroll mixing during infinite scroll pagination. When `collectionsOnly` is true, all collections render at once (no pagination). When false, new pages are appended without re-sorting existing items.
 
-**Mobile Parallax Backdrop**: TV show, season, artist, and album detail views on mobile use a parallax scroll effect. The backdrop image (3/4 width, right-justified) translates at 0.4× scroll rate via CSS custom property `--parallax-y` set by `onScroll` handler in MediaBrowser's scroll container. Backdrop height is 130% to prevent gaps during movement. No `overflow-hidden` on backdrop containers — content sections use `relative z-[1]` to paint above the backdrop.
-
-**Mobile MediaDetails Sheet**: On mobile, the detail bottom sheet uses a unified scroll container — hero image, title, stats, actions, summary, and detail content all scroll together. Hero image parallaxes at 0.3× scroll rate (`data-hero-img` + `will-change-transform`). Stats/actions/summary fade out over 150px scroll (`data-fade-content` + opacity). Title stays visible (overlaid at bottom of hero). Desktop keeps the fixed-header layout.
-
-**iOS Status Bar**: `index.html` uses `viewport-fit=cover` + `apple-mobile-web-app-status-bar-style: black-translucent`. The `html`/`body` use `height: 100%` (not `100dvh` or `100vh`) with `overflow: hidden`. The app shell uses `position: fixed` on `<main>`, which prevents DOM content from rendering behind the iOS status bar — this is a platform constraint. Background color extends behind the status bar via the `<html>` element's inline `background-color`.
-
 ## External APIs & Rate Limits
 
 - **TMDB**: 40 req/s, 24-hour in-memory cache, `append_to_response` for batch season fetches
@@ -645,22 +608,6 @@ Sensitive credentials are encrypted at rest using Electron's `safeStorage` API, 
 4. If encryption is unavailable (rare edge cases), credentials fall back to plain text with a warning
 
 **Important:** Encrypted credentials are tied to the OS user account. Moving the database to another machine will require re-entering credentials.
-
-### Image Proxy Whitelist
-
-The web server's image proxy (`WebServerService.ts`) only allows requests to whitelisted domains (SSRF prevention):
-- Private IPs (192.168.*, 10.*, 172.16-31.*)
-- localhost/127.0.0.1
-- `*.plex.direct`
-- `image.tmdb.org`
-- `coverartarchive.org`
-- URLs with `X-Plex-Token` parameter
-
-On the renderer side (`webTransport.ts`), `needsProxy()` exempts `*.tmdb.org` and `coverartarchive.org` from proxy rewriting — these load directly from the browser. All other image URLs are rewritten to `/api/proxy-image?url=...`.
-
-### Custom TLS Certificates
-
-Users can provide their own TLS cert/key by placing `custom-cert.pem` and `custom-key.pem` in `%APPDATA%\totality\tls\`. These take priority over self-signed generation. Self-signed certs auto-regenerate when network IPs change (SANs mismatch detection via `crypto.X509Certificate`).
 
 ### Electron Security Settings
 

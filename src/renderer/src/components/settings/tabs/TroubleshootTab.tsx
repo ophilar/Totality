@@ -33,7 +33,6 @@ import {
   Circle,
 } from 'lucide-react'
 import { Toggle } from '../../ui/Toggle'
-import { Button, Input, Select } from '../../ui'
 
 interface LogEntry {
   id: string
@@ -308,17 +307,17 @@ export function TroubleshootTab() {
   const getLevelIcon = useCallback((level: string) => {
     switch (level) {
       case 'error':
-        return <AlertCircle className="w-3.5 h-3.5 text-destructive shrink-0" />
+        return <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
       case 'warn':
         return <AlertTriangle className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
       case 'info':
-        return <Info className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+        return <Info className="w-3.5 h-3.5 text-blue-500 shrink-0" />
       case 'debug':
         return <Bug className="w-3.5 h-3.5 text-purple-400 shrink-0" />
       case 'verbose':
         return <MessageSquareText className="w-3.5 h-3.5 text-gray-400 shrink-0" />
       default:
-        return <Info className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+        return <Info className="w-3.5 h-3.5 text-blue-500 shrink-0" />
     }
   }, [])
 
@@ -344,7 +343,7 @@ export function TroubleshootTab() {
         <div style={style} className="px-2 py-0.5">
           <div
             className={`rounded h-full flex items-center gap-2 px-2 ${
-              entry.details ? 'cursor-pointer hover:bg-muted/50' : ''
+              entry.details ? 'cursor-pointer hover:bg-white/5' : ''
             } ${isDetailTarget ? 'ring-1 ring-primary' : ''} ${isChecked ? 'bg-primary/10' : ''}`}
             onClick={() => entry.details && setDetailLogId(isDetailTarget ? null : entry.id)}
           >
@@ -366,15 +365,15 @@ export function TroubleshootTab() {
               )}
             </button>
             {getLevelIcon(entry.level)}
-            <span className="text-muted-foreground shrink-0 text-caption">
+            <span className="text-muted-foreground shrink-0 text-xs">
               {formatTime(entry.timestamp)}
             </span>
-            <span className="text-muted-foreground shrink-0 text-caption max-w-[100px] truncate">
+            <span className="text-primary/70 shrink-0 text-xs max-w-[100px] truncate">
               {entry.source}
             </span>
-            <span className="text-foreground flex-1 truncate text-caption">{entry.message}</span>
+            <span className="text-foreground flex-1 truncate text-xs">{entry.message}</span>
             {entry.details && (
-              <span className="text-muted-foreground text-caption shrink-0">
+              <span className="text-muted-foreground text-[10px] shrink-0">
                 {isDetailTarget ? '▼' : '▶'}
               </span>
             )}
@@ -397,24 +396,23 @@ export function TroubleshootTab() {
     <div className="p-6 flex flex-col flex-1 min-h-0">
       {/* Header */}
       <div className="flex items-center justify-between mb-4 shrink-0">
-        <h3 className="text-label font-medium text-foreground">Application Logs</h3>
+        <h3 className="text-sm font-medium text-foreground">Application Logs</h3>
 
         <div className="flex items-center gap-2">
           {/* Search input */}
-          <Input
-            inputSize="sm"
+          <input
             type="text"
             placeholder="Search logs..."
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            className="w-44"
+            className="bg-muted text-foreground text-sm rounded-md px-3 py-1.5 w-44 border border-border focus:outline-hidden focus:ring-2 focus:ring-primary placeholder:text-muted-foreground"
           />
 
           {/* Filter dropdown */}
-          <Select
-            inputSize="sm"
+          <select
             value={filter}
             onChange={(e) => setFilter(e.target.value as LogFilter)}
+            className="bg-muted text-foreground text-sm rounded-md px-3 py-1.5 border border-border focus:outline-hidden focus:ring-2 focus:ring-primary"
           >
             <option value="all">All Levels</option>
             <option value="verbose">Verbose</option>
@@ -422,7 +420,7 @@ export function TroubleshootTab() {
             <option value="info">Info</option>
             <option value="warn">Warnings</option>
             <option value="error">Errors</option>
-          </Select>
+          </select>
 
           {/* Verbose mode toggle */}
           <div className="flex items-center gap-2 cursor-pointer" title="Enable verbose logging for detailed operational logs" onClick={handleVerboseToggle}>
@@ -439,7 +437,7 @@ export function TroubleshootTab() {
                 </svg>
               )}
             </button>
-            <span className="text-label text-muted-foreground">Verbose</span>
+            <span className="text-sm text-muted-foreground">Verbose</span>
           </div>
 
           {/* Clear button */}
@@ -469,12 +467,12 @@ export function TroubleshootTab() {
 
       {/* Selection toolbar */}
       {selectedIds.size > 0 && (
-        <div className="flex items-center justify-between mb-2 px-3 py-1.5 bg-primary/10 border border-primary/20 rounded-lg shrink-0">
-          <div className="flex items-center gap-3 text-caption">
+        <div className="flex items-center justify-between mb-2 px-3 py-1.5 bg-primary/10 border border-primary/20 rounded-md shrink-0">
+          <div className="flex items-center gap-3 text-xs">
             <span className="font-medium">{selectedIds.size} selected</span>
             <button
               onClick={handleSelectAll}
-              className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+              className="flex items-center gap-1 text-primary hover:text-primary/80 transition-colors"
             >
               <CheckSquare className="w-3.5 h-3.5" />
               Select All ({filteredLogs.length})
@@ -486,21 +484,20 @@ export function TroubleshootTab() {
               Clear
             </button>
           </div>
-          <Button
-            variant="primary"
-            size="sm"
-            icon={<Copy className="w-3.5 h-3.5" />}
+          <button
             onClick={handleCopySelected}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
           >
-            {copyFeedback ? 'Copied!' : 'Copy selected'}
-          </Button>
+            <Copy className="w-3.5 h-3.5" />
+            {copyFeedback ? 'Copied!' : 'Copy Selected'}
+          </button>
         </div>
       )}
 
       {/* Log viewer with virtualization - min-h-0 is critical for flex shrinking */}
       <div ref={logViewerRef} tabIndex={-1} className="flex-1 min-h-0 bg-muted/30 rounded-lg border border-border/40 font-mono overflow-hidden relative outline-hidden">
         {filteredLogs.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-muted-foreground text-label">
+          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
             No logs to display
           </div>
         ) : (
@@ -523,7 +520,7 @@ export function TroubleshootTab() {
             {!autoScroll && filteredLogs.length > 0 && (
               <button
                 onClick={jumpToLatest}
-                className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 text-caption bg-primary text-primary-foreground rounded-full shadow-lg hover:bg-primary/90 transition-colors"
+                className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-full shadow-lg hover:bg-primary/90 transition-all"
               >
                 <ChevronsDown className="w-3.5 h-3.5" />
                 Jump to latest
@@ -534,15 +531,15 @@ export function TroubleshootTab() {
             {detailLog?.details && (
               <div className="absolute bottom-0 left-0 right-0 z-20 border-t border-border/30 bg-muted h-[120px] overflow-y-auto">
                 <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/20 sticky top-0 bg-muted">
-                  <span className="text-caption text-muted-foreground font-medium">Details</span>
+                  <span className="text-xs text-muted-foreground font-medium">Details</span>
                   <button
                     onClick={() => setDetailLogId(null)}
-                    className="p-0.5 rounded hover:bg-muted/50"
+                    className="p-0.5 rounded hover:bg-white/10"
                   >
                     <X className="w-3.5 h-3.5 text-muted-foreground" />
                   </button>
                 </div>
-                <pre className="px-3 py-2 text-caption text-muted-foreground whitespace-pre-wrap break-all">
+                <pre className="px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap break-all">
                   {detailLog.details}
                 </pre>
               </div>
@@ -560,7 +557,7 @@ export function TroubleshootTab() {
           >
             <div className="shrink-0">
               {fileLoggingSettings.enabled ? (
-                <CheckCircle className="w-5 h-5 text-foreground" />
+                <CheckCircle className="w-5 h-5 text-green-500" />
               ) : (
                 <Circle className="w-5 h-5 text-muted-foreground/50" />
               )}
@@ -575,7 +572,7 @@ export function TroubleshootTab() {
                   {fileLoggingSettings.enabled ? `All levels · ${fileLoggingSettings.retentionDays} day retention` : 'Disabled'}
                 </span>
               </div>
-              <p className="text-caption text-muted-foreground truncate">Save logs to disk with automatic daily rotation</p>
+              <p className="text-xs text-muted-foreground truncate">Save logs to disk with automatic daily rotation</p>
             </div>
             <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${fileLoggingExpanded ? 'rotate-180' : ''}`} />
           </button>
@@ -595,23 +592,23 @@ export function TroubleshootTab() {
                   value={fileLoggingSettings.retentionDays}
                   onChange={(e) => handleFileLoggingSetting({ retentionDays: parseInt(e.target.value, 10) })}
                   disabled={!fileLoggingSettings.enabled}
+                  className="bg-background text-foreground text-sm rounded-md px-3 py-2 border border-border/30 focus:outline-hidden focus:ring-2 focus:ring-primary disabled:opacity-50"
                 >
                   <option value={3}>3 days</option>
                   <option value={7}>7 days</option>
                   <option value={14}>14 days</option>
                   <option value={30}>30 days</option>
-                </Select>
+                </select>
               </div>
-              <div className="flex items-center justify-between py-3">
-                <span className="text-label text-foreground">Log files location</span>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon={<FolderOpen className="w-3.5 h-3.5" />}
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-sm text-foreground">Log files location</span>
+                <button
                   onClick={() => window.electronAPI.openLogFolder()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
                 >
+                  <FolderOpen className="w-3.5 h-3.5" />
                   Open Folder
-                </Button>
+                </button>
               </div>
             </div>
           </div>
@@ -620,7 +617,7 @@ export function TroubleshootTab() {
 
       {/* Footer */}
       <div className="mt-3 pt-3 border-t border-border/30 shrink-0">
-        <p className="text-caption text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           Logs are stored in memory and will be cleared when the app restarts. Export logs before
           closing the app to share with support.
         </p>

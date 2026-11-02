@@ -22,7 +22,6 @@ import { z } from 'zod'
 import { getTaskQueueService } from '../services/TaskQueueService'
 import { analyzeAlbumQuality } from '../services/MusicQualityAnalyzer'
 import { getArtistAlbumsCombined } from '../services/utils/musicUtils'
-import { getWishlistCompletionService } from '../services/WishlistCompletionService'
 
 export function registerMusicHandlers(): void {
   // ============================================================================
@@ -127,11 +126,6 @@ export function registerMusicHandlers(): void {
         console.log(`[music:scanLibrary] Updated scan timestamp for library ${library.name}`)
       }
 
-      // Check wishlist for auto-completion
-      getWishlistCompletionService().checkAndComplete().catch((err) => {
-        console.error('[music:scanLibrary] Wishlist check failed:', err)
-      })
-
       return result
     } catch (error: unknown) {
       console.error('[music:scanLibrary] Error:', error)
@@ -215,17 +209,6 @@ export function registerMusicHandlers(): void {
     }
   })
 
-  ipcMain.handle('music:getTrackById', async (_event, id: unknown) => {
-    try {
-      const validId = validateInput(PositiveIntSchema, id, 'music:getTrackById')
-      const db = getDatabase()
-      return db.getMusicTrackById(validId)
-    } catch (error: unknown) {
-      console.error('[music:getTrackById] Error:', error)
-      throw error
-    }
-  })
-
   /**
    * Get all music tracks
    */
@@ -300,21 +283,10 @@ export function registerMusicHandlers(): void {
   createIpcHandler(IPC_CHANNELS.musicGetStats, async (sourceId?: unknown) => {
     try {
       const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'music:getStats') : undefined
-      const validLibraryId = typeof libraryId === 'string' && libraryId ? libraryId : undefined
       const db = getDatabase()
-      return db.getMusicStats(validSourceId, validLibraryId)
+      return db.getMusicStats(validSourceId)
     } catch (error: unknown) {
       console.error('[music:getStats] Error:', error)
-      throw error
-    }
-  })
-
-  ipcMain.handle('music:getCompletenessStats', async (_event, includeEps?: unknown, includeSingles?: unknown) => {
-    try {
-      const db = getDatabase()
-      return db.getMusicCompletenessStats(!!includeEps, !!includeSingles)
-    } catch (error: unknown) {
-      console.error('[music:getCompletenessStats] Error:', error)
       throw error
     }
   })

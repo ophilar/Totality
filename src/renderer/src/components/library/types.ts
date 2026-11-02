@@ -47,7 +47,6 @@ export interface MusicAlbum {
   track_count?: number
   duration_ms?: number
   thumb_url?: string
-  art_url?: string
   is_lossless?: boolean
   is_hi_res?: boolean
   best_audio_codec?: string
@@ -105,7 +104,6 @@ export interface MediaItem {
   video_bitrate_kbps: number
   audio_channels: number
   poster_url?: string
-  art_url?: string
   episode_thumb_url?: string
   season_poster_url?: string
   overall_score?: number | null
@@ -159,7 +157,6 @@ export interface MediaItem {
 export interface TVShow {
   title: string
   poster_url?: string
-  art_url?: string
   seasons: Map<number, TVSeason>
 }
 

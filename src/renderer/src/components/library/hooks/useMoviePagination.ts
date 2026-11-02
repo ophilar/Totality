@@ -10,8 +10,6 @@ interface UseMoviePaginationOptions {
   tierFilter: string
   qualityFilter: string
   searchQuery: string
-  alphabetFilter: string | null
-  isMobile?: boolean
 }
 
 interface UseMoviePaginationReturn {
@@ -36,8 +34,6 @@ export function useMoviePagination({
   tierFilter,
   qualityFilter,
   searchQuery,
-  alphabetFilter,
-  isMobile = false,
 }: UseMoviePaginationOptions): UseMoviePaginationReturn {
   const [movieSortBy, setMovieSortByState] = useState<MovieSortBy>('title')
   const movieSortByRef = useRef<MovieSortBy>('title')

@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
 import { RefreshCw, MoreVertical, Pencil, Folder, CircleFadingArrowUp, EyeOff, ChevronDown, ChevronUp, Copy, Check, Zap } from 'lucide-react'
 import { TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
 import { DropdownMenu, DropdownMenuItem } from '../ui/DropdownMenu'
-import { Button } from '../ui/Button'
 import { AnimatedNumber } from '../ui/AnimatedNumber'
 import { MissingItemCard } from './MissingItemCard'
 import { SharedOptimizationDialog } from './TranscodeModal'
@@ -63,7 +62,7 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
     <div
       ref={cardRef}
       tabIndex={0}
-      className="group cursor-pointer rounded-lg bg-muted/20 hover:bg-muted/40 transition-colors duration-200 p-4 flex gap-4 items-center outline-hidden"
+      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center outline-hidden"
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -73,13 +72,12 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
       }}
     >
       {/* Poster Thumbnail */}
-      <div className="w-16 h-24 bg-muted rounded-lg overflow-hidden shrink-0 relative shadow-md shadow-black/20">
+      <div className="w-16 h-24 bg-muted rounded-md overflow-hidden shrink-0 relative shadow-md shadow-black/20">
         {show.poster_url ? (
           <img
             src={show.poster_url}
             alt={show.series_title}
             loading="lazy"
-            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
@@ -88,18 +86,10 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-muted/50"><TvPlaceholder className="w-8 h-8 text-muted-foreground" /></div>
         )}
-        {/* Completeness badge — over poster */}
-        {completenessData && (
-          <div className="absolute bottom-1 right-1 z-10">
-            <div className="bg-foreground text-background text-caption font-semibold px-1 py-0.5 rounded shadow-md">
-              {completenessData.owned_episodes}/{completenessData.total_episodes}
-            </div>
-          </div>
-        )}
         {/* Source badge */}
-        {showSourceBadge && sourceType && !completenessData && (
+        {showSourceBadge && sourceType && (
           <div
-            className={`absolute bottom-0 right-0 ${providerColors[sourceType] || 'bg-gray-500'} text-white text-caption font-semibold px-1 py-0.5 rounded`}
+            className={`absolute bottom-0 right-0 ${providerColors[sourceType] || 'bg-gray-500'} text-white text-xs font-bold px-1 py-0.5 rounded`}
           >
             {sourceType.charAt(0).toUpperCase()}
           </div>
@@ -108,10 +98,10 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
 
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <h4 className="font-semibold text-label truncate">{show.series_title}</h4>
-        <p className="text-caption text-muted-foreground mt-0.5">
-          {seasonCount} {seasonCount === 1 ? 'season' : 'seasons'} · {totalEpisodes} episodes
-          {completenessData?.status && ` · ${getStatusBadge(completenessData.status)?.text || completenessData.status}`}
+        <h4 className="font-semibold text-sm truncate">{show.series_title}</h4>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {seasonCount} {seasonCount === 1 ? 'Season' : 'Seasons'} • {totalEpisodes} Episodes
+          {completenessData?.status && ` • ${getStatusBadge(completenessData.status)?.text || completenessData.status}`}
         </p>
         <p className="text-xs text-muted-foreground mt-0.5">Total size: {formatBytes(show.total_size_bytes)}</p>
         <ScopedOptimizationSummary totalCount={totalEpisodes} estimatedSavingsBytes={show.estimated_savings_bytes} coverage={show.savings_coverage} className="mt-1" />
@@ -207,14 +197,6 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onOptim
   const needsUpgrade = !!episode.needs_upgrade
   const showMenuButton = (onRescan && episode.file_path) || (onDismissUpgrade && needsUpgrade) || (onOptimizeEpisode && episode.id && episode.file_path && episode.source_id && episode.series_identity_key)
 
-  // Format audio channels to standard labels (6ch = 5.1, 8ch = 7.1, etc.)
-  const formatChannels = (ch: number): string => {
-    if (ch <= 1) return 'Mono'
-    if (ch === 2) return 'Stereo'
-    return `${ch - 1}.1`
-  }
-  const audioDisplay = episode.audio_channels ? formatChannels(episode.audio_channels) : ''
-
   return (
     <div
       ref={cardRef}
@@ -228,14 +210,13 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onOptim
         }
       }}
     >
-      {/* Episode Thumbnail */}
-      <div className={`${isMobile ? 'w-24' : 'w-44'} aspect-video bg-muted overflow-hidden rounded-lg shadow-md shadow-black/20 shrink-0`}>
+      {/* Episode Thumbnail - 16:9 aspect ratio with shadow */}
+      <div className={`${isMobile ? 'w-24' : 'w-44'} aspect-video bg-muted overflow-hidden rounded-md shadow-md shadow-black/20 shrink-0`}>
         {episode.episode_thumb_url ? (
           <img
             src={episode.episode_thumb_url}
             alt={episode.title}
             loading="lazy"
-            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
@@ -249,15 +230,18 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onOptim
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-label font-semibold text-muted-foreground shrink-0">
+          <span className="text-sm font-semibold text-muted-foreground shrink-0">
             E{episode.episode_number}
           </span>
-          <h4 className={`font-semibold truncate ${isMobile ? 'text-label' : ''}`}>{episode.title}</h4>
+          <h4 className="font-semibold truncate">{episode.title}</h4>
         </div>
         <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
           <span>{episode.resolution} • {(episode.video_bitrate_kbps / 1000).toFixed(1)} Mbps • {episode.audio_channels}.0 Audio</span>
           {needsUpgrade && (
-            <span title="Quality upgrade recommended"><CircleFadingArrowUp className="w-3.5 h-3.5 text-destructive shrink-0 ml-0.5" /></span>
+            <>
+              <span>•</span>
+              <span title="Quality upgrade recommended"><CircleFadingArrowUp className="w-4 h-4 text-red-500 shrink-0" /></span>
+            </>
           )}
         </div>
         <QualityBadges item={episode} showSavings={false} />
@@ -273,13 +257,18 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onOptim
       {showMenuButton && (
         <div ref={menuRef} className="relative shrink-0">
           <button
-            onClick={(e) => { e.stopPropagation(); onAddToWishlist(episode) }}
-            className={`${isMobile ? 'min-h-[44px] min-w-[44px]' : 'p-1.5'} flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground transition-colors`}
-            title="Add to wishlist"
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowMenu(!showMenu)
+            }}
+            className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
           >
-            <Star className={isMobile ? 'w-5 h-5' : 'w-4 h-4'} />
+            {isRescanning ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <MoreVertical className="w-4 h-4" />
+            )}
           </button>
-        )}
 
           {showMenu && !isRescanning && (
             <DropdownMenu>
@@ -300,25 +289,15 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onOptim
                   Rescan File
                 </DropdownMenuItem>
               )}
-            </button>
-
-            {showMenu && !isRescanning && (
-              <DropdownMenu>
-                {onRescan && episode.file_path && (
-                  <DropdownMenuItem onClick={handleRescan} icon={<RefreshCw className={isMobile ? 'w-4 h-4' : 'w-3.5 h-3.5'} />}>
-                    Rescan File
-                  </DropdownMenuItem>
-                )}
-                {onDismissUpgrade && needsUpgrade && (
-                  <DropdownMenuItem onClick={handleDismissUpgrade} icon={<EyeOff className={isMobile ? 'w-4 h-4' : 'w-3.5 h-3.5'} />}>
-                    Dismiss Upgrade
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenu>
-            )}
-          </div>
-        )}
-      </div>
+              {onDismissUpgrade && needsUpgrade && (
+                <DropdownMenuItem onClick={handleDismissUpgrade} icon={<EyeOff className="w-3.5 h-3.5" />}>
+                  Dismiss Upgrade
+                </DropdownMenuItem>
+              )}
+            </DropdownMenu>
+          )}
+        </div>
+      )}
     </div>
   )
 })
@@ -489,14 +468,14 @@ export function TVShowsView({
   // IntersectionObserver for infinite scroll
   const showSentinelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (viewType !== 'list' || !showSentinelRef.current || selectedShow) return
+    if (!showSentinelRef.current || selectedShow) return
     const observer = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) onLoadMoreShows() },
       { rootMargin: '400px' }
     )
     observer.observe(showSentinelRef.current)
     return () => observer.disconnect()
-  }, [viewType, onLoadMoreShows, selectedShow])
+  }, [onLoadMoreShows, selectedShow])
 
   // Optimization modal state
   const [optimizingShow, setOptimizingShow] = useState<TVShowSummary | null>(null)
@@ -667,7 +646,7 @@ export function TVShowsView({
     ? 'grid grid-cols-3 gap-3'
     : isTablet
       ? 'grid grid-cols-4 gap-4'
-      : 'grid gap-6'
+      : 'grid gap-8'
 
   const gridStyle = (!isMobile && !isTablet)
     ? { gridTemplateColumns: `repeat(auto-fill, ${posterMinWidth}px)` }
@@ -695,7 +674,7 @@ export function TVShowsView({
         <div className={`${gridClassName} mt-4`} style={gridStyle}>
           {Array.from({ length: 18 }).map((_, i) => (
             <div key={i}>
-              <div className="aspect-2/3 bg-muted/50 rounded-lg animate-pulse" />
+              <div className="aspect-2/3 bg-muted/50 rounded-md animate-pulse" />
               <div className="mt-2 h-3 bg-muted/50 rounded animate-pulse" />
               <div className="mt-1 h-3 w-2/3 bg-muted/40 rounded animate-pulse" />
             </div>
@@ -708,8 +687,8 @@ export function TVShowsView({
       return (
         <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
           <TvPlaceholder className="w-20 h-20 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground text-title">No TV shows found</p>
-          <p className="text-label text-muted-foreground mt-2">
+          <p className="text-muted-foreground text-lg">No TV shows found</p>
+          <p className="text-sm text-muted-foreground mt-2">
             Scan a TV library from the sidebar to get started
           </p>
         </div>
@@ -717,7 +696,7 @@ export function TVShowsView({
     }
 
     const statsBar = (
-      <div className="flex items-center gap-4 text-label text-muted-foreground">
+      <div className="flex items-center gap-4 text-sm text-muted-foreground">
         <span><AnimatedNumber value={totalShowCount} locale /> Shows</span>
         <span className="text-muted-foreground/50">•</span>
         <span>{totalEpisodeCount.toLocaleString()} Episodes</span>
@@ -763,7 +742,7 @@ export function TVShowsView({
           <div ref={showSentinelRef} className="h-1" />
           {showsLoading && <div className="flex justify-center py-4"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>}
           {totalShowCount > 0 && (
-            <div className="text-center text-label text-muted-foreground py-2">
+            <div className="text-center text-sm text-muted-foreground py-2">
               {shows.length} of {totalShowCount} TV shows
             </div>
           )}
@@ -778,11 +757,14 @@ export function TVShowsView({
       )
     }
 
-    // Grid view — native CSS Grid
+    // Grid view (default)
     return (
       <>
         {statsBar}
-        <div className={`${gridClassName} mt-4`} style={gridStyle}>
+        <div
+          className={`${gridClassName} mt-4`}
+          style={gridStyle}
+        >
           {shows.map((show) => {
             const completeness = seriesCompleteness.get(show.series_title)
             return (
@@ -803,7 +785,7 @@ export function TVShowsView({
         <div ref={showSentinelRef} className="h-1" />
         {showsLoading && <div className="flex justify-center py-4"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>}
         {totalShowCount > 0 && (
-          <div className="text-center text-label text-muted-foreground py-2">
+          <div className="text-center text-sm text-muted-foreground py-2">
             {shows.length} of {totalShowCount} TV shows
           </div>
         )}
@@ -828,9 +810,10 @@ export function TVShowsView({
     if (!selectedShowData) {
       return (
         <div className="flex flex-col items-center justify-center min-h-[40vh] text-center">
-          <Button variant="tertiary" size="sm" onClick={handleBack} icon={<ChevronLeft className="w-4 h-4" />} className="mb-4">
-            Back to TV shows
-          </Button>
+          <button onClick={handleBack} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            Back to TV Shows
+          </button>
           <p className="text-muted-foreground">No episodes found for this show</p>
         </div>
       )
@@ -854,7 +837,18 @@ export function TVShowsView({
 
 
     return (
-      <div className={isMobile ? '' : 'space-y-6'}>
+      <div className="space-y-6">
+        {/* Breadcrumb */}
+        <button
+          onClick={handleBack}
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to TV Shows
+        </button>
+
         {/* Show Header */}
         <div className={`flex ${isMobile ? 'gap-3 mb-4' : 'gap-6 mb-6'}`}>
           {/* Poster */}
@@ -984,185 +978,11 @@ export function TVShowsView({
                 )}
               </div>
             )}
-            {/* Breadcrumb — inside backdrop on mobile */}
-            <div className="relative z-[1] mb-4">
-              <Button
-                variant="tertiary"
-                size="sm"
-                onClick={handleBack}
-                icon={<ChevronLeft className="w-4 h-4" />}
-                className="text-white"
-              >
-                Back to TV shows
-              </Button>
-            </div>
-            <div className="relative z-[1]">
-              <div className="flex items-center gap-1.5">
-                <h3 className="text-h2 font-semibold">{selectedShowData.title}</h3>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    navigator.clipboard.writeText(selectedShowData.title)
-                    setCopiedTitle(true)
-                    setTimeout(() => setCopiedTitle(false), 1500)
-                  }}
-                  className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                  title="Copy title"
-                >
-                  {copiedTitle ? <Check className="w-4 h-4 text-foreground" /> : <Copy className="w-4 h-4" />}
-                </button>
-              </div>
-              <div className="flex items-center gap-2 mt-1 text-label text-muted-foreground">
-                <span>{ownedSeasons.length} of {totalSeasons} seasons</span>
-                {completenessData?.status && (
-                  <>
-                    <span>•</span>
-                    <span>{getStatusBadge(completenessData.status)?.text || completenessData.status}</span>
-                  </>
-                )}
-              </div>
-              <div className="flex items-center gap-3 mt-3" ref={showDetailMenuRef}>
-                <Button
-                  onClick={() => selectedShow && onAnalyzeSeries(selectedShow)}
-                  size="sm"
-                  icon={<RefreshCw className="w-3.5 h-3.5" />}
-                  title="Analyze series"
-                >
-                  Analyze series
-                </Button>
-                {onFixMatch && (
-                  <Button
-                    variant="tertiary"
-                    size="icon-sm"
-                    onClick={() => selectedShow && onFixMatch(selectedShow, '', undefined)}
-                    icon={<Pencil className="w-4 h-4" />}
-                    title="Fix match"
-                  />
-                )}
-              </div>
-              {showOverview && (
-                <div className="mt-3">
-                  <p className={`text-label text-muted-foreground leading-relaxed ${showOverviewExpanded ? '' : 'line-clamp-2'}`}>
-                    {showOverview}
-                  </p>
-                  <button
-                    onClick={() => setShowOverviewExpanded(!showOverviewExpanded)}
-                    className="flex items-center gap-1 text-label text-muted-foreground hover:text-foreground mt-1 transition-colors"
-                  >
-                    {showOverviewExpanded ? (
-                      <><span>Less</span><ChevronUp className="w-4 h-4" /></>
-                    ) : (
-                      <><span>More</span><ChevronDown className="w-4 h-4" /></>
-                    )}
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
-        ) : (
-          <div className="mb-6">
-            <div>
-              <Button
-                variant="tertiary"
-                size="sm"
-                onClick={handleBack}
-                icon={<ChevronLeft className="w-4 h-4" />}
-              >
-                Back to TV shows
-              </Button>
-            </div>
-            <div className="flex gap-6 mt-3">
-              {/* Poster */}
-              {selectedShowData.poster_url && (
-                <div className="w-44 shrink-0">
-                  <img
-                    src={selectedShowData.poster_url}
-                    alt={selectedShowData.title}
-                    loading="lazy"
-                    className="w-full h-auto rounded-lg shadow-lg shadow-black/30"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none'
-                    }}
-                  />
-                </div>
-              )}
-
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-              {/* Title */}
-              <div className="flex items-center gap-1.5">
-                <h3 className="text-h1 font-semibold">{selectedShowData.title}</h3>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    navigator.clipboard.writeText(selectedShowData.title)
-                    setCopiedTitle(true)
-                    setTimeout(() => setCopiedTitle(false), 1500)
-                  }}
-                  className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                  title="Copy title"
-                >
-                  {copiedTitle ? <Check className="w-4 h-4 text-foreground" /> : <Copy className="w-4 h-4" />}
-                </button>
-              </div>
-
-              {/* Metadata line */}
-              <div className="flex items-center gap-2 mt-1 text-label text-muted-foreground">
-                <span>{ownedSeasons.length} of {totalSeasons} seasons</span>
-                {completenessData?.status && (
-                  <>
-                    <span>•</span>
-                    <span>{getStatusBadge(completenessData.status)?.text || completenessData.status}</span>
-                  </>
-                )}
-              </div>
-
-              {/* Action buttons row */}
-              <div className="flex items-center gap-3 mt-3" ref={showDetailMenuRef}>
-                <Button
-                  onClick={() => selectedShow && onAnalyzeSeries(selectedShow)}
-                  size="sm"
-                  icon={<RefreshCw className="w-3.5 h-3.5" />}
-                  title="Analyze series"
-                >
-                  Analyze series
-                </Button>
-                {onFixMatch && (
-                  <Button
-                    variant="tertiary"
-                    size="icon-sm"
-                    onClick={() => selectedShow && onFixMatch(selectedShow, '', undefined)}
-                    icon={<Pencil className="w-4 h-4" />}
-                    title="Fix match"
-                  />
-                )}
-              </div>
-
-              {/* Overview */}
-              {showOverview && (
-                <div className="mt-3 max-w-2xl">
-                  <p className={`text-label text-muted-foreground leading-relaxed ${showOverviewExpanded ? '' : 'line-clamp-3'}`}>
-                    {showOverview}
-                  </p>
-                  <button
-                    onClick={() => setShowOverviewExpanded(!showOverviewExpanded)}
-                    className="flex items-center gap-1 text-label text-muted-foreground hover:text-foreground mt-1 transition-colors"
-                  >
-                    {showOverviewExpanded ? (
-                      <><span>Less</span><ChevronUp className="w-4 h-4" /></>
-                    ) : (
-                      <><span>More</span><ChevronDown className="w-4 h-4" /></>
-                    )}
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-          </div>
-        )}
+        </div>
 
         <div
-          className={`${gridClassName} ${isMobile ? 'relative z-[1]' : ''}`}
+          className={gridClassName}
           style={gridStyle}
         >
           {allSeasonItems.map((item) => (
@@ -1235,55 +1055,17 @@ export function TVShowsView({
     })
 
     return (
-      <div className={isMobile ? '' : 'space-y-6'}>
-        {isMobile ? (
-          <div className="relative px-4 pb-3 mb-4 -mx-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)', minHeight: '200px' }}>
-            {(() => { const url = selectedShowData.art_url || season?.posterUrl || completenessData?.poster_url || selectedShowData.poster_url; return url ? (
-              <div className="absolute top-0 right-0 w-3/4 h-full will-change-transform" style={{ transform: 'translateY(var(--parallax-y, 0px))' }}>
-                <img src={url} alt="" className="w-full h-full object-cover object-top" />
-                <div className="absolute inset-0 bg-gradient-to-r from-background to-transparent" />
-                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
-              </div>
-            ) : null })()}
-            {/* Breadcrumb inside backdrop */}
-            <div className="relative z-[1] mb-4">
-              <Button variant="tertiary" size="sm" onClick={handleBack} icon={<ChevronLeft className="w-4 h-4" />} className="text-white">
-                Back to {selectedShowData.title}
-              </Button>
-            </div>
-            <div className="relative z-[1]">
-              {/* Season poster art */}
-              {(season?.posterUrl || selectedShowData.poster_url) && (
-                <div className="w-24 h-36 rounded-lg overflow-hidden shadow-lg shadow-black/30 mb-3">
-                  <img src={season?.posterUrl || selectedShowData.poster_url!} alt={formatSeasonLabel(selectedSeason!)} className="w-full h-full object-cover" />
-                </div>
-              )}
-              <h3 className="text-h2 font-semibold">{formatSeasonLabel(selectedSeason!)}</h3>
-              <p className="text-label text-muted-foreground mt-0.5">
-                {selectedShowData.title} · {allOwnedEpisodes.length} episode{allOwnedEpisodes.length !== 1 ? 's' : ''}
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="mb-4">
-            <Button variant="tertiary" size="sm" onClick={handleBack} icon={<ChevronLeft className="w-4 h-4" />}>
-              Back to {selectedShowData.title}
-            </Button>
-            <div className="flex gap-5 mt-3">
-              {(season?.posterUrl || selectedShowData.poster_url) && (
-                <div className="w-24 h-36 shrink-0 rounded-lg overflow-hidden shadow-lg shadow-black/30">
-                  <img src={season?.posterUrl || selectedShowData.poster_url!} alt={formatSeasonLabel(selectedSeason!)} className="w-full h-full object-cover" />
-                </div>
-              )}
-              <div>
-                <h3 className="text-h2 font-semibold">{formatSeasonLabel(selectedSeason!)}</h3>
-                <p className="text-label text-muted-foreground mt-0.5">
-                  {selectedShowData.title} · {allOwnedEpisodes.length} episode{allOwnedEpisodes.length !== 1 ? 's' : ''}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
+      <div className="space-y-6">
+        {/* Breadcrumb */}
+        <button
+          onClick={handleBack}
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to {selectedShowData.title}
+        </button>
 
         <div className="flex items-center justify-between">
           <h3 className="text-xl font-bold">
@@ -1303,13 +1085,13 @@ export function TVShowsView({
         {/* Episode filters */}
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <span className="text-caption text-muted-foreground">Resolution</span>
+            <span className="text-xs text-muted-foreground">Resolution</span>
             <div className="flex gap-1">
               {(['all', '4K', '1080p', '720p', 'SD'] as const).map((tier) => (
                 <button
                   key={tier}
                   onClick={() => setEpisodeTierFilter(tier)}
-                  className={`px-2.5 py-1 rounded-lg text-caption transition-colors ${
+                  className={`px-2.5 py-1 rounded-md text-xs transition-colors ${
                     episodeTierFilter === tier
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1322,13 +1104,13 @@ export function TVShowsView({
           </div>
           <div className="h-6 w-px bg-border/50" />
           <div className="flex items-center gap-2">
-            <span className="text-caption text-muted-foreground">Quality</span>
+            <span className="text-xs text-muted-foreground">Quality</span>
             <div className="flex gap-1">
               {(['all', 'high', 'medium', 'low'] as const).map((quality) => (
                 <button
                   key={quality}
                   onClick={() => setEpisodeQualityFilter(quality)}
-                  className={`px-2.5 py-1 rounded-lg text-caption transition-colors ${
+                  className={`px-2.5 py-1 rounded-md text-xs transition-colors ${
                     episodeQualityFilter === quality
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1340,14 +1122,13 @@ export function TVShowsView({
             </div>
           </div>
           {(episodeTierFilter !== 'all' || episodeQualityFilter !== 'all') && (
-            <span className="text-caption text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               {ownedEpisodes.length} of {allOwnedEpisodes.length} episodes
             </span>
           )}
         </div>
-        )}
 
-        <div className={`divide-y divide-border/50 ${isMobile ? 'relative z-[1]' : ''}`}>
+        <div className="divide-y divide-border/50">
           {allEpisodeItems.map((item) => (
             item.type === 'owned' ? (
               <EpisodeRow
@@ -1435,7 +1216,7 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
         }
       }}
     >
-      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-lg shadow-lg shadow-black/30">
+      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
         {/* 3-dot menu button */}
         <div ref={menuRef} className="absolute top-2 left-2 z-20">
           <button
@@ -1478,22 +1259,13 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
           )}
         </div>
 
-        {/* Source Badge — hidden when completeness badge present */}
-        {showSourceBadge && sourceType && !completenessData && (
+        {/* Source Badge */}
+        {showSourceBadge && sourceType && (
           <div
-            className={`absolute bottom-2 left-2 ${providerColors[sourceType] || 'bg-gray-500'} text-white text-caption font-semibold px-1.5 py-0.5 rounded shadow-md`}
+            className={`absolute bottom-2 left-2 ${providerColors[sourceType] || 'bg-gray-500'} text-white text-xs font-bold px-1.5 py-0.5 rounded shadow-md`}
             title={sourceType.charAt(0).toUpperCase() + sourceType.slice(1)}
           >
             {sourceType.charAt(0).toUpperCase()}
-          </div>
-        )}
-
-        {/* Completeness badge — over poster */}
-        {completenessData && (
-          <div className="absolute bottom-2 right-2 z-10">
-            <div className="bg-foreground text-background text-caption font-semibold px-1.5 py-0.5 rounded shadow-md">
-              {completenessData.owned_episodes}/{completenessData.total_episodes}
-            </div>
           </div>
         )}
 
@@ -1502,7 +1274,6 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
             src={show.poster_url}
             alt={show.series_title}
             loading="lazy"
-            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
@@ -1625,9 +1396,8 @@ const MissingEpisodeRowWithArtwork = memo(({
   const cardRef = useRef<HTMLDivElement>(null)
   const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
 
-  // Skip individual TMDB still fetches on mobile — use fallback poster to avoid N RPC round trips
   useEffect(() => {
-    if (tmdbId && !isMobile) {
+    if (tmdbId) {
       window.electronAPI.seriesGetEpisodeStill(tmdbId, episode.season_number, episode.episode_number)
         .then((url) => {
           if (url) setStillUrl(url)
@@ -1636,7 +1406,7 @@ const MissingEpisodeRowWithArtwork = memo(({
           console.warn(`Failed to fetch episode still for S${episode.season_number}E${episode.episode_number}:`, err)
         })
     }
-  }, [tmdbId, episode.season_number, episode.episode_number, isMobile])
+  }, [tmdbId, episode.season_number, episode.episode_number])
 
   return (
     <div
@@ -1652,13 +1422,12 @@ const MissingEpisodeRowWithArtwork = memo(({
       }}
     >
       {/* Missing Episode Thumbnail - 16:9 aspect ratio with shadow */}
-      <div className={`${isMobile ? 'w-24' : 'w-44'} aspect-video bg-muted shrink-0 overflow-hidden rounded-lg shadow-md shadow-black/20`}>
+      <div className={`${isMobile ? 'w-24' : 'w-44'} aspect-video bg-muted shrink-0 overflow-hidden rounded-md shadow-md shadow-black/20`}>
         {stillUrl ? (
           <img
             src={stillUrl}
             alt={episode.title || `Episode ${episode.episode_number}`}
             loading="lazy"
-            decoding="async"
             className="w-full h-full object-cover grayscale opacity-50"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
@@ -1674,7 +1443,7 @@ const MissingEpisodeRowWithArtwork = memo(({
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-label font-semibold text-muted-foreground shrink-0">
+          <span className="text-sm font-semibold text-muted-foreground shrink-0">
             E{episode.episode_number}
           </span>
           <h4 className="font-semibold truncate text-muted-foreground">
@@ -1682,7 +1451,7 @@ const MissingEpisodeRowWithArtwork = memo(({
           </h4>
         </div>
         {episode.air_date && (
-          <p className="text-caption text-muted-foreground mt-0.5">
+          <p className="text-xs text-muted-foreground mt-0.5">
             Aired: {new Date(episode.air_date).toLocaleDateString()}
           </p>
         )}
@@ -1732,13 +1501,12 @@ const SeasonCard = memo(({ season, showTitle, onClick, missingCount = 0 }: { sea
         }
       }}
     >
-      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-lg shadow-lg shadow-black/30">
+      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
         {season.posterUrl ? (
           <img
             src={season.posterUrl}
             alt={`${showTitle} - ${formatSeasonLabel(season.seasonNumber)}`}
             loading="lazy"
-            decoding="async"
             className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
@@ -1747,20 +1515,12 @@ const SeasonCard = memo(({ season, showTitle, onClick, missingCount = 0 }: { sea
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-muted/50"><Folder className="w-16 h-16 text-white/30" strokeWidth={1.5} /></div>
         )}
-        {/* Completeness badge — over poster */}
-        {total > 0 && missingCount > 0 && (
-          <div className="absolute bottom-2 right-2 z-10">
-            <div className="bg-foreground text-background text-caption font-semibold px-1.5 py-0.5 rounded shadow-md">
-              {owned}/{total}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Title below poster */}
       <div className="pt-2">
-        <h4 className="font-medium text-label truncate">{formatSeasonLabel(season.seasonNumber)}</h4>
-        <p className="text-caption text-muted-foreground">
+        <h4 className="font-medium text-sm truncate">{formatSeasonLabel(season.seasonNumber)}</h4>
+        <p className="text-xs text-muted-foreground">
           {total > 0 && owned < total
             ? `${owned} of ${total} ${total === 1 ? 'Episode' : 'Episodes'}`
             : `${owned} ${owned === 1 ? 'Episode' : 'Episodes'}`

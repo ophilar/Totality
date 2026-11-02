@@ -161,14 +161,16 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border/30 shrink-0">
-          <h2 id={titleId} className="text-title font-semibold">Settings</h2>
-          <Button
+        <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-2xl shrink-0">
+          <h2 id={titleId} className="text-lg font-semibold">Settings</h2>
+          <button
             ref={closeButtonRef}
             onClick={requestClose}
             className="p-2 rounded-md hover:bg-muted transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary"
             aria-label="Close settings"
-          />
+          >
+            <X className="w-5 h-5" aria-hidden="true" />
+          </button>
         </div>
 
         {/* Content area with tabs */}
@@ -176,7 +178,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
           {/* Tab navigation (left side) */}
           <div
             ref={tabListRef}
-            className="w-44 border-r border-border/30 p-2 pt-3 flex flex-col gap-1"
+            className="w-44 border-r border-border/30 p-2 pt-3 flex flex-col gap-1 bg-sidebar-gradient"
             role="tablist"
             aria-label="Settings categories"
             aria-orientation="vertical"
@@ -194,9 +196,9 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
                   tabIndex={isActive ? 0 : -1}
                   onClick={() => setActiveTab(tab.id)}
                   onKeyDown={(e) => handleTabKeyDown(e, index)}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-label font-medium transition-colors text-left focus:outline-hidden focus:ring-2 focus:ring-primary ${
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-left focus:outline-hidden focus:ring-2 focus:ring-primary ${
                     isActive
-                      ? 'bg-foreground text-background'
+                      ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                   }`}
                 >

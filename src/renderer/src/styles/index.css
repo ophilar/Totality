@@ -2,24 +2,6 @@
 @source not "../../../main";
 @source not "../../../preload";
 
-/* Plus Jakarta Sans — SKILL.md §2 */
-/* Variable font: weights 200–800, we use 400/500/600 only */
-@font-face {
-  font-family: 'Plus Jakarta Sans';
-  src: url('../assets/fonts/PlusJakartaSans-VariableFont_wght.ttf') format('truetype');
-  font-weight: 200 800;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Plus Jakarta Sans';
-  src: url('../assets/fonts/PlusJakartaSans-Italic-VariableFont_wght.ttf') format('truetype');
-  font-weight: 200 800;
-  font-style: italic;
-  font-display: swap;
-}
-
 @theme {
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
@@ -97,24 +79,6 @@
     }
     to {
       transform: translateY(0);
-    }
-  }
-
-  @keyframes slide-up-sheet {
-    from {
-      transform: translateY(100%);
-    }
-    to {
-      transform: translateY(0);
-    }
-  }
-
-  @keyframes slide-down-sheet {
-    from {
-      transform: translateY(0);
-    }
-    to {
-      transform: translateY(100%);
     }
   }
   @keyframes slide-in-from-left {
@@ -891,7 +855,7 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -903,51 +867,9 @@
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-weight: 600;
+    font-weight: 700;
+    letter-spacing: -0.02em;
   }
-}
-
-/* SKILL.md §5: disable hover effects on touch-only devices.
-   On touch, :hover sticks after tap — controls look permanently hovered.
-   This makes all hover: utilities no-ops on touch-only devices by
-   raising specificity of the base state above the hover state. */
-@media (hover: none) and (pointer: coarse) {
-  /* Force all interactive elements to ignore :hover by resetting
-     the properties that Tailwind hover utilities commonly set */
-  button, a, [role="button"], [role="tab"], [role="menuitem"],
-  [role="option"], [role="listitem"], [role="checkbox"], [role="radio"],
-  [role="switch"], label, summary {
-    &:hover {
-      background-color: revert-layer;
-      color: revert-layer;
-      border-color: revert-layer;
-      opacity: revert-layer;
-      text-decoration: revert-layer;
-      transform: revert-layer;
-    }
-  }
-}
-
-/* SKILL.md Typography Scale (§2) — Plus Jakarta Sans */
-/* Each class bakes in size + line-height + letter-spacing */
-@layer utilities {
-  .animate-slide-up {
-    animation: slide-up-sheet 350ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  .animate-slide-down {
-    animation: slide-down-sheet 350ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  }
-
-  .text-display { font-size: 48px; line-height: 52px; letter-spacing: -0.020em; }
-  .text-h1 { font-size: 32px; line-height: 38px; letter-spacing: -0.014em; }
-  .text-h2 { font-size: 24px; line-height: 30px; letter-spacing: -0.012em; }
-  .text-h3 { font-size: 20px; line-height: 26px; letter-spacing: -0.009em; }
-  .text-title { font-size: 17px; line-height: 24px; letter-spacing: -0.006em; }
-  .text-body-lg { font-size: 17px; line-height: 26px; letter-spacing: -0.006em; }
-  .text-body { font-size: 15px; line-height: 22px; letter-spacing: -0.004em; }
-  .text-label { font-size: 14px; line-height: 20px; letter-spacing: -0.002em; }
-  .text-caption { font-size: 13px; line-height: 18px; letter-spacing: 0em; }
-  .text-micro { font-size: 11px; line-height: 14px; letter-spacing: 0.020em; }
 }
 
 /* Backdrop blur styles for artwork backgrounds */
@@ -1001,10 +923,8 @@ textarea:focus-visible,
   transition: transform 200ms ease-out;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .hover-scale:hover {
-    transform: scale(1.05);
-  }
+.hover-scale:hover {
+  transform: scale(1.05);
 }
 
 .hover-scale.active {

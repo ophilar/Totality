@@ -166,7 +166,7 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
 
   if (loading) {
     return (
-      <div className="fixed inset-0 z-50 bg-black/60 flex items-end">
+      <div className="fixed inset-0 z-[60] bg-black/60 flex items-end">
         <div className="w-full bg-card rounded-t-2xl p-6 flex justify-center" style={{ height: `${SNAP_HALF}vh` }}>
           <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
@@ -189,7 +189,7 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
   const displayTierQuality = activeVersion?.tier_quality ?? quality?.tier_quality
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] bg-black/60" onClick={onClose}>
       <div
         className={`absolute bottom-0 left-0 right-0 bg-card rounded-t-2xl flex flex-col ${
           isDragging ? '' : 'transition-[height] duration_ms-300 ease-out'
@@ -223,13 +223,13 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
                 {media.poster_url ? (
                   <img src={media.poster_url} alt="" className="w-full h-full object-cover" />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-muted-foreground text-caption">No poster</div>
+                  <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">No poster</div>
                 )}
               </div>
               <div className="flex-1 min-w-0 pt-1">
-                <h2 className="text-body font-semibold text-foreground leading-snug">{media.title}</h2>
+                <h2 className="text-base font-semibold text-foreground leading-snug">{media.title}</h2>
                 {media.type === 'episode' && media.series_title && (
-                  <p className="text-caption text-muted-foreground mt-0.5">
+                  <p className="text-xs text-muted-foreground mt-0.5">
                     {media.series_title} · S{media.season_number}E{media.episode_number}
                   </p>
                 )}
@@ -237,7 +237,7 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
                   {media.year && <span className="text-xs text-muted-foreground">{media.year}</span>}
                   {media.duration_ms > 0 && <span className="text-xs text-muted-foreground">{formatDuration(media.duration_ms)}</span>}
                   {media.tmdb_rating != null && media.tmdb_rating > 0 && (
-                    <span className="text-caption text-yellow-400 flex items-center gap-0.5">
+                    <span className="text-xs text-yellow-400 flex items-center gap-0.5">
                       <Star className="w-3 h-3 fill-yellow-400" />
                       {media.tmdb_rating.toFixed(1)}
                     </span>
@@ -252,7 +252,7 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
                 )}
                 {/* Play count */}
                 {(media.play_count ?? 0) > 0 && (
-                  <div className="flex items-center gap-1.5 mt-2 text-caption text-muted-foreground">
+                  <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
                     <Play className="w-3 h-3" />
                     <span>Played {media.play_count} time{media.play_count !== 1 ? 's' : ''}</span>
                     {media.last_watched_at && (
@@ -272,7 +272,7 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
                     <button
                       key={v.id}
                       onClick={() => setSelectedVersionId(v.id)}
-                      className={`shrink-0 px-3 min-h-[36px] text-caption font-medium rounded-lg transition-colors flex items-center gap-1 ${
+                      className={`shrink-0 px-3 min-h-[36px] text-xs font-medium rounded-md transition-colors flex items-center gap-1 ${
                         isSelected
                           ? 'bg-white text-black'
                           : 'bg-white/10 text-white/70'
@@ -288,7 +288,7 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
 
             {/* Summary */}
             {media.summary && (
-              <p className="text-caption text-muted-foreground mt-4 leading-relaxed">{media.summary}</p>
+              <p className="text-xs text-muted-foreground mt-4 leading-relaxed">{media.summary}</p>
             )}
 
             {/* Technical details */}
@@ -306,14 +306,14 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
             {/* Audio tracks */}
             {audioTracks.length > 1 && (
               <div className="mt-4">
-                <p className="text-caption text-muted-foreground mb-2">Audio tracks</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Audio Tracks</p>
                 <div className="space-y-1.5">
                   {audioTracks.map((t, i) => (
-                    <div key={i} className="flex items-center gap-2 text-caption">
+                    <div key={i} className="flex items-center gap-2 text-xs">
                       <span className="font-mono text-foreground">{t.codec || '?'}</span>
                       <span className="text-muted-foreground">{t.channels}ch</span>
                       {t.bitrate && <span className="text-muted-foreground">{formatBitrate(t.bitrate)}</span>}
-                      {t.language && <span className="text-muted-foreground">{t.language}</span>}
+                      {t.language && <span className="text-muted-foreground uppercase">{t.language}</span>}
                     </div>
                   ))}
                 </div>
@@ -324,7 +324,7 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
             <button
               onClick={handleWishlistToggle}
               disabled={onWishlist}
-              className={`w-full mt-5 flex items-center justify-center gap-2 px-4 min-h-[48px] rounded-lg text-label font-medium transition-colors ${
+              className={`w-full mt-5 flex items-center justify-center gap-2 px-4 min-h-[48px] rounded-lg text-sm font-medium transition-colors ${
                 onWishlist
                   ? 'bg-muted text-muted-foreground'
                   : 'bg-white text-black hover:bg-white/90'
@@ -346,8 +346,8 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
 function DetailItem({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-caption text-muted-foreground">{label}</p>
-      <p className="text-label text-foreground font-mono">{value}</p>
+      <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
+      <p className="text-sm text-foreground font-mono">{value}</p>
     </div>
   )
 }

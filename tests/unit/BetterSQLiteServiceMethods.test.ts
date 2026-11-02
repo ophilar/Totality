@@ -31,10 +31,8 @@ vi.mock('electron', () => ({
 }))
 
 vi.mock('fs', () => ({
-  default: { existsSync: vi.fn(() => true), copyFileSync: vi.fn(), unlinkSync: vi.fn() },
+  default: { existsSync: vi.fn(() => true) },
   existsSync: vi.fn(() => true),
-  copyFileSync: vi.fn(),
-  unlinkSync: vi.fn(),
 }))
 
 vi.mock('node:path', async (importOriginal) => {

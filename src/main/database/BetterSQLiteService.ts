@@ -359,21 +359,8 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         console.log('[BetterSQLite] New database created')
       }
 
-      // Backup database before running migrations (in case schema changes fail)
-      if (dbExists) {
-        const backupPath = this.dbPath + '.pre-migration-backup'
-        try {
-          fs.copyFileSync(this.dbPath, backupPath)
-          this.runMigrations()
-          // Remove backup after successful migration
-          try { fs.unlinkSync(backupPath) } catch { /* ignore */ }
-        } catch (migrationError) {
-          console.error('[BetterSQLite] Migration failed, backup available at:', backupPath)
-          throw migrationError
-        }
-      } else {
-        this.runMigrations()
-      }
+      // Run schema and migrations
+      this.runMigrations()
 
       // Purge stale TMDB cache entries (older than 24h)
       this.purgeStaleTmdbCache()
@@ -417,7 +404,6 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       // Media items enhancements
       'ALTER TABLE media_items ADD COLUMN series_identity_key TEXT',
       'ALTER TABLE media_items ADD COLUMN episode_thumb_url TEXT',
-      'ALTER TABLE media_items ADD COLUMN art_url TEXT',
       'ALTER TABLE media_items ADD COLUMN season_poster_url TEXT',
       'ALTER TABLE media_items ADD COLUMN video_frame_rate REAL',
       'ALTER TABLE media_items ADD COLUMN color_bit_depth INTEGER',
@@ -1801,78 +1787,6 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   }
 
   /**
-   * Get media items with only grid/list display fields (much smaller payload).
-   * Detail views use getMediaItem(id) for full data.
-   */
-  getMediaItemsSlim(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): Partial<MediaItem>[] {
-    if (!this.db) throw new Error('Database not initialized')
-
-    let sql = `
-      SELECT m.id, m.title, m.year, m.poster_url, m.type, m.source_id, m.library_id,
-             m.file_path, m.resolution, m.tmdb_id, m.imdb_id,
-             q.overall_score, q.needs_upgrade, q.quality_tier, q.tier_quality, q.tier_score
-      FROM media_items m
-      LEFT JOIN quality_scores q ON m.id = q.media_item_id
-      LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE 1=1
-    `
-    const params: unknown[] = []
-
-    if (!filters?.includeDisabledLibraries) {
-      sql += ' AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)'
-    }
-    if (filters?.type) { sql += ' AND m.type = ?'; params.push(filters.type) }
-    if (filters?.sourceId) { sql += ' AND m.source_id = ?'; params.push(filters.sourceId) }
-    if (filters?.sourceType) { sql += ' AND m.source_type = ?'; params.push(filters.sourceType) }
-    if (filters?.libraryId) { sql += ' AND m.library_id = ?'; params.push(filters.libraryId) }
-    if (filters?.searchQuery) {
-      sql += ' AND m.id IN (SELECT rowid FROM media_fts WHERE media_fts MATCH ?)'
-      params.push(BetterSQLiteService.buildFtsQuery(filters.searchQuery))
-    }
-    if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') {
-        sql += " AND m.title NOT GLOB '[A-Za-z]*'"
-      } else {
-        sql += ' AND UPPER(SUBSTR(m.title, 1, 1)) = ?'
-        params.push(filters.alphabetFilter.toUpperCase())
-      }
-    }
-    if (filters?.qualityTier) { sql += ' AND q.quality_tier = ?'; params.push(filters.qualityTier) }
-    if (filters?.tierQuality) { sql += ' AND q.tier_quality = ?'; params.push(filters.tierQuality) }
-    if (filters?.needsUpgrade !== undefined) {
-      if (filters.needsUpgrade) {
-        sql += ` AND (q.needs_upgrade = 1 OR (ls.upgrade_min_tier IS NOT NULL AND
-          CASE q.quality_tier WHEN '4K' THEN 4 WHEN '1080p' THEN 3 WHEN '720p' THEN 2 ELSE 1 END
-          < CASE ls.upgrade_min_tier WHEN '4K' THEN 4 WHEN '1080p' THEN 3 WHEN '720p' THEN 2 ELSE 1 END))`
-        sql += ` AND m.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'media_upgrade' AND reference_id IS NOT NULL)`
-      } else {
-        sql += ' AND q.needs_upgrade = ?'; params.push(0)
-      }
-    }
-
-    const sortColumnMap: Record<string, string> = {
-      'title': 'COALESCE(m.sort_title, m.title)', 'year': 'm.year', 'play_count': 'm.play_count',
-      'last_watched_at': 'm.last_watched_at', 'updated_at': 'm.updated_at', 'created_at': 'm.created_at',
-      'tier_score': 'q.tier_score', 'overall_score': 'q.overall_score', 'tmdb_rating': 'm.tmdb_rating'
-    }
-    const sortColumn = sortColumnMap[filters?.sortBy || 'title'] || 'COALESCE(m.sort_title, m.title)'
-    const sortOrder = filters?.sortOrder?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC'
-    if (filters?.sortBy === 'last_watched_at' || filters?.sortBy === 'tmdb_rating') {
-      sql += ` ORDER BY ${sortColumn} IS NULL ASC, ${sortColumn} ${sortOrder}, COALESCE(m.sort_title, m.title) ASC, m.id ASC`
-    } else if (filters?.sortBy === 'play_count') {
-      sql += ` ORDER BY ${sortColumn} ${sortOrder}, COALESCE(m.sort_title, m.title) ASC, m.id ASC`
-    } else {
-      sql += ` ORDER BY ${sortColumn} ${sortOrder}, m.id ASC`
-    }
-
-    if (filters?.limit) { sql += ' LIMIT ?'; params.push(filters.limit) }
-    if (filters?.offset) { sql += ' OFFSET ?'; params.push(filters.offset) }
-
-    const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as Partial<MediaItem>[]
-  }
-
-  /**
    * Get media item by ID
    */
   getMediaItem(id: number): MediaItem | null {
@@ -2111,7 +2025,6 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         series_tmdb_id = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.series_tmdb_id ELSE COALESCE(excluded.series_tmdb_id, media_items.series_tmdb_id) END,
         original_language = COALESCE(excluded.original_language, media_items.original_language),
         poster_url = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.poster_url ELSE COALESCE(excluded.poster_url, media_items.poster_url) END,
-        art_url = COALESCE(excluded.art_url, media_items.art_url),
         episode_thumb_url = COALESCE(excluded.episode_thumb_url, media_items.episode_thumb_url),
         season_poster_url = COALESCE(excluded.season_poster_url, media_items.season_poster_url),
         summary = COALESCE(excluded.summary, media_items.summary),
@@ -2126,7 +2039,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     stmt.run(
       sourceId,
       item.source_type || 'plex',
-      item.library_id || '',
+      item.library_id || null,
       item.plex_id,
       item.title,
       item.sort_title || null,
@@ -2166,7 +2079,6 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       item.series_tmdb_id || null,
       item.original_language || null,
       item.poster_url || null,
-      item.art_url || null,
       item.episode_thumb_url || null,
       item.season_poster_url || null,
       item.summary || null,
@@ -2283,15 +2195,14 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     const db = this.db
     const txn = db.transaction(() => {
       let cleaned = 0
-      // LEFT JOIN is faster than NOT IN for large tables
       cleaned += db.prepare(
-        'DELETE FROM quality_scores WHERE media_item_id IN (SELECT qs.media_item_id FROM quality_scores qs LEFT JOIN media_items mi ON qs.media_item_id = mi.id WHERE mi.id IS NULL)'
+        'DELETE FROM quality_scores WHERE media_item_id NOT IN (SELECT id FROM media_items)'
       ).run().changes
       cleaned += db.prepare(
-        'DELETE FROM media_item_versions WHERE media_item_id IN (SELECT mv.media_item_id FROM media_item_versions mv LEFT JOIN media_items mi ON mv.media_item_id = mi.id WHERE mi.id IS NULL)'
+        'DELETE FROM media_item_versions WHERE media_item_id NOT IN (SELECT id FROM media_items)'
       ).run().changes
       cleaned += db.prepare(
-        'DELETE FROM media_item_collections WHERE media_item_id IN (SELECT mc.media_item_id FROM media_item_collections mc LEFT JOIN media_items mi ON mc.media_item_id = mi.id WHERE mi.id IS NULL)'
+        'DELETE FROM media_item_collections WHERE media_item_id NOT IN (SELECT id FROM media_items)'
       ).run().changes
 
       // Validate collection ownership — batch-query all owned TMDB IDs at once
@@ -2532,40 +2443,40 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
 
     let cleaned = 0
 
-    // Delete music quality scores for albums that no longer exist (LEFT JOIN is faster than NOT IN for large tables)
+    // Delete music quality scores for albums that no longer exist
     cleaned += this.db.prepare(
-      'DELETE FROM music_quality_scores WHERE album_id IN (SELECT mqs.album_id FROM music_quality_scores mqs LEFT JOIN music_albums ma ON mqs.album_id = ma.id WHERE ma.id IS NULL)'
+      'DELETE FROM music_quality_scores WHERE album_id NOT IN (SELECT id FROM music_albums)'
     ).run().changes
 
     // Delete album completeness for albums that no longer exist
     cleaned += this.db.prepare(
-      'DELETE FROM album_completeness WHERE album_id IN (SELECT ac.album_id FROM album_completeness ac LEFT JOIN music_albums ma ON ac.album_id = ma.id WHERE ma.id IS NULL)'
+      'DELETE FROM album_completeness WHERE album_id NOT IN (SELECT id FROM music_albums)'
     ).run().changes
 
     // Delete artist completeness for artists that no longer exist
     cleaned += this.db.prepare(
-      'DELETE FROM artist_completeness WHERE artist_name IN (SELECT arc.artist_name FROM artist_completeness arc LEFT JOIN music_artists ma ON arc.artist_name = ma.name WHERE ma.id IS NULL)'
+      'DELETE FROM artist_completeness WHERE artist_name NOT IN (SELECT name FROM music_artists)'
     ).run().changes
 
-    // Delete albums with 0 tracks (LEFT JOIN approach)
+    // Delete albums with 0 tracks (parameterized, no string interpolation)
     if (sourceId) {
       cleaned += this.db.prepare(
-        'DELETE FROM music_albums WHERE id IN (SELECT a.id FROM music_albums a LEFT JOIN music_tracks t ON a.id = t.album_id WHERE a.source_id = ? AND t.id IS NULL)'
+        'DELETE FROM music_albums WHERE source_id = ? AND id NOT IN (SELECT DISTINCT album_id FROM music_tracks WHERE album_id IS NOT NULL)'
       ).run(sourceId).changes
     } else {
       cleaned += this.db.prepare(
-        'DELETE FROM music_albums WHERE id IN (SELECT a.id FROM music_albums a LEFT JOIN music_tracks t ON a.id = t.album_id WHERE t.id IS NULL)'
+        'DELETE FROM music_albums WHERE id NOT IN (SELECT DISTINCT album_id FROM music_tracks WHERE album_id IS NOT NULL)'
       ).run().changes
     }
 
-    // Delete artists with 0 tracks (LEFT JOIN approach)
+    // Delete artists with 0 tracks (parameterized)
     if (sourceId) {
       cleaned += this.db.prepare(
-        'DELETE FROM music_artists WHERE id IN (SELECT a.id FROM music_artists a LEFT JOIN music_tracks t ON a.id = t.artist_id WHERE a.source_id = ? AND t.id IS NULL)'
+        'DELETE FROM music_artists WHERE source_id = ? AND id NOT IN (SELECT DISTINCT artist_id FROM music_tracks WHERE artist_id IS NOT NULL)'
       ).run(sourceId).changes
     } else {
       cleaned += this.db.prepare(
-        'DELETE FROM music_artists WHERE id IN (SELECT a.id FROM music_artists a LEFT JOIN music_tracks t ON a.id = t.artist_id WHERE t.id IS NULL)'
+        'DELETE FROM music_artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM music_tracks WHERE artist_id IS NOT NULL)'
       ).run().changes
     }
 
@@ -3555,7 +3466,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     stmt.run(
       track.source_id,
       track.source_type,
-      track.library_id || '',
+      track.library_id || null,
       track.provider_id,
       track.album_id || null,
       track.artist_id || null,
@@ -3621,7 +3532,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     stmt.run(
       artist.source_id,
       artist.source_type,
-      artist.library_id || '',
+      artist.library_id || null,
       artist.provider_id,
       artist.name,
       artist.sort_name || null,
@@ -3689,7 +3600,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     stmt.run(
       album.source_id,
       album.source_type,
-      album.library_id || '',
+      album.library_id || null,
       album.provider_id,
       album.artist_id || null,
       album.artist_name,
@@ -3967,10 +3878,6 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       sql += ' AND source_id = ?'
       params.push(filters.sourceId)
     }
-    if (filters?.libraryId) {
-      sql += ' AND library_id = ?'
-      params.push(filters.libraryId)
-    }
     if (filters?.searchQuery) {
       sql += ' AND id IN (SELECT rowid FROM music_track_fts WHERE music_track_fts MATCH ?)'
       params.push(BetterSQLiteService.buildFtsQuery(filters.searchQuery))
@@ -4040,7 +3947,6 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     if (filters?.albumId) { sql += ' AND album_id = ?'; params.push(filters.albumId) }
     if (filters?.artistId) { sql += ' AND artist_id = ?'; params.push(filters.artistId) }
     if (filters?.sourceId) { sql += ' AND source_id = ?'; params.push(filters.sourceId) }
-    if (filters?.libraryId) { sql += ' AND library_id = ?'; params.push(filters.libraryId) }
     if (filters?.searchQuery) { sql += ' AND id IN (SELECT rowid FROM music_track_fts WHERE music_track_fts MATCH ?)'; params.push(BetterSQLiteService.buildFtsQuery(filters.searchQuery)) }
     if (filters?.alphabetFilter) {
       if (filters.alphabetFilter === '#') { sql += " AND title NOT GLOB '[A-Za-z]*'" }
@@ -4174,18 +4080,15 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   /**
    * Get music library stats
    */
-  getMusicStats(sourceId?: string, libraryId?: string): {
+  getMusicStats(sourceId?: string): {
     totalArtists: number
     totalAlbums: number
     totalTracks: number
   } {
     if (!this.db) throw new Error('Database not initialized')
 
-    const conditions: string[] = []
-    const params: string[] = []
-    if (sourceId) { conditions.push('source_id = ?'); params.push(sourceId) }
-    if (libraryId) { conditions.push('library_id = ?'); params.push(libraryId) }
-    const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : ''
+    const whereClause = sourceId ? ' WHERE source_id = ?' : ''
+    const params = sourceId ? [sourceId] : []
 
     const artistsStmt = this.db.prepare(`SELECT COUNT(*) as count FROM music_artists${whereClause}`)
     const albumsStmt = this.db.prepare(`SELECT COUNT(*) as count FROM music_albums${whereClause}`)
@@ -4789,66 +4692,6 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       incompleteSeries,
       totalMissingEpisodes,
       averageCompleteness,
-    }
-  }
-
-  /**
-   * Get aggregated music completeness stats (computed server-side to avoid sending full dataset).
-   * Matches the weighting formula used client-side: albums×3 + EPs×2 + singles×1.
-   */
-  getMusicCompletenessStats(includeEps: boolean, includeSingles: boolean): {
-    totalArtists: number
-    analyzedArtists: number
-    completeArtists: number
-    incompleteArtists: number
-    totalMissingAlbums: number
-    averageCompleteness: number
-  } {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const epsWeight = includeEps ? 1 : 0
-    const singlesWeight = includeSingles ? 1 : 0
-
-    const stmt = this.db.prepare(`
-      SELECT
-        COUNT(*) as analyzed,
-        SUM(CASE WHEN pct >= 100 THEN 1 ELSE 0 END) as complete,
-        SUM(missing_count) as total_missing,
-        COALESCE(AVG(pct), 0) as avg_pct
-      FROM (
-        SELECT
-          CASE
-            WHEN (total_albums * 3 + total_eps * 2 * :eps + total_singles * :singles) = 0 THEN 100
-            ELSE ROUND(
-              (owned_albums * 3 + owned_eps * 2 * :eps + owned_singles * :singles) * 100.0 /
-              (total_albums * 3 + total_eps * 2 * :eps + total_singles * :singles)
-            )
-          END as pct,
-          MAX(0, total_albums - owned_albums)
-            + MAX(0, total_eps - owned_eps) * :eps
-            + MAX(0, total_singles - owned_singles) * :singles as missing_count
-        FROM artist_completeness
-      )
-    `)
-
-    const row = stmt.get({ eps: epsWeight, singles: singlesWeight }) as {
-      analyzed: number
-      complete: number
-      total_missing: number
-      avg_pct: number
-    }
-
-    const totalArtists = row.analyzed
-    const completeArtists = row.complete || 0
-    const incompleteArtists = totalArtists - completeArtists
-
-    return {
-      totalArtists,
-      analyzedArtists: totalArtists,
-      completeArtists,
-      incompleteArtists,
-      totalMissingAlbums: row.total_missing || 0,
-      averageCompleteness: Math.round(row.avg_pct || 0),
     }
   }
 
@@ -5639,14 +5482,8 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     const params: unknown[] = []
 
     if (filters?.media_type) {
-      if (filters.media_type === 'tv') {
-        sql += " AND media_type IN ('season', 'episode')"
-      } else if (filters.media_type === 'music') {
-        sql += " AND media_type IN ('album', 'track')"
-      } else {
-        sql += ' AND media_type = ?'
-        params.push(filters.media_type)
-      }
+      sql += ' AND media_type = ?'
+      params.push(filters.media_type)
     }
     if (filters?.priority) {
       sql += ' AND priority = ?'
@@ -5666,12 +5503,8 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       params.push(search, search, search)
     }
 
-    // Sorting — whitelist column names to prevent SQL injection
-    const sortColumnMap: Record<string, string> = {
-      'added_at': 'added_at', 'priority': 'priority', 'title': 'title',
-      'year': 'year', 'completed_at': 'completed_at',
-    }
-    const sortColumn = sortColumnMap[filters?.sortBy || 'added_at'] || 'added_at'
+    // Sorting
+    const sortColumn = filters?.sortBy || 'added_at'
     const sortOrder = filters?.sortOrder?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC'
     sql += ` ORDER BY ${sortColumn} ${sortOrder}`
 
@@ -5702,7 +5535,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
    */
   getWishlistCount(): number {
     if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare("SELECT COUNT(*) as count FROM wishlist_items WHERE status = 'active'")
+    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM wishlist_items')
     return (stmt.get() as { count: number }).count
   }
 
@@ -6399,10 +6232,9 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   createNotification(notification: Omit<Notification, 'id' | 'isRead' | 'createdAt' | 'readAt'>): number {
     if (!this.db) throw new Error('Database not initialized')
 
-    const now = new Date().toISOString()
     const stmt = this.db.prepare(`
       INSERT INTO notifications (type, title, message, source_id, source_name, item_count, metadata, is_read, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'))
     `)
 
     const result = stmt.run(
@@ -6412,8 +6244,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       notification.sourceId || null,
       notification.sourceName || null,
       notification.itemCount || 0,
-      notification.metadata ? JSON.stringify(notification.metadata) : '{}',
-      now
+      notification.metadata ? JSON.stringify(notification.metadata) : '{}'
     )
 
     this.pruneReadNotifications()
@@ -6427,10 +6258,9 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     if (!this.db) throw new Error('Database not initialized')
 
     const ids: number[] = []
-    const now = new Date().toISOString()
     const stmt = this.db.prepare(`
       INSERT INTO notifications (type, title, message, source_id, source_name, item_count, metadata, is_read, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'))
     `)
 
     const transaction = this.db.transaction(() => {
@@ -6442,8 +6272,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
           notification.sourceId || null,
           notification.sourceName || null,
           notification.itemCount || 0,
-          notification.metadata ? JSON.stringify(notification.metadata) : '{}',
-          now
+          notification.metadata ? JSON.stringify(notification.metadata) : '{}'
         )
         ids.push(Number(result.lastInsertRowid))
       }
@@ -6595,9 +6424,9 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   /**
    * Global search across all media types
    */
-  globalSearch(query: string, maxResults = 15): {
-    movies: Array<{ id: number; title: string; year?: number; poster_url?: string; tmdb_id?: string }>
-    tvShows: Array<{ id: number; title: string; poster_url?: string; tmdb_id?: string }>
+  globalSearch(query: string, maxResults = 5): {
+    movies: Array<{ id: number; title: string; year?: number; poster_url?: string }>
+    tvShows: Array<{ id: number; title: string; poster_url?: string }>
     episodes: Array<{ id: number; title: string; series_title: string; season_number: number; episode_number: number; poster_url?: string }>
     artists: Array<{ id: number; name: string; thumb_url?: string }>
     albums: Array<{ id: number; title: string; artist_name: string; year?: number; thumb_url?: string }>
@@ -6614,19 +6443,19 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
 
     // Search movies
     const moviesStmt = this.db.prepare(`
-      SELECT id, title, year, poster_url, tmdb_id
+      SELECT id, title, year, poster_url
       FROM media_items
       WHERE type = 'movie' AND LOWER(title) ${likeOp} ?
       ORDER BY title
       LIMIT ?
     `)
     const movies = moviesStmt.all(searchQuery, maxResults) as Array<{
-      id: number; title: string; year?: number; poster_url?: string; tmdb_id?: string
+      id: number; title: string; year?: number; poster_url?: string
     }>
 
     // Search TV shows (unique series titles)
     const tvShowsStmt = this.db.prepare(`
-      SELECT MIN(id) as id, series_title as title, MIN(poster_url) as poster_url, MIN(tmdb_id) as tmdb_id
+      SELECT MIN(id) as id, series_title as title, MIN(poster_url) as poster_url
       FROM media_items
       WHERE type = 'episode' AND series_title IS NOT NULL AND LOWER(series_title) ${likeOp} ?
       GROUP BY series_title
@@ -6634,7 +6463,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       LIMIT ?
     `)
     const tvShows = tvShowsStmt.all(searchQuery, maxResults) as Array<{
-      id: number; title: string; poster_url?: string; tmdb_id?: string
+      id: number; title: string; poster_url?: string
     }>
 
     // Search episodes
@@ -6791,7 +6620,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   getEpisodeCountForSeason(seriesTitle: string, seasonNumber: number): number {
     if (!this.db) throw new Error('Database not initialized')
     const stmt = this.db.prepare(
-      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_title COLLATE NOCASE = ? AND season_number = ?"
+      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_title = ? AND season_number = ?"
     )
     return (stmt.get(seriesTitle, seasonNumber) as { count: number }).count
   }
@@ -6802,20 +6631,9 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   getEpisodeCountForSeasonEpisode(seriesTitle: string, seasonNumber: number, episodeNumber: number): number {
     if (!this.db) throw new Error('Database not initialized')
     const stmt = this.db.prepare(
-      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_title COLLATE NOCASE = ? AND season_number = ? AND episode_number = ?"
+      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_title = ? AND season_number = ? AND episode_number = ?"
     )
     return (stmt.get(seriesTitle, seasonNumber, episodeNumber) as { count: number }).count
-  }
-
-  /**
-   * Get count of any episodes for a series (no specific season)
-   */
-  getEpisodeCountForSeries(seriesTitle: string): number {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare(
-      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_title COLLATE NOCASE = ?"
-    )
-    return (stmt.get(seriesTitle) as { count: number }).count
   }
 
   /**
@@ -6862,27 +6680,6 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     if (!this.db) throw new Error('Database not initialized')
     const stmt = this.db.prepare('SELECT * FROM music_tracks WHERE musicbrainz_id = ? LIMIT 1')
     return (stmt.get(id) as MusicTrack) || null
-  }
-
-  /**
-   * Batch lookup music tracks by MusicBrainz IDs
-   * Returns a Map of musicbrainz_id → MusicTrack
-   */
-  getMusicTracksByMusicbrainzIds(ids: string[]): Map<string, MusicTrack> {
-    if (!this.db) throw new Error('Database not initialized')
-    const result = new Map<string, MusicTrack>()
-    if (ids.length === 0) return result
-    const batchSize = 500
-    for (let i = 0; i < ids.length; i += batchSize) {
-      const batch = ids.slice(i, i + batchSize)
-      const placeholders = batch.map(() => '?').join(',')
-      const stmt = this.db.prepare(`SELECT * FROM music_tracks WHERE musicbrainz_id IN (${placeholders})`)
-      const rows = stmt.all(...batch) as MusicTrack[]
-      for (const row of rows) {
-        if (row.musicbrainz_id) result.set(row.musicbrainz_id, row)
-      }
-    }
-    return result
   }
 
   /**

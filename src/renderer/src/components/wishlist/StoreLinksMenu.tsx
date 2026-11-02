@@ -49,16 +49,16 @@ export function StoreLinksMenu({ storeLinks, onOpenLink, isLoading, compact = fa
       {isOpen && (
         <div className="absolute right-0 top-full mt-1 w-56 bg-popover border border-border rounded-lg shadow-xl z-50 py-1 max-h-80 overflow-y-auto">
           {isLoading ? (
-            <div className="px-3 py-2 text-label text-muted-foreground">Loading stores...</div>
+            <div className="px-3 py-2 text-sm text-muted-foreground">Loading stores...</div>
           ) : storeLinks.length === 0 ? (
-            <div className="px-3 py-2 text-label text-muted-foreground">No stores available</div>
+            <div className="px-3 py-2 text-sm text-muted-foreground">No stores available</div>
           ) : (
             <>
               {/* Aggregators */}
               {aggregators.length > 0 && (
                 <>
-                  <div className="px-3 py-1.5 text-caption font-semibold text-muted-foreground">
-                    Where to watch
+                  <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Where to Watch
                   </div>
                   {aggregators.map((store) => (
                     <StoreMenuItem
@@ -74,8 +74,8 @@ export function StoreLinksMenu({ storeLinks, onOpenLink, isLoading, compact = fa
               {/* Physical Media */}
               {physical.length > 0 && (
                 <>
-                  <div className="px-3 py-1.5 text-caption font-semibold text-muted-foreground mt-1">
-                    Physical media
+                  <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider mt-1">
+                    Physical Media
                   </div>
                   {physical.map((store) => (
                     <StoreMenuItem
@@ -91,7 +91,7 @@ export function StoreLinksMenu({ storeLinks, onOpenLink, isLoading, compact = fa
               {/* Digital Stores */}
               {digital.length > 0 && (
                 <>
-                  <div className="px-3 py-1.5 text-caption font-semibold text-muted-foreground mt-1">
+                  <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider mt-1">
                     Digital
                   </div>
                   {digital.map((store) => (
@@ -127,9 +127,9 @@ function StoreMenuItem({ store, onOpenLink, onClose }: StoreMenuItemProps) {
   return (
     <button
       onClick={handleClick}
-      className="w-full flex items-center gap-2 px-3 py-2 text-label hover:bg-muted transition-colors text-left"
+      className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
     >
-      <span className="w-6 h-6 rounded bg-muted flex items-center justify-center text-caption font-semibold text-muted-foreground">
+      <span className="w-6 h-6 rounded bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground">
         {storeIcons[store.icon] || store.icon.substring(0, 2).toUpperCase()}
       </span>
       <span className="flex-1 truncate">{store.name}</span>

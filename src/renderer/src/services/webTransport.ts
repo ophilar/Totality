@@ -19,12 +19,8 @@ function needsProxy(url: string): boolean {
   try {
     const u = new URL(url)
     const h = u.hostname
-    // In Electron (non-web mode), CDNs load directly — no proxy needed
-    // In web mode, proxy everything so images go through the 7-day disk cache
-    if (!isWebMode()) {
-      if (h === 'image.tmdb.org' || h.endsWith('.tmdb.org')) return false
-      if (h === 'coverartarchive.org') return false
-    }
+    // Don't proxy well-known public CDNs — they work directly from the browser
+    if (h === 'image.tmdb.org' || h.endsWith('.tmdb.org')) return false
     // Proxy everything else: Plex (*.plex.direct, local IPs), Jellyfin, Emby, Kodi, etc.
     return true
   } catch {
@@ -67,10 +63,7 @@ for (const [method, channel] of Object.entries(EVENT_CHANNEL_MAP)) {
 }
 
 let ws: WebSocket | null = null
-let connectPromise: Promise<void> | null = null
-let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let requestId = 0
-let reconnectAttempts = 0
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
 const eventListeners = new Map<string, Set<Function>>()
 let sessionToken: string | null = null
@@ -83,39 +76,13 @@ function getWsUrl(): string {
   return `${protocol}//${location.host}`
 }
 
-let isConnecting = false
-
 function connect(): Promise<void> {
-  // Guard: already connected
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    return Promise.resolve()
-  }
-  // Guard: connection in progress — return the existing promise
-  if (isConnecting && connectPromise) {
-    return connectPromise
-  }
-
-  // Cancel any pending reconnect
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer)
-    reconnectTimer = null
-  }
-
-  // Close any stale socket before creating a new one
-  if (ws) {
-    try { ws.onclose = null; ws.close() } catch { /* ignore */ }
-    ws = null
-  }
-
-  isConnecting = true
-
-  const promise = new Promise<void>((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     ws = new WebSocket(getWsUrl())
 
     ws.onopen = () => {
-      isConnecting = false
-      reconnectAttempts = 0
-      const stored = localStorage.getItem('web_session_token')
+      // Try to restore session
+      const stored = sessionStorage.getItem('web_session_token')
       if (stored) {
         sessionToken = stored
       }
@@ -153,14 +120,9 @@ function connect(): Promise<void> {
     }
 
     ws.onerror = () => {
-      isConnecting = false
-      connectPromise = null
       reject(new Error('WebSocket connection failed'))
     }
   })
-
-  connectPromise = promise
-  return promise
 }
 
 function handleMessage(data: { type: string; [key: string]: unknown }): void {
@@ -188,7 +150,7 @@ function handleMessage(data: { type: string; [key: string]: unknown }): void {
     case 'auth': {
       if (data.success && data.token) {
         sessionToken = data.token as string
-        localStorage.setItem('web_session_token', sessionToken)
+        sessionStorage.setItem('web_session_token', sessionToken)
         authPromise?.resolve(sessionToken)
         authPromise = null
       } else {
@@ -213,14 +175,7 @@ function dispatchEvent(channel: string, args: unknown[]): void {
 }
 
 function sendRpc(channel: string, args: unknown[]): Promise<unknown> {
-  // Build dedup key from channel + args
-  const dedupKey = channel + ':' + JSON.stringify(args)
-  const existing = rpcDedup.get(dedupKey)
-  if (existing && Date.now() - existing.timestamp < RPC_DEDUP_WINDOW_MS) {
-    return existing.promise
-  }
-
-  const promise = new Promise<unknown>((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       reject(new Error('Not connected'))
       return
@@ -235,12 +190,6 @@ function sendRpc(channel: string, args: unknown[]): Promise<unknown> {
       token: sessionToken,
     }))
   })
-
-  rpcDedup.set(dedupKey, { promise, timestamp: Date.now() })
-  // Clean up after window expires
-  setTimeout(() => rpcDedup.delete(dedupKey), RPC_DEDUP_WINDOW_MS + 10)
-
-  return promise
 }
 
 export function authenticate(pin: string): Promise<string> {

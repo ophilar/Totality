@@ -10,7 +10,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Loader2, Monitor, ArrowUpCircle, RefreshCw, Download, Globe, Copy, Check, Eye, EyeOff, Languages } from 'lucide-react'
 import { Toggle } from '../../ui/Toggle'
-import { Button, Card, Input, Select } from '../../ui'
 import { SETTING_KEYS } from '../../../../../shared/settingKeys'
 import { isSameLanguage, LANGUAGE_OPTIONS, parseLanguageWhitelist } from '../../library/mediaUtils'
 
@@ -149,13 +148,13 @@ export function GeneralTab() {
       <div className="space-y-2">
         <div className="flex items-center gap-2 mb-1">
           <Monitor className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-label font-medium text-foreground">Window Behavior</h3>
+          <h3 className="text-sm font-medium text-foreground">Window Behavior</h3>
         </div>
-        <Card variant="muted" padding="none" className="divide-y divide-border/30">
+        <div className="bg-muted/30 rounded-lg border border-border/40 divide-y divide-border/30">
           <div className="flex items-center justify-between px-4 py-3">
             <div>
-              <p className="text-label text-foreground">Minimize to tray on close</p>
-              <p className="text-caption text-muted-foreground">Hide to system tray instead of quitting</p>
+              <p className="text-sm text-foreground">Minimize to tray on close</p>
+              <p className="text-xs text-muted-foreground">Hide to system tray instead of quitting</p>
             </div>
             <Toggle
               checked={minimizeToTray}
@@ -172,8 +171,8 @@ export function GeneralTab() {
           {minimizeToTray && (
             <div className="flex items-center justify-between px-4 py-3">
               <div>
-                <p className="text-label text-foreground">Start minimized to tray</p>
-                <p className="text-caption text-muted-foreground">Launch the app hidden in the system tray</p>
+                <p className="text-sm text-foreground">Start minimized to tray</p>
+                <p className="text-xs text-muted-foreground">Launch the app hidden in the system tray</p>
               </div>
               <Toggle
                 checked={startMinimized}
@@ -184,7 +183,7 @@ export function GeneralTab() {
               />
             </div>
           )}
-        </Card>
+        </div>
       </div>
 
       {/* Subtitle Stream Preferences */}
@@ -261,52 +260,51 @@ export function GeneralTab() {
       <div className="space-y-2">
         <div className="flex items-center gap-2 mb-1">
           <ArrowUpCircle className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-label font-medium text-foreground">Updates</h3>
+          <h3 className="text-sm font-medium text-foreground">Updates</h3>
         </div>
-        <Card variant="muted" className="space-y-3">
+        <div className="bg-muted/30 rounded-lg border border-border/40 p-4 space-y-3">
           <div className="flex items-center gap-3">
             <div className="flex-1">
-              <p className="text-label font-medium">Totality v{appVersion}</p>
+              <p className="text-sm font-medium">Totality v{appVersion}</p>
               {(status === 'idle' || status === 'not-available') && lastChecked && (
-                <p className="text-caption text-muted-foreground">Up to date · Last checked {new Date(lastChecked).toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground">Up to date · Last checked {new Date(lastChecked).toLocaleString()}</p>
               )}
               {(status === 'idle' || status === 'not-available') && !lastChecked && (
-                <p className="text-caption text-muted-foreground">Up to date</p>
+                <p className="text-xs text-muted-foreground">Up to date</p>
               )}
-              {status === 'checking' && <p className="text-caption text-muted-foreground">Checking for updates...</p>}
-              {status === 'available' && <p className="text-caption text-foreground">Version {newVersion} available</p>}
+              {status === 'checking' && <p className="text-xs text-muted-foreground">Checking for updates...</p>}
+              {status === 'available' && <p className="text-xs text-primary">Version {newVersion} available</p>}
               {status === 'downloading' && downloadProgress && (
-                <p className="text-caption text-muted-foreground">Downloading... {Math.round(downloadProgress.percent)}%</p>
+                <p className="text-xs text-muted-foreground">Downloading... {Math.round(downloadProgress.percent)}%</p>
               )}
-              {status === 'downloaded' && <p className="text-caption text-foreground">Version {newVersion} ready to install</p>}
-              {status === 'error' && <p className="text-caption text-destructive">Update check failed</p>}
+              {status === 'downloaded' && <p className="text-xs text-green-500">Version {newVersion} ready to install</p>}
+              {status === 'error' && <p className="text-xs text-destructive">Update check failed</p>}
             </div>
-            <Button
-              variant="primary"
-              size="sm"
-              icon={(isChecking || status === 'checking') ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> :
+            <button
+              onClick={status === 'downloaded' ? () => window.electronAPI.autoUpdateInstallUpdate() : status === 'available' ? () => window.electronAPI.autoUpdateDownloadUpdate() : handleCheckForUpdates}
+              disabled={isChecking || status === 'checking' || status === 'downloading'}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+            >
+              {(isChecking || status === 'checking') ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> :
                status === 'downloaded' ? <ArrowUpCircle className="w-3.5 h-3.5" /> :
                status === 'available' ? <Download className="w-3.5 h-3.5" /> :
                <RefreshCw className="w-3.5 h-3.5" />}
-              onClick={status === 'downloaded' ? () => window.electronAPI.autoUpdateInstallUpdate() : status === 'available' ? () => window.electronAPI.autoUpdateDownloadUpdate() : handleCheckForUpdates}
-              disabled={isChecking || status === 'checking' || status === 'downloading'}
-            >
               {(isChecking || status === 'checking') ? 'Checking...' :
                status === 'downloaded' ? 'Install' :
                status === 'available' ? 'Download' :
-               'Check for updates'}
-            </Button>
+               'Check for Updates'}
+            </button>
           </div>
           {status === 'downloading' && downloadProgress && (
             <div className="w-full bg-muted rounded-full h-1.5">
-              <div className="bg-primary h-1.5 rounded-full transition-[width]" style={{ width: `${downloadProgress.percent}%` }} />
+              <div className="bg-primary h-1.5 rounded-full transition-all" style={{ width: `${downloadProgress.percent}%` }} />
             </div>
           )}
           {/* Release notes */}
           {releaseNotes && (status === 'available' || status === 'downloaded' || status === 'downloading') && (
             <div className="border-t border-border/30 pt-3 mt-1">
-              <p className="text-caption font-medium text-foreground mb-2">What's new in v{newVersion}</p>
-              <div className="text-caption text-muted-foreground space-y-1 max-h-40 overflow-y-auto pr-1">
+              <p className="text-xs font-medium text-foreground mb-2">What's new in v{newVersion}</p>
+              <div className="text-xs text-muted-foreground space-y-1 max-h-40 overflow-y-auto pr-1">
                 {releaseNotes.split('\n').filter(line => line.trim()).map((line, i) => {
                   const trimmed = line.replace(/^#+\s*/, '').replace(/^\*\s*/, '').replace(/^-\s*/, '').trim()
                   if (!trimmed) return null
@@ -324,12 +322,12 @@ export function GeneralTab() {
               </div>
             </div>
           )}
-        </Card>
-        <Card variant="muted" padding="none">
+        </div>
+        <div className="bg-muted/30 rounded-lg border border-border/40">
           <div className="flex items-center justify-between px-4 py-3">
             <div>
-              <p className="text-label text-foreground">Check for updates automatically</p>
-              <p className="text-caption text-muted-foreground">Periodically checks GitHub for new releases</p>
+              <p className="text-sm text-foreground">Check for updates automatically</p>
+              <p className="text-xs text-muted-foreground">Periodically checks GitHub for new releases</p>
             </div>
             <Toggle
               checked={autoUpdateEnabled}
@@ -339,21 +337,20 @@ export function GeneralTab() {
               }}
             />
           </div>
-        </Card>
+        </div>
       </div>
 
       {/* Web Access */}
       <div className="space-y-2">
         <div className="flex items-center gap-2 mb-1">
           <Globe className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-label font-medium text-foreground">Web Access</h3>
-          <span className="text-caption font-medium text-amber-500">Beta</span>
+          <h3 className="text-sm font-medium text-foreground">Web Access</h3>
         </div>
-        <Card variant="muted" padding="none" className="divide-y divide-border/30">
+        <div className="bg-muted/30 rounded-lg border border-border/40 divide-y divide-border/30">
           <div className="flex items-center justify-between px-4 py-3">
             <div>
-              <p className="text-label text-foreground">Enable web access</p>
-              <p className="text-caption text-muted-foreground">Access Totality from a browser on your network</p>
+              <p className="text-sm text-foreground">Enable web access</p>
+              <p className="text-xs text-muted-foreground">Access Totality from a browser on your network</p>
             </div>
             <Toggle
               checked={webEnabled}
@@ -384,7 +381,7 @@ export function GeneralTab() {
                 <div className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-green-500" />
-                    <span className="text-caption text-muted-foreground">
+                    <span className="text-xs text-muted-foreground">
                       Available at{' '}
                       <span className="font-mono text-foreground">{webUrl}</span>
                     </span>
@@ -397,10 +394,10 @@ export function GeneralTab() {
                       className="ml-1 p-0.5 text-muted-foreground hover:text-foreground transition-colors"
                       title="Copy URL"
                     >
-                      {urlCopied ? <Check className="w-3 h-3 text-foreground" /> : <Copy className="w-3 h-3" />}
+                      {urlCopied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
                     </button>
                     {webClients > 0 && (
-                      <span className="text-caption text-muted-foreground ml-auto">
+                      <span className="text-xs text-muted-foreground ml-auto">
                         {webClients} client{webClients !== 1 ? 's' : ''} connected
                       </span>
                     )}
@@ -411,11 +408,10 @@ export function GeneralTab() {
               {/* Port */}
               <div className="flex items-center justify-between px-4 py-3">
                 <div>
-                  <p className="text-label text-foreground">Port</p>
-                  <p className="text-caption text-muted-foreground">Restart required after changing</p>
+                  <p className="text-sm text-foreground">Port</p>
+                  <p className="text-xs text-muted-foreground">Restart required after changing</p>
                 </div>
-                <Input
-                  inputSize="sm"
+                <input
                   type="number"
                   value={webPort}
                   onChange={(e) => setWebPort(e.target.value)}
@@ -425,7 +421,7 @@ export function GeneralTab() {
                       await window.electronAPI.setSetting(SETTING_KEYS.web_access_port, String(port))
                     }
                   }}
-                  className="w-24 text-right"
+                  className="w-24 px-2 py-1 text-sm text-right bg-muted/50 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
                   min={1}
                   max={65535}
                 />
@@ -438,8 +434,7 @@ export function GeneralTab() {
                   <p className="text-xs text-muted-foreground">Required whenever web access is enabled.</p>
                 </div>
                 <div className="flex items-center gap-1">
-                  <Input
-                    inputSize="sm"
+                  <input
                     type={showPin ? 'text' : 'password'}
                     value={webPin}
                     onChange={(e) => setWebPin(e.target.value)}
@@ -497,44 +492,26 @@ export function GeneralTab() {
               {/* Session timeout */}
               <div className="flex items-center justify-between px-4 py-3">
                 <div>
-                  <p className="text-label text-foreground">Session timeout</p>
-                  <p className="text-caption text-muted-foreground">How long before requiring PIN again</p>
+                  <p className="text-sm text-foreground">Session timeout</p>
+                  <p className="text-xs text-muted-foreground">How long before requiring PIN again</p>
                 </div>
-                <Select
-                  inputSize="sm"
+                <select
                   value={webSessionTimeout}
                   onChange={async (e) => {
                     setWebSessionTimeout(e.target.value)
                     await window.electronAPI.setSetting(SETTING_KEYS.web_access_session_timeout, e.target.value)
                   }}
+                  className="px-2 py-1 text-sm bg-muted/50 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
                 >
                   <option value="3600000">1 hour</option>
                   <option value="28800000">8 hours</option>
                   <option value="86400000">24 hours</option>
                   <option value="604800000">7 days</option>
-                </Select>
-              </div>
-
-              {/* IP Allowlist */}
-              <div className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <p className="text-label text-foreground">IP allowlist</p>
-                  <p className="text-caption text-muted-foreground">Comma-separated. Empty allows all.</p>
-                </div>
-                <Input
-                  inputSize="sm"
-                  value={webIpAllowlist}
-                  onChange={(e) => setWebIpAllowlist(e.target.value)}
-                  onBlur={async () => {
-                    await window.electronAPI.setSetting(SETTING_KEYS.web_access_ip_allowlist, webIpAllowlist.trim())
-                  }}
-                  placeholder="All IPs allowed"
-                  className="w-44"
-                />
+                </select>
               </div>
             </>
           )}
-        </Card>
+        </div>
       </div>
 
     </div>

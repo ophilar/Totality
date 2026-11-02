@@ -19,7 +19,6 @@ import {
 } from 'lucide-react'
 import { TranscodingHardwareCard } from '../TranscodingHardwareCard'
 import { Toggle } from '../../ui/Toggle'
-import { Button, Input, Select } from '../../ui'
 
 interface ServiceCardProps {
   title: string
@@ -58,7 +57,7 @@ function ServiceCard({
           {/* Status indicator */}
           <div className="shrink-0">
             {status === 'configured' ? (
-              <CheckCircle className="w-5 h-5 text-foreground" />
+              <CheckCircle className="w-5 h-5 text-primary" />
             ) : status === 'partial' ? (
               <CheckCircle className="w-5 h-5 text-muted-foreground" />
             ) : (
@@ -72,10 +71,10 @@ function ServiceCard({
           {/* Title and status */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <span className="font-medium text-label">{title}</span>
-              <span className="text-caption text-muted-foreground">{statusText}</span>
+              <span className="font-medium text-sm">{title}</span>
+              <span className="text-xs text-muted-foreground">{statusText}</span>
             </div>
-            <p className="text-caption text-muted-foreground truncate">{description}</p>
+            <p className="text-xs text-muted-foreground truncate">{description}</p>
           </div>
 
         </button>
@@ -437,7 +436,7 @@ export function ServicesTab() {
       <TranscodingHardwareCard />
       {/* Header */}
       <div className="mb-4">
-        <p className="text-caption text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           Configure external services and tools used for metadata and media analysis.
         </p>
       </div>
@@ -455,7 +454,7 @@ export function ServicesTab() {
         <div className="space-y-3">
           <div className="flex gap-2">
               <div className="relative flex-1">
-                <Input
+                <input
                   id={tmdbId}
                   type={showTmdbKey ? 'text' : 'password'}
                   value={tmdbApiKey}
@@ -464,7 +463,7 @@ export function ServicesTab() {
                     setTmdbStatus('idle')
                   }}
                   placeholder="Enter your TMDB API key"
-                  className="pr-10"
+                  className="w-full px-3 py-2 pr-10 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
                 />
                 <button
                   type="button"
@@ -478,17 +477,17 @@ export function ServicesTab() {
               <button
                 onClick={handleTestTmdb}
                 disabled={!tmdbApiKey.trim() || tmdbStatus === 'testing' || tmdbStatus === 'valid'}
-                className={`px-3 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 ${
-                  tmdbStatus === 'valid' ? 'text-foreground' :
+                className={`px-3 py-2 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2 ${
+                  tmdbStatus === 'valid' ? 'text-primary' :
                   tmdbStatus === 'invalid' ? 'text-destructive bg-destructive/10' :
-                  'text-label bg-muted hover:bg-muted/80'
+                  'text-sm bg-muted hover:bg-muted/80'
                 }`}
                 title={tmdbStatus === 'valid' ? 'API key is valid' : tmdbStatus === 'invalid' ? 'Invalid API key' : 'Test API key'}
               >
                 {tmdbStatus === 'testing' ? <Loader2 className="w-4 h-4 animate-spin" /> :
                  tmdbStatus === 'valid' ? <CheckCircle className="w-4 h-4" /> :
-                 tmdbStatus === 'invalid' ? <><XCircle className="w-4 h-4" /><span className="text-caption">Invalid</span></> :
-                 <span className="text-label">Test</span>}
+                 tmdbStatus === 'invalid' ? <><XCircle className="w-4 h-4" /><span className="text-xs">Invalid</span></> :
+                 <span className="text-sm">Test</span>}
               </button>
               {tmdbApiKey.trim() && (
                 <button
@@ -496,16 +495,16 @@ export function ServicesTab() {
                     setTmdbApiKey('')
                     setTmdbStatus('idle')
                   }}
-                  className="px-3 py-2 text-label text-muted-foreground hover:text-destructive rounded-lg transition-colors"
+                  className="px-3 py-2 text-sm text-muted-foreground hover:text-destructive rounded-md transition-colors"
                   aria-label="Clear TMDB API key"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
               )}
             </div>
-          <p className="text-caption text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Free API key from{' '}
-            <button type="button" onClick={() => window.electronAPI.openExternal('https://www.themoviedb.org/settings/api')} className="text-muted-foreground hover:text-foreground hover:underline">themoviedb.org</button>
+            <button type="button" onClick={() => window.electronAPI.openExternal('https://www.themoviedb.org/settings/api')} className="text-primary hover:underline">themoviedb.org</button>
           </p>
         </div>
       </ServiceCard>
@@ -524,59 +523,57 @@ export function ServicesTab() {
         <div className="space-y-3">
           <div className="flex items-center gap-3">
             <div className="flex-1">
-              <p className="text-label font-medium">
+              <p className="text-sm font-medium">
                 {ffprobeAvailable ? `FFprobe v${ffprobeVersion || '?'}` : 'FFprobe not installed'}
               </p>
               {ffprobeAvailable && !updateAvailable && latestVersion && (
-                <p className="text-caption text-muted-foreground">Up to date</p>
+                <p className="text-xs text-muted-foreground">Up to date</p>
               )}
               {ffprobeAvailable && !updateAvailable && !latestVersion && (
-                <p className="text-caption text-muted-foreground">{ffprobeBundled ? 'Bundled' : 'System installed'}</p>
+                <p className="text-xs text-muted-foreground">{ffprobeBundled ? 'Bundled' : 'System installed'}</p>
               )}
               {updateAvailable && latestVersion && (
-                <p className="text-caption text-primary">Version {latestVersion} available</p>
+                <p className="text-xs text-primary">Version {latestVersion} available</p>
               )}
               {!ffprobeAvailable && (
-                <p className="text-caption text-muted-foreground">Required for local file analysis</p>
+                <p className="text-xs text-muted-foreground">Required for local file analysis</p>
               )}
             </div>
             {ffprobeAvailable ? (
-              <Button
-                variant="primary"
-                size="sm"
-                icon={(checkingUpdate) ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> :
-                 updateAvailable ? <Download className="w-3.5 h-3.5" /> :
-                 <RefreshCw className="w-3.5 h-3.5" />}
+              <button
                 onClick={updateAvailable ? handleInstallFFprobe : handleCheckForUpdate}
                 disabled={checkingUpdate || isInstalling}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
+                {(checkingUpdate) ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> :
+                 updateAvailable ? <Download className="w-3.5 h-3.5" /> :
+                 <RefreshCw className="w-3.5 h-3.5" />}
                 {checkingUpdate ? 'Checking...' :
                  updateAvailable ? 'Update' :
-                 'Check for updates'}
-              </Button>
+                 'Check for Updates'}
+              </button>
             ) : (
-              <Button
-                variant="primary"
-                size="sm"
-                icon={isInstalling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+              <button
                 onClick={handleInstallFFprobe}
                 disabled={isInstalling}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
+                {isInstalling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                 Install (~80MB)
-              </Button>
+              </button>
             )}
           </div>
 
           {/* Install/Update Progress */}
           {isInstalling && installProgress && (
             <div className="w-full bg-muted rounded-full h-1.5">
-              <div className="bg-primary h-1.5 rounded-full transition-[width]" style={{ width: `${installProgress.percent}%` }} />
+              <div className="bg-primary h-1.5 rounded-full transition-all" style={{ width: `${installProgress.percent}%` }} />
             </div>
           )}
 
           {/* Error */}
           {ffprobeError && (
-            <p className="text-caption text-destructive">{ffprobeError}</p>
+            <p className="text-xs text-destructive">{ffprobeError}</p>
           )}
 
           {/* Uninstall */}
@@ -584,7 +581,7 @@ export function ServicesTab() {
             <button
               onClick={handleUninstallFFprobe}
               disabled={isUninstalling || isInstalling}
-              className={`text-caption transition-colors disabled:opacity-50 ${
+              className={`text-xs transition-colors disabled:opacity-50 ${
                 confirmUninstall
                   ? 'text-destructive'
                   : 'text-muted-foreground hover:text-foreground'
@@ -619,7 +616,7 @@ export function ServicesTab() {
         <div className="space-y-3">
           <div className="flex gap-2">
               <div className="relative flex-1">
-                <Input
+                <input
                   id={geminiId}
                   type={showGeminiKey ? 'text' : 'password'}
                   value={geminiApiKey}
@@ -629,7 +626,7 @@ export function ServicesTab() {
                     setGeminiError(null)
                   }}
                   placeholder="Enter your Gemini API key"
-                  className="pr-10"
+                  className="w-full px-3 py-2 pr-10 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
                 />
                 <button
                   type="button"
@@ -643,17 +640,17 @@ export function ServicesTab() {
               <button
                 onClick={handleTestGemini}
                 disabled={!geminiApiKey.trim() || geminiStatus === 'testing' || geminiStatus === 'valid'}
-                className={`px-3 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 ${
-                  geminiStatus === 'valid' ? 'text-foreground' :
+                className={`px-3 py-2 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2 ${
+                  geminiStatus === 'valid' ? 'text-primary' :
                   geminiStatus === 'invalid' ? 'text-destructive bg-destructive/10' :
-                  'text-label bg-muted hover:bg-muted/80'
+                  'text-sm bg-muted hover:bg-muted/80'
                 }`}
                 title={geminiStatus === 'valid' ? 'API key is valid' : geminiStatus === 'invalid' ? (geminiError || 'Invalid API key') : 'Test API key'}
               >
                 {geminiStatus === 'testing' ? <Loader2 className="w-4 h-4 animate-spin" /> :
                  geminiStatus === 'valid' ? <CheckCircle className="w-4 h-4" /> :
-                 geminiStatus === 'invalid' ? <><XCircle className="w-4 h-4" /><span className="text-caption">Invalid</span></> :
-                 <span className="text-label">Test</span>}
+                 geminiStatus === 'invalid' ? <><XCircle className="w-4 h-4" /><span className="text-xs">Invalid</span></> :
+                 <span className="text-sm">Test</span>}
               </button>
               {geminiApiKey.trim() && (
                 <button
@@ -662,16 +659,16 @@ export function ServicesTab() {
                     setGeminiStatus('idle')
                     setGeminiError(null)
                   }}
-                  className="px-3 py-2 text-label text-muted-foreground hover:text-destructive rounded-lg transition-colors"
+                  className="px-3 py-2 text-sm text-muted-foreground hover:text-destructive rounded-md transition-colors"
                   aria-label="Clear Gemini API key"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
               )}
             </div>
-          <p className="text-caption text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Free API key from{' '}
-            <button type="button" onClick={() => window.electronAPI.openExternal('https://aistudio.google.com/apikey')} className="text-muted-foreground hover:text-foreground hover:underline">aistudio.google.com</button>
+            <button type="button" onClick={() => window.electronAPI.openExternal('https://aistudio.google.com/apikey')} className="text-primary hover:underline">aistudio.google.com</button>
             {' '}(no credit card required)
           </p>
 
@@ -693,7 +690,7 @@ export function ServicesTab() {
         onToggle={() => toggleCard('nfs')}
       >
         <div className="space-y-4">
-          <p className="text-caption text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Required for FFprobe to analyze files on NFS shares used by Kodi. Maps NFS URLs to local
             Windows paths.
           </p>
@@ -706,18 +703,18 @@ export function ServicesTab() {
                 const testResult = testResults[nfsPath]
                 return (
                   <div key={nfsPath} className="space-y-1">
-                    <div className="flex items-center gap-2 p-2.5">
-                      <code className="flex-1 text-caption truncate text-muted-foreground" title={nfsPath}>
+                    <div className="flex items-center gap-2 p-2.5 bg-background/50 rounded-lg">
+                      <code className="flex-1 text-xs truncate text-muted-foreground" title={nfsPath}>
                         nfs://{nfsPath}
                       </code>
                       <span className="text-muted-foreground/50">→</span>
-                      <code className="flex-1 text-caption truncate" title={localPath}>
+                      <code className="flex-1 text-xs truncate" title={localPath}>
                         {localPath}
                       </code>
                       <button
                         onClick={() => handleTestNfsMapping(nfsPath, localPath)}
                         disabled={isTesting}
-                        className="flex items-center gap-1 px-2 py-1 text-caption bg-muted hover:bg-muted/80 rounded transition-colors disabled:opacity-50"
+                        className="flex items-center gap-1 px-2 py-1 text-xs bg-muted hover:bg-muted/80 rounded transition-colors disabled:opacity-50"
                         title="Test mapping"
                       >
                         {isTesting ? (
@@ -737,9 +734,9 @@ export function ServicesTab() {
                     </div>
                     {testResult && (
                       <div
-                        className={`flex items-center gap-2 px-2.5 py-1.5 text-caption rounded-lg ${
+                        className={`flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg ${
                           testResult.success
-                            ? 'bg-muted/50 text-foreground'
+                            ? 'bg-primary/10 text-primary'
                             : 'bg-destructive/10 text-destructive'
                         }`}
                       >
@@ -763,41 +760,42 @@ export function ServicesTab() {
           )}
 
           {/* Add New Mapping */}
-          <div className="space-y-2 pt-3 border-t border-border/30">
-            <p className="text-caption font-medium text-muted-foreground">Add new mapping</p>
+          <div className="space-y-2 p-3 bg-background/50 rounded-lg">
+            <p className="text-xs font-medium text-muted-foreground">Add new mapping</p>
             <div className="flex items-end gap-2">
               <div className="flex-1 space-y-1">
-                <label className="text-caption text-muted-foreground">NFS Path (without nfs://)</label>
-                <Input
+                <label className="text-xs text-muted-foreground">NFS Path (without nfs://)</label>
+                <input
                   type="text"
                   value={newNfsPath}
                   onChange={(e) => setNewNfsPath(e.target.value)}
                   placeholder="nas.local/media"
+                  className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
                 />
               </div>
               <div className="flex-1 space-y-1">
-                <label className="text-caption text-muted-foreground">Local Path</label>
-                <Input
+                <label className="text-xs text-muted-foreground">Local Path</label>
+                <input
                   type="text"
                   value={newLocalPath}
                   onChange={(e) => setNewLocalPath(e.target.value)}
                   placeholder="Z:\"
+                  className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
                 />
               </div>
-              <Button
-                variant="primary"
-                size="sm"
-                icon={<Plus className="w-4 h-4" />}
+              <button
                 onClick={handleAddNfsMapping}
                 disabled={!newNfsPath.trim() || !newLocalPath.trim()}
+                className="flex items-center gap-1 px-3 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
+                <Plus className="w-4 h-4" />
                 Add
-              </Button>
+              </button>
             </div>
           </div>
 
           {Object.keys(nfsMappings).length === 0 && (
-            <p className="text-caption text-muted-foreground text-center py-2">
+            <p className="text-xs text-muted-foreground text-center py-2">
               No NFS mappings configured. Only needed if you use NFS shares with Kodi.
             </p>
           )}
@@ -809,14 +807,14 @@ export function ServicesTab() {
       {/* Save button */}
       {hasChanges && (
         <div className="flex justify-end pt-3">
-          <Button
-            variant="primary"
-            icon={isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          <button
             onClick={handleSave}
             disabled={isSaving}
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
-            {isSaving ? 'Saving...' : 'Save changes'}
-          </Button>
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {isSaving ? 'Saving...' : 'Save Changes'}
+          </button>
         </div>
       )}
     </div>

@@ -11,8 +11,6 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { X, Tags, RefreshCw, ArrowRight, CheckCircle2, AlertCircle, Loader2, Circle, Search } from 'lucide-react'
-import { Button } from '../ui/Button'
-import { Input, Select } from '../ui/Input'
 
 interface MoodSource {
   sourceId: string
@@ -408,39 +406,39 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
       <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
         <div className="flex items-center gap-2">
           <Tags className="w-4 h-4 text-muted-foreground" />
-          <h2 className="text-label font-semibold">Tag Sync</h2>
+          <h2 className="text-sm font-semibold">Tag Sync</h2>
           {totalMismatches > 0 && (
-            <span className="text-caption text-muted-foreground">{totalMismatches}</span>
+            <span className="text-xs text-muted-foreground">{totalMismatches}</span>
           )}
         </div>
         <div className="flex items-center gap-1">
-          <Button
-            variant="tertiary"
-            size="icon-sm"
+          <button
             onClick={() => loadComparison()}
             disabled={loading || !sourceOfTruthId}
-            icon={<RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-50 focus:outline-hidden focus:ring-2 focus:ring-primary"
             title="Refresh"
-          />
-          <Button
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
             ref={closeButtonRef}
-            variant="tertiary"
-            size="icon-sm"
             onClick={onClose}
-            icon={<X className="w-4 h-4" />}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary"
             aria-label="Close tag sync panel"
-          />
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
       {/* Step 1: Source of Truth */}
       <div className="px-3 pt-3 pb-2 border-b border-border/30">
-        <label htmlFor="sync-source-select" className="text-caption font-medium text-muted-foreground mb-1.5 block">Source of truth</label>
-        <Select
+        <label htmlFor="sync-source-select" className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">1. Source of Truth</label>
+        <select
           id="sync-source-select"
-          inputSize="sm"
           value={sourceOfTruthId}
           onChange={(e) => setSourceOfTruthId(e.target.value)}
+          className="w-full px-2.5 py-1.5 rounded-lg bg-background border border-border/30 text-foreground text-xs focus:outline-hidden focus:ring-2 focus:ring-primary"
         >
           <option value="">Select a source...</option>
           {sources.map(s => {
@@ -454,98 +452,101 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
               </option>
             )
           })}
-        </Select>
+        </select>
       </div>
 
-      {/* Fields + Mode (merged row) */}
+      {/* Step 2: Fields to sync */}
       <div className="px-3 pt-2 pb-2 border-b border-border/30">
-        <div className="flex items-center justify-between">
-          {/* Fields */}
-          <div className="flex items-center gap-4">
-            {(['mood', 'genre'] as const).map(f => (
-              <label key={f} className="flex items-center gap-1.5 cursor-pointer">
-                <button
-                  role="checkbox"
-                  aria-checked={syncFields[f]}
-                  onClick={() => toggleField(f)}
-                  className={`w-3.5 h-3.5 rounded border transition-colors flex items-center justify-center ${
-                    syncFields[f]
-                      ? 'bg-primary border-primary'
-                      : 'border-muted-foreground/40 hover:border-muted-foreground'
-                  }`}
-                >
-                  {syncFields[f] && (
-                    <svg className="w-2.5 h-2.5 text-primary-foreground" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M2 6l3 3 5-5" />
-                    </svg>
-                  )}
-                </button>
-                <span className={`text-caption ${syncFields[f] ? 'text-foreground' : 'text-muted-foreground'}`}>
-                  {f === 'mood' ? 'Mood' : 'Genre'}
-                </span>
-              </label>
-            ))}
-          </div>
-          {/* Mode */}
-          <div className="flex gap-1" role="radiogroup" aria-label="Sync mode">
-            <button
-              role="radio"
-              aria-checked={syncMode === 'overwrite'}
-              onClick={() => setSyncMode('overwrite')}
-              className={`flex-1 px-2 py-1.5 text-caption font-medium rounded-lg transition-colors ${
-                syncMode === 'overwrite'
-                  ? 'bg-foreground text-background'
-                  : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
-              }`}
-            >
-              Overwrite
-            </button>
-            <button
-              role="radio"
-              aria-checked={syncMode === 'append'}
-              onClick={() => setSyncMode('append')}
-              className={`flex-1 px-2 py-1.5 text-caption font-medium rounded-lg transition-colors ${
-                syncMode === 'append'
-                  ? 'bg-foreground text-background'
-                  : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
-              }`}
-            >
-              Append
-            </button>
-          </div>
+        <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">2. Fields</p>
+        <div className="flex items-center gap-4">
+          {(['mood', 'genre'] as const).map(f => (
+            <label key={f} className="flex items-center gap-1.5 cursor-pointer">
+              <button
+                role="checkbox"
+                aria-checked={syncFields[f]}
+                onClick={() => toggleField(f)}
+                className={`w-3.5 h-3.5 rounded border transition-colors flex items-center justify-center ${
+                  syncFields[f]
+                    ? 'bg-primary border-primary'
+                    : 'border-muted-foreground/40 hover:border-muted-foreground'
+                }`}
+              >
+                {syncFields[f] && (
+                  <svg className="w-2.5 h-2.5 text-primary-foreground" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M2 6l3 3 5-5" />
+                  </svg>
+                )}
+              </button>
+              <span className={`text-xs ${syncFields[f] ? 'text-foreground' : 'text-muted-foreground'}`}>
+                {f === 'mood' ? 'Mood' : 'Genre'}
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Step 3: Sync mode */}
+      <div className="px-3 pt-2 pb-2 border-b border-border/30">
+        <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">3. Mode</p>
+        <div className="flex gap-1" role="radiogroup" aria-label="Sync mode">
+          <button
+            role="radio"
+            aria-checked={syncMode === 'overwrite'}
+            onClick={() => setSyncMode('overwrite')}
+            className={`flex-1 px-2 py-1.5 text-[10px] font-medium rounded-md transition-colors ${
+              syncMode === 'overwrite'
+                ? 'bg-primary/20 text-primary'
+                : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
+            }`}
+          >
+            Overwrite
+          </button>
+          <button
+            role="radio"
+            aria-checked={syncMode === 'append'}
+            onClick={() => setSyncMode('append')}
+            className={`flex-1 px-2 py-1.5 text-[10px] font-medium rounded-md transition-colors ${
+              syncMode === 'append'
+                ? 'bg-primary/20 text-primary'
+                : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
+            }`}
+          >
+            Append
+          </button>
         </div>
       </div>
 
       {/* Step 4: Targets */}
       {targetSources.size > 0 && (
         <div className="px-3 pt-2 pb-2 border-b border-border/30">
-          <p className="text-caption font-medium text-muted-foreground mb-1.5">Sync targets</p>
+          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">4. Sync Targets</p>
           <div className="space-y-1.5">
             {Array.from(targetSources.values()).map(target => (
               <div key={target.sourceId} className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 min-w-0">
                   {target.mismatchCount === 0 ? (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-foreground shrink-0" />
+                    <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
                   ) : (
                     <Circle className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
                   )}
-                  <span className="text-caption truncate">{target.sourceName}</span>
-                  <span className="text-caption text-muted-foreground shrink-0">
+                  <span className="text-xs truncate">{target.sourceName}</span>
+                  <span className="text-[10px] text-muted-foreground shrink-0">
                     {target.mismatchCount === 0 ? 'synced' : `${target.mismatchCount} pending`}
                   </span>
                 </div>
-                <Button
-                  variant="primary"
-                  size="sm"
+                <button
                   onClick={() => handleSyncClick(target.sourceId)}
                   disabled={syncing || target.mismatchCount === 0 || !hasActiveField || selectedTrackIds.size === 0}
-                  loading={syncingTarget === target.sourceId}
-                  icon={syncingTarget !== target.sourceId ? <ArrowRight className="w-3 h-3" /> : undefined}
                   aria-label={`Sync ${fieldLabel} to ${target.sourceName}`}
-                  className="shrink-0 ml-2"
+                  className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0 ml-2 focus:outline-hidden focus:ring-2 focus:ring-primary"
                 >
+                  {syncingTarget === target.sourceId ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <ArrowRight className="w-3 h-3" />
+                  )}
                   {selectedTrackIds.size > 0 ? `Sync ${selectedTrackIds.size}` : 'Sync'}
-                </Button>
+                </button>
               </div>
             ))}
           </div>
@@ -556,35 +557,34 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
       {comparisons.length > 0 && (
         <div className="px-3 pt-2 pb-2 border-b border-border/30 space-y-2">
           {/* Stats */}
-          <div className="text-caption text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5">
+          <div className="text-[10px] text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5">
             {selectedSource && <span>{selectedSource.tracksWithMoods} source {fieldLabel}</span>}
             <span>{comparisons.length} matched</span>
             <span>{totalMismatches} mismatched</span>
-            {selectedTrackIds.size > 0 && <span className="text-foreground">{selectedTrackIds.size} selected</span>}
+            {selectedTrackIds.size > 0 && <span className="text-primary">{selectedTrackIds.size} selected</span>}
           </div>
 
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-            <Input
+            <input
               type="text"
-              inputSize="sm"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search artist, track, album..."
-              className="pl-6 pr-2"
+              className="w-full pl-6 pr-2 py-1.5 rounded-lg bg-background border border-border/30 text-foreground text-[10px] focus:outline-hidden focus:ring-2 focus:ring-primary placeholder:text-muted-foreground/50"
             />
           </div>
 
           {/* Selection + filter */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Button variant="tertiary" size="sm" onClick={selectAll}>All</Button>
-              <Button variant="tertiary" size="sm" onClick={selectNone}>None</Button>
-              <span className="text-caption text-muted-foreground">{filteredComparisons.length} tracks</span>
+              <button onClick={selectAll} className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">All</button>
+              <button onClick={selectNone} className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">None</button>
+              <span className="text-[10px] text-muted-foreground">{filteredComparisons.length} tracks</span>
             </div>
             <label className="flex items-center gap-1.5 cursor-pointer">
-              <span className="text-caption text-muted-foreground">Mismatches</span>
+              <span className="text-[10px] text-muted-foreground">Mismatches</span>
               <button
                 role="switch"
                 aria-checked={showMismatchOnly}
@@ -605,12 +605,12 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
       {/* Progress */}
       {syncProgress && (
         <div className="px-3 py-2 border-b border-border/30 space-y-1">
-          <div className="flex justify-between text-caption text-muted-foreground">
+          <div className="flex justify-between text-[10px] text-muted-foreground">
             <span className="truncate pr-2">{syncProgress.currentTrack}</span>
             <span className="shrink-0">{syncProgress.current}/{syncProgress.total}</span>
           </div>
           <div className="h-1 bg-muted rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round((syncProgress.current / syncProgress.total) * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Sync progress">
-            <div className="h-full bg-primary transition-[width] duration-300" style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }} />
+            <div className="h-full bg-primary transition-all duration-300" style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }} />
           </div>
         </div>
       )}
@@ -641,14 +641,14 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
             <div className="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center mb-3">
               <Tags className="w-6 h-6 text-muted-foreground" />
             </div>
-            <p className="text-label font-medium mb-1">
+            <p className="text-sm font-medium mb-1">
               {sourceOfTruthId
                 ? comparisons.length === 0
                   ? 'No matched tracks'
                   : searchQuery ? 'No results' : 'All synced'
                 : 'No source selected'}
             </p>
-            <p className="text-caption text-muted-foreground max-w-[220px]">
+            <p className="text-xs text-muted-foreground max-w-[220px]">
               {sourceOfTruthId
                 ? comparisons.length === 0
                   ? `No tracks with ${fieldLabel} were found in both sources`
@@ -669,11 +669,12 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                 <div
                   key={comp.sourceOfTruthTrackId}
                   role="listitem"
-                  className={`p-2 rounded-lg transition-colors duration-300 cursor-pointer ${
+                  className={`p-2 rounded-lg transition-all duration-300 cursor-pointer ${
                     hasFailed ? 'bg-destructive/10' :
-                    wasSynced ? 'bg-muted/30' :
+                    wasSynced ? 'bg-green-500/10' :
                     isSyncing ? 'bg-primary/10' :
-                    'hover:bg-muted/30'
+                    isSelected ? 'bg-primary/5' :
+                    'bg-muted/30 hover:bg-muted/50'
                   }`}
                   onClick={() => {
                     if (!syncing && hasMismatch) {
@@ -690,35 +691,35 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                       ) : hasFailed ? (
                         <AlertCircle className="w-3.5 h-3.5 text-destructive" />
                       ) : !hasMismatch || wasSynced ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-foreground" />
+                        <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
                       ) : isSelected ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-foreground" />
+                        <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
                       ) : (
                         <Circle className="w-3.5 h-3.5 text-muted-foreground/50" />
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-caption font-medium truncate leading-tight">{comp.trackTitle}</p>
-                      <p className="text-caption text-muted-foreground truncate">{comp.artist}</p>
+                      <p className="text-xs font-medium truncate leading-tight">{comp.trackTitle}</p>
+                      <p className="text-[10px] text-muted-foreground truncate">{comp.artist}</p>
                     </div>
                   </div>
 
                   {/* Source tags */}
                   <div className="mt-1.5 ml-5.5 space-y-0.5">
                     {syncFields.mood && comp.sourceMoods.length > 0 && (
-                      <p className="text-caption">
-                        <span className="text-muted-foreground/50 text-caption mr-1">mood</span>
+                      <p className="text-[10px]">
+                        <span className="text-muted-foreground/50 uppercase tracking-wider text-[8px] mr-1">mood</span>
                         <span className="text-foreground">{comp.sourceMoods.join(' / ')}</span>
                       </p>
                     )}
                     {syncFields.genre && comp.sourceGenres.length > 0 && (
-                      <p className="text-caption">
-                        <span className="text-muted-foreground/50 text-caption mr-1">genre</span>
+                      <p className="text-[10px]">
+                        <span className="text-muted-foreground/50 uppercase tracking-wider text-[8px] mr-1">genre</span>
                         <span className="text-foreground">{comp.sourceGenres.join(' / ')}</span>
                       </p>
                     )}
                     {comp.sourceMoods.length === 0 && comp.sourceGenres.length === 0 && (
-                      <p className="text-caption text-muted-foreground/50 italic">No {fieldLabel}</p>
+                      <p className="text-[10px] text-muted-foreground/50 italic">No {fieldLabel}</p>
                     )}
                   </div>
 
@@ -731,14 +732,14 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
 
                     return (
                       <div key={j} className="mt-1.5 ml-5.5 pt-1.5 border-t border-border/20">
-                        <p className="text-caption text-muted-foreground/50 mb-0.5">
+                        <p className="text-[10px] text-muted-foreground/50 mb-0.5">
                           {target.sourceName}
                           {target.trackId === syncingTrackId && <Loader2 className="w-2 h-2 text-primary animate-spin inline ml-1" />}
                         </p>
 
                         {showMood && (
-                          <p className="text-caption">
-                            <span className="text-muted-foreground/50 text-caption mr-1">mood</span>
+                          <p className="text-[10px]">
+                            <span className="text-muted-foreground/50 uppercase tracking-wider text-[8px] mr-1">mood</span>
                             {target.targetMoods.length > 0 ? target.targetMoods.map((m, k) => (
                               <span key={k}>
                                 {k > 0 && <span className="text-muted-foreground/30"> / </span>}
@@ -749,7 +750,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                             )}
                             {/* Show source moods missing from target */}
                             {target.moodMismatch && comp.sourceMoods.filter(m => isMissing(m, target.targetMoods)).length > 0 && (
-                              <span className="text-foreground/70">
+                              <span className="text-primary/70">
                                 {target.targetMoods.length > 0 && <span className="text-muted-foreground/30"> / </span>}
                                 {comp.sourceMoods.filter(m => isMissing(m, target.targetMoods)).map((m, k) => (
                                   <span key={k}>
@@ -763,8 +764,8 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                         )}
 
                         {showGenre && (
-                          <p className="text-caption">
-                            <span className="text-muted-foreground/50 text-caption mr-1">genre</span>
+                          <p className="text-[10px]">
+                            <span className="text-muted-foreground/50 uppercase tracking-wider text-[8px] mr-1">genre</span>
                             {target.targetGenres.length > 0 ? target.targetGenres.map((m, k) => (
                               <span key={k}>
                                 {k > 0 && <span className="text-muted-foreground/30"> / </span>}
@@ -774,7 +775,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                               <span className="text-muted-foreground/40 italic">missing</span>
                             )}
                             {target.genreMismatch && comp.sourceGenres.filter(m => isMissing(m, target.targetGenres)).length > 0 && (
-                              <span className="text-foreground/70">
+                              <span className="text-primary/70">
                                 {target.targetGenres.length > 0 && <span className="text-muted-foreground/30"> / </span>}
                                 {comp.sourceGenres.filter(m => isMissing(m, target.targetGenres)).map((m, k) => (
                                   <span key={k}>
@@ -788,7 +789,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                         )}
 
                         {!showMood && !showGenre && !wasSynced && (
-                          <p className="text-caption text-muted-foreground/40 italic">No {fieldLabel}</p>
+                          <p className="text-[10px] text-muted-foreground/40 italic">No {fieldLabel}</p>
                         )}
                       </div>
                     )
@@ -797,7 +798,7 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
               )
             })}
             {filteredComparisons.length > 200 && (
-              <p className="text-caption text-muted-foreground text-center py-2">Showing 200 of {filteredComparisons.length}</p>
+              <p className="text-[10px] text-muted-foreground text-center py-2">Showing 200 of {filteredComparisons.length}</p>
             )}
           </div>
         )}
@@ -809,21 +810,21 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
           <div className="bg-card rounded-xl p-4 w-full max-w-[300px] space-y-3 shadow-lg border border-border/30">
             <div className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
-              <h3 id="sync-confirm-title" className="text-label font-semibold">Write to {confirmDialog.targetName}</h3>
+              <h3 id="sync-confirm-title" className="text-sm font-semibold">Write to {confirmDialog.targetName}</h3>
             </div>
 
             {confirmDialog.isRunning ? (
               <div className="space-y-2">
-                <p className="text-caption text-destructive">
+                <p className="text-xs text-destructive">
                   {confirmDialog.targetName} is currently running. Close it before syncing to prevent database corruption.
                 </p>
-                <Button variant="secondary" size="sm" onClick={() => setConfirmDialog(null)} className="w-full">
+                <button onClick={() => setConfirmDialog(null)} className="w-full px-3 py-1.5 text-xs font-medium rounded-md bg-muted text-foreground hover:bg-muted/80 transition-colors">
                   Close
-                </Button>
+                </button>
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="text-caption text-muted-foreground space-y-1.5">
+                <div className="text-xs text-muted-foreground space-y-1.5">
                   <p>This will modify the {confirmDialog.targetName} database:</p>
                   <ul className="space-y-1 ml-3">
                     <li>Update {fieldLabel} on {confirmDialog.trackCount} tracks</li>
@@ -831,15 +832,15 @@ export function MoodSyncPanel({ isOpen, onClose }: MoodSyncPanelProps) {
                     <li>{syncMode === 'overwrite' ? `Existing ${fieldLabel} will be replaced` : `New values will be added to existing ${fieldLabel}`}</li>
                   </ul>
                   {confirmDialog.databasePath && (
-                    <p className="text-caption text-muted-foreground/70 truncate mt-2">{confirmDialog.databasePath}</p>
+                    <p className="text-[10px] text-muted-foreground/70 truncate mt-2">{confirmDialog.databasePath}</p>
                   )}
                 </div>
 
                 <div className="flex gap-2">
-                  <Button variant="secondary" size="sm" onClick={() => setConfirmDialog(null)} className="flex-1">Cancel</Button>
-                  <Button variant="primary" size="sm" onClick={() => executeSync(confirmDialog.targetSourceId)} className="flex-1">
+                  <button onClick={() => setConfirmDialog(null)} className="flex-1 px-3 py-1.5 text-xs font-medium rounded-md bg-muted text-foreground hover:bg-muted/80 transition-colors">Cancel</button>
+                  <button onClick={() => executeSync(confirmDialog.targetSourceId)} className="flex-1 px-3 py-1.5 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
                     Write {confirmDialog.trackCount} tracks
-                  </Button>
+                  </button>
                 </div>
               </div>
             )}

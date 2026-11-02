@@ -53,34 +53,19 @@ export class WishlistCompletionService {
     const db = getDatabase()
     const activeItems = db.getActiveWishlistItems() as WishlistItem[]
 
-    console.log(`[WishlistCompletion] Checking ${activeItems.length} active wishlist items`)
-
     if (activeItems.length === 0) return
 
     const missingItems = activeItems.filter((i: WishlistItem) => i.reason === 'missing')
     const upgradeItems = activeItems.filter((i: WishlistItem) => i.reason === 'upgrade')
 
-    console.log(`[WishlistCompletion] Missing: ${missingItems.length}, Upgrade: ${upgradeItems.length}`)
-    for (const item of missingItems) {
-      console.log(`[WishlistCompletion]   Missing: "${item.title}" type=${item.media_type} series="${item.series_title}" season=${item.season_number} tmdb=${item.tmdb_id}`)
-    }
-
     const completed: CompletionResult[] = []
 
     if (missingItems.length > 0) {
-      try {
-        completed.push(...this.checkMissingItems(missingItems))
-      } catch (err) {
-        console.error('[WishlistCompletion] Error checking missing items:', err)
-      }
+      completed.push(...this.checkMissingItems(missingItems))
     }
 
     if (upgradeItems.length > 0) {
-      try {
-        completed.push(...this.checkUpgradeItems(upgradeItems))
-      } catch (err) {
-        console.error('[WishlistCompletion] Error checking upgrade items:', err)
-      }
+      completed.push(...this.checkUpgradeItems(upgradeItems))
     }
 
     if (completed.length > 0) {
@@ -117,7 +102,7 @@ export class WishlistCompletionService {
     const albumItems = items.filter((i) => i.media_type === 'album' && (i.musicbrainz_id || (i.title && i.artist_name)))
     const trackItems = items.filter((i) => i.media_type === 'track' && (i.musicbrainz_id || (i.title && i.artist_name)))
 
-    // Batch check movies by TMDB ID, with title fallback
+    // Batch check movies by TMDB ID
     if (movieItems.length > 0) {
       const tmdbIds = movieItems.filter(item => item.tmdb_id).map(item => item.tmdb_id!)
       const foundMovies = db.getMediaItemsByTmdbIds(tmdbIds)
@@ -139,7 +124,7 @@ export class WishlistCompletionService {
       }
     }
 
-    // Check seasons by series_title + season_number, or by title, or by TMDB ID
+    // Check seasons by series_title + season_number
     for (const item of seasonItems) {
       const count = item.tmdb_id
         ? db.getEpisodeCountBySeriesTmdbId(item.tmdb_id, item.season_number!)
@@ -167,7 +152,7 @@ export class WishlistCompletionService {
       }
     }
 
-    // Batch check albums by MusicBrainz ID, with title+artist fallback
+    // Batch check albums by MusicBrainz ID
     if (albumItems.length > 0) {
       const mbIds = albumItems.filter(item => item.musicbrainz_id).map(item => item.musicbrainz_id!)
       const foundAlbums = db.getMusicAlbumsByMusicbrainzIds(mbIds)
@@ -264,33 +249,6 @@ export class WishlistCompletionService {
           reason: 'upgrade',
           media_type: item.media_type,
         })
-      }
-    }
-
-    // Check track upgrades via album quality
-    const trackItems = items.filter(
-      (i) => i.media_type === 'track' && i.musicbrainz_id && i.current_quality_tier
-    )
-
-    if (trackItems.length > 0) {
-      const mbIds = trackItems.map((i) => i.musicbrainz_id!)
-      const foundTracks = db.getMusicTracksByMusicbrainzIds(mbIds)
-
-      for (const item of trackItems) {
-        const track = foundTracks.get(item.musicbrainz_id!)
-        if (!track || !track.album_id) continue
-
-        const qualityScore = db.getMusicQualityScore(track.album_id)
-        if (!qualityScore) continue
-
-        if (this.isMusicQualityImproved(item, qualityScore.quality_tier)) {
-          completed.push({
-            id: item.id!,
-            title: item.title,
-            reason: 'upgrade',
-            media_type: item.media_type,
-          })
-        }
       }
     }
 

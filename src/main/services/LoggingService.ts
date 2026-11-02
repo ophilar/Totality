@@ -4,7 +4,7 @@ import { IPC_CHANNELS } from '../../shared/ipcChannels'
  *
  * Features:
  * - Intercepts console.log/warn/error/info
- * - Stores logs in circular buffer (max 500 info + 500 important entries)
+ * - Stores logs in circular buffer (max 2000 entries)
  * - Emits new logs to renderer via IPC
  * - Exports logs to file
  */

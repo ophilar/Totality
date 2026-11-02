@@ -706,7 +706,7 @@ export class TaskQueueService {
         task.status = 'failed'
         task.error = errorMsg
         this.addTaskHistoryEntry(task, 'task-failed', `Failed: ${task.label} - ${task.error}`)
-        console.error(`[TaskQueue] Task failed: ${task.label} (type=${task.type}, sourceId=${task.sourceId || 'all'}, libraryId=${task.libraryId || 'all'})`, error)
+        console.error(`[TaskQueue] Task failed: ${task.label}`, error)
         try {
           getDatabase().createNotification({
             type: 'error',
@@ -1447,10 +1447,12 @@ export class TaskQueueService {
         }
       } catch (err) { console.error('[TaskQueue] Failed to create upgrade notification:', err) }
 
-      // Always check wishlist after any task completes
-      getWishlistCompletionService().checkAndComplete().catch((err) => {
-        console.error('[TaskQueue] Wishlist completion check failed:', getErrorMessage(err))
-      })
+      // Check wishlist for auto-completion after items were added or updated
+      if ((task.result?.itemsAdded || 0) > 0 || (task.result?.itemsUpdated || 0) > 0) {
+        getWishlistCompletionService().checkAndComplete().catch((err) => {
+          console.error('[TaskQueue] Wishlist completion check failed:', getErrorMessage(err))
+        })
+      }
 
       // Auto-queue completeness analysis for scanned libraries
       if ((task.type === 'library-scan' || task.type === 'source-scan' || task.type === 'music-scan') &&

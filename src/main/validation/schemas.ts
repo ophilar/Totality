@@ -434,7 +434,7 @@ export const WishlistItemSchema = z.object({
   tmdb_id: z.string().max(20).optional().nullable(),
   imdb_id: z.string().max(20).optional().nullable(),
   musicbrainz_id: z.string().max(100).optional().nullable(),
-  poster_url: z.string().max(2000).optional().nullable(),
+  poster_url: z.string().url().optional().nullable(),
   media_item_id: z.number().int().positive().optional().nullable(),
   current_quality_tier: z.string().max(10).optional().nullable(),
   current_quality_level: z.string().max(10).optional().nullable(),
@@ -461,33 +461,6 @@ export const SafeUrlSchema = z.string().url().refine(
   },
   { message: 'URL must use http or https protocol' }
 )
-
-// ============================================================================
-// NOTIFICATION SCHEMAS
-// ============================================================================
-
-export const NotificationIdsSchema = z.array(z.number().int().positive()).min(1)
-
-export const NotificationOptionsSchema = z.object({
-  limit: z.number().int().positive().optional(),
-  offset: z.number().int().nonnegative().optional(),
-  type: z.string().optional(),
-  unreadOnly: z.boolean().optional(),
-}).optional()
-
-// ============================================================================
-// MOOD SCHEMAS
-// ============================================================================
-
-export const MoodSourceIdSchema = z.string().min(1)
-export const MoodFieldSchema = z.enum(['mood', 'genre']).optional()
-export const MoodComparisonArgsSchema = z.union([
-  z.string().min(1),
-  z.object({
-    sourceOfTruthId: z.string().min(1),
-    field: z.enum(['mood', 'genre']).optional(),
-  }),
-])
 
 // ============================================================================
 // AI (GEMINI) SCHEMAS

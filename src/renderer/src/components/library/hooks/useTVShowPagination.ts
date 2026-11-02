@@ -8,8 +8,6 @@ interface UseTVShowPaginationOptions {
   activeSourceId: string | null
   activeLibraryId: string | null
   searchQuery: string
-  alphabetFilter: string | null
-  isMobile?: boolean
 }
 
 interface UseTVShowPaginationReturn {
@@ -35,8 +33,6 @@ export function useTVShowPagination({
   activeSourceId,
   activeLibraryId,
   searchQuery,
-  alphabetFilter,
-  isMobile = false,
 }: UseTVShowPaginationOptions): UseTVShowPaginationReturn {
   const [totalEpisodeCount, setTotalEpisodeCount] = useState(0)
   const [tvSortBy, setTvSortByState] = useState<TVShowSortBy>('title')
@@ -66,10 +62,9 @@ export function useTVShowPagination({
       if (activeSourceId) filters.sourceId = activeSourceId
       if (activeLibraryId) filters.libraryId = activeLibraryId
       if (searchQuery.trim()) filters.searchQuery = searchQuery.trim()
-      if (alphabetFilter) filters.alphabetFilter = alphabetFilter
       return filters
     },
-    deps: [activeSourceId, activeLibraryId, searchQuery, alphabetFilter],
+    deps: [activeSourceId, activeLibraryId, searchQuery],
   })
 
   const loadSelectedShowEpisodes = useCallback(async (showTitleOrSummary: string | TVShowSummary) => {
