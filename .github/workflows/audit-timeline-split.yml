@@ -22,6 +22,8 @@ jobs:
           git grep -n -i -E 'timeline|playlistSync' -- src/main src/preload src/renderer tests | grep -v -E '(/timelines/|TimelinesView|/fixtures/timeline|/services/timelines/)' | head -240 || true
           echo '=== Timeline references in configuration ==='
           git grep -n -i -E 'timeline' -- package.json src/main/config src/main/database | head -140 || true
+          echo '=== All non-dedicated timeline references ==='
+          git grep -n -i -E 'timeline|playlistSync|TimelineDefinition|TimelineRecipe' -- ':!data/timelines/**' ':!src/main/services/timelines/**' ':!src/main/ipc/timelines.ts' ':!src/renderer/src/components/timelines/**' ':!tests/fixtures/timelines/**' ':!tests/unit/services/timelines/**' ':!tests/unit/components/TimelinesViewLayout.test.tsx' ':!tests/unit/TimelinesViewRendering.test.tsx' | head -260 || true
           echo '=== Timeline source-side commits ==='
           git log --format='%h %s' -- src/main/services/timelines src/renderer/src/components/timelines | head -35
           echo '=== Existing test scripts ==='
