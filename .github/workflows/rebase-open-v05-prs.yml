@@ -1,0 +1,78 @@
+name: Rebase open 0.5 PRs onto current 0.5 base
+on:
+  push:
+    branches:
+      - automation/rebase-v05-onto-v043-runner
+permissions:
+  contents: write
+jobs:
+  rebase:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pr: "215"
+            branch: "test/visual-regression-v042-v05"
+            old: "461167c314b1c209327f31b8cf7675e47c8f713d"
+            fork: "06df89687b8e795a495ded7061c4b9db693f1481"
+          - pr: "217"
+            branch: "fix/v0.5-runtime-log-reconciliation-csp-samples"
+            old: "75b8d2ca928b50ec6f2e21cb8b638bb3c9993a62"
+            fork: "cc31fb285cafbbc9291d544d8eb60f0736d72472"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.old }}
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Replay PR commits against rebased 0.5
+        shell: bash
+        env:
+          BRANCH: ${{ matrix.branch }}
+          OLD: ${{ matrix.old }}
+          FORK: ${{ matrix.fork }}
+          PR: ${{ matrix.pr }}
+        run: |
+          set -euo pipefail
+          target="fc9b18b425a31475ca082b637e1d62774fc805ab"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          test "$(git rev-parse HEAD)" = "$OLD"
+          git cat-file -e "$target^{commit}"
+          git cat-file -e "$FORK^{commit}"
+          git switch -c "integration/temp-rebased-pr-$PR"
+          if ! GIT_EDITOR=true git rebase --onto "$target" "$FORK"; then
+            echo "::error::PR $PR needs deliberate conflict resolution"
+            git status --short
+            git diff --name-only --diff-filter=U
+            git show --no-patch --format="%h %s" REBASE_HEAD || true
+            exit 1
+          fi
+          git merge-base --is-ancestor "$target" HEAD
+          git diff --check "$target" HEAD
+          echo "Rebased PR $PR onto $target: $(git rev-parse HEAD)"
+          git diff --stat "$target" HEAD
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install and validate code
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          npm ci
+          npm run typecheck
+          npm run test:run
+          npx vite build
+      - name: Publish rebased PR with optimistic lease and backup
+        shell: bash
+        env:
+          BRANCH: ${{ matrix.branch }}
+          OLD: ${{ matrix.old }}
+          PR: ${{ matrix.pr }}
+        run: |
+          set -euo pipefail
+          git push origin "$OLD:refs/heads/backup/pr-$PR-before-0.4.3-rebase"
+          git push "--force-with-lease=refs/heads/$BRANCH:$OLD" origin "HEAD:refs/heads/$BRANCH"
