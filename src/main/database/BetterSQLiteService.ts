@@ -6458,7 +6458,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       SELECT MIN(id) as id, series_title as title, MIN(poster_url) as poster_url, MAX(series_tmdb_id) as tmdb_id
       FROM media_items
       WHERE type = 'episode' AND series_title IS NOT NULL AND LOWER(series_title) ${likeOp} ?
-      GROUP BY series_title
+      GROUP BY COALESCE(NULLIF(series_identity_key, ''), NULLIF(series_tmdb_id, ''), series_title), source_id, library_id
       ORDER BY series_title
       LIMIT ?
     `)
