@@ -3,7 +3,7 @@ on:
   push:
     branches: [automation/rebase-v05-onto-v043-runner]
 permissions:
-  contents: read
+  contents: write
 jobs:
   split:
     runs-on: ubuntu-24.04
@@ -39,7 +39,7 @@ jobs:
           test "$(git write-tree)" = "$(git rev-parse "$OLD^{tree}")"
           python3 ../tooling/scripts/extract-timelines-feature.py
           git add -A
-          git diff --cached --check "$OLD" || true
+          git diff --cached --check "$OLD"
           git commit -m "feat(v0.5): establish timeline-free 0.5 core" -m "Preserves the validated 0.5 functionality other than the separate Timelines feature; original detailed history preserved under a backup. Parent is the three upstream-only bugfix commits."
           CORE="$(git rev-parse HEAD)"
           git diff --name-only "$OLD" "$CORE" | sort | head -80
@@ -74,3 +74,18 @@ jobs:
           npm run renderer:build
           test "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse fc9b18b425a31475ca082b637e1d62774fc805ab^{tree})"
           echo "Both linear branch heads validated."
+      - name: Publish validated linear history with rollback ref
+        working-directory: repo
+        shell: bash
+        run: |
+          set -euo pipefail
+          OLD=fc9b18b425a31475ca082b637e1d62774fc805ab
+          test "$(git rev-parse origin/v0.5.0-clean)" = "$OLD"
+          CORE="$(git rev-parse core-candidate)"
+          FEATURE="$(git rev-parse timeline-feature)"
+          test "$(git rev-parse "$FEATURE^")" = "$CORE"
+          test "$(git rev-parse 'timeline-feature^{tree}')" = "$(git rev-parse "$OLD^{tree}")"
+          git push origin "$OLD:refs/heads/backup/v05-before-timeline-split-20261102"
+          git push origin "$FEATURE:refs/heads/feature/timelines"
+          git push "--force-with-lease=refs/heads/v0.5.0-clean:$OLD" origin "$CORE:refs/heads/v0.5.0-clean"
+          echo "::notice::Published core $CORE; timeline $FEATURE; preserved old head $OLD"
