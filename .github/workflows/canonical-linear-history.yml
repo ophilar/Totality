@@ -3,7 +3,7 @@ on:
   push:
     branches: [automation/rebase-v05-onto-v043-runner]
 permissions:
-  contents: read
+  contents: write
 jobs:
   validate:
     runs-on: ubuntu-24.04
@@ -109,3 +109,22 @@ jobs:
           npm run test:run
           npm run renderer:build
           echo "Canonical linear history and three branch trees validated."
+      - name: Archive all prior refs and publish three linear branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          NEW_MASTER="$(git rev-parse canonical-master)"
+          NEW_CORE="$(git rev-parse canonical-core)"
+          NEW_FEATURE="$(git rev-parse canonical-timelines)"
+          git merge-base --is-ancestor "$NEW_MASTER" "$NEW_CORE"
+          test "$(git rev-parse "$NEW_FEATURE^")" = "$NEW_CORE"
+          test "$(git for-each-ref --format='%(objectname)' refs/remotes/origin | sort -u | wc -l)" -ge 20
+          OLD_MASTER=b8a57ef5f8879211c53b824afdefd005a30156e8
+          archive_tree="$(git rev-parse "$OLD_MASTER^{tree}")"
+          archive="$(git commit-tree "$archive_tree" $(git for-each-ref --format='-p %(objectname)' refs/remotes/origin | sort -u) -m "Archive all prior Totality branch tips before linearization")"
+          git tag -a archive/pre-linear-cleanup-20261102 "$archive" -m "Historical branch-tip archive; Git parents preserve original commit graphs and all branches removed during cleanup"
+          git push origin refs/tags/archive/pre-linear-cleanup-20261102
+          git push "--force-with-lease=refs/heads/master:$OLD_MASTER" origin "$NEW_MASTER:refs/heads/master"
+          git push "--force-with-lease=refs/heads/v0.5.0-clean:8973f6fa06c39cd33635af7b078e5a3ea7327137" origin "$NEW_CORE:refs/heads/v0.5.0-clean"
+          git push "--force-with-lease=refs/heads/feature/timelines:564667402ab2553819bcdfe3950cc3a7851957a4" origin "$NEW_FEATURE:refs/heads/feature/timelines"
+          echo "::notice::Canonical master $NEW_MASTER; core $NEW_CORE; timeline $NEW_FEATURE; old refs protected in archive/pre-linear-cleanup-20261102"
