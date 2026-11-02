@@ -1,4 +1,4 @@
-name: Validate independent upstream 0.4.3 bugfix branches
+name: Validate independent bugfixes rebased onto upstream master
 on:
   push:
     branches:
@@ -21,6 +21,12 @@ jobs:
         with:
           ref: ${{ matrix.branch }}
           persist-credentials: false
+      - name: Assert clean upstream master ancestry
+        shell: bash
+        run: |
+          git fetch --no-tags --depth=2 origin f2f9d4942185b75614ffa8d080e5cd82a78a9216
+          git merge-base --is-ancestor f2f9d4942185b75614ffa8d080e5cd82a78a9216 HEAD
+          test "$(git rev-list --count f2f9d4942185b75614ffa8d080e5cd82a78a9216..HEAD)" = 1
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
