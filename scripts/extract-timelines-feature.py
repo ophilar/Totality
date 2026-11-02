@@ -68,7 +68,7 @@ edit("src/renderer/src/App.tsx", """        {currentView === 'timelines' ? (
         ) : currentView === 'dashboard' && !isMobile ? (""", """        {currentView === 'dashboard' && !isMobile ? (""")
 edit("src/renderer/src/components/layout/TopBar.tsx", ", ListOrdered, ListTodo", ", ListTodo")
 edit("src/renderer/src/components/layout/TopBar.tsx", "currentView: 'dashboard' | 'library' | 'timelines'", "currentView: 'dashboard' | 'library'")
-remove_matching_lines("src/renderer/src/components/layout/TopBar.tsx", lambda s: "onNavigateTimelines" in s, 2)
+remove_matching_lines("src/renderer/src/components/layout/TopBar.tsx", lambda s: s.startswith("  onNavigateTimelines"), 2)
 edit("src/renderer/src/components/layout/TopBar.tsx", """
               <button
                 onClick={onNavigateTimelines}
