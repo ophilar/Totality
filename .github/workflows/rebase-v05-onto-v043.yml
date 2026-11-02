@@ -1,8 +1,6 @@
 name: Validate rebased Totality 0.5 with upstream 0.4.3
 on:
-  push:
-    branches:
-      - automation/rebase-v05-onto-v043-runner
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:

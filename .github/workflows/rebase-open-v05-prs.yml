@@ -1,8 +1,6 @@
 name: Rebase open 0.5 PRs onto current 0.5 base
 on:
-  push:
-    branches:
-      - automation/rebase-v05-onto-v043-runner
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
