@@ -56,7 +56,13 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD^)" = bf6dc45299e46aa4da74aa873c9d35c6f3d39419
-          if git ls-remote --exit-code --heads origin timelines >/dev/null; then
+          if git ls-remote --heads origin 'refs/heads/timelines' | grep -q 'refs/heads/timelines
+            echo "::error::Ref timelines already exists; refusing unexpected update"
+            exit 1
+          fi
+          git push origin HEAD:refs/heads/timelines
+          echo "::notice::Published standalone timeline v0.5 $(git rev-parse HEAD)"
+; then
             echo "::error::Ref timelines already exists; refusing unexpected update"
             exit 1
           fi
