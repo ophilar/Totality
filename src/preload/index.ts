@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 // Import shared types from main process (type-only, no runtime code)
 import type { ConnectionTestResult } from '@main/types/ipc'
+import { TIMELINE_CHANNELS } from '../shared/timelineChannels'
+import type { TimelineRecipeSummary, TimelineFetchOptions, TimelineDefinition } from '@main/services/timelines/ITimelineRecipeProvider'
+import type { TimelineResolutionOperationResult } from '@main/services/timelines/TimelineResolutionEngine'
+import type { TimelineParserPlugin, TimelineParserPluginInput } from '@main/services/timelines/TimelineParserPlugin'
+import type { PlexPlaylistSummary, PlexPlaylistSyncResult } from '@main/services/timelines/PlexPlaylistSyncService'
 
 // Re-export for consumers of this module
 export type { ConnectionTestResult } from '@main/types/ipc'
@@ -8,6 +13,15 @@ export type { ConnectionTestResult } from '@main/types/ipc'
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
+  timelinesListRecipes: () => ipcRenderer.invoke(TIMELINE_CHANNELS.timelinesListRecipes),
+  timelinesListParserPlugins: () => ipcRenderer.invoke(TIMELINE_CHANNELS.timelinesListParserPlugins),
+  timelinesSaveParserPlugin: (plugin: unknown) => ipcRenderer.invoke(TIMELINE_CHANNELS.timelinesSaveParserPlugin, plugin),
+  timelinesRemoveParserPlugin: (id: string) => ipcRenderer.invoke(TIMELINE_CHANNELS.timelinesRemoveParserPlugin, id),
+  timelinesGetRecipe: (recipeId: string, options?: { refresh?: boolean }) => ipcRenderer.invoke(TIMELINE_CHANNELS.timelinesGetRecipe, recipeId, options),
+  timelinesResolveTimeline: (recipeId: string, sourceId: string | undefined, options: { refresh?: boolean; snapshotId?: string } | undefined, requestId: string, showInActivity: boolean) => ipcRenderer.invoke(TIMELINE_CHANNELS.timelinesResolveTimeline, recipeId, sourceId, options, requestId, showInActivity),
+  timelinesSyncPlexPlaylist: (payload: { sourceId: string; recipeId: string; playlistTitle: string; snapshotId: string; playlistRatingKey?: string; allowStale?: boolean }, requestId: string) => ipcRenderer.invoke(TIMELINE_CHANNELS.timelinesSyncPlexPlaylist, payload, requestId),
+  timelinesGetPlexPlaylists: (sourceId: string) => ipcRenderer.invoke(TIMELINE_CHANNELS.timelinesGetPlexPlaylists, sourceId),
+  timelinesCancel: (requestId: string) => ipcRenderer.invoke(TIMELINE_CHANNELS.timelinesCancel, requestId),
   // App lifecycle
   appReady: () => ipcRenderer.send('app:ready'),
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
@@ -878,6 +892,15 @@ export interface DiscoveredServerResponse {
 
 // Type definitions for window object
 export interface ElectronAPI {
+  timelinesListRecipes: () => Promise<TimelineRecipeSummary[]>
+  timelinesListParserPlugins: () => Promise<TimelineParserPlugin[]>
+  timelinesSaveParserPlugin: (plugin: TimelineParserPluginInput) => Promise<TimelineParserPlugin[]>
+  timelinesRemoveParserPlugin: (id: string) => Promise<TimelineParserPlugin[]>
+  timelinesGetRecipe: (recipeId: string, options?: TimelineFetchOptions) => Promise<TimelineDefinition>
+  timelinesResolveTimeline: (recipeId: string, sourceId: string | undefined, options: TimelineFetchOptions | undefined, requestId: string, showInActivity: boolean) => Promise<TimelineResolutionOperationResult>
+  timelinesSyncPlexPlaylist: (payload: { sourceId: string; recipeId: string; playlistTitle: string; snapshotId: string; playlistRatingKey?: string; allowStale?: boolean }, requestId: string) => Promise<PlexPlaylistSyncResult | { cancelled: true }>
+  timelinesGetPlexPlaylists: (sourceId: string) => Promise<PlexPlaylistSummary[]>
+  timelinesCancel: (requestId: string) => Promise<'cancelling' | 'committing' | 'missing'>
   // App lifecycle
   appReady: () => void
   getAppVersion: () => Promise<string>
