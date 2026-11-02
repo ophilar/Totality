@@ -1,7 +1,6 @@
 name: Consolidate validated 0.5 PRs without merge commits
 on:
-  push:
-    branches: [automation/rebase-v05-onto-v043-runner]
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
