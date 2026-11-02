@@ -6,11 +6,13 @@
 
 import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { SETTING_KEYS } from '../../../../shared/settingKeys'
-import { Search, X, Home, Film, Tv, Music, Tags, ListChecks, Star, Settings, RefreshCw, Disc3, User, MessageSquare, ArrowLeft, ArrowRight, Activity, Loader2 } from 'lucide-react'
+import { Search, X, Home, Film, Tv, Music, Tags, ListChecks, Star, Settings, RefreshCw, Disc3, User, MessageSquare, ArrowLeft, ArrowRight, Loader2, ListTodo } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
 import { useWishlist } from '../../contexts/WishlistContext'
 import { useNavigation } from '../../contexts/NavigationContext'
+import { useMenuClose } from '../../hooks/useMenuClose'
 import { NotificationBell } from '../ui/NotificationBell'
+import { ActivityPanel } from '../ui/ActivityPanel'
 import logoImage from '../../assets/totality_header_logo.png'
 import type { MediaViewType } from '../library/types'
 
@@ -63,7 +65,7 @@ function Tooltip({ label, children }: { label: string; children: ReactNode }) {
     <div className="relative" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}>
       {children}
       {visible && (
-        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-1 bg-popover border border-border text-caption text-popover-foreground rounded shadow-md whitespace-nowrap z-50 pointer-events-none">
+        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-1 bg-popover border border-border text-xs text-popover-foreground rounded shadow-md whitespace-nowrap z-[200] pointer-events-none">
           {label}
         </div>
       )}
@@ -130,11 +132,11 @@ export function TopBar({
   const [taskPendingCount, setTaskPendingCount] = useState(0)
   const [hasRunningTask, setHasRunningTask] = useState(false)
   useEffect(() => {
-    const unsubscribe = window.electronAPI.onTaskQueueUpdated?.((state: { currentTask: unknown; queue: unknown[] }) => {
+    const unsubscribe = window.electronAPI.onTaskQueueUpdated?.((state) => {
       setTaskPendingCount(state.queue.length + (state.currentTask ? 1 : 0))
       setHasRunningTask(!!state.currentTask)
     })
-    window.electronAPI.taskQueueGetState?.().then((state: { currentTask: unknown; queue: unknown[] }) => {
+    window.electronAPI.taskQueueGetState?.().then((state) => {
       setTaskPendingCount(state.queue.length + (state.currentTask ? 1 : 0))
       setHasRunningTask(!!state.currentTask)
     })
@@ -150,8 +152,9 @@ export function TopBar({
   const [searchResultIndex, setSearchResultIndex] = useState(-1)
   const [isSearching, setIsSearching] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const searchContainerRef = useRef<HTMLDivElement>(null)
-  const searchDebounceRef = useRef<NodeJS.Timeout>()
+  const closeSearchResults = useCallback(() => setShowSearchResults(false), [])
+  const searchContainerRef = useMenuClose({ isOpen: showSearchResults, onClose: closeSearchResults })
+  const searchDebounceRef = useRef<NodeJS.Timeout | undefined>(undefined)
 
   // Debounced search
   const performSearch = useCallback(async (query: string) => {
@@ -270,18 +273,8 @@ export function TopBar({
     }
   }
 
-  // Click outside to close
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
-        setShowSearchResults(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
   const isDashboard = currentView === 'dashboard'
+  const isLibrary = currentView === 'library'
 
   // Get actual theme from document (to escape TopBar's forced dark mode)
 
@@ -289,7 +282,7 @@ export function TopBar({
   return (
     <header
       id="top-bar"
-      className="fixed top-4 left-4 right-4 z-100 bg-black/72 backdrop-blur-xl text-white rounded-2xl shadow-xl px-4 py-2"
+      className="fixed top-4 left-4 right-4 z-100 bg-black text-white rounded-2xl shadow-xl px-4 py-2"
       role="banner"
       aria-label="Main navigation"
     >
@@ -300,7 +293,7 @@ export function TopBar({
           <img src={logoImage} alt="Totality" className="h-8 shrink-0" />
 
           {/* Search */}
-          <div ref={searchContainerRef} className="relative shrink min-w-24 max-w-80 w-80">
+          <div ref={searchContainerRef} className="relative shrink min-w-24 max-w-80 w-56 focus-within:w-80 transition-all duration-300 ease-out">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/50 z-10" />
             <input
               ref={searchInputRef}
@@ -310,7 +303,7 @@ export function TopBar({
               onChange={(e) => handleSearchInputChange(e.target.value)}
               onFocus={() => setShowSearchResults(true)}
               onKeyDown={handleSearchKeyDown}
-              className="w-full pl-10 pr-8 py-2 bg-white/10 border border-white/15 rounded-lg text-label text-white placeholder:text-white/40 focus:outline-hidden focus:ring-2 focus:ring-white/30 focus:border-white/25 transition-colors"
+              className="w-full pl-10 pr-8 py-2 bg-white/10 border border-white/15 rounded-full text-sm text-white placeholder:text-white/40 focus:outline-hidden focus:ring-2 focus:ring-white/30 focus:border-white/25 transition-all duration-300"
               aria-label="Search all libraries"
             />
             {searchInput && (
@@ -329,13 +322,13 @@ export function TopBar({
 
             {/* Search Results Dropdown */}
             {showSearchResults && searchInput.length >= 2 && (
-              <div className="absolute top-full left-0 mt-2 w-96 bg-popover text-popover-foreground border border-border rounded-2xl shadow-xl z-50 max-h-[400px] overflow-y-auto overflow-x-hidden">
+              <div className="absolute top-full left-0 mt-2 w-96 bg-popover text-popover-foreground border border-border rounded-lg shadow-2xl z-9999 max-h-[400px] overflow-y-auto overflow-x-hidden">
                 {isSearching && (
-                  <div className="px-3 py-4 text-label text-muted-foreground text-center">Searching...</div>
+                  <div className="px-3 py-4 text-sm text-muted-foreground text-center">Searching...</div>
                 )}
 
                 {!isSearching && !hasResults && (
-                  <div className="px-3 py-4 text-label text-muted-foreground text-center">No results found</div>
+                  <div className="px-3 py-4 text-sm text-muted-foreground text-center">No results found</div>
                 )}
 
                 {!isSearching && hasResults && searchResults && (
@@ -343,7 +336,7 @@ export function TopBar({
                     {/* Movies */}
                     {searchResults.movies.length > 0 && (
                       <div>
-                        <div className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
+                        <div className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
                           <Film className="w-3 h-3" />
                           Movies
                         </div>
@@ -354,7 +347,7 @@ export function TopBar({
                               key={`movie-${movie.id}`}
                               onClick={() => handleResultClick('movie', movie.id)}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
-                                searchResultIndex === flatIndex ? 'bg-muted' : 'hover:bg-muted/50'
+                                searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
                               }`}
                             >
                               <div className="w-8 h-12 bg-muted rounded overflow-hidden shrink-0">
@@ -367,8 +360,8 @@ export function TopBar({
                                 )}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="text-label font-medium truncate">{movie.title}</div>
-                                {movie.year && <div className="text-caption text-muted-foreground">{movie.year}</div>}
+                                <div className="text-sm font-medium truncate">{movie.title}</div>
+                                {movie.year && <div className="text-xs text-muted-foreground">{movie.year}</div>}
                               </div>
                             </button>
                           )
@@ -379,7 +372,7 @@ export function TopBar({
                     {/* TV Shows */}
                     {searchResults.tvShows.length > 0 && (
                       <div>
-                        <div className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
+                        <div className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
                           <Tv className="w-3 h-3" />
                           TV Shows
                         </div>
@@ -390,7 +383,7 @@ export function TopBar({
                               key={`tv-${show.id}`}
                               onClick={() => handleResultClick('tv', show.id, { title: show.title })}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
-                                searchResultIndex === flatIndex ? 'bg-muted' : 'hover:bg-muted/50'
+                                searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
                               }`}
                             >
                               <div className="w-8 h-12 bg-muted rounded overflow-hidden shrink-0">
@@ -402,7 +395,7 @@ export function TopBar({
                                   </div>
                                 )}
                               </div>
-                              <div className="text-label font-medium truncate">{show.title}</div>
+                              <div className="text-sm font-medium truncate">{show.title}</div>
                             </button>
                           )
                         })}
@@ -412,7 +405,7 @@ export function TopBar({
                     {/* Episodes */}
                     {searchResults.episodes.length > 0 && (
                       <div>
-                        <div className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
+                        <div className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
                           <Tv className="w-3 h-3" />
                           Episodes
                         </div>
@@ -423,7 +416,7 @@ export function TopBar({
                               key={`episode-${episode.id}`}
                               onClick={() => handleResultClick('episode', episode.id, { series_title: episode.series_title, season_number: episode.season_number })}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
-                                searchResultIndex === flatIndex ? 'bg-muted' : 'hover:bg-muted/50'
+                                searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
                               }`}
                             >
                               <div className="w-8 h-12 bg-muted rounded overflow-hidden shrink-0">
@@ -436,8 +429,8 @@ export function TopBar({
                                 )}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="text-label font-medium truncate">{episode.title}</div>
-                                <div className="text-caption text-muted-foreground truncate">
+                                <div className="text-sm font-medium truncate">{episode.title}</div>
+                                <div className="text-xs text-muted-foreground truncate">
                                   {episode.series_title} · S{episode.season_number}E{episode.episode_number}
                                 </div>
                               </div>
@@ -450,7 +443,7 @@ export function TopBar({
                     {/* Artists */}
                     {searchResults.artists.length > 0 && (
                       <div>
-                        <div className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
+                        <div className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
                           <User className="w-3 h-3" />
                           Artists
                         </div>
@@ -461,7 +454,7 @@ export function TopBar({
                               key={`artist-${artist.id}`}
                               onClick={() => handleResultClick('artist', artist.id, { name: artist.name })}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
-                                searchResultIndex === flatIndex ? 'bg-muted' : 'hover:bg-muted/50'
+                                searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
                               }`}
                             >
                               <div className="w-10 h-10 bg-muted rounded-full overflow-hidden shrink-0">
@@ -473,7 +466,7 @@ export function TopBar({
                                   </div>
                                 )}
                               </div>
-                              <div className="text-label font-medium truncate">{artist.name}</div>
+                              <div className="text-sm font-medium truncate">{artist.name}</div>
                             </button>
                           )
                         })}
@@ -483,7 +476,7 @@ export function TopBar({
                     {/* Albums */}
                     {searchResults.albums.length > 0 && (
                       <div>
-                        <div className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
+                        <div className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
                           <Disc3 className="w-3 h-3" />
                           Albums
                         </div>
@@ -494,7 +487,7 @@ export function TopBar({
                               key={`album-${album.id}`}
                               onClick={() => handleResultClick('album', album.id)}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
-                                searchResultIndex === flatIndex ? 'bg-muted' : 'hover:bg-muted/50'
+                                searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
                               }`}
                             >
                               <div className="w-10 h-10 bg-muted rounded overflow-hidden shrink-0">
@@ -507,8 +500,8 @@ export function TopBar({
                                 )}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="text-label font-medium truncate">{album.title}</div>
-                                <div className="text-caption text-muted-foreground truncate">
+                                <div className="text-sm font-medium truncate">{album.title}</div>
+                                <div className="text-xs text-muted-foreground truncate">
                                   {album.artist_name}{album.year && ` · ${album.year}`}
                                 </div>
                               </div>
@@ -521,7 +514,7 @@ export function TopBar({
                     {/* Tracks */}
                     {searchResults.tracks.length > 0 && (
                       <div>
-                        <div className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
+                        <div className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
                           <Music className="w-3 h-3" />
                           Tracks
                         </div>
@@ -532,7 +525,7 @@ export function TopBar({
                               key={`track-${track.id}`}
                               onClick={() => handleResultClick('track', track.id, { album_id: track.album_id })}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
-                                searchResultIndex === flatIndex ? 'bg-muted' : 'hover:bg-muted/50'
+                                searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
                               }`}
                             >
                               <div className="w-10 h-10 bg-muted rounded overflow-hidden shrink-0">
@@ -545,9 +538,9 @@ export function TopBar({
                                 )}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="text-label font-medium truncate">{track.title}</div>
+                                <div className="text-sm font-medium truncate">{track.title}</div>
                                 {track.artist_name && (
-                                  <div className="text-caption text-muted-foreground truncate">{track.artist_name}</div>
+                                  <div className="text-xs text-muted-foreground truncate">{track.artist_name}</div>
                                 )}
                               </div>
                             </button>
@@ -567,7 +560,7 @@ export function TopBar({
               <button
                 onClick={canGoBack && onBack ? onBack : undefined}
                 disabled={!canGoBack}
-                className={`p-1.5 rounded-lg transition-colors shrink-0 ${
+                className={`p-1.5 rounded-md transition-colors shrink-0 ${
                   canGoBack
                     ? 'text-white hover:bg-white/10 cursor-pointer'
                     : 'text-neutral-600 cursor-default'
@@ -579,7 +572,7 @@ export function TopBar({
               <button
                 onClick={canGoForward && onForward ? onForward : undefined}
                 disabled={!canGoForward}
-                className={`p-1.5 rounded-lg transition-colors shrink-0 ${
+                className={`p-1.5 rounded-md transition-colors shrink-0 ${
                   canGoForward
                     ? 'text-white hover:bg-white/10 cursor-pointer'
                     : 'text-neutral-600 cursor-default'
@@ -600,7 +593,7 @@ export function TopBar({
               {/* Home Button */}
               <button
                 onClick={onNavigateHome}
-                className={`px-3 py-2 rounded-lg text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                   isDashboard
                     ? 'bg-white text-black'
                     : 'text-white hover:bg-white/10'
@@ -621,13 +614,13 @@ export function TopBar({
               {hasMovies && (
                 <button
                   onClick={() => onNavigateToLibrary('movies')}
-                  className={`px-4 py-2 rounded-lg text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
-                    !isDashboard && libraryTab === 'movies'
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                    isLibrary && libraryTab === 'movies'
                       ? 'bg-white text-black'
                       : 'text-white hover:bg-white/10'
                   }`}
                   role="tab"
-                  aria-selected={!isDashboard && libraryTab === 'movies'}
+                  aria-selected={isLibrary && libraryTab === 'movies'}
                 >
                   <Film className="w-4 h-4" />
                   {!isMobile && <span>Movies</span>}
@@ -638,13 +631,13 @@ export function TopBar({
               {hasTV && (
                 <button
                   onClick={() => onNavigateToLibrary('tv')}
-                  className={`px-4 py-2 rounded-lg text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
-                    !isDashboard && libraryTab === 'tv'
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                    isLibrary && libraryTab === 'tv'
                       ? 'bg-white text-black'
                       : 'text-white hover:bg-white/10'
                   }`}
                   role="tab"
-                  aria-selected={!isDashboard && libraryTab === 'tv'}
+                  aria-selected={isLibrary && libraryTab === 'tv'}
                 >
                   <Tv className="w-4 h-4" />
                   {!isMobile && <span>TV Shows</span>}
@@ -655,13 +648,13 @@ export function TopBar({
               {hasMusic && (
                 <button
                   onClick={() => onNavigateToLibrary('music')}
-                  className={`px-4 py-2 rounded-lg text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
-                    !isDashboard && libraryTab === 'music'
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                    isLibrary && libraryTab === 'music'
                       ? 'bg-white text-black'
                       : 'text-white hover:bg-white/10'
                   }`}
                   role="tab"
-                  aria-selected={!isDashboard && libraryTab === 'music'}
+                  aria-selected={isLibrary && libraryTab === 'music'}
                 >
                   <Music className="w-4 h-4" />
                   {!isMobile && <span>Music</span>}
@@ -670,7 +663,7 @@ export function TopBar({
 
               {/* Auto-refresh indicator */}
               {isAutoRefreshing && (
-                <div className="flex items-center gap-1.5 px-2 py-1 text-caption text-white/50" title="Checking for new content...">
+                <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-white/50" title="Checking for new content...">
                   <RefreshCw className="w-3 h-3 animate-spin" />
                   <span>Syncing</span>
                 </div>
@@ -685,7 +678,7 @@ export function TopBar({
           <Tooltip label="AI Chat">
             <button
               onClick={onToggleChat}
-              className={`p-2 rounded-lg transition-colors ${
+              className={`p-2 rounded-md transition-colors ${
                 showChatPanel
                   ? 'bg-white text-black'
                   : 'text-white hover:bg-white/10'
@@ -701,7 +694,7 @@ export function TopBar({
           <Tooltip label={!tmdbApiKeySet ? 'Completeness — TMDB key needed' : 'Completeness'}>
             <button
               onClick={onToggleCompleteness}
-              className={`relative p-2 rounded-lg transition-colors ${
+              className={`relative p-2 rounded-md transition-colors ${
                 showCompletenessPanel
                   ? 'bg-white text-black'
                   : 'text-white hover:bg-white/10'
@@ -723,7 +716,7 @@ export function TopBar({
           <Tooltip label="Tag Sync">
             <button
               onClick={onToggleMoodSync}
-              className={`relative p-2 rounded-lg transition-colors ${
+              className={`relative p-2 rounded-md transition-colors ${
                 showMoodSyncPanel
                   ? 'bg-white text-black'
                   : 'text-white hover:bg-white/10'
@@ -739,7 +732,7 @@ export function TopBar({
           <Tooltip label="Wishlist">
             <button
               onClick={onToggleWishlist}
-              className={`relative p-2 rounded-lg transition-colors ${
+              className={`relative p-2 rounded-md transition-colors ${
                 showWishlistPanel
                   ? 'bg-white text-black'
                   : 'text-white hover:bg-white/10'
@@ -749,7 +742,7 @@ export function TopBar({
             >
               <Star className="w-5 h-5" />
               {wishlistCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-white text-black text-caption font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                <span className="absolute -top-1 -right-1 bg-white text-black text-[10px] font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
                   {wishlistCount > 99 ? '99+' : wishlistCount}
                 </span>
               )}
@@ -760,7 +753,7 @@ export function TopBar({
           <Tooltip label="Task Queue">
             <button
               onClick={onToggleTaskQueue}
-              className={`relative p-2 rounded-lg transition-colors ${
+              className={`relative p-2 rounded-md transition-colors ${
                 showTaskQueuePanel
                   ? 'bg-white text-black'
                   : 'text-white hover:bg-white/10'
@@ -771,15 +764,17 @@ export function TopBar({
               {hasRunningTask ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
-                <Activity className="w-5 h-5" />
+                <ListTodo className="w-5 h-5" />
               )}
               {taskPendingCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-white text-black text-caption font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                <span className="absolute -top-1 -right-1 bg-white text-black text-[10px] font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
                   {taskPendingCount > 99 ? '99+' : taskPendingCount}
                 </span>
               )}
             </button>
           </Tooltip>
+
+          <ActivityPanel />
 
           {/* Notifications */}
           <NotificationBell />
@@ -788,7 +783,7 @@ export function TopBar({
           <Tooltip label="Settings">
             <button
               onClick={onOpenSettings}
-              className="p-2 rounded-lg transition-colors text-white hover:bg-white/10"
+              className="p-2 rounded-md transition-colors text-white hover:bg-white/10"
               aria-label="Open settings"
             >
               <Settings className="w-5 h-5" />

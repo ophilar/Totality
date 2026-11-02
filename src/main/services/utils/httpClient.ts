@@ -1,3 +1,4 @@
+
 /**
  * httpClient — lightweight fetch wrapper replacing axios
  *
@@ -10,7 +11,8 @@ export class HttpError extends Error {
   constructor(
     public readonly status: number,
     public readonly data: unknown,
-    message: string
+    message: string,
+    public readonly headers?: Headers
   ) {
     super(message)
     this.name = 'HttpError'
@@ -50,13 +52,9 @@ export async function fetchWithTimeout(
   options: RequestInit = {},
   timeoutMs = 30_000
 ): Promise<Response> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    return await fetch(url, { ...options, signal: controller.signal })
-  } finally {
-    clearTimeout(timer)
-  }
+  const timeoutSignal = AbortSignal.timeout(timeoutMs)
+  const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal
+  return fetch(url, { ...options, signal })
 }
 
 export interface FetchJSONOptions extends RequestInit {
@@ -71,6 +69,26 @@ export interface FetchJSONOptions extends RequestInit {
   allowStatuses?: number[]
 }
 
+export async function fetchResponse(
+  url: string,
+  options: FetchJSONOptions = {}
+): Promise<Response> {
+  const { params, timeoutMs = 30_000, allowStatuses, ...init } = options
+  const response = await fetchWithTimeout(buildUrl(url, params), init, timeoutMs)
+
+  if (!response.ok && !allowStatuses?.includes(response.status)) {
+    let data: unknown = null
+    try {
+      data = await response.json()
+    } catch {
+      data = await response.text().catch(() => null)
+    }
+    throw new HttpError(response.status, data, `HTTP ${response.status}: ${response.statusText}`, response.headers)
+  }
+
+  return response
+}
+
 /**
  * Fetch a URL and return the parsed JSON body.
  * Throws HttpError (with status + data) on non-ok responses,
@@ -80,20 +98,7 @@ export async function fetchJSON<T>(
   url: string,
   options: FetchJSONOptions = {}
 ): Promise<T> {
-  const { params, timeoutMs = 30_000, allowStatuses, ...init } = options
-  const finalUrl = buildUrl(url, params)
-  const response = await fetchWithTimeout(finalUrl, init, timeoutMs)
-
-  if (!response.ok && !allowStatuses?.includes(response.status)) {
-    let data: unknown = null
-    try {
-      data = await response.json()
-    } catch {
-      data = await response.text().catch(() => null)
-    }
-    throw new HttpError(response.status, data, `HTTP ${response.status}: ${response.statusText}`)
-  }
-
+  const response = await fetchResponse(url, options)
   if (response.status === 204) return null as T
   return response.json() as Promise<T>
 }

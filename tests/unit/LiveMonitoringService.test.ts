@@ -9,6 +9,7 @@ vi.mock('chokidar', () => ({
 }))
 vi.mock('child_process', () => ({
   exec: vi.fn(),
+  execFile: vi.fn(),
 }))
 vi.mock('util', () => ({
   promisify: vi.fn(() => vi.fn()),
