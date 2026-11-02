@@ -3,7 +3,7 @@ import { BrowserWindow } from 'electron'
 import { IPC_CHANNELS } from '../../../shared/ipcChannels'
 import { safeSend } from './safeSend'
 
-export type ActivityOperationKind = 'duplicate-scan' | 'ai-report' | 'update-download' | 'sonarr-wait' | 'optimization-preflight'
+export type ActivityOperationKind = 'duplicate-scan' | 'ai-report' | 'timeline' | 'plex-playlist' | 'update-download' | 'sonarr-wait' | 'optimization-preflight'
 export type ActivityOperationState = 'running' | 'pausing' | 'paused' | 'cancelling' | 'finishing' | 'completed' | 'cancelled' | 'partial' | 'failed'
 
 export interface ActivityOperation {

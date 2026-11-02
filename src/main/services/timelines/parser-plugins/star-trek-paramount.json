@@ -1,0 +1,24 @@
+{
+  "id": "star-trek-paramount",
+  "name": "Paramount+ Star Trek Viewing Guide",
+  "franchise": "Star Trek",
+  "description": "Official series-level chronological viewing order; each listed series expands to its available local episodes.",
+  "sourceUrl": "https://www.paramountplus.com/sneak-peak/star-trek-viewing-order-guide/",
+  "attribution": "Paramount+, Star Trek Shows In Chronological Order",
+  "groupings": [],
+  "orders": [
+    {
+      "id": "chronological-series",
+      "name": "Star Trek — Paramount+ Series Order",
+      "description": "Paramount+'s current chronological order for its 11 shows, including Starfleet Academy. Series entries expand to available local episodes; this guide does not interleave individual episodes or films.",
+      "order": {
+        "kind": "list",
+        "listSelector": "article",
+        "itemSelector": "h3",
+        "format": "title-list",
+        "minimumItems": 11,
+        "defaultType": "show"
+      }
+    }
+  ]
+}
