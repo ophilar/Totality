@@ -173,4 +173,6 @@ for name in ['package.json','package-lock.json']:
         for key in ['css-select','domhandler','domutils','htmlparser2']:
             j['dependencies'][key]=oldp['dependencies'][key]
     p.write_text(json.dumps(j,indent=2,ensure_ascii=False)+'\n')
+for path in ['src/main/services/timelines/TraktRecipeProvider.ts','src/renderer/src/components/timelines/TimelinesView.tsx']:
+    p=Path(path);p.write_text('\n'.join(line.rstrip() for line in p.read_text().splitlines())+'\n')
 print("v0.5 Timelines source assembly complete")
