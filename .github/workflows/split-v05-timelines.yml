@@ -1,7 +1,6 @@
 name: Validate linear 0.5 core and extracted Timelines feature
 on:
-  push:
-    branches: [automation/rebase-v05-onto-v043-runner]
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:

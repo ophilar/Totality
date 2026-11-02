@@ -1,0 +1,68 @@
+name: Consolidate validated 0.5 PRs without merge commits
+on:
+  push:
+    branches: [automation/rebase-v05-onto-v043-runner]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v0.5.0-clean
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Cherry-pick existing PR commits onto linear 0.5 core
+        shell: bash
+        run: |
+          set -euo pipefail
+          CORE_OLD=a4fe89593b3dcc7aff8aa17bc4283ec6028b0bc1
+          FEATURE_OLD=1944f4d806ab07cc8238b0af26c5777d20a73689
+          OLD_PR_BASE=fc9b18b425a31475ca082b637e1d62774fc805ab
+          PR217=5bd149b51a7ad694592fdd8aee12c7d94dff99f4
+          PR215=89bef5a01f1280c32f5df061e58b59b67e1d9c8f
+          test "$(git rev-parse origin/v0.5.0-clean)" = "$CORE_OLD"
+          test "$(git rev-parse origin/feature/timelines)" = "$FEATURE_OLD"
+          test "$(git rev-parse origin/fix/v0.5-runtime-log-reconciliation-csp-samples)" = "$PR217"
+          test "$(git rev-parse origin/test/visual-regression-v042-v05)" = "$PR215"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c combined-core "$CORE_OLD"
+          git cherry-pick "$OLD_PR_BASE..$PR217"
+          git cherry-pick "$OLD_PR_BASE..$PR215"
+          NEW_CORE="$(git rev-parse HEAD)"
+          test "$(git rev-list --count "$CORE_OLD..$NEW_CORE")" = 28
+          test "$(git rev-list --merges --count "$CORE_OLD..$NEW_CORE")" = 0
+          git diff --check "$CORE_OLD" "$NEW_CORE"
+          git switch -c timeline-rebased "$FEATURE_OLD"
+          git rebase --onto "$NEW_CORE" "$CORE_OLD" timeline-rebased
+          test "$(git rev-parse 'HEAD^')" = "$NEW_CORE"
+          git diff --check "$NEW_CORE" HEAD
+          git diff --name-only "$CORE_OLD" "$FEATURE_OLD" | sort > /tmp/old-timelines.txt
+          git diff --name-only "$NEW_CORE" HEAD | sort > /tmp/new-timelines.txt
+          diff -u /tmp/old-timelines.txt /tmp/new-timelines.txt
+          git diff "$CORE_OLD" "$FEATURE_OLD" > /tmp/old-timeline.patch
+          git diff "$NEW_CORE" HEAD > /tmp/new-timeline.patch
+          cmp /tmp/old-timeline.patch /tmp/new-timeline.patch
+          echo "::notice::Core candidate $NEW_CORE; timeline candidate $(git rev-parse HEAD)"
+          git switch combined-core
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate integrated core
+        run: |
+          npm run typecheck
+          npm run test:run
+          npm run renderer:build
+      - name: Validate rebased Timelines
+        shell: bash
+        run: |
+          git switch timeline-rebased
+          npm run typecheck
+          npm run test:run
+          npm run renderer:build
+          echo "Both consolidated branches validated."

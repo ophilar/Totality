@@ -1,7 +1,6 @@
 name: Audit Totality 0.5 timeline extraction
 on:
-  push:
-    branches: [automation/rebase-v05-onto-v043-runner]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
