@@ -74,7 +74,7 @@ export function createValidatedIpcHandlerWithEvent<TSchema extends z.ZodType, TR
 run('git','restore','--source='+SOURCE,'--staged','--worktree','--','src/main/services/utils/httpClient.ts')
 engine='src/main/services/timelines/TimelineResolutionEngine.ts'
 edit(engine,'duration: match.duration_ms,','duration: match.duration,')
-edit(engine,'row.series_identity_key',"(row.series_tmdb_id || normalizeMediaTitle(row.series_title || ''))",4)
+edit(engine,'row.series_identity_key',"(row.series_tmdb_id || normalizeMediaTitle(row.series_title || ''))",9)
 edit(engine,'episodes[0].series_identity_key',"(episodes[0].series_tmdb_id || normalizeMediaTitle(episodes[0].series_title || ''))")
 # The v0.4.4 schema has no per-series TVDB/IMDb key; never claim that it does.
 edit(engine,"row.series_identity_key === "+chr(96)+"tvdb:","(row.series_tmdb_id || '') === "+chr(96)+"tvdb:",1) if False else None
