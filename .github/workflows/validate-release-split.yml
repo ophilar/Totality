@@ -1,64 +1,70 @@
-name: Validate standalone v0.5 Timelines on fixes
+name: Validate four linear Totality releases
 on:
   push:
     branches:
       - automation/release-split-validation
 permissions:
-  contents: write
+  contents: read
 jobs:
-  timelines:
+  validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 50
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - branch: master
+            version: 0.4.3
+          - branch: fixes
+            version: 0.4.4
+          - branch: timelines
+            version: 0.5.0
+          - branch: optimization
+            version: 0.6.0
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: automation/release-split-validation
-          path: tooling
-      - uses: actions/checkout@v4
-        with:
-          ref: fixes
+          ref: ${{ matrix.branch }}
           fetch-depth: 0
-          path: repo
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: repo/package-lock.json
-      - name: Build v0.5 Timelines from the 0.4.4 fixes base
-        working-directory: repo
+      - name: Verify linear ancestry and release metadata
         shell: bash
+        env:
+          BRANCH: ${{ matrix.branch }}
+          EXPECT_VERSION: ${{ matrix.version }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          python3 ../tooling/scripts/release-timelines.py
-          nl -ba src/main/services/timelines/TimelineResolutionEngine.ts | sed -n '218,245p'
-          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-          git add -A
-          git diff --cached --check
-          git commit -m "feat(v0.5): add standalone viewing timelines on 0.4.4 fixes"
-          git diff --stat fixes HEAD | tail -30
+          node -e 'const p=require("./package.json"); const l=require("./package-lock.json"); for(const v of [p.version,l.version,l.packages[""].version]) if(v!==process.env.EXPECT_VERSION) process.exit(1)'
+          git merge-base --is-ancestor f2f9d4942185b75614ffa8d080e5cd82a78a9216 HEAD
+          case "$BRANCH" in
+            master)
+              test "$(git rev-parse HEAD)" = f2f9d4942185b75614ffa8d080e5cd82a78a9216
+              ;;
+            fixes)
+              test "$(git rev-parse HEAD)" = bf6dc45299e46aa4da74aa873c9d35c6f3d39419
+              test "$(git rev-list --count f2f9d4942185b75614ffa8d080e5cd82a78a9216..HEAD)" = 5
+              ;;
+            timelines)
+              test "$(git rev-parse HEAD)" = b800fe628bc8e4bd338eeb921dea90e51fc6f9e9
+              test "$(git rev-parse HEAD^)" = bf6dc45299e46aa4da74aa873c9d35c6f3d39419
+              test -f src/main/ipc/timelines.ts
+              test ! -f src/main/services/MeasuredOptimizationService.ts
+              ;;
+            optimization)
+              test "$(git rev-parse HEAD)" = 44e525fce7b7ed27f48ecdc254902e273eb829e2
+              test "$(git rev-parse HEAD^)" = b800fe628bc8e4bd338eeb921dea90e51fc6f9e9
+              test -f src/main/ipc/timelines.ts
+              test -f src/main/services/MeasuredOptimizationService.ts
+              ;;
+          esac
       - name: Install
-        working-directory: repo
         run: npm ci
       - name: Typecheck
-        working-directory: repo
         run: npx tsc --noEmit
-      - name: Test
-        working-directory: repo
+      - name: Full tests
         run: npm run test:run
-      - name: Build
-        working-directory: repo
+      - name: Vite build
         run: npx vite build
-      - name: Publish Timelines only after all checks pass
-        working-directory: repo
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD^)" = bf6dc45299e46aa4da74aa873c9d35c6f3d39419
-          if git ls-remote --heads origin refs/heads/timelines | grep -q 'refs/heads/timelines$'; then
-            echo "::error::Ref timelines already exists; refusing unexpected update"
-            exit 1
-          fi
-          git push origin HEAD:refs/heads/timelines
-          echo "::notice::Published standalone timeline v0.5 $(git rev-parse HEAD)"
