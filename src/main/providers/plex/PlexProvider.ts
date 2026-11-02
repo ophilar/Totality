@@ -488,6 +488,9 @@ export class PlexProvider implements MediaProvider {
 
           // Get all episodes
           const episodes = await this.getAllEpisodes(item.ratingKey)
+          if (episodes.length === 0) {
+            throw new Error(`Plex returned no episodes for ${item.title}; cannot verify a complete inventory`)
+          }
           for (const ep of episodes) {
             const epExt = ep as PlexMediaItem & { _showTmdbId?: string; _showTitleSort?: string }
             epExt._showTmdbId = showTmdbId
@@ -593,6 +596,8 @@ export class PlexProvider implements MediaProvider {
                 } else {
                   result.itemsAdded++
                 }
+              } else {
+                result.errors.push(`Could not convert Plex metadata for ${item.title}; incomplete scan cannot verify deletions`)
               }
 
               if (onProgress) {
@@ -616,6 +621,11 @@ export class PlexProvider implements MediaProvider {
         }
       } finally {
         await db.endBatch()
+      }
+
+      if (result.cancelled || result.errors.length > 0) {
+        result.durationMs = Date.now() - startTime
+        return result
       }
 
       // Remove stale items
@@ -866,11 +876,17 @@ export class PlexProvider implements MediaProvider {
       )
 
       const container = responseData?.MediaContainer
-      const items = container?.Metadata || []
+      if (!container) throw new Error('Invalid Plex library response: missing MediaContainer')
+      const items = container.Metadata || []
       allItems.push(...items)
 
-      const totalSize = container?.totalSize
-      if (items.length === 0 || (totalSize != null && allItems.length >= totalSize)) {
+      const totalSize = container.totalSize
+      if (items.length === 0) {
+        if (totalSize != null && allItems.length < totalSize) {
+          throw new Error(`Incomplete Plex inventory: received ${allItems.length} of ${totalSize} items`)
+        }
+        hasMore = false
+      } else if (totalSize != null && allItems.length >= totalSize) {
         hasMore = false
       } else {
         offset += items.length
@@ -922,13 +938,8 @@ export class PlexProvider implements MediaProvider {
       throw new Error('No server selected')
     }
 
-    try {
-      const url = `${this.selectedServer.uri}/library/metadata/${showKey}/allLeaves`
-      return await this.paginatedPlexFetch<PlexMediaItem>(url)
-    } catch (error) {
-      console.error('Failed to get episodes:', error)
-      return []
-    }
+    const url = `${this.selectedServer.uri}/library/metadata/${showKey}/allLeaves`
+    return this.paginatedPlexFetch<PlexMediaItem>(url)
   }
 
   private async getSeasonMetadata(seasonKey: string): Promise<PlexMediaItem | null> {
