@@ -3,7 +3,7 @@ on:
   push:
     branches: [automation/rebase-v05-onto-v043-runner]
 permissions:
-  contents: read
+  contents: write
 jobs:
   validate:
     runs-on: ubuntu-24.04
@@ -66,3 +66,15 @@ jobs:
           npm run test:run
           npm run renderer:build
           echo "Both consolidated branches validated."
+      - name: Publish linear PR integration without extra feature branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          OLD_CORE=a4fe89593b3dcc7aff8aa17bc4283ec6028b0bc1
+          OLD_FEATURE=1944f4d806ab07cc8238b0af26c5777d20a73689
+          NEW_CORE="$(git rev-parse combined-core)"
+          NEW_FEATURE="$(git rev-parse timeline-rebased)"
+          test "$(git rev-parse "$NEW_FEATURE^")" = "$NEW_CORE"
+          git push "--force-with-lease=refs/heads/v0.5.0-clean:$OLD_CORE" origin "$NEW_CORE:refs/heads/v0.5.0-clean"
+          git push "--force-with-lease=refs/heads/feature/timelines:$OLD_FEATURE" origin "$NEW_FEATURE:refs/heads/feature/timelines"
+          echo "::notice::Integrated PR 217 and PR 215 into $NEW_CORE; timeline feature rebased to $NEW_FEATURE"
