@@ -1,0 +1,44 @@
+
+import type { ITranscodeCommandBuilder, TranscodeOptions } from './types'
+import { NvidiaCommandBuilder } from './NvidiaCommandBuilder'
+import { IntelCommandBuilder } from './IntelCommandBuilder'
+import { AmdCommandBuilder } from './AmdCommandBuilder'
+import { AppleCommandBuilder } from './AppleCommandBuilder'
+import { SoftwareCommandBuilder } from './SoftwareCommandBuilder'
+import { StreamRemuxCommandBuilder } from './StreamRemuxCommandBuilder'
+
+export class TranscodeCommandFactory {
+  private static readonly GPU_BUILDERS: Record<string, () => ITranscodeCommandBuilder> = {
+    'NVIDIA': () => new NvidiaCommandBuilder(),
+    'Intel': () => new IntelCommandBuilder(),
+    'AMD': () => new AmdCommandBuilder(),
+    'Apple': () => new AppleCommandBuilder(),
+  }
+
+  static resolveOutputMode(
+    requestedOutputMode: TranscodeOptions['outputMode'] | null | undefined,
+    _encoder?: string,
+    _hasCustomArgs = false
+  ): NonNullable<TranscodeOptions['outputMode']> {
+    if (!requestedOutputMode) throw new Error('Transcode output mode must be explicitly selected.')
+    return requestedOutputMode
+  }
+
+  static getBuilder(vendor?: string, options: TranscodeOptions = {}): ITranscodeCommandBuilder {
+    if (options.optimizationMode === 'remux_only' || options.encoder === 'remux' || options.encoder === 'copy') {
+      return new StreamRemuxCommandBuilder()
+    }
+    const isGpuRequested = Boolean(options.useGpu || options.gpuId)
+    if (isGpuRequested) {
+      if (!vendor || vendor === 'Unknown' || vendor === 'Software') {
+        throw new Error('GPU transcoding was requested, but no valid GPU vendor was provided.')
+      }
+      const builderFactory = this.GPU_BUILDERS[vendor]
+      if (!builderFactory) {
+        throw new Error(`GPU transcoding is not supported for vendor: "${vendor}". Supported hardware transcoding vendors: ${Object.keys(this.GPU_BUILDERS).join(', ')}.`)
+      }
+      return builderFactory()
+    }
+    return new SoftwareCommandBuilder()
+  }
+}

@@ -1,4 +1,6 @@
+
 import { getErrorMessage } from './utils/errorUtils'
+import { getLoggingService } from './LoggingService'
 /**
  * MediaFileAnalyzer Service
  *
@@ -11,13 +13,16 @@ import { getErrorMessage } from './utils/errorUtils'
 import { spawn } from 'child_process'
 import * as crypto from 'crypto'
 import * as fs from 'fs'
-import * as path from 'path'
+import * as path from 'node:path'
 import * as http from 'http'
 import AdmZip from 'adm-zip'
 import * as https from 'https'
 import { app } from 'electron'
 import { createWriteStream, mkdirSync, readFileSync } from 'fs'
 import { pipeline } from 'stream/promises'
+import { StreamByteAccumulator } from './transcoding/StreamByteAccounting'
+import { PathUtils } from './utils/PathUtils'
+import { detectHdrFormat, estimateAudioBitrate, extractBitDepth, parseFrameRate } from './utils/ffprobeMetadata'
 
 // FFprobe JSON output types
 interface FFprobeStream {
@@ -98,13 +103,15 @@ interface FFprobeOutput {
 
 // Analyzed result types
 export interface AnalyzedVideoStream {
+  durationMs?: number
+  timestampPrecisionMs?: number
   index: number
   codec: string
   profile?: string
   level?: number
   width: number
   height: number
-  bitrate?: number
+  bitrateKbps?: number
   frameRate?: number
   bitDepth?: number
   pixelFormat?: string
@@ -112,21 +119,27 @@ export interface AnalyzedVideoStream {
   colorTransfer?: string
   colorPrimaries?: string
   hdrFormat?: string
+  dolbyVisionProfile?: number
 }
 
 export interface AnalyzedAudioStream {
+  durationMs?: number
+  timestampPrecisionMs?: number
   index: number
   codec: string
   profile?: string
   channels: number
   channelLayout?: string
-  bitrate?: number
+  bitrateKbps?: number
   sampleRate?: number
   bitDepth?: number
   language?: string
   title?: string
   isDefault: boolean
   hasObjectAudio: boolean
+  isCommentary?: boolean
+  isAudioDescription?: boolean
+  isAccessibility?: boolean
 }
 
 export interface AnalyzedSubtitleStream {
@@ -160,19 +173,37 @@ export interface EmbeddedMetadataTags {
 }
 
 export interface FileAnalysisResult {
+  optimizationMeasurement?: {
+    cacheKey: string
+    qualityProfile: import('./MeasuredOptimizationPolicy').OptimizationQualityProfile
+    sourceSize: number
+    sourceMtimeMs: number
+    samplingRole: 'measured' | 'projected'
+  }
+  sourceFingerprint?: { size: number; mtimeMs: number; sha256: string }
   success: boolean
   error?: string
   filePath: string
   container?: string
-  duration?: number // milliseconds
-  fileSize?: number // bytes
-  overallBitrate?: number // kbps
+  durationMs?: number
+  fileSizeBytes?: number
+  overallBitrateKbps?: number
 
   video?: AnalyzedVideoStream
   audioTracks: AnalyzedAudioStream[]
   subtitleTracks: AnalyzedSubtitleStream[]
   embeddedArtwork?: EmbeddedArtwork
   embeddedMetadata?: EmbeddedMetadataTags
+  streamBytes?: Record<number, number>
+  deepAnalysis?: {
+    peakBitrate?: number
+    avgBitrate?: number
+    bitrateVariance?: number
+    isVariableBitrate?: boolean
+    [key: string]: unknown
+  }
+  fileAnalysisFingerprint?: Partial<import('./utils/FileIdentity').FileIdentity>
+  analysisOptions?: { scanBitrate?: boolean; detectVolume?: boolean; includePacketMetrics?: boolean }
 }
 
 // Singleton instance
@@ -505,12 +536,7 @@ export class MediaFileAnalyzer {
       this.ffprobePath = finalPath
       this.ffprobeChecked = true
 
-      // Cleanup temp directory
-      try {
-        fs.rmSync(tempDir, { recursive: true, force: true })
-      } catch {
-        // Ignore cleanup errors
-      }
+      this.removeTemporaryDirectory(tempDir)
 
       onProgress?.({ stage: 'Installation complete!', percent: 100 })
 
@@ -523,12 +549,7 @@ export class MediaFileAnalyzer {
     } catch (error: unknown) {
       console.error('[MediaFileAnalyzer] FFprobe installation failed:', error)
 
-      // Cleanup on error
-      try {
-        fs.rmSync(tempDir, { recursive: true, force: true })
-      } catch {
-        // Ignore cleanup errors
-      }
+      this.removeTemporaryDirectory(tempDir)
 
       return {
         success: false,
@@ -633,18 +654,6 @@ export class MediaFileAnalyzer {
         throw new Error('ffprobe.exe not found in archive')
       }
       fs.copyFileSync(ffprobeSource, destPath)
-
-      // Also extract ffmpeg.exe if present (same archive on Windows)
-      try {
-        const ffmpegSource = await this.findFileInDir(tempDir, 'ffmpeg.exe')
-        if (ffmpegSource) {
-          const ffmpegDest = destPath.replace(/ffprobe\.exe$/i, 'ffmpeg.exe')
-          fs.copyFileSync(ffmpegSource, ffmpegDest)
-          console.log('[MediaFileAnalyzer] Also extracted ffmpeg.exe alongside ffprobe')
-        }
-      } catch {
-        // FFmpeg extraction is best-effort — ffprobe is the primary binary
-      }
     } else if (platform === 'darwin') {
       // Use unzip on macOS
       await this.runCommand('unzip', ['-o', archivePath, '-d', tempDir])
@@ -656,17 +665,6 @@ export class MediaFileAnalyzer {
       }
       fs.copyFileSync(ffprobeSource, destPath)
       fs.chmodSync(destPath, 0o755) // Make executable
-
-      // Also extract ffmpeg if present
-      try {
-        const ffmpegSource = await this.findFileInDir(tempDir, 'ffmpeg')
-        if (ffmpegSource && !ffmpegSource.includes('ffprobe')) {
-          const ffmpegDest = destPath.replace(/ffprobe$/, 'ffmpeg')
-          fs.copyFileSync(ffmpegSource, ffmpegDest)
-          fs.chmodSync(ffmpegDest, 0o755)
-          console.log('[MediaFileAnalyzer] Also extracted ffmpeg alongside ffprobe')
-        }
-      } catch { /* best-effort */ }
     } else {
       // Use tar on Linux
       await this.runCommand('tar', ['-xf', archivePath, '-C', tempDir])
@@ -678,17 +676,33 @@ export class MediaFileAnalyzer {
       }
       fs.copyFileSync(ffprobeSource, destPath)
       fs.chmodSync(destPath, 0o755) // Make executable
+    }
+    await this.extractFFmpegIfPresent(tempDir, destPath)
+  }
 
-      // Also extract ffmpeg if present
-      try {
-        const ffmpegSource = await this.findFileInDir(tempDir, 'ffmpeg')
-        if (ffmpegSource && !ffmpegSource.includes('ffprobe')) {
-          const ffmpegDest = destPath.replace(/ffprobe$/, 'ffmpeg')
-          fs.copyFileSync(ffmpegSource, ffmpegDest)
-          fs.chmodSync(ffmpegDest, 0o755)
-          console.log('[MediaFileAnalyzer] Also extracted ffmpeg alongside ffprobe')
-        }
-      } catch { /* best-effort */ }
+  private async extractFFmpegIfPresent(tempDir: string, ffprobePath: string): Promise<void> {
+    const isWindows = process.platform === 'win32'
+    const executableName = isWindows ? 'ffmpeg.exe' : 'ffmpeg'
+    const ffmpegSource = await this.findFileInDir(tempDir, executableName)
+    if (!ffmpegSource) return
+
+    const ffmpegPath = isWindows
+      ? ffprobePath.replace(/ffprobe\.exe$/i, 'ffmpeg.exe')
+      : ffprobePath.replace(/ffprobe$/, 'ffmpeg')
+    try {
+      fs.copyFileSync(ffmpegSource, ffmpegPath)
+      if (!isWindows) fs.chmodSync(ffmpegPath, 0o755)
+      console.log(`[MediaFileAnalyzer] Also extracted ${executableName} alongside ffprobe`)
+    } catch (error) {
+      console.warn(`[MediaFileAnalyzer] Failed to extract optional ${executableName}:`, error)
+    }
+  }
+
+  private removeTemporaryDirectory(tempDir: string): void {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    } catch (error) {
+      console.warn(`[MediaFileAnalyzer] Failed to remove temporary directory ${tempDir}:`, error)
     }
   }
 
@@ -762,12 +776,11 @@ export class MediaFileAnalyzer {
   /**
    * Check if FFmpeg is available (needed for artwork extraction)
    */
-  isFFmpegAvailable(): boolean {
-    if (!this.ffprobePath) return false
-    const ffmpegPath = this.ffprobePath.replace(/ffprobe(\.exe)?$/i, (match) =>
-      match.toLowerCase().includes('.exe') ? 'ffmpeg.exe' : 'ffmpeg'
-    )
-    return fs.existsSync(ffmpegPath)
+  async isFFmpegAvailable(): Promise<boolean> {
+    if (!this.ffprobePath) await this.isAvailable()
+    const ffmpegPath = this.getFFmpegPath()
+    if (ffmpegPath !== 'ffmpeg' && fs.existsSync(ffmpegPath)) return true
+    return this.isFFmpegInPath()
   }
 
   async uninstallFFprobe(): Promise<boolean> {
@@ -814,7 +827,7 @@ export class MediaFileAnalyzer {
   /**
    * Analyze a media file and return detailed metadata
    */
-  async analyzeFile(filePath: string): Promise<FileAnalysisResult> {
+  async analyzeFile(filePath: string, signal?: AbortSignal): Promise<FileAnalysisResult> {
     // Check if FFprobe is available
     if (!await this.isAvailable()) {
       return {
@@ -838,7 +851,7 @@ export class MediaFileAnalyzer {
     }
 
     try {
-      const ffprobeOutput = await this.runFFprobe(filePath)
+      const ffprobeOutput = await this.runFFprobe(filePath, signal)
       const result = this.parseFFprobeOutput(filePath, ffprobeOutput)
 
       // Note: Packet analysis for accurate bitrates was removed for performance.
@@ -852,6 +865,113 @@ export class MediaFileAnalyzer {
         filePath,
         audioTracks: [],
         subtitleTracks: [],
+      }
+    }
+  }
+
+  /**
+   * Measure stream packet bytes and sliding-window bitrate metrics using streaming parsing
+   */
+  async measurePacketMetrics(
+    filePath: string,
+    videoStreamIndex?: number | 'first',
+    signal?: AbortSignal,
+    _requestId?: string
+  ): Promise<{
+    streamBytes: Record<number, number>
+    bitrate?: { peakBitrate: number; avgBitrate: number; bitrateVariance: number; isVariableBitrate: boolean }
+  }> {
+    const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
+    if (!this.ffprobePath) await this.isAvailable()
+    const ffprobeCommand = this.ffprobePath || 'ffprobe'
+
+    return new Promise((resolve, reject) => {
+      const args = [
+        '-v', 'error',
+        ...(videoStreamIndex === 'first' ? ['-select_streams', 'v:0'] : []),
+        '-show_entries', 'packet=stream_index,size,duration_time:packet_side_data=',
+        '-of', 'compact=p=1:nk=0',
+        sanitizedPath,
+      ]
+
+      const proc = spawn(ffprobeCommand, args, { stdio: ['ignore', 'pipe', 'pipe'], signal })
+      const packetAccumulator = new StreamByteAccumulator(videoStreamIndex)
+      let stderr = ''
+      let outputError: unknown
+
+      proc.stdout.on('data', (data) => {
+        if (outputError) return
+        try {
+          packetAccumulator.write(data.toString())
+        } catch (error) {
+          outputError = error
+          proc.kill()
+        }
+      })
+
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString()
+      })
+
+      proc.on('close', (code, signal) => {
+        if (outputError) return reject(outputError)
+        if (code === 0) {
+          resolve(packetAccumulator.finishWithBitrate())
+        } else {
+          reject(new Error(stderr || `FFprobe packet analysis exited with code ${code ?? `signal ${signal}`}`))
+        }
+      })
+
+      proc.on('error', (err) => {
+        reject(new Error(`Failed to spawn FFprobe: ${err.message}`))
+      })
+    })
+  }
+
+  /**
+   * Complete file analysis combining container metadata, packet stream accounting, and bitrate metrics
+   */
+  async analyzeCompleteFile(
+    filePath: string,
+    options: { scanBitrate?: boolean; detectVolume?: boolean; includePacketMetrics?: boolean; requestId?: string; signal?: AbortSignal } = {}
+  ): Promise<FileAnalysisResult> {
+    const metadataStartedAt = Date.now()
+    const fileAnalysis = await this.analyzeFile(filePath, options.signal)
+    options.signal?.throwIfAborted()
+    const requestContext = `filePath=${filePath}${options.requestId ? `, requestId=${options.requestId}` : ''}`
+    getLoggingService().debug('[MediaFileAnalyzer]', `Metadata probe completed: ${requestContext}, elapsedMs=${Date.now() - metadataStartedAt}, success=${fileAnalysis.success}`)
+    if (!fileAnalysis.success) {
+      getLoggingService().error('[MediaFileAnalyzer]', `Metadata probe failed: ${requestContext}`, fileAnalysis.error)
+      return fileAnalysis
+    }
+
+    if (options.includePacketMetrics === false) {
+      getLoggingService().debug('[MediaFileAnalyzer]', `Packet metrics skipped: ${requestContext}`)
+      return fileAnalysis
+    }
+
+    const packetStartedAt = Date.now()
+    try {
+      const packetMetrics = await this.measurePacketMetrics(
+        filePath,
+        (options.scanBitrate ?? true) ? fileAnalysis.video?.index : undefined,
+        options.signal,
+        options.requestId
+      )
+      getLoggingService().debug('[MediaFileAnalyzer]', `Packet metrics completed: ${requestContext}, elapsedMs=${Date.now() - packetStartedAt}, success=true`)
+
+      return {
+        ...fileAnalysis,
+        streamBytes: packetMetrics.streamBytes,
+        deepAnalysis: packetMetrics.bitrate ? { ...packetMetrics.bitrate } : undefined,
+      }
+    } catch (error) {
+      options.signal?.throwIfAborted()
+      getLoggingService().error('[MediaFileAnalyzer]', `Packet metrics failed: ${requestContext}, elapsedMs=${Date.now() - packetStartedAt}`, error)
+      return {
+        ...fileAnalysis,
+        success: false,
+        error: `Packet analysis failed: ${error instanceof Error ? error.message : String(error)}`,
       }
     }
   }
@@ -924,6 +1044,19 @@ export class MediaFileAnalyzer {
     return this.ffprobePath
   }
 
+  /**
+   * Get the current FFmpeg executable path
+   */
+  getFFmpegPath(): string {
+    if (this.ffprobePath) {
+      const ffmpegPath = this.ffprobePath.replace(/ffprobe(\.exe)?$/i, (match) =>
+        match.toLowerCase().endsWith('.exe') ? 'ffmpeg.exe' : 'ffmpeg'
+      )
+      if (fs.existsSync(ffmpegPath)) return ffmpegPath
+    }
+    return 'ffmpeg'
+  }
+
   // ============================================================================
   // PRIVATE METHODS
   // ============================================================================
@@ -960,7 +1093,7 @@ export class MediaFileAnalyzer {
       // Check common package manager locations
       const localAppData = process.env.LOCALAPPDATA
       if (localAppData) {
-        paths.push(path.join(localAppData, 'Microsoft', 'WinGet', 'Packages', '**', 'ffprobe.exe'))
+        paths.push(path.join(localAppData, 'Microsoft', 'WinGet', 'Links', 'ffprobe.exe'))
         paths.push(path.join(localAppData, 'Programs', 'ffmpeg', 'bin', 'ffprobe.exe'))
       }
 
@@ -1037,7 +1170,7 @@ export class MediaFileAnalyzer {
     })
   }
 
-  private async runFFprobe(filePath: string): Promise<FFprobeOutput> {
+  private async runFFprobe(filePath: string, signal?: AbortSignal): Promise<FFprobeOutput> {
     return new Promise((resolve, reject) => {
       const args = [
         '-v', 'quiet',
@@ -1050,6 +1183,7 @@ export class MediaFileAnalyzer {
       const proc = spawn(this.ffprobePath!, args, {
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: 60000, // 60 second timeout for large files
+        signal,
       })
 
       let stdout = ''
@@ -1093,11 +1227,11 @@ export class MediaFileAnalyzer {
     // Parse format info
     if (output.format) {
       result.container = output.format.format_name
-      result.fileSize = output.format.size ? parseInt(output.format.size, 10) : undefined
-      result.duration = output.format.duration
+      result.fileSizeBytes = output.format.size ? parseInt(output.format.size, 10) : undefined
+      result.durationMs = output.format.duration
         ? Math.round(parseFloat(output.format.duration) * 1000)
         : undefined
-      result.overallBitrate = output.format.bit_rate
+      result.overallBitrateKbps = output.format.bit_rate
         ? Math.round(parseInt(output.format.bit_rate, 10) / 1000)
         : undefined
 
@@ -1182,11 +1316,11 @@ export class MediaFileAnalyzer {
         case 'video':
           // Only use first video stream (and not attached pictures)
           if (!result.video) {
-            result.video = this.parseVideoStream(stream, result.duration)
+            result.video = this.parseVideoStream(stream, result.durationMs)
           }
           break
         case 'audio':
-          result.audioTracks.push(this.parseAudioStream(stream, result.duration))
+          result.audioTracks.push(this.parseAudioStream(stream, result.durationMs))
           break
         case 'subtitle':
           result.subtitleTracks.push(this.parseSubtitleStream(stream))
@@ -1196,14 +1330,14 @@ export class MediaFileAnalyzer {
 
     // Calculate video bitrate from file size and duration (more accurate than metadata)
     // MKV files frequently have inaccurate bitrate values in their metadata tags
-    if (result.video && result.fileSize && result.duration) {
-      const durationSeconds = result.duration / 1000
+    if (result.video && result.fileSizeBytes && result.durationMs) {
+      const durationSeconds = result.durationMs / 1000
 
       // Calculate total bitrate from file: (bytes * 8) / seconds / 1000 = kbps
-      const calculatedTotalBitrate = Math.round((result.fileSize * 8) / durationSeconds / 1000)
+      const calculatedTotalBitrate = Math.round((result.fileSizeBytes * 8) / durationSeconds / 1000)
 
       // Sum audio bitrates (from metadata or estimates)
-      let totalAudioBitrate = result.audioTracks.reduce((sum, t) => sum + (t.bitrate || 0), 0)
+      let totalAudioBitrate = result.audioTracks.reduce((sum, t) => sum + (t.bitrateKbps || 0), 0)
 
       // Cap audio at 30% of total - audio can't exceed this in a typical video file
       // This prevents over-estimated lossless audio (TrueHD/DTS-HD MA) from inflating audio total
@@ -1215,31 +1349,31 @@ export class MediaFileAnalyzer {
 
       const calculatedVideoBitrate = Math.max(0, calculatedTotalBitrate - totalAudioBitrate)
 
-      const metadataBitrate = result.video.bitrate
+      const metadataBitrate = result.video.bitrateKbps
       if (metadataBitrate) {
         // If stream metadata bitrate differs significantly from calculated (< 50% or > 150%), use calculated
         const ratio = metadataBitrate / calculatedVideoBitrate
         if (ratio < 0.5 || ratio > 1.5) {
           console.log(`[MediaFileAnalyzer] Stream bitrate (${metadataBitrate} kbps) differs significantly from calculated (${calculatedVideoBitrate} kbps). Using calculated.`)
-          result.video.bitrate = calculatedVideoBitrate
+          result.video.bitrateKbps = calculatedVideoBitrate
         } else {
           console.log(`[MediaFileAnalyzer] Stream bitrate (${metadataBitrate} kbps) matches calculated (${calculatedVideoBitrate} kbps). Using metadata.`)
         }
       } else {
         // No metadata bitrate, use calculated
-        result.video.bitrate = calculatedVideoBitrate
+        result.video.bitrateKbps = calculatedVideoBitrate
         console.log(`[MediaFileAnalyzer] Video bitrate: ${calculatedVideoBitrate} kbps (total: ${calculatedTotalBitrate} - audio: ${totalAudioBitrate})`)
       }
-    } else if (result.video && result.overallBitrate && !result.video.bitrate) {
+    } else if (result.video && result.overallBitrateKbps && !result.video.bitrateKbps) {
       // Fallback: use overall bitrate from format if no file size available
-      let totalAudioBitrate = result.audioTracks.reduce((sum, t) => sum + (t.bitrate || 0), 0)
+      let totalAudioBitrate = result.audioTracks.reduce((sum, t) => sum + (t.bitrateKbps || 0), 0)
       // Cap audio at 30% of overall bitrate
-      const maxAudioBitrate = Math.round(result.overallBitrate * 0.30)
+      const maxAudioBitrate = Math.round(result.overallBitrateKbps * 0.30)
       if (totalAudioBitrate > maxAudioBitrate) {
         totalAudioBitrate = maxAudioBitrate
       }
-      result.video.bitrate = Math.max(0, result.overallBitrate - totalAudioBitrate)
-      console.log(`[MediaFileAnalyzer] Using format bitrate fallback: ${result.video.bitrate} kbps (overall: ${result.overallBitrate} - audio: ${totalAudioBitrate})`)
+      result.video.bitrateKbps = Math.max(0, result.overallBitrateKbps - totalAudioBitrate)
+      console.log(`[MediaFileAnalyzer] Using format bitrate fallback: ${result.video.bitrateKbps} kbps (overall: ${result.overallBitrateKbps} - audio: ${totalAudioBitrate})`)
     }
 
     return result
@@ -1273,13 +1407,8 @@ export class MediaFileAnalyzer {
       return false
     }
 
-    // Derive ffmpeg path from ffprobe path
-    const ffmpegPath = this.ffprobePath.replace(/ffprobe(\.exe)?$/i, (match) => {
-      return match.toLowerCase().includes('.exe') ? 'ffmpeg.exe' : 'ffmpeg'
-    })
-
-    // Check if ffmpeg exists
-    if (!fs.existsSync(ffmpegPath) && !await this.isFFmpegInPath()) {
+    const ffmpegPath = this.getFFmpegPath()
+    if (!await this.isFFmpegAvailable()) {
       console.warn('[MediaFileAnalyzer] FFmpeg not found, cannot extract artwork')
       return false
     }
@@ -1352,9 +1481,11 @@ export class MediaFileAnalyzer {
 
   private parseVideoStream(stream: FFprobeStream, durationMs?: number): AnalyzedVideoStream {
     const bitrate = this.extractBitrate(stream, durationMs)
-    const frameRate = this.parseFrameRate(stream.avg_frame_rate || stream.r_frame_rate)
-    const bitDepth = this.extractBitDepth(stream)
-    const hdrFormat = this.detectHdrFormat(stream)
+    const frameRate = parseFrameRate(stream.avg_frame_rate || stream.r_frame_rate)
+    const bitDepth = extractBitDepth(stream)
+    const hdrFormat = detectHdrFormat(stream)
+    const dvProfile = stream.side_data_list?.find(sideData => sideData.side_data_type.toLowerCase().includes('dolby vision'))?.dv_profile
+    const dolbyVisionProfile = typeof dvProfile === 'number' ? dvProfile : typeof dvProfile === 'string' && /^\d+$/.test(dvProfile) ? Number(dvProfile) : undefined
 
     return {
       index: stream.index,
@@ -1363,7 +1494,7 @@ export class MediaFileAnalyzer {
       level: stream.level,
       width: stream.width || stream.coded_width || 0,
       height: stream.height || stream.coded_height || 0,
-      bitrate,
+      bitrateKbps: bitrate,
       frameRate,
       bitDepth,
       pixelFormat: stream.pix_fmt,
@@ -1371,6 +1502,7 @@ export class MediaFileAnalyzer {
       colorTransfer: stream.color_transfer,
       colorPrimaries: stream.color_primaries,
       hdrFormat,
+      dolbyVisionProfile,
     }
   }
 
@@ -1382,7 +1514,7 @@ export class MediaFileAnalyzer {
 
     // Estimate bitrate for codecs that don't report it
     if (!bitrate) {
-      bitrate = this.estimateAudioBitrate(codec, channels, stream.profile, stream.sample_rate)
+      bitrate = estimateAudioBitrate(codec, channels, stream.profile, stream.sample_rate)
     }
 
     return {
@@ -1391,7 +1523,7 @@ export class MediaFileAnalyzer {
       profile: stream.profile,
       channels,
       channelLayout: stream.channel_layout,
-      bitrate,
+      bitrateKbps: bitrate,
       sampleRate: stream.sample_rate ? parseInt(stream.sample_rate, 10) : undefined,
       bitDepth: stream.bits_per_sample || (stream.bits_per_raw_sample ? parseInt(stream.bits_per_raw_sample, 10) : undefined),
       language: stream.tags?.language,
@@ -1399,77 +1531,6 @@ export class MediaFileAnalyzer {
       isDefault: stream.disposition?.default === 1,
       hasObjectAudio,
     }
-  }
-
-  /**
-   * Estimate audio bitrate for codecs that don't report it in metadata
-   */
-  private estimateAudioBitrate(codec: string, channels: number, profile?: string, sampleRateStr?: string): number | undefined {
-    const codecLower = codec.toLowerCase()
-    const sampleRate = sampleRateStr ? parseInt(sampleRateStr, 10) : 48000
-
-    // AC3 (Dolby Digital) - standard bitrates based on channels
-    if (codecLower === 'ac3') {
-      if (channels <= 2) return 192
-      if (channels <= 6) return 448  // 5.1
-      return 640  // Max AC3 bitrate
-    }
-
-    // EAC3 (Dolby Digital Plus) - higher bitrates
-    if (codecLower === 'eac3') {
-      if (channels <= 2) return 256
-      if (channels <= 6) return 640  // 5.1
-      if (channels <= 8) return 1024  // 7.1
-      return 1536  // Atmos object audio
-    }
-
-    // TrueHD - lossless, estimate based on channels and sample rate
-    if (codecLower === 'truehd') {
-      // TrueHD typical bitrates: ~2500-4500 kbps for 5.1, 4000-8000+ for 7.1/Atmos
-      const baseRate = sampleRate > 48000 ? 4000 : 2500
-      if (channels <= 2) return Math.round(baseRate * 0.4)
-      if (channels <= 6) return baseRate  // 5.1
-      if (channels <= 8) return Math.round(baseRate * 1.6)  // 7.1
-      return Math.round(baseRate * 2)  // Atmos with many objects
-    }
-
-    // DTS - standard bitrates
-    if (codecLower === 'dts') {
-      const profileLower = profile?.toLowerCase() || ''
-      // DTS-HD MA (lossless)
-      if (profileLower.includes('ma') || profileLower.includes('hd ma')) {
-        if (channels <= 2) return 1500
-        if (channels <= 6) return 3000  // 5.1
-        if (channels <= 8) return 4500  // 7.1
-        return 6000  // DTS:X
-      }
-      // DTS-HD HRA (high resolution)
-      if (profileLower.includes('hra') || profileLower.includes('hd hra')) {
-        if (channels <= 6) return 1500
-        return 2000
-      }
-      // Standard DTS
-      if (channels <= 2) return 768
-      if (channels <= 6) return 1509  // 5.1 typical
-      return 1509
-    }
-
-    // FLAC - lossless, estimate based on sample rate and bit depth
-    if (codecLower === 'flac') {
-      // FLAC typically compresses to 50-70% of uncompressed
-      // Estimate: channels * sampleRate * 16bits * 0.6 / 1000 for kbps
-      const bitDepth = 16  // Assume 16-bit if unknown
-      const compressionRatio = 0.6
-      return Math.round((channels * sampleRate * bitDepth * compressionRatio) / 1000)
-    }
-
-    // PCM - uncompressed
-    if (codecLower.includes('pcm')) {
-      const bitDepth = 16
-      return Math.round((channels * sampleRate * bitDepth) / 1000)
-    }
-
-    return undefined
   }
 
   private parseSubtitleStream(stream: FFprobeStream): AnalyzedSubtitleStream {
@@ -1511,88 +1572,6 @@ export class MediaFileAnalyzer {
     }
 
     console.log(`[MediaFileAnalyzer] No bitrate found in stream metadata`)
-    return undefined
-  }
-
-  private parseFrameRate(frameRateStr?: string): number | undefined {
-    if (!frameRateStr || frameRateStr === '0/0') return undefined
-
-    const parts = frameRateStr.split('/')
-    if (parts.length === 2) {
-      const num = parseInt(parts[0], 10)
-      const den = parseInt(parts[1], 10)
-      if (den !== 0) {
-        return Math.round((num / den) * 100) / 100
-      }
-    }
-
-    const parsed = parseFloat(frameRateStr)
-    return isNaN(parsed) ? undefined : Math.round(parsed * 100) / 100
-  }
-
-  private extractBitDepth(stream: FFprobeStream): number | undefined {
-    // Try bits_per_raw_sample first
-    if (stream.bits_per_raw_sample) {
-      return parseInt(stream.bits_per_raw_sample, 10)
-    }
-
-    // Infer from pixel format
-    const pixFmt = stream.pix_fmt?.toLowerCase() || ''
-
-    if (pixFmt.includes('12le') || pixFmt.includes('12be')) return 12
-    if (pixFmt.includes('10le') || pixFmt.includes('10be') || pixFmt.includes('p010')) return 10
-    if (pixFmt.includes('yuv420p') || pixFmt.includes('yuv422p') || pixFmt.includes('yuv444p')) return 8
-
-    return undefined
-  }
-
-  private detectHdrFormat(stream: FFprobeStream): string | undefined {
-    const colorTransfer = stream.color_transfer?.toLowerCase() || ''
-    const colorPrimaries = stream.color_primaries?.toLowerCase() || ''
-    const colorSpace = stream.color_space?.toLowerCase() || ''
-
-    // Check side data for HDR metadata
-    const sideData = stream.side_data_list || []
-    const hasDolbyVision = sideData.some(sd =>
-      sd.side_data_type?.toLowerCase().includes('dolby vision')
-    )
-    const hasHdr10Plus = sideData.some(sd =>
-      sd.side_data_type?.toLowerCase().includes('hdr10+') ||
-      sd.side_data_type?.toLowerCase().includes('dynamic hdr')
-    )
-    const hasMasteringDisplay = sideData.some(sd =>
-      sd.side_data_type?.toLowerCase().includes('mastering display')
-    )
-    const hasContentLight = sideData.some(sd =>
-      sd.side_data_type?.toLowerCase().includes('content light')
-    )
-
-    // Dolby Vision (check side data and profile)
-    if (hasDolbyVision) {
-      return 'Dolby Vision'
-    }
-
-    // HDR10+ (dynamic metadata)
-    if (hasHdr10Plus) {
-      return 'HDR10+'
-    }
-
-    // HDR10 (static metadata with BT.2020 + PQ)
-    if (
-      (colorTransfer.includes('smpte2084') || colorTransfer.includes('pq')) &&
-      (colorPrimaries.includes('bt2020') || colorSpace.includes('bt2020'))
-    ) {
-      if (hasMasteringDisplay || hasContentLight) {
-        return 'HDR10'
-      }
-      return 'PQ'
-    }
-
-    // HLG
-    if (colorTransfer.includes('arib-std-b67') || colorTransfer.includes('hlg')) {
-      return 'HLG'
-    }
-
     return undefined
   }
 

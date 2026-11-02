@@ -1,12 +1,13 @@
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
 /**
  * Music IPC Handlers
  *
  * Handles IPC communication for music library operations.
  */
 
-import { ipcMain } from 'electron'
 import { getDatabase } from '../database/getDatabase'
-import { getMusicBrainzService } from '../services/MusicBrainzService'
+import { createIpcHandler, createIpcHandlerWithEvent, createValidatedIpcHandler } from './utils/createHandler'
+import { getMusicBrainzService, MusicBrainzReleaseDataNotFoundError } from '../services/MusicBrainzService'
 import { getSourceManager } from '../services/SourceManager'
 import { PlexProvider } from '../providers/plex/PlexProvider'
 import { LocalFolderProvider } from '../providers/local/LocalFolderProvider'
@@ -21,7 +22,6 @@ import { z } from 'zod'
 import { getTaskQueueService } from '../services/TaskQueueService'
 import { analyzeAlbumQuality } from '../services/MusicQualityAnalyzer'
 import { getArtistAlbumsCombined } from '../services/utils/musicUtils'
-import { getWishlistCompletionService } from '../services/WishlistCompletionService'
 
 export function registerMusicHandlers(): void {
   // ============================================================================
@@ -31,7 +31,7 @@ export function registerMusicHandlers(): void {
   /**
    * Scan a music library from a source
    */
-  ipcMain.handle('music:scanLibrary', async (_event, sourceId: unknown, libraryId: unknown) => {
+  createIpcHandlerWithEvent(IPC_CHANNELS.musicScanLibrary, async (_event, sourceId: unknown, libraryId: unknown) => {
     const validSourceId = validateInput(SourceIdSchema, sourceId, 'music:scanLibrary')
     const validLibraryId = validateInput(LibraryIdSchema, libraryId, 'music:scanLibrary')
 
@@ -126,11 +126,6 @@ export function registerMusicHandlers(): void {
         console.log(`[music:scanLibrary] Updated scan timestamp for library ${library.name}`)
       }
 
-      // Check wishlist for auto-completion
-      getWishlistCompletionService().checkAndComplete().catch((err) => {
-        console.error('[music:scanLibrary] Wishlist check failed:', err)
-      })
-
       return result
     } catch (error: unknown) {
       console.error('[music:scanLibrary] Error:', error)
@@ -147,7 +142,7 @@ export function registerMusicHandlers(): void {
   /**
    * Get all music artists
    */
-  ipcMain.handle('music:getArtists', async (_event, filters?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicGetArtists, async (filters?: unknown) => {
     try {
       const validFilters = validateInput(MusicFiltersSchema, filters, 'music:getArtists')
       const db = getDatabase()
@@ -161,7 +156,7 @@ export function registerMusicHandlers(): void {
   /**
    * Get a music artist by ID
    */
-  ipcMain.handle('music:getArtistById', async (_event, id: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicGetArtistById, async (id: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'music:getArtistById')
       const db = getDatabase()
@@ -175,7 +170,7 @@ export function registerMusicHandlers(): void {
   /**
    * Get all music albums
    */
-  ipcMain.handle('music:getAlbums', async (_event, filters?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicGetAlbums, async (filters?: unknown) => {
     try {
       const validFilters = validateInput(MusicFiltersSchema, filters, 'music:getAlbums')
       const db = getDatabase()
@@ -189,7 +184,7 @@ export function registerMusicHandlers(): void {
   /**
    * Get albums for a specific artist
    */
-  ipcMain.handle('music:getAlbumsByArtist', async (_event, artistId: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicGetAlbumsByArtist, async (artistId: unknown) => {
     try {
       const validArtistId = validateInput(PositiveIntSchema, artistId, 'music:getAlbumsByArtist')
       const db = getDatabase()
@@ -203,7 +198,7 @@ export function registerMusicHandlers(): void {
   /**
    * Get a music album by ID
    */
-  ipcMain.handle('music:getAlbumById', async (_event, id: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicGetAlbumById, async (id: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'music:getAlbumById')
       const db = getDatabase()
@@ -214,21 +209,10 @@ export function registerMusicHandlers(): void {
     }
   })
 
-  ipcMain.handle('music:getTrackById', async (_event, id: unknown) => {
-    try {
-      const validId = validateInput(PositiveIntSchema, id, 'music:getTrackById')
-      const db = getDatabase()
-      return db.getMusicTrackById(validId)
-    } catch (error: unknown) {
-      console.error('[music:getTrackById] Error:', error)
-      throw error
-    }
-  })
-
   /**
    * Get all music tracks
    */
-  ipcMain.handle('music:getTracks', async (_event, filters?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicGetTracks, async (filters?: unknown) => {
     try {
       const validFilters = validateInput(MusicFiltersSchema, filters, 'music:getTracks')
       const db = getDatabase()
@@ -239,10 +223,14 @@ export function registerMusicHandlers(): void {
     }
   })
 
+  createValidatedIpcHandler(IPC_CHANNELS.musicGetTrackById, PositiveIntSchema, async id =>
+    getDatabase().getMusicTrackById(id)
+  )
+
   /**
    * Count music items (for pagination)
    */
-  ipcMain.handle('music:countArtists', async (_event, filters?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicCountArtists, async (filters?: unknown) => {
     try {
       const validFilters = validateInput(MusicFiltersSchema, filters, 'music:countArtists')
       const db = getDatabase()
@@ -253,7 +241,7 @@ export function registerMusicHandlers(): void {
     }
   })
 
-  ipcMain.handle('music:countAlbums', async (_event, filters?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicCountAlbums, async (filters?: unknown) => {
     try {
       const validFilters = validateInput(MusicFiltersSchema, filters, 'music:countAlbums')
       const db = getDatabase()
@@ -264,7 +252,7 @@ export function registerMusicHandlers(): void {
     }
   })
 
-  ipcMain.handle('music:countTracks', async (_event, filters?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicCountTracks, async (filters?: unknown) => {
     try {
       const validFilters = validateInput(MusicFiltersSchema, filters, 'music:countTracks')
       const db = getDatabase()
@@ -278,7 +266,7 @@ export function registerMusicHandlers(): void {
   /**
    * Get tracks for a specific album
    */
-  ipcMain.handle('music:getTracksByAlbum', async (_event, albumId: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicGetTracksByAlbum, async (albumId: unknown) => {
     try {
       const validAlbumId = validateInput(PositiveIntSchema, albumId, 'music:getTracksByAlbum')
       const db = getDatabase()
@@ -292,24 +280,13 @@ export function registerMusicHandlers(): void {
   /**
    * Get music library statistics
    */
-  ipcMain.handle('music:getStats', async (_event, sourceId?: unknown, libraryId?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicGetStats, async (sourceId?: unknown) => {
     try {
       const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'music:getStats') : undefined
-      const validLibraryId = typeof libraryId === 'string' && libraryId ? libraryId : undefined
       const db = getDatabase()
-      return db.getMusicStats(validSourceId, validLibraryId)
+      return db.getMusicStats(validSourceId)
     } catch (error: unknown) {
       console.error('[music:getStats] Error:', error)
-      throw error
-    }
-  })
-
-  ipcMain.handle('music:getCompletenessStats', async (_event, includeEps?: unknown, includeSingles?: unknown) => {
-    try {
-      const db = getDatabase()
-      return db.getMusicCompletenessStats(!!includeEps, !!includeSingles)
-    } catch (error: unknown) {
-      console.error('[music:getCompletenessStats] Error:', error)
       throw error
     }
   })
@@ -321,7 +298,7 @@ export function registerMusicHandlers(): void {
   /**
    * Get quality score for an album
    */
-  ipcMain.handle('music:getAlbumQuality', async (_event, albumId: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicGetAlbumQuality, async (albumId: unknown) => {
     try {
       const validAlbumId = validateInput(PositiveIntSchema, albumId, 'music:getAlbumQuality')
       const db = getDatabase()
@@ -335,12 +312,11 @@ export function registerMusicHandlers(): void {
   /**
    * Get albums that need quality upgrades
    */
-  ipcMain.handle('music:getAlbumsNeedingUpgrade', async (_event, limit?: unknown, sourceId?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicGetAlbumsNeedingUpgrade, async (options?: unknown) => {
     try {
-      const validLimit = limit !== undefined ? validateInput(z.number().int().positive().optional(), limit, 'music:getAlbumsNeedingUpgrade') : undefined
-      const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'music:getAlbumsNeedingUpgrade') : undefined
+      const parsed = validateInput(z.object({ limit: z.number().int().positive().optional(), sourceId: OptionalSourceIdSchema }).strict(), options ?? {}, 'music:getAlbumsNeedingUpgrade')
       const db = getDatabase()
-      return db.getAlbumsNeedingUpgrade(validLimit, validSourceId)
+      return db.getAlbumsNeedingUpgrade(parsed.limit, parsed.sourceId)
     } catch (error: unknown) {
       console.error('[music:getAlbumsNeedingUpgrade] Error:', error)
       throw error
@@ -350,7 +326,7 @@ export function registerMusicHandlers(): void {
   /**
    * Analyze quality for all albums
    */
-  ipcMain.handle('music:analyzeAllQuality', async (event, sourceId?: unknown) => {
+  createIpcHandlerWithEvent(IPC_CHANNELS.musicAnalyzeAllQuality, async (event, sourceId?: unknown) => {
     const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'music:analyzeAllQuality') : undefined
     const db = getDatabase()
     const win = getWindowFromEvent(event)
@@ -388,7 +364,7 @@ export function registerMusicHandlers(): void {
    *
    * @param sourceId Optional source ID to scope analysis
    */
-  ipcMain.handle('music:analyzeAll', async (event, sourceId?: unknown) => {
+  createIpcHandlerWithEvent(IPC_CHANNELS.musicAnalyzeAll, async (event, sourceId?: unknown) => {
     const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'music:analyzeAll') : undefined
     const mbService = getMusicBrainzService()
     const win = getWindowFromEvent(event)
@@ -399,7 +375,7 @@ export function registerMusicHandlers(): void {
         onProgress(progress)
       }, validSourceId)
 
-      return { success: true, ...result }
+      return { success: result.completed, ...result }
     } catch (error: unknown) {
       console.error('[music:analyzeAll] Error:', error)
       throw error
@@ -411,7 +387,7 @@ export function registerMusicHandlers(): void {
   /**
    * Cancel the current music analysis
    */
-  ipcMain.handle('music:cancelAnalysis', async () => {
+  createIpcHandler(IPC_CHANNELS.musicCancelAnalysis, async () => {
     try {
       const mbService = getMusicBrainzService()
       mbService.cancel()
@@ -425,7 +401,7 @@ export function registerMusicHandlers(): void {
   /**
    * Search for an artist in MusicBrainz
    */
-  ipcMain.handle('music:searchMusicBrainzArtist', async (_event, name: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicSearchMusicBrainzArtist, async (name: unknown) => {
     try {
       const validName = validateInput(NonEmptyStringSchema, name, 'music:searchMusicBrainzArtist')
       const mbService = getMusicBrainzService()
@@ -439,7 +415,7 @@ export function registerMusicHandlers(): void {
   /**
    * Analyze completeness for a specific artist
    */
-  ipcMain.handle('music:analyzeArtistCompleteness', async (_event, artistId: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicAnalyzeArtistCompleteness, async (artistId: unknown) => {
     try {
       const validArtistId = validateInput(PositiveIntSchema, artistId, 'music:analyzeArtistCompleteness')
       const db = getDatabase()
@@ -486,7 +462,11 @@ export function registerMusicHandlers(): void {
             console.log(`[music:analyzeArtistCompleteness] ${album.title}: ${albumCompleteness.owned_tracks}/${albumCompleteness.total_tracks} tracks`)
           }
         } catch (albumError) {
-          console.warn(`[music:analyzeArtistCompleteness] Failed to analyze album "${album.title}":`, albumError)
+          if (albumError instanceof MusicBrainzReleaseDataNotFoundError) {
+            console.info(`[music:analyzeArtistCompleteness] No MusicBrainz track data for album "${album.title}"; skipped track completeness.`)
+          } else {
+            console.warn(`[music:analyzeArtistCompleteness] Failed to analyze album "${album.title}":`, albumError)
+          }
         }
       }
 
@@ -500,7 +480,7 @@ export function registerMusicHandlers(): void {
   /**
    * Get artist completeness data
    */
-  ipcMain.handle('music:getArtistCompleteness', async (_event, artistName: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicGetArtistCompleteness, async (artistName: unknown) => {
     try {
       const validArtistName = validateInput(NonEmptyStringSchema, artistName, 'music:getArtistCompleteness')
       const db = getDatabase()
@@ -514,7 +494,7 @@ export function registerMusicHandlers(): void {
   /**
    * Get all artist completeness data
    */
-  ipcMain.handle('music:getAllArtistCompleteness', async (_event, sourceId?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicGetAllArtistCompleteness, async (sourceId?: unknown) => {
     try {
       const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'music:getAllArtistCompleteness') : undefined
       const db = getDatabase()
@@ -528,7 +508,7 @@ export function registerMusicHandlers(): void {
   /**
    * Analyze track completeness for a single album
    */
-  ipcMain.handle('music:analyzeAlbumTrackCompleteness', async (_event, albumId: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicAnalyzeAlbumTrackCompleteness, async (albumId: unknown) => {
     try {
       const validAlbumId = validateInput(PositiveIntSchema, albumId, 'music:analyzeAlbumTrackCompleteness')
       const db = getDatabase()
@@ -570,7 +550,7 @@ export function registerMusicHandlers(): void {
   /**
    * Get album completeness data
    */
-  ipcMain.handle('music:getAlbumCompleteness', async (_event, albumId: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicGetAlbumCompleteness, async (albumId: unknown) => {
     try {
       const validAlbumId = validateInput(PositiveIntSchema, albumId, 'music:getAlbumCompleteness')
       const db = getDatabase()
@@ -584,7 +564,7 @@ export function registerMusicHandlers(): void {
   /**
    * Get all album completeness data
    */
-  ipcMain.handle('music:getAllAlbumCompleteness', async () => {
+  createIpcHandler(IPC_CHANNELS.musicGetAllAlbumCompleteness, async () => {
     try {
       const db = getDatabase()
       return db.getAllAlbumCompleteness()
@@ -597,7 +577,7 @@ export function registerMusicHandlers(): void {
   /**
    * Get incomplete albums (albums with missing tracks)
    */
-  ipcMain.handle('music:getIncompleteAlbums', async () => {
+  createIpcHandler(IPC_CHANNELS.musicGetIncompleteAlbums, async () => {
     try {
       const db = getDatabase()
       return db.getIncompleteAlbums()
@@ -614,7 +594,7 @@ export function registerMusicHandlers(): void {
   /**
    * Cancel music library scan
    */
-  ipcMain.handle('music:cancelScan', async (_event, sourceId: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicCancelScan, async (sourceId: unknown) => {
     try {
       const validSourceId = validateInput(SourceIdSchema, sourceId, 'music:cancelScan')
       const manager = getSourceManager()
@@ -659,7 +639,7 @@ export function registerMusicHandlers(): void {
    * Fix the MusicBrainz match for an artist
    * Updates the artist's musicbrainz_id and re-runs completeness analysis
    */
-  ipcMain.handle('music:fixArtistMatch', async (event, artistId: unknown, musicbrainzId: unknown) => {
+  createIpcHandlerWithEvent(IPC_CHANNELS.musicFixArtistMatch, async (event, artistId: unknown, musicbrainzId: unknown) => {
     try {
       const validArtistId = validateInput(PositiveIntSchema, artistId, 'music:fixArtistMatch')
       const validMusicbrainzId = validateInput(NonEmptyStringSchema, musicbrainzId, 'music:fixArtistMatch')
@@ -693,7 +673,7 @@ export function registerMusicHandlers(): void {
       await db.upsertArtistCompleteness(completeness)
 
       // Send library update for live refresh
-      safeSend(win, 'library:updated', { type: 'music' })
+      safeSend(win, IPC_CHANNELS.libraryUpdated, { type: 'music' })
 
       return {
         success: true,
@@ -708,7 +688,7 @@ export function registerMusicHandlers(): void {
   /**
    * Search MusicBrainz for releases (albums) to fix a match
    */
-  ipcMain.handle('music:searchMusicBrainzRelease', async (_event, artistName: unknown, albumTitle: unknown) => {
+  createIpcHandler(IPC_CHANNELS.musicSearchMusicBrainzRelease, async (artistName: unknown, albumTitle: unknown) => {
     try {
       const validArtistName = validateInput(NonEmptyStringSchema, artistName, 'music:searchMusicBrainzRelease')
       const validAlbumTitle = validateInput(NonEmptyStringSchema, albumTitle, 'music:searchMusicBrainzRelease')
@@ -724,7 +704,7 @@ export function registerMusicHandlers(): void {
    * Fix the MusicBrainz match for an album
    * Updates the album's musicbrainz_id and re-runs track completeness analysis
    */
-  ipcMain.handle('music:fixAlbumMatch', async (event, albumId: unknown, musicbrainzReleaseGroupId: unknown) => {
+  createIpcHandlerWithEvent(IPC_CHANNELS.musicFixAlbumMatch, async (event, albumId: unknown, musicbrainzReleaseGroupId: unknown) => {
     try {
       const validAlbumId = validateInput(PositiveIntSchema, albumId, 'music:fixAlbumMatch')
       const validMusicbrainzReleaseGroupId = validateInput(NonEmptyStringSchema, musicbrainzReleaseGroupId, 'music:fixAlbumMatch')
@@ -759,7 +739,7 @@ export function registerMusicHandlers(): void {
       }
 
       // Send library update for live refresh
-      safeSend(win, 'library:updated', { type: 'music' })
+      safeSend(win, IPC_CHANNELS.libraryUpdated, { type: 'music' })
 
       return {
         success: true,

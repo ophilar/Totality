@@ -58,6 +58,39 @@ describe('LoggingService', () => {
         service.verbose('[Test]', 'message', { key: 'value' })
       }).not.toThrow()
     })
+
+    it('writes each captured level to the file buffer without filtering or duplicating entries', () => {
+      const internal = service as any
+      internal.fileLoggingEnabled = true
+      internal.logDir = 'test-logs'
+      internal.writeBuffer = []
+
+      service.debug('[Test]', 'debug entry')
+      service.info('[Test]', 'info entry')
+      service.warn('[Test]', 'warning entry')
+      service.error('[Test]', 'error entry')
+
+      expect(internal.writeBuffer).toHaveLength(4)
+      expect(internal.writeBuffer.join('')).toContain('[DEBUG  ] [Test] debug entry')
+      expect(internal.writeBuffer.join('')).toContain('[INFO   ] [Test] info entry')
+      expect(internal.writeBuffer.join('')).toContain('[WARN   ] [Test] warning entry')
+      expect(internal.writeBuffer.join('')).toContain('[ERROR  ] [Test] error entry')
+    })
+
+    it('writes verbose entries when verbose logging is enabled', () => {
+      const internal = service as any
+      internal.fileLoggingEnabled = true
+      internal.logDir = 'test-logs'
+      internal.writeBuffer = []
+      service.setVerboseLogging(true)
+      internal.writeBuffer = []
+
+      service.verbose('[Test]', 'verbose entry')
+
+      expect(internal.writeBuffer).toHaveLength(1)
+      expect(internal.writeBuffer[0]).toContain('[VERBOSE] [Test] verbose entry')
+      service.setVerboseLogging(false)
+    })
   })
 
   describe('console interception safety', () => {
@@ -95,6 +128,39 @@ describe('LoggingService', () => {
       expect(() => {
         console.log(null, undefined, '', 0, false)
       }).not.toThrow()
+    })
+  })
+
+  describe('renderer console capture', () => {
+    it('captures Electron webContents console messages once and detaches on reassignment', () => {
+      let listener: ((event: any) => void) | undefined
+      const webContents = {
+        on: vi.fn((_event: string, callback: (event: any) => void) => { listener = callback }),
+        removeListener: vi.fn(),
+        isDestroyed: () => false,
+        send: vi.fn(),
+      }
+      const window = { webContents, isDestroyed: () => false } as any
+
+      service.setMainWindow(window)
+      const firstListener = listener
+      service.setMainWindow(window)
+
+      expect(webContents.removeListener).toHaveBeenCalledWith('console-message', firstListener)
+      listener?.({
+        level: 'error',
+        message: 'renderer failure',
+        sourceId: 'renderer.js',
+        lineNumber: 42,
+      })
+
+      expect(service.getLogs().filter(log => log.message === 'renderer failure')).toHaveLength(1)
+      expect(service.getLogs().find(log => log.message === 'renderer failure')).toMatchObject({
+        level: 'error',
+        source: '[Renderer]',
+        details: 'at renderer.js:42',
+      })
+      service.setMainWindow(null)
     })
   })
 })

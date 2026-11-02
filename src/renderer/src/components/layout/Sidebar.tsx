@@ -1,42 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { ChevronDown, ChevronRight, Loader2, RefreshCw, Plus, Film, Tv, Music, Folder, Trash2, Pencil, Info, Square, Server, HardDrive, Settings, Eye, EyeOff, Clock, PanelLeftClose, PanelLeft } from 'lucide-react'
 import { useSources, type ProviderType } from '../../contexts/SourceContext'
-import { AddSourceModal } from '../sources/AddSourceModal'
 import type { MediaSourceResponse, MediaLibraryResponse } from '../../../../preload/index'
-
-// Task queue types
-interface QueuedTask {
-  id: string
-  type: string
-  label: string
-  sourceId?: string
-  libraryId?: string
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-  progress?: {
-    current: number
-    total: number
-    percentage: number
-    phase: string
-    currentItem?: string
-  }
-}
-
-interface TaskQueueState {
-  currentTask: QueuedTask | null
-  queue: QueuedTask[]
-  isPaused: boolean
-}
-
-const PROVIDER_COLORS: Record<ProviderType, string> = {
-  plex: 'bg-[#e5a00d]',
-  jellyfin: 'bg-purple-500',
-  emby: 'bg-green-500',
-  kodi: 'bg-blue-500',
-  'kodi-local': 'bg-blue-500',
-  'kodi-mysql': 'bg-blue-500',
-  mediamonkey: 'bg-orange-500',
-  local: 'bg-slate-600',
-}
+import type { QueueState, QueuedTask } from '@main/types/taskQueue'
+import { formatRelativeTime } from '../../utils/dateUtils'
+import { providerColors } from '../library/mediaUtils'
 
 const LIBRARY_ICONS: Record<string, typeof Film> = {
   movie: Film,
@@ -44,26 +12,14 @@ const LIBRARY_ICONS: Record<string, typeof Film> = {
   music: Music,
 }
 
-function formatRelativeTime(dateStr?: string): string | null {
-  if (!dateStr) return null
-  const diffMs = Date.now() - new Date(dateStr).getTime()
-  const diffMins = Math.floor(diffMs / 60000)
-  const diffHours = Math.floor(diffMins / 60)
-  const diffDays = Math.floor(diffHours / 24)
-
-  if (diffMins < 1) return 'Just now'
-  if (diffMins < 60) return `${diffMins}m ago`
-  if (diffHours < 24) return `${diffHours}h ago`
-  return `${diffDays}d ago`
-}
-
 interface SidebarProps {
   onOpenAbout: () => void
+  onAddSource: () => void
   isCollapsed: boolean
   onToggleCollapse: () => void
 }
 
-export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarProps) {
+export function Sidebar({ onOpenAbout, onAddSource, isCollapsed, onToggleCollapse }: SidebarProps) {
   const {
     sources,
     isLoading,
@@ -81,7 +37,6 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
     refreshLibraryTypes,
   } = useSources()
 
-  const [showAddModal, setShowAddModal] = useState(false)
   const [expandedSourceId, setExpandedSourceId] = useState<string | null>(null)
   const [sourceLibraries, setSourceLibraries] = useState<Map<string, MediaLibraryResponse[]>>(new Map())
   const [allSourceLibraries, setAllSourceLibraries] = useState<Map<string, Array<MediaLibraryResponse & { isEnabled: boolean }>>>(new Map())
@@ -97,7 +52,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
   const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number; percentage: number; currentItem?: string } | null>(null)
   const [musicScanProgress, setMusicScanProgress] = useState<Map<string, { current: number; total: number; percentage: number; currentItem?: string; phase?: string }>>(new Map())
   const [renamingSourceId, setRenamingSourceId] = useState<string | null>(null)
-  const [taskQueueState, setTaskQueueState] = useState<TaskQueueState | null>(null)
+  const [taskQueueState, setTaskQueueState] = useState<QueueState | null>(null)
   const addSourceButtonRef = useRef<HTMLButtonElement>(null)
   const aboutButtonRef = useRef<HTMLButtonElement>(null)
   // Listen for library updates to refresh sidebar when libraries are toggled
@@ -178,13 +133,13 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
   // Listen for task queue updates to show scanning/queued status
   useEffect(() => {
     // Load initial state
-    window.electronAPI.taskQueueGetState?.().then((state: unknown) => {
-      setTaskQueueState(state as TaskQueueState)
+    window.electronAPI.taskQueueGetState?.().then((state) => {
+      setTaskQueueState(state)
     }).catch(console.error)
 
     // Subscribe to updates
-    const unsubscribe = window.electronAPI.onTaskQueueUpdated?.((state: unknown) => {
-      setTaskQueueState(state as TaskQueueState)
+    const unsubscribe = window.electronAPI.onTaskQueueUpdated?.((state) => {
+      setTaskQueueState(state)
     })
     return () => unsubscribe?.()
   }, [])
@@ -344,11 +299,6 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
     }
   }
 
-  const handleSourceAdded = () => {
-    setShowAddModal(false)
-    refreshSources()
-  }
-
   const handleRenameSource = async (sourceId: string, newName: string) => {
     try {
       await window.electronAPI.sourcesUpdate(sourceId, { displayName: newName })
@@ -370,20 +320,20 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
   // Unified sidebar with conditional collapsed/expanded content
   return (
     <aside
-      className={`fixed left-4 top-[76px] bottom-4 ${isCollapsed ? 'w-16' : 'w-64'} bg-card/80 backdrop-blur-xl rounded-2xl shadow-xl z-40 flex flex-col overflow-hidden transition-[width] duration-300 ease-out will-change-[width]`}
+      className={`fixed left-4 top-[76px] bottom-4 ${isCollapsed ? 'w-16' : 'w-64'} bg-sidebar-gradient rounded-2xl shadow-xl z-40 flex flex-col overflow-hidden transition-[width] duration-300 ease-out will-change-[width]`}
       role="navigation"
       aria-label="Media sources"
     >
       {/* Header - adapts to collapsed/expanded state */}
       <div className={`flex items-center transition-[padding,border] duration-300 ease-out ${isCollapsed ? 'p-2 border-b border-border justify-center' : 'p-4 pb-0 justify-between'}`}>
         {!isCollapsed && (
-          <h2 className="text-caption font-semibold text-muted-foreground px-2 whitespace-nowrap">
-            Media sources
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2 whitespace-nowrap">
+            Media Sources
           </h2>
         )}
         <button
           onClick={onToggleCollapse}
-          className={`rounded-lg text-muted-foreground hover:text-foreground transition-colors shrink-0 ${isCollapsed ? 'w-12 h-10 rounded-lg flex items-center justify-center hover:bg-white/10' : 'p-2 hover:bg-muted/50'}`}
+          className={`rounded-md text-muted-foreground hover:text-foreground transition-colors shrink-0 ${isCollapsed ? 'w-12 h-10 rounded-lg flex items-center justify-center hover:bg-white/10' : 'p-2 hover:bg-muted/50'}`}
           title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
@@ -401,14 +351,14 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
           )}
 
           {sources.map((source) => {
-            const color = PROVIDER_COLORS[source.source_type as ProviderType] || 'bg-gray-500'
+            const color = providerColors[source.source_type as ProviderType] || 'bg-gray-500'
             const isActive = activeSourceId === source.source_id
 
             return (
               <button
                 key={source.source_id}
                 onClick={() => setActiveSource(source.source_id)}
-                className={`w-12 h-12 rounded-lg flex items-center justify-center transition-[background-color,box-shadow] ${
+                className={`w-12 h-12 rounded-lg flex items-center justify-center transition-all ${
                   isActive
                     ? 'bg-primary ring-2 ring-primary-foreground/30'
                     : 'hover:bg-white/10'
@@ -416,7 +366,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
                 title={source.display_name}
                 aria-label={`Select ${source.display_name}`}
               >
-                <div className={`w-8 h-8 ${color} rounded-lg flex items-center justify-center`}>
+                <div className={`w-8 h-8 ${color} rounded-md flex items-center justify-center`}>
                   {source.source_type === 'local' ? (
                     <HardDrive className="w-4 h-4 text-white" />
                   ) : (
@@ -428,7 +378,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
           })}
 
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={onAddSource}
             className="w-12 h-12 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
             title="Add Source"
             aria-label="Add media source"
@@ -454,12 +404,12 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
         {/* No Sources */}
         {!isLoading && sources.length === 0 && (
           <div className="space-y-2">
-            <p className="text-caption text-muted-foreground text-left px-2">
+            <p className="text-xs text-muted-foreground text-left px-2">
               No media sources configured
             </p>
             <button
-              onClick={() => setShowAddModal(true)}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-label hover:bg-primary/90 transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
+              onClick={onAddSource}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
               aria-label="Add media source"
             >
               <Plus className="w-4 h-4" aria-hidden="true" />
@@ -520,8 +470,8 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
         {sources.length > 0 && (
           <button
             ref={addSourceButtonRef}
-            onClick={() => setShowAddModal(true)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-caption text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
+            onClick={onAddSource}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
             aria-label="Add media source"
           >
             <Plus className="w-3.5 h-3.5" aria-hidden="true" />
@@ -537,21 +487,13 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
         <button
           ref={aboutButtonRef}
           onClick={onOpenAbout}
-          className="w-full flex items-center justify-center gap-2 text-caption text-muted-foreground hover:text-foreground transition-colors py-2 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
+          className="w-full flex items-center justify-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors py-2 rounded-md focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
           aria-label="About Totality"
         >
           <Info className={isCollapsed ? 'w-5 h-5' : 'w-3.5 h-3.5'} aria-hidden="true" />
           {!isCollapsed && 'About Totality'}
         </button>
       </div>
-
-      {/* Add Source Modal */}
-      {showAddModal && (
-        <AddSourceModal
-          onClose={() => setShowAddModal(false)}
-          onSuccess={handleSourceAdded}
-        />
-      )}
 
     </aside>
   )
@@ -582,7 +524,7 @@ interface SourceItemProps {
   onCancelRename: () => void
   onStopScan: () => void
   onScanAll: () => void
-  taskQueueState: TaskQueueState | null
+  taskQueueState: QueueState | null
   newItemCounts: Map<string, number>
   onClearNewItems: (libraryKey: string) => void
 }
@@ -621,7 +563,7 @@ function SourceItem({
   newItemCounts,
   onClearNewItems,
 }: SourceItemProps) {
-  const color = PROVIDER_COLORS[source.source_type as ProviderType] || 'bg-gray-500'
+  const color = providerColors[source.source_type as ProviderType] || 'bg-gray-500'
 
   // Helper to check if a library is being scanned via task queue
   const getTaskQueueStatus = (libraryId: string): { isScanning: boolean; isQueued: boolean; queuePosition?: number; progress?: QueuedTask['progress'] } => {
@@ -724,13 +666,13 @@ function SourceItem({
   const ChevronIcon = isExpanded ? ChevronDown : ChevronRight
 
   return (
-    <div className="rounded-lg overflow-hidden">
+    <div className="rounded-md overflow-hidden">
       <button
         ref={buttonRef}
         onClick={onSelect}
         aria-label={`Select ${source.display_name} media source`}
         aria-expanded={isExpanded}
-        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors focus:outline-hidden ${
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-md font-medium transition-colors focus:outline-hidden ${
           isActive ? 'bg-primary text-primary-foreground' : 'hover:bg-muted/50 text-foreground'
         }`}
       >
@@ -751,10 +693,10 @@ function SourceItem({
               onBlur={handleRenameSubmit}
               onKeyDown={handleRenameKeyDown}
               onClick={(e) => e.stopPropagation()}
-              className="w-full text-label font-medium bg-muted text-foreground border border-primary rounded px-2 py-0.5 focus:outline-hidden focus:ring-2 focus:ring-primary"
+              className="w-full text-sm font-medium bg-muted text-foreground border border-primary rounded px-2 py-0.5 focus:outline-hidden focus:ring-2 focus:ring-primary"
             />
           ) : (
-            <div className="text-label font-medium truncate">{source.display_name}</div>
+            <div className="text-sm font-medium truncate">{source.display_name}</div>
           )}
         </div>
         <span
@@ -786,7 +728,7 @@ function SourceItem({
           {/* Manage Libraries Mode */}
           {!isLoadingLibraries && isManaging && allLibraries.length > 0 && (
             <div className="space-y-1">
-              <div className="text-caption text-muted-foreground px-2 mb-2">
+              <div className="text-xs text-muted-foreground px-2 mb-2">
                 Toggle libraries to show/hide them
               </div>
               {allLibraries.map((library) => (
@@ -796,7 +738,7 @@ function SourceItem({
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <LibraryIcon type={library.type} />
-                    <span className="text-caption truncate">{library.name}</span>
+                    <span className="text-xs truncate">{library.name}</span>
                   </div>
                   <button
                     onClick={(e) => {
@@ -805,7 +747,7 @@ function SourceItem({
                     }}
                     className={`p-1 rounded transition-colors ${
                       library.isEnabled
-                        ? 'text-foreground hover:text-foreground'
+                        ? 'text-green-500 hover:text-green-400'
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                     title={library.isEnabled ? 'Hide library' : 'Show library'}
@@ -870,14 +812,14 @@ function SourceItem({
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 min-w-0">
                         <LibraryIcon type={library.type} />
-                        <span className="text-caption truncate">{library.name}</span>
+                        <span className="text-xs truncate">{library.name}</span>
                         {newItemCount && !isQueueScanning && !isQueued && (
-                          <span className="bg-primary text-primary-foreground text-caption px-1.5 py-0.5 rounded-full font-medium">
+                          <span className="bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5 rounded-full font-medium">
                             +{newItemCount}
                           </span>
                         )}
                         {isQueued && (
-                          <span className="flex items-center gap-1 text-caption text-muted-foreground">
+                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
                             <Clock className="w-3 h-3" />
                             <span>#{queueStatus.queuePosition}</span>
                           </span>
@@ -885,7 +827,7 @@ function SourceItem({
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         {!showScanningUI && !isQueued && lastScan && (
-                          <span className="text-caption text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+                          <span className="text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
                             {lastScan}
                           </span>
                         )}
@@ -909,12 +851,12 @@ function SourceItem({
                         <div className="flex items-center gap-1">
                           <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
                             <div
-                              className="h-full bg-primary transition-[width]"
+                              className="h-full bg-primary transition-all"
                               style={{ width: `${queueProgress.percentage || 0}%` }}
                             />
                           </div>
                         </div>
-                        <div className="text-caption text-muted-foreground mt-0.5 truncate">
+                        <div className="text-xs text-muted-foreground mt-0.5 truncate">
                           <span className="font-medium">Scanning:</span>{' '}
                           {queueProgress.percentage?.toFixed(0) || 0}%
                           {queueProgress.currentItem && (
@@ -925,7 +867,7 @@ function SourceItem({
                     )}
                     {isQueueScanning && !queueProgress && (
                       <div className="mt-1.5">
-                        <div className="text-caption text-muted-foreground truncate">
+                        <div className="text-xs text-muted-foreground truncate">
                           <span className="font-medium">Scanning...</span>
                         </div>
                       </div>
@@ -938,7 +880,7 @@ function SourceItem({
                             <div className="flex items-center gap-1">
                               <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
                                 <div
-                                  className="h-full bg-primary transition-[width]"
+                                  className="h-full bg-primary transition-all"
                                   style={{ width: `${(scanPhase === 'scanning' ? progress?.percentage : analysisProgress?.percentage) || 0}%` }}
                                 />
                               </div>
@@ -947,14 +889,14 @@ function SourceItem({
                                   e.stopPropagation()
                                   onStopScan()
                                 }}
-                                className="p-0.5 text-muted-foreground hover:text-destructive transition-colors rounded"
+                                className="p-0.5 text-muted-foreground hover:text-red-500 transition-colors rounded"
                                 title="Stop scan"
                                 aria-label="Stop scan"
                               >
                                 <Square className="w-3 h-3" />
                               </button>
                             </div>
-                            <div className="text-caption text-muted-foreground mt-0.5 truncate">
+                            <div className="text-xs text-muted-foreground mt-0.5 truncate">
                               <span className="font-medium">
                                 {scanPhase === 'scanning' ? 'Scanning' : 'Analyzing Quality'}:
                               </span>{' '}
@@ -969,7 +911,7 @@ function SourceItem({
                           </>
                         ) : (
                           <div className="flex items-center gap-1">
-                            <div className="flex-1 text-caption text-muted-foreground truncate">
+                            <div className="flex-1 text-xs text-muted-foreground truncate">
                               <span className="font-medium">
                                 {scanPhase === 'scanning' ? 'Scanning...' : 'Analyzing Quality...'}
                               </span>
@@ -979,7 +921,7 @@ function SourceItem({
                                 e.stopPropagation()
                                 onStopScan()
                               }}
-                              className="p-0.5 text-muted-foreground hover:text-destructive transition-colors rounded"
+                              className="p-0.5 text-muted-foreground hover:text-red-500 transition-colors rounded"
                               title="Stop scan"
                               aria-label="Stop scan"
                             >
@@ -996,7 +938,7 @@ function SourceItem({
           )}
 
           {!isLoadingLibraries && !isManaging && !progress && libraries.length === 0 && (
-            <div className="text-caption text-muted-foreground px-2">No libraries enabled</div>
+            <div className="text-xs text-muted-foreground px-2">No libraries enabled</div>
           )}
 
           {/* Action Buttons */}
@@ -1038,8 +980,8 @@ function SourceItem({
               disabled={isDeleting}
               className={`p-2 rounded transition-colors focus:outline-hidden disabled:opacity-50 ${
                 confirmDelete
-                  ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                  : 'text-destructive hover:text-destructive hover:bg-destructive/10'
+                  ? 'bg-red-500 text-white hover:bg-red-600'
+                  : 'text-red-400 hover:text-red-300 hover:bg-red-500/10'
               }`}
               aria-label={confirmDelete ? `Confirm remove ${source.display_name}` : `Remove ${source.display_name}`}
               title={confirmDelete ? 'Confirm?' : 'Remove'}

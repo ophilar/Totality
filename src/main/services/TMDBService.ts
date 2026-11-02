@@ -1,3 +1,4 @@
+
 import {
   TMDBMovieDetails,
   TMDBCollection,
@@ -15,7 +16,9 @@ import {
 import { getDatabase } from '../database/getDatabase'
 import { getLoggingService } from './LoggingService'
 import { RateLimiters, SlidingWindowRateLimiter } from './utils/RateLimiter'
+import { fetchWithTimeout } from './utils/httpClient'
 import { retryWithBackoff, getRateLimitRetryAfter } from './utils/retryWithBackoff'
+import { APP_CONFIG } from '@main/config'
 
 /**
  * TMDB API v3 Service with rate limiting and caching
@@ -34,7 +37,10 @@ export class TMDBService {
   private movieGenres: TMDBGenre[] | null = null
   private tvGenres: TMDBGenre[] | null = null
   private cache: Map<string, { data: unknown; timestamp: number }> = new Map()
-  private rateLimiter: SlidingWindowRateLimiter = RateLimiters.createTMDBLimiter()
+  private rateLimiter: SlidingWindowRateLimiter = RateLimiters.createTMDBLimiter(
+    APP_CONFIG.tmdb.rateLimitRequests,
+    APP_CONFIG.tmdb.rateLimitWindowMs
+  )
   private activeRequests = 0
   private requestQueue: Array<{ execute: () => Promise<void>; resolve: () => void }> = []
 
@@ -49,6 +55,10 @@ export class TMDBService {
     if (!this.apiKey || this.apiKey === '') {
       console.warn('TMDB API key not configured. Collection detection will be unavailable.')
     }
+  }
+
+  isConfigured(): boolean {
+    return this.apiKey !== null && this.apiKey !== ''
   }
 
   /**
@@ -72,7 +82,7 @@ export class TMDBService {
 
   /**
    * Rate limiting: Wait for a request slot
-   * Uses shared SlidingWindowRateLimiter (40 requests per second)
+   * Uses the configured shared sliding-window rate limiter.
    */
   private async waitForRateLimit(): Promise<void> {
     await this.rateLimiter.waitForSlot()
@@ -221,9 +231,6 @@ export class TMDBService {
       return cached
     }
 
-    // Apply rate limiting
-    await this.waitForRateLimit()
-
     // Build URL
     const url = new URL(`${TMDBService.BASE_URL}${endpoint}`)
     url.searchParams.append('api_key', apiKey)
@@ -237,28 +244,25 @@ export class TMDBService {
     const retryState = { minRetryDelay: 0 }
 
     // Make request with retry logic and timeout
-    const data = await retryWithBackoff<T>(
+    const data = await this.queueRequest(() => retryWithBackoff<T>(
       async () => {
+        await this.waitForRateLimit()
         console.log('[TMDB] Requesting:', urlForLogging)
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), TMDBService.REQUEST_TIMEOUT)
-
         let response: Response
         try {
-          response = await fetch(url.toString(), { signal: controller.signal })
+          response = await fetchWithTimeout(url.toString(), {}, TMDBService.REQUEST_TIMEOUT)
         } catch (error: unknown) {
-          clearTimeout(timeoutId)
           if (error instanceof Error && error.name === 'AbortError') {
             throw new Error('TMDB API request timed out')
           }
           throw error
-        } finally {
-          clearTimeout(timeoutId)
         }
 
         // Handle rate limiting with Retry-After header
         const rateLimitDelay = getRateLimitRetryAfter(response)
         if (rateLimitDelay !== null) {
+          this.rateLimiter.pauseFor(rateLimitDelay)
+          this.rateLimiter.recordError(429)
           getLoggingService().verbose('[TMDB]', `Rate limited, retry after ${rateLimitDelay}ms`)
           console.warn(`[TMDB] Rate limited, retry after ${rateLimitDelay}ms`)
           // Pass server's delay to retry backoff as minimum floor
@@ -269,6 +273,7 @@ export class TMDBService {
         }
 
         if (!response.ok) {
+          this.rateLimiter.recordError(response.status)
           const errorBody = await response.json().catch(() => ({}))
           console.error('[TMDB] Error response:', errorBody)
           const error = new Error(`TMDB API Error: ${errorBody.status_message || response.statusText}`) as Error & { status: number }
@@ -277,6 +282,7 @@ export class TMDBService {
         }
 
         const result = await response.json()
+        this.rateLimiter.recordSuccess()
         console.log('[TMDB] Response for', endpoint, '- total_results:', (result as { total_results?: number }).total_results)
         return result as T
       },
@@ -289,7 +295,7 @@ export class TMDBService {
           console.warn(`[TMDB] Retry ${attempt}/3 for ${urlForLogging} after ${delay}ms: ${error.message}`)
         }
       }
-    )
+    ))
 
     // Cache the response
     this.setCache(cacheKey, data)
@@ -380,6 +386,7 @@ export class TMDBService {
       return { seriesTmdbId, episode, seriesName }
     } catch (error) {
       // Episode might not exist in TMDB
+      console.debug(`[TMDBService] Failed to load episode for ${seriesTitle} S${seasonNumber}E${episodeNumber}:`, error)
       return null
     }
   }
@@ -425,11 +432,11 @@ export class TMDBService {
     externalId: string,
     externalSource: 'imdb_id'
   ): Promise<{
-    movie_results: Array<{ id: number; title: string; release_date?: string }>
+    movie_results: Array<{ id: number; title: string; release_date?: string; original_language: string }>
     tv_results: Array<{ id: number; name: string }>
   }> {
     return await this.request<{
-      movie_results: Array<{ id: number; title: string; release_date?: string }>
+      movie_results: Array<{ id: number; title: string; release_date?: string; original_language: string }>
       tv_results: Array<{ id: number; name: string }>
     }>(
       `/find/${externalId}`,
