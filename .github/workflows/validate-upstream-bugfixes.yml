@@ -1,4 +1,4 @@
-name: Validate independent bugfixes rebased onto upstream master
+name: Validate consolidated upstream fixes
 on:
   push:
     branches:
@@ -13,9 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         branch:
-          - upstream/fix-v043-scan-integrity
-          - upstream/fix-v043-scan-status
-          - upstream/fix-v043-wishlist-identity
+          - upstream/fix-v043-combined
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,7 +24,7 @@ jobs:
         shell: bash
         run: |
           git merge-base --is-ancestor f2f9d4942185b75614ffa8d080e5cd82a78a9216 HEAD
-          test "$(git rev-list --count f2f9d4942185b75614ffa8d080e5cd82a78a9216..HEAD)" = 1
+          test "$(git rev-list --count f2f9d4942185b75614ffa8d080e5cd82a78a9216..HEAD)" = 3
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
