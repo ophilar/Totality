@@ -1,8 +1,6 @@
 name: Validate four linear Totality releases
 on:
-  push:
-    branches:
-      - automation/release-split-validation
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

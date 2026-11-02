@@ -1,0 +1,43 @@
+name: Archive superseded branch history and prune temporary refs
+on:
+  push:
+    branches:
+      - automation/release-split-validation
+permissions:
+  contents: write
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: automation/release-split-validation
+          fetch-depth: 0
+      - name: Verify releases, archive old heads, and prune
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin '+refs/heads/*:refs/remotes/origin/*'
+          test "$(git rev-parse origin/master)" = f2f9d4942185b75614ffa8d080e5cd82a78a9216
+          test "$(git rev-parse origin/fixes)" = bf6dc45299e46aa4da74aa873c9d35c6f3d39419
+          test "$(git rev-parse origin/timelines)" = b800fe628bc8e4bd338eeb921dea90e51fc6f9e9
+          test "$(git rev-parse origin/optimization)" = 44e525fce7b7ed27f48ecdc254902e273eb829e2
+          git merge-base --is-ancestor origin/master origin/fixes
+          test "$(git rev-parse origin/timelines^)" = "$(git rev-parse origin/fixes)"
+          test "$(git rev-parse origin/optimization^)" = "$(git rev-parse origin/timelines)"
+          test "$(git rev-parse origin/feature/timelines)" = 60e06fa80575cccc4f002b5b8d2ccc221b65c0c3
+          test "$(git rev-parse origin/v0.5.0-clean)" = 7e4ec12140dfc3f2152ef6b6ea185de01c766477
+          old_full=60e06fa80575cccc4f002b5b8d2ccc221b65c0c3
+          old_core=7e4ec12140dfc3f2152ef6b6ea185de01c766477
+          archive_tree="$(git rev-parse "$old_full^{tree}")"
+          archive="$(git commit-tree "$archive_tree" -p "$old_full" -p "$old_core" -p "$(git rev-parse HEAD)" -m "Archive superseded v0.5 and Timelines histories before v0.4.4-v0.6 repartition")"
+          git tag -a archive/pre-release-repartition-20261102 "$archive" -m "Preserves old v0.5 core, old feature/timelines, and validated release-split tooling history"
+          git push origin refs/tags/archive/pre-release-repartition-20261102
+          git push origin --delete feature/timelines
+          git push origin --delete v0.5.0-clean
+          git push origin --delete automation/release-split-validation
+          test "$(git ls-remote --heads origin | wc -l)" = 5
+          echo "::notice::Four canonical releases remain, plus the open Dependabot branch; previous history archived."
