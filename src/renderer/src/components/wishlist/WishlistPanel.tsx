@@ -53,9 +53,13 @@ function WishlistSearch() {
       const tvShows = tvSearch.status === 'fulfilled' ? tvSearch.value : []
       const local = localSearch.status === 'fulfilled' ? localSearch.value : null
 
-      // Build sets of owned titles for ownership tagging
-      const ownedMovieTitles = new Set(local?.movies.map(m => m.title.toLowerCase()))
-      const ownedTVTitles = new Set(local?.tvShows.map(s => s.title.toLowerCase()))
+      // Match stable TMDB identity first, retaining title matching for items without an ID.
+      const localMovies = local?.movies as Array<{ title: string; tmdb_id?: string }> | undefined
+      const localShows = local?.tvShows as Array<{ title: string; tmdb_id?: string }> | undefined
+      const ownedMovieTmdbIds = new Set(localMovies?.flatMap(m => m.tmdb_id ? [String(m.tmdb_id)] : []))
+      const ownedTVTmdbIds = new Set(localShows?.flatMap(s => s.tmdb_id ? [String(s.tmdb_id)] : []))
+      const ownedMovieTitles = new Set(localMovies?.map(m => m.title.toLowerCase()))
+      const ownedTVTitles = new Set(localShows?.map(s => s.title.toLowerCase()))
 
       const combined: SearchResult[] = []
 
@@ -67,7 +71,7 @@ function WishlistSearch() {
           type: 'movie',
           poster_url: m.poster_url || undefined,
           tmdb_id: m.id,
-          owned: local ? ownedMovieTitles.has(m.title.toLowerCase()) : undefined,
+          owned: local ? ownedMovieTmdbIds.has(String(m.id)) || ownedMovieTitles.has(m.title.toLowerCase()) : undefined,
           release_date: m.release_date || undefined,
           physical_release_date: m.physical_release_date || undefined,
         })
@@ -81,7 +85,7 @@ function WishlistSearch() {
           type: 'tv',
           poster_url: s.poster_url || undefined,
           tmdb_id: s.id,
-          owned: local ? ownedTVTitles.has(s.name.toLowerCase()) : undefined,
+          owned: local ? ownedTVTmdbIds.has(String(s.id)) || ownedTVTitles.has(s.name.toLowerCase()) : undefined,
           release_date: s.first_air_date || undefined,
         })
       }

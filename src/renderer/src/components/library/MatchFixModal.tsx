@@ -246,21 +246,21 @@ export function MatchFixModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-200 flex items-center justify-center bg-black/60 p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
     >
       <div
         ref={modalRef}
-        className="bg-card rounded-xl shadow-2xl w-full max-w-2xl max-h-[calc(100vh-2rem)] min-h-0 flex flex-col overflow-hidden"
+        className="bg-card rounded-xl shadow-2xl w-full max-w-2xl max-h-[calc(100vh-2rem)] min-h-0 flex flex-col overflow-hidden border border-border"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
           <div className="min-w-0 flex-1 mr-4">
-            <h2 className="text-lg font-semibold">Fix {getTypeLabel()} Match</h2>
+            <h2 className="text-title font-semibold">Fix {getTypeLabel()} match</h2>
             <p className="text-sm text-muted-foreground">
               Current: <span className="text-foreground">{currentTitle}</span>
             </p>
@@ -322,6 +322,7 @@ export function MatchFixModal({
           <div className="space-y-2">
             {searchResults.map((result, index) => {
               const isSelected = selectedResult === result
+              const isArtistType = type === 'artist'
               const title = getResultTitle(result)
               const year = getResultYear(result)
               const score = getResultScore(result)
@@ -332,14 +333,14 @@ export function MatchFixModal({
                 <button
                   key={index}
                   onClick={() => setSelectedResult(result)}
-                  className={`w-full flex items-start gap-3 p-3 rounded-lg text-left transition-colors ${
+                  className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors ${
                     isSelected
-                      ? 'bg-primary/20 border-2 border-primary'
-                      : 'bg-muted/30 hover:bg-muted/50 border-2 border-transparent'
+                      ? 'bg-foreground text-background'
+                      : 'hover:bg-muted/50'
                   }`}
                 >
                   {/* Poster/Thumbnail */}
-                  <div className="w-12 h-16 shrink-0 bg-muted rounded overflow-hidden">
+                  <div className={`shrink-0 bg-muted overflow-hidden ${isArtistType ? 'w-12 h-12 rounded-full' : 'w-12 h-16 rounded'}`}>
                     {poster ? (
                       <img
                         src={poster}

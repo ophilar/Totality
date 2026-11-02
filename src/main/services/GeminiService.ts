@@ -3,6 +3,7 @@ import { GoogleGenAI } from '@google/genai'
 import type { Content, FunctionDeclaration, GenerateContentResponse } from '@google/genai'
 import APP_CONFIG from '../config'
 import { getDatabase } from '../database/getDatabase'
+import { getLoggingService } from './LoggingService'
 
 /**
  * Google Gemini AI Service with rate limit tracking
@@ -162,6 +163,7 @@ export class GeminiService {
    * Handle API errors, tracking rate limits
    */
   private handleApiError(error: unknown): never {
+    console.warn('[GeminiService] API error:', error instanceof Error ? error.message : error)
     if (error && typeof error === 'object' && 'status' in error) {
       const apiError = error as { status: number; message?: string; headers?: unknown }
       if (apiError.status === 429) {
@@ -221,6 +223,7 @@ export class GeminiService {
   }): Promise<{ text: string; usage: { input_tokens: number; output_tokens: number } }> {
     this.checkRateLimit()
     const client = this.getClient()
+    getLoggingService().verbose('[GeminiService]', `sendMessage: ${params.messages.length} messages, model=${GeminiService.DEFAULT_MODEL}`)
 
     try {
       const response = await client.models.generateContent({
