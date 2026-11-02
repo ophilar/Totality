@@ -1673,8 +1673,8 @@ interface ExistingElectronAPI {
 
   // Database - Global Search
   mediaSearch: (query: string) => Promise<{
-    movies: Array<{ id: number; title: string; year?: number; poster_url?: string }>
-    tvShows: Array<{ id: number; title: string; poster_url?: string }>
+    movies: Array<{ id: number; title: string; year?: number; poster_url?: string; tmdb_id?: string }>
+    tvShows: Array<{ id: number; title: string; poster_url?: string; tmdb_id?: string }>
     episodes: Array<{ id: number; title: string; series_title: string; season_number: number; episode_number: number; poster_url?: string }>
     artists: Array<{ id: number; name: string; thumb_url?: string }>
     albums: Array<{ id: number; title: string; artist_name: string; year?: number; thumb_url?: string }>
