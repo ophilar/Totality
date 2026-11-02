@@ -187,4 +187,21 @@ for name in ['package.json','package-lock.json']:
     p.write_text(json.dumps(j,indent=2,ensure_ascii=False)+'\n')
 for path in ['src/main/services/timelines/TraktRecipeProvider.ts','src/renderer/src/components/timelines/TimelinesView.tsx']:
     p=Path(path);p.write_text('\n'.join(line.rstrip() for line in p.read_text().splitlines())+'\n')
+# LoggingService 0.4.4 captures and sanitizes console output rather than
+# exposing the newer instance-level debug/error methods.
+edit(ipc,"getLoggingService().error(","console.error(")
+edit(ipc,"import { getLoggingService } from '../services/LoggingService'\n","")
+parser='src/main/services/timelines/TimelineParserPluginProvider.ts'
+edit(parser,"getLoggingService().debug(","console.debug(",2)
+edit(parser,"import { getLoggingService } from '../LoggingService'\n","")
+# SeriesCompleteness stores canonical TMDB identity in tmdb_id, not series_tmdb_id.
+p=Path(engine);lines=p.read_text().splitlines(keepends=True)
+hits=0
+for i,line in enumerate(lines):
+    if line.strip().startswith("if (episodes.length) return"):
+        assert "row.series_tmdb_id" in line
+        lines[i]=line.replace("row.series_tmdb_id","row.tmdb_id")
+        hits+=1
+assert hits==1
+p.write_text(''.join(lines))
 print("v0.5 Timelines source assembly complete")
