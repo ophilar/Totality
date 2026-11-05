@@ -7,6 +7,7 @@ const mockDeleteMediaItem = vi.hoisted(() => vi.fn())
 const mockDeleteMusicTrack = vi.hoisted(() => vi.fn())
 const mockUpdateSourceScanTime = vi.hoisted(() => vi.fn())
 const mockParseMusic = vi.hoisted(() => vi.fn())
+const mockGetSetting = vi.hoisted(() => vi.fn((key: string) => key === 'ffprobe_batch_size' ? '25' : 'false'))
 
 // Mock all heavy dependencies of LocalFolderProvider module
 vi.mock('fs', () => ({
@@ -25,7 +26,7 @@ vi.mock('electron', () => ({
 }))
 vi.mock('../../src/main/database/getDatabase', () => ({
   getDatabase: vi.fn(() => ({
-    getSetting: vi.fn(() => 'false'),
+    getSetting: mockGetSetting,
     getMediaItemByPath: mockGetMediaItemByPath,
     getMusicTrackByPath: mockGetMusicTrackByPath,
     deleteMediaItem: mockDeleteMediaItem,
