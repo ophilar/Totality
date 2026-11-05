@@ -491,6 +491,8 @@ const electronAPI = {
   // Music - Cancellation
   musicCancelScan: (sourceId: string) => ipcRenderer.invoke(IPC_CHANNELS.musicCancelScan, sourceId),
 
+  barcodeLookup: (barcode: string) => ipcRenderer.invoke(IPC_CHANNELS.barcodeLookup, barcode),
+
   // Database - Statistics
   getLibraryStats: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.dbGetLibraryStats, sourceId),
   getStorageAnalytics: () => ipcRenderer.invoke(IPC_CHANNELS.dbGetStorageAnalytics),
@@ -818,6 +820,8 @@ const electronAPI = {
   exportLogs: () => ipcRenderer.invoke(IPC_CHANNELS.logsExport),
   setVerboseLogging: (enabled: boolean) => ipcRenderer.invoke(IPC_CHANNELS.logsSetVerbose, enabled),
   isVerboseLogging: () => ipcRenderer.invoke(IPC_CHANNELS.logsIsVerbose),
+  clientLog: (level: 'info' | 'warn' | 'error', source: string, message: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.logsClientLog, { level, source, message }),
   getFileLoggingSettings: () => ipcRenderer.invoke(IPC_CHANNELS.logsGetFileLoggingSettings),
   setFileLoggingSettings: (settings: { enabled?: boolean; retentionDays?: number }) =>
     ipcRenderer.invoke(IPC_CHANNELS.logsSetFileLoggingSettings, settings),

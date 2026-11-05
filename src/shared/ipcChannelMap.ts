@@ -319,12 +319,16 @@ export const RPC_CHANNEL_MAP: Record<string, string> = {
   aiMusicQualityReport: IPC_CHANNELS.aiMusicQualityReport,
   aiExplainQuality: IPC_CHANNELS.aiExplainQuality,
 
+  // Barcode
+  barcodeLookup: IPC_CHANNELS.barcodeLookup,
+
   // Logging
   getLogs: IPC_CHANNELS.logsGetAll,
   clearLogs: IPC_CHANNELS.logsClear,
   exportLogs: IPC_CHANNELS.logsExport,
   setVerboseLogging: IPC_CHANNELS.logsSetVerbose,
   isVerboseLogging: IPC_CHANNELS.logsIsVerbose,
+  clientLog: IPC_CHANNELS.logsClientLog,
   getFileLoggingSettings: IPC_CHANNELS.logsGetFileLoggingSettings,
   setFileLoggingSettings: IPC_CHANNELS.logsSetFileLoggingSettings,
   openLogFolder: IPC_CHANNELS.logsOpenLogFolder,

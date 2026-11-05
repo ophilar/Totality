@@ -71,6 +71,7 @@ import { registerAutoUpdateHandlers } from './ipc/autoUpdate'
 import { registerGeminiHandlers } from './ipc/gemini'
 import { registerMoodHandlers, setMoodMainWindow } from './ipc/mood'
 import { registerTimelinesHandlers } from './ipc/timelines'
+import { registerBarcodeHandlers } from './ipc/barcode'
 import { registerTranscodingHandlers, resumeBackgroundPreflights } from './ipc/transcoding'
 import { registerDuplicateHandlers } from './ipc/duplicates'
 import { registerPlaybackTargetProfileHandlers } from './ipc/playbackTargetProfiles'
@@ -461,6 +462,7 @@ app.whenReady().then(async () => {
     registerGeminiHandlers()
     registerMoodHandlers()
     registerTimelinesHandlers()
+    registerBarcodeHandlers()
     registerTranscodingHandlers()
     registerDuplicateHandlers()
     registerPlaybackTargetProfileHandlers()

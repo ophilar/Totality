@@ -5,7 +5,7 @@ import { IPC_CHANNELS } from '../../shared/ipcChannels'
  * Provides IPC communication for log viewing and export functionality.
  */
 
-import { dialog, BrowserWindow, shell, app } from 'electron'
+import { dialog, BrowserWindow, shell, app, ipcMain } from 'electron'
 import { getLoggingService } from '../services/LoggingService'
 import type { SourceInfo, DiagnosticInfo } from '../services/LoggingService'
 import { getSourceManager } from '../services/SourceManager'
@@ -185,7 +185,7 @@ export function registerLoggingHandlers(): void {
 
   // Client-side log forwarding — renderer/mobile sends errors to main process log
   // Accepts both: object { level, source, message } (from preload) or positional args (from web proxy)
-  ipcMain.handle('logs:clientLog', async (_event, data: unknown, sourceArg?: unknown, messageArg?: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.logsClientLog, async (_event, data: unknown, sourceArg?: unknown, messageArg?: unknown) => {
     try {
       let level: string, source: string, message: string
       if (typeof data === 'object' && data !== null) {
