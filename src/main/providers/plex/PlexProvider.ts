@@ -1378,32 +1378,6 @@ export class PlexProvider implements MediaProvider {
   }
 
   /**
-   * Get total item count from Plex library without fetching item data.
-   * Uses X-Plex-Container-Size=0 to only get the totalSize from the container.
-   * For TV show libraries, use type=4 (episodes) to get episode count.
-   */
-  private async getLibraryItemCount(libraryId: string, libraryType: 'movie' | 'show'): Promise<number> {
-    if (!this.selectedServer) return 0
-
-    const url = `${this.selectedServer.uri}/library/sections/${libraryId}/all`
-    // type=1 for movies, type=4 for episodes
-    const plexType = libraryType === 'show' ? 4 : 1
-    const responseData = await fetchJSON<{ MediaContainer?: { totalSize?: number } }>(
-      buildUrl(url, { type: plexType }),
-      {
-        headers: {
-          'X-Plex-Token': this.selectedServer.accessToken,
-          'X-Plex-Container-Start': '0',
-          'X-Plex-Container-Size': '0',
-          Accept: 'application/json',
-        },
-      }
-    )
-
-    return responseData?.MediaContainer?.totalSize || 0
-  }
-
-  /**
    * Get total music track count from Plex without fetching item data.
    * Uses X-Plex-Container-Size=0 to only get the totalSize from the container.
    */
