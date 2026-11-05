@@ -6292,7 +6292,7 @@ WHERE m.type = 'episode' AND m.series_title = ?`
     // Search TV shows (unique series titles) — FTS matches on series_title too
     const tvShowsStmt = ftsQuery
       ? this.db.prepare(`
-        SELECT MIN(id) as id, series_title as title, MIN(poster_url) as poster_url, MIN(tmdb_id) as tmdb_id
+        SELECT MIN(id) as id, series_title as title, MIN(poster_url) as poster_url, MAX(series_tmdb_id) as tmdb_id
         FROM media_items
         WHERE type = 'episode' AND series_title IS NOT NULL
           AND id IN (SELECT rowid FROM media_fts WHERE media_fts MATCH ?)
@@ -6301,7 +6301,7 @@ WHERE m.type = 'episode' AND m.series_title = ?`
         LIMIT ?
       `)
       : this.db.prepare(`
-        SELECT MIN(id) as id, series_title as title, MIN(poster_url) as poster_url, MIN(tmdb_id) as tmdb_id
+        SELECT MIN(id) as id, series_title as title, MIN(poster_url) as poster_url, MAX(series_tmdb_id) as tmdb_id
         FROM media_items
         WHERE type = 'episode' AND series_title IS NOT NULL AND LOWER(series_title) ${likeOp} ?
         GROUP BY series_title
