@@ -1,6 +1,6 @@
 {
   "name": "totality",
-  "version": "0.4.7",
+  "version": "0.5.0",
   "description": "Analyze media library quality and recommend upgrades",
   "main": "dist-electron/main/index.cjs",
   "scripts": {
@@ -43,8 +43,12 @@
     "adm-zip": "^0.6.1",
     "better-sqlite3": "^12.11.1",
     "chokidar": "^5.0.0",
+    "css-select": "^7.0.0",
+    "domhandler": "^6.0.1",
+    "domutils": "^4.0.2",
     "electron-updater": "^6.8.3",
     "html5-qrcode": "^2.3.8",
+    "htmlparser2": "^12.0.0",
     "lucide-react": "^0.577.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -88,11 +92,5 @@
     "vite-plugin-electron": "^0.29.1",
     "vite-plugin-electron-renderer": "^0.14.5",
     "vitest": "^4.0.18"
-  },
-  "overrides": {
-    "gaxios": {
-      "glob": "^14.0.3",
-      "minimatch": "^11.0.4"
-    }
   }
 }
