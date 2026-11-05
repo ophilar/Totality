@@ -1,21 +1,11 @@
 /**
- * Database Factory
- *
- * Provides the database service instance using better-sqlite3.
- * SQL.js backend was removed — better-sqlite3 is the sole database backend.
- * (sql.js is still used by KodiLocalProvider and MediaMonkeyProvider
- *  to read external database files, but not for the app's own database.)
+ * Database entry point. better-sqlite3 is the application's sole database backend.
+ * External Kodi/MediaMonkey database readers are independent of this instance.
  */
-
 import { getBetterSQLiteService } from './BetterSQLiteService'
-
 import type { DatabaseServiceInterface } from './DatabaseInterface'
+
 export type { DatabaseServiceInterface }
 
-/**
- * Get the database service instance (synchronous)
- * Should only be called after app.whenReady() and database initialization
- */
-export function getDatabaseServiceSync(): DatabaseServiceInterface {
-  return getBetterSQLiteService()
-}
+// Preserve the existing API name without an unnecessary delegate function.
+export const getDatabaseServiceSync: () => DatabaseServiceInterface = getBetterSQLiteService
