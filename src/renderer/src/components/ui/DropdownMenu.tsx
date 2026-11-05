@@ -12,7 +12,7 @@ interface DropdownMenuProps {
  */
 export function DropdownMenu({ children, align = 'right', className = '' }: DropdownMenuProps) {
   return (
-    <div className={`absolute top-8 ${align === 'right' ? 'right-0' : 'left-0'} bg-card border border-border rounded-lg shadow-lg py-1 min-w-[160px] z-20 ${className}`}>
+    <div className={`absolute top-8 ${align === 'right' ? 'right-0' : 'left-0'} bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-20 ${className}`}>
       {children}
     </div>
   )
@@ -32,7 +32,7 @@ export function DropdownMenuItem({ onClick, icon, children, destructive }: Dropd
   return (
     <button
       onClick={onClick}
-      className={`w-full px-3 py-1.5 text-left text-label hover:bg-muted flex items-center gap-2 ${destructive ? 'text-red-500' : ''}`}
+      className={`w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2 ${destructive ? 'text-red-500' : ''}`}
     >
       {icon}
       {children}

@@ -25,7 +25,7 @@ interface UseMenuCloseOptions {
  * )
  * ```
  */
-export function useMenuClose({ isOpen, onClose }: UseMenuCloseOptions): RefObject<HTMLDivElement> {
+export function useMenuClose({ isOpen, onClose }: UseMenuCloseOptions): RefObject<HTMLDivElement | null> {
   const menuRef = useRef<HTMLDivElement>(null)
 
   // Memoize onClose to prevent unnecessary effect re-runs

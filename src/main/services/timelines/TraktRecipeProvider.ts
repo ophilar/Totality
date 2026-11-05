@@ -70,7 +70,7 @@ export class TraktRecipeProvider implements ITimelineRecipeProvider {
       .replace(/^https?:\/\/(?:www\.)?trakt\.tv\//, '')
       .replace(/^\/?users\//, '')
     const parts = cleaned.split('/').filter(Boolean)
-
+    
     let username: string
     let listSlug: string
 
