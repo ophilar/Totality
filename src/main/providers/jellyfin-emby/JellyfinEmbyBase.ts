@@ -812,23 +812,34 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
         // Phase 2: For each BoxSet, fetch its child movies
         for (const boxset of boxsets) {
-          const movieResponse = await fetchJSON<{ Items: JellyfinMediaItem[]; TotalRecordCount: number }>(
-            buildUrl(`${this.serverUrl}/Items`, {
-              ParentId: boxset.Id,
-              Recursive: true,
-              IncludeItemTypes: 'Movie',
-              Fields: fieldsParam,
-              EnableImageTypes: 'Primary,Thumb,Screenshot,Banner,Backdrop',
-              EnableTotalRecordCount: true,
-              StartIndex: 0,
-              Limit: 1000,
-            }),
-            { headers: this.getAuthHeaders() }
-          )
-          allItems.push(...movieResponse.Items)
+          const movieItems: JellyfinMediaItem[] = []
+          let movieOffset = 0
+          while (true) {
+            const movieResponse = await fetchJSON<{ Items: JellyfinMediaItem[]; TotalRecordCount: number }>(
+              buildUrl(`${this.serverUrl}/Items`, {
+                ParentId: boxset.Id,
+                Recursive: true,
+                IncludeItemTypes: 'Movie',
+                Fields: fieldsParam,
+                EnableImageTypes: 'Primary,Thumb,Screenshot,Banner,Backdrop',
+                EnableTotalRecordCount: true,
+                StartIndex: movieOffset,
+                Limit: 1000,
+              }),
+              { headers: this.getAuthHeaders() }
+            )
+            if (movieResponse.TotalRecordCount == null) throw new Error('Missing collection movie count')
+            movieItems.push(...movieResponse.Items)
+            if (movieItems.length >= movieResponse.TotalRecordCount) break
+            if (movieResponse.Items.length === 0) {
+              throw new Error(`Incomplete collection ${boxset.Id}: ${movieItems.length} of ${movieResponse.TotalRecordCount} movies`)
+            }
+            movieOffset += movieResponse.Items.length
+          }
+          allItems.push(...movieItems)
 
           // Create a collection entry for this BoxSet
-          const ownedTmdbIds = movieResponse.Items
+          const ownedTmdbIds = movieItems
             .map(m => m.ProviderIds?.Tmdb)
             .filter(Boolean) as string[]
 
@@ -840,8 +851,8 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
               : undefined
 
             // Fallback: use first child movie's poster if BoxSet has no poster
-            const firstMoviePosterUrl = movieResponse.Items[0]?.ImageTags?.Primary
-              ? this.buildImageUrl(movieResponse.Items[0].Id, 'Primary', movieResponse.Items[0].ImageTags.Primary)
+            const firstMoviePosterUrl = movieItems[0]?.ImageTags?.Primary
+              ? this.buildImageUrl(movieItems[0].Id, 'Primary', movieItems[0].ImageTags.Primary)
               : undefined
 
             let totalMovies = ownedTmdbIds.length
@@ -1835,9 +1846,11 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         const items = response.Items || []
         allArtists.push(...items)
 
-        const total = response.TotalRecordCount || items.length
+        const total = response.TotalRecordCount
+        if (total == null) throw new Error('Missing music inventory count')
+        if (items.length === 0 && startIndex < total) throw new Error(`Incomplete music inventory: ${startIndex} of ${total}`)
         startIndex += items.length
-        hasMore = startIndex < total && items.length === batchSize
+        hasMore = startIndex < total
       }
 
       console.log(`[${this.providerType}] getMusicArtists: Found ${allArtists.length} album artists`)
@@ -1889,9 +1902,11 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         const items = response.Items || []
         allAlbums.push(...items)
 
-        const total = response.TotalRecordCount || items.length
+        const total = response.TotalRecordCount
+        if (total == null) throw new Error('Missing music inventory count')
+        if (items.length === 0 && startIndex < total) throw new Error(`Incomplete music inventory: ${startIndex} of ${total}`)
         startIndex += items.length
-        hasMore = startIndex < total && items.length === batchSize
+        hasMore = startIndex < total
       }
 
       return allAlbums
@@ -1905,24 +1920,36 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
    * Get tracks for an album
    */
   async getMusicTracks(albumId: string): Promise<JellyfinMusicTrack[]> {
-    if (!this.serverUrl) {
-      throw new Error('Not connected to server')
-    }
+    if (!this.serverUrl) throw new Error('Not connected to server')
 
     try {
-      const response = await fetchJSON<{ Items: JellyfinMusicTrack[] }>(
-        buildUrl(`${this.serverUrl}/Items`, {
-          ParentId: albumId,
-          IncludeItemTypes: 'Audio',
-          Fields: 'MediaSources,Path,ProviderIds,Artists,ArtistItems,ImageTags,PrimaryImageTag',
-        }),
-        { headers: this.getAuthHeaders() }
-      )
+      const allTracks: JellyfinMusicTrack[] = []
+      const batchSize = 100
+      let startIndex = 0
+      while (true) {
+        const response = await fetchJSON<{ Items: JellyfinMusicTrack[]; TotalRecordCount: number }>(
+          buildUrl(`${this.serverUrl}/Items`, {
+            ParentId: albumId,
+            IncludeItemTypes: 'Audio',
+            Fields: 'MediaSources,Path,ProviderIds,Artists,ArtistItems,ImageTags,PrimaryImageTag',
+            StartIndex: startIndex,
+            Limit: batchSize,
+            EnableTotalRecordCount: true,
+          }),
+          { headers: this.getAuthHeaders() }
+        )
 
-      return response.Items || []
+        if (response.TotalRecordCount == null) throw new Error('Missing music track inventory count')
+        const items = response.Items || []
+        allTracks.push(...items)
+        if (allTracks.length >= response.TotalRecordCount) return allTracks
+        if (items.length === 0) {
+          throw new Error(`Incomplete music track inventory: ${allTracks.length} of ${response.TotalRecordCount}`)
+        }
+        startIndex += items.length
+      }
     } catch (error: unknown) {
-      console.error(`[${this.providerType}] Failed to get music tracks:`, error)
-      throw new Error('Failed to fetch music tracks')
+      throw new Error(`Failed to fetch music tracks: ${getErrorMessage(error)}`)
     }
   }
 
@@ -2072,9 +2099,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
       const db = getDatabase()
 
       // Track scanned IDs for cleanup
-      const scannedArtistIds = new Set<string>()
       const scannedAlbumIds = new Set<string>()
-      const scannedTrackIds = new Set<string>()
 
       // Helper to process an album
       const processAlbum = async (
@@ -2105,9 +2130,8 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         const trackDataList: MusicTrack[] = []
         for (const jellyfinTrack of tracks) {
           const trackData = this.convertToMusicTrack(jellyfinTrack, undefined, artistId, libraryId)
-          if (trackData) {
-            trackDataList.push(trackData)
-          }
+          if (!trackData) throw new Error(`Could not convert music track ${jellyfinTrack.Id}`)
+          trackDataList.push(trackData)
         }
 
         // Calculate album stats from tracks
@@ -2129,7 +2153,6 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         for (const trackData of trackDataList) {
           trackData.album_id = albumId
           await db.upsertMusicTrack(trackData)
-          scannedTrackIds.add(trackData.provider_id)
           result.itemsScanned++
         }
 
@@ -2158,7 +2181,6 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
           // Upsert artist
           const artistId = await db.upsertMusicArtist(artistData)
-          scannedArtistIds.add(jellyfinArtist.Id)
 
           // Get all albums for this artist
           const albums = await this.getMusicAlbums(libraryId, jellyfinArtist.Id)
@@ -2229,7 +2251,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         }
       }
 
-      result.success = true
+      result.success = result.errors.length === 0
       result.durationMs = Date.now() - startTime
 
       console.log(`[${this.providerType}Provider ${this.sourceId}] Music scan complete: ${result.itemsScanned} tracks scanned in ${result.durationMs}ms`)
