@@ -53,10 +53,8 @@ def launch_and_verify(schema_path: Path) -> None:
         env["HOME"] = str(home)
         env["XDG_CONFIG_HOME"] = str(config_root)
         command = [
-            "dbus-run-session", "--", "xvfb-run", "-a",
+            "xvfb-run", "-a",
             str(Path.cwd() / "node_modules/.bin/electron"),
-            "--disable-dev-shm-usage",
-            "--disable-gpu",
             str(Path.cwd()),
         ]
         process = subprocess.Popen(
@@ -98,6 +96,11 @@ def launch_and_verify(schema_path: Path) -> None:
                 output.append(events.get_nowait())
 
         if not migrated:
+            log_dir = data_dir / "logs"
+            for log_file in sorted(log_dir.glob("*")) if log_dir.exists() else []:
+                if log_file.is_file():
+                    output.append(f"\n--- {log_file.name} ---\n")
+                    output.append(log_file.read_text(encoding="utf-8", errors="replace")[-12000:])
             raise AssertionError(
                 "Electron database upgrade did not complete:\n" + "".join(output[-80:])
             )
