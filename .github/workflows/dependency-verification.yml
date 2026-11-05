@@ -50,9 +50,22 @@ jobs:
       - name: Typecheck
         if: runner.os == 'Linux'
         run: npx tsc --noEmit
-      - name: Package application
+      - name: Build application
+        run: npx vite build
+      - name: Check out upstream 0.4.2 schema
+        if: runner.os == 'Linux'
+        uses: actions/checkout@v5
+        with:
+          repository: bbidwell85/Totality
+          ref: v0.4.2
+          path: legacy
+      - name: Verify real database upgrade
+        if: runner.os == 'Linux'
         run: |
-          npx vite build
-          npx electron-builder --publish never
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          python3 scripts/verify-database-upgrade.py legacy/src/main/database/schema.ts
+      - name: Package application
+        run: npx electron-builder --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
