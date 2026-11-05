@@ -546,7 +546,7 @@ export class PlexProvider implements MediaProvider {
 
               const detailed = metaResult.value
               if (!detailed || !detailed.Media || detailed.Media.length === 0) {
-                console.warn(`[PlexProvider ${this.sourceId}] Skipping ${item.title}: no media data available`)
+                result.errors.push(`Plex metadata for ${item.title} has no media data; scan incomplete`)
                 continue
               }
 
@@ -682,9 +682,6 @@ export class PlexProvider implements MediaProvider {
         result.itemsRemoved = await this.removeStaleItems(currentPlexIds, itemType, libraryId)
       }
 
-      // Update scan time
-      await db.updateSourceScanTime(this.sourceId)
-
       // Clean up any orphaned data (collections, series, music validated inside)
       try {
         db.cleanupOrphanedMediaData()
@@ -692,6 +689,9 @@ export class PlexProvider implements MediaProvider {
         result.errors.push(`Failed to clean orphaned media: ${getErrorMessage(error)}`)
       }
 
+      if (result.errors.length === 0) {
+        await db.updateSourceScanTime(this.sourceId)
+      }
       result.success = result.errors.length === 0
       result.durationMs = Date.now() - startTime
       console.log(`[PlexProvider ${this.sourceId}] Scan complete: ${result.itemsScanned} scanned, ${result.itemsAdded} added, ${result.itemsUpdated} updated, ${result.itemsRemoved} removed, ${result.errors.length} errors (${(result.durationMs / 1000).toFixed(1)}s)`)
@@ -1871,7 +1871,8 @@ export class PlexProvider implements MediaProvider {
 
         for (const plexTrack of tracks) {
           const trackData = this.convertToMusicTrack(plexTrack, undefined, artistId, libraryId)
-          if (trackData) {
+          if (!trackData) throw new Error(`Could not convert Plex music track ${plexTrack.ratingKey}`)
+          {
             trackDataList.push(trackData)
             totalDuration += trackData.duration || 0
             totalSize += trackData.file_size || 0
