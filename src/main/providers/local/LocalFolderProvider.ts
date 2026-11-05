@@ -2530,8 +2530,10 @@ export class LocalFolderProvider implements MediaProvider {
       // Update artist stats (album count, track count)
       await this.updateArtistStats(db, artistMap)
 
-      // Update scan time
-      await db.updateSourceScanTime(this.sourceId)
+      // An incomplete music scan must be retried rather than advancing the cursor.
+      if (result.errors.length === 0) {
+        await db.updateSourceScanTime(this.sourceId)
+      }
 
       result.success = result.errors.length === 0
       result.durationMs = Date.now() - startTime
