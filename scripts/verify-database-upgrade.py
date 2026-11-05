@@ -53,9 +53,10 @@ def launch_and_verify(schema_path: Path) -> None:
         env["HOME"] = str(home)
         env["XDG_CONFIG_HOME"] = str(config_root)
         command = [
-            "xvfb-run", "-a",
+            "dbus-run-session", "--", "xvfb-run", "-a",
             str(Path.cwd() / "node_modules/.bin/electron"),
             "--disable-dev-shm-usage",
+            "--disable-gpu",
             str(Path.cwd()),
         ]
         process = subprocess.Popen(
