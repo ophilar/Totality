@@ -2,22 +2,42 @@ name: Validate branch layers
 
 on:
   workflow_dispatch:
+    inputs:
+      full_matrix:
+        description: Run Linux, macOS and Windows (release readiness)
+        type: boolean
+        default: true
   pull_request:
     branches:
       - architecture
       - optimization
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'resources/**'
+      - 'package*.json'
+      - 'vite.config.ts'
+      - 'vitest.config.ts'
+      - 'tsconfig*.json'
+      - 'electron-builder.yml'
+      - '.github/workflows/branch-validation.yml'
 
 permissions:
   contents: read
+
+concurrency:
+  group: branch-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
-        os: [ubuntu-24.04, macos-15, windows-2025]
+        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.full_matrix && '["ubuntu-24.04","macos-15","windows-2025"]' || '["ubuntu-24.04"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
