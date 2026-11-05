@@ -1,6 +1,6 @@
 {
   "name": "totality",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Analyze media library quality and recommend upgrades",
   "main": "dist-electron/main/index.cjs",
   "scripts": {
@@ -44,6 +44,7 @@
     "better-sqlite3": "^12.11.1",
     "chokidar": "^5.0.0",
     "electron-updater": "^6.8.3",
+    "html5-qrcode": "^2.3.8",
     "lucide-react": "^0.577.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

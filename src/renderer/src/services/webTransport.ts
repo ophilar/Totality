@@ -72,7 +72,7 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let requestId = 0
 let reconnectAttempts = 0
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
-const eventListeners = new Map<string, Set<Function>>()
+const eventListeners = new Map<string, Set<(...args: unknown[]) => void>>()
 let sessionToken: string | null = null
 let authPromise: { resolve: (token: string) => void; reject: (e: Error) => void } | null = null
 // Auth callback for future use (e.g., auto-showing login screen)
@@ -119,6 +119,7 @@ function connect(): Promise<void> {
       if (stored) {
         sessionToken = stored
       }
+      window.dispatchEvent(new CustomEvent('ws-status', { detail: { connected: true } }))
       resolve()
     }
 
@@ -135,12 +136,20 @@ function connect(): Promise<void> {
       ws = null
       isConnecting = false
       connectPromise = null
+      // Reject all pending RPC promises so callers don't hang forever
+      for (const [pendingId, { reject }] of pending.entries()) {
+        reject(new Error('WebSocket disconnected'))
+        pending.delete(pendingId)
+      }
+      requestId = 0 // Reset to avoid stale ID collisions on reconnect
+      // Notify listeners of offline status
+      window.dispatchEvent(new CustomEvent('ws-status', { detail: { connected: false } }))
       // Reconnect with exponential backoff (1s, 1.5s, 2.25s, ... capped at 30s)
       const delayMs = Math.min(30000, 1000 * Math.pow(1.5, reconnectAttempts))
       reconnectAttempts++
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null
-        connect().catch(() => {})
+        connect().catch((err) => console.warn('[WebSocket] Reconnect failed:', err))
       }, delayMs)
     }
 
@@ -201,16 +210,26 @@ function handleMessage(data: { type: string; [key: string]: unknown }): void {
   }
 }
 
-// Deduplication: identical RPC calls within 100ms share the same promise
+// Deduplication: identical RPC calls within 500ms share the same promise
 const rpcDedup = new Map<string, { promise: Promise<unknown>; timestamp: number }>()
 const RPC_DEDUP_WINDOW_MS = 500
+const RPC_TIMEOUT_MS = 30_000
+
+// Write channels are excluded from deduplication to avoid suppressing legitimate rapid operations
+const WRITE_CHANNEL_PREFIXES = ['wishlist:add', 'wishlist:update', 'wishlist:remove', 'wishlist:addBulk', 'db:setSetting', 'db:reset', 'db:upsert', 'sources:', 'mood:', 'music:fix', 'movie:fix', 'series:fix']
+
+function isWriteChannel(channel: string): boolean {
+  return WRITE_CHANNEL_PREFIXES.some(p => channel.startsWith(p))
+}
 
 function sendRpc(channel: string, args: unknown[]): Promise<unknown> {
-  // Build dedup key from channel + args
-  const dedupKey = channel + ':' + JSON.stringify(args)
-  const existing = rpcDedup.get(dedupKey)
-  if (existing && Date.now() - existing.timestamp < RPC_DEDUP_WINDOW_MS) {
-    return existing.promise
+  // Skip deduplication for write operations
+  if (!isWriteChannel(channel)) {
+    const dedupKey = channel + ':' + JSON.stringify(args)
+    const existing = rpcDedup.get(dedupKey)
+    if (existing && Date.now() - existing.timestamp < RPC_DEDUP_WINDOW_MS) {
+      return existing.promise
+    }
   }
 
   const promise = new Promise<unknown>((resolve, reject) => {
@@ -219,7 +238,16 @@ function sendRpc(channel: string, args: unknown[]): Promise<unknown> {
       return
     }
     const id = ++requestId
-    pending.set(id, { resolve, reject })
+    const timer = setTimeout(() => {
+      if (pending.has(id)) {
+        pending.delete(id)
+        reject(new Error(`RPC timeout: ${channel}`))
+      }
+    }, RPC_TIMEOUT_MS)
+    pending.set(id, {
+      resolve: (v: unknown) => { clearTimeout(timer); resolve(v) },
+      reject: (e: Error) => { clearTimeout(timer); reject(e) },
+    })
     ws.send(JSON.stringify({
       type: 'rpc',
       id,
@@ -229,9 +257,12 @@ function sendRpc(channel: string, args: unknown[]): Promise<unknown> {
     }))
   })
 
-  rpcDedup.set(dedupKey, { promise, timestamp: Date.now() })
-  // Clean up after window expires
-  setTimeout(() => rpcDedup.delete(dedupKey), RPC_DEDUP_WINDOW_MS + 10)
+  // Cache for deduplication (read-only channels only)
+  if (!isWriteChannel(channel)) {
+    const dedupKey = channel + ':' + JSON.stringify(args)
+    rpcDedup.set(dedupKey, { promise, timestamp: Date.now() })
+    setTimeout(() => rpcDedup.delete(dedupKey), RPC_DEDUP_WINDOW_MS + 10)
+  }
 
   return promise
 }
@@ -252,7 +283,8 @@ export function authenticate(pin: string): Promise<string> {
 // }
 
 export function isAuthenticated(): boolean {
-  return sessionToken !== null
+  // Check in-memory token first, then localStorage (for initial render before WebSocket connects)
+  return sessionToken !== null || !!localStorage.getItem('web_session_token')
 }
 
 export function isWebMode(): boolean {
@@ -266,16 +298,20 @@ export function isWebMode(): boolean {
 export async function initWebTransport(): Promise<void> {
   await connect()
 
+  console.log('[WebTransport] Connected. Token in localStorage:', !!localStorage.getItem('web_session_token'), 'sessionToken:', !!sessionToken)
+
   // Try authenticating with stored token by making a test RPC
   if (sessionToken) {
     try {
       await sendRpc('app:getVersion', [])
-      // Token is valid
-    } catch {
-      // Token expired, clear it
+      console.log('[WebTransport] Token validated successfully')
+    } catch (err) {
+      console.log('[WebTransport] Token validation failed:', err instanceof Error ? err.message : String(err))
       sessionToken = null
       localStorage.removeItem('web_session_token')
     }
+  } else {
+    console.log('[WebTransport] No session token available')
   }
 
   // Install the proxy
@@ -295,7 +331,7 @@ function createApiProxy(): unknown {
       // Event listener methods (on*)
       if (prop in EVENT_CHANNEL_MAP) {
         const channel = EVENT_CHANNEL_MAP[prop]
-        return (callback: Function) => {
+        return (callback: (...args: unknown[]) => void) => {
           if (!eventListeners.has(channel)) {
             eventListeners.set(channel, new Set())
           }

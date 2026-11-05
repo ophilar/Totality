@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { X, Filter, ArrowUpDown, Film, Tv, Music, Loader2, ListTodo, CircleFadingArrowUp, Download, CheckCircle2, Circle, RefreshCw, Search, Plus, Check, Star } from 'lucide-react'
+import { X, Filter, ArrowUpDown, Film, Tv, Music, Loader2, ListTodo, CircleFadingArrowUp, Download, CheckCircle2, Circle, RefreshCw, Search, Plus, Check, Star, ScanBarcode } from 'lucide-react'
+import { BarcodeScanner } from '../barcode/BarcodeScanner'
 import { useWishlist, WishlistMediaType, WishlistPriority, WishlistReason, WishlistStatus } from '../../contexts/WishlistContext'
 import { WishlistItemCard } from './WishlistItemCard'
 import { WishlistEmptyState } from './WishlistEmptyState'
@@ -19,7 +20,7 @@ interface SearchResult {
   physical_release_date?: string
 }
 
-function WishlistSearch({ isMobile = false }: { isMobile?: boolean }) {
+function WishlistSearch({ isMobile = false, onBarcodeScan }: { isMobile?: boolean; onBarcodeScan?: () => void }) {
   const { addItem, items } = useWishlist()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
@@ -148,11 +149,15 @@ function WishlistSearch({ isMobile = false }: { isMobile?: boolean }) {
           />
           {isSearching ? (
             <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 animate-spin text-muted-foreground" />
-          ) : query && (
+          ) : query ? (
             <button onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors">
               <X className="w-5 h-5" />
             </button>
-          )}
+          ) : onBarcodeScan ? (
+            <button onClick={onBarcodeScan} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors" title="Scan barcode">
+              <ScanBarcode className="w-5 h-5" />
+            </button>
+          ) : null}
         </div>
 
         {results.length > 0 && (
@@ -306,6 +311,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
     updateItem,
     markCompleted,
     markActive,
+    addItem,
     addBulk,
     exportToCsv
   } = useWishlist()
@@ -314,6 +320,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
   const [activeStatus, setActiveStatus] = useState<StatusType>('active')
   const [isExporting, setIsExporting] = useState(false)
   const [showSyncSection, setShowSyncSection] = useState(false)
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false)
 
   // Sync state
   const [syncingPlex, setSyncingPlex] = useState(false)
@@ -343,10 +350,10 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
       setTimeout(() => closeButtonRef.current?.focus(), 100)
       window.electronAPI.getSetting(SETTING_KEYS.trakt_username)
         .then(val => { if (val) setTraktUser(val) })
-        .catch(() => {})
+        .catch((err) => console.warn('[Wishlist] Failed to load trakt username:', err))
       window.electronAPI.getSetting(SETTING_KEYS.plex_token)
         .then(val => setHasPlexSource(!!val))
-        .catch(() => {})
+        .catch((err) => console.warn('[Wishlist] Failed to load plex token:', err))
     }
   }, [isOpen])
 
@@ -670,7 +677,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
       {isMobileInline ? (
         // Mobile page layout: search + wrapped filter rows
         <div className="shrink-0 px-4 py-3" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)' }}>
-          <WishlistSearch isMobile={isMobile} />
+          <WishlistSearch isMobile={isMobile} onBarcodeScan={() => setShowBarcodeScanner(true)} />
           {counts.total > 0 && (
             <div className="mt-3 space-y-2">
               {/* Row 1: Status + Sort */}
@@ -917,6 +924,30 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
         )}
       </div>
     </aside>
+
+    {/* Barcode Scanner overlay */}
+    <BarcodeScanner
+      isOpen={showBarcodeScanner}
+      onClose={() => setShowBarcodeScanner(false)}
+      onAddToWishlist={async (result) => {
+        try {
+          await addItem({
+            media_type: result.type === 'tv' ? 'season' : result.type === 'album' ? 'album' : 'movie',
+            title: result.title,
+            year: result.year,
+            tmdb_id: result.tmdb_id ? String(result.tmdb_id) : undefined,
+            musicbrainz_id: result.musicbrainz_id,
+            artist_name: result.artist_name,
+            poster_url: result.poster_url,
+            priority: 3,
+            reason: 'missing' as WishlistReason,
+            status: 'active' as WishlistStatus,
+          })
+        } catch (err) {
+          console.error('Failed to add barcode item to wishlist:', err)
+        }
+      }}
+    />
     </>
   )
 }

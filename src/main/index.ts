@@ -35,6 +35,21 @@ if (gpuDisabled) {
   app.disableHardwareAcceleration()
 }
 
+// Single instance lock — prevent two copies from corrupting the SQLite database
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    // Focus existing window when a second instance is launched
+    if (win) {
+      if (win.isMinimized()) win.restore()
+      if (!win.isVisible()) win.show()
+      win.focus()
+    }
+  })
+}
+
 // Register custom protocol for serving local artwork files
 // Must be registered before app is ready
 protocol.registerSchemesAsPrivileged([
@@ -66,6 +81,7 @@ import { registerLoggingHandlers } from './ipc/logging'
 import { registerAutoUpdateHandlers } from './ipc/autoUpdate'
 import { registerGeminiHandlers } from './ipc/gemini'
 import { registerMoodHandlers, setMoodMainWindow } from './ipc/mood'
+import { registerBarcodeHandlers } from './ipc/barcode'
 import { getLiveMonitoringService } from './services/LiveMonitoringService'
 import { getTaskQueueService } from './services/TaskQueueService'
 import { getLoggingService } from './services/LoggingService'
@@ -430,10 +446,10 @@ app.whenReady().then(async () => {
     console.log('Source manager initialized successfully')
 
     // Intercept ipcMain.handle to build handler map for web server RPC bridge
-    const webHandlerMap = new Map<string, Function>()
+    const webHandlerMap = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
     const origHandle = ipcMain.handle.bind(ipcMain)
     ipcMain.handle = ((channel: string, handler: (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => unknown) => {
-      webHandlerMap.set(channel, handler)
+      webHandlerMap.set(channel, handler as (event: unknown, ...args: unknown[]) => unknown)
       return origHandle(channel, handler)
     }) as typeof ipcMain.handle
 
@@ -453,6 +469,7 @@ app.whenReady().then(async () => {
     registerAutoUpdateHandlers()
     registerGeminiHandlers()
     registerMoodHandlers()
+    registerBarcodeHandlers()
     registerWebAccessHandlers()
 
     // Restore ipcMain.handle to original (interception complete)
