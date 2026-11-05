@@ -55,6 +55,22 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - name: Ensure media tools for native tests (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            brew install ffmpeg
+          fi
+      - name: Ensure media tools for native tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+          }
+      - name: Test native platforms before packaging
+        if: runner.os != 'Linux'
+        run: npm run test:run
       - name: Restore shared application bundles
         uses: actions/download-artifact@v4
         with:

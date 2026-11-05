@@ -27,7 +27,13 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -35,7 +41,13 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npm audit --omit=dev --audit-level=moderate
       - run: npm run test:run
-      - run: npx tsc --noEmit
-      - run: npx vite build
+      - name: Audit production dependencies
+        if: runner.os == 'Linux'
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: Typecheck
+        if: runner.os == 'Linux'
+        run: npx tsc --noEmit
+      - name: Build application
+        if: runner.os == 'Linux'
+        run: npx vite build
