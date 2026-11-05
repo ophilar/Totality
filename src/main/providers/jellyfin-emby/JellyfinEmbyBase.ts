@@ -756,8 +756,12 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
       // Get library info to determine type
       const libraries = await this.getLibraries()
       const library = libraries.find(l => l.id === libraryId)
-      const libraryType = library?.type || 'movie'
-      const isBoxsets = library?.collectionType === 'boxsets'
+      if (!library) throw new Error(`Library ${libraryId} not found on ${this.providerType} server`)
+      const libraryType = library.type
+      if (libraryType !== 'movie' && libraryType !== 'show') {
+        throw new Error(`Cannot scan ${this.providerType} library ${libraryId} with type ${libraryType} as video`)
+      }
+      const isBoxsets = library.collectionType === 'boxsets'
 
       // Get all items in library
       const allItems: JellyfinMediaItem[] = []
@@ -792,11 +796,15 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
             }),
             { headers: this.getAuthHeaders() }
           )
+          if (boxsetResponse.TotalRecordCount == null) throw new Error('Missing BoxSet inventory count')
           boxsets.push(...boxsetResponse.Items)
+          if (boxsetResponse.Items.length === 0 && boxsets.length < boxsetResponse.TotalRecordCount) {
+            throw new Error(`Incomplete BoxSet inventory: ${boxsets.length} of ${boxsetResponse.TotalRecordCount}`)
+          }
           if (boxsets.length >= boxsetResponse.TotalRecordCount || boxsetResponse.Items.length === 0) {
             hasMoreBoxsets = false
           } else {
-            boxsetOffset += batchSize
+            boxsetOffset += boxsetResponse.Items.length
           }
         }
 
@@ -931,12 +939,16 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
             { headers: this.getAuthHeaders() }
           )
 
+          if (response.TotalRecordCount == null) throw new Error('Missing library inventory count')
           allItems.push(...response.Items)
+          if (response.Items.length === 0 && allItems.length < response.TotalRecordCount) {
+            throw new Error(`Incomplete ${this.providerType} library inventory: ${allItems.length} of ${response.TotalRecordCount}`)
+          }
 
           if (allItems.length >= response.TotalRecordCount || response.Items.length === 0) {
             hasMoreItems = false
           } else {
-            offset += batchSize
+            offset += response.Items.length
           }
         }
       }
@@ -1040,12 +1052,11 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
             for (const item of group) {
               if (!item.MediaSources || item.MediaSources.length === 0) {
-                console.warn(`[${this.providerType}Provider ${this.sourceId}] Skipping ${item.Name}: no media sources`)
-                continue
+                throw new Error(`No media sources returned for ${item.Name} (${item.Id})`)
               }
 
               const converted = await this.convertToMediaItem(item)
-              if (!converted) continue
+              if (!converted) throw new Error(`Cannot convert media metadata for ${item.Name} (${item.Id})`)
 
               if (!canonicalItem) {
                 canonicalItem = converted.mediaItem
@@ -1135,6 +1146,12 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         await db.endBatch()
       }
 
+      // Incomplete or cancelled inventories cannot authorize deletions or successful timestamps.
+      if (result.cancelled || result.errors.length > 0) {
+        result.durationMs = Date.now() - startTime
+        return result
+      }
+
       // Remove stale items
       if (!isIncremental) {
         // Full scan: reconcile against all scanned IDs
@@ -1143,7 +1160,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
         // Safety guard: refuse deletion when API returned 0 IDs but DB has items
         if (scannedProviderIds.size === 0 && items.length > 0) {
-          console.warn(`[${this.providerType}Provider ${this.sourceId}] API returned 0 IDs but DB has ${items.length} — skipping deletion (possible API failure)`)
+          throw new Error(`Incomplete ${this.providerType} inventory: server returned no items while ${items.length} are stored`)
         } else if (scannedProviderIds.size > 0) {
           for (const item of items) {
             if (!scannedProviderIds.has(item.plex_id)) {
@@ -1162,6 +1179,9 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
           const serverCount = await this.getLibraryItemCount(libraryId, libraryType)
           const dbCount = db.countMediaItems({ type: itemType, sourceId: this.sourceId, libraryId, includeDisabledLibraries: true })
 
+          if (serverCount === 0 && dbCount > 0) {
+            throw new Error(`Incomplete ${this.providerType} inventory: server reported no items while ${dbCount} are stored`)
+          }
           if (serverCount > 0 && serverCount < dbCount) {
             console.log(`[${this.providerType}Provider ${this.sourceId}] Server has ${serverCount} items but DB has ${dbCount} — reconciling deletions`)
 
@@ -1169,7 +1189,8 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
             const serverIds = await this.getAllLibraryItemIds(libraryId, libraryType)
             const items = db.getMediaItems({ type: itemType, sourceId: this.sourceId, libraryId })
 
-            if (serverIds.size > 0) {
+            if (serverIds.size === 0) throw new Error('Incomplete deletion inventory: server returned no IDs')
+            {
               for (const item of items) {
                 if (!serverIds.has(item.plex_id)) {
                   if (item.id) {
@@ -1184,14 +1205,19 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
             }
           }
         } catch (err) {
-          console.warn(`[${this.providerType}Provider ${this.sourceId}] Incremental deletion check failed:`, err)
+          result.errors.push(`Incremental deletion reconciliation failed: ${getErrorMessage(err)}`)
         }
+      }
+
+      if (result.errors.length > 0) {
+        result.durationMs = Date.now() - startTime
+        return result
       }
 
       // Update scan time
       await db.updateSourceScanTime(this.sourceId)
 
-      result.success = true
+      result.success = result.errors.length === 0
       result.durationMs = Date.now() - startTime
 
       console.log(`[${this.providerType}Provider ${this.sourceId}] Scan complete: ${result.itemsScanned} scanned, ${result.itemsAdded} added, ${result.itemsRemoved} removed, ${result.errors.length} errors (${(result.durationMs / 1000).toFixed(1)}s)`)
@@ -1223,7 +1249,8 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
       }),
       { headers: this.getAuthHeaders() }
     )
-    return response.TotalRecordCount || 0
+    if (response.TotalRecordCount == null) throw new Error('Missing library count')
+    return response.TotalRecordCount
   }
 
   /**
@@ -1249,8 +1276,12 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         { headers: this.getAuthHeaders() }
       )
 
+      if (response.TotalRecordCount == null) throw new Error('Missing deletion inventory count')
       for (const item of response.Items) {
         ids.add(item.Id)
+      }
+      if (response.Items.length === 0 && ids.size < response.TotalRecordCount) {
+        throw new Error(`Incomplete deletion inventory: ${ids.size} of ${response.TotalRecordCount}`)
       }
 
       if (ids.size >= response.TotalRecordCount || response.Items.length === 0) {
