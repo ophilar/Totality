@@ -1,0 +1,27 @@
+name: One-time Totality dependency repair
+on:
+  push:
+    branches: [ci/minimize-cross-platform-minutes-20261105]
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Patch the lockfile using npm security advisories
+        shell: bash
+        run: |
+          npm audit fix --package-lock-only
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if ! git diff --quiet -- package-lock.json; then
+            git add package-lock.json
+            git commit -m 'security(deps): resolve Totality npm audit advisories'
+            git push origin HEAD:ci/minimize-cross-platform-minutes-20261105
+          fi
