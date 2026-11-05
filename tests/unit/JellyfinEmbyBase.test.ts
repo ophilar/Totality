@@ -97,6 +97,49 @@ describe('JellyfinEmbyBase (via JellyfinProvider)', () => {
     provider = new JellyfinProvider(makeConfig())
   })
 
+  describe('music pagination', () => {
+    it('retrieves album artists after a short nonterminal page', async () => {
+      mockFetchJSON
+        .mockResolvedValueOnce({ Items: [{ Id: 'artist-1' }], TotalRecordCount: 2 })
+        .mockResolvedValueOnce({ Items: [{ Id: 'artist-2' }], TotalRecordCount: 2 })
+      const artists = await provider.getMusicArtists('music-library')
+      expect(artists.map(artist => artist.Id)).toEqual(['artist-1', 'artist-2'])
+      expect(String(mockFetchJSON.mock.calls[1][0])).toContain('StartIndex=1')
+    })
+
+    it('retrieves albums after a short nonterminal page', async () => {
+      mockFetchJSON
+        .mockResolvedValueOnce({ Items: [{ Id: 'album-1' }], TotalRecordCount: 2 })
+        .mockResolvedValueOnce({ Items: [{ Id: 'album-2' }], TotalRecordCount: 2 })
+      const albums = await provider.getMusicAlbums('music-library')
+      expect(albums.map(album => album.Id)).toEqual(['album-1', 'album-2'])
+      expect(String(mockFetchJSON.mock.calls[1][0])).toContain('StartIndex=1')
+    })
+
+    it('retrieves every album track using counted pages', async () => {
+      mockFetchJSON
+        .mockResolvedValueOnce({ Items: [{ Id: 'track-1' }], TotalRecordCount: 2 })
+        .mockResolvedValueOnce({ Items: [{ Id: 'track-2' }], TotalRecordCount: 2 })
+      const tracks = await provider.getMusicTracks('album-1')
+      expect(tracks.map(track => track.Id)).toEqual(['track-1', 'track-2'])
+      expect(String(mockFetchJSON.mock.calls[1][0])).toContain('StartIndex=1')
+    })
+
+    it('fails a truncated artist inventory rather than returning partial results', async () => {
+      mockFetchJSON
+        .mockResolvedValueOnce({ Items: [{ Id: 'artist-1' }], TotalRecordCount: 2 })
+        .mockResolvedValueOnce({ Items: [], TotalRecordCount: 2 })
+      await expect(provider.getMusicArtists('music-library')).rejects.toThrow('Failed to fetch music artists')
+    })
+
+    it('fails a truncated track inventory rather than returning partial results', async () => {
+      mockFetchJSON
+        .mockResolvedValueOnce({ Items: [{ Id: 'track-1' }], TotalRecordCount: 2 })
+        .mockResolvedValueOnce({ Items: [], TotalRecordCount: 2 })
+      await expect(provider.getMusicTracks('album-1')).rejects.toThrow('Failed to fetch music tracks')
+    })
+  })
+
   // ==========================================================================
   // buildImageUrl (protected — access via any cast)
   // ==========================================================================
