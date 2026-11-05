@@ -1785,9 +1785,11 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         const items = response.Items || []
         allArtists.push(...items)
 
-        const total = response.TotalRecordCount || items.length
+        const total = response.TotalRecordCount
+        if (total == null) throw new Error('Music artist inventory has no total count')
+        if (items.length === 0 && allArtists.length < total) throw new Error(`Incomplete music artist inventory: ${allArtists.length} of ${total}`)
         startIndex += items.length
-        hasMore = startIndex < total && items.length === batchSize
+        hasMore = startIndex < total
       }
 
       console.log(`[${this.providerType}] getMusicArtists: Found ${allArtists.length} album artists`)
@@ -1839,9 +1841,11 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         const items = response.Items || []
         allAlbums.push(...items)
 
-        const total = response.TotalRecordCount || items.length
+        const total = response.TotalRecordCount
+        if (total == null) throw new Error('Music album inventory has no total count')
+        if (items.length === 0 && allAlbums.length < total) throw new Error(`Incomplete music album inventory: ${allAlbums.length} of ${total}`)
         startIndex += items.length
-        hasMore = startIndex < total && items.length === batchSize
+        hasMore = startIndex < total
       }
 
       return allAlbums
@@ -1860,16 +1864,29 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
     }
 
     try {
-      const response = await fetchJSON<{ Items: JellyfinMusicTrack[] }>(
-        buildUrl(`${this.serverUrl}/Items`, {
-          ParentId: albumId,
-          IncludeItemTypes: 'Audio',
-          Fields: 'MediaSources,Path,ProviderIds,Artists,ArtistItems,ImageTags,PrimaryImageTag',
-        }),
-        { headers: this.getAuthHeaders() }
-      )
+      const allTracks: JellyfinMusicTrack[] = []
+      const batchSize = 100
+      let startIndex = 0
+      while (true) {
+        const response = await fetchJSON<{ Items: JellyfinMusicTrack[]; TotalRecordCount: number }>(
+          buildUrl(`${this.serverUrl}/Items`, {
+            ParentId: albumId,
+            IncludeItemTypes: 'Audio',
+            Fields: 'MediaSources,Path,ProviderIds,Artists,ArtistItems,ImageTags,PrimaryImageTag',
+            StartIndex: startIndex,
+            Limit: batchSize,
+            EnableTotalRecordCount: true,
+          }),
+          { headers: this.getAuthHeaders() }
+        )
 
-      return response.Items || []
+        if (response.TotalRecordCount == null) throw new Error('Music track inventory has no total count')
+        const items = response.Items || []
+        allTracks.push(...items)
+        if (allTracks.length >= response.TotalRecordCount) return allTracks
+        if (items.length === 0) throw new Error(`Incomplete music track inventory: ${allTracks.length} of ${response.TotalRecordCount}`)
+        startIndex += items.length
+      }
     } catch (error: unknown) {
       console.error(`[${this.providerType}] Failed to get music tracks:`, error)
       throw new Error('Failed to fetch music tracks')
