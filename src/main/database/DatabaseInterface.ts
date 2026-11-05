@@ -1,13 +1,4 @@
-/**
- * Typed database interface — both BetterSQLiteService and DatabaseService must implement this.
- *
- * Replaces the `[key: string]: any` catch-all in DatabaseFactory.ts.
- * TypeScript will now catch method signature mismatches at compile time.
- *
- * Write operations use `void | Promise<void>` because BetterSQLiteService is synchronous
- * while DatabaseService (SQL.js) wraps writes in async save() calls. Callers should
- * always `await` write operations to be safe with both backends.
- */
+import type { BetterSQLiteService } from './BetterSQLiteService'
 
 import type {
   MediaItem, MediaItemVersion, MediaSource,
