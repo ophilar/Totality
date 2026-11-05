@@ -191,6 +191,29 @@ function createProviderWithServer(token = 'test-token'): PlexProvider {
 // ---------------------------------------------------------------------------
 
 describe('PlexProvider', () => {
+  describe('full scan inventory selection', () => {
+    const sinceTimestamp = new Date('2026-01-01T00:00:00.000Z')
+
+    it('requests the full inventory when forceFullScan overrides a timestamp', async () => {
+      const provider = createProviderWithServer()
+      const fetchItems = vi.spyOn(provider as any, 'getPlexLibraryItems')
+        .mockRejectedValueOnce(new Error('Stop after inventory request'))
+      const result = await provider.scanLibrary('lib-1', { sinceTimestamp, forceFullScan: true })
+      expect(fetchItems).toHaveBeenCalledExactlyOnceWith('lib-1', undefined)
+      expect(result.success).toBe(false)
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+
+    it('preserves time filtering on genuinely incremental scans', async () => {
+      const provider = createProviderWithServer()
+      const fetchItems = vi.spyOn(provider as any, 'getPlexLibraryItems')
+        .mockRejectedValueOnce(new Error('Stop after inventory request'))
+      await provider.scanLibrary('lib-1', { sinceTimestamp })
+      expect(fetchItems).toHaveBeenCalledExactlyOnceWith('lib-1', sinceTimestamp)
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
   })
