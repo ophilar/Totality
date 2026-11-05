@@ -48,6 +48,9 @@ jobs:
       - name: Typecheck
         if: runner.os == 'Linux'
         run: npx tsc --noEmit
-      - name: Build application
-        if: runner.os == 'Linux'
-        run: npx vite build
+      - name: Package application
+        run: |
+          npx vite build
+          npx electron-builder --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
