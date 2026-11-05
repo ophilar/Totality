@@ -5,6 +5,8 @@ const mockGetMediaItemByPath = vi.hoisted(() => vi.fn())
 const mockGetMusicTrackByPath = vi.hoisted(() => vi.fn())
 const mockDeleteMediaItem = vi.hoisted(() => vi.fn())
 const mockDeleteMusicTrack = vi.hoisted(() => vi.fn())
+const mockUpdateSourceScanTime = vi.hoisted(() => vi.fn())
+const mockParseMusic = vi.hoisted(() => vi.fn())
 
 // Mock all heavy dependencies of LocalFolderProvider module
 vi.mock('fs', () => ({
@@ -28,6 +30,9 @@ vi.mock('../../src/main/database/getDatabase', () => ({
     getMusicTrackByPath: mockGetMusicTrackByPath,
     deleteMediaItem: mockDeleteMediaItem,
     deleteMusicTrack: mockDeleteMusicTrack,
+    updateSourceScanTime: mockUpdateSourceScanTime,
+    startBatch: vi.fn(),
+    endBatch: vi.fn(),
   })),
 }))
 vi.mock('../../src/main/services/QualityAnalyzer', () => ({
@@ -40,6 +45,7 @@ vi.mock('../../src/main/services/FileNameParser', () => ({
   getFileNameParser: vi.fn(() => ({
     isVideoFile: vi.fn(() => true),
     isAudioFile: vi.fn(() => true),
+    parseMusic: mockParseMusic,
   })),
 }))
 vi.mock('../../src/main/services/TMDBService', () => ({
@@ -208,6 +214,23 @@ describe('LocalFolderProvider scan safety', () => {
     expect(result.itemsRemoved).toBe(0)
     expect(result.errors).toHaveLength(1)
     expect(mockDeleteMusicTrack).not.toHaveBeenCalled()
+  })
+
+  it('preserves the music scan cursor when a discovered track fails processing', async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    mockParseMusic.mockImplementationOnce(() => { throw new Error('Invalid music metadata') })
+    const provider = new LocalFolderProvider({
+      sourceId: 'test-local',
+      connectionConfig: { folderPath: '/music', mediaType: 'music' },
+    } as ConstructorParameters<typeof LocalFolderProvider>[0])
+    vi.spyOn(provider as any, 'discoverAudioFiles')
+      .mockResolvedValue([{ filePath: '/music/bad.flac', relativePath: 'bad.flac' }])
+    const scan = Reflect.get(provider, 'scanMusicLibrary') as
+      (onProgress?: unknown, scanPath?: string) => Promise<{ success: boolean; errors: string[] }>
+    const result = await scan.call(provider, undefined, '/music')
+    expect(result.success).toBe(false)
+    expect(result.errors.join(' ')).toContain('Invalid music metadata')
+    expect(mockUpdateSourceScanTime).not.toHaveBeenCalled()
   })
 
   it('rejects inaccessible music subdirectories as incomplete inventory', async () => {
