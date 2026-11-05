@@ -744,13 +744,11 @@ describe('PlexProvider', () => {
       ])
 
       const provider = createProviderWithServer()
-      const removed = await (provider as any).removeStaleItems(
+      await expect((provider as any).removeStaleItems(
         new Set<string>(), // empty — simulates Plex API failure
         'movie',
         'lib-1'
-      )
-
-      expect(removed).toBe(0)
+      )).rejects.toThrow('Incomplete Plex movie inventory')
       expect(mockDeleteMediaItem).not.toHaveBeenCalled()
     })
 
