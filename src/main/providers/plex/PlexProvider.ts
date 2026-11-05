@@ -716,13 +716,7 @@ export class PlexProvider implements MediaProvider {
         const currentPlexIds = await this.getPlexLibraryItemIds(libraryId, libType)
         const itemType = libType === 'show' ? 'episode' : 'movie'
 
-        // Check for deletions (items in DB but not in Plex)
-        const removedCount = await this.removeStaleItems(currentPlexIds, itemType, libraryId)
-        if (removedCount > 0) {
-          console.log(`[PlexProvider ${this.sourceId}] Removed ${removedCount} deleted items`)
-        }
-        result.itemsRemoved = removedCount
-
+        // Reconcile newly discovered items before authorizing deletions.
         // Check for additions (items in Plex but not in DB)
         const dbItems = db.getMediaItems({ type: itemType, sourceId: this.sourceId, libraryId }) as Array<{ plex_id?: string }>
         const dbIds = new Set(dbItems.map((item: typeof dbItems[0]) => item.plex_id).filter(Boolean))
@@ -736,10 +730,22 @@ export class PlexProvider implements MediaProvider {
         if (missingIds.length > 0) {
           console.log(`[PlexProvider ${this.sourceId}] Found ${missingIds.length} items in Plex not in DB, fetching...`)
           // Fetch and process the missing items
-          const addedCount = await this.fetchAndProcessMissingItems(missingIds, libraryId, libType, analyzer, onProgress)
+          const { addedCount, errors } = await this.fetchAndProcessMissingItems(missingIds, libraryId, libType, analyzer, onProgress)
           result.itemsAdded += addedCount
+          result.errors.push(...errors)
           console.log(`[PlexProvider ${this.sourceId}] Added ${addedCount} missing items`)
         }
+
+        if (result.errors.length > 0) {
+          result.durationMs = Date.now() - startTime
+          return result
+        }
+
+        const removedCount = await this.removeStaleItems(currentPlexIds, itemType, libraryId)
+        if (removedCount > 0) {
+          console.log(`[PlexProvider ${this.sourceId}] Removed ${removedCount} deleted items`)
+        }
+        result.itemsRemoved = removedCount
       }
 
       // Update scan time
@@ -857,15 +863,19 @@ export class PlexProvider implements MediaProvider {
     libraryType: 'movie' | 'show',
     analyzer: ReturnType<typeof getQualityAnalyzer>,
     _onProgress?: ProgressCallback
-  ): Promise<number> {
+  ): Promise<{ addedCount: number; errors: string[] }> {
     const db = getDatabase()
     let addedCount = 0
+    const errors: string[] = []
 
     for (const ratingKey of missingIds) {
       try {
         // Fetch the item metadata
         const metadata = await this.getPlexItemMetadata(ratingKey)
-        if (!metadata) continue
+        if (!metadata) {
+          errors.push(`Plex metadata unavailable for ${ratingKey}`)
+          continue
+        }
 
         // Convert and add the item
         const itemType = libraryType === 'show' ? 'episode' : 'movie'
@@ -892,21 +902,23 @@ export class PlexProvider implements MediaProvider {
             mediaItem.id = itemId
             const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
             if (qualityScore) {
-              db.upsertQualityScore(qualityScore)
+              await db.upsertQualityScore(qualityScore)
             }
           } catch (qualityError) {
-            console.warn(`[PlexProvider ${this.sourceId}] Failed to analyze quality for ${mediaItem.title}:`, qualityError)
+            errors.push(`Failed to analyze quality for ${mediaItem.title}: ${getErrorMessage(qualityError)}`)
           }
 
           addedCount++
           console.log(`[PlexProvider ${this.sourceId}] Added missing ${itemType}: "${mediaItem.title}"`)
+        } else {
+          errors.push(`Could not convert Plex metadata for ${ratingKey}`)
         }
       } catch (error) {
-        console.error(`[PlexProvider ${this.sourceId}] Failed to fetch item ${ratingKey}:`, error)
+        errors.push(`Failed to process Plex item ${ratingKey}: ${getErrorMessage(error)}`)
       }
     }
 
-    return addedCount
+    return { addedCount, errors }
   }
 
   // ============================================================================
