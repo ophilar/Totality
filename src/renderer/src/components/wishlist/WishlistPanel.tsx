@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { X, Filter, ArrowUpDown, Film, Tv, Music, Loader2, ListTodo, CircleFadingArrowUp, Download, CheckCircle2, Circle, RefreshCw, Search, Plus, Check, Star } from 'lucide-react'
+import { BarcodeScanner } from '../barcode/BarcodeScanner'
+import { X, Filter, ArrowUpDown, Film, Tv, Music, Loader2, ListTodo, CircleFadingArrowUp, Download, CheckCircle2, Circle, RefreshCw, Search, Plus, Check, Star, ScanBarcode } from 'lucide-react'
 import { useWishlist, WishlistMediaType, WishlistPriority, WishlistReason, WishlistStatus } from '../../contexts/WishlistContext'
 import { useToast } from '../../contexts/ToastContext'
 import { WishlistItemCard } from './WishlistItemCard'
@@ -244,12 +245,14 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
     markCompleted,
     markActive,
     addBulk,
+    addItem,
     exportToCsv
   } = useWishlist()
 
   const [activeCategory, setActiveCategory] = useState<CategoryType>('all')
   const [activeStatus, setActiveStatus] = useState<StatusType>('active')
   const [isExporting, setIsExporting] = useState(false)
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false)
 
   // Sync state
   const [syncingPlex, setSyncingPlex] = useState(false)
@@ -594,6 +597,11 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
 
       {/* Search to add */}
       <WishlistSearch />
+      <div className="px-3 pb-2 border-b border-border/30">
+        <button type="button" onClick={() => setShowBarcodeScanner(true)} className="flex items-center gap-2 text-xs text-primary hover:underline" aria-label="Scan barcode to add wishlist item">
+          <ScanBarcode className="w-4 h-4" /> Scan barcode
+        </button>
+      </div>
 
       {/* Status Tabs (Active / Completed) */}
       {counts.total > 0 && (
@@ -779,6 +787,28 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
         )}
       </div>
     </aside>
+    <BarcodeScanner
+      isOpen={showBarcodeScanner}
+      onClose={() => setShowBarcodeScanner(false)}
+      onAddToWishlist={async result => {
+        try {
+          await addItem({
+            media_type: result.type === 'tv' ? 'season' : result.type === 'album' ? 'album' : 'movie',
+            title: result.title,
+            year: result.year,
+            tmdb_id: result.tmdb_id ? String(result.tmdb_id) : undefined,
+            musicbrainz_id: result.musicbrainz_id,
+            artist_name: result.artist_name,
+            poster_url: result.poster_url,
+            priority: 3,
+            reason: 'missing' as WishlistReason,
+            status: 'active' as WishlistStatus,
+          })
+        } catch (error) {
+          addToast({ type: 'error', title: 'Could not add barcode item', message: error instanceof Error ? error.message : String(error) })
+        }
+      }}
+    />
     </>
   )
 }
