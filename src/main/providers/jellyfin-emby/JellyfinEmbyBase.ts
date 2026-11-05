@@ -750,8 +750,12 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
       // Get library info to determine type
       const libraries = await this.getLibraries()
       const library = libraries.find(l => l.id === libraryId)
-      const libraryType = library?.type || 'movie'
-      const isBoxsets = library?.collectionType === 'boxsets'
+      if (!library) throw new Error(`Library ${libraryId} not found on ${this.providerType} server`)
+      const libraryType = library.type
+      if (libraryType !== 'movie' && libraryType !== 'show') {
+        throw new Error(`Cannot scan ${this.providerType} library ${libraryId} with type ${libraryType} as video`)
+      }
+      const isBoxsets = library.collectionType === 'boxsets'
 
       // Get all items in library
       const allItems: JellyfinMediaItem[] = []
@@ -786,11 +790,15 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
             }),
             { headers: this.getAuthHeaders() }
           )
+          if (boxsetResponse.TotalRecordCount == null) throw new Error(`Missing ${this.providerType} BoxSet inventory count`)
           boxsets.push(...boxsetResponse.Items)
+          if (boxsetResponse.Items.length === 0 && boxsets.length < boxsetResponse.TotalRecordCount) {
+            throw new Error(`Incomplete ${this.providerType} BoxSet inventory: ${boxsets.length} of ${boxsetResponse.TotalRecordCount} received`)
+          }
           if (boxsets.length >= boxsetResponse.TotalRecordCount || boxsetResponse.Items.length === 0) {
             hasMoreBoxsets = false
           } else {
-            boxsetOffset += batchSize
+            boxsetOffset += boxsetResponse.Items.length
           }
         }
 
@@ -798,23 +806,34 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
         // Phase 2: For each BoxSet, fetch its child movies
         for (const boxset of boxsets) {
-          const movieResponse = await fetchJSON<{ Items: JellyfinMediaItem[]; TotalRecordCount: number }>(
-            buildUrl(`${this.serverUrl}/Items`, {
-              ParentId: boxset.Id,
-              Recursive: true,
-              IncludeItemTypes: 'Movie',
-              Fields: fieldsParam,
-              EnableImageTypes: 'Primary,Thumb,Screenshot,Banner,Backdrop',
-              EnableTotalRecordCount: true,
-              StartIndex: 0,
-              Limit: 1000,
-            }),
-            { headers: this.getAuthHeaders() }
-          )
-          allItems.push(...movieResponse.Items)
+          const movieItems: JellyfinMediaItem[] = []
+          let movieOffset = 0
+          while (true) {
+            const movieResponse = await fetchJSON<{ Items: JellyfinMediaItem[]; TotalRecordCount: number }>(
+              buildUrl(`${this.serverUrl}/Items`, {
+                ParentId: boxset.Id,
+                Recursive: true,
+                IncludeItemTypes: 'Movie',
+                Fields: fieldsParam,
+                EnableImageTypes: 'Primary,Thumb,Screenshot,Banner,Backdrop',
+                EnableTotalRecordCount: true,
+                StartIndex: movieOffset,
+                Limit: 1000,
+              }),
+              { headers: this.getAuthHeaders() }
+            )
+            if (movieResponse.TotalRecordCount == null) throw new Error(`Missing ${this.providerType} collection movie count`)
+            movieItems.push(...movieResponse.Items)
+            if (movieItems.length >= movieResponse.TotalRecordCount) break
+            if (movieResponse.Items.length === 0) {
+              throw new Error(`Incomplete ${this.providerType} collection ${boxset.Id}: ${movieItems.length} of ${movieResponse.TotalRecordCount} movies received`)
+            }
+            movieOffset += movieResponse.Items.length
+          }
+          allItems.push(...movieItems)
 
           // Create a collection entry for this BoxSet
-          const ownedTmdbIds = movieResponse.Items
+          const ownedTmdbIds = movieItems
             .map(m => m.ProviderIds?.Tmdb)
             .filter(Boolean) as string[]
 
@@ -826,8 +845,8 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
               : undefined
 
             // Fallback: use first child movie's poster if BoxSet has no poster
-            const firstMoviePosterUrl = movieResponse.Items[0]?.ImageTags?.Primary
-              ? this.buildImageUrl(movieResponse.Items[0].Id, 'Primary', movieResponse.Items[0].ImageTags.Primary)
+            const firstMoviePosterUrl = movieItems[0]?.ImageTags?.Primary
+              ? this.buildImageUrl(movieItems[0].Id, 'Primary', movieItems[0].ImageTags.Primary)
               : undefined
 
             let totalMovies = ownedTmdbIds.length
@@ -925,12 +944,16 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
             { headers: this.getAuthHeaders() }
           )
 
+          if (response.TotalRecordCount == null) throw new Error(`Missing ${this.providerType} library inventory count`)
           allItems.push(...response.Items)
+          if (response.Items.length === 0 && allItems.length < response.TotalRecordCount) {
+            throw new Error(`Incomplete ${this.providerType} library inventory: ${allItems.length} of ${response.TotalRecordCount} received`)
+          }
 
           if (allItems.length >= response.TotalRecordCount || response.Items.length === 0) {
             hasMoreItems = false
           } else {
-            offset += batchSize
+            offset += response.Items.length
           }
         }
       }
@@ -1034,12 +1057,11 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
             for (const item of group) {
               if (!item.MediaSources || item.MediaSources.length === 0) {
-                console.warn(`[${this.providerType}Provider ${this.sourceId}] Skipping ${item.Name}: no media sources`)
-                continue
+                throw new Error(`No media sources returned for ${item.Name} (${item.Id})`)
               }
 
               const converted = await this.convertToMediaItem(item)
-              if (!converted) continue
+              if (!converted) throw new Error(`Cannot convert media metadata for ${item.Name} (${item.Id})`)
 
               if (!canonicalItem) {
                 canonicalItem = converted.mediaItem
@@ -1129,6 +1151,12 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         await db.endBatch()
       }
 
+      // A failed item cannot authorize destructive reconciliation or a successful scan timestamp.
+      if (result.errors.length > 0 || result.cancelled) {
+        result.durationMs = Date.now() - startTime
+        return result
+      }
+
       // Remove stale items
       if (!isIncremental) {
         // Full scan: reconcile against all scanned IDs
@@ -1137,7 +1165,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
         // Safety guard: refuse deletion when API returned 0 IDs but DB has items
         if (scannedProviderIds.size === 0 && items.length > 0) {
-          console.warn(`[${this.providerType}Provider ${this.sourceId}] API returned 0 IDs but DB has ${items.length} — skipping deletion (possible API failure)`)
+          throw new Error(`Incomplete ${this.providerType} inventory: server returned no items while ${items.length} are stored`)
         } else if (scannedProviderIds.size > 0) {
           for (const item of items) {
             if (!scannedProviderIds.has(item.plex_id)) {
@@ -1156,6 +1184,9 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
           const serverCount = await this.getLibraryItemCount(libraryId, libraryType)
           const dbCount = db.countMediaItems({ type: itemType, sourceId: this.sourceId, libraryId, includeDisabledLibraries: true })
 
+          if (serverCount === 0 && dbCount > 0) {
+            throw new Error(`Incomplete ${this.providerType} inventory: server reported no items while ${dbCount} are stored`)
+          }
           if (serverCount > 0 && serverCount < dbCount) {
             console.log(`[${this.providerType}Provider ${this.sourceId}] Server has ${serverCount} items but DB has ${dbCount} — reconciling deletions`)
 
@@ -1163,29 +1194,35 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
             const serverIds = await this.getAllLibraryItemIds(libraryId, libraryType)
             const items = db.getMediaItems({ type: itemType, sourceId: this.sourceId, libraryId })
 
-            if (serverIds.size > 0) {
-              for (const item of items) {
-                if (!serverIds.has(item.plex_id)) {
-                  if (item.id) {
-                    await db.deleteMediaItem(item.id)
-                    result.itemsRemoved++
-                  }
+            if (serverIds.size === 0) {
+              throw new Error(`Incomplete ${this.providerType} deletion inventory: server reported ${serverCount} items but returned no IDs`)
+            }
+            for (const item of items) {
+              if (!serverIds.has(item.plex_id)) {
+                if (item.id) {
+                  await db.deleteMediaItem(item.id)
+                  result.itemsRemoved++
                 }
               }
-              if (result.itemsRemoved > 0) {
-                console.log(`[${this.providerType}Provider ${this.sourceId}] Removed ${result.itemsRemoved} deleted items during incremental scan`)
-              }
+            }
+            if (result.itemsRemoved > 0) {
+              console.log(`[${this.providerType}Provider ${this.sourceId}] Removed ${result.itemsRemoved} deleted items during incremental scan`)
             }
           }
         } catch (err) {
-          console.warn(`[${this.providerType}Provider ${this.sourceId}] Incremental deletion check failed:`, err)
+          result.errors.push(`Incremental ${this.providerType} deletion reconciliation failed: ${getErrorMessage(err)}`)
         }
+      }
+
+      if (result.errors.length > 0) {
+        result.durationMs = Date.now() - startTime
+        return result
       }
 
       // Update scan time
       await db.updateSourceScanTime(this.sourceId)
 
-      result.success = true
+      result.success = result.errors.length === 0
       result.durationMs = Date.now() - startTime
 
       console.log(`[${this.providerType}Provider ${this.sourceId}] Scan complete: ${result.itemsScanned} scanned, ${result.itemsAdded} added, ${result.itemsRemoved} removed, ${result.errors.length} errors (${(result.durationMs / 1000).toFixed(1)}s)`)
@@ -1217,7 +1254,8 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
       }),
       { headers: this.getAuthHeaders() }
     )
-    return response.TotalRecordCount || 0
+    if (response.TotalRecordCount === undefined) throw new Error(`Missing ${this.providerType} library count`)
+    return response.TotalRecordCount
   }
 
   /**
@@ -1243,10 +1281,14 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         { headers: this.getAuthHeaders() }
       )
 
+      if (response.TotalRecordCount == null) throw new Error(`Missing ${this.providerType} deletion inventory count`)
       for (const item of response.Items) {
         ids.add(item.Id)
       }
 
+      if (response.Items.length === 0 && ids.size < response.TotalRecordCount) {
+        throw new Error(`Incomplete ${this.providerType} deletion inventory: ${ids.size} of ${response.TotalRecordCount} IDs received`)
+      }
       if (ids.size >= response.TotalRecordCount || response.Items.length === 0) {
         hasMore = false
       } else {
@@ -2039,9 +2081,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
       const db = getDatabase()
 
       // Track scanned IDs for cleanup
-      const scannedArtistIds = new Set<string>()
       const scannedAlbumIds = new Set<string>()
-      const scannedTrackIds = new Set<string>()
 
       // Helper to process an album
       const processAlbum = async (
@@ -2096,7 +2136,6 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         for (const trackData of trackDataList) {
           trackData.album_id = albumId
           await db.upsertMusicTrack(trackData)
-          scannedTrackIds.add(trackData.provider_id)
           result.itemsScanned++
         }
 
@@ -2125,7 +2164,6 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
           // Upsert artist
           const artistId = await db.upsertMusicArtist(artistData)
-          scannedArtistIds.add(jellyfinArtist.Id)
 
           // Get all albums for this artist
           const albums = await this.getMusicAlbums(libraryId, jellyfinArtist.Id)
@@ -2196,7 +2234,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         }
       }
 
-      result.success = true
+      result.success = result.errors.length === 0
       result.durationMs = Date.now() - startTime
 
       console.log(`[${this.providerType}Provider ${this.sourceId}] Music scan complete: ${result.itemsScanned} tracks scanned in ${result.durationMs}ms`)
