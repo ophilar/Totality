@@ -15,7 +15,7 @@ import { PathUtils } from '@main/services/utils/PathUtils'
 import { GpuDetector, type GpuInfo } from '@main/services/utils/GpuDetector'
 import { TranscodeCommandFactory } from './transcoding/TranscodeCommandFactory'
 import { validateHdrTranscode } from './transcoding/HdrTranscodingPolicy'
-import { buildTranscodingCapabilities, getHardwareEncoder, TranscodingCapabilities } from './TranscodingCapabilities'
+import { buildTranscodingCapabilities, ENCODER_PROBES, getHardwareEncoder, TranscodingCapabilities } from './TranscodingCapabilities'
 import type { FileAnalysisResult } from './MediaFileAnalyzer'
 import type { StreamSelectionPolicy } from './transcoding/StreamSelectionPlan'
 import { buildStreamSelectionPlan, getPlannedAudioStreams, type PlannedAudioStream } from './transcoding/StreamSelectionPlan'
@@ -1953,40 +1953,15 @@ export class TranscodingService {
       deviceEncoders: { software: [], ...Object.fromEntries(gpus.map(gpu => [gpu.id, []])) },
       failures: [`FFmpeg encoder probe exited with code ${encoderListing.code}: ${encoderListing.output}`]
     }
-    const ffmpegNames = [...encoderListing.output.matchAll(/^\s*[A-Z.]+\s+(\S+)/gm)].map(match => match[1])
-    const aliases: Record<string, string> = {
-      hevc_nvenc: 'nvenc_h265',
-      av1_nvenc: 'nvenc_av1',
-      h264_nvenc: 'nvenc_h264',
-      hevc_qsv: 'qsv_h265',
-      av1_qsv: 'qsv_av1',
-      h264_qsv: 'qsv_h264',
-      hevc_amf: 'hevc_amf',
-      av1_amf: 'av1_amf',
-      h264_amf: 'h264_amf',
-      hevc_videotoolbox: 'vt_h265',
-      h264_videotoolbox: 'vt_h264',
-      libx265: 'x265',
-      libsvtav1: 'svt_av1',
-      libx264: 'libx264'
-    }
-    const encoderNames = ffmpegNames.map(name => aliases[name] || name)
-    getLoggingService().debug('[TranscodingService]', `FFmpeg encoder verification completed: ${encoderNames.length} encoders found`)
-    const encodersToProbe: Record<string, { vendor?: GpuInfo['vendor']; codec: string; arguments?: string[] }> = {
-      nvenc_h265: { vendor: 'NVIDIA', codec: 'hevc_nvenc' }, nvenc_av1: { vendor: 'NVIDIA', codec: 'av1_nvenc' }, nvenc_h264: { vendor: 'NVIDIA', codec: 'h264_nvenc' },
-      qsv_h265: { vendor: 'Intel', codec: 'hevc_qsv' }, qsv_av1: { vendor: 'Intel', codec: 'av1_qsv' }, qsv_h264: { vendor: 'Intel', codec: 'h264_qsv' },
-      hevc_amf: { vendor: 'AMD', codec: 'hevc_amf' }, av1_amf: { vendor: 'AMD', codec: 'av1_amf' }, h264_amf: { vendor: 'AMD', codec: 'h264_amf' },
-      vt_h265: { vendor: 'Apple', codec: 'hevc_videotoolbox', arguments: ['-allow_sw', '0'] }, vt_h264: { vendor: 'Apple', codec: 'h264_videotoolbox', arguments: ['-allow_sw', '0'] },
-      x265: { codec: 'libx265' }, svt_av1: { codec: 'libsvtav1' }, libx264: { codec: 'libx264' }
-    }
+    const ffmpegNames = new Set([...encoderListing.output.matchAll(/^\\s*[A-Z.]+\\s+(\\S+)/gm)].map(match => match[1]))
+    getLoggingService().debug('[TranscodingService]', `FFmpeg encoder verification completed: ${ffmpegNames.size} encoders found`)
     const deviceEncoders: Record<string, string[]> = {}
     const failures: string[] = []
     const softwareEncoders: string[] = []
-    for (const encoder of encoderNames) {
-      const device = encodersToProbe[encoder]
-      if (!device || device.vendor) continue
+    for (const [encoder, device] of Object.entries(ENCODER_PROBES)) {
+      if (device.vendor || !ffmpegNames.has(device.ffmpegName)) continue
       try {
-        const result = await this.runCapabilityProcess(ffmpegPath, ['-v', 'error', '-f', 'lavfi', '-i', `testsrc2=size=${APP_CONFIG.transcoding.encoderProbeWidth}x${APP_CONFIG.transcoding.encoderProbeHeight}`, '-frames:v', '1', '-c:v', device.codec, ...(device.arguments ?? []), '-f', 'null', '-'], 30000)
+        const result = await this.runCapabilityProcess(ffmpegPath, ['-v', 'error', '-f', 'lavfi', '-i', `testsrc2=size=${APP_CONFIG.transcoding.encoderProbeWidth}x${APP_CONFIG.transcoding.encoderProbeHeight}`, '-frames:v', '1', '-c:v', device.ffmpegName, ...(device.arguments ?? []), '-f', 'null', '-'], 30000)
         if (result.code !== 0) throw new Error(result.output || `FFmpeg exited with code ${result.code}`)
         softwareEncoders.push(encoder)
       } catch (error) {
@@ -2003,14 +1978,13 @@ export class TranscodingService {
         deviceEncoders[gpu.id] = []
         continue
       }
-      for (const encoder of encoderNames) {
-        const device = encodersToProbe[encoder]
-        if (!device || device.vendor !== gpu.vendor) continue
+      for (const [encoder, device] of Object.entries(ENCODER_PROBES)) {
+        if (device.vendor !== gpu.vendor || !ffmpegNames.has(device.ffmpegName)) continue
         try {
           const result = await this.runCapabilityProcess(ffmpegPath, [
             '-v', 'error', ...encoderInitializationArgs,
             '-f', 'lavfi', '-i', `testsrc2=size=${APP_CONFIG.transcoding.encoderProbeWidth}x${APP_CONFIG.transcoding.encoderProbeHeight}`,
-            '-frames:v', '1', '-c:v', device.codec,
+            '-frames:v', '1', '-c:v', device.ffmpegName,
             ...(process.platform === 'linux' && gpu.vendor === 'NVIDIA' ? ['-gpu', String(gpu.encoderDeviceSelector?.kind === 'nvenc' ? gpu.encoderDeviceSelector.index : ''), '-vf', 'format=nv12'] : ['-vf', 'format=nv12,hwupload']),
             ...(device.arguments ?? []), '-f', 'null', '-'
           ], 30000)
