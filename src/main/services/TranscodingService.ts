@@ -1953,7 +1953,7 @@ export class TranscodingService {
       deviceEncoders: { software: [], ...Object.fromEntries(gpus.map(gpu => [gpu.id, []])) },
       failures: [`FFmpeg encoder probe exited with code ${encoderListing.code}: ${encoderListing.output}`]
     }
-    const ffmpegNames = new Set([...encoderListing.output.matchAll(/^\\s*[A-Z.]+\\s+(\\S+)/gm)].map(match => match[1]))
+    const ffmpegNames = new Set([...encoderListing.output.matchAll(/^\s*[A-Z.]+\s+(\S+)/gm)].map(match => match[1]))
     getLoggingService().debug('[TranscodingService]', `FFmpeg encoder verification completed: ${ffmpegNames.size} encoders found`)
     const deviceEncoders: Record<string, string[]> = {}
     const failures: string[] = []
