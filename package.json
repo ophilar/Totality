@@ -87,5 +87,11 @@
     "vite-plugin-electron": "^0.29.1",
     "vite-plugin-electron-renderer": "^0.14.5",
     "vitest": "^4.0.18"
+  },
+  "overrides": {
+    "gaxios": {
+      "glob": "^14.0.3",
+      "minimatch": "^11.0.4"
+    }
   }
 }
