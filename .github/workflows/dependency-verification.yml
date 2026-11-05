@@ -30,7 +30,23 @@ concurrency:
 
 jobs:
   verify:
-    name: Test (${{ matrix.os }})
+    name: Fast validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run test:run
+      - run: npx tsc --noEmit
+
+  certify:
+    name: Release certification (${{ matrix.os }})
+    if: github.event_name != 'pull_request'
+    needs: verify
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -44,13 +60,9 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npm run test:run
       - name: Audit production dependencies
         if: runner.os == 'Linux'
         run: npm audit --omit=dev --audit-level=moderate
-      - name: Typecheck
-        if: runner.os == 'Linux'
-        run: npx tsc --noEmit
       - name: Build application
         run: npx vite build
       - name: Check out upstream 0.4.2 schema
