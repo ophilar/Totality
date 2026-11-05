@@ -711,7 +711,8 @@ export class PlexProvider implements MediaProvider {
       } else if (isIncremental) {
         // Incremental scan: fetch all current IDs from Plex to detect changes
         const libType = libraryType || await this.getPlexLibraryType(libraryId)
-        if (libType) {
+        if (!libType) throw new Error(`Could not determine Plex library type for ${libraryId}`)
+        {
           console.log(`[PlexProvider ${this.sourceId}] Checking for changes in ${libType} library...`)
           const currentPlexIds = await this.getPlexLibraryItemIds(libraryId, libType)
           const itemType = libType === 'show' ? 'episode' : 'movie'
@@ -836,7 +837,10 @@ export class PlexProvider implements MediaProvider {
       const CONCURRENCY = 8
       for (let start = 0; start < items.length; start += CONCURRENCY) {
         const groups = await Promise.all(items.slice(start, start + CONCURRENCY).map(item => this.getAllEpisodes(item.ratingKey)))
-        for (const episodes of groups) for (const ep of episodes) ids.add(ep.ratingKey)
+        for (const episodes of groups) {
+          if (episodes.length === 0) throw new Error('Incomplete Plex episode inventory: a show returned no episodes')
+          for (const episode of episodes) ids.add(episode.ratingKey)
+        }
       }
     } else {
       for (const item of items) ids.add(item.ratingKey)
@@ -943,10 +947,14 @@ export class PlexProvider implements MediaProvider {
       )
 
       const container = responseData?.MediaContainer
-      const items = container?.Metadata || []
+      if (!container) throw new Error('Plex inventory response has no MediaContainer')
+      const items = container.Metadata ?? []
       allItems.push(...items)
 
-      const totalSize = container?.totalSize
+      const totalSize = container.totalSize
+      if (totalSize != null && items.length === 0 && allItems.length < totalSize) {
+        throw new Error(`Incomplete Plex inventory: received ${allItems.length} of ${totalSize} items`)
+      }
       if (items.length === 0 || (totalSize != null && allItems.length >= totalSize)) {
         hasMore = false
       } else {
