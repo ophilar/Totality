@@ -17,7 +17,8 @@ jobs:
       - name: Patch the lockfile using npm security advisories
         shell: bash
         run: |
-          npm audit fix --package-lock-only
+          npm install --package-lock-only --ignore-scripts
+          npm audit --omit=dev --audit-level=moderate
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           if ! git diff --quiet -- package-lock.json; then
