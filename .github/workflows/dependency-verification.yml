@@ -16,6 +16,8 @@ on:
       - 'vitest.config.ts'
       - 'tsconfig*.json'
       - 'electron-builder.yml'
+  push:
+    branches: [fixes]
   workflow_dispatch:
 
 permissions:
