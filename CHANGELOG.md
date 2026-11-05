@@ -2,31 +2,6 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-### [0.4.4](https://github.com/bbidwell85/Totality/compare/v0.4.3...v0.4.4) (2026-11-05)
-
-
-### Features
-
-* barcode scanner for mobile wishlist + client log forwarding ([2ce67a7](https://github.com/bbidwell85/Totality/commit/2ce67a7a0a62eaa52784ef874480c8b118e5dfff))
-* mobile web audit fixes, scan UI, deep linking, search navigation ([e158b92](https://github.com/bbidwell85/Totality/commit/e158b920558e0791e9a1a02263e14ca5215c616c))
-
-
-### Bug Fixes
-
-* comprehensive audit — security, quality scoring, resilience ([57b3441](https://github.com/bbidwell85/Totality/commit/57b344131a1c7fed5a19ba19a4aa1e57a057c8f4))
-* mobile web polish, session persistence, shared server filtering ([65716d5](https://github.com/bbidwell85/Totality/commit/65716d5f8ea41d241b7940d2f705aaa2245b2e55))
-* scan detection, resolution classification, monitoring optimization ([e3501b3](https://github.com/bbidwell85/Totality/commit/e3501b373ae25093a6955d65d5b88954d133175d))
-* scan reconciliation efficiency and detection gaps ([5f184be](https://github.com/bbidwell85/Totality/commit/5f184bef508e94d85549abff345727a81b854699))
-
-### [0.4.3](https://github.com/bbidwell85/Totality/compare/v0.4.2...v0.4.3) (2026-11-01)
-
-
-### Bug Fixes
-
-* alphabet filter incorrectly applied to album list in artist detail ([66b6b04](https://github.com/bbidwell85/Totality/commit/66b6b048f6b0725d0d6baf85350fb3df13984152))
-* cap music completeness percentage at 100% ([69b1d20](https://github.com/bbidwell85/Totality/commit/69b1d20d3832b58f360d7949e7d3605cdecd5f88))
-* search, logging, UI polish — multiple improvements ([7e89506](https://github.com/bbidwell85/Totality/commit/7e89506e17d978983cd20f02f828b637eea11e0f))
-
 ### [0.4.2](https://github.com/bbidwell85/Totality/compare/v0.4.1...v0.4.2) (2026-10-31)
 
 

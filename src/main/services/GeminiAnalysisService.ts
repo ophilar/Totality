@@ -1,3 +1,4 @@
+
 import { getDatabase } from '../database/getDatabase'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { getGeminiService } from './GeminiService'
@@ -13,7 +14,7 @@ import {
 } from './ai-system-prompts'
 
 /** Strip null/undefined/empty fields to reduce token usage */
-function compact(obj: Record<string, unknown>): Record<string, unknown> {
+function compact<T extends object>(obj: T): Record<string, unknown> {
   const result: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(obj)) {
     if (v !== null && v !== undefined && v !== '') result[k] = v
@@ -61,9 +62,7 @@ export class GeminiAnalysisService {
           type: item.type,
           resolution: item.resolution,
           video_codec: item.video_codec,
-          video_bitrate: item.video_bitrate,
-          quality_tier: item.quality_tier,
-          tier_quality: item.tier_quality,
+          video_bitrate_kbps: item.video_bitrate_kbps,
         })),
       ),
     ].join('\n')
@@ -114,31 +113,27 @@ export class GeminiAnalysisService {
       '',
       '## LOW Quality Items (up to 30)',
       JSON.stringify(
-        lowItems.map((item: Record<string, unknown>) => compact({
+        lowItems.map((item) => compact({
           title: item.title,
           year: item.year,
           type: item.type,
           series_title: item.series_title,
           resolution: item.resolution,
           video_codec: item.video_codec,
-          video_bitrate: item.video_bitrate,
-          quality_tier: item.quality_tier,
-          tier_quality: item.tier_quality,
+          video_bitrate_kbps: item.video_bitrate_kbps,
         })),
       ),
       '',
       '## MEDIUM Quality Items (up to 20)',
       JSON.stringify(
-        mediumItems.map((item: Record<string, unknown>) => compact({
+        mediumItems.map((item) => compact({
           title: item.title,
           year: item.year,
           type: item.type,
           series_title: item.series_title,
           resolution: item.resolution,
           video_codec: item.video_codec,
-          video_bitrate: item.video_bitrate,
-          quality_tier: item.quality_tier,
-          tier_quality: item.tier_quality,
+          video_bitrate_kbps: item.video_bitrate_kbps,
         })),
       ),
     ].join('\n')

@@ -21,7 +21,7 @@ const FOCUSABLE_SELECTOR = [
  */
 export function useFocusTrap(
   isActive: boolean,
-  containerRef: RefObject<HTMLElement>,
+  containerRef: RefObject<HTMLElement | null>,
   autoFocusFirst: boolean = true
 ) {
   const previousActiveElement = useRef<HTMLElement | null>(null)
@@ -47,12 +47,8 @@ export function useFocusTrap(
     // Auto-focus first element if requested
     if (autoFocusFirst) {
       const focusableElements = getFocusableElements()
-      if (focusableElements.length > 0) {
-        // Small delay to ensure the container is fully rendered
-        setTimeout(() => {
-          focusableElements[0].focus()
-        }, 0)
-      }
+      const initialFocus = focusableElements.find(el => el.hasAttribute('autofocus')) ?? focusableElements[0] ?? container
+      initialFocus.focus()
     }
 
     // Handle Tab key to trap focus

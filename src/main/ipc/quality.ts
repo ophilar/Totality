@@ -1,9 +1,9 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
 import { getQualityAnalyzer } from '../services/QualityAnalyzer'
+import { getTaskQueueService } from '../services/TaskQueueService'
 import { getDatabase } from '../database/getDatabase'
-import { validateInput, PositiveIntSchema } from '../validation/schemas'
-import { safeSend } from './utils/safeSend'
-import { getWishlistCompletionService } from '../services/WishlistCompletionService'
+import { PositiveIntSchema } from '../validation/schemas'
+import { createIpcHandler, createValidatedIpcHandler } from './utils/createHandler'
 
 /**
  * Register all quality analysis IPC handlers
@@ -15,69 +15,27 @@ export function registerQualityHandlers() {
   // QUALITY ANALYSIS
   // ============================================================================
 
-  ipcMain.handle('quality:analyzeAll', async (event) => {
-    try {
-      const win = BrowserWindow.fromWebContents(event.sender)
-
-      await analyzer.loadThresholdsFromDatabase()
-
-      let lastUpdateTime = 0
-      const UPDATE_INTERVAL = 2000 // Send library:updated every 2 seconds during analysis
-
-      const count = await analyzer.analyzeAllMediaItems((current, total) => {
-        // Send progress updates to renderer
-        safeSend(win,'quality:analysisProgress', { current, total })
-
-        // Send periodic library:updated events for live refresh
-        const now = Date.now()
-        if (now - lastUpdateTime >= UPDATE_INTERVAL) {
-          safeSend(win,'library:updated', { type: 'media' })
-          lastUpdateTime = now
-        }
-      })
-
-      // Send final update when analysis completes
-      safeSend(win,'library:updated', { type: 'media' })
-
-      // Check wishlist for auto-completion
-      getWishlistCompletionService().checkAndComplete().catch((err) => {
-        console.error('[quality:analyzeAll] Wishlist check failed:', err)
-      })
-
-      return count
-    } catch (error) {
-      console.error('Error analyzing all media items:', error)
-      throw error
-    }
+  createIpcHandler(IPC_CHANNELS.qualityAnalyzeAll, async () => {
+    const queue = getTaskQueueService()
+    const taskId = queue.addTask({ type: 'quality-analysis', label: 'Refresh media quality' })
+    const task = await queue.waitForTask(taskId)
+    if (task.status !== 'completed') throw new Error(task.error ?? `Quality refresh ${task.status}`)
+    return task.result!.itemsScanned!
   })
 
-  ipcMain.handle('quality:getDistribution', async () => {
-    try {
-      return analyzer.getQualityDistribution()
-    } catch (error) {
-      console.error('Error getting quality distribution:', error)
-      throw error
-    }
+  createIpcHandler(IPC_CHANNELS.qualityGetDistribution, async () => {
+    return analyzer.getQualityDistribution()
   })
 
-  ipcMain.handle('quality:getRecommendedFormat', async (_event, mediaItemId: unknown) => {
-    try {
-      const validMediaItemId = validateInput(PositiveIntSchema, mediaItemId, 'quality:getRecommendedFormat')
-      const db = getDatabase()
-      const mediaItem = db.getMediaItemById(validMediaItemId)
+  createValidatedIpcHandler(IPC_CHANNELS.qualityGetRecommendedFormat, PositiveIntSchema, async mediaItemId => {
+    const db = getDatabase()
+    const mediaItem = db.getMediaItemById(mediaItemId)
 
-      if (!mediaItem) {
-        throw new Error('Media item not found')
-      }
-
-      const qualityScore = db.getQualityScoreByMediaId(validMediaItemId)
-      const currentScore = qualityScore?.overall_score || 0
-
-      return analyzer.getRecommendedFormat(mediaItem, currentScore)
-    } catch (error) {
-      console.error('Error getting recommended format:', error)
-      throw error
+    if (!mediaItem) {
+      throw new Error('Media item not found')
     }
+
+    return analyzer.getRecommendedFormat(mediaItem)
   })
 
   console.log('Quality analysis IPC handlers registered')

@@ -1,4 +1,4 @@
-import { TIMELINE_CHANNELS } from '../../shared/timelineChannels'
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
 import { app } from 'electron'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
@@ -16,6 +16,7 @@ import { TimelineRecipeProviderFactory } from '../services/timelines/TimelineRec
 import { TimelineResolutionEngine, type ResolvedTimelineResult } from '../services/timelines/TimelineResolutionEngine'
 import { PlexPlaylistCleanupError, PlexPlaylistSyncService } from '../services/timelines/PlexPlaylistSyncService'
 import { getErrorMessage } from '../services/utils/errorUtils'
+import { getLoggingService } from '../services/LoggingService'
 import type { ITimelineRecipeProvider } from '../services/timelines/ITimelineRecipeProvider'
 import { operationRequestRegistry } from './utils/OperationRequestRegistry'
 import { createIpcHandler, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from './utils/createHandler'
@@ -33,18 +34,17 @@ const provider = new TimelineRecipeProviderFactory([
 const playlistSync = new PlexPlaylistSyncService()
 const snapshotKey = (id: string) => `timeline_snapshot:${id}`
 export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvider = provider): void {
-  createValidatedIpcHandlerWithEvent(TIMELINE_CHANNELS.timelinesCancel, z.string().min(1).max(100), async (event, requestId) => operationRequestRegistry.cancel(event.sender.id, requestId))
-  createIpcHandler(TIMELINE_CHANNELS.timelinesListRecipes, async () => timelineProvider.listAvailableRecipes())
-  createIpcHandler(TIMELINE_CHANNELS.timelinesListParserPlugins, async () => parserProvider.listPlugins())
-  createIpcHandler(TIMELINE_CHANNELS.timelinesSaveParserPlugin, async (input: unknown) => parserProvider.savePlugin(input))
-  createValidatedIpcHandler(TIMELINE_CHANNELS.timelinesRemoveParserPlugin, z.string().min(1), async id => parserProvider.removePlugin(id))
+  createIpcHandler(IPC_CHANNELS.timelinesListRecipes, async () => timelineProvider.listAvailableRecipes())
+  createIpcHandler(IPC_CHANNELS.timelinesListParserPlugins, async () => parserProvider.listPlugins())
+  createIpcHandler(IPC_CHANNELS.timelinesSaveParserPlugin, async (input: unknown) => parserProvider.savePlugin(input))
+  createValidatedIpcHandler(IPC_CHANNELS.timelinesRemoveParserPlugin, z.string().min(1), async id => parserProvider.removePlugin(id))
   createValidatedIpcHandler(
-    TIMELINE_CHANNELS.timelinesGetRecipe,
+    IPC_CHANNELS.timelinesGetRecipe,
     z.tuple([z.string().min(1), z.object({ refresh: z.boolean().optional() }).optional()]),
     async (id, options) => timelineProvider.fetchTimeline(id, options)
   )
   createValidatedIpcHandlerWithEvent(
-    TIMELINE_CHANNELS.timelinesResolveTimeline,
+    IPC_CHANNELS.timelinesResolveTimeline,
     z.tuple([z.string().min(1), z.string().optional(), z.object({ refresh: z.boolean().optional(), snapshotId: z.string().min(1).optional() }).optional(), z.string().min(1).max(100), z.boolean()]),
     async (event, recipeId, sourceId, options, requestId, showInActivity) => {
     let stage = 'checking cancellation'
@@ -92,7 +92,7 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
         return { cancelled: true as const }
       }
       const message = getErrorMessage(error)
-      console.error(
+      getLoggingService().error(
         '[Timelines]',
         `Timeline resolution failed: stage=${stage}, recipe=${recipeId}, source=${sourceId ?? 'all'}, request=${requestId}: ${message}`,
         error
@@ -103,7 +103,7 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
       operation.dispose()
     }
   })
-  createValidatedIpcHandler(TIMELINE_CHANNELS.timelinesGetPlexPlaylists, z.string().min(1), async id => {
+  createValidatedIpcHandler(IPC_CHANNELS.timelinesGetPlexPlaylists, z.string().min(1), async id => {
     const plex = getSourceManager().getProvider(id)
     if (!(plex instanceof PlexProvider)) throw new Error(`Source '${id}' is not a connected Plex source.`)
     const server = plex.getSelectedServer()
@@ -111,7 +111,7 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
     return playlistSync.getExistingPlaylists(server.uri, server.accessToken)
   })
   createValidatedIpcHandlerWithEvent(
-    TIMELINE_CHANNELS.timelinesSyncPlexPlaylist,
+    IPC_CHANNELS.timelinesSyncPlexPlaylist,
     z.tuple([z.object({ sourceId: z.string().min(1), recipeId: z.string().min(1), playlistTitle: z.string().min(1), snapshotId: z.string().min(1), playlistRatingKey: z.string().optional(), allowStale: z.boolean().optional() }), z.string().min(1).max(100)]),
     async (event, input, requestId) => {
     const operation = operationRequestRegistry.register(event.sender, requestId, {

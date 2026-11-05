@@ -14,7 +14,7 @@
 import { getErrorMessage } from '../../services/utils/errorUtils'
 import type { Database } from 'sql.js'
 import * as fs from 'fs'
-import * as path from 'path'
+import * as path from 'node:path'
 import { app } from 'electron'
 import { getDatabase } from '../../database/getDatabase'
 import { getMediaFileAnalyzer } from '../../services/MediaFileAnalyzer'
@@ -60,15 +60,6 @@ import {
   calculateAlbumStats,
   guessCodecFromExtension,
 } from '../base/MusicScannerUtils'
-
-const VIDEO_EXTENSIONS = new Set([
-  '.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.ts', '.mpg', '.mpeg', '.3gp', '.vob',
-])
-
-function isVideoExtension(filePath: string): boolean {
-  const ext = path.extname(filePath).toLowerCase()
-  return VIDEO_EXTENSIONS.has(ext)
-}
 
 export class MediaMonkeyProvider implements MediaProvider {
   readonly providerType: ProviderType = 'mediamonkey'
@@ -337,9 +328,6 @@ export class MediaMonkeyProvider implements MediaProvider {
           for (const song of songs) {
             if (this.musicScanCancelled) break
 
-            // Skip video files — MediaMonkey stores audio and video in the same Songs table
-            if (song.SongPath && isVideoExtension(song.SongPath)) continue
-
             const trackData = this.convertToMusicTrack(song, albumId, artistId, moodMap)
             await db.upsertMusicTrack(trackData)
             trackDataList.push(trackData)
@@ -506,8 +494,7 @@ export class MediaMonkeyProvider implements MediaProvider {
     _totalTracks?: number,
   ): Promise<void> {
     const fileAnalyzer = getMediaFileAnalyzer()
-    await fileAnalyzer.isAvailable() // Ensure FFprobe path is resolved
-    const ffmpegAvailable = fileAnalyzer.isFFmpegAvailable()
+    const ffmpegAvailable = await fileAnalyzer.isFFmpegAvailable()
 
     const albums = db.getMusicAlbums({ sourceId: this.sourceId })
     if (!albums || albums.length === 0) return
@@ -580,7 +567,10 @@ export class MediaMonkeyProvider implements MediaProvider {
         }
       }
       return null
-    } catch {
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.warn(`[MediaMonkeyProvider] Failed to find artwork in "${folderPath}":`, error)
+      }
       return null
     }
   }
@@ -615,7 +605,8 @@ export class MediaMonkeyProvider implements MediaProvider {
       }
 
       return null
-    } catch {
+    } catch (error) {
+      console.warn(`[MediaMonkeyProvider] Failed to extract artwork from "${audioFilePath}":`, error)
       return null
     }
   }
@@ -820,14 +811,22 @@ export class MediaMonkeyProvider implements MediaProvider {
 
       } catch (txError) {
         console.warn(`[MediaMonkeyProvider] Transaction error: ${getErrorMessage(txError)}`)
-        try { db.run('ROLLBACK') } catch { /* ignore rollback error */ }
+        try {
+          db.run('ROLLBACK')
+        } catch (rollbackError) {
+          console.error('[MediaMonkeyProvider] Transaction rollback failed:', getErrorMessage(rollbackError))
+        }
         throw txError
       } finally {
         db.close()
       }
 
       // Clean up backup on success
-      try { fs.unlinkSync(backupPath) } catch { /* keep backup if delete fails */ }
+      try {
+        fs.unlinkSync(backupPath)
+      } catch (error) {
+        console.warn(`[MediaMonkeyProvider] Could not remove successful-write backup ${backupPath}:`, error)
+      }
 
     } catch (error) {
       console.warn(`[MediaMonkeyProvider] Write failed: ${getErrorMessage(error)}`)
@@ -838,7 +837,11 @@ export class MediaMonkeyProvider implements MediaProvider {
           fs.copyFileSync(backupPath, this.databasePath)
           console.warn('[MediaMonkeyProvider] Restored database from backup after write failure')
         }
-      } catch { /* backup restore failed */ }
+      } catch (restoreError) {
+        const message = `Database restoration failed: ${getErrorMessage(restoreError)}. Backup remains at ${backupPath}`
+        result.errors.push(message)
+        console.error(`[MediaMonkeyProvider] ${message}`)
+      }
     }
 
     return result

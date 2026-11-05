@@ -1,9 +1,10 @@
-import { ipcMain } from 'electron'
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
 import { getMovieCollectionService } from '../services/MovieCollectionService'
 import { getWindowFromEvent } from './utils/safeSend'
 import { createProgressUpdater } from './utils/progressUpdater'
 import { validateInput, OptionalSourceIdSchema, PositiveIntSchema, NonEmptyStringSchema } from '../validation/schemas'
 import { getTaskQueueService } from '../services/TaskQueueService'
+import { createIpcHandler, createIpcHandlerWithEvent } from './utils/createHandler'
 
 export function registerCollectionHandlers() {
   const service = getMovieCollectionService()
@@ -11,7 +12,7 @@ export function registerCollectionHandlers() {
   // Analyze all movies for collection completeness
   // @param sourceId Optional source ID to scope analysis
   // @param libraryId Optional library ID to scope analysis
-  ipcMain.handle('collections:analyzeAll', async (event, sourceId?: unknown, libraryId?: unknown) => {
+  createIpcHandlerWithEvent(IPC_CHANNELS.collectionsAnalyzeAll, async (event, sourceId?: unknown, libraryId?: unknown) => {
     const validSourceId = sourceId !== undefined ? validateInput(NonEmptyStringSchema, sourceId, 'collections:analyzeAll.sourceId') : undefined
     const validLibraryId = libraryId !== undefined ? validateInput(NonEmptyStringSchema, libraryId, 'collections:analyzeAll.libraryId') : undefined
 
@@ -29,67 +30,39 @@ export function registerCollectionHandlers() {
       }, validSourceId, validLibraryId)
 
       return { success: true, ...result }
-    } catch (error) {
-      console.error('Error analyzing collections:', error)
-      throw error
     } finally {
       flush()
     }
   })
 
   // Cancel collections analysis
-  ipcMain.handle('collections:cancelAnalysis', async () => {
-    try {
-      service.cancel()
-      return { success: true }
-    } catch (error) {
-      console.error('Error cancelling collection analysis:', error)
-      throw error
-    }
+  createIpcHandler(IPC_CHANNELS.collectionsCancelAnalysis, async () => {
+    service.cancel()
+    return { success: true }
   })
 
   // Get all collections
-  ipcMain.handle('collections:getAll', async (_event, sourceId?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.collectionsGetAll, async (sourceId?: unknown) => {
     const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'collections:getAll.sourceId') : undefined
-    try {
-      return service.getCollections(validSourceId)
-    } catch (error) {
-      console.error('Error getting collections:', error)
-      throw error
-    }
+    return service.getCollections(validSourceId)
   })
 
   // Get incomplete collections only
   // @param sourceId Optional source ID to filter by
-  ipcMain.handle('collections:getIncomplete', async (_event, sourceId?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.collectionsGetIncomplete, async (sourceId?: unknown) => {
     const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'collections:getIncomplete.sourceId') : undefined
-    try {
-      return service.getIncompleteCollections(validSourceId)
-    } catch (error) {
-      console.error('Error getting incomplete collections:', error)
-      throw error
-    }
+    return service.getIncompleteCollections(validSourceId)
   })
 
   // Get collection stats
-  ipcMain.handle('collections:getStats', async () => {
-    try {
-      return service.getStats()
-    } catch (error) {
-      console.error('Error getting collection stats:', error)
-      throw error
-    }
+  createIpcHandler(IPC_CHANNELS.collectionsGetStats, async () => {
+    return service.getStats()
   })
 
   // Delete a collection
-  ipcMain.handle('collections:delete', async (_event, id: unknown) => {
+  createIpcHandler(IPC_CHANNELS.collectionsDelete, async (id: unknown) => {
     const validId = validateInput(PositiveIntSchema, id, 'collections:delete.id')
-    try {
-      return service.deleteCollection(validId)
-    } catch (error) {
-      console.error('Error deleting collection:', error)
-      throw error
-    }
+    return service.deleteCollection(validId)
   })
 
   console.log('Movie collection IPC handlers registered')

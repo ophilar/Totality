@@ -19,7 +19,7 @@ export interface AutoDismissRule {
 
 export function parseAutoRules(json: string | null): AutoDismissRule[] {
   if (!json) return []
-  try { return JSON.parse(json) } catch { return [] }
+  return JSON.parse(json) as AutoDismissRule[]
 }
 
 function matchesAnyRule(item: { title?: string; year?: number; release_date?: string }, rules: AutoDismissRule[]): boolean {
@@ -141,14 +141,12 @@ export function applySeriesFilters(
 type JsonAlbumItem = { musicbrainz_id?: string }
 
 function filterJsonAlbums(json: string | undefined, excludedSet: Set<string>, parentKey: string): { filtered: string; removedCount: number } {
-  try {
-    const parsed = JSON.parse(json || '[]') as JsonAlbumItem[]
-    const filtered = parsed.filter(item => !excludedSet.has(`${parentKey}:${item.musicbrainz_id}`))
-    if (filtered.length !== parsed.length) {
-      return { filtered: JSON.stringify(filtered), removedCount: parsed.length - filtered.length }
-    }
-  } catch { /* keep original */ }
-  return { filtered: json || '[]', removedCount: 0 }
+  const parsed = JSON.parse(json ?? '[]') as JsonAlbumItem[]
+  const filtered = parsed.filter(item => !excludedSet.has(`${parentKey}:${item.musicbrainz_id}`))
+  if (filtered.length !== parsed.length) {
+    return { filtered: JSON.stringify(filtered), removedCount: parsed.length - filtered.length }
+  }
+  return { filtered: json ?? '[]', removedCount: 0 }
 }
 
 /**
