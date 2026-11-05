@@ -257,6 +257,18 @@ describe('BetterSQLiteService — Media Items', () => {
     expect(service.getMediaItem(id)?.version_count).toBe(2)
   })
 
+  it('global TV search returns series identity rather than episode identity', () => {
+    service.upsertMediaItem(makeMediaItem({
+      plex_id: 'episode-1', type: 'episode', title: 'Pilot',
+      series_title: 'Example Series', season_number: 1, episode_number: 1,
+      tmdb_id: '111', series_tmdb_id: '999',
+    }))
+
+    const results = service.globalSearch('Example Series')
+    expect(results.tvShows).toHaveLength(1)
+    expect(results.tvShows[0].tmdb_id).toBe('999')
+  })
+
   it('deleteMediaItem removes item and cascades', () => {
     const id = service.upsertMediaItem(makeMediaItem())
     service.deleteMediaItem(id)
