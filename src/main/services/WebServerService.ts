@@ -252,7 +252,12 @@ export class WebServerService {
       ws.isAlive = true
 
       ws.on('pong', () => { ws.isAlive = true })
-      ws.on('message', (data) => this.handleWebSocket(ws, data))
+      ws.on('message', (data) => {
+        void this.handleWebSocket(ws, data).catch(error => {
+          console.error('[WebServer] WebSocket request failed:', error)
+          ws.send(JSON.stringify({ type: 'error', error: 'Internal server error' }))
+        })
+      })
       ws.on('close', (code, reason) => {
         this.eventThrottles.delete(ws)
         getLoggingService().verbose('WebServer', `WebSocket disconnected from ${ws.clientIp} (code: ${code}, reason: ${reason || 'none'}, clients: ${this.wss!.clients.size})`)
@@ -334,7 +339,13 @@ export class WebServerService {
           for (const [token, session] of this.sessions.entries()) {
             if (session.expiresAt < now) { this.sessions.delete(token); cleaned = true }
           }
-          if (cleaned) this.persistSessions()
+          if (cleaned) {
+            try {
+              this.persistSessions()
+            } catch (error) {
+              console.error('[WebServer] Failed to persist expired-session cleanup:', error)
+            }
+          }
           // Evict expired rate limit entries
           for (const [ip, entry] of this.rateLimits.entries()) {
             if (entry.lockedUntil < now && entry.failures === 0) this.rateLimits.delete(ip)
@@ -984,7 +995,12 @@ export class WebServerService {
     // Issue token
     const token = crypto.randomUUID()
     this.sessions.set(token, { expiresAt: Date.now() + this.getSessionTimeout(), ip, pinFingerprint: this.getPinFingerprint() })
-    this.persistSessions()
+    try {
+      this.persistSessions()
+    } catch (error) {
+      this.sessions.delete(token)
+      throw error
+    }
     ws.sessionToken = token
     ws.send(JSON.stringify({ type: 'auth', success: true, token }))
     getLoggingService().verbose('WebServer', `Authenticated client from ${ip}`)
