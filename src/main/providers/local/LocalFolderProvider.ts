@@ -707,8 +707,8 @@ export class LocalFolderProvider implements MediaProvider {
             mediaItem.file_mtime = bestItem.fileMtime
             mediaItem.version_count = versions.length
             // Reuse the parent of an already-known edition, even when the best file is absent.
-            const parents = group
-              .map(item => db.getMediaItemByPath(item.metadata.filePath))
+            const parents = versions
+              .map(version => db.getMediaItemByPath(version.file_path))
               .filter((item): item is MediaItem => !!item && item.source_id === this.sourceId && item.library_id === libraryId)
             if (parents.some(parent => parent.id !== parents[0].id)) {
               throw new Error('Conflicting existing movie version parents')
