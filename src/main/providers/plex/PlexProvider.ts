@@ -711,35 +711,34 @@ export class PlexProvider implements MediaProvider {
       } else if (isIncremental) {
         // Incremental scan: fetch all current IDs from Plex to detect changes
         const libType = libraryType || await this.getPlexLibraryType(libraryId)
-        if (libType) {
-          console.log(`[PlexProvider ${this.sourceId}] Checking for changes in ${libType} library...`)
-          const currentPlexIds = await this.getPlexLibraryItemIds(libraryId, libType)
-          const itemType = libType === 'show' ? 'episode' : 'movie'
+        if (!libType) throw new Error(`Could not determine Plex library type for ${libraryId}`)
+        console.log(`[PlexProvider ${this.sourceId}] Checking for changes in ${libType} library...`)
+        const currentPlexIds = await this.getPlexLibraryItemIds(libraryId, libType)
+        const itemType = libType === 'show' ? 'episode' : 'movie'
 
-          // Check for deletions (items in DB but not in Plex)
-          const removedCount = await this.removeStaleItems(currentPlexIds, itemType, libraryId)
-          if (removedCount > 0) {
-            console.log(`[PlexProvider ${this.sourceId}] Removed ${removedCount} deleted items`)
-          }
-          result.itemsRemoved = removedCount
+        // Check for deletions (items in DB but not in Plex)
+        const removedCount = await this.removeStaleItems(currentPlexIds, itemType, libraryId)
+        if (removedCount > 0) {
+          console.log(`[PlexProvider ${this.sourceId}] Removed ${removedCount} deleted items`)
+        }
+        result.itemsRemoved = removedCount
 
-          // Check for additions (items in Plex but not in DB)
-          const dbItems = db.getMediaItems({ type: itemType, sourceId: this.sourceId, libraryId }) as Array<{ plex_id?: string }>
-          const dbIds = new Set(dbItems.map((item: typeof dbItems[0]) => item.plex_id).filter(Boolean))
-          const missingIds: string[] = []
-          for (const plexId of currentPlexIds) {
-            if (!dbIds.has(plexId)) {
-              missingIds.push(plexId)
-            }
+        // Check for additions (items in Plex but not in DB)
+        const dbItems = db.getMediaItems({ type: itemType, sourceId: this.sourceId, libraryId }) as Array<{ plex_id?: string }>
+        const dbIds = new Set(dbItems.map((item: typeof dbItems[0]) => item.plex_id).filter(Boolean))
+        const missingIds: string[] = []
+        for (const plexId of currentPlexIds) {
+          if (!dbIds.has(plexId)) {
+            missingIds.push(plexId)
           }
+        }
 
-          if (missingIds.length > 0) {
-            console.log(`[PlexProvider ${this.sourceId}] Found ${missingIds.length} items in Plex not in DB, fetching...`)
-            // Fetch and process the missing items
-            const addedCount = await this.fetchAndProcessMissingItems(missingIds, libraryId, libType, analyzer, onProgress)
-            result.itemsAdded += addedCount
-            console.log(`[PlexProvider ${this.sourceId}] Added ${addedCount} missing items`)
-          }
+        if (missingIds.length > 0) {
+          console.log(`[PlexProvider ${this.sourceId}] Found ${missingIds.length} items in Plex not in DB, fetching...`)
+          // Fetch and process the missing items
+          const addedCount = await this.fetchAndProcessMissingItems(missingIds, libraryId, libType, analyzer, onProgress)
+          result.itemsAdded += addedCount
+          console.log(`[PlexProvider ${this.sourceId}] Added ${addedCount} missing items`)
         }
       }
 
@@ -836,7 +835,10 @@ export class PlexProvider implements MediaProvider {
       const CONCURRENCY = 8
       for (let start = 0; start < items.length; start += CONCURRENCY) {
         const groups = await Promise.all(items.slice(start, start + CONCURRENCY).map(item => this.getAllEpisodes(item.ratingKey)))
-        for (const episodes of groups) for (const ep of episodes) ids.add(ep.ratingKey)
+        for (const episodes of groups) {
+          if (episodes.length === 0) throw new Error('Incomplete Plex episode inventory: a show returned no episodes')
+          for (const episode of episodes) ids.add(episode.ratingKey)
+        }
       }
     } else {
       for (const item of items) ids.add(item.ratingKey)
@@ -943,10 +945,14 @@ export class PlexProvider implements MediaProvider {
       )
 
       const container = responseData?.MediaContainer
-      const items = container?.Metadata || []
+      if (!container) throw new Error('Plex inventory response has no MediaContainer')
+      const items = container.Metadata ?? []
       allItems.push(...items)
 
-      const totalSize = container?.totalSize
+      const totalSize = container.totalSize
+      if (totalSize != null && items.length === 0 && allItems.length < totalSize) {
+        throw new Error(`Incomplete Plex inventory: received ${allItems.length} of ${totalSize} items`)
+      }
       if (items.length === 0 || (totalSize != null && allItems.length >= totalSize)) {
         hasMore = false
       } else {

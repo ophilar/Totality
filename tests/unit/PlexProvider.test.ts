@@ -669,6 +669,48 @@ describe('PlexProvider', () => {
   })
 
   // ========================================================================
+  // Inventory completeness (deletion safety)
+  // ========================================================================
+
+  describe('inventory completeness', () => {
+    it('rejects an empty page before Plex reaches its declared inventory size', async () => {
+      mockFetchJSON
+        .mockResolvedValueOnce({ MediaContainer: { Metadata: [makeMovieItem()], totalSize: 2 } })
+        .mockResolvedValueOnce({ MediaContainer: { Metadata: [], totalSize: 2 } })
+      const provider = createProviderWithServer()
+      await expect((provider as any).paginatedPlexFetch('http://plex/library/sections/1/all'))
+        .rejects.toThrow('Incomplete Plex inventory: received 1 of 2 items')
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+
+    it('preserves successfully enumerated complete pages', async () => {
+      mockFetchJSON
+        .mockResolvedValueOnce({ MediaContainer: { Metadata: [makeMovieItem({ ratingKey: '100' })], totalSize: 2 } })
+        .mockResolvedValueOnce({ MediaContainer: { Metadata: [makeMovieItem({ ratingKey: '200' })], totalSize: 2 } })
+      const provider = createProviderWithServer()
+      const items = await (provider as any).paginatedPlexFetch('http://plex/library/sections/1/all')
+      expect(items.map((item: PlexMediaItem) => item.ratingKey)).toEqual(['100', '200'])
+    })
+
+    it('rejects responses missing Plex inventory metadata', async () => {
+      mockFetchJSON.mockResolvedValueOnce({})
+      const provider = createProviderWithServer()
+      await expect((provider as any).paginatedPlexFetch('http://plex/library/sections/1/all'))
+        .rejects.toThrow('Plex inventory response has no MediaContainer')
+    })
+
+    it('rejects empty show-episode inventories during deletion reconciliation', async () => {
+      mockFetchJSON
+        .mockResolvedValueOnce({ MediaContainer: { Metadata: [{ ratingKey: 'show-1', type: 'show' }], totalSize: 1 } })
+        .mockResolvedValueOnce({ MediaContainer: { Metadata: [], totalSize: 0 } })
+      const provider = createProviderWithServer()
+      await expect((provider as any).getPlexLibraryItemIds('1', 'show'))
+        .rejects.toThrow('Incomplete Plex episode inventory')
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+  })
+
+  // ========================================================================
   // removeStaleItems (safety guard)
   // ========================================================================
 
