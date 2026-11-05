@@ -6,6 +6,7 @@ const mockUpdateScanTime = vi.hoisted(() => vi.fn())
 
 vi.mock('../../src/main/database/getDatabase', () => ({
   getDatabase: () => ({
+    getSetting: vi.fn(() => 'false'),
     getMediaItems: mockGetMediaItems,
     deleteMediaItem: mockDeleteMediaItem,
     updateSourceScanTime: mockUpdateScanTime,
@@ -36,6 +37,19 @@ describe('Kodi inventory safety', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetMediaItems.mockReturnValue([{ id: 1, plex_id: 'stored-1' }])
+  })
+
+  it('Kodi Local: reports missing targeted items as a failed scan', async () => {
+    const provider = new KodiLocalProvider({ sourceId: 'kodi-local-targeted', connectionConfig: {} })
+    vi.spyOn(provider as any, 'openDatabase').mockResolvedValue(undefined)
+    vi.spyOn(provider as any, 'closeDatabase').mockImplementation(() => {})
+    vi.spyOn(provider as any, 'getAudioStreamsByFileId').mockReturnValue(new Map())
+    vi.spyOn(provider as any, 'findMovieByFilePath').mockResolvedValue(null)
+    const result = await provider.scanLibrary('movies', { targetFiles: ['/missing/movie.mkv'] })
+
+    expect(result.success).toBe(false)
+    expect(result.errors.join(' ')).toContain('File not found in Kodi database')
+    expect(mockDeleteMediaItem).not.toHaveBeenCalled()
   })
 
   for (const [name, create] of providers) {
