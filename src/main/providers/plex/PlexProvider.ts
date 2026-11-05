@@ -441,7 +441,7 @@ export class PlexProvider implements MediaProvider {
     }
 
     try {
-      const items = await this.getPlexLibraryItems(libraryId, sinceTimestamp)
+      const items = await this.getPlexLibraryItems(libraryId, isIncremental ? sinceTimestamp : undefined)
       const db = getDatabase()
       const analyzer = getQualityAnalyzer()
       await analyzer.loadThresholdsFromDatabase()
