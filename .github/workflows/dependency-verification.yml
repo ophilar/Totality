@@ -14,6 +14,7 @@ on:
       - 'scripts/**'
       - 'vite.config.ts'
       - 'vitest.config.ts'
+      - 'vitest.upgrade.config.ts'
       - 'tsconfig*.json'
       - 'electron-builder.yml'
   push:
@@ -61,14 +62,7 @@ jobs:
           path: legacy
       - name: Verify real database upgrade
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb
-          node node_modules/electron/install.js
-          sudo chown root:root node_modules/electron/dist/chrome-sandbox
-          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
-          sudo chmod 1777 /dev/shm
-          python3 scripts/verify-database-upgrade.py legacy/src/main/database/schema.ts
+        run: npx vitest run --config vitest.upgrade.config.ts
       - name: Package application
         run: npx electron-builder --publish never
         env:
