@@ -80,7 +80,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: totality-042-vs-05-visual-report
+          name: totality-044-vs-09-visual-report
           if-no-files-found: warn
           retention-days: 3
           path: |
