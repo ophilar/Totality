@@ -85,12 +85,15 @@ def launch_and_verify(schema_path: Path) -> None:
                     migrated = True
                     break
         finally:
-            os.killpg(process.pid, signal.SIGTERM)
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait()
+            while not events.empty():
+                output.append(events.get_nowait())
 
         if not migrated:
             raise AssertionError(
