@@ -62,7 +62,10 @@ jobs:
           path: legacy
       - name: Verify real database upgrade
         if: runner.os == 'Linux'
-        run: npx vitest run --config vitest.upgrade.config.ts
+        run: |
+          npm rebuild better-sqlite3 --build-from-source
+          npx vitest run --config vitest.upgrade.config.ts
+          npx electron-rebuild
       - name: Package application
         run: npx electron-builder --publish never
         env:
