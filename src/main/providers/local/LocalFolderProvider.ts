@@ -37,6 +37,16 @@ import type { MediaItem, MediaItemVersion, AudioTrack } from '../../types/databa
 import { extractVersionNames } from '../utils/VersionNaming'
 import { scoreVersion } from '../utils/ProviderUtils'
 
+/** Reject invalid batch settings instead of entering a non-advancing scan loop. */
+export function readFfprobeBatchSize(value: string | null | undefined, defaultSize: number): number {
+  if (value == null || value.trim() === '') return defaultSize
+  const size = Number(value)
+  if (!Number.isSafeInteger(size) || size < 1 || size > 128) {
+    throw new Error('Invalid ffprobe_batch_size: expected an integer from 1 to 128')
+  }
+  return size
+}
+
 export interface LocalFolderConfig {
   folderPath: string
   mediaType: 'movies' | 'tvshows' | 'music' | 'mixed'
@@ -465,9 +475,8 @@ export class LocalFolderProvider implements MediaProvider {
 
       // Parallel FFprobe settings
       const ffprobeParallelEnabled = db.getSetting('ffprobe_parallel_enabled') !== 'false'
-      const ffprobeBatchSize = parseInt(db.getSetting('ffprobe_batch_size') || '25', 10)
+      const ffprobeBatchSize = readFfprobeBatchSize(db.getSetting('ffprobe_batch_size'), 25)
 
-      const scannedFilePaths = new Set<string>()
       const scanType = libraryType === 'movies' ? 'movie' : 'episode'
 
       // Phase 1: Discover all media files
@@ -482,11 +491,18 @@ export class LocalFolderProvider implements MediaProvider {
 
       const mediaFiles = await this.discoverMediaFiles(scanPath, scanType, onProgress, isIncremental ? sinceTimestamp : undefined)
       const totalFiles = mediaFiles.length
+      // Enumeration proves presence even when parsing or metadata analysis is skipped.
+      const scannedFilePaths = new Set(mediaFiles.map(file => file.filePath))
 
       console.log(`[LocalFolderProvider ${this.sourceId}] Found ${totalFiles} ${scanType} files`)
 
       if (totalFiles === 0) {
-        result.success = true
+        const existingItems = db.getMediaItems({ type: scanType, sourceId: this.sourceId, libraryId })
+        if (existingItems.length > 0) {
+          result.errors.push(`Empty media inventory but ${existingItems.length} stored items exist; scan cannot verify deletions`)
+        } else {
+          result.success = true
+        }
         result.durationMs = Date.now() - startTime
         return result
       }
@@ -549,8 +565,7 @@ export class LocalFolderProvider implements MediaProvider {
               const existingItem = db.getMediaItemByPath(filePath)
 
               if (existingItem?.file_mtime === fileMtime) {
-                // File unchanged, mark as present and skip processing
-                scannedFilePaths.add(filePath)
+                // File unchanged, skip processing
                 result.itemsScanned++
                 continue
               }
@@ -636,7 +651,6 @@ export class LocalFolderProvider implements MediaProvider {
               }
 
               processedItems.push({ metadata, parsed, fileMtime })
-              scannedFilePaths.add(filePath)
             } catch (error: unknown) {
               result.errors.push(`Failed to process ${path.basename(filePath)}: ${getErrorMessage(error)}`)
             }
@@ -720,6 +734,12 @@ export class LocalFolderProvider implements MediaProvider {
         }
       } finally {
         await db.endBatch()
+      }
+
+      // A partial scan cannot establish which stored media files are truly absent.
+      if (result.errors.length > 0) {
+        result.durationMs = Date.now() - startTime
+        return result
       }
 
       // Phase 3: Remove stale items (only for full scans)
@@ -837,19 +857,16 @@ export class LocalFolderProvider implements MediaProvider {
         return parser.isVideoFile(path.basename(filePath))
       })
 
-      // Handle deleted files
-      const deletedFiles = filePaths.filter(filePath => !fs.existsSync(filePath))
-      for (const filePath of deletedFiles) {
-        const existingItem = db.getMediaItemByPath(filePath)
-        if (existingItem?.id) {
-          await db.deleteMediaItem(existingItem.id)
-          result.itemsRemoved++
-          console.log(`[LocalFolderProvider ${this.sourceId}] Removed deleted file: ${path.basename(filePath)}`)
+      // A targeted filesystem event is not proof of deletion (the volume may be unavailable).
+      const missingFiles = filePaths.filter(filePath => !fs.existsSync(filePath))
+      for (const filePath of missingFiles) {
+        if (db.getMediaItemByPath(filePath)) {
+          result.errors.push(`Cannot verify deletion of ${path.basename(filePath)} from a targeted event; stored item retained`)
         }
       }
 
-      if (validFiles.length === 0 && deletedFiles.length === 0) {
-        result.success = true
+      if (validFiles.length === 0) {
+        result.success = result.errors.length === 0
         result.durationMs = Date.now() - startTime
         return result
       }
@@ -982,7 +999,7 @@ export class LocalFolderProvider implements MediaProvider {
         console.log(`[LocalFolderProvider ${this.sourceId}] TMDB matches: ${parts.join(', ')}`)
       }
 
-      result.success = true
+      result.success = result.errors.length === 0
       result.durationMs = Date.now() - startTime
 
       console.log(`[LocalFolderProvider ${this.sourceId}] Targeted scan complete: ${result.itemsAdded} added, ${result.itemsUpdated} updated, ${result.itemsRemoved} removed`)
@@ -1030,23 +1047,15 @@ export class LocalFolderProvider implements MediaProvider {
         return parser.isAudioFile(path.basename(filePath))
       })
 
-      // Handle deleted files
-      const deletedFiles = filePaths.filter(filePath => !fs.existsSync(filePath))
-      console.log(`[LocalFolderProvider ${this.sourceId}] Checking ${deletedFiles.length} deleted files`)
-      for (const filePath of deletedFiles) {
-        console.log(`[LocalFolderProvider ${this.sourceId}] Looking up deleted track: ${path.basename(filePath)}`)
-        const existingTrack = db.getMusicTrackByPath(filePath)
-        if (existingTrack?.id) {
-          await db.deleteMusicTrack(existingTrack.id)
-          result.itemsRemoved++
-          console.log(`[LocalFolderProvider ${this.sourceId}] Removed deleted track: ${path.basename(filePath)}`)
-        } else {
-          console.log(`[LocalFolderProvider ${this.sourceId}] Track not found in database for: ${path.basename(filePath)}`)
+      const missingFiles = filePaths.filter(filePath => !fs.existsSync(filePath))
+      for (const filePath of missingFiles) {
+        if (db.getMusicTrackByPath(filePath)) {
+          result.errors.push(`Cannot verify deletion of ${path.basename(filePath)} from a targeted event; stored track retained`)
         }
       }
 
-      if (validFiles.length === 0 && deletedFiles.length === 0) {
-        result.success = true
+      if (validFiles.length === 0) {
+        result.success = result.errors.length === 0
         result.durationMs = Date.now() - startTime
         return result
       }
@@ -1236,7 +1245,7 @@ export class LocalFolderProvider implements MediaProvider {
         await db.updateMusicArtistCounts(artistId, albums.length, tracks.length)
       }
 
-      result.success = true
+      result.success = result.errors.length === 0
       result.durationMs = Date.now() - startTime
 
       console.log(`[LocalFolderProvider ${this.sourceId}] Targeted music scan complete: ${result.itemsAdded} added, ${result.itemsUpdated} updated, ${result.itemsRemoved} removed`)
@@ -1265,7 +1274,7 @@ export class LocalFolderProvider implements MediaProvider {
     let skippedUnchanged = 0
 
     const scanDir = async (dir: string, depth = 0): Promise<void> => {
-      if (depth > 15) return // Prevent infinite recursion
+      if (depth > 15) throw new Error('Media directory nesting exceeds scan limit')
 
       try {
         const entries = await fs.promises.readdir(dir, { withFileTypes: true })
@@ -1318,8 +1327,7 @@ export class LocalFolderProvider implements MediaProvider {
           await new Promise(resolve => setImmediate(resolve))
         }
       } catch (error) {
-        // Skip inaccessible directories
-        console.warn(`[LocalFolderProvider] Cannot access directory: ${path.basename(dir)}`)
+        throw new Error(`Cannot complete media inventory in ${dir}: ${getErrorMessage(error)}`)
       }
     }
 
@@ -2203,7 +2211,7 @@ export class LocalFolderProvider implements MediaProvider {
 
       // Parallel FFprobe settings
       const ffprobeParallelEnabled = db.getSetting('ffprobe_parallel_enabled') !== 'false'
-      const ffprobeBatchSize = parseInt(db.getSetting('ffprobe_batch_size') || '50', 10)
+      const ffprobeBatchSize = readFfprobeBatchSize(db.getSetting('ffprobe_batch_size'), 50)
 
       if (mbNameCorrectionEnabled) {
         console.log(`[LocalFolderProvider ${this.sourceId}] MusicBrainz name correction enabled`)
@@ -2224,7 +2232,12 @@ export class LocalFolderProvider implements MediaProvider {
       console.log(`[LocalFolderProvider ${this.sourceId}] Found ${totalFiles} audio files`)
 
       if (totalFiles === 0) {
-        result.success = true
+        const existing = db.getMusicTracks({ sourceId: this.sourceId })
+        if (existing.length > 0) {
+          result.errors.push(`Empty music inventory but ${existing.length} stored tracks exist; scan incomplete`)
+        } else {
+          result.success = true
+        }
         result.durationMs = Date.now() - startTime
         return result
       }
@@ -2520,7 +2533,7 @@ export class LocalFolderProvider implements MediaProvider {
       // Update scan time
       await db.updateSourceScanTime(this.sourceId)
 
-      result.success = true
+      result.success = result.errors.length === 0
       result.durationMs = Date.now() - startTime
 
       console.log(`[LocalFolderProvider ${this.sourceId}] Music scan complete: ${result.itemsScanned} tracks, ${artistMap.size} artists, ${albumMap.size} albums`)
@@ -2541,7 +2554,7 @@ export class LocalFolderProvider implements MediaProvider {
     let directoriesProcessed = 0
 
     const scanDir = async (dir: string, depth = 0): Promise<void> => {
-      if (depth > 15) return // Prevent infinite recursion
+      if (depth > 15) throw new Error(`Music directory scan exceeded the supported depth at ${dir}`)
 
       try {
         const entries = await fs.promises.readdir(dir, { withFileTypes: true })
@@ -2568,8 +2581,7 @@ export class LocalFolderProvider implements MediaProvider {
           await new Promise(resolve => setImmediate(resolve))
         }
       } catch (error) {
-        // Skip inaccessible directories
-        console.warn(`[LocalFolderProvider] Cannot access directory: ${path.basename(dir)}`)
+        throw new Error(`Cannot complete music inventory in ${dir}: ${getErrorMessage(error)}`)
       }
     }
 
