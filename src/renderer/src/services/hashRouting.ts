@@ -10,7 +10,7 @@
 import { isWebMode } from './webTransport'
 
 export interface HashState {
-  view: 'dashboard' | 'library'
+  view: 'dashboard' | 'library' | 'timelines'
   tab?: 'movies' | 'tv' | 'music'
   // Drill-down targets (only one set at a time)
   showTitle?: string
@@ -27,6 +27,7 @@ export function stateToHash(state: HashState): string {
 
   if (state.wishlist) return '#/wishlist'
   if (state.view === 'dashboard') return '#/'
+  if (state.view === 'timelines') return '#/timelines'
 
   const tab = state.tab || 'movies'
 
@@ -60,6 +61,10 @@ export function parseHash(hash: string): HashState {
   if (segments.length === 0) return { view: 'dashboard' }
 
   const first = segments[0]
+
+  if (first === 'timelines') {
+    return { view: 'timelines' }
+  }
 
   if (first === 'wishlist') {
     return { view: 'library', wishlist: true }
