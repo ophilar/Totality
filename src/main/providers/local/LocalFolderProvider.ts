@@ -706,20 +706,27 @@ export class LocalFolderProvider implements MediaProvider {
             mediaItem.library_id = libraryId
             mediaItem.file_mtime = bestItem.fileMtime
             mediaItem.version_count = versions.length
-            // Use first item's plex_id as canonical (stable across rescans)
-            mediaItem.plex_id = group[0].metadata.itemId
+            // Reuse the parent of an already-known edition, even when the best file is absent.
+            const parents = versions
+              .map(version => db.getMediaItemByPath(version.file_path))
+              .filter((item): item is MediaItem => !!item && item.source_id === this.sourceId && item.library_id === libraryId)
+            if (parents.some(parent => parent.id !== parents[0].id)) {
+              throw new Error('Conflicting existing movie version parents')
+            }
+            mediaItem.plex_id = parents[0]?.plex_id ?? group[0].metadata.itemId
 
             const id = await db.upsertMediaItem(mediaItem)
 
-            // Sync versions: delete stale, upsert current, update best version
+            // A scan cannot authorize deletion of editions that are temporarily unobserved.
             const scoredVersions = versions.map(version => {
               const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
               return { ...version, media_item_id: id, ...vScore } as MediaItemVersion
             })
-            db.syncMediaItemVersions(id, scoredVersions)
+            db.syncMediaItemVersions(id, scoredVersions, 'merge')
 
-            mediaItem.id = id
-            const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
+            const canonical = db.getMediaItem(id)
+            if (!canonical) throw new Error('Updated local media parent is missing')
+            const qualityScore = await analyzer.analyzeMediaItem(canonical)
             await db.upsertQualityScore(qualityScore)
 
             result.itemsScanned++
@@ -742,30 +749,14 @@ export class LocalFolderProvider implements MediaProvider {
         return result
       }
 
-      // Phase 3: Remove stale items (only for full scans)
-      // During incremental scans, we only process changed files, so we can't determine stale items
+      // A directory inventory cannot distinguish deleted media from inaccessible NAS paths.
       if (!isIncremental) {
-        onProgress?.({
-          current: totalFiles,
-          total: totalFiles,
-          phase: 'saving',
-          currentItem: 'Removing stale entries...',
-          percentage: 100,
-        })
-
         const existingItems = db.getMediaItems({ type: scanType, sourceId: this.sourceId, libraryId })
-
-        // Safety guard: refuse deletion when scan found 0 files but DB has items
-        if (scannedFilePaths.size === 0 && existingItems.length > 0) {
-          console.warn(`[LocalFolderProvider ${this.sourceId}] Scan returned 0 files but DB has ${existingItems.length} — skipping deletion (possible access issue)`)
-        } else {
-          for (const item of existingItems) {
-            if (!scannedFilePaths.has(item.file_path)) {
-              if (item.id) {
-                await db.deleteMediaItem(item.id)
-                result.itemsRemoved++
-              }
-            }
+        const unobserved = existingItems.filter(item => !scannedFilePaths.has(item.file_path))
+        if (unobserved.length > 0) {
+          console.warn(`[LocalFolderProvider ${this.sourceId}] Retaining ${unobserved.length} unobserved ${scanType} records pending explicit reconciliation`)
+          for (const item of unobserved) {
+            if (item.id) db.updateBestVersion(item.id, scannedFilePaths)
           }
         }
       }
@@ -953,16 +944,21 @@ export class LocalFolderProvider implements MediaProvider {
               mediaItem.library_id = libraryId
               mediaItem.file_mtime = fileMtime
 
+              const existingParent = db.getMediaItemByPath(filePath)
+              if (existingParent?.source_id === this.sourceId && existingParent.library_id === libraryId) {
+                mediaItem.plex_id = existingParent.plex_id
+              }
               const id = await db.upsertMediaItem(mediaItem)
 
-              // Sync version: delete stale, upsert current, update best version
+              // Targeted inventories are partial; retain sibling editions.
               const version = this.convertMetadataToVersion(metadata, parsed as ParsedMovieInfo | ParsedEpisodeInfo, fileMtime)
               const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
-              db.syncMediaItemVersions(id, [{ ...version, media_item_id: id, ...vScore } as MediaItemVersion])
+              db.syncMediaItemVersions(id, [{ ...version, media_item_id: id, ...vScore } as MediaItemVersion], 'merge')
 
-              // Analyze quality
-              mediaItem.id = id
-              const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
+              // Analyze the canonical parent, not the last updated lower-quality edition.
+              const canonical = db.getMediaItem(id)
+              if (!canonical) throw new Error('Updated local media parent is missing')
+              const qualityScore = await analyzer.analyzeMediaItem(canonical)
               await db.upsertQualityScore(qualityScore)
 
               result.itemsScanned++
