@@ -781,8 +781,7 @@ export class PlexProvider implements MediaProvider {
     // Safety guard: refuse bulk deletion when Plex returns 0 IDs but DB has items
     // (likely a Plex API failure, not an actual empty library)
     if (validIds.size === 0 && items.length > 0) {
-      console.warn(`[PlexProvider ${this.sourceId}] Plex returned 0 ${type} IDs but DB has ${items.length} — skipping deletion (possible API failure)`)
-      return 0
+      throw new Error(`Incomplete Plex ${type} inventory: 0 IDs returned while ${items.length} stored media items exist`)
     }
 
     let removedCount = 0
