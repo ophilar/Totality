@@ -2,11 +2,6 @@ name: Validate branch layers
 
 on:
   workflow_dispatch:
-    inputs:
-      full_matrix:
-        description: Run Linux, macOS and Windows (release readiness)
-        type: boolean
-        default: true
   pull_request:
     branches:
       - architecture
@@ -35,32 +30,42 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.full_matrix && '["ubuntu-24.04","macos-15","windows-2025"]' || '["ubuntu-24.04"]') }}
+        os: [ubuntu-24.04, macos-15, windows-2025]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Install FFmpeg (Linux)
+      - name: Ensure FFmpeg and FFprobe (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-      - name: Install FFmpeg (macOS)
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+      - name: Ensure FFmpeg and FFprobe (macOS)
         if: runner.os == 'macOS'
-        run: brew install ffmpeg
-      - name: Install FFmpeg (Windows)
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            brew install ffmpeg
+          fi
+      - name: Ensure FFmpeg and FFprobe (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: choco install ffmpeg -y --no-progress
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+          }
       - name: Unit and integration tests
         run: npm run test:run
       - name: TypeScript typecheck
+        if: runner.os == 'Linux'
         run: npx tsc --noEmit
       - name: Renderer build
+        if: runner.os == 'Linux'
         run: npx vite build
