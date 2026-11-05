@@ -32,7 +32,7 @@ export function safeSend(win: BrowserWindow | null, channel: string, ...args: un
       sent = true
     }
   } catch (error) {
-    // Silently ignore - window was likely closed during operation
+    console.debug(`[IPC] Failed to send ${channel} to the Electron window`, error)
   }
   // Always broadcast to web clients (except desktop-only channels)
   if (!BROADCAST_SKIP.has(channel)) {
@@ -41,7 +41,9 @@ export function safeSend(win: BrowserWindow | null, channel: string, ...args: un
       if (webServer?.isRunning()) {
         webServer.broadcastEvent(channel, ...args)
       }
-    } catch { /* web server not initialized yet */ }
+    } catch (error) {
+      console.warn(`[IPC] Failed to broadcast ${channel} to web clients:`, error)
+    }
   }
 
   return sent

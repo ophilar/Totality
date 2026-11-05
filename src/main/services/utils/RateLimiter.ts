@@ -1,3 +1,6 @@
+
+import { APP_CONFIG } from '../../config'
+
 /**
  * RateLimiter Utilities
  *
@@ -20,7 +23,6 @@ export interface RateLimiter {
    */
   reset(): void
 }
-
 /**
  * Sliding Window Rate Limiter
  *
@@ -39,6 +41,8 @@ export class SlidingWindowRateLimiter implements RateLimiter {
   private readonly maxRequests: number
   private readonly windowMs: number
   private readonly bufferMs: number
+  private effectiveMaxRequests: number
+  private pauseUntil = 0
 
   /**
    * @param maxRequests Maximum number of requests allowed in the window
@@ -47,36 +51,43 @@ export class SlidingWindowRateLimiter implements RateLimiter {
    */
   constructor(maxRequests: number, windowMs: number, bufferMs: number = 100) {
     this.maxRequests = maxRequests
+    this.effectiveMaxRequests = maxRequests
     this.windowMs = windowMs
     this.bufferMs = bufferMs
   }
 
   async waitForSlot(): Promise<void> {
-    const now = Date.now()
-
-    // Remove timestamps outside the window
-    this.requestTimestamps = this.requestTimestamps.filter(
-      timestamp => now - timestamp < this.windowMs
-    )
-
-    // If at capacity, wait until oldest request expires
-    if (this.requestTimestamps.length >= this.maxRequests) {
-      const oldestTimestamp = this.requestTimestamps[0]
-      const waitTime = this.windowMs - (now - oldestTimestamp) + this.bufferMs
-
-      if (waitTime > 0) {
-        await this.delay(waitTime)
-        // Recursively check again after waiting
-        return this.waitForSlot()
+    while (true) {
+      const now = Date.now()
+      this.requestTimestamps = this.requestTimestamps.filter(timestamp => now - timestamp < this.windowMs)
+      const pauseWait = this.pauseUntil - now
+      const windowWait = this.requestTimestamps.length >= this.effectiveMaxRequests
+        ? this.windowMs - (now - this.requestTimestamps[0]) + this.bufferMs
+        : 0
+      if (pauseWait <= 0 && windowWait <= 0) {
+        this.requestTimestamps.push(now)
+        return
       }
+      await this.delay(Math.max(pauseWait, windowWait))
     }
-
-    // Record this request
-    this.requestTimestamps.push(Date.now())
   }
 
   reset(): void {
     this.requestTimestamps = []
+    this.effectiveMaxRequests = this.maxRequests
+    this.pauseUntil = 0
+  }
+
+  pauseFor(delayMs: number): void {
+    this.pauseUntil = Math.max(this.pauseUntil, Date.now() + Math.max(0, delayMs))
+  }
+
+  recordError(status: number): void {
+    if (status === 429 || status === 503) this.effectiveMaxRequests = Math.max(1, Math.floor(this.effectiveMaxRequests / 2))
+  }
+
+  recordSuccess(): void {
+    if (this.effectiveMaxRequests < this.maxRequests) this.effectiveMaxRequests++
   }
 
   private delay(ms: number): Promise<void> {
@@ -94,7 +105,7 @@ export class SlidingWindowRateLimiter implements RateLimiter {
 
     return {
       currentCount,
-      maxRequests: this.maxRequests,
+      maxRequests: this.effectiveMaxRequests,
       windowMs: this.windowMs,
     }
   }
@@ -114,30 +125,79 @@ export class SlidingWindowRateLimiter implements RateLimiter {
  * await fetch(...)
  */
 export class SimpleDelayRateLimiter implements RateLimiter {
-  private lastRequestTime: number = 0
-  private readonly delayMs: number
+  private lastScheduledTime = 0
+  private readonly baseDelayMs: number
+  private currentDelayMs: number
+  private readonly maxDelayMs: number
+  private consecutiveSuccesses = 0
+  private consecutiveAvailabilityFailures = 0
+  private cooldownUntil = 0
 
   /**
    * @param delayMs Minimum milliseconds between requests
+   * @param maxDelayMs Maximum adaptive delay after service errors
    */
-  constructor(delayMs: number) {
-    this.delayMs = delayMs
+  constructor(
+    delayMs: number,
+    maxDelayMs = 6000,
+    private readonly availabilityCooldown?: { failureThreshold: number; durationMs: number }
+  ) {
+    this.baseDelayMs = delayMs
+    this.currentDelayMs = delayMs
+    this.maxDelayMs = maxDelayMs
   }
 
   async waitForSlot(): Promise<void> {
     const now = Date.now()
-    const elapsed = now - this.lastRequestTime
-    const remainingWait = this.delayMs - elapsed
-
-    if (remainingWait > 0) {
-      await this.delay(remainingWait)
+    if (this.cooldownUntil > 0 && this.cooldownUntil <= now) {
+      this.cooldownUntil = 0
+      this.consecutiveAvailabilityFailures = 0
     }
+    const scheduledTime = Math.max(now, this.lastScheduledTime === 0 ? now : this.lastScheduledTime + this.currentDelayMs, this.cooldownUntil)
+    this.lastScheduledTime = scheduledTime
+    const waitMs = scheduledTime - now
 
-    this.lastRequestTime = Date.now()
+    if (waitMs > 0) {
+      await this.delay(waitMs)
+    }
+  }
+
+  recordError(status: number): void {
+    if ([429, 502, 503, 504].includes(status)) {
+      this.currentDelayMs = Math.min(this.maxDelayMs, Math.max(this.currentDelayMs * 1.5, 3000))
+      this.consecutiveSuccesses = 0
+    }
+    if ([502, 503, 504].includes(status) && this.availabilityCooldown) {
+      this.consecutiveAvailabilityFailures++
+      if (this.consecutiveAvailabilityFailures >= this.availabilityCooldown.failureThreshold && this.cooldownUntil === 0) {
+        this.cooldownUntil = Date.now() + this.availabilityCooldown.durationMs
+      }
+    }
+  }
+
+  recordSuccess(): void {
+    this.consecutiveAvailabilityFailures = 0
+    this.consecutiveSuccesses++
+    if (this.consecutiveSuccesses >= 5 && this.currentDelayMs > this.baseDelayMs) {
+      this.currentDelayMs = Math.max(this.baseDelayMs, this.currentDelayMs - 500)
+      this.consecutiveSuccesses = 0
+    }
+  }
+
+  setDelay(delayMs: number): void {
+    this.currentDelayMs = Math.max(this.baseDelayMs, delayMs)
+  }
+
+  getCurrentDelay(): number {
+    return this.currentDelayMs
   }
 
   reset(): void {
-    this.lastRequestTime = 0
+    this.lastScheduledTime = 0
+    this.currentDelayMs = this.baseDelayMs
+    this.consecutiveSuccesses = 0
+    this.consecutiveAvailabilityFailures = 0
+    this.cooldownUntil = 0
   }
 
   private delay(ms: number): Promise<void> {
@@ -148,7 +208,8 @@ export class SimpleDelayRateLimiter implements RateLimiter {
    * Get current state
    */
   getTimeSinceLastRequest(): number {
-    return Date.now() - this.lastRequestTime
+    if (this.lastScheduledTime === 0) return Infinity
+    return Date.now() - this.lastScheduledTime
   }
 }
 
@@ -160,8 +221,8 @@ export const RateLimiters = {
    * TMDB API: ~40 requests per second per IP
    * Using 40 req/1s to maximize throughput while staying within limits
    */
-  createTMDBLimiter(): SlidingWindowRateLimiter {
-    return new SlidingWindowRateLimiter(40, 1000, 25)
+  createTMDBLimiter(maxRequests = 40, windowMs = 1000): SlidingWindowRateLimiter {
+    return new SlidingWindowRateLimiter(maxRequests, windowMs, 25)
   },
 
   /**
@@ -169,6 +230,10 @@ export const RateLimiters = {
    * Using 1.5s to be safe and respectful of the service
    */
   createMusicBrainzLimiter(): SimpleDelayRateLimiter {
-    return new SimpleDelayRateLimiter(1500)
+    const config = APP_CONFIG.musicBrainz
+    return new SimpleDelayRateLimiter(config.requestIntervalMs, config.maxAdaptiveDelayMs, {
+      failureThreshold: config.availabilityFailuresBeforeCooldown,
+      durationMs: config.availabilityCooldownMs,
+    })
   },
 }
