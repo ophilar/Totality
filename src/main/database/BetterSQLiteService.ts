@@ -123,9 +123,8 @@ export class BetterSQLiteService {
     return this._isInitialized
   }
 
-  constructor() {
-    const userDataPath = app.getPath('userData')
-    this.dbPath = path.join(userDataPath, 'totality-v2.db')
+  constructor(databasePath?: string) {
+    this.dbPath = databasePath ?? path.join(app.getPath('userData'), 'totality-v2.db')
   }
 
   /**
