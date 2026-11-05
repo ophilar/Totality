@@ -26,6 +26,17 @@ jobs:
 
       - run: npm ci
       - run: npm run test:run
+      - name: Build application bundles once on Linux
+        run: npx tsc && npx vite build
+      - name: Share compiled application with platform packaging jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: totality-compiled-app
+          path: |
+            dist/
+            dist-electron/
+          if-no-files-found: error
+          retention-days: 1
 
   build:
     name: Build (${{ matrix.os }})
@@ -44,6 +55,10 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - name: Restore shared application bundles
+        uses: actions/download-artifact@v4
+        with:
+          name: totality-compiled-app
 
       # macOS code signing setup
       - name: Import macOS signing certificate
@@ -72,8 +87,8 @@ jobs:
           # Clean up certificate file
           rm $RUNNER_TEMP/certificate.p12
 
-      - name: Build and package
-        run: npx tsc && npx vite build && npx electron-builder --publish never
+      - name: Package for ${{ matrix.os }}
+        run: npx electron-builder --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
