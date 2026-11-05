@@ -224,11 +224,9 @@ export class WebServerService {
       if (origin) {
         try {
           const originUrl = new URL(origin)
-          const expectedPort = String(this.port)
-          const oh = originUrl.hostname.replace(/^\[|]$/g, '') // strip IPv6 brackets
-          const isLocalhost = oh === 'localhost' || oh === '127.0.0.1' || oh === '::1'
-          // Must match our port AND be either localhost or same-network (not a random website)
-          if (originUrl.port !== expectedPort || (!isLocalhost && originUrl.protocol !== 'https:' && originUrl.protocol !== 'http:')) {
+          const requestHost = new URL(`http://${req.headers.host}`).host
+          if ((originUrl.protocol !== 'http:' && originUrl.protocol !== 'https:') ||
+              originUrl.host !== requestHost) {
             console.warn(`[WebServer] Rejected WebSocket from unexpected origin: ${origin}`)
             ws.close(4003, 'Origin not allowed')
             return
