@@ -11,6 +11,10 @@ on:
       - 'scripts/visual-regression.mjs'
       - '.github/workflows/visual-regression.yml'
 
+concurrency:
+  group: visual-comparison-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
