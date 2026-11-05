@@ -55,6 +55,7 @@ def launch_and_verify(schema_path: Path) -> None:
         command = [
             "xvfb-run", "-a",
             str(Path.cwd() / "node_modules/.bin/electron"),
+            "--disable-dev-shm-usage",
             str(Path.cwd()),
         ]
         process = subprocess.Popen(
