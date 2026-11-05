@@ -570,7 +570,6 @@ export class LocalFolderProvider implements MediaProvider {
 
               if (existingItem?.file_mtime === fileMtime && existingItem.file_size_bytes === stat.size && (!ffprobeAvailable || Boolean(existingItem.video_codec))) {
                 // File unchanged, mark as present and skip processing
-                scannedFilePaths.add(filePath)
                 result.itemsScanned++
                 continue
               }
@@ -2202,7 +2201,6 @@ export class LocalFolderProvider implements MediaProvider {
               const existingTrack = db.getMusicTrackByPath(filePath)
               if (existingTrack?.file_mtime === fileMtime && existingTrack.file_size === stats.size) {
                 // File unchanged, skip expensive FFprobe analysis
-                scannedFilePaths.add(filePath)
                 result.itemsScanned++
                 continue
               }
