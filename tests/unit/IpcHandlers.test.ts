@@ -123,58 +123,58 @@ describe('IPC Handler Registration', () => {
 
     it('db:getMediaItemById rejects non-positive integer', async () => {
       const handler = handlers.get('db:getMediaItemById')!
-      await expect(handler({} as never, -1)).rejects.toThrow('Validation failed')
-      await expect(handler({} as never, 'abc')).rejects.toThrow('Validation failed')
-      await expect(handler({} as never, 0)).rejects.toThrow('Validation failed')
+      await expect(handler({ senderFrame: { url: 'file:///test' } } as never, -1)).rejects.toThrow('Validation failed')
+      await expect(handler({ senderFrame: { url: 'file:///test' } } as never, 'abc')).rejects.toThrow('Validation failed')
+      await expect(handler({ senderFrame: { url: 'file:///test' } } as never, 0)).rejects.toThrow('Validation failed')
     })
 
     it('db:getMediaItemById accepts valid id', async () => {
       const handler = handlers.get('db:getMediaItemById')!
-      const result = await handler({} as never, 42)
+      const result = await handler({ senderFrame: { url: 'file:///test' } } as never, 42)
       expect(result).toBeNull() // mock returns null
     })
 
     it('db:getSetting rejects empty key', async () => {
       const handler = handlers.get('db:getSetting')!
-      await expect(handler({} as never, '')).rejects.toThrow('Validation failed')
+      await expect(handler({ senderFrame: { url: 'file:///test' } } as never, '')).rejects.toThrow('Validation failed')
     })
 
     it('db:getSetting accepts valid key', async () => {
       const handler = handlers.get('db:getSetting')!
-      const result = await handler({} as never, 'tmdb_api_key')
+      const result = await handler({ senderFrame: { url: 'file:///test' } } as never, 'tmdb_api_key')
       expect(result).toBeNull() // mock returns null
     })
 
     it('db:setSetting rejects key exceeding max length', async () => {
       const handler = handlers.get('db:setSetting')!
-      const mockEvent = { sender: { id: 1 } } as never
+      const mockEvent = { sender: { id: 1 }, senderFrame: { url: 'file:///test' } } as never
       await expect(handler(mockEvent, 'a'.repeat(201), 'value')).rejects.toThrow('Validation failed')
     })
 
     it('db:deleteMediaItem rejects non-integer id', async () => {
       const handler = handlers.get('db:deleteMediaItem')!
-      await expect(handler({} as never, 'not-a-number')).rejects.toThrow('Validation failed')
+      await expect(handler({ senderFrame: { url: 'file:///test' } } as never, 'not-a-number')).rejects.toThrow('Validation failed')
     })
 
     it('db:getMediaItems accepts undefined filters', async () => {
       const handler = handlers.get('db:getMediaItems')!
-      const result = await handler({} as never, undefined)
+      const result = await handler({ senderFrame: { url: 'file:///test' } } as never, undefined)
       expect(Array.isArray(result)).toBe(true)
     })
 
     it('db:getTVShows rejects invalid sortBy', async () => {
       const handler = handlers.get('db:getTVShows')!
-      await expect(handler({} as never, { sortBy: 'DROP TABLE' })).rejects.toThrow('Validation failed')
+      await expect(handler({ senderFrame: { url: 'file:///test' } } as never, { sortBy: 'DROP TABLE' })).rejects.toThrow('Validation failed')
     })
 
     it('db:countMediaItems rejects invalid filter type', async () => {
       const handler = handlers.get('db:countMediaItems')!
-      await expect(handler({} as never, { type: 'invalid' })).rejects.toThrow('Validation failed')
+      await expect(handler({ senderFrame: { url: 'file:///test' } } as never, { type: 'invalid' })).rejects.toThrow('Validation failed')
     })
 
     it('db:getLetterOffset validates required params', async () => {
       const handler = handlers.get('db:getLetterOffset')!
-      await expect(handler({} as never, {})).rejects.toThrow('Validation failed')
+      await expect(handler({ senderFrame: { url: 'file:///test' } } as never, {})).rejects.toThrow('Validation failed')
     })
   })
 })
@@ -189,7 +189,7 @@ describe('IPC Handler Error Handling', () => {
   it('handlers throw errors with context for invalid input', async () => {
     const handler = handlers.get('db:getMediaItemById')!
     try {
-      await handler({} as never, 'invalid')
+      await handler({ senderFrame: { url: 'file:///test' } } as never, 'invalid')
       expect.fail('should throw')
     } catch (error) {
       expect((error as Error).message).toContain('db:getMediaItemById')
@@ -203,6 +203,6 @@ describe('IPC Handler Error Handling', () => {
     })
 
     const handler = handlers.get('db:getMediaItemById')!
-    await expect(handler({} as never, 1)).rejects.toThrow('Database connection lost')
+    await expect(handler({ senderFrame: { url: 'file:///test' } } as never, 1)).rejects.toThrow('Database connection lost')
   })
 })

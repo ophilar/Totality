@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
 import { BrowserWindow } from 'electron'
 import { safeSend } from '../ipc/utils/safeSend'
 import type { GeminiToolDefinition } from './GeminiService'
@@ -5,6 +6,7 @@ import { getDatabase } from '../database/getDatabase'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { getTMDBService } from './TMDBService'
 import { getMusicBrainzService } from './MusicBrainzService'
+import { WISHLIST_MEDIA_TYPES } from '../types/database'
 import type { SeriesCompleteness, MovieCollection } from '../types/database'
 import { formatSize } from './utils/formatUtils'
 
@@ -24,7 +26,7 @@ function collectItem(collector: ActionableItem[] | undefined, item: ActionableIt
 }
 
 /** Strip null/undefined/empty fields to reduce token usage */
-function compact(obj: Record<string, unknown>): Record<string, unknown> {
+function compact<T extends object>(obj: T): Record<string, unknown> {
   const result: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(obj)) {
     if (v !== null && v !== undefined && v !== '') result[k] = v
@@ -60,7 +62,7 @@ export const LIBRARY_TOOLS: GeminiToolDefinition[] = [
         tier_quality: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'], description: 'Filter by quality level within tier' },
         needs_upgrade: { type: 'boolean', description: 'Only return items that need quality upgrades' },
         search_query: { type: 'string', description: 'Search by title' },
-        sort_by: { type: 'string', enum: ['title', 'year', 'tier_score', 'overall_score', 'updated_at'], description: 'Sort field' },
+        sort_by: { type: 'string', enum: ['title', 'year', 'overall_score', 'updated_at'], description: 'Sort field' },
         sort_order: { type: 'string', enum: ['asc', 'desc'], description: 'Sort direction' },
         limit: { type: 'number', description: 'Max results to return (default 20, max 50)' },
       },
@@ -102,7 +104,9 @@ export const LIBRARY_TOOLS: GeminiToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        series_title: { type: 'string', description: 'Optional: filter to a specific series by title' },
+        series_identity_key: { type: 'string', description: 'Optional: canonical series identity key (e.g. tmdb:123, tvdb:456, unresolved:...)' },
+        source_id: { type: 'string', description: 'Optional: source ID for scoping series query' },
+        library_id: { type: 'string', description: 'Optional: library ID for scoping series query' },
         incomplete_only: { type: 'boolean', description: 'Only return incomplete series (default false)' },
         limit: { type: 'number', description: 'Max results (default 20, max 50)' },
       },
@@ -283,7 +287,7 @@ export const LIBRARY_TOOLS: GeminiToolDefinition[] = [
   },
   {
     name: 'get_item_details',
-    description: 'Get full technical details for a specific media item by title or ID. Returns video/audio specs, all audio tracks, subtitle tracks, file info, versions, and quality scores. Use for in-depth quality breakdowns.',
+    description: 'Get full technical details for a specific media item by title or ID. Returns video/audio specs, tracks, file info, versions, and the configurable metadata-based media quality rating.',
     parameters: {
       type: 'object',
       properties: {
@@ -495,8 +499,7 @@ function checkTVShowOwnership(
   // Fallback: title-based search
   const tvShows = db.getTVShows({ searchQuery: title, limit: 1 })
   if (tvShows.length > 0) {
-    const show = tvShows[0] as Record<string, unknown>
-    return { owned: true, episode_count: (show.episode_count as number) || 0 }
+    return { owned: true, episode_count: tvShows[0].episode_count }
   }
 
   return { owned: false, episode_count: 0 }
@@ -576,17 +579,20 @@ export async function executeTool(
 
     case 'get_media_items': {
       const limit = toolNumber(input, 'limit', 1, 50) || 20
+      const requestedSortBy = toolString(input, 'sort_by')
+      const sortBy = (['title', 'year', 'updated_at', 'created_at', 'overall_score', 'play_count', 'last_watched_at', 'tmdb_rating', 'estimated_savings_bytes'] as const)
+        .find(value => value === requestedSortBy)
       const items = db.getMediaItems({
         type: toolString(input, 'type') as 'movie' | 'episode' | undefined || undefined,
         qualityTier: toolString(input, 'quality_tier') || undefined,
         tierQuality: toolString(input, 'tier_quality') || undefined,
         needsUpgrade: toolBoolean(input, 'needs_upgrade'),
         searchQuery: toolString(input, 'search_query', 200) || undefined,
-        sortBy: toolString(input, 'sort_by') || 'title',
+        sortBy: sortBy ?? 'title',
         sortOrder: (toolString(input, 'sort_order') as 'asc' | 'desc') || 'asc',
         limit,
       })
-      const simplified = items.map((item: Record<string, unknown>) => compact({
+      const simplified = items.map((item) => compact({
         title: item.title,
         year: item.year,
         type: item.type,
@@ -595,7 +601,7 @@ export async function executeTool(
         episode_number: item.episode_number,
         resolution: item.resolution,
         video_codec: item.video_codec,
-        video_bitrate: item.video_bitrate,
+        video_bitrate_kbps: item.video_bitrate_kbps,
         audio_codec: item.audio_codec,
         quality_tier: item.quality_tier,
         tier_quality: item.tier_quality,
@@ -612,7 +618,7 @@ export async function executeTool(
         sortBy: (toolString(input, 'sort_by') as 'title' | 'episode_count' | 'season_count') || 'title',
         limit,
       })
-      const simplified = shows.map((s: Record<string, unknown>) => compact({
+      const simplified = shows.map((s) => compact({
         series_title: s.series_title,
         episode_count: s.episode_count,
         season_count: s.season_count,
@@ -631,18 +637,21 @@ export async function executeTool(
     }
 
     case 'get_series_completeness': {
-      let series
-      const seriesTitle = toolString(input, 'series_title', 300)
-      if (seriesTitle) {
-        const single = db.getSeriesCompletenessByTitle(seriesTitle)
+      let series: SeriesCompleteness[]
+      const seriesIdentityKey = toolString(input, 'series_identity_key', 300)
+      const sourceId = toolString(input, 'source_id', 100) || undefined
+      const libraryId = toolString(input, 'library_id', 100) || undefined
+
+      if (seriesIdentityKey) {
+        const single = db.getSeriesCompletenessByIdentity(seriesIdentityKey, sourceId, libraryId)
         series = single ? [single] : []
       } else if (toolBoolean(input, 'incomplete_only')) {
-        series = db.getIncompleteSeries()
+        series = db.getIncompleteSeries(sourceId)
       } else {
-        series = db.getAllSeriesCompleteness()
+        series = db.getAllSeriesCompleteness(sourceId, libraryId)
       }
       const seriesLimit = toolNumber(input, 'limit', 1, 50) || 20
-      const limited = (series as SeriesCompleteness[]).slice(0, seriesLimit)
+      const limited = series.slice(0, seriesLimit)
       const simplified = limited.map((s) => {
         const missingEps = s.missing_episodes || []
         const missingCount = missingEps.length
@@ -704,7 +713,7 @@ export async function executeTool(
       const wlLimit = toolNumber(input, 'limit', 1, 50) || 20
       const items = db.getWishlistItems({
         reason: (toolString(input, 'reason') as 'missing' | 'upgrade') || undefined,
-        media_type: toolString(input, 'media_type') || undefined,
+        media_type: WISHLIST_MEDIA_TYPES.find(type => type === toolString(input, 'media_type')),
         limit: wlLimit,
         status: 'active',
       })
@@ -844,7 +853,7 @@ export async function executeTool(
             quality: ownedItem ? {
               resolution: ownedItem.resolution,
               video_codec: ownedItem.video_codec,
-              video_bitrate: ownedItem.video_bitrate,
+              video_bitrate_kbps: ownedItem.video_bitrate_kbps,
               audio_codec: ownedItem.audio_codec,
               quality_tier: ownedItem.quality_tier,
               tier_quality: ownedItem.tier_quality,
@@ -877,7 +886,7 @@ export async function executeTool(
             first_air_date: s.first_air_date,
             tmdb_id: s.id,
             overview: s.overview?.substring(0, 150) || null,
-            owned_episodes: match ? (match as Record<string, unknown>).episode_count : 0,
+            owned_episodes: match?.episode_count ?? 0,
             in_library: !!match,
           }
         })
@@ -1216,10 +1225,8 @@ export async function executeTool(
       }
 
       // Parse audio tracks
-      let audioTracks: Array<Record<string, unknown>> = []
-      try {
-        if (item.audio_tracks) {
-          audioTracks = JSON.parse(item.audio_tracks as string).map((t: Record<string, unknown>) => compact({
+      const audioTracks: Array<Record<string, unknown>> = item.audio_tracks
+        ? JSON.parse(item.audio_tracks as string).map((t: Record<string, unknown>) => compact({
             codec: t.codec,
             channels: t.channels,
             language: t.language,
@@ -1228,18 +1235,14 @@ export async function executeTool(
             profile: t.profile,
             object_audio: t.has_object_audio || undefined,
           }))
-        }
-      } catch { /* empty */ }
+        : []
 
       // Parse subtitle tracks
-      let subtitleTracks: string[] = []
-      try {
-        if (item.subtitle_tracks) {
-          subtitleTracks = JSON.parse(item.subtitle_tracks as string).map(
+      const subtitleTracks: string[] = item.subtitle_tracks
+        ? JSON.parse(item.subtitle_tracks as string).map(
             (t: Record<string, unknown>) => t.language || t.title || 'Unknown',
           )
-        }
-      } catch { /* empty */ }
+        : []
 
       // Get quality score
       const qualityScore = db.getQualityScoreByMediaId(item.id as number) as Record<string, unknown> | null
@@ -1251,18 +1254,18 @@ export async function executeTool(
         label: v.label,
         resolution: v.resolution,
         video_codec: v.video_codec,
-        video_bitrate: v.video_bitrate,
+        video_bitrate_kbps: v.video_bitrate_kbps,
         audio_codec: v.audio_codec,
         audio_channels: v.audio_channels,
         hdr_format: v.hdr_format,
-        file_size: v.file_size,
+        file_size_bytes: v.file_size_bytes,
         quality_tier: v.quality_tier,
         tier_quality: v.tier_quality,
         is_best: v.is_best,
       })) : undefined
 
-      const fileSizeMB = item.file_size ? Math.round((item.file_size as number) / 1024 / 1024) : null
-      const durationMin = item.duration ? Math.round((item.duration as number) / 60) : null
+      const fileSizeMB = item.file_size_bytes ? Math.round((item.file_size_bytes as number) / 1024 / 1024) : null
+      const durationMin = item.duration_ms ? Math.round((item.duration_ms as number) / 60000) : null
 
       const details = compact({
         title: item.title,
@@ -1274,7 +1277,7 @@ export async function executeTool(
         // Video
         resolution: item.resolution,
         video_codec: item.video_codec,
-        video_bitrate: item.video_bitrate,
+        video_bitrate_kbps: item.video_bitrate_kbps,
         video_frame_rate: item.video_frame_rate,
         hdr_format: item.hdr_format,
         color_bit_depth: item.color_bit_depth,
@@ -1282,7 +1285,7 @@ export async function executeTool(
         // Audio (primary)
         audio_codec: item.audio_codec,
         audio_channels: item.audio_channels,
-        audio_bitrate: item.audio_bitrate,
+        audio_bitrate_kbps: item.audio_bitrate_kbps,
         has_object_audio: item.has_object_audio,
         // All tracks
         audio_tracks: audioTracks.length > 0 ? audioTracks : undefined,
@@ -1340,7 +1343,9 @@ export async function executeTool(
                 resolvedTitle = releases[0].title || resolvedTitle
               }
             }
-          } catch { /* continue without MusicBrainz data */ }
+          } catch (error) {
+            console.warn(`[GeminiTools] MusicBrainz enrichment failed for wishlist item "${item.title}":`, error)
+          }
         } else {
           // Movie/TV: look up TMDB for poster
           try {
@@ -1373,7 +1378,9 @@ export async function executeTool(
                 }
               }
             }
-          } catch { /* continue without TMDB data */ }
+          } catch (error) {
+            console.warn(`[GeminiTools] TMDB enrichment failed for wishlist item "${item.title}":`, error)
+          }
         }
 
         // Map chat media types to wishlist media types
@@ -1416,7 +1423,7 @@ export async function executeTool(
       // Notify renderer to refresh wishlist immediately
       if (added > 0) {
         for (const win of BrowserWindow.getAllWindows()) {
-          safeSend(win, 'wishlist:changed')
+          safeSend(win, IPC_CHANNELS.wishlistChanged)
         }
       }
 
@@ -1511,7 +1518,7 @@ export async function executeTool(
       for (const album of allAlbums) {
         const quality = db.getMusicQualityScore(album.id as number)
         if (quality) {
-          const tier = (quality as Record<string, unknown>).quality_tier as string
+          const tier = quality.quality_tier
           if (tier in tiers) tiers[tier]++
           else tiers.UNSCORED++
         } else {
@@ -1558,22 +1565,15 @@ export async function executeTool(
 
       const limited = artists.slice(0, limit)
       const simplified = limited.map((a: Record<string, unknown>) => {
-        let missingCount = 0
-        let missingSample: string[] = []
-        try {
-          const parsed = JSON.parse((a.missing_albums as string) || '[]')
-          missingCount = parsed.length
-          missingSample = parsed.slice(0, 5).map((m: Record<string, unknown>) =>
-            m.year ? `${m.title} (${m.year})` : `${m.title}`,
-          )
-        } catch { /* empty */ }
+        const missingAlbums = JSON.parse(a.missing_albums as string) as Array<Record<string, unknown>>
+        const missingSample = missingAlbums.slice(0, 5).map(m => m.year ? `${m.title} (${m.year})` : `${m.title}`)
         return compact({
           artist_name: a.artist_name,
           total_albums: a.total_albums,
           owned_albums: a.owned_albums,
           completeness_percentage: a.completeness_percentage,
           country: a.country,
-          missing_album_count: missingCount,
+          missing_album_count: missingAlbums.length,
           missing_sample: missingSample.length > 0 ? missingSample : undefined,
         })
       })
@@ -1638,10 +1638,10 @@ export async function executeTool(
         avg_audio_bitrate: album.avg_audio_bitrate,
         best_sample_rate: album.best_sample_rate,
         best_bit_depth: album.best_bit_depth,
-        quality_tier: quality ? (quality as Record<string, unknown>).quality_tier : undefined,
-        tier_quality: quality ? (quality as Record<string, unknown>).tier_quality : undefined,
-        tier_score: quality ? (quality as Record<string, unknown>).tier_score : undefined,
-        needs_upgrade: quality ? (quality as Record<string, unknown>).needs_upgrade : undefined,
+        quality_tier: quality?.quality_tier,
+        tier_quality: quality?.tier_quality,
+        tier_score: quality?.tier_score,
+        needs_upgrade: quality?.needs_upgrade,
         completeness_percentage: completeness ? (completeness as unknown as Record<string, unknown>).completeness_percentage : undefined,
         tracks: trackData,
       })
@@ -1661,8 +1661,8 @@ export async function executeTool(
         sortOrder: 'desc',
         limit,
       })
-      const filtered = items.filter((i: Record<string, unknown>) => (i.play_count as number) > 0)
-      return JSON.stringify(filtered.map((i: Record<string, unknown>) => compact({
+      const filtered = items.filter((i) => (i.play_count ?? 0) > 0)
+      return JSON.stringify(filtered.map((i) => compact({
         title: i.title, year: i.year, type: i.type,
         play_count: i.play_count, last_watched_at: i.last_watched_at,
         quality_tier: i.quality_tier, series_title: i.series_title,
@@ -1696,7 +1696,7 @@ export async function executeTool(
         copies: d.copies.map((c: any) => ({
           source_type: c.source_type, resolution: c.resolution,
           video_codec: c.video_codec, quality_score: c.overall_score,
-          file_size: c.file_size ? `${(c.file_size / 1e9).toFixed(1)} GB` : null,
+          file_size_bytes: c.file_size_bytes ? `${(c.file_size_bytes / 1e9).toFixed(1)} GB` : null,
         })),
       })))
     }
@@ -1727,8 +1727,7 @@ export async function executeTool(
       const persons = db.getPersonCompleteness(personType)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return JSON.stringify(persons.map((p: any) => {
-        let missingMovies: Array<{ title: string; year?: number }> = []
-        try { missingMovies = JSON.parse(p.missing_movies).slice(0, 10) } catch { /* ignore */ }
+        const missingMovies = (JSON.parse(p.missing_movies) as Array<{ title: string; year?: number }>).slice(0, 10)
         return {
           person_name: p.person_name, person_type: p.person_type,
           total_movies: p.total_movies, owned_movies: p.owned_movies,
@@ -1748,8 +1747,8 @@ export async function executeTool(
         limit,
       })
       const minRating = toolNumber(input, 'min_rating') || 7.5
-      const filtered = items.filter((i: Record<string, unknown>) => ((i.tmdb_rating as number) || 0) >= minRating)
-      return JSON.stringify(filtered.map((i: Record<string, unknown>) => compact({
+      const filtered = items.filter((i) => (i.tmdb_rating ?? 0) >= minRating)
+      return JSON.stringify(filtered.map((i) => compact({
         title: i.title, year: i.year, type: i.type,
         tmdb_rating: i.tmdb_rating, quality_tier: i.quality_tier,
         series_title: i.series_title,
@@ -1780,10 +1779,7 @@ export async function executeTool(
       }
 
       const comp = completeness as unknown as Record<string, unknown>
-      let missingAlbums: Array<Record<string, unknown>> = []
-      try {
-        missingAlbums = JSON.parse((comp.missing_albums as string) || '[]')
-      } catch { /* empty */ }
+      const missingAlbums = JSON.parse(comp.missing_albums as string) as Array<Record<string, unknown>>
 
       // Get owned albums
       const ownedAlbums = db.getMusicAlbumsByArtistName(artistName, limit) as unknown as Record<string, unknown>[]
@@ -1816,7 +1812,7 @@ export async function executeTool(
       const tracks = db.getMusicTracks({
         artistName,
         limit: limit * 5, // fetch more to filter
-      }) as Record<string, unknown>[]
+      })
 
       // Aggregate mood/genre tags
       const moodCounts: Record<string, number> = {}
@@ -1825,7 +1821,7 @@ export async function executeTool(
 
       for (const track of tracks) {
         const moods = (track.mood as string || '').split(';').map(s => s.trim()).filter(Boolean)
-        const genres = (track.genre as string || '').split(';').map(s => s.trim()).filter(Boolean)
+        const genres = (track.genres || '').split(';').map(s => s.trim()).filter(Boolean)
 
         for (const m of moods) moodCounts[m] = (moodCounts[m] || 0) + 1
         for (const g of genres) genreCounts[g] = (genreCounts[g] || 0) + 1
@@ -1853,7 +1849,9 @@ export async function executeTool(
     }
 
     case 'get_recent_notifications': {
-      const notifType = toolString(input, 'type') || undefined
+      const requestedType = toolString(input, 'type')
+      const notifType = (['source_change', 'scan_complete', 'error', 'info'] as const)
+        .find(type => type === requestedType)
       const limit = Math.min(toolNumber(input, 'limit') || 20, 50)
 
       const notifications = db.getNotifications({ limit, type: notifType })

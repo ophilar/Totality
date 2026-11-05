@@ -17,7 +17,7 @@ import { getErrorMessage } from '../../services/utils/errorUtils'
 
 import type { Database } from 'sql.js'
 import * as fs from 'fs'
-import * as path from 'path'
+import * as path from 'node:path'
 import { getDatabase } from '../../database/getDatabase'
 import { getQualityAnalyzer } from '../../services/QualityAnalyzer'
 import { getKodiLocalDiscoveryService } from '../../services/KodiLocalDiscoveryService'
@@ -34,7 +34,7 @@ import type {
   SourceConfig,
   ProviderType,
 } from '../base/MediaProvider'
-import type { MediaItem, MediaItemVersion, AudioTrack, MusicArtist, MusicAlbum, MusicTrack, AlbumType } from '../../types/database'
+import type { MediaItemVersion, MusicArtist, MusicAlbum, MusicTrack, AlbumType } from '../../types/database'
 import { extractVersionNames } from '../utils/VersionNaming'
 import {
   QUERY_MOVIES_WITH_DETAILS,
@@ -61,12 +61,12 @@ import {
   KodiMusicSongResult,
   parseTrackNumber,
   buildMusicFilePath,
-  guessCodecFromExtension,
 } from './KodiMusicDatabaseSchema'
 import {
   isLosslessCodec,
   calculateAlbumStats,
   parseKodiMoodString,
+  guessCodecFromExtension,
 } from '../base/MusicScannerUtils'
 import {
   normalizeVideoCodec,
@@ -76,12 +76,15 @@ import {
   normalizeAudioChannels,
   hasObjectAudio,
 } from '../../services/MediaNormalizer'
+import { MediaConverter } from '../../services/MediaConverter'
 import {
   estimateAudioBitrate,
   calculateAudioBitrateFromFile,
+  groupByMediaIdentity,
+  selectBestAudioTrack,
   scoreVersion,
 } from '../utils/ProviderUtils'
-import { getFileNameParser } from '../../services/FileNameParser'
+import { AudioCodecRanker } from '../../services/AudioCodecRanker'
 import type { AudioStreamInfo } from '../base/MediaProvider'
 
 // Type for audio stream query result
@@ -352,15 +355,15 @@ export class KodiLocalProvider implements MediaProvider {
       if (analysis.video.width && analysis.video.height) {
         enhanced.width = analysis.video.width
         enhanced.height = analysis.video.height
-        enhanced.resolution = this.normalizeResolutionFromDimensions(analysis.video.width, analysis.video.height)
+        enhanced.resolution = normalizeResolution(analysis.video.width, analysis.video.height)
       }
 
       if (analysis.video.codec) {
-        enhanced.videoCodec = this.normalizeVideoCodecName(analysis.video.codec)
+        enhanced.videoCodec = normalizeVideoCodec(analysis.video.codec)
       }
 
-      if (analysis.video.bitrate !== undefined) {
-        enhanced.videoBitrate = analysis.video.bitrate
+      if (analysis.video.bitrateKbps !== undefined) {
+        enhanced.videoBitrate = analysis.video.bitrateKbps
       }
 
       if (analysis.video.frameRate) {
@@ -389,13 +392,13 @@ export class KodiLocalProvider implements MediaProvider {
     }
 
     // Duration from FFprobe
-    if (analysis.duration) {
-      enhanced.duration = analysis.duration
+    if (analysis.durationMs) {
+      enhanced.duration = analysis.durationMs
     }
 
     // File size from FFprobe
-    if (analysis.fileSize) {
-      enhanced.fileSize = analysis.fileSize
+    if (analysis.fileSizeBytes) {
+      enhanced.fileSize = analysis.fileSizeBytes
     }
 
     // Container format
@@ -406,10 +409,10 @@ export class KodiLocalProvider implements MediaProvider {
     // Audio tracks - replace with accurate FFprobe data (independent of video)
     if (analysis.audioTracks.length > 0) {
       enhanced.audioTracks = analysis.audioTracks.map(track => ({
-        codec: this.normalizeAudioCodecName(track.codec),
+        codec: normalizeAudioCodec(track.codec, track.profile),
         profile: track.profile,
         channels: track.channels,
-        bitrate: track.bitrate,
+        bitrate: track.bitrateKbps,
         sampleRate: track.sampleRate,
         language: track.language,
         title: track.title,
@@ -418,9 +421,9 @@ export class KodiLocalProvider implements MediaProvider {
       }))
 
       // Find the best audio track (not just default/first) for primary audio fields
-      const primaryAudio = this.selectBestFFprobeAudioTrack(analysis.audioTracks)
+      const primaryAudio = AudioCodecRanker.selectBestTrack(analysis.audioTracks.map(track => ({ ...track, bitrate: track.bitrateKbps ?? 0 })))
       if (primaryAudio) {
-        enhanced.audioCodec = this.normalizeAudioCodecName(primaryAudio.codec)
+        enhanced.audioCodec = normalizeAudioCodec(primaryAudio.codec, primaryAudio.profile)
         enhanced.audioChannels = primaryAudio.channels
         enhanced.audioBitrate = primaryAudio.bitrate
         enhanced.audioSampleRate = primaryAudio.sampleRate
@@ -441,126 +444,6 @@ export class KodiLocalProvider implements MediaProvider {
     }
 
     return enhanced
-  }
-
-  /**
-   * Normalize resolution string from dimensions
-   */
-  private normalizeResolutionFromDimensions(width: number, height: number): string {
-    if (height >= 2160 || width >= 3840) return '4K'
-    if (height >= 1080 || width >= 1920) return '1080p'
-    if (height >= 720 || width >= 1280) return '720p'
-    if (height >= 480 || width >= 720) return '480p'
-    return 'SD'
-  }
-
-  /**
-   * Normalize video codec name from FFprobe output
-   */
-  private normalizeVideoCodecName(codec: string): string {
-    const codecLower = codec.toLowerCase()
-    if (codecLower === 'hevc' || codecLower === 'h265') return 'HEVC'
-    if (codecLower === 'h264' || codecLower === 'avc1' || codecLower === 'avc') return 'H.264'
-    if (codecLower === 'av1') return 'AV1'
-    if (codecLower === 'vp9') return 'VP9'
-    if (codecLower === 'vp8') return 'VP8'
-    if (codecLower === 'mpeg4' || codecLower === 'mpeg-4') return 'MPEG-4'
-    if (codecLower === 'mpeg2video') return 'MPEG-2'
-    if (codecLower === 'vc1') return 'VC-1'
-    return codec.toUpperCase()
-  }
-
-  /**
-   * Normalize audio codec name from FFprobe output
-   */
-  private normalizeAudioCodecName(codec: string): string {
-    const codecLower = codec.toLowerCase()
-    if (codecLower === 'truehd') return 'TrueHD'
-    if (codecLower === 'dts') return 'DTS'
-    if (codecLower.includes('dts-hd') || codecLower === 'dtshd') return 'DTS-HD MA'
-    if (codecLower === 'eac3' || codecLower === 'ec-3') return 'EAC3'
-    if (codecLower === 'ac3' || codecLower === 'ac-3') return 'AC3'
-    if (codecLower === 'aac') return 'AAC'
-    if (codecLower === 'flac') return 'FLAC'
-    if (codecLower === 'pcm_s16le' || codecLower === 'pcm_s24le' || codecLower.startsWith('pcm')) return 'PCM'
-    if (codecLower === 'mp3' || codecLower === 'mp3float') return 'MP3'
-    if (codecLower === 'opus') return 'Opus'
-    if (codecLower === 'vorbis') return 'Vorbis'
-    return codec.toUpperCase()
-  }
-
-  /**
-   * Select the best audio track from FFprobe analysis results
-   * Prioritizes: Object audio > Lossless > Premium surround > Standard surround > Stereo
-   */
-  private selectBestFFprobeAudioTrack(tracks: Array<{
-    codec: string
-    channels: number
-    bitrate?: number
-    hasObjectAudio: boolean
-    profile?: string
-    sampleRate?: number
-    language?: string
-    title?: string
-    isDefault: boolean
-  }>): typeof tracks[0] | undefined {
-    if (!tracks || tracks.length === 0) return undefined
-    if (tracks.length === 1) return tracks[0]
-
-    let bestTrack = tracks[0]
-    let bestScore = this.calculateAudioTrackScore(bestTrack)
-
-    for (let i = 1; i < tracks.length; i++) {
-      const score = this.calculateAudioTrackScore(tracks[i])
-      if (score > bestScore) {
-        bestScore = score
-        bestTrack = tracks[i]
-      }
-    }
-
-    return bestTrack
-  }
-
-  /**
-   * Calculate quality score for an audio track (higher = better)
-   * Matches logic in QualityAnalyzer.calculateAudioTrackQualityScore()
-   */
-  private calculateAudioTrackScore(track: {
-    codec: string
-    channels: number
-    bitrate?: number
-    hasObjectAudio: boolean
-  }): number {
-    let score = 0
-    const codecLower = track.codec.toLowerCase()
-
-    // Object audio (Atmos, DTS:X) - highest priority
-    if (track.hasObjectAudio) {
-      score += 10000
-    }
-
-    // Lossless codecs
-    if (codecLower.includes('truehd') || codecLower.includes('dts-hd') || codecLower === 'dtshd' ||
-        codecLower === 'flac' || codecLower.includes('pcm') || codecLower === 'alac') {
-      score += 5000
-    }
-
-    // Premium lossy codecs
-    if (codecLower.includes('eac3') || codecLower.includes('e-ac-3') || codecLower.includes('dd+')) {
-      score += 3000
-    } else if (codecLower.includes('ac3') || codecLower.includes('ac-3') || codecLower === 'dts') {
-      score += 2000
-    } else if (codecLower === 'aac') {
-      score += 1000
-    }
-
-    // More channels = better (7.1 > 5.1 > stereo)
-    score += (track.channels || 2) * 100
-
-    // Higher bitrate = better
-    score += (track.bitrate || 0)
-
-    return score
   }
 
   // ============================================================================
@@ -790,8 +673,10 @@ export class KodiLocalProvider implements MediaProvider {
     try {
       const stats = fs.statSync(filePath)
       return stats.size
-    } catch {
-      // File may not be accessible (network drive, removed, etc.)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.warn(`[KodiLocalProvider] Failed to read file size for "${filePath}":`, error)
+      }
       return 0
     }
   }
@@ -1001,7 +886,7 @@ export class KodiLocalProvider implements MediaProvider {
               if (i === 0) {
                 console.log(`[KodiLocalProvider] FFprobe result for "${items[i].title}":`, {
                   success: ffprobeResult.success, error: ffprobeResult.error, hasVideo: !!ffprobeResult.video,
-                  videoBitrate: ffprobeResult.video?.bitrate, colorBitDepth: ffprobeResult.video?.bitDepth,
+                  videoBitrate: ffprobeResult.video?.bitrateKbps, colorBitDepth: ffprobeResult.video?.bitDepth,
                   colorSpace: ffprobeResult.video?.colorSpace, frameRate: ffprobeResult.video?.frameRate,
                   audioTracks: ffprobeResult.audioTracks?.length,
                 })
@@ -1031,26 +916,9 @@ export class KodiLocalProvider implements MediaProvider {
         type VersionData = Omit<MediaItemVersion, 'id' | 'media_item_id'>
         const isMovieLib = libraryId === 'movies'
 
-        const groups: MediaMetadata[][] = []
-        if (isMovieLib) {
-          const groupMap = new Map<string, MediaMetadata[]>()
-          for (const item of items) {
-            const groupKey = item.tmdbId ? `tmdb:${item.tmdbId}`
-              : item.imdbId ? `imdb:${item.imdbId}`
-              : `title:${this.normalizeGroupTitle(item.title || '')}|${item.year || ''}`
-
-            // Log grouping info for first 10 items or potential multi-versions
-            if (groupMap.size < 10 || groupMap.has(groupKey)) {
-              console.log(`[KodiLocalProvider] Grouping "${item.title}" → key="${groupKey}" (tmdb=${item.tmdbId || 'none'}, imdb=${item.imdbId || 'none'})`)
-            }
-
-            if (!groupMap.has(groupKey)) groupMap.set(groupKey, [])
-            groupMap.get(groupKey)!.push(item)
-          }
-          groups.push(...groupMap.values())
-        } else {
-          for (const item of items) groups.push([item])
-        }
+        const groups = isMovieLib
+          ? groupByMediaIdentity(items, item => item)
+          : items.map(item => [item])
 
         const multiVersionGroups = groups.filter(g => g.length > 1).length
         if (multiVersionGroups > 0) {
@@ -1059,7 +927,7 @@ export class KodiLocalProvider implements MediaProvider {
 
         for (const group of groups) {
           try {
-            const versions: VersionData[] = group.map(m => this.convertMetadataToVersion(m))
+            const versions: VersionData[] = group.map(m => MediaConverter.toMediaItemVersion(m, 'kodi_local'))
 
             if (versions.length > 1) {
               extractVersionNames(versions)
@@ -1068,30 +936,25 @@ export class KodiLocalProvider implements MediaProvider {
             const bestIdx = versions.reduce((bi, v, i) => scoreVersion(v) > scoreVersion(versions[bi]) ? i : bi, 0)
             const bestMetadata = group[bestIdx]
 
-            const mediaItem = this.convertMetadataToMediaItem(bestMetadata)
-            if (mediaItem) {
-              mediaItem.source_id = this.sourceId
-              mediaItem.source_type = 'kodi-local'
-              mediaItem.library_id = libraryId
-              mediaItem.version_count = versions.length
-              mediaItem.plex_id = group[0].itemId
+            const mediaItem = MediaConverter.toMediaItem(bestMetadata, { sourceId: this.sourceId, sourceType: this.providerType, libraryId })
 
-              const id = await db.upsertMediaItem(mediaItem)
-              scannedProviderIds.add(mediaItem.plex_id)
+            mediaItem.version_count = versions.length
+            mediaItem.plex_id = group[0].itemId
 
-              // Sync versions: delete stale, upsert current, update best version
-              const scoredVersions = versions.map(version => {
-                const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
-                return { ...version, media_item_id: id, ...vScore } as MediaItemVersion
-              })
-              db.syncMediaItemVersions(id, scoredVersions)
+            const id = await db.upsertMediaItem(mediaItem)
+            scannedProviderIds.add(mediaItem.plex_id)
 
-              mediaItem.id = id
-              const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
-              await db.upsertQualityScore(qualityScore)
+            const scoredVersions = versions.map(version => {
+              const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
+              return { ...version, media_item_id: id, ...vScore } as MediaItemVersion
+            })
+            db.syncMediaItemVersions(id, scoredVersions)
 
-              result.itemsScanned++
-            }
+            mediaItem.id = id
+            const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
+            await db.upsertQualityScore(qualityScore)
+
+            result.itemsScanned++
           } catch (error: unknown) {
             const msg = getErrorMessage(error)
             if (/cancel/i.test(msg)) throw error
@@ -1108,14 +971,11 @@ export class KodiLocalProvider implements MediaProvider {
       }
 
       // Remove stale items (only for full scans, not incremental)
-      if (!isIncremental) {
+      if (!isIncremental && scannedProviderIds.size > 0) {
         const itemType = libraryId === 'movies' ? 'movie' : 'episode'
         const existingItems = db.getMediaItems({ type: itemType, sourceId: this.sourceId, libraryId })
 
-        // Safety guard: refuse deletion when scan returned 0 items but DB has items
-        if (scannedProviderIds.size === 0 && existingItems.length > 0) {
-          console.warn(`[KodiLocalProvider ${this.sourceId}] Scan found 0 items but DB has ${existingItems.length} — skipping deletion (possible database read failure)`)
-        } else for (const item of existingItems) {
+        for (const item of existingItems) {
           if (!scannedProviderIds.has(item.plex_id)) {
             if (item.id) {
               await db.deleteMediaItem(item.id)
@@ -1248,7 +1108,7 @@ export class KodiLocalProvider implements MediaProvider {
                   success: ffprobeResult.success,
                   error: ffprobeResult.error,
                   hasVideo: !!ffprobeResult.video,
-                  videoBitrate: ffprobeResult.video?.bitrate,
+                  videoBitrate: ffprobeResult.video?.bitrateKbps,
                 })
                 if (ffprobeResult.success) {
                   metadata = this.enhanceMetadataWithFFprobe(metadata, ffprobeResult)
@@ -1259,11 +1119,7 @@ export class KodiLocalProvider implements MediaProvider {
             }
 
             // Convert to MediaItem and save
-            const mediaItem = this.convertMetadataToMediaItem(metadata)
-            if (mediaItem) {
-              mediaItem.source_id = this.sourceId
-              mediaItem.source_type = 'kodi-local'
-              mediaItem.library_id = libraryId
+            const mediaItem = MediaConverter.toMediaItem(metadata, { sourceId: this.sourceId, sourceType: this.providerType, libraryId })
 
               const id = await db.upsertMediaItem(mediaItem)
 
@@ -1275,7 +1131,7 @@ export class KodiLocalProvider implements MediaProvider {
               result.itemsScanned++
               result.itemsUpdated++
               console.log(`[KodiLocalProvider ${this.sourceId}] Updated: ${metadata.title}`)
-            }
+
           } catch (error: unknown) {
             result.errors.push(`Failed to process ${inputFilePath}: ${getErrorMessage(error)}`)
           }
@@ -1527,18 +1383,8 @@ export class KodiLocalProvider implements MediaProvider {
     const audioTracks = this.convertAudioStreams(audioStreams, movie.title, totalBitrate, videoBitrate)
 
     // Find the best audio track (highest quality, prefer object audio)
-    let bestAudio = audioTracks[0]
-    let hasAnyObjectAudio = false
-    for (const track of audioTracks) {
-      if (track.hasObjectAudio) {
-        hasAnyObjectAudio = true
-        if (!bestAudio?.hasObjectAudio || (track.bitrate || 0) > (bestAudio?.bitrate || 0)) {
-          bestAudio = track
-        }
-      } else if (!bestAudio?.hasObjectAudio && (track.bitrate || 0) > (bestAudio?.bitrate || 0)) {
-        bestAudio = track
-      }
-    }
+    const bestAudio = selectBestAudioTrack(audioTracks.map((track, index) => ({ ...track, index: track.index ?? index, bitrate: track.bitrate ?? 0 })))
+    const hasAnyObjectAudio = audioTracks.some(track => track.hasObjectAudio)
 
     const audioCodec = bestAudio?.codec || normalizeAudioCodec(movie.audioCodec) || undefined
     const audioChannels = bestAudio?.channels || normalizeAudioChannels(movie.audioChannels, undefined) || undefined
@@ -1607,18 +1453,8 @@ export class KodiLocalProvider implements MediaProvider {
     const audioTracks = this.convertAudioStreams(audioStreams, episode.title, totalBitrate, videoBitrate)
 
     // Find the best audio track
-    let bestAudio = audioTracks[0]
-    let hasAnyObjectAudio = false
-    for (const track of audioTracks) {
-      if (track.hasObjectAudio) {
-        hasAnyObjectAudio = true
-        if (!bestAudio?.hasObjectAudio || (track.bitrate || 0) > (bestAudio?.bitrate || 0)) {
-          bestAudio = track
-        }
-      } else if (!bestAudio?.hasObjectAudio && (track.bitrate || 0) > (bestAudio?.bitrate || 0)) {
-        bestAudio = track
-      }
-    }
+    const bestAudio = selectBestAudioTrack(audioTracks.map((track, index) => ({ ...track, index: track.index ?? index, bitrate: track.bitrate ?? 0 })))
+    const hasAnyObjectAudio = audioTracks.some(track => track.hasObjectAudio)
 
     const audioCodec = bestAudio?.codec || normalizeAudioCodec(episode.audioCodec) || undefined
     const audioChannels = bestAudio?.channels || normalizeAudioChannels(episode.audioChannels, undefined) || undefined
@@ -1657,145 +1493,9 @@ export class KodiLocalProvider implements MediaProvider {
     }
   }
 
-  private convertMetadataToMediaItem(metadata: MediaMetadata): MediaItem | null {
-    // Build audio tracks from metadata.audioTracks if available, otherwise from primary audio info
-    const audioTracks: AudioTrack[] = []
-    if (metadata.audioTracks && metadata.audioTracks.length > 0) {
-      // Use all audio tracks from metadata, preserving object audio detection
-      metadata.audioTracks.forEach((track, index) => {
-        audioTracks.push({
-          index,
-          codec: track.codec || 'Unknown',
-          channels: track.channels || 2,
-          bitrate: track.bitrate || 0,
-          language: track.language,
-          hasObjectAudio: track.hasObjectAudio || false,
-        })
-      })
-    } else if (metadata.audioCodec) {
-      // Fallback to single track from primary audio info
-      audioTracks.push({
-        index: 0,
-        codec: metadata.audioCodec,
-        channels: metadata.audioChannels || 2,
-        bitrate: metadata.audioBitrate || 0,
-        hasObjectAudio: metadata.hasObjectAudio || false,
-      })
-    }
 
-    return {
-      plex_id: metadata.itemId,
-      title: metadata.title,
-      sort_title: metadata.sortTitle,
-      year: metadata.year,
-      type: metadata.type,
-      series_title: metadata.seriesTitle,
-      season_number: metadata.seasonNumber,
-      episode_number: metadata.episodeNumber,
-      file_path: metadata.filePath || '',
-      file_size: metadata.fileSize || 0,
-      duration: metadata.duration || 0,
-      resolution: metadata.resolution || 'SD',
-      width: metadata.width || 0,
-      height: metadata.height || 0,
-      video_codec: metadata.videoCodec || '',
-      video_bitrate: metadata.videoBitrate || 0,
-      video_frame_rate: metadata.videoFrameRate,
-      color_bit_depth: metadata.colorBitDepth,
-      color_space: metadata.colorSpace,
-      video_profile: metadata.videoProfile,
-      video_level: metadata.videoLevel ? parseInt(metadata.videoLevel, 10) : undefined,
-      audio_codec: metadata.audioCodec || '',
-      audio_channels: metadata.audioChannels || 2,
-      audio_bitrate: metadata.audioBitrate || 0,
-      has_object_audio: metadata.hasObjectAudio || false,
-      hdr_format: metadata.hdrFormat,
-      audio_tracks: JSON.stringify(audioTracks),
-      subtitle_tracks: metadata.subtitleTracks && metadata.subtitleTracks.length > 0
-        ? JSON.stringify(metadata.subtitleTracks.map((t, i) => ({
-            index: i,
-            codec: t.codec || 'unknown',
-            language: t.language,
-            title: t.title,
-            isDefault: t.isDefault || false,
-            isForced: t.isForced || false,
-          })))
-        : undefined,
-      imdb_id: metadata.imdbId,
-      tmdb_id: metadata.tmdbId?.toString(),
-      poster_url: metadata.posterUrl,
-      episode_thumb_url: metadata.episodeThumbUrl,
-      season_poster_url: metadata.seasonPosterUrl,
-      tmdb_rating: metadata.tmdbRating || undefined,
-      play_count: metadata.playCount || 0,
-      last_watched_at: metadata.lastWatched || undefined,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-  }
 
   // scoreVersion extracted to ProviderUtils.scoreVersion
-
-  private normalizeGroupTitle(title: string): string {
-    return title
-      .toLowerCase()
-      .trim()
-      .replace(/\s*[-:(]\s*(director'?s?\s*cut|extended|unrated|theatrical|imax|remastered|special\s*edition|ultimate\s*edition|collector'?s?\s*edition)\s*[):]?\s*$/i, '')
-      .replace(/\s*\(\s*\)\s*$/, '')
-      .trim()
-  }
-
-  private convertMetadataToVersion(metadata: MediaMetadata): Omit<MediaItemVersion, 'id' | 'media_item_id'> {
-    const audioTracks: AudioTrack[] = []
-    if (metadata.audioTracks?.length) {
-      metadata.audioTracks.forEach((track, index) => {
-        audioTracks.push({ index, codec: track.codec || 'Unknown', channels: track.channels || 2, bitrate: track.bitrate || 0, language: track.language, hasObjectAudio: track.hasObjectAudio || false })
-      })
-    } else if (metadata.audioCodec) {
-      audioTracks.push({ index: 0, codec: metadata.audioCodec, channels: metadata.audioChannels || 2, bitrate: metadata.audioBitrate || 0, hasObjectAudio: metadata.hasObjectAudio || false })
-    }
-
-    const resolution = metadata.resolution || 'SD'
-    const hdrFormat = metadata.hdrFormat || 'None'
-
-    // Extract source type from filename
-    const parsed = metadata.filePath ? getFileNameParser().parse(metadata.filePath) : null
-    const source = parsed?.type !== 'music' ? parsed?.source : undefined
-    const sourceType = source && /remux/i.test(source) ? 'REMUX'
-      : source && /web-dl|webdl/i.test(source) ? 'WEB-DL'
-      : undefined
-
-    const labelParts = [resolution]
-    if (hdrFormat !== 'None') labelParts.push(hdrFormat)
-    if (sourceType) labelParts.push(sourceType)
-
-    return {
-      version_source: `kodi_local_${metadata.itemId}`,
-      source_type: sourceType,
-      label: labelParts.join(' '),
-      file_path: metadata.filePath || '',
-      file_size: metadata.fileSize || 0,
-      duration: metadata.duration || 0,
-      resolution,
-      width: metadata.width || 0,
-      height: metadata.height || 0,
-      video_codec: metadata.videoCodec || '',
-      video_bitrate: metadata.videoBitrate || 0,
-      audio_codec: metadata.audioCodec || '',
-      audio_channels: metadata.audioChannels || 2,
-      audio_bitrate: metadata.audioBitrate || 0,
-      video_frame_rate: metadata.videoFrameRate,
-      color_bit_depth: metadata.colorBitDepth,
-      hdr_format: hdrFormat === 'None' ? undefined : hdrFormat,
-      color_space: metadata.colorSpace,
-      video_profile: metadata.videoProfile,
-      audio_profile: metadata.audioProfile,
-      audio_sample_rate: metadata.audioSampleRate,
-      has_object_audio: metadata.hasObjectAudio,
-      audio_tracks: JSON.stringify(audioTracks),
-      container: metadata.container,
-    }
-  }
 
   // ============================================================================
   // MUSIC LIBRARY SUPPORT
@@ -2005,8 +1705,8 @@ export class KodiLocalProvider implements MediaProvider {
         track.is_lossless = isLosslessCodec(track.audio_codec)
       }
 
-      if (audioStream.bitrate) {
-        track.audio_bitrate = audioStream.bitrate
+      if (audioStream.bitrateKbps) {
+        track.audio_bitrate = audioStream.bitrateKbps
       }
 
       if (audioStream.sampleRate) {
@@ -2030,13 +1730,13 @@ export class KodiLocalProvider implements MediaProvider {
       }
 
       // Update duration from FFprobe if available
-      if (analysis.duration) {
-        track.duration = Math.round(analysis.duration * 1000) // Convert to ms
+      if (analysis.durationMs) {
+        track.duration = analysis.durationMs
       }
 
       // Update file size
-      if (analysis.fileSize) {
-        track.file_size = analysis.fileSize
+      if (analysis.fileSizeBytes) {
+        track.file_size = analysis.fileSizeBytes
       }
 
       return track
@@ -2452,14 +2152,22 @@ export class KodiLocalProvider implements MediaProvider {
         console.log(`[KodiLocalProvider] Wrote ${result.written} tag updates to ${path.basename(this.musicDatabasePath)}`)
 
       } catch (txError) {
-        try { db.run('ROLLBACK') } catch { /* ignore */ }
+        try {
+          db.run('ROLLBACK')
+        } catch (rollbackError) {
+          console.error('[KodiLocalProvider] Transaction rollback failed:', getErrorMessage(rollbackError))
+        }
         throw txError
       } finally {
         db.close()
       }
 
       // Clean up backup on success
-      try { fs.unlinkSync(backupPath) } catch { /* keep if delete fails */ }
+      try {
+        fs.unlinkSync(backupPath)
+      } catch (error) {
+        console.warn(`[KodiLocalProvider] Could not remove successful-write backup ${backupPath}:`, error)
+      }
 
     } catch (error) {
       console.warn(`[KodiLocalProvider] Write failed: ${getErrorMessage(error)}`)
@@ -2469,7 +2177,11 @@ export class KodiLocalProvider implements MediaProvider {
           fs.copyFileSync(backupPath, this.musicDatabasePath)
           console.warn('[KodiLocalProvider] Restored from backup')
         }
-      } catch { /* backup restore failed */ }
+      } catch (restoreError) {
+        const message = `Database restoration failed: ${getErrorMessage(restoreError)}. Backup remains at ${backupPath}`
+        result.errors.push(message)
+        console.error(`[KodiLocalProvider] ${message}`)
+      }
     }
 
     return result

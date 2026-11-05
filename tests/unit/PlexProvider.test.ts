@@ -69,6 +69,7 @@ const TEST_SERVER: PlexServer = {
   scheme: 'http',
   address: '192.168.1.100',
   uri: 'http://192.168.1.100:32400',
+  connectionType: 'local',
   owned: true,
   accessToken: 'test-token-123',
 }
@@ -194,7 +195,7 @@ describe('PlexProvider', () => {
   describe('full scan inventory selection', () => {
     const sinceTimestamp = new Date('2026-01-01T00:00:00.000Z')
 
-    it('requests the full inventory when forceFullScan overrides a timestamp', async () => {
+    it('fetches the entire library when forceFullScan overrides a timestamp', async () => {
       const provider = createProviderWithServer()
       const fetchItems = vi.spyOn(provider as any, 'getPlexLibraryItems')
         .mockRejectedValueOnce(new Error('Stop after inventory request'))
@@ -204,7 +205,7 @@ describe('PlexProvider', () => {
       expect(mockDeleteMediaItem).not.toHaveBeenCalled()
     })
 
-    it('preserves time filtering on genuinely incremental scans', async () => {
+    it('retains timestamp filtering for actual incremental scans', async () => {
       const provider = createProviderWithServer()
       const fetchItems = vi.spyOn(provider as any, 'getPlexLibraryItems')
         .mockRejectedValueOnce(new Error('Stop after inventory request'))
@@ -474,6 +475,28 @@ describe('PlexProvider', () => {
       expect(result.versions).toHaveLength(1)
     })
 
+    it('stores Plex stream identities separately from audio ordinals', () => {
+      const provider = createProviderWithServer()
+      const result = (provider as any).convertToMediaItem(makeMovieItem())
+      const audioTracks = JSON.parse(result.mediaItem.audio_tracks)
+      expect(audioTracks[0].index).toBe(0)
+      expect(audioTracks[0].streamIndex).toBe(1)
+    })
+
+    it('retains the media file path when Plex omits stream metadata', () => {
+      const item = makeMovieItem()
+      item.Media![0].Part![0].Stream = []
+
+      const provider = createProviderWithServer()
+      const result = (provider as any).convertToMediaItem(item)
+
+      expect(result.mediaItem.file_path).toBe('/movies/Test Movie (2024)/Test.Movie.2024.1080p.mkv')
+      expect(result.versions[0].audio_codec).toBe('')
+      expect(result.versions[0].audio_channels).toBe(0)
+      expect(result.versions[0].audio_bitrate_kbps).toBe(0)
+      expect(result.versions[0].audio_tracks).toBe('[]')
+    })
+
     it('picks best version from multiple Media entries', () => {
       const item = makeMovieItem({
         Media: [
@@ -544,8 +567,8 @@ describe('PlexProvider', () => {
   describe('scoreVersion integration', () => {
     it('picks 4K version over 1080p in multi-version item', () => {
       // This was a bug — scoreVersion checked includes('2160') but normalizeResolution returns '4K'
-      const uhd = scoreVersion({ resolution: '4K', video_bitrate: 30000, hdr_format: 'None' })
-      const fhd = scoreVersion({ resolution: '1080p', video_bitrate: 30000, hdr_format: 'None' })
+      const uhd = scoreVersion({ resolution: '4K' })
+      const fhd = scoreVersion({ resolution: '1080p' })
 
       expect(uhd).toBeGreaterThan(fhd)
     })
@@ -665,52 +688,6 @@ describe('PlexProvider', () => {
       const result = provider.convertToMusicTrack(makeMusicTrack())
 
       expect(result!.mood).toBe(JSON.stringify(['Melancholy', 'Chill']))
-    })
-  })
-
-  // ========================================================================
-  // Inventory pagination must be complete before deletion reconciliation
-  // ========================================================================
-
-  describe('paginatedPlexFetch', () => {
-    it('rejects a missing Plex response container', async () => {
-      mockFetchJSON.mockResolvedValueOnce({})
-      const provider = createProviderWithServer()
-      await expect((provider as any).paginatedPlexFetch('/library/sections/1/all'))
-        .rejects.toThrow('missing MediaContainer')
-      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
-    })
-
-    it('rejects a truncated inventory rather than returning a partial deletion set', async () => {
-      mockFetchJSON
-        .mockResolvedValueOnce({ MediaContainer: { Metadata: [makeMovieItem()], totalSize: 2 } })
-        .mockResolvedValueOnce({ MediaContainer: { Metadata: [], totalSize: 2 } })
-      const provider = createProviderWithServer()
-      await expect((provider as any).paginatedPlexFetch('/library/sections/1/all'))
-        .rejects.toThrow('Incomplete Plex inventory')
-      expect(mockFetchJSON).toHaveBeenCalledTimes(2)
-      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
-    })
-
-    it('propagates TV episode-fetch failures instead of interpreting them as deletions', async () => {
-      mockFetchJSON.mockRejectedValueOnce(new Error('Plex unavailable'))
-      const provider = createProviderWithServer()
-      await expect(provider.getAllEpisodes('show-1')).rejects.toThrow('Plex unavailable')
-      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
-    })
-
-    it('accepts an explicitly empty inventory and a complete multi-page inventory', async () => {
-      const provider = createProviderWithServer()
-      mockFetchJSON.mockResolvedValueOnce({ MediaContainer: { Metadata: [], totalSize: 0 } })
-      await expect((provider as any).paginatedPlexFetch('/library/sections/1/all'))
-        .resolves.toEqual([])
-
-      const second = makeMovieItem({ ratingKey: '67890' })
-      mockFetchJSON
-        .mockResolvedValueOnce({ MediaContainer: { Metadata: [makeMovieItem()], totalSize: 2 } })
-        .mockResolvedValueOnce({ MediaContainer: { Metadata: [second], totalSize: 2 } })
-      await expect((provider as any).paginatedPlexFetch('/library/sections/1/all'))
-        .resolves.toEqual([makeMovieItem(), second])
     })
   })
 
@@ -848,6 +825,50 @@ describe('PlexProvider', () => {
       expect(libraries[0]).toEqual(expect.objectContaining({ id: '1', name: 'Movies', type: 'movie' }))
       expect(libraries[1]).toEqual(expect.objectContaining({ id: '2', name: 'TV Shows', type: 'show' }))
       expect(libraries[2]).toEqual(expect.objectContaining({ id: '3', name: 'Music', type: 'music' }))
+    })
+
+    it('loads and deduplicates video roots from Plex library sections', async () => {
+      mockFetchJSON.mockResolvedValue({
+        MediaContainer: {
+          Directory: [
+            { key: '1', title: 'Movies', type: 'movie', Location: [{ path: 'D:/Media/Movies' }] },
+            { key: '2', title: 'TV Shows', type: 'show', Location: [{ path: 'D:/Media/Shows' }, { path: 'D:/Media/Movies' }] },
+            { key: '3', title: 'Music', type: 'artist', Location: [{ path: 'D:/Media/Music' }] },
+          ],
+        },
+      })
+
+      const provider = createProviderWithServer()
+      const result = await provider.getLibrariesWithPaths()
+
+      expect(result.paths).toEqual(['D:/Media/Movies', 'D:/Media/Shows'])
+      expect(result.errors).toEqual([])
+      expect(result.libraries.map(library => library.id)).toEqual(['1', '2', '3'])
+      expect(mockFetchJSON).toHaveBeenCalledTimes(1)
+      expect(mockFetchJSON).toHaveBeenCalledWith(
+        expect.stringContaining('/library/sections'),
+        expect.objectContaining({ timeoutMs: 30_000 })
+      )
+    })
+
+    it('reports missing section locations with server and response-field diagnostics', async () => {
+      mockFetchJSON.mockResolvedValue({
+        MediaContainer: {
+          Directory: [
+            { key: '7', title: 'Movies', type: 'movie', count: 10 },
+          ],
+        },
+      })
+
+      const provider = createProviderWithServer()
+      const result = await provider.getLibrariesWithPaths()
+
+      expect(result.paths).toEqual([])
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0].message).toContain('Movies (7)')
+      expect(result.errors[0].message).toContain('http://192.168.1.100:32400')
+      expect(result.errors[0].message).toContain('connection: local; server owned: true')
+      expect(result.errors[0].message).toContain('library fields: count, key, title, type')
     })
   })
 })

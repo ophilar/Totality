@@ -170,7 +170,7 @@ export function TimelinesView() {
 
     return () => {
       isMounted = false
-      void window.electronAPI.timelinesCancel(requestId)
+      void window.electronAPI.dbCancelOperation(requestId)
     }
   }, [selectedRecipeId, resolveSourceId, addToast, recipeRefreshToken])
 
@@ -478,7 +478,7 @@ export function TimelinesView() {
           {(isImporting || isRefreshingWeb || isSyncingPlaylist) && (
             <div className="mb-2 flex items-center justify-between gap-2 text-xs" role="status">
               <span className="text-muted-foreground">{isSyncingPlaylist ? 'Plex playlist sync in progress…' : 'Timeline work in progress…'}</span>
-
+              <button type="button" onClick={() => window.dispatchEvent(new Event('operations:openActivity'))} className="text-primary hover:underline">Manage in Activity</button>
             </div>
           )}
           {parserEditorOpen && (

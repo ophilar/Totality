@@ -64,7 +64,8 @@ export async function runMigration(db: Database): Promise<void> {
     // Copy data
     db.run(`
       INSERT INTO media_sources_new (id, source_id, source_type, display_name, connection_config, is_enabled, last_connected_at, last_scan_at, created_at, updated_at)
-      SELECT id, source_id, source_type, display_name, connection_config, is_enabled, last_connected_at, last_scan_at, created_at, updated_at
+      SELECT id, source_id, source_type, display_name, connection_config, is_enabled, last_connected_at, last_scan_at,
+             COALESCE(created_at, datetime('now')), COALESCE(updated_at, datetime('now'))
       FROM media_sources
     `)
 

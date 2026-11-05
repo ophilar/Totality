@@ -1,13 +1,14 @@
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
 /**
  * Web Access IPC Handlers
  *
  * Exposes web server status and control to the renderer.
  */
 
-import { ipcMain } from 'electron'
 import { getWebServerService } from '../services/WebServerService'
 import { getDatabase } from '../database/getDatabase'
 import { SETTING_KEYS } from '../../shared/settingKeys'
+import { createIpcHandler } from './utils/createHandler'
 import os from 'os'
 
 function getLocalIp(): string {
@@ -23,7 +24,7 @@ function getLocalIp(): string {
 }
 
 export function registerWebAccessHandlers() {
-  ipcMain.handle('webAccess:getStatus', () => {
+  createIpcHandler(IPC_CHANNELS.webAccessGetStatus, async () => {
     const ws = getWebServerService()
     const db = getDatabase()
     const enabled = db.getSetting(SETTING_KEYS.web_access_enabled) === 'true'
@@ -42,7 +43,7 @@ export function registerWebAccessHandlers() {
     }
   })
 
-  ipcMain.handle('webAccess:start', async () => {
+  createIpcHandler(IPC_CHANNELS.webAccessStart, async () => {
     const ws = getWebServerService()
     if (!ws) throw new Error('Web server not initialized')
     if (ws.isRunning()) return { success: true, message: 'Already running' }
@@ -51,7 +52,7 @@ export function registerWebAccessHandlers() {
     return { success: true }
   })
 
-  ipcMain.handle('webAccess:stop', () => {
+  createIpcHandler(IPC_CHANNELS.webAccessStop, async () => {
     const ws = getWebServerService()
     if (!ws) throw new Error('Web server not initialized')
     ws.stop()

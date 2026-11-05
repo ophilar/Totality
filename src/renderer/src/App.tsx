@@ -2,8 +2,8 @@ import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } fro
 import { SETTING_KEYS } from '../../shared/settingKeys'
 import { Sidebar } from './components/layout/Sidebar'
 import { TopBar } from './components/layout/TopBar'
-import { MediaBrowser } from './components/library/MediaBrowser'
-import { Dashboard } from './components/dashboard'
+const MediaBrowser = lazy(() => import('./components/library/MediaBrowser').then(module => ({ default: module.MediaBrowser })))
+const Dashboard = lazy(() => import('./components/dashboard').then(module => ({ default: module.Dashboard })))
 import { WishlistPanel } from './components/wishlist/WishlistPanel'
 import { CompletenessPanel } from './components/library/CompletenessPanel'
 import { ChatPanel } from './components/chat/ChatPanel'
@@ -14,18 +14,17 @@ import { SourceProvider, useSources } from './contexts/SourceContext'
 import { WishlistProvider } from './contexts/WishlistContext'
 import { NavigationProvider, useNavigation } from './contexts/NavigationContext'
 import { ToastProvider } from './contexts/ToastContext'
-import { ThemeProvider, useTheme } from './contexts/ThemeContext'
-import { AddSourceModal } from './components/sources/AddSourceModal'
-import { AboutModal } from './components/ui/AboutModal'
-import { SettingsPanel } from './components/settings'
+import { ThemeProvider } from './contexts/ThemeContext'
+const AddSourceModal = lazy(() => import('./components/sources/AddSourceModal').then(module => ({ default: module.AddSourceModal })))
+const AboutModal = lazy(() => import('./components/ui/AboutModal').then(module => ({ default: module.AboutModal })))
+const SettingsPanel = lazy(() => import('./components/settings').then(module => ({ default: module.SettingsPanel })))
 import { SplashScreen } from './components/layout/SplashScreen'
 import { ToastContainer } from './components/ui/Toast'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { SectionErrorBoundary } from './components/ui/SectionErrorBoundary'
 const TimelinesView = lazy(() => import('./components/timelines/TimelinesView').then(module => ({ default: module.TimelinesView })))
-import type { MediaViewType, SeriesStats, CollectionStats, MusicCompletenessStats, AnalysisProgress } from './components/library/types'
+import type { MediaViewType, SeriesStats, CollectionStats, MusicCompletenessStats, AnalysisProgress, TVOptimizationNavigation } from './components/library/types'
 import { isWebMode, isAuthenticated, authenticate } from './services/webTransport'
-import { stateToHash, parseHash, pushHash, replaceHash } from './services/hashRouting'
 import { useMobileLayout } from './hooks/useMobileLayout'
 import { MobileTabBar, type MobileTab } from './components/mobile/MobileTabBar'
 import { MobileSearchOverlay } from './components/mobile/MobileSearchOverlay'
@@ -36,7 +35,6 @@ type AppView = 'dashboard' | 'library' | 'timelines'
 
 function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean; isTablet?: boolean }) {
   const { isLoading, sources, activeSourceId, hasMovies, hasTV, hasMusic } = useSources()
-  const { effectiveIsDark } = useTheme()
   const [showAddSourceModal, setShowAddSourceModal] = useState(false)
   const [showAboutModal, setShowAboutModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
@@ -56,15 +54,8 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
   const [showChatPanel, setShowChatPanel] = useState(false)
   const [showMoodSyncPanel, setShowMoodSyncPanel] = useState(false)
   const [showTaskQueuePanel, setShowTaskQueuePanel] = useState(false)
+  const [pendingTVOptimizationAction, setPendingTVOptimizationAction] = useState<TVOptimizationNavigation | null>(null)
   const [showMobileSearch, setShowMobileSearch] = useState(false)
-  const [wsConnected, setWsConnected] = useState(true)
-  // Desktop backdrop state (passed up from MediaBrowser)
-  const [backdropUrl, setBackdropUrl] = useState<string | null>(null)
-  const [backdropVisible, setBackdropVisible] = useState<string | null>(null) // persists URL during fade-out
-  useEffect(() => {
-    if (backdropUrl) setBackdropVisible(backdropUrl)
-  }, [backdropUrl])
-
   // Auto-refresh state (passed up from MediaBrowser)
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false)
 
@@ -80,26 +71,6 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
   useEffect(() => {
     localStorage.setItem('sidebar-collapsed', String(sidebarCollapsed))
   }, [sidebarCollapsed])
-
-  // Track WebSocket connection status (web mode only)
-  useEffect(() => {
-    if (!isWebMode()) return
-    const handler = (e: Event) => {
-      setWsConnected((e as CustomEvent).detail?.connected ?? true)
-    }
-    window.addEventListener('ws-status', handler)
-    return () => window.removeEventListener('ws-status', handler)
-  }, [])
-  // Task queue state — lifted here so it survives MediaBrowser unmount (wishlist view swap)
-  const [taskQueueState, setTaskQueueState] = useState<unknown>(null)
-  useEffect(() => {
-    if (!isMobile) return
-    const unsub = window.electronAPI.onTaskQueueUpdated?.((s: unknown) => setTaskQueueState(s))
-    window.electronAPI.taskQueueGetState?.().then((s) => setTaskQueueState(s))
-    return () => { unsub?.() }
-  }, [isMobile])
-  const isScanActive = !!(taskQueueState && ((taskQueueState as { currentTask: unknown }).currentTask || ((taskQueueState as { queue: unknown[] }).queue?.length > 0)))
-
   const hasSignaledReady = useRef(false)
 
   const markSplashShown = () => {
@@ -132,32 +103,70 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
     }
   }, [])
 
-  // Load music completeness stats — server-side aggregation (~0.5KB vs 680KB full dataset)
+  // Load music completeness stats with real-time EP/Singles filtering
   const loadMusicCompletenessData = useCallback(async () => {
     try {
-      const [epsVal, singlesVal] = await Promise.all([
+      const [artistsData, epsVal, singlesVal] = await Promise.all([
+        window.electronAPI.musicGetAllArtistCompleteness(),
         window.electronAPI.getSetting(SETTING_KEYS.completeness_include_eps),
         window.electronAPI.getSetting(SETTING_KEYS.completeness_include_singles),
       ])
+      const artists = artistsData as Array<{
+        completeness_percentage: number
+        total_albums: number
+        owned_albums: number
+        total_eps: number
+        owned_eps: number
+        total_singles: number
+        owned_singles: number
+      }>
       const epsEnabled = (epsVal as string) !== 'false'
       const singlesEnabled = (singlesVal as string) !== 'false'
-      const stats = await window.electronAPI.musicGetCompletenessStats(epsEnabled, singlesEnabled) as {
-        totalArtists: number; analyzedArtists: number; completeArtists: number
-        incompleteArtists: number; totalMissingAlbums: number; averageCompleteness: number
+
+      // Recalculate stats from raw counts using current settings
+      const totalArtists = artists.length
+      let completeArtists = 0
+      let totalMissingAlbums = 0
+      let totalPctSum = 0
+      for (const a of artists) {
+        const totalItems = (a.total_albums || 0) * 3
+          + (epsEnabled ? (a.total_eps || 0) * 2 : 0)
+          + (singlesEnabled ? (a.total_singles || 0) : 0)
+        const ownedItems = (a.owned_albums || 0) * 3
+          + (epsEnabled ? (a.owned_eps || 0) * 2 : 0)
+          + (singlesEnabled ? (a.owned_singles || 0) : 0)
+        const pct = totalItems > 0 ? Math.round((ownedItems / totalItems) * 100) : 100
+        totalPctSum += pct
+        if (pct >= 100) completeArtists++
+
+        const missingAlbumCount = Math.max(0, (a.total_albums || 0) - (a.owned_albums || 0))
+        const missingEpCount = epsEnabled ? Math.max(0, (a.total_eps || 0) - (a.owned_eps || 0)) : 0
+        const missingSingleCount = singlesEnabled ? Math.max(0, (a.total_singles || 0) - (a.owned_singles || 0)) : 0
+        totalMissingAlbums += missingAlbumCount + missingEpCount + missingSingleCount
       }
-      setMusicCompletenessStats(stats)
+      const incompleteArtists = totalArtists - completeArtists
+      const avgCompleteness = totalArtists > 0
+        ? Math.round(totalPctSum / totalArtists)
+        : 0
+
+      setMusicCompletenessStats({
+        totalArtists,
+        analyzedArtists: totalArtists,
+        completeArtists,
+        incompleteArtists,
+        totalMissingAlbums,
+        averageCompleteness: avgCompleteness
+      })
     } catch (err) {
       console.warn('Failed to load music completeness stats:', err)
     }
   }, [])
 
-  // Load completeness data on mount — skip on mobile (no dashboard view, saves ~1.7MB)
+  // Load completeness data on mount and when sources change
   useEffect(() => {
-    if (!isMobile) {
-      loadCompletenessData()
-      loadMusicCompletenessData()
-    }
-  }, [loadCompletenessData, loadMusicCompletenessData, isMobile])
+    loadCompletenessData()
+    loadMusicCompletenessData()
+  }, [loadCompletenessData, loadMusicCompletenessData])
 
   // Listen for completeness analysis progress events
   useEffect(() => {
@@ -178,9 +187,8 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
     })
 
     // Listen for task queue updates to detect completion
-    const cleanupTaskQueue = window.electronAPI.onTaskQueueUpdated((state: unknown) => {
-      const queueState = state as { currentTask: { status: string } | null }
-      if (!queueState.currentTask || queueState.currentTask.status === 'completed') {
+    const cleanupTaskQueue = window.electronAPI.onTaskQueueUpdated((state) => {
+      if (!state.currentTask || state.currentTask.status === 'completed') {
         setIsAnalyzing(false)
         setAnalysisProgress(null)
         setAnalysisType(null)
@@ -269,25 +277,54 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
     setShowAddSourceModal(false)
   }
 
-  const handleNavigateToLibrary = (tab?: MediaViewType) => {
+  const handleNavigateToLibrary = useCallback((tab?: MediaViewType) => {
     const newTab = tab || libraryTab
     if (!isRestoringRef.current) {
       pushNavState({ view: 'library', tab: newTab })
-      pushHash(stateToHash({ view: 'library', tab: newTab }))
     }
     if (tab) setLibraryTab(tab)
     setCurrentView('library')
-    setShowWishlistPanel(false)
-    setShowMobileSearch(false)
-  }
+  }, [libraryTab, pushNavState])
+
+  const handleTVOptimizationActionHandled = useCallback(() => setPendingTVOptimizationAction(null), [])
+
+  useEffect(() => {
+    const openReview = (event: Event) => {
+      const preflightId = (event as CustomEvent<{ preflightId?: string }>).detail?.preflightId
+      if (!preflightId) return
+      setPendingTVOptimizationAction({ kind: 'review', preflightId })
+      handleNavigateToLibrary('tv')
+    }
+    const openMovieReview = (event: Event) => {
+      const detail = (event as CustomEvent<{ preflightId?: string; mediaItemId?: number }>).detail
+      if (!detail?.preflightId || detail.mediaItemId === undefined) return
+      setPendingTVOptimizationAction({ kind: 'review-movie', preflightId: detail.preflightId, mediaItemId: detail.mediaItemId })
+      handleNavigateToLibrary('movies')
+    }
+    const resumePreflight = (event: Event) => {
+      const detail = (event as CustomEvent<{ requestId?: string; entity?: Extract<TVOptimizationNavigation, { kind: 'resume' }>['entity'] }>).detail
+      if (!detail?.requestId || !detail.entity) return
+      setPendingTVOptimizationAction({ kind: 'resume', requestId: detail.requestId, entity: detail.entity })
+      handleNavigateToLibrary('tv')
+    }
+    window.addEventListener('tvOptimization:requestReview', openReview)
+    window.addEventListener('optimization:requestMovieReview', openMovieReview)
+    window.addEventListener('tvOptimization:returnToPreflight', resumePreflight)
+    const openTaskQueue = () => setShowTaskQueuePanel(true)
+    window.addEventListener('taskQueue:open', openTaskQueue)
+    return () => {
+      window.removeEventListener('tvOptimization:requestReview', openReview)
+      window.removeEventListener('optimization:requestMovieReview', openMovieReview)
+      window.removeEventListener('tvOptimization:returnToPreflight', resumePreflight)
+      window.removeEventListener('taskQueue:open', openTaskQueue)
+    }
+  }, [handleNavigateToLibrary])
 
   const handleNavigateToDashboard = () => {
     if (!isRestoringRef.current) {
       pushNavState({ view: 'dashboard' })
-      pushHash(stateToHash({ view: 'dashboard' }))
     }
     setCurrentView('dashboard')
-    setBackdropUrl(null)
   }
 
   const handleNavigateToTimelines = () => {
@@ -336,96 +373,6 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleBack, handleForward])
 
-  // Mouse back/forward button navigation
-  useEffect(() => {
-    const handleMouseUp = (e: MouseEvent) => {
-      if (e.button === 3) { e.preventDefault(); handleBack() }
-      else if (e.button === 4) { e.preventDefault(); handleForward() }
-    }
-    window.addEventListener('mouseup', handleMouseUp)
-    return () => window.removeEventListener('mouseup', handleMouseUp)
-  }, [handleBack, handleForward])
-
-  // --- Hash routing (web mode only) ---
-  const isRestoringHashRef = useRef(false)
-
-  // Sync hash on top-level navigation changes
-  useEffect(() => {
-    if (!isWebMode() || isRestoringHashRef.current) return
-    const hash = stateToHash({
-      view: currentView,
-      tab: libraryTab,
-      wishlist: showWishlistPanel,
-    })
-    if (hash) replaceHash(hash)
-  }, [currentView, libraryTab, showWishlistPanel])
-
-  // Restore from hash on initial mount
-  useEffect(() => {
-    if (!isWebMode()) return
-    const hash = window.location.hash
-    if (!hash || hash === '#/' || hash === '#') return
-    const state = parseHash(hash)
-    isRestoringHashRef.current = true
-    isRestoringRef.current = true
-    if (state.wishlist) {
-      setShowWishlistPanel(true)
-      setCurrentView('library')
-    } else {
-      setCurrentView(state.view)
-      if (state.tab) setLibraryTab(state.tab)
-      // Drill-down targets are handled by MediaBrowser via navigateTo
-      if (state.mediaId) {
-        navigateTo({ type: 'movie', id: state.mediaId })
-      } else if (state.showTitle) {
-        navigateTo({ type: 'tv', id: state.showTitle, ...(state.seasonNumber !== undefined ? { seasonNumber: state.seasonNumber } : {}) })
-      } else if (state.artistId) {
-        navigateTo({ type: 'artist', id: state.artistId })
-      } else if (state.albumId) {
-        navigateTo({ type: 'album', id: state.albumId })
-      }
-    }
-    isRestoringRef.current = false
-    isRestoringHashRef.current = false
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Browser back/forward via popstate
-  useEffect(() => {
-    if (!isWebMode()) return
-    const onPopState = () => {
-      const state = parseHash(window.location.hash)
-      isRestoringHashRef.current = true
-      isRestoringRef.current = true
-      if (state.wishlist) {
-        setShowWishlistPanel(true)
-        setCurrentView('library')
-      } else {
-        setShowWishlistPanel(false)
-        setCurrentView(state.view)
-        if (state.tab) setLibraryTab(state.tab)
-        // Drill-down via navigateTo for detail views
-        if (state.mediaId) {
-          navigateTo({ type: 'movie', id: state.mediaId })
-        } else if (state.showTitle) {
-          navigateTo({ type: 'tv', id: state.showTitle, ...(state.seasonNumber !== undefined ? { seasonNumber: state.seasonNumber } : {}) })
-        } else if (state.artistId) {
-          navigateTo({ type: 'artist', id: state.artistId })
-        } else if (state.albumId) {
-          navigateTo({ type: 'album', id: state.albumId })
-        } else {
-          // No drill-down — clear any current detail view
-          window.dispatchEvent(new CustomEvent('navigate-restore', { detail: { view: state.view, tab: state.tab } }))
-        }
-      }
-      isRestoringRef.current = false
-      isRestoringHashRef.current = false
-    }
-    window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   const handleOpenSettings = (initialTab?: string) => {
     setSettingsInitialTab(initialTab)
     setShowSettingsModal(true)
@@ -454,14 +401,14 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
   }
 
   const chatViewContext = useMemo((): ViewContext => ({
-    currentView: currentView as 'dashboard' | 'library',
+    currentView: currentView === 'timelines' ? 'dashboard' : currentView,
     libraryTab: currentView === 'library' ? libraryTab as 'movies' | 'tv' | 'music' : undefined,
     activeSourceId: activeSourceId || undefined,
   }), [currentView, libraryTab, activeSourceId])
 
   if (isLoading) {
     return (
-      <div className="h-full bg-background flex items-center justify-center">
+      <div className="h-screen bg-background flex items-center justify-center">
         <div className="text-muted-foreground">Loading...</div>
       </div>
     )
@@ -472,24 +419,11 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
   return (
     <>
       {/* Render main app - it loads behind the splash screen */}
-      <div className="relative h-full overflow-hidden bg-main-gradient text-foreground">
-        {/* Plex-style blurred backdrop — behind everything, shows through translucent sidebar/topbar */}
-        {!isMobile && (
-          <div
-            className="fixed inset-0 pointer-events-none"
-            style={{
-              transition: 'opacity 2s cubic-bezier(0.25, 0, 0.15, 1)',
-              opacity: backdropUrl ? (effectiveIsDark ? 1 : 0.35) : 0,
-              backgroundImage: backdropVisible ? `url(${backdropVisible})` : undefined,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              filter: effectiveIsDark ? 'blur(80px) brightness(0.3)' : 'blur(80px) saturate(0.6)',
-            }}
-          />
-        )}
+      <div className="relative h-screen overflow-hidden bg-main-gradient text-foreground">
         {!isMobile && (
           <Sidebar
             onOpenAbout={() => setShowAboutModal(true)}
+            onAddSource={() => setShowAddSourceModal(true)}
             isCollapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
           />
@@ -527,7 +461,9 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
         <Suspense fallback={<main className="fixed inset-x-0 bottom-0 top-[76px]" aria-busy="true" />}>
         {currentView === 'timelines' ? (
           <main className="fixed top-[76px] bottom-0 transition-[left,right] duration-300 ease-out" style={{ left: sidebarCollapsed ? '96px' : '288px', right: '16px' }}>
-            <SectionErrorBoundary section="Timelines"><TimelinesView /></SectionErrorBoundary>
+            <SectionErrorBoundary section="Timelines">
+              <TimelinesView />
+            </SectionErrorBoundary>
           </main>
         ) : currentView === 'dashboard' && !isMobile ? (
           <SectionErrorBoundary section="Dashboard">
@@ -543,9 +479,12 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
           </SectionErrorBoundary>
         ) : isMobile && showWishlistPanel ? (
           <main
-            className="fixed inset-0 bg-background"
+            className="fixed bottom-0 transition-[left,right,top] duration-300 ease-out"
             style={{
-              paddingTop: 'max(env(safe-area-inset-top, 0px), 8px)',
+              top: 'max(env(safe-area-inset-top, 0px), 8px)',
+              left: '8px',
+              right: '8px',
+              bottom: '0px',
             }}
           >
             <div className="absolute inset-0 flex flex-col overflow-hidden">
@@ -559,13 +498,12 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
           </main>
         ) : (
           <main
-            className={`fixed bottom-0 transition-[left,right,top] duration-300 ease-out ${isMobile ? 'bg-background' : ''}`}
+            className="fixed bottom-0 transition-[left,right,top] duration-300 ease-out"
             style={{
-              top: isMobile ? '0px' : '76px',
-              left: isMobile ? '0px' : (sidebarCollapsed ? '96px' : '288px'),
-              right: isMobile ? '0px' : '16px',
+              top: isMobile ? 'max(env(safe-area-inset-top, 0px), 8px)' : '76px',
+              left: isMobile ? '8px' : (sidebarCollapsed ? '96px' : '288px'),
+              right: isMobile ? '8px' : '16px',
               bottom: '0px',
-              paddingTop: isMobile ? '0px' : undefined,
             }}
           >
             <SectionErrorBoundary section="Media Library">
@@ -583,31 +521,40 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
                 libraryTab={libraryTab}
                 onLibraryTabChange={setLibraryTab}
                 onAutoRefreshChange={setIsAutoRefreshing}
-                onBackdropChange={setBackdropUrl}
+                pendingTVOptimizationAction={pendingTVOptimizationAction}
+                onTVOptimizationActionHandled={handleTVOptimizationActionHandled}
                 isMobile={isMobile}
                 isTablet={isTablet}
-                taskQueueState={taskQueueState}
-                isScanActive={isScanActive}
               />
             </SectionErrorBoundary>
           </main>
         )}
         </Suspense>
         {showAddSourceModal && (
+          <Suspense fallback={null}>
           <AddSourceModal
             onClose={() => setShowAddSourceModal(false)}
             onSuccess={handleAddSourceSuccess}
           />
+          </Suspense>
         )}
-        <AboutModal isOpen={showAboutModal} onClose={() => setShowAboutModal(false)} />
-        <SettingsPanel
-          isOpen={showSettingsModal}
-          onClose={() => {
-            setShowSettingsModal(false)
-            setSettingsInitialTab(undefined)
-          }}
-          initialTab={settingsInitialTab as 'library' | 'quality' | 'services' | 'appearance' | 'data' | 'update' | 'troubleshoot' | undefined}
-        />
+        {showAboutModal && (
+          <Suspense fallback={null}>
+            <AboutModal isOpen={showAboutModal} onClose={() => setShowAboutModal(false)} />
+          </Suspense>
+        )}
+        {showSettingsModal && (
+          <Suspense fallback={null}>
+            <SettingsPanel
+              isOpen={showSettingsModal}
+              onClose={() => {
+                setShowSettingsModal(false)
+                setSettingsInitialTab(undefined)
+              }}
+              initialTab={settingsInitialTab as 'library' | 'quality' | 'services' | 'appearance' | 'data' | 'update' | 'troubleshoot' | undefined}
+            />
+          </Suspense>
+        )}
         {/* Panels - rendered at App level for Dashboard view */}
         {currentView === 'dashboard' && (
           <>
@@ -677,9 +624,9 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
               handleNavigateToLibrary('tv')
               navigateTo({ type: 'episode', id })
             }}
-            onSelectArtist={(id, name) => {
+            onSelectArtist={(_id, name) => {
               handleNavigateToLibrary('music')
-              navigateTo({ type: 'artist', id, artistName: name })
+              navigateTo({ type: 'artist', id: name })
             }}
             onSelectAlbum={(id) => {
               handleNavigateToLibrary('music')
@@ -688,12 +635,6 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
           />
         )}
 
-        {/* Mobile offline banner */}
-        {isMobile && isWebMode() && !wsConnected && (
-          <div className="fixed bottom-[68px] left-0 right-0 z-50 bg-destructive text-destructive-foreground text-center text-caption py-1.5" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
-            Offline — reconnecting...
-          </div>
-        )}
         {/* Mobile bottom tab bar */}
         {isMobile && (
           <MobileTabBar
@@ -707,7 +648,6 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
             onTabChange={(tab: MobileTab) => {
               if (tab === 'wishlist') {
                 setShowWishlistPanel(true)
-                pushHash(stateToHash({ view: 'library', wishlist: true }))
               } else {
                 setShowWishlistPanel(false)
                 handleNavigateToLibrary(tab === 'tv' ? 'tv' : tab)

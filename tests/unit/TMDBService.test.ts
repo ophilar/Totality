@@ -28,6 +28,9 @@ vi.mock('../../src/main/services/utils/RateLimiter', () => ({
   RateLimiters: {
     createTMDBLimiter: vi.fn(() => ({
       waitForSlot: vi.fn(() => Promise.resolve()),
+      pauseFor: vi.fn(),
+      recordError: vi.fn(),
+      recordSuccess: vi.fn(),
     })),
   },
   SlidingWindowRateLimiter: vi.fn(),
