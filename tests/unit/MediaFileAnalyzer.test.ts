@@ -18,7 +18,7 @@ vi.mock('fs', () => ({
   createWriteStream: vi.fn(),
   mkdirSync: vi.fn(),
 }))
-vi.mock('path', () => ({
+vi.mock('node:path', () => ({
   default: { join: (...args: string[]) => args.join('/'), dirname: (p: string) => p },
   join: (...args: string[]) => args.join('/'),
   dirname: (p: string) => p,
@@ -71,7 +71,36 @@ describe('MediaFileAnalyzer', () => {
     })
   })
 
+  describe('isFFmpegAvailable', () => {
+    it('detects FFmpeg on PATH before FFprobe has been resolved', async () => {
+      mockSpawn.mockImplementation((executable: string) => {
+        if (executable === 'ffmpeg') return createMockProcess('ffmpeg version 7.0', 0)
+        const proc = createMockProcess('', 1)
+        proc.on = vi.fn((event: string, callback: (error: Error) => void) => {
+          if (event === 'error') setTimeout(() => callback(new Error('ENOENT')), 0)
+        })
+        return proc
+      })
+
+      await expect(analyzer.isFFmpegAvailable()).resolves.toBe(true)
+      expect(mockSpawn).toHaveBeenCalledWith('ffmpeg', ['-version'], expect.objectContaining({ timeout: 5000 }))
+    })
+  })
+
   describe('isAvailable', () => {
+    it('checks the WinGet Links install path on Windows', () => {
+      if (process.platform !== 'win32') return
+      const previousLocalAppData = process.env.LOCALAPPDATA
+      process.env.LOCALAPPDATA = 'C:/Users/test/AppData/Local'
+      try {
+        const paths = (analyzer as any).getPossibleFFprobePaths() as string[]
+        expect(paths).toContain('C:/Users/test/AppData/Local/Microsoft/WinGet/Links/ffprobe.exe')
+      } finally {
+        if (previousLocalAppData === undefined) delete process.env.LOCALAPPDATA
+        else process.env.LOCALAPPDATA = previousLocalAppData
+      }
+    })
+
     it('returns false when no ffprobe found', async () => {
       mockSpawn.mockImplementation(() => {
         const proc = createMockProcess('', 1)
@@ -108,6 +137,38 @@ describe('MediaFileAnalyzer', () => {
       const result = await analyzer.analyzeFile('test.mkv')
       expect(result.success).toBe(false)
       expect(result.error).toContain('FFprobe is not installed')
+    })
+  })
+
+  describe('analyzeCompleteFile', () => {
+    it('skips packet analysis when only metadata is requested', async () => {
+      vi.spyOn(analyzer, 'analyzeFile').mockResolvedValue({
+        success: true,
+        filePath: 'test.mkv',
+        audioTracks: [],
+        subtitleTracks: [],
+      })
+      const measurePacketMetrics = vi.spyOn(analyzer, 'measurePacketMetrics')
+
+      const result = await analyzer.analyzeCompleteFile('test.mkv', { includePacketMetrics: false })
+
+      expect(result.success).toBe(true)
+      expect(measurePacketMetrics).not.toHaveBeenCalled()
+    })
+
+    it('returns packet-analysis failures instead of a successful partial analysis', async () => {
+      vi.spyOn(analyzer, 'analyzeFile').mockResolvedValue({
+        success: true,
+        filePath: 'test.mkv',
+        audioTracks: [],
+        subtitleTracks: [],
+      })
+      vi.spyOn(analyzer, 'measurePacketMetrics').mockRejectedValue(new Error('FFprobe packet analysis failed'))
+
+      await expect(analyzer.analyzeCompleteFile('test.mkv')).resolves.toMatchObject({
+        success: false,
+        error: 'Packet analysis failed: FFprobe packet analysis failed',
+      })
     })
   })
 })

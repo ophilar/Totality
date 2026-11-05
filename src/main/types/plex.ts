@@ -10,6 +10,7 @@ export interface PlexServer {
   address: string
   uri: string
   localAddresses?: string
+  connectionType: 'local' | 'remote' | 'relay'
   owned: boolean
   accessToken: string
 }
@@ -30,6 +31,11 @@ export interface PlexLibrary {
   contentChangedAt: number
   hidden: number
   count?: number  // Number of items in the library (optional)
+  Location?: PlexLibraryLocation[]
+}
+
+export interface PlexLibraryLocation {
+  path: string
 }
 
 export interface PlexMediaItem {
@@ -65,7 +71,6 @@ export interface PlexMediaItem {
   grandparentKey?: string
   parentKey?: string
   grandparentThumb?: string
-  grandparentArt?: string
   parentThumb?: string
   index?: number
   parentIndex?: number

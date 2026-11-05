@@ -1,17 +1,11 @@
-import { beforeEach, describe, it, expect, vi } from 'vitest'
-import * as fs from 'fs'
-
-const mockGetMediaItemByPath = vi.hoisted(() => vi.fn())
-const mockGetMusicTrackByPath = vi.hoisted(() => vi.fn())
-const mockDeleteMediaItem = vi.hoisted(() => vi.fn())
-const mockDeleteMusicTrack = vi.hoisted(() => vi.fn())
+import { describe, it, expect, vi } from 'vitest'
 
 // Mock all heavy dependencies of LocalFolderProvider module
 vi.mock('fs', () => ({
   default: { existsSync: vi.fn(), statSync: vi.fn() },
   existsSync: vi.fn(),
   statSync: vi.fn(),
-  promises: { readdir: vi.fn() },
+  promises: { readdir: vi.fn(), stat: vi.fn() },
 }))
 vi.mock('fs/promises', () => ({
   default: { readdir: vi.fn(), stat: vi.fn() },
@@ -22,31 +16,22 @@ vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => '/tmp') },
 }))
 vi.mock('../../src/main/database/getDatabase', () => ({
-  getDatabase: vi.fn(() => ({
-    getSetting: vi.fn(() => 'false'),
-    getMediaItemByPath: mockGetMediaItemByPath,
-    getMusicTrackByPath: mockGetMusicTrackByPath,
-    deleteMediaItem: mockDeleteMediaItem,
-    deleteMusicTrack: mockDeleteMusicTrack,
-  })),
+  getDatabase: vi.fn(() => ({})),
 }))
 vi.mock('../../src/main/services/QualityAnalyzer', () => ({
-  getQualityAnalyzer: vi.fn(() => ({ loadThresholdsFromDatabase: vi.fn(async () => {}) })),
+  getQualityAnalyzer: vi.fn(() => ({ loadThresholdsFromDatabase: vi.fn().mockResolvedValue(undefined), isHighResolutionAudio: vi.fn().mockReturnValue(false) })),
 }))
 vi.mock('../../src/main/services/MediaFileAnalyzer', () => ({
-  getMediaFileAnalyzer: vi.fn(() => ({ isAvailable: vi.fn(async () => false) })),
+  getMediaFileAnalyzer: vi.fn(() => ({})),
 }))
 vi.mock('../../src/main/services/FileNameParser', () => ({
-  getFileNameParser: vi.fn(() => ({
-    isVideoFile: vi.fn(() => true),
-    isAudioFile: vi.fn(() => true),
-  })),
+  getFileNameParser: vi.fn(() => ({})),
 }))
 vi.mock('../../src/main/services/TMDBService', () => ({
   getTMDBService: vi.fn(() => ({})),
 }))
 vi.mock('../../src/main/services/LoggingService', () => ({
-  getLoggingService: vi.fn(() => ({ verbose: vi.fn() })),
+  getLoggingService: vi.fn(() => ({ verbose: vi.fn(), warn: vi.fn(), info: vi.fn() })),
 }))
 vi.mock('../../src/main/services/MusicBrainzService', () => ({
   getMusicBrainzService: vi.fn(() => ({})),
@@ -60,7 +45,12 @@ vi.mock('../../src/main/services/MediaNormalizer', () => ({
   normalizeAudioCodec: vi.fn((c: string) => c),
 }))
 
-import { isExtrasContent, readFfprobeBatchSize, LocalFolderProvider } from '@main/providers/local/LocalFolderProvider'
+import * as fs from 'fs'
+import { getDatabase } from '@main/database/getDatabase'
+import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
+import { getFileNameParser } from '@main/services/FileNameParser'
+import { LocalFolderProvider, isExtrasContent, readFfprobeBatchSize } from '@main/providers/local/LocalFolderProvider'
+import { APP_CONFIG } from '@main/config'
 
 describe('isExtrasContent', () => {
   it('detects sample files', () => {
@@ -144,80 +134,147 @@ describe('isExtrasContent', () => {
   })
 })
 
-describe('LocalFolderProvider scan safety', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+describe('ffprobe batch-size validation', () => {
+  it('uses one configured upper bound for all local scan modes', () => {
+    const policy = APP_CONFIG.workers.ffprobe
+    expect(readFfprobeBatchSize(null, policy.defaultVideoBatchSize)).toBe(policy.defaultVideoBatchSize)
+    expect(readFfprobeBatchSize(null, policy.defaultMusicBatchSize)).toBe(policy.defaultMusicBatchSize)
+    expect(readFfprobeBatchSize(String(policy.maxBatchSize), policy.defaultVideoBatchSize)).toBe(policy.maxBatchSize)
+    expect(() => readFfprobeBatchSize(String(policy.maxBatchSize + 1), policy.defaultMusicBatchSize)).toThrow('ffprobe_batch_size')
   })
 
-  it('uses configured defaults only when the setting is absent', () => {
-    expect(readFfprobeBatchSize(null, 25)).toBe(25)
-    expect(readFfprobeBatchSize('', 50)).toBe(50)
-    expect(readFfprobeBatchSize('  ', 25)).toBe(25)
-    expect(readFfprobeBatchSize('8', 25)).toBe(8)
-    expect(readFfprobeBatchSize('128', 25)).toBe(128)
+  it('uses the documented default only for absent settings', () => {
+    const { defaultVideoBatchSize, defaultMusicBatchSize, maxBatchSize } = APP_CONFIG.workers.ffprobe
+    expect(readFfprobeBatchSize(null, defaultVideoBatchSize)).toBe(defaultVideoBatchSize)
+    expect(readFfprobeBatchSize('', defaultMusicBatchSize)).toBe(defaultMusicBatchSize)
+    expect(readFfprobeBatchSize('8', defaultVideoBatchSize)).toBe(8)
+    expect(readFfprobeBatchSize(String(maxBatchSize), defaultVideoBatchSize)).toBe(maxBatchSize)
   })
 
-  it.each(['0', '-1', '1.5', '12items', '129', 'NaN', 'Infinity'])(
-    'rejects invalid ffprobe_batch_size %s instead of looping indefinitely',
-    setting => {
-      expect(() => readFfprobeBatchSize(setting, 25)).toThrow('Invalid ffprobe_batch_size')
-    }
+  it.each(['0', '-1', 'NaN', '1.5', '3junk', 'Infinity'])(
+    'rejects a non-advancing or invalid setting %s', value => {
+      expect(() => readFfprobeBatchSize(value, 25)).toThrow('ffprobe_batch_size')
+    },
   )
+})
 
-  it('rejects an incomplete directory enumeration rather than treating it as a deletion', async () => {
-    vi.mocked(fs.promises.readdir).mockRejectedValueOnce(new Error('EACCES'))
-    const provider = new LocalFolderProvider({
-      sourceId: 'test-local',
-      connectionConfig: { folderPath: '/media', mediaType: 'movies' },
-    } as ConstructorParameters<typeof LocalFolderProvider>[0])
-
-    const discover = Reflect.get(provider, 'discoverMediaFiles') as (
-      dir: string, type: 'movie' | 'episode'
-    ) => Promise<unknown>
-    await expect(discover.call(provider, '/media', 'movie')).rejects.toThrow(
-      'Cannot complete media inventory'
-    )
-  })
-  it('retains a missing video when a targeted watcher event cannot prove deletion', async () => {
+describe('targeted music inventory safety', () => {
+  it('retains the stored record when a watcher reports a missing track', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(false)
-    mockGetMediaItemByPath.mockReturnValue({ id: 21 })
+    const deleteMusicTrack = vi.fn()
+    const getMusicTrackByPath = vi.fn().mockReturnValue({ id: 42 })
+    vi.mocked(getDatabase).mockReturnValue({
+      getSetting: vi.fn().mockImplementation((key: string) => key === 'ffprobe_batch_size' ? null : 'false'),
+      getMusicTrackByPath, deleteMusicTrack,
+    } as never)
+    vi.mocked(getMediaFileAnalyzer).mockReturnValue({ isAvailable: vi.fn().mockResolvedValue(false) } as never)
+    vi.mocked(getFileNameParser).mockReturnValue({ isAudioFile: vi.fn().mockReturnValue(true) } as never)
     const provider = new LocalFolderProvider({
-      sourceId: 'test-local',
-      connectionConfig: { folderPath: '/media', mediaType: 'movies' },
-    } as ConstructorParameters<typeof LocalFolderProvider>[0])
-    const scan = Reflect.get(provider, 'scanTargetedFiles') as
-      (libraryId: string, files: string[]) => Promise<{ success: boolean; itemsRemoved: number; errors: string[] }>
-    const result = await scan.call(provider, 'movies', ['/unavailable/Movie.mkv'])
+      sourceId: 'local-library',
+      connectionConfig: { folderPath: '/music', mediaType: 'music' },
+    } as never)
+    const result = await provider.scanLibrary('music', { targetFiles: ['/music/missing.flac'] })
     expect(result.success).toBe(false)
     expect(result.itemsRemoved).toBe(0)
-    expect(result.errors).toHaveLength(1)
-    expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    expect(result.errors).toEqual([expect.stringContaining('Stored music retained')])
+    expect(getMusicTrackByPath).toHaveBeenCalledWith('/music/missing.flac')
+    expect(deleteMusicTrack).not.toHaveBeenCalled()
   })
 
-  it('retains a missing track when a targeted watcher event cannot prove deletion', async () => {
-    vi.mocked(fs.existsSync).mockReturnValue(false)
-    mockGetMusicTrackByPath.mockReturnValue({ id: 22 })
+  it('skips filename parsing and MusicBrainz on an unchanged file with equal size and mtime', async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.promises.readdir).mockResolvedValue([
+      { name: 'unchanged.flac', isDirectory: () => false },
+    ] as never)
+    vi.mocked(fs.promises.stat).mockResolvedValue({
+      size: 123, mtime: new Date(1700000000000),
+    } as never)
+    const parseMusic = vi.fn()
+    const db = {
+      getSetting: vi.fn().mockImplementation((key: string) =>
+        key === 'ffprobe_batch_size' ? null : key === 'musicbrainz_name_correction' ? 'true' : 'false'),
+      getMusicTrackByPath: vi.fn().mockReturnValue({
+        id: 1, file_path: '/music/unchanged.flac', file_mtime: 1700000000000, file_size: 123,
+      }),
+      getMusicTracks: vi.fn().mockReturnValue([]),
+      startBatch: vi.fn(), endBatch: vi.fn().mockResolvedValue(undefined),
+      forceSave: vi.fn().mockResolvedValue(undefined),
+      updateSourceScanTime: vi.fn().mockResolvedValue(undefined),
+      deleteMusicTrack: vi.fn(),
+    }
+    vi.mocked(getDatabase).mockReturnValue(db as never)
+    vi.mocked(getMediaFileAnalyzer).mockReturnValue({ isAvailable: vi.fn().mockResolvedValue(false) } as never)
+    vi.mocked(getFileNameParser).mockReturnValue({
+      isAudioFile: vi.fn().mockReturnValue(true), parseMusic,
+    } as never)
     const provider = new LocalFolderProvider({
-      sourceId: 'test-local',
+      sourceId: 'local-library',
       connectionConfig: { folderPath: '/music', mediaType: 'music' },
-    } as ConstructorParameters<typeof LocalFolderProvider>[0])
-    const scan = Reflect.get(provider, 'scanTargetedMusicFiles') as
-      (files: string[]) => Promise<{ success: boolean; itemsRemoved: number; errors: string[] }>
-    const result = await scan.call(provider, ['/unavailable/Song.flac'])
-    expect(result.success).toBe(false)
+    } as never)
+    const result = await provider.scanLibrary('music')
+    expect(result.success).toBe(true)
+    expect(result.itemsScanned).toBe(1)
+    expect(parseMusic).not.toHaveBeenCalled()
+    expect(db.getMusicTrackByPath).toHaveBeenCalledWith('/music/unchanged.flac')
+    expect(db.deleteMusicTrack).not.toHaveBeenCalled()
+  })
+
+  it('preserves missing music database records after a nonempty full inventory', async () => {
+    vi.mocked(fs.existsSync).mockImplementation((filePath: fs.PathLike) => String(filePath) !== '/music/disconnected.flac')
+    vi.mocked(fs.promises.readdir).mockResolvedValue([
+      { name: 'present.flac', isDirectory: () => false },
+    ] as never)
+    vi.mocked(fs.promises.stat).mockResolvedValue({
+      size: 123, mtime: new Date(1700000000000),
+    } as never)
+    const db = {
+      getSetting: vi.fn().mockImplementation((key: string) =>
+        key === 'ffprobe_batch_size' ? null : 'false'),
+      getMusicTrackByPath: vi.fn().mockReturnValue({
+        id: 1, file_path: '/music/present.flac', file_mtime: 1700000000000, file_size: 123,
+      }),
+      getMusicTracks: vi.fn().mockReturnValue([
+        { id: 1, file_path: '/music/present.flac' },
+        { id: 2, file_path: '/music/disconnected.flac' },
+      ]),
+      startBatch: vi.fn(), endBatch: vi.fn().mockResolvedValue(undefined),
+      forceSave: vi.fn().mockResolvedValue(undefined),
+      updateSourceScanTime: vi.fn().mockResolvedValue(undefined),
+      deleteMusicTrack: vi.fn(),
+    }
+    vi.mocked(getDatabase).mockReturnValue(db as never)
+    vi.mocked(getMediaFileAnalyzer).mockReturnValue({ isAvailable: vi.fn().mockResolvedValue(false) } as never)
+    vi.mocked(getFileNameParser).mockReturnValue({
+      isAudioFile: vi.fn().mockReturnValue(true), parseMusic: vi.fn(),
+    } as never)
+    const provider = new LocalFolderProvider({
+      sourceId: 'local-library',
+      connectionConfig: { folderPath: '/music', mediaType: 'music' },
+    } as never)
+    const result = await provider.scanLibrary('music')
+    expect(result.success).toBe(true)
     expect(result.itemsRemoved).toBe(0)
-    expect(result.errors).toHaveLength(1)
-    expect(mockDeleteMusicTrack).not.toHaveBeenCalled()
+    expect(db.deleteMusicTrack).not.toHaveBeenCalled()
   })
 
-  it('rejects inaccessible music subdirectories as incomplete inventory', async () => {
-    vi.mocked(fs.promises.readdir).mockRejectedValueOnce(new Error('EACCES'))
+  it('fails closed when a full music inventory cannot read a directory', async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.promises.readdir).mockRejectedValue(new Error('volume unavailable'))
+    const deleteMusicTrack = vi.fn()
+    vi.mocked(getDatabase).mockReturnValue({
+      getSetting: vi.fn().mockImplementation((key: string) => key === 'ffprobe_batch_size' ? null : 'false'),
+      deleteMusicTrack,
+      getMusicTracks: vi.fn().mockReturnValue([{ id: 42, file_path: '/music/kept.flac' }]),
+    } as never)
+    vi.mocked(getMediaFileAnalyzer).mockReturnValue({ isAvailable: vi.fn().mockResolvedValue(false) } as never)
+    vi.mocked(getFileNameParser).mockReturnValue({ isAudioFile: vi.fn().mockReturnValue(true) } as never)
     const provider = new LocalFolderProvider({
-      sourceId: 'test-local',
+      sourceId: 'local-library',
       connectionConfig: { folderPath: '/music', mediaType: 'music' },
-    } as ConstructorParameters<typeof LocalFolderProvider>[0])
-    const discover = Reflect.get(provider, 'discoverAudioFiles') as (root: string) => Promise<unknown>
-    await expect(discover.call(provider, '/music')).rejects.toThrow('Cannot complete music inventory')
+    } as never)
+    const result = await provider.scanLibrary('music')
+    expect(result.success).toBe(false)
+    expect(result.errors.join(' ')).toContain('volume unavailable')
+    expect(deleteMusicTrack).not.toHaveBeenCalled()
   })
-
 })

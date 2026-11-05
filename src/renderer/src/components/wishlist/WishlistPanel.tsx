@@ -1,12 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { X, Filter, ArrowUpDown, Film, Tv, Music, Loader2, ListTodo, CircleFadingArrowUp, Download, CheckCircle2, Circle, RefreshCw, Search, Plus, Check, Star, ScanBarcode } from 'lucide-react'
-import { BarcodeScanner } from '../barcode/BarcodeScanner'
+import { X, Filter, ArrowUpDown, Film, Tv, Music, Loader2, ListTodo, CircleFadingArrowUp, Download, CheckCircle2, Circle, RefreshCw, Search, Plus, Check, Star } from 'lucide-react'
 import { useWishlist, WishlistMediaType, WishlistPriority, WishlistReason, WishlistStatus } from '../../contexts/WishlistContext'
+import { useToast } from '../../contexts/ToastContext'
 import { WishlistItemCard } from './WishlistItemCard'
 import { WishlistEmptyState } from './WishlistEmptyState'
 import { SETTING_KEYS } from '../../../../shared/settingKeys'
-import { Button } from '../ui/Button'
-import { Input, Select } from '../ui/Input'
 
 interface SearchResult {
   id: string
@@ -20,11 +18,13 @@ interface SearchResult {
   physical_release_date?: string
 }
 
-function WishlistSearch({ isMobile = false, onBarcodeScan }: { isMobile?: boolean; onBarcodeScan?: () => void }) {
+function WishlistSearch() {
   const { addItem, items } = useWishlist()
+  const { addToast } = useToast()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set())
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -38,19 +38,28 @@ function WishlistSearch({ isMobile = false, onBarcodeScan }: { isMobile?: boolea
     if (q.length < 2) { setResults([]); return }
     setIsSearching(true)
     try {
-      const [movies, tvShows, local] = await Promise.all([
-        window.electronAPI.movieSearchTMDB(q).catch(() => []),
-        window.electronAPI.seriesSearchTMDB(q).catch(() => []),
-        window.electronAPI.mediaSearch(q).catch(() => ({ movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: [] })),
+      const [movieSearch, tvSearch, localSearch] = await Promise.allSettled([
+        window.electronAPI.movieSearchTMDB(q),
+        window.electronAPI.seriesSearchTMDB(q),
+        window.electronAPI.mediaSearch(q),
       ])
+      const failures = [movieSearch, tvSearch, localSearch]
+        .map((result, index) => result.status === 'rejected'
+          ? `${['Movie', 'TV show', 'Library'][index]} search: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`
+          : null)
+        .filter((message): message is string => message !== null)
+      setSearchError(failures.length > 0 ? failures.join(' · ') : null)
+      const movies = movieSearch.status === 'fulfilled' ? movieSearch.value : []
+      const tvShows = tvSearch.status === 'fulfilled' ? tvSearch.value : []
+      const local = localSearch.status === 'fulfilled' ? localSearch.value : null
 
-      // Build sets of owned TMDB IDs + titles for ownership tagging
-      const localMovies = local.movies as Array<{ id: number; title: string; tmdb_id?: string }>
-      const localShows = local.tvShows as Array<{ id: number; title: string; tmdb_id?: string }>
-      const ownedMovieTmdbIds = new Set(localMovies.filter(m => m.tmdb_id).map(m => m.tmdb_id))
-      const ownedMovieTitles = new Set(localMovies.map(m => m.title.toLowerCase()))
-      const ownedTVTmdbIds = new Set(localShows.filter(s => s.tmdb_id).map(s => s.tmdb_id))
-      const ownedTVTitles = new Set(localShows.map(s => s.title.toLowerCase()))
+      // Match TMDB identities; title matching is reserved for media without an external ID.
+      const localMovies = local?.movies ?? []
+      const localShows = local?.tvShows ?? []
+      const ownedMovieTmdbIds = new Set(localMovies.flatMap(m => m.tmdb_id ? [String(m.tmdb_id)] : []))
+      const ownedTVTmdbIds = new Set(localShows.flatMap(s => s.tmdb_id ? [String(s.tmdb_id)] : []))
+      const unidentifiedMovieTitles = new Set(localMovies.filter(m => !m.tmdb_id).map(m => m.title.toLowerCase()))
+      const unidentifiedTVTitles = new Set(localShows.filter(s => !s.tmdb_id).map(s => s.title.toLowerCase()))
 
       const combined: SearchResult[] = []
 
@@ -62,7 +71,7 @@ function WishlistSearch({ isMobile = false, onBarcodeScan }: { isMobile?: boolea
           type: 'movie',
           poster_url: m.poster_url || undefined,
           tmdb_id: m.id,
-          owned: ownedMovieTmdbIds.has(String(m.id)) || ownedMovieTitles.has(m.title.toLowerCase()),
+          owned: local ? ownedMovieTmdbIds.has(String(m.id)) || unidentifiedMovieTitles.has(m.title.toLowerCase()) : undefined,
           release_date: m.release_date || undefined,
           physical_release_date: m.physical_release_date || undefined,
         })
@@ -76,14 +85,15 @@ function WishlistSearch({ isMobile = false, onBarcodeScan }: { isMobile?: boolea
           type: 'tv',
           poster_url: s.poster_url || undefined,
           tmdb_id: s.id,
-          owned: ownedTVTmdbIds.has(String(s.id)) || ownedTVTitles.has(s.name.toLowerCase()),
+          owned: local ? ownedTVTmdbIds.has(String(s.id)) || unidentifiedTVTitles.has(s.name.toLowerCase()) : undefined,
           release_date: s.first_air_date || undefined,
         })
       }
 
       setResults(combined)
-    } catch {
+    } catch (error) {
       setResults([])
+      setSearchError(error instanceof Error ? error.message : String(error))
     } finally {
       setIsSearching(false)
     }
@@ -103,22 +113,23 @@ function WishlistSearch({ isMobile = false, onBarcodeScan }: { isMobile?: boolea
   }, [items])
 
   const handleAdd = useCallback(async (result: SearchResult) => {
-    const mediaType: WishlistMediaType = result.type === 'tv' ? 'season' : 'movie'
-
-    await addItem({
-      title: result.title,
-      year: result.year,
-      tmdb_id: result.tmdb_id ? String(result.tmdb_id) : undefined,
-      poster_url: result.poster_url,
-      media_type: mediaType,
-      reason: 'missing' as WishlistReason,
-      priority: 3 as WishlistPriority,
-      status: 'active' as WishlistStatus,
-      // For TV shows, set series_title so wishlist completion can match episodes
-      ...(result.type === 'tv' ? { series_title: result.title } : {}),
-    })
-    setAddedIds(prev => new Set(prev).add(result.id))
-  }, [addItem])
+    try {
+      const mediaType: WishlistMediaType = result.type === 'tv' ? 'season' : 'movie'
+      await addItem({
+        title: result.title,
+        year: result.year,
+        tmdb_id: result.tmdb_id ? String(result.tmdb_id) : undefined,
+        poster_url: result.poster_url,
+        media_type: mediaType,
+        reason: 'missing' as WishlistReason,
+        priority: 3 as WishlistPriority,
+        status: 'active' as WishlistStatus,
+      })
+      setAddedIds(prev => new Set(prev).add(result.id))
+    } catch (error) {
+      addToast({ type: 'error', title: 'Could not add wishlist item', message: error instanceof Error ? error.message : String(error) })
+    }
+  }, [addItem, addToast])
 
   const typeIcon = (type: string) =>
     type === 'tv'
@@ -128,104 +139,22 @@ function WishlistSearch({ isMobile = false, onBarcodeScan }: { isMobile?: boolea
   const clearSearch = useCallback(() => {
     setQuery('')
     setResults([])
+    setSearchError(null)
     setAddedIds(new Set())
     if (debounceRef.current) clearTimeout(debounceRef.current)
   }, [])
 
-  if (isMobile) {
-    // Mobile: pill-shaped search matching MobileSearchOverlay style
-    return (
-      <div>
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground/50 pointer-events-none z-10" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={query}
-            onChange={(e) => handleInput(e.target.value)}
-            placeholder="Add movies, TV shows..."
-            className="w-full pl-12 pr-10 py-3.5 bg-muted/50 rounded-full text-body text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-foreground/20"
-            autoComplete="off"
-          />
-          {isSearching ? (
-            <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 animate-spin text-muted-foreground" />
-          ) : query ? (
-            <button onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors">
-              <X className="w-5 h-5" />
-            </button>
-          ) : onBarcodeScan ? (
-            <button onClick={onBarcodeScan} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors" title="Scan barcode">
-              <ScanBarcode className="w-5 h-5" />
-            </button>
-          ) : null}
-        </div>
-
-        {results.length > 0 && (
-          <div className="mt-3 max-h-[50vh] overflow-y-auto rounded-2xl border border-border/30 bg-card">
-            {results.map((result) => {
-              const alreadyAdded = addedIds.has(result.id) || isInWishlist(result)
-              return (
-                <div
-                  key={result.id}
-                  className="flex items-center gap-3 px-4 min-h-[56px] py-2 hover:bg-muted/30 transition-colors"
-                >
-                  {result.poster_url ? (
-                    <img src={result.poster_url} alt="" className="w-10 h-14 object-cover rounded-lg shrink-0" loading="lazy" decoding="async" />
-                  ) : (
-                    <div className="w-10 h-14 bg-muted/50 rounded-lg flex items-center justify-center shrink-0">
-                      {typeIcon(result.type)}
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="text-body font-medium truncate">{result.title}</div>
-                    <div className="text-label text-muted-foreground flex items-center gap-1">
-                      {typeIcon(result.type)}
-                      <span>{result.type === 'tv' ? 'TV' : 'Movie'}</span>
-                      {result.release_date && <span>· {new Date(result.release_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
-                      {!result.release_date && result.year && <span>· {result.year}</span>}
-                    </div>
-                    {result.physical_release_date && (
-                      <div className="text-caption text-muted-foreground">Blu-ray/Digital: {new Date(result.physical_release_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
-                    )}
-                  </div>
-                  {result.owned ? (
-                    <span className="shrink-0 text-label text-muted-foreground/60 px-1.5">Owned</span>
-                  ) : (
-                    <button
-                      onClick={() => handleAdd(result)}
-                      disabled={alreadyAdded}
-                      className={`shrink-0 p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors ${
-                        alreadyAdded
-                          ? 'text-foreground'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                      }`}
-                      title={alreadyAdded ? 'Already in wishlist' : 'Add to wishlist'}
-                    >
-                      {alreadyAdded ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-                    </button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // Desktop: compact panel search
   return (
     <div className="px-3 pt-2 pb-2 border-b border-border/30">
       <div className="relative">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-        <Input
+        <input
           ref={inputRef}
           type="text"
-          inputSize="sm"
           value={query}
           onChange={(e) => handleInput(e.target.value)}
-          placeholder="Add movies, TV shows..."
-          className="pl-8 pr-8"
+          placeholder="Search movies, TV shows..."
+          className="w-full pl-8 pr-8 py-1.5 bg-background border border-border/30 rounded-lg text-xs focus:outline-hidden focus:ring-1 focus:ring-primary"
         />
         {isSearching ? (
           <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-muted-foreground" />
@@ -235,6 +164,8 @@ function WishlistSearch({ isMobile = false, onBarcodeScan }: { isMobile?: boolea
           </button>
         )}
       </div>
+
+      {searchError && <p role="alert" className="mt-2 text-xs text-destructive">Search incomplete: {searchError}</p>}
 
       {results.length > 0 && (
         <div className="mt-1.5 max-h-60 overflow-y-auto rounded-lg border border-border/30 bg-background">
@@ -246,33 +177,33 @@ function WishlistSearch({ isMobile = false, onBarcodeScan }: { isMobile?: boolea
                 className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-muted/30 transition-colors"
               >
                 {result.poster_url ? (
-                  <img src={result.poster_url} alt="" className="w-7 h-10 object-cover rounded shrink-0" loading="lazy" decoding="async" />
+                  <img src={result.poster_url} alt="" className="w-7 h-10 object-cover rounded shrink-0" />
                 ) : (
                   <div className="w-7 h-10 bg-muted/50 rounded flex items-center justify-center shrink-0">
                     {typeIcon(result.type)}
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <div className="text-caption font-medium truncate">{result.title}</div>
-                  <div className="text-caption text-muted-foreground flex items-center gap-1">
+                  <div className="text-xs font-medium truncate">{result.title}</div>
+                  <div className="text-xs text-muted-foreground flex items-center gap-1">
                     {typeIcon(result.type)}
                     <span>{result.type === 'tv' ? 'TV' : 'Movie'}</span>
                     {result.release_date && <span>· {new Date(result.release_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
                     {!result.release_date && result.year && <span>· {result.year}</span>}
                   </div>
                   {result.physical_release_date && (
-                    <div className="text-caption text-muted-foreground">Blu-ray/Digital: {new Date(result.physical_release_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                    <div className="text-xs text-primary/70">Blu-ray/Digital: {new Date(result.physical_release_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
                   )}
                 </div>
                 {result.owned ? (
-                  <span className="shrink-0 text-caption text-muted-foreground/60 px-1.5">Owned</span>
+                  <span className="shrink-0 text-xs text-muted-foreground/60 px-1.5">Owned</span>
                 ) : (
                   <button
                     onClick={() => handleAdd(result)}
                     disabled={alreadyAdded}
-                    className={`shrink-0 p-1 rounded-lg transition-colors ${
+                    className={`shrink-0 p-1 rounded transition-colors ${
                       alreadyAdded
-                        ? 'text-foreground'
+                        ? 'text-green-500'
                         : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                     }`}
                     title={alreadyAdded ? 'Already in wishlist' : 'Add to wishlist'}
@@ -297,11 +228,12 @@ export interface WishlistPanelProps {
 }
 
 type SortOption = 'priority' | 'added_at' | 'title' | 'year' | 'completed_at'
-type FilterType = WishlistMediaType | 'tv' | 'music' | 'all'
+type FilterType = WishlistMediaType | 'all'
 type CategoryType = WishlistReason | 'all'
 type StatusType = WishlistStatus | 'all'
 
 export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = false }: WishlistPanelProps) {
+  const { addToast } = useToast()
   const {
     items,
     counts,
@@ -311,7 +243,6 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
     updateItem,
     markCompleted,
     markActive,
-    addItem,
     addBulk,
     exportToCsv
   } = useWishlist()
@@ -319,8 +250,6 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
   const [activeCategory, setActiveCategory] = useState<CategoryType>('all')
   const [activeStatus, setActiveStatus] = useState<StatusType>('active')
   const [isExporting, setIsExporting] = useState(false)
-  const [showSyncSection, setShowSyncSection] = useState(false)
-  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false)
 
   // Sync state
   const [syncingPlex, setSyncingPlex] = useState(false)
@@ -350,10 +279,10 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
       setTimeout(() => closeButtonRef.current?.focus(), 100)
       window.electronAPI.getSetting(SETTING_KEYS.trakt_username)
         .then(val => { if (val) setTraktUser(val) })
-        .catch((err) => console.warn('[Wishlist] Failed to load trakt username:', err))
+        .catch(error => console.error('[WishlistPanel] Failed to load Trakt username:', error))
       window.electronAPI.getSetting(SETTING_KEYS.plex_token)
         .then(val => setHasPlexSource(!!val))
-        .catch((err) => console.warn('[Wishlist] Failed to load plex token:', err))
+        .catch(error => console.error('[WishlistPanel] Failed to load Plex connection state:', error))
     }
   }, [isOpen])
 
@@ -408,6 +337,15 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
     }
   }
 
+  const toggleSort = (field: SortOption) => {
+    if (sortBy === field) {
+      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortBy(field)
+      setSortOrder(field === 'priority' ? 'desc' : 'asc')
+    }
+  }
+
   const handleExport = async () => {
     setIsExporting(true)
     try {
@@ -438,16 +376,13 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
   // Media type filter options (no "All" — category row already has it)
   const filterOptions: { type: FilterType; icon: typeof Film; label: string }[] = [
     { type: 'movie', icon: Film, label: 'Movies' },
-    { type: 'tv', icon: Tv, label: 'TV' },
-    { type: 'music', icon: Music, label: 'Music' }
+    { type: 'episode', icon: Tv, label: 'TV' },
+    { type: 'album', icon: Music, label: 'Music' }
   ]
 
   // Group items by reason for display
   const missingItems = items.filter(item => item.reason === 'missing')
   const upgradeItems = items.filter(item => item.reason === 'upgrade')
-
-  // Mobile inline mode — render as a full page, not a panel
-  const isMobileInline = isMobile && inline
 
   return (
     <>
@@ -465,7 +400,7 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
       id="wishlist-panel"
       className={inline
         ? 'flex flex-col h-full overflow-hidden'
-        : `fixed top-[76px] bottom-4 right-4 w-[22rem] bg-card border border-border rounded-2xl shadow-xl z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
+        : `fixed top-[76px] bottom-4 left-4 sm:left-auto right-4 w-auto sm:w-80 max-w-[calc(100vw-2rem)] bg-sidebar-gradient rounded-2xl shadow-xl z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
             isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`
       }
@@ -473,88 +408,77 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
       role="complementary"
       aria-label="Shopping wishlist"
     >
-      {/* Header — hidden on mobile inline (tab bar already identifies the page) */}
-      {!isMobileInline && (
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
-          <div className="flex items-center gap-2">
-            <Star className="w-4 h-4 text-muted-foreground" />
-            <h2 className="text-label font-semibold">
-              Wishlist
-            </h2>
-            {counts.active > 0 && (
-              <span className="px-1.5 py-0.5 text-caption font-medium bg-muted text-foreground rounded-full">
-                {counts.active}
-              </span>
-            )}
-          </div>
-          {!inline && (
-            <div className="flex items-center gap-1">
-              <Button
-                variant="tertiary"
-                size="icon-sm"
-                onClick={() => setShowSyncSection(!showSyncSection)}
-                icon={<RefreshCw className="w-4 h-4" />}
-                aria-label="Sync watchlists"
-                title="Sync from Plex/Trakt"
-              />
-              {counts.total > 0 && (
-                <Button
-                  ref={exportButtonRef}
-                  variant="tertiary"
-                  size="icon-sm"
-                  onClick={handleExport}
-                  loading={isExporting}
-                  icon={<Download className="w-4 h-4" />}
-                  aria-label="Export wishlist to CSV"
-                  title="Export to CSV"
-                />
-              )}
-              <Button
-                ref={closeButtonRef}
-                variant="tertiary"
-                size="icon-sm"
-                onClick={onClose}
-                icon={<X className="w-4 h-4" />}
-                aria-label="Close wishlist panel"
-              />
-            </div>
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
+        <div className="flex items-center gap-2">
+          <Star className="w-4 h-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold">
+            Wishlist
+          </h2>
+          {counts.total > 0 && (
+            <span className="px-1.5 py-0.5 text-xs font-medium bg-primary/20 text-primary rounded-full">
+              {counts.total}
+            </span>
           )}
         </div>
-      )}
+        {!inline && (
+          <div className="flex items-center gap-1">
+            {counts.total > 0 && (
+              <button
+                ref={exportButtonRef}
+                onClick={handleExport}
+                disabled={isExporting}
+                className="p-1.5 rounded-md hover:bg-muted transition-colors focus:outline-hidden disabled:opacity-50"
+                aria-label="Export wishlist to CSV"
+                title="Export to CSV"
+              >
+                {isExporting ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                ) : (
+                  <Download className="w-4 h-4 text-muted-foreground" />
+                )}
+              </button>
+            )}
+            <button
+              ref={closeButtonRef}
+              onClick={onClose}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary"
+              aria-label="Close wishlist panel"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+      </div>
 
-      {/* Sync sections — hidden in inline/mobile mode, toggled via header button */}
-      {!inline && showSyncSection && <div className="px-3 pt-2 pb-1 border-b border-border/30 space-y-1.5">
+      {/* Sync sections — hidden in inline/mobile mode */}
+      {!inline && <div className="px-3 pt-2 pb-1 border-b border-border/30 space-y-1.5">
         {/* Plex watchlist sync */}
         {hasPlexSource && (
           <div className="flex items-center gap-1.5">
-            <span className="text-caption text-muted-foreground w-14 shrink-0">Plex</span>
-            <span className="flex-1 text-caption text-muted-foreground/60">Plex Watchlist</span>
-            <Button
-              variant="tertiary"
-              size="icon-sm"
-              onClick={async () => {
-                if (syncingPlex) return
-                setSyncingPlex(true); setPlexResult(null)
-                try {
-                  const items = await window.electronAPI.fetchPlexWatchlist()
-                  if (items.length === 0) { setPlexResult('Empty'); return }
-                  setSyncPreview(items); setSyncPreviewSource('plex')
-                  setSyncPreviewSelected(new Set(items.map((_item: unknown, i: number) => i)))
-                } catch { setPlexResult('Error') }
-                finally { setSyncingPlex(false) }
-              }}
-              disabled={syncingPlex}
-              icon={syncingPlex ? <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" /> : <RefreshCw className="w-3 h-3 text-muted-foreground" />}
-              title="Sync Plex watchlist"
-              className="shrink-0"
-            />
-            {plexResult && <span className={`text-caption shrink-0 ${plexResult === 'Error' ? 'text-destructive' : 'text-foreground'}`}>{plexResult}</span>}
+            <span className="text-xs text-muted-foreground w-14 shrink-0">Plex</span>
+            <span className="flex-1 text-xs text-muted-foreground/60">Plex Watchlist</span>
+            <button onClick={async () => {
+              if (syncingPlex) return
+              setSyncingPlex(true); setPlexResult(null)
+              try {
+                const items = await window.electronAPI.fetchPlexWatchlist()
+                if (items.length === 0) { setPlexResult('Empty'); return }
+                setSyncPreview(items); setSyncPreviewSource('plex')
+                setSyncPreviewSelected(new Set(items.map((_item: unknown, i: number) => i)))
+              } catch (error) { setPlexResult(`Error: ${error instanceof Error ? error.message : String(error)}`) }
+              finally { setSyncingPlex(false) }
+            }} disabled={syncingPlex}
+              className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-50 shrink-0" title="Sync Plex watchlist">
+              {syncingPlex ? <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" /> : <RefreshCw className="w-3 h-3 text-muted-foreground" />}
+            </button>
+            {plexResult && <span className={`text-xs shrink-0 ${plexResult.startsWith('Error:') ? 'text-destructive' : 'text-primary'}`}>{plexResult}</span>}
           </div>
         )}
         {/* Trakt sync */}
         <div className="flex items-center gap-1.5">
-          <span className="text-caption text-muted-foreground w-14 shrink-0">Trakt</span>
-          <Input type="text" inputSize="sm" value={traktUser} onChange={e => setTraktUser(e.target.value)}
+          <span className="text-xs text-muted-foreground w-14 shrink-0">Trakt</span>
+          <input type="text" value={traktUser} onChange={e => setTraktUser(e.target.value)}
             onKeyDown={async e => {
               if (e.key === 'Enter' && traktUser.trim() && !syncingTrakt) {
                 await window.electronAPI.setSetting(SETTING_KEYS.trakt_username, traktUser.trim())
@@ -564,44 +488,41 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
                   if (items.length === 0) { setTraktResult('Empty'); return }
                   setSyncPreview(items); setSyncPreviewSource('trakt')
                   setSyncPreviewSelected(new Set(items.map((_item: unknown, i: number) => i)))
-                } catch { setTraktResult('Error') }
+                } catch (error) { setTraktResult(`Error: ${error instanceof Error ? error.message : String(error)}`) }
                 finally { setSyncingTrakt(false) }
               }
             }}
             placeholder="username"
-            className="flex-1 min-w-0" />
-          <Button
-            variant="tertiary"
-            size="icon-sm"
-            onClick={async () => {
-              if (!traktUser.trim() || syncingTrakt) return
-              await window.electronAPI.setSetting(SETTING_KEYS.trakt_username, traktUser.trim())
-              setSyncingTrakt(true); setTraktResult(null)
-              try {
-                const items = await window.electronAPI.fetchTraktWatchlist(traktUser.trim())
-                if (items.length === 0) { setTraktResult('Empty'); return }
-                setSyncPreview(items); setSyncPreviewSource('trakt')
-                setSyncPreviewSelected(new Set(items.map((_item: unknown, i: number) => i)))
-              } catch { setTraktResult('Error') }
-              finally { setSyncingTrakt(false) }
-            }}
-            disabled={syncingTrakt || !traktUser.trim()}
-            icon={syncingTrakt ? <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" /> : <RefreshCw className="w-3 h-3 text-muted-foreground" />}
-            title="Sync Trakt watchlist"
-            className="shrink-0"
-          />
-          {traktResult && <span className={`text-caption shrink-0 ${traktResult === 'Error' ? 'text-destructive' : 'text-foreground'}`}>{traktResult}</span>}
+            className="flex-1 px-2 py-1 bg-background border border-border/30 rounded text-xs focus:outline-hidden focus:ring-1 focus:ring-primary min-w-0" />
+          <button onClick={async () => {
+            if (!traktUser.trim() || syncingTrakt) return
+            await window.electronAPI.setSetting(SETTING_KEYS.trakt_username, traktUser.trim())
+            setSyncingTrakt(true); setTraktResult(null)
+            try {
+              const items = await window.electronAPI.fetchTraktWatchlist(traktUser.trim())
+              if (items.length === 0) { setTraktResult('Empty'); return }
+              setSyncPreview(items); setSyncPreviewSource('trakt')
+              setSyncPreviewSelected(new Set(items.map((_item: unknown, i: number) => i)))
+            } catch (error) { setTraktResult(`Error: ${error instanceof Error ? error.message : String(error)}`) }
+            finally { setSyncingTrakt(false) }
+          }} disabled={syncingTrakt || !traktUser.trim()}
+            className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-50 shrink-0" title="Sync Trakt watchlist">
+            {syncingTrakt ? <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" /> : <RefreshCw className="w-3 h-3 text-muted-foreground" />}
+          </button>
+          {traktResult && <span className={`text-xs shrink-0 ${traktResult.startsWith('Error:') ? 'text-destructive' : 'text-primary'}`}>{traktResult}</span>}
         </div>
       </div>}
 
       {/* Sync Preview — hidden in inline mode */}
       {!inline && syncPreview && (
         <div className="flex-1 flex flex-col min-h-0 border-b border-border/30">
-          <div className="flex items-center justify-between px-3 py-2 shrink-0">
-            <span className="text-caption font-medium">{syncPreview.length} from {syncPreviewSource === 'plex' ? 'Plex' : 'Trakt'}</span>
+          <div className="flex items-center justify-between px-3 py-2 bg-muted/20 shrink-0">
+            <span className="text-xs font-medium">{syncPreview.length} from {syncPreviewSource === 'plex' ? 'Plex' : 'Trakt'}</span>
             <div className="flex items-center gap-2">
-              <Button variant="tertiary" size="sm" onClick={() => setSyncPreviewSelected(new Set(syncPreview.map((_, i) => i)))}>All</Button>
-              <Button variant="tertiary" size="sm" onClick={() => setSyncPreviewSelected(new Set())}>None</Button>
+              <button onClick={() => setSyncPreviewSelected(new Set(syncPreview.map((_, i) => i)))}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors">All</button>
+              <button onClick={() => setSyncPreviewSelected(new Set())}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors">None</button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto min-h-0">
@@ -615,24 +536,22 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
                     {selected && <Check className="w-3 h-3 text-primary-foreground" />}
                   </div>
                   {item.poster_url ? (
-                    <img src={item.poster_url} alt="" className="w-7 h-10 object-cover rounded shrink-0" loading="lazy" decoding="async" />
+                    <img src={item.poster_url} alt="" className="w-7 h-10 object-cover rounded shrink-0" />
                   ) : (
                     <div className="w-7 h-10 bg-muted/50 rounded flex items-center justify-center shrink-0">
                       {item.media_type === 'season' ? <Tv className="w-3 h-3 text-muted-foreground" /> : <Film className="w-3 h-3 text-muted-foreground" />}
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <div className="text-caption font-medium truncate">{item.title}</div>
-                    <div className="text-caption text-muted-foreground">{item.media_type === 'season' ? 'TV' : 'Movie'}{item.year ? ` · ${item.year}` : ''}</div>
+                    <div className="text-xs font-medium truncate">{item.title}</div>
+                    <div className="text-xs text-muted-foreground">{item.media_type === 'season' ? 'TV' : 'Movie'}{item.year ? ` · ${item.year}` : ''}</div>
                   </div>
                 </button>
               )
             })}
           </div>
           <div className="flex items-center gap-2 px-3 py-2 shrink-0 border-t border-border/30">
-            <Button
-              variant="primary"
-              size="sm"
+            <button
               onClick={async () => {
                 setSyncPreviewAdding(true)
                 try {
@@ -653,203 +572,139 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
                   setSyncPreview(null); setSyncPreviewSource(null)
                   if (source === 'plex') setPlexResult(`+${selected.length}`)
                   else setTraktResult(`+${selected.length}`)
-                } catch { /* ignore */ }
+                } catch (error) {
+                  addToast({ type: 'error', title: 'Wishlist import failed', message: error instanceof Error ? error.message : String(error) })
+                }
                 finally { setSyncPreviewAdding(false) }
               }}
               disabled={syncPreviewSelected.size === 0 || syncPreviewAdding}
-              loading={syncPreviewAdding}
-              className="flex-1"
+              className="flex-1 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              {syncPreviewAdding ? 'Adding...' : `Add ${syncPreviewSelected.size} selected`}
-            </Button>
-            <Button
-              variant="tertiary"
-              size="sm"
+              {syncPreviewAdding ? 'Adding...' : `Add ${syncPreviewSelected.size} Selected`}
+            </button>
+            <button
               onClick={() => { setSyncPreview(null); setSyncPreviewSource(null) }}
+              className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               Cancel
-            </Button>
+            </button>
           </div>
         </div>
       )}
 
-      {/* Controls — search + filters */}
-      {isMobileInline ? (
-        // Mobile page layout: search + wrapped filter rows
-        <div className="shrink-0 px-4 py-3" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)' }}>
-          <WishlistSearch isMobile={isMobile} onBarcodeScan={() => setShowBarcodeScanner(true)} />
-          {counts.total > 0 && (
-            <div className="mt-3 space-y-2">
-              {/* Row 1: Status + Sort */}
-              <div className="flex items-center gap-2">
-                {statusOptions.map(({ type, icon: Icon, label, count }) => (
-                  <button
-                    key={type}
-                    onClick={() => { setActiveStatus(type); setActiveCategory('all'); setActiveFilter('all'); setSortBy(type === 'completed' ? 'completed_at' : 'priority') }}
-                    className={`flex items-center gap-1.5 px-3 py-2 min-h-[44px] text-label rounded-lg transition-colors ${
-                      activeStatus === type
-                        ? 'bg-foreground text-background'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    <span>{label}</span>
-                    {count > 0 && <span className="opacity-60">({count})</span>}
-                  </button>
-                ))}
-                <div className="ml-auto flex items-center gap-1">
-                  <Select
-                    inputSize="sm"
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as SortOption)}
-                    className="w-auto"
-                  >
-                    {(activeStatus === 'completed'
-                      ? (['completed_at', 'added_at', 'title'] as SortOption[])
-                      : (['priority', 'added_at', 'title'] as SortOption[])
-                    ).map(field => (
-                      <option key={field} value={field}>
-                        {field === 'priority' ? 'Priority' : field === 'added_at' ? 'Added' : field === 'title' ? 'Title' : field === 'year' ? 'Year' : 'Completed'}
-                      </option>
-                    ))}
-                  </Select>
-                  <Button
-                    variant="tertiary"
-                    size="icon-sm"
-                    onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-                    icon={<ArrowUpDown className="w-3 h-3" />}
-                    title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
-                  />
-                </div>
-              </div>
-              {/* Row 2: Category + Media type (only when active) */}
-              {activeStatus !== 'completed' && (
-                <div className="flex items-center gap-2">
-                  {categoryOptions.filter(o => o.type !== 'all').map(({ type, icon: Icon, label }) => (
-                    <button
-                      key={type}
-                      onClick={() => { setActiveCategory(activeCategory === type ? 'all' : type); if (type === 'all') setActiveFilter('all') }}
-                      className={`flex items-center gap-1.5 px-3 py-2 min-h-[44px] text-label rounded-lg transition-colors ${
-                        activeCategory === type
-                          ? 'bg-foreground text-background'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      <Icon className="w-4 h-4" />
-                      <span>{label}</span>
-                    </button>
-                  ))}
-                  <div className="h-5 w-px bg-border/40" />
-                  {filterOptions.map(({ type, icon: Icon }) => (
-                    <button
-                      key={type}
-                      onClick={() => setActiveFilter(activeFilter === type ? 'all' : type)}
-                      className={`flex items-center justify-center p-2 min-h-[44px] min-w-[44px] rounded-lg transition-colors ${
-                        activeFilter === type
-                          ? 'bg-foreground text-background'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      <Icon className="w-4 h-4" />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+      {/* Search to add */}
+      <WishlistSearch />
+
+      {/* Status Tabs (Active / Completed) */}
+      {counts.total > 0 && (
+        <div className="px-3 pt-3 pb-2 border-b border-border/30">
+          <div className="flex gap-1">
+            {statusOptions.map(({ type, icon: Icon, label, count }) => (
+              <button
+                key={type}
+                onClick={() => {
+                  setActiveStatus(type)
+                  setActiveCategory('all')
+                  setActiveFilter('all')
+                  setSortBy(type === 'completed' ? 'completed_at' : 'priority')
+                }}
+                className={`flex-1 flex items-center justify-center gap-1.5 ${isMobile ? 'px-3 py-3 min-h-[44px] text-sm' : 'px-2 py-2 text-xs'} rounded-lg transition-colors ${
+                  activeStatus === type
+                    ? type === 'completed' ? 'bg-green-600 text-white' : 'bg-primary text-primary-foreground'
+                    : 'bg-muted/30 text-muted-foreground hover:bg-muted/50'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{label}</span>
+                {count > 0 && (
+                  <span className={`text-xs ${activeStatus === type ? 'opacity-80' : 'text-muted-foreground/60'}`}>
+                    ({count})
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
-      ) : (
-        // Desktop panel layout: search + stacked filter sections
-        <>
-          <WishlistSearch isMobile={isMobile} />
+      )}
 
-          {/* Status toggle — top level view selector */}
-          {counts.total > 0 && (
-            <div className="border-b border-border/30">
-              {/* Row 1: Status + Sort */}
-              <div className="px-3 py-2 flex items-center gap-1">
-                {statusOptions.map(({ type, icon: Icon, label, count }) => (
-                  <button
-                    key={type}
-                    onClick={() => { setActiveStatus(type); setActiveCategory('all'); setActiveFilter('all'); setSortBy(type === 'completed' ? 'completed_at' : 'priority') }}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 text-caption rounded-lg transition-colors ${
-                      activeStatus === type
-                        ? 'bg-foreground text-background'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    <span>{label}</span>
-                    {count > 0 && <span className="opacity-60">({count})</span>}
-                  </button>
-                ))}
-                <div className="ml-auto flex items-center gap-1">
-                  <Select
-                    inputSize="sm"
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as SortOption)}
-                    className="w-auto"
-                  >
-                    {(activeStatus === 'completed'
-                      ? (['completed_at', 'added_at', 'title'] as SortOption[])
-                      : (['priority', 'added_at', 'title'] as SortOption[])
-                    ).map(field => (
-                      <option key={field} value={field}>
-                        {field === 'priority' ? 'Priority' : field === 'added_at' ? 'Added' : field === 'title' ? 'Title' : field === 'year' ? 'Year' : 'Completed'}
-                      </option>
-                    ))}
-                  </Select>
-                  <Button
-                    variant="tertiary"
-                    size="icon-sm"
-                    onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-                    icon={<ArrowUpDown className="w-3 h-3" />}
-                    title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
-                  />
-                </div>
-              </div>
+      {/* Combined filter row: Category + Media type */}
+      {counts.total > 0 && activeStatus !== 'completed' && (
+        <div className="px-3 pt-2 pb-2 border-b border-border/30 space-y-1.5">
+          {/* Category pills */}
+          <div className="flex flex-wrap gap-1">
+            {categoryOptions.map(({ type, icon: Icon, label, count }) => (
+              <button
+                key={type}
+                onClick={() => { setActiveCategory(type); if (type === 'all') setActiveFilter('all') }}
+                className={`flex items-center gap-1 ${isMobile ? 'px-3 py-2 min-h-[44px] text-sm' : 'px-2 py-1 text-xs'} rounded-full transition-colors ${
+                  activeCategory === type
+                    ? 'bg-primary/20 text-primary'
+                    : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
+                }`}
+              >
+                <Icon className="w-3 h-3" />
+                <span>{label}</span>
+                {count > 0 && (
+                  <span className={`text-xs ${activeCategory === type ? 'text-primary/80' : 'text-muted-foreground/60'}`}>
+                    ({count})
+                  </span>
+                )}
+              </button>
+            ))}
+            <span className="text-border/60 self-center mx-0.5">·</span>
+            {/* Media type pills inline */}
+            {filterOptions.map(({ type, icon: Icon, label }) => (
+              <button
+                key={type}
+                onClick={() => setActiveFilter(activeFilter === type ? 'all' : type)}
+                className={`flex items-center gap-1 ${isMobile ? 'px-3 py-2 min-h-[44px] text-sm' : 'px-2 py-1 text-xs'} rounded-full transition-colors ${
+                  activeFilter === type
+                    ? 'bg-primary/20 text-primary'
+                    : 'bg-muted/30 text-muted-foreground hover:bg-muted/50'
+                }`}
+              >
+                <Icon className="w-3 h-3" />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
-              {/* Row 2: Category + media type filters */}
-              {activeStatus !== 'completed' && (
-                <div className="px-3 py-1.5 flex items-center gap-1">
-                  {categoryOptions.filter(o => o.type !== 'all').map(({ type, icon: Icon, label }) => (
-                    <button
-                      key={type}
-                      onClick={() => { setActiveCategory(activeCategory === type ? 'all' : type); if (type === 'all') setActiveFilter('all') }}
-                      className={`flex items-center gap-1 px-2 py-1 text-caption rounded-lg transition-colors ${
-                        activeCategory === type
-                          ? 'bg-foreground text-background'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                      title={label}
-                    >
-                      <Icon className="w-3.5 h-3.5" />
-                      <span>{label}</span>
-                    </button>
-                  ))}
-                  <div className="h-4 w-px bg-border/40 mx-0.5" />
-                  {filterOptions.map(({ type, icon: Icon }) => (
-                    <button
-                      key={type}
-                      onClick={() => setActiveFilter(activeFilter === type ? 'all' : type)}
-                      className={`flex items-center justify-center p-1 rounded-lg transition-colors ${
-                        activeFilter === type
-                          ? 'bg-foreground text-background'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      <Icon className="w-3.5 h-3.5" />
-                    </button>
-                  ))}
-                </div>
-              )}
+      {/* Filters & Sort */}
+      {counts.total > 0 && (
+        <div className="p-3 border-b border-border/30">
+
+          {/* Sort options */}
+          <div className={`flex items-center gap-2 ${isMobile ? 'text-sm' : 'text-xs'}`}>
+            <span className="text-muted-foreground">Sort:</span>
+            <div className="flex gap-1 flex-wrap">
+              {(activeStatus === 'completed'
+                ? (['completed_at', 'added_at', 'title'] as SortOption[])
+                : (['priority', 'added_at', 'title'] as SortOption[])
+              ).map((field) => (
+                <button
+                  key={field}
+                  onClick={() => toggleSort(field)}
+                  className={`${isMobile ? 'px-3 py-2 min-h-[44px]' : 'px-2 py-0.5'} rounded transition-colors flex items-center gap-1 ${
+                    sortBy === field
+                      ? 'bg-muted text-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {field === 'priority' ? 'Priority' : field === 'completed_at' ? 'Completed' : field === 'added_at' ? 'Added' : 'Title'}
+                  {sortBy === field && (
+                    <ArrowUpDown className={`w-3 h-3 ${sortOrder === 'desc' ? 'rotate-180' : ''}`} />
+                  )}
+                </button>
+              ))}
             </div>
-          )}
-        </>
+          </div>
+        </div>
       )}
 
       {/* Content */}
-      <div className={`flex-1 overflow-y-auto ${isMobileInline ? 'px-4 pb-24' : 'p-3'}`}>
+      <div className="flex-1 overflow-y-auto p-3">
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -864,8 +719,8 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
               <div>
                 <div className="flex items-center gap-2 mb-2 px-1">
                   <ListTodo className="w-3.5 h-3.5 text-muted-foreground" />
-                  <h3 className="text-label font-medium text-muted-foreground">
-                    Complete collection ({missingItems.length})
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Complete Collection ({missingItems.length})
                   </h3>
                 </div>
                 <div className="space-y-2">
@@ -888,8 +743,8 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
               <div>
                 <div className="flex items-center gap-2 mb-2 px-1">
                   <CircleFadingArrowUp className="w-3.5 h-3.5 text-muted-foreground" />
-                  <h3 className="text-label font-medium text-muted-foreground">
-                    Upgrade quality ({upgradeItems.length})
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Upgrade Quality ({upgradeItems.length})
                   </h3>
                 </div>
                 <div className="space-y-2">
@@ -924,30 +779,6 @@ export function WishlistPanel({ isOpen, onClose, isMobile = false, inline = fals
         )}
       </div>
     </aside>
-
-    {/* Barcode Scanner overlay */}
-    <BarcodeScanner
-      isOpen={showBarcodeScanner}
-      onClose={() => setShowBarcodeScanner(false)}
-      onAddToWishlist={async (result) => {
-        try {
-          await addItem({
-            media_type: result.type === 'tv' ? 'season' : result.type === 'album' ? 'album' : 'movie',
-            title: result.title,
-            year: result.year,
-            tmdb_id: result.tmdb_id ? String(result.tmdb_id) : undefined,
-            musicbrainz_id: result.musicbrainz_id,
-            artist_name: result.artist_name,
-            poster_url: result.poster_url,
-            priority: 3,
-            reason: 'missing' as WishlistReason,
-            status: 'active' as WishlistStatus,
-          })
-        } catch (err) {
-          console.error('Failed to add barcode item to wishlist:', err)
-        }
-      }}
-    />
     </>
   )
 }
