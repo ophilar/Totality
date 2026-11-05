@@ -68,6 +68,41 @@ export function validateSenderFrame(event: Pick<IpcMainInvokeEvent, 'senderFrame
   }
 }
 
+/** Shared IPC boundary: authenticate, log, then propagate the original error. */
+function beginIpcRequest(event: IpcMainInvokeEvent, channel: string, options: HandlerOptions, synchronous = false): void {
+  validateSenderFrame(event, channel)
+  if (options.logCalls) {
+    getLoggingService().info('[IPC]', `${channel} called${synchronous ? ' (sync)' : ''}`)
+  }
+}
+
+function rethrowIpcFailure(channel: string, error: unknown, options: HandlerOptions): never {
+  getLoggingService().error('[IPC]', `Error in ${channel}:`, getErrorMessage(error))
+  options.onError?.(channel, error)
+  throw error
+}
+
+function validatedIpcArguments(schema: z.ZodSchema<unknown>, args: unknown[], channel: string): unknown[] {
+  const isTuple = schema instanceof z.ZodTuple
+  const validated = validateInput(schema, isTuple ? args : args[0], channel)
+  return isTuple && Array.isArray(validated) ? validated : [validated]
+}
+
+function registerAsyncIpcHandler<T>(
+  channel: string,
+  handler: (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<T>,
+  options: HandlerOptions
+): void {
+  ipcMain.handle(channel, async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+    try {
+      beginIpcRequest(event, channel, options)
+      return await handler(event, ...args)
+    } catch (error) {
+      rethrowIpcFailure(channel, error, options)
+    }
+  })
+}
+
 /**
  * Create a type-safe IPC handler with consistent validation and error handling.
  *
@@ -84,34 +119,11 @@ export function createValidatedIpcHandler<TSchema extends z.ZodSchema<unknown>, 
     : (arg: z.infer<TSchema>) => Promise<TReturn>,
   options: HandlerOptions = {}
 ): void {
-  ipcMain.handle(channel, async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
-    try {
-      validateSenderFrame(event, channel)
-      if (options.logCalls) {
-        getLoggingService().info('[IPC]', `${channel} called`)
-      }
+  registerAsyncIpcHandler(channel, (_event, ...args) => {
+    const validated = validatedIpcArguments(schema, args, channel)
+    return (handler as unknown as (...args: unknown[]) => Promise<TReturn>)(...validated)
+  }, options)
 
-      const isTuple = schema instanceof z.ZodTuple
-      const validated = isTuple
-        ? validateInput(schema, args, channel)
-        : validateInput(schema, args[0], channel)
-
-      if (isTuple && Array.isArray(validated)) {
-        return await (handler as unknown as (...args: unknown[]) => Promise<TReturn>)(...validated)
-      } else {
-        return await (handler as unknown as (arg: unknown) => Promise<TReturn>)(validated)
-      }
-    } catch (error) {
-      const message = getErrorMessage(error)
-      getLoggingService().error('[IPC]', `Error in ${channel}:`, message)
-
-      if (options.onError) {
-        options.onError(channel, error)
-      }
-
-      throw error
-    }
-  })
 }
 
 /**
@@ -127,34 +139,11 @@ export function createValidatedIpcHandlerWithEvent<TSchema extends z.ZodSchema<u
     : (event: IpcMainInvokeEvent, arg: z.infer<TSchema>) => Promise<TReturn>,
   options: HandlerOptions = {}
 ): void {
-  ipcMain.handle(channel, async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
-    try {
-      validateSenderFrame(event, channel)
-      if (options.logCalls) {
-        getLoggingService().info('[IPC]', `${channel} called`)
-      }
+  registerAsyncIpcHandler(channel, (event, ...args) => {
+    const validated = validatedIpcArguments(schema, args, channel)
+    return (handler as unknown as (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<TReturn>)(event, ...validated)
+  }, options)
 
-      const isTuple = schema instanceof z.ZodTuple
-      const validated = isTuple
-        ? validateInput(schema, args, channel)
-        : validateInput(schema, args[0], channel)
-
-      if (isTuple && Array.isArray(validated)) {
-        return await (handler as unknown as (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<TReturn>)(event, ...validated)
-      } else {
-        return await (handler as unknown as (event: IpcMainInvokeEvent, arg: unknown) => Promise<TReturn>)(event, validated)
-      }
-    } catch (error) {
-      const message = getErrorMessage(error)
-      getLoggingService().error('[IPC]', `Error in ${channel}:`, message)
-
-      if (options.onError) {
-        options.onError(channel, error)
-      }
-
-      throw error
-    }
-  })
 }
 
 /**
@@ -165,24 +154,8 @@ export function createIpcHandler<TArgs extends unknown[], TReturn>(
   handler: (...args: TArgs) => Promise<TReturn>,
   options: HandlerOptions = {}
 ): void {
-  ipcMain.handle(channel, async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
-    try {
-      validateSenderFrame(event, channel)
-      if (options.logCalls) {
-        getLoggingService().info('[IPC]', `${channel} called`)
-      }
-      return await handler(...(args as TArgs))
-    } catch (error) {
-      const message = getErrorMessage(error)
-      getLoggingService().error('[IPC]', `Error in ${channel}:`, message)
+  registerAsyncIpcHandler(channel, (_event, ...args) => handler(...(args as TArgs)), options)
 
-      if (options.onError) {
-        options.onError(channel, error)
-      }
-
-      throw error
-    }
-  })
 }
 
 /**
@@ -200,24 +173,8 @@ export function createIpcHandlerWithEvent<TArgs extends unknown[], TReturn>(
   handler: (event: IpcMainInvokeEvent, ...args: TArgs) => Promise<TReturn>,
   options: HandlerOptions = {}
 ): void {
-  ipcMain.handle(channel, async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
-    try {
-      validateSenderFrame(event, channel)
-      if (options.logCalls) {
-        getLoggingService().info('[IPC]', `${channel} called`)
-      }
-      return await handler(event, ...(args as TArgs))
-    } catch (error) {
-      const message = getErrorMessage(error)
-      getLoggingService().error('[IPC]', `Error in ${channel}:`, message)
+  registerAsyncIpcHandler(channel, (event, ...args) => handler(event, ...(args as TArgs)), options)
 
-      if (options.onError) {
-        options.onError(channel, error)
-      }
-
-      throw error
-    }
-  })
 }
 
 /**
@@ -231,22 +188,13 @@ export function createSyncHandler<TArgs extends unknown[], TReturn>(
 ): void {
   ipcMain.handle(channel, (event: IpcMainInvokeEvent, ...args: unknown[]) => {
     try {
-      validateSenderFrame(event, channel)
-      if (options.logCalls) {
-        getLoggingService().info('[IPC]', `${channel} called (sync)`)
-      }
+      beginIpcRequest(event, channel, options, true)
       return handler(...(args as TArgs))
     } catch (error) {
-      const message = getErrorMessage(error)
-      getLoggingService().error('[IPC]', `Error in ${channel}:`, message)
-
-      if (options.onError) {
-        options.onError(channel, error)
-      }
-
-      throw error
+      rethrowIpcFailure(channel, error, options)
     }
   })
+
 }
 
 /**
