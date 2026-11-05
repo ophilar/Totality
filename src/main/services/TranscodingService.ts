@@ -1953,13 +1953,19 @@ export class TranscodingService {
       deviceEncoders: { software: [], ...Object.fromEntries(gpus.map(gpu => [gpu.id, []])) },
       failures: [`FFmpeg encoder probe exited with code ${encoderListing.code}: ${encoderListing.output}`]
     }
-    const ffmpegNames = new Set([...encoderListing.output.matchAll(/^\s*[A-Z.]+\s+(\S+)/gm)].map(match => match[1]))
-    getLoggingService().debug('[TranscodingService]', `FFmpeg encoder verification completed: ${ffmpegNames.size} encoders found`)
+    const ffmpegNames = [...encoderListing.output.matchAll(/^\s*[A-Z.]+\s+(\S+)/gm)].map(match => match[1])
+    const encoderByFfmpegName = new Map(Object.entries(ENCODER_PROBES).map(([encoder, probe]) => [probe.ffmpegName, encoder]))
+    const encoderNames = ffmpegNames.flatMap(name => {
+      const encoder = encoderByFfmpegName.get(name)
+      return encoder ? [encoder] : []
+    })
+    getLoggingService().debug('[TranscodingService]', `FFmpeg encoder verification completed: ${ffmpegNames.length} encoders found`)
     const deviceEncoders: Record<string, string[]> = {}
     const failures: string[] = []
     const softwareEncoders: string[] = []
-    for (const [encoder, device] of Object.entries(ENCODER_PROBES)) {
-      if (device.vendor || !ffmpegNames.has(device.ffmpegName)) continue
+    for (const encoder of encoderNames) {
+      const device = ENCODER_PROBES[encoder]
+      if (device.vendor) continue
       try {
         const result = await this.runCapabilityProcess(ffmpegPath, ['-v', 'error', '-f', 'lavfi', '-i', `testsrc2=size=${APP_CONFIG.transcoding.encoderProbeWidth}x${APP_CONFIG.transcoding.encoderProbeHeight}`, '-frames:v', '1', '-c:v', device.ffmpegName, ...(device.arguments ?? []), '-f', 'null', '-'], 30000)
         if (result.code !== 0) throw new Error(result.output || `FFmpeg exited with code ${result.code}`)
@@ -1978,8 +1984,9 @@ export class TranscodingService {
         deviceEncoders[gpu.id] = []
         continue
       }
-      for (const [encoder, device] of Object.entries(ENCODER_PROBES)) {
-        if (device.vendor !== gpu.vendor || !ffmpegNames.has(device.ffmpegName)) continue
+      for (const encoder of encoderNames) {
+        const device = ENCODER_PROBES[encoder]
+        if (device.vendor !== gpu.vendor) continue
         try {
           const result = await this.runCapabilityProcess(ffmpegPath, [
             '-v', 'error', ...encoderInitializationArgs,
