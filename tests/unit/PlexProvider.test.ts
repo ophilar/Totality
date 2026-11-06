@@ -831,20 +831,16 @@ describe('PlexProvider', () => {
     it('reports missing metadata rather than silently completing', async () => {
       mockFetchJSON.mockResolvedValueOnce({ MediaContainer: { Metadata: [] } })
       const provider = createProviderWithServer()
-      const result = await (provider as any).fetchAndProcessMissingItems(['missing-1'], 'lib-1', 'movie', {})
-      expect(result).toEqual({
-        addedCount: 0,
-        errors: ['Plex metadata unavailable for missing-1'],
-      })
+      await expect((provider as any).fetchAndProcessMissingItems(['missing-1'], 'lib-1', 'movie', {}))
+        .rejects.toThrow('Failed to process Plex item missing-1: Metadata unavailable for missing-1')
       expect(mockDeleteMediaItem).not.toHaveBeenCalled()
     })
 
     it('reports unusable media metadata instead of treating the item as added', async () => {
       mockFetchJSON.mockResolvedValueOnce({ MediaContainer: { Metadata: [makeMovieItem({ ratingKey: 'bad-1', Media: undefined })] } })
       const provider = createProviderWithServer()
-      const result = await (provider as any).fetchAndProcessMissingItems(['bad-1'], 'lib-1', 'movie', {})
-      expect(result.addedCount).toBe(0)
-      expect(result.errors).toEqual(['Could not convert Plex metadata for bad-1'])
+      await expect((provider as any).fetchAndProcessMissingItems(['bad-1'], 'lib-1', 'movie', {}))
+        .rejects.toThrow('Failed to process Plex item bad-1: Could not convert Plex metadata for bad-1')
       expect(mockDeleteMediaItem).not.toHaveBeenCalled()
     })
   })
