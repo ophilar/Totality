@@ -2049,6 +2049,7 @@ export class PlexProvider implements MediaProvider {
       // Reconcile music: remove tracks not in scanned set
       const existingTracks = db.getMusicTracks({ sourceId: this.sourceId }) as MusicTrack[]
       const existingTrackCount = existingTracks.length
+      let musicRemoved = 0
 
       // Safety guard: refuse bulk deletion when scan appears incomplete (API failures, timeouts)
       if (scannedTrackIds.size === 0 && existingTrackCount > 0) {
@@ -2056,7 +2057,6 @@ export class PlexProvider implements MediaProvider {
       } else if (existingTrackCount > 0 && scannedTrackIds.size < existingTrackCount * 0.5) {
         throw new Error(`Incomplete Plex music inventory: ${scannedTrackIds.size} of ${existingTrackCount} stored tracks scanned`)
       } else {
-        let musicRemoved = 0
         for (const track of existingTracks) {
           if (track.provider_id && !scannedTrackIds.has(track.provider_id) && track.id) {
             await db.deleteMusicTrack(track.id)
