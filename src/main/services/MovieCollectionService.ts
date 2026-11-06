@@ -83,7 +83,7 @@ export class MovieCollectionService extends CancellableOperation {
                 tmdbId = String(findResult.movie_results[0].id)
                 console.log(`[MovieCollectionService] Found "${movie.title}" via IMDB: ${tmdbId}`)
               }
-            } catch (error) {
+            } catch {
               // Continue to title search
             }
           }

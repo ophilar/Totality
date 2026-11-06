@@ -135,7 +135,7 @@ export class KodiLocalDiscoveryService {
           return false
         }
       }
-    } catch (error) {
+    } catch {
       // If command fails, assume Kodi is not running
       return false
     }
@@ -150,7 +150,7 @@ export class KodiLocalDiscoveryService {
       const fd = fs.openSync(dbPath, 'r')
       fs.closeSync(fd)
       return true
-    } catch (error) {
+    } catch {
       return false
     }
   }

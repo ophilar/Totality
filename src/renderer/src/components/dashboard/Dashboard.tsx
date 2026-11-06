@@ -597,7 +597,8 @@ export function Dashboard({
     ) => (index: number) => {
       setExpanded(prev => {
         const next = new Set(prev)
-        next.has(index) ? next.delete(index) : next.add(index)
+        if (next.has(index)) next.delete(index)
+        else next.add(index)
         return next
       })
       listRef.current?.resetAfterIndex(index)
