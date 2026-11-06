@@ -627,10 +627,11 @@ export class KodiProvider implements MediaProvider {
             })
             db.syncMediaItemVersions(id, scoredVersions)
 
-              result.itemsScanned++
-            } else {
-              throw new Error('Could not convert Kodi media metadata')
-            }
+            mediaItem.id = id
+            const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
+            await db.upsertQualityScore(qualityScore)
+
+            result.itemsScanned++
           } catch (error: unknown) {
             const names = group.map(g => g.title).join(', ')
             result.errors.push(`Failed to process ${names}: ${getErrorMessage(error)}`)
