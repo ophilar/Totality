@@ -50,6 +50,8 @@ import type {
   GetNotificationsOptions,
 } from '../types/monitoring'
 
+import { PlaybackTargetProfileRepository } from './repositories/PlaybackTargetProfileRepository'
+import { MediaRemuxJobRepository } from './repositories/MediaRemuxJobRepository'
 import { backfillSeriesIdentityKeys } from './SeriesIdentityMigration'
 import { deriveSeriesIdentityKey } from '../services/SeriesIdentityService'
 import { QUALITY_MODEL_VERSION } from '../constants/qualityModelVersion'
@@ -67,6 +69,12 @@ export function getBetterSQLiteService(): BetterSQLiteService {
 export const getDatabase = getBetterSQLiteService
 
 export class BetterSQLiteService {
+  readonly playbackTargetProfiles = new PlaybackTargetProfileRepository()
+  readonly mediaRemuxJobs = new MediaRemuxJobRepository(() => {
+    if (!this.db) throw new Error('Database not initialized')
+    return this.db
+  })
+
   private db: Database.Database | null = null
   private dbPath: string
   private _isInitialized = false
