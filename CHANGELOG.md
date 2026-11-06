@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.0 — Optimization foundation (pre-release)
+## 0.6.0 — Optimization foundation
 
 - Add measured media optimization, encoding policies, transcoding, compatibility checks, and review UI.
 - Consolidate database schemas, source/provider contracts, and shared IPC definitions, including timeline channels introduced in 0.5.
