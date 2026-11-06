@@ -1,0 +1,48 @@
+name: Extract read-only optimization savings model
+on:
+  push:
+    branches: [integration/stratify-release-stack-20261106]
+    paths: [.github/workflows/stratify-savings.yml]
+permissions:
+  contents: write
+jobs:
+  extract:
+    if: github.repository == 'ophilar/Totality'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Extract non-destructive savings estimates and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Totality Integration'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin upstream/06-codec-capabilities optimization
+          git switch -C upstream/07-savings-estimation origin/upstream/06-codec-capabilities
+          git show 'origin/optimization:src/main/services/OptimizationSavingsService.ts' > 'src/main/services/OptimizationSavingsService.ts'
+          git show 'origin/optimization:tests/unit/services/OptimizationSavingsService.test.ts' > 'tests/unit/services/OptimizationSavingsService.test.ts'
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/main/types/database.ts')
+          s=p.read_text()
+          match='export type SyncField = \'mood\' | \'genre\''
+          if s.count(match)!=1 or 'export type SavingsCoverage' in s: raise SystemExit('Unexpected database contracts')
+          s=s.replace(match,match+'\n\nexport type SavingsCoverage = \'complete\' | \'partial\' | \'insufficient\'')
+          p.write_text(s)
+          PY
+          git add 'src/main/services/OptimizationSavingsService.ts' 'tests/unit/services/OptimizationSavingsService.test.ts' 'src/main/types/database.ts'
+          git commit -m 'feat(planning): isolate estimated savings arithmetic and coverage evidence'
+          git push origin HEAD:refs/heads/upstream/07-savings-estimation
+      - name: Validate read-only savings model
+        run: |
+          npm ci --no-audit --no-fund
+          npm run test:run
+          npm run typecheck
+          npx vite build
+          npm run lint
