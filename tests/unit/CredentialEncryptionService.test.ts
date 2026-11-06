@@ -45,7 +45,7 @@ describe('CredentialEncryptionService — encryption unavailable', () => {
 
   it('decrypt() rejects encrypted credentials when OS encryption is unavailable', () => {
     const svc = new CredentialEncryptionService()
-    expect(() => svc.decrypt('ENC:c2VjcmV0')).toThrow('cannot be decrypted')
+    expect(() => svc.decrypt('ENC:c2VjcmV0')).toThrow('OS credential encryption unavailable')
   })
 })
 
