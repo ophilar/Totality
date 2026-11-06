@@ -50,8 +50,6 @@ import type {
   GetNotificationsOptions,
 } from '../types/monitoring'
 
-import { PlaybackTargetProfileRepository } from './repositories/PlaybackTargetProfileRepository'
-import { MediaRemuxJobRepository } from './repositories/MediaRemuxJobRepository'
 import { backfillSeriesIdentityKeys } from './SeriesIdentityMigration'
 import { deriveSeriesIdentityKey } from '../services/SeriesIdentityService'
 import { QUALITY_MODEL_VERSION } from '../constants/qualityModelVersion'
