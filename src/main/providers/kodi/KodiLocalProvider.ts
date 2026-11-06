@@ -1140,9 +1140,6 @@ export class KodiLocalProvider implements MediaProvider {
               result.itemsScanned++
               result.itemsUpdated++
               console.log(`[KodiLocalProvider ${this.sourceId}] Updated: ${metadata.title}`)
-            } else {
-              throw new Error(`Could not convert Kodi media metadata for ${metadata.title}`)
-            }
           } catch (error: unknown) {
             result.errors.push(`Failed to process ${inputFilePath}: ${getErrorMessage(error)}`)
           }
