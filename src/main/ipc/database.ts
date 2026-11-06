@@ -801,10 +801,10 @@ export function registerDatabaseHandlers() {
 
       // Export data as CSV
       const csv = await db.exportWorkingCSV({
-        includeUpgrades: validOptions.includeUpgrades,
-        includeMissingMovies: validOptions.includeMissingMovies,
-        includeMissingEpisodes: validOptions.includeMissingEpisodes,
-        includeMissingAlbums: validOptions.includeMissingAlbums,
+        includeUpgrades: validOptions.includeUpgrades ?? false,
+        includeMissingMovies: validOptions.includeMissingMovies ?? false,
+        includeMissingEpisodes: validOptions.includeMissingEpisodes ?? false,
+        includeMissingAlbums: validOptions.includeMissingAlbums ?? false,
         includeMusicUpgrades: validOptions.includeMusicUpgrades,
       })
       await fs.writeFile(result.filePath, csv, 'utf-8')
