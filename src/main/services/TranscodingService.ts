@@ -705,9 +705,11 @@ export class TranscodingService {
     const targetProfile = profileId == null ? undefined : (await getDatabase().playbackTargetProfiles.get(profileId) ?? undefined)
     if (profileId != null && !targetProfile) throw new Error(`Playback target profile ${profileId} was not found`)
     if (!targetProfile && request.options.targetHdrFormat && request.options.optimizationMode !== 'remux_only') throw new Error('HDR format conversion requires a selected playback target.')
-    const scopedItems = request.mediaItemId === undefined
-      ? await getDatabase().tvShows.getEpisodes(request.seriesTitle!, request.sourceId, request.seriesIdentityKey!, request.libraryId!, request.seasonNumber)
-      : [await getDatabase().media.getItemById(request.mediaItemId)].filter((item): item is MediaItem => item !== null)
+    const scopedItems: MediaItem[] = request.mediaItemId === undefined
+      ? getDatabase().getMediaItems({ type: 'episode', sourceId: request.sourceId, libraryId: request.libraryId })
+        .filter(item => item.series_identity_key === request.seriesIdentityKey &&
+          (request.seasonNumber === undefined || item.season_number === request.seasonNumber))
+      : [getDatabase().getMediaItem(request.mediaItemId)].filter((item): item is MediaItem => item !== null)
     const selectedMediaItemIds = request.selectedMediaItemIds === undefined ? undefined : new Set(request.selectedMediaItemIds)
     const episodes = selectedMediaItemIds ? scopedItems.filter(item => item.id !== undefined && selectedMediaItemIds.has(item.id)) : scopedItems
     if (selectedMediaItemIds && episodes.length !== selectedMediaItemIds.size) throw new Error('One or more selected optimization candidates no longer belong to this scope. Discover candidates again.')
@@ -1602,9 +1604,11 @@ export class TranscodingService {
           return []
         }
       })
-    const episodes = identity.mediaItemId === undefined
-      ? await getDatabase().tvShows.getEpisodes(identity.seriesTitle ?? '', identity.sourceId, identity.seriesIdentityKey ?? '', identity.libraryId ?? '', identity.seasonNumber)
-      : [await getDatabase().media.getItemById(identity.mediaItemId)].filter((item): item is MediaItem => item !== null)
+    const episodes: MediaItem[] = identity.mediaItemId === undefined
+      ? getDatabase().getMediaItems({ type: 'episode', sourceId: identity.sourceId, libraryId: identity.libraryId })
+        .filter(item => item.series_identity_key === identity.seriesIdentityKey &&
+          (identity.seasonNumber === undefined || item.season_number === identity.seasonNumber))
+      : [getDatabase().getMediaItem(identity.mediaItemId)].filter((item): item is MediaItem => item !== null)
     let capabilityFingerprint: string | undefined
     for (const preflight of matches.sort((left, right) => (right.result.createdAt ?? '').localeCompare(left.result.createdAt ?? ''))) {
       if ((preflight.result.measurementVersion !== MEASUREMENT_VERSION || preflight.result.searchVersion !== OPTIMIZATION_SEARCH_VERSION) && preflight.request.options.optimizationMode !== 'remux_only') continue
