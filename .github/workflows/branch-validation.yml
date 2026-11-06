@@ -4,12 +4,8 @@ on:
   workflow_dispatch:
   pull_request:
     branches:
-      - fixes
-      - timelines
       - optimization
-      - architecture
       - '0.7'
-      - '0.9'
     paths:
       - 'src/**'
       - 'tests/**'
