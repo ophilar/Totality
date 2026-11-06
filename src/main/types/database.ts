@@ -6,6 +6,8 @@ export type ProviderType = 'plex' | 'jellyfin' | 'emby' | 'kodi' | 'kodi-local' 
 // Syncable tag fields on music tracks
 export type SyncField = 'mood' | 'genre'
 
+export type SavingsCoverage = 'complete' | 'partial' | 'insufficient'
+
 // Media source configuration (Plex, Jellyfin, Emby, Kodi servers)
 export interface MediaSource {
   id?: number
