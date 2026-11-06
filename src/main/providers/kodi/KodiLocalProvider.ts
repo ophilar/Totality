@@ -950,10 +950,11 @@ export class KodiLocalProvider implements MediaProvider {
             })
             db.syncMediaItemVersions(id, scoredVersions)
 
-              result.itemsScanned++
-            } else {
-              throw new Error('Could not convert Kodi media metadata')
-            }
+            mediaItem.id = id
+            const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
+            await db.upsertQualityScore(qualityScore)
+
+            result.itemsScanned++
           } catch (error: unknown) {
             const msg = getErrorMessage(error)
             if (/cancel/i.test(msg)) throw error
