@@ -931,10 +931,15 @@ export class PlexProvider implements MediaProvider {
       )
 
       const container = responseData?.MediaContainer
-      const items = container?.Metadata || []
+      if (!container) throw new Error('Plex response missing MediaContainer')
+
+      const items = container.Metadata || []
       allItems.push(...items)
 
-      const totalSize = container?.totalSize
+      const totalSize = container.totalSize
+      if (totalSize != null && items.length === 0 && allItems.length < totalSize) {
+        throw new Error(`Incomplete Plex inventory: received ${allItems.length} of ${totalSize} items`)
+      }
       if (items.length === 0 || (totalSize != null && allItems.length >= totalSize)) {
         hasMore = false
       } else {
