@@ -1,0 +1,58 @@
+name: Extract toolchain modernization layer
+on:
+  push:
+    branches: [integration/stratify-release-stack-20261106]
+    paths: [.github/workflows/stratify-toolchain.yml]
+permissions:
+  contents: write
+concurrency:
+  group: stratify-totality-toolchain
+  cancel-in-progress: false
+jobs:
+  extract:
+    if: github.repository == 'ophilar/Totality'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Extract dependency and config changes only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Totality Integration'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin timelines optimization
+          git switch -C upstream/01-toolchain-modernization origin/timelines
+          python3 - <<'PY'
+          import json, pathlib, subprocess
+          from pathlib import Path
+          baseline = json.loads(Path('package.json').read_text())
+          new = json.loads(subprocess.check_output(['git','show','origin/optimization:package.json'], text=True))
+          keys = ["@vitejs/plugin-react","@vitest/coverage-istanbul","@vitest/coverage-v8","@vitest/ui","@tailwindcss/postcss","cssnano","postcss","prettier","tailwindcss","typescript","vite","vite-plugin-electron","vite-plugin-electron-renderer","vitest","esbuild","oxlint"]
+          for key in keys:
+              if key in new.get('devDependencies', {}): baseline.setdefault('devDependencies', {})[key] = new['devDependencies'][key]
+              else: raise SystemExit('Missing toolchain dependency: '+key)
+          for key in ('eslint','eslint-plugin-react-hooks','eslint-plugin-react-refresh','typescript-eslint'): baseline['devDependencies'].pop(key,None)
+          baseline['scripts']['lint'] = new['scripts']['lint']
+          baseline['scripts']['typecheck'] = new['scripts']['typecheck']
+          Path('package.json').write_text(json.dumps(baseline,indent=2)+'\n')
+          for old in ('vite.config.ts','vitest.config.ts','postcss.config.js','eslint.config.js'): Path(old).unlink(missing_ok=True)
+          for newfile in ('vite.config.mts','vitest.config.mts','postcss.config.mjs','.oxlintrc.json'):
+              Path(newfile).write_bytes(subprocess.check_output(['git','show','origin/optimization:'+newfile]))
+          PY
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          git add -A
+          git commit -m 'build: modernize Vite TypeScript Vitest CSS and lint tooling'
+          git push origin HEAD:refs/heads/upstream/01-toolchain-modernization
+      - name: Install lockfile and verify toolchain layer
+        run: |
+          npm ci --no-audit --no-fund
+          npm run test:run
+          npm run typecheck
+          npx vite build
+          npm run lint
