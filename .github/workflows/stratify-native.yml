@@ -1,0 +1,51 @@
+name: Extract native runtime dependency layer
+on:
+  push:
+    branches: [integration/stratify-release-stack-20261106]
+    paths: [.github/workflows/stratify-native.yml]
+permissions:
+  contents: write
+jobs:
+  extract:
+    if: github.repository == 'ophilar/Totality'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Stage native dependency upgrades without feature code
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Totality Integration'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin upstream/01-toolchain-modernization optimization
+          git switch -C upstream/02-native-runtime-modernization origin/upstream/01-toolchain-modernization
+          python3 - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          source=json.loads(subprocess.check_output(['git','show','origin/optimization:package.json'],text=True))
+          current=json.loads(Path('package.json').read_text())
+          scope={"dependencies":["better-sqlite3","electron-updater","zod"],"optionalDependencies":["mysql2","sql.js"],"devDependencies":["electron","electron-builder","@types/better-sqlite3","@types/node","@types/sql.js"],"overrides":["@electron/get","tsyringe"]}
+          for group,names in scope.items():
+              for name in names:
+                  if name not in source[group]: raise SystemExit(f'Missing {group}/{name}')
+                  current.setdefault(group,{})[name]=source[group][name]
+          Path('package.json').write_text(json.dumps(current,indent=2)+'\n')
+          PY
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          git add package.json package-lock.json
+          git commit -m 'build: modernize Electron and native database dependencies'
+          git push origin HEAD:refs/heads/upstream/02-native-runtime-modernization
+      - name: Verify isolated native migration
+        run: |
+          npm ci --no-audit --no-fund
+          npm run test:run
+          npm run typecheck
+          npx vite build
+          npm run lint
+          npm audit --omit=dev --audit-level=moderate
