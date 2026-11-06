@@ -113,7 +113,7 @@ export function TroubleshootTab() {
         isAutoScrolling.current = false
       }, 50)
     }
-  }, [filteredLogs.length, autoScroll])
+  }, [filteredLogs.length, autoScroll, listRef])
 
   // Handle scroll events to detect manual scrolling
   const handleScroll = useCallback(
@@ -140,7 +140,7 @@ export function TroubleshootTab() {
     if (listRef.current && filteredLogs.length > 0) {
       listRef.current.scrollToRow({ index: filteredLogs.length - 1, align: 'end' })
     }
-  }, [filteredLogs.length])
+  }, [filteredLogs.length, listRef])
 
   // Measure container height with ResizeObserver
   useEffect(() => {
