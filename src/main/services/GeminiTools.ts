@@ -1821,7 +1821,7 @@ export async function executeTool(
 
       for (const track of tracks) {
         const moods = (track.mood as string || '').split(';').map(s => s.trim()).filter(Boolean)
-        const genres = (track.genres || '').split(';').map(s => s.trim()).filter(Boolean)
+        const genres = String(track.genres ?? '').split(';').map(s => s.trim()).filter(Boolean)
 
         for (const m of moods) moodCounts[m] = (moodCounts[m] || 0) + 1
         for (const g of genres) genreCounts[g] = (genreCounts[g] || 0) + 1
