@@ -1204,9 +1204,9 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
                   }
                 }
               }
-              if (result.itemsRemoved > 0) {
-                console.log(`[${this.providerType}Provider ${this.sourceId}] Removed ${result.itemsRemoved} deleted items during incremental scan`)
-              }
+            }
+            if (result.itemsRemoved > 0) {
+              console.log(`[${this.providerType}Provider ${this.sourceId}] Removed ${result.itemsRemoved} deleted items during incremental scan`)
             }
           }
         } catch (err) {
@@ -1289,6 +1289,9 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         throw new Error(`Incomplete deletion inventory: ${ids.size} of ${response.TotalRecordCount}`)
       }
 
+      if (response.Items.length === 0 && ids.size < response.TotalRecordCount) {
+        throw new Error(`Incomplete ${this.providerType} deletion inventory: ${ids.size} of ${response.TotalRecordCount} IDs received`)
+      }
       if (ids.size >= response.TotalRecordCount || response.Items.length === 0) {
         hasMore = false
       } else {
