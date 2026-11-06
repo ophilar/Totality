@@ -3,7 +3,7 @@ productName: Totality
 
 publish:
   provider: github
-  owner: ophilar
+  owner: bbidwell85
   repo: Totality
 directories:
   buildResources: resources
