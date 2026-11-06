@@ -169,7 +169,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
 
   it('preflights a single movie without requiring a series identity', async () => {
     const transcodingService = getTranscodingService()
-    mockDb.getMediaItem.mockResolvedValue({
+    mockDb.getMediaItem.mockReturnValue({
       id: 101,
       title: 'Movie',
       source_id: 'src1',
@@ -190,7 +190,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
   it('accepts an explicit no-target optimization without consulting the saved default', async () => {
     const transcodingService = getTranscodingService()
     mockDb.config.getSetting.mockResolvedValue('saved-default')
-    mockDb.getMediaItem.mockResolvedValue({
+    mockDb.getMediaItem.mockReturnValue({
       id: 101,
       title: 'Movie',
       source_id: 'src1',
@@ -225,7 +225,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     const preflightId = 'valid_preflight_1'
     const sourcePath = path.resolve('src/main/services/TranscodingService.ts')
     const sourceStat = await fs.stat(sourcePath)
-    mockDb.getMediaItem.mockImplementation(async (id: number) => ({
+    mockDb.getMediaItem.mockImplementation((id: number) => ({
       id, title: `Show S01E0${id - 100}`, source_id: 'src1', file_path: sourcePath,
     }))
     mockDb.sources.getSourceById.mockResolvedValue({ connection_config: JSON.stringify({ folderPath: path.dirname(sourcePath) }) })
@@ -284,7 +284,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     const preflightId = 'retry_preflight_1'
     const sourcePath = path.resolve('src/main/services/TranscodingService.ts')
     const sourceStat = await fs.stat(sourcePath)
-    mockDb.getMediaItem.mockImplementation(async (id: number) => ({ id, title: `Episode ${id}`, source_id: 'src1', file_path: sourcePath }))
+    mockDb.getMediaItem.mockImplementation((id: number) => ({ id, title: `Episode ${id}`, source_id: 'src1', file_path: sourcePath }))
     mockDb.sources.getSourceById.mockResolvedValue({ connection_config: JSON.stringify({ folderPath: path.dirname(sourcePath) }) })
     mockAddTasks.mockReturnValue(['retry-task-102'])
     mockGetQueueState.mockReturnValue({
