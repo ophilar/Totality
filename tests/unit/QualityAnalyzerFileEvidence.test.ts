@@ -7,7 +7,7 @@ const mockUpdateDeepAnalysisByPath = vi.fn()
 
 vi.mock('../../src/main/database/getDatabase', () => ({
   getDatabase: vi.fn(() => ({
-    config: { getSetting: vi.fn(() => null), getSettingsByPrefix: vi.fn(() => ({})) },
+    getSetting: vi.fn(() => null),
     getSettingsByPrefix: vi.fn(() => ({})),
     upsertQualityScore: vi.fn(),
     getMediaItemByPath: mockGetMediaItemByPath,
