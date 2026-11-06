@@ -493,8 +493,6 @@ export class PlexProvider implements MediaProvider {
 
       // Cache for season metadata and show TMDB IDs
       const seasonCache = new Map<string, PlexMediaItem | null>()
-      const showTmdbIdCache = new Map<string, string | undefined>()
-      const showTitleSortCache = new Map<string, string | undefined>()
 
       // First pass: count total items (including episodes for TV shows)
       const itemsToProcess: Array<PlexMediaItem & { _showTmdbId?: string; _showTitleSort?: string }> = []
@@ -523,9 +521,7 @@ export class PlexProvider implements MediaProvider {
               break
             }
           }
-          if (showTmdbId) showTmdbIdCache.set(item.ratingKey, showTmdbId)
           const showTitleSort = showMetadata.titleSort || item.titleSort
-          if (showTitleSort) showTitleSortCache.set(item.ratingKey, showTitleSort)
           return episodes.map(ep => ({
             ...ep,
             _showTmdbId: showTmdbId,
@@ -841,9 +837,10 @@ export class PlexProvider implements MediaProvider {
     libraryType: 'movie' | 'show',
     analyzer: ReturnType<typeof getQualityAnalyzer>,
     _onProgress?: ProgressCallback
-  ): Promise<number> {
+  ): Promise<{ addedCount: number; errors: string[] }> {
     const db = getDatabase()
     let addedCount = 0
+    const errors: string[] = []
 
     for (const ratingKey of missingIds) {
       try {
@@ -892,7 +889,7 @@ export class PlexProvider implements MediaProvider {
       }
     }
 
-    return addedCount
+    return { addedCount, errors }
   }
 
   // ============================================================================
