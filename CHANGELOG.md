@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0 — Optimization foundation (pre-release)
+
+- Add measured media optimization, encoding policies, transcoding, compatibility checks, and review UI.
+- Consolidate database schemas, source/provider contracts, and shared IPC definitions, including timeline channels introduced in 0.5.
+- Preserve 0.4.7/0.5 wishlist movie identity safeguards and regression tests.
+- Use release verification workflows for build, testing, database migration and cross-platform packaging.
+
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
 ### [0.4.2](https://github.com/bbidwell85/Totality/compare/v0.4.1...v0.4.2) (2026-10-31)
