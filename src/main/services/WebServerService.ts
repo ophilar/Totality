@@ -241,7 +241,6 @@ export class WebServerService {
         })
       })
       ws.on('close', (code, reason) => {
-        this.eventThrottles.delete(ws)
         getLoggingService().verbose('WebServer', `WebSocket disconnected from ${ws.clientIp} (code: ${code}, reason: ${reason || 'none'}, clients: ${this.wss!.clients.size})`)
       })
       ws.on('error', (err) => {
@@ -323,7 +322,7 @@ export class WebServerService {
               expired = true
             }
           }
-          if (cleaned) {
+          if (expired) {
             try {
               this.persistSessions()
             } catch (error) {
@@ -769,35 +768,6 @@ export class WebServerService {
     if (!setting?.trim()) return true
     const normalized = ip.replace(/^::ffff:/, '')
     return setting.split(',').map(value => value.trim()).filter(Boolean).includes(normalized)
-  }
-
-  private loadPersistedSessions(): void {
-    const stored = getDatabase().getSetting('web_sessions')
-    if (!stored) return
-    if (!getCredentialEncryptionService().isEncrypted(stored)) {
-      // 0.4.2 persisted bearer tokens as plaintext. Revoke them on upgrade;
-      // do not load or re-encrypt previously exposed authentication sessions.
-      getDatabase().deleteSetting('web_sessions')
-      console.warn('[WebServer] Revoked unencrypted legacy web sessions during upgrade')
-      return
-    }
-    const plain = getCredentialEncryptionService().decrypt(stored)
-    if (!plain) throw new Error('Persisted web sessions cannot be decrypted')
-    const sessions = JSON.parse(plain) as Array<[string, Session]>
-    const now = Date.now()
-    for (const [token, session] of sessions) {
-      if (session.expiresAt > now && session.pinFingerprint === this.getPinFingerprint()) this.sessions.set(token, session)
-    }
-  }
-
-  private persistSessions(): void {
-    const serialized = JSON.stringify(Array.from(this.sessions.entries()))
-    getDatabase().setSetting('web_sessions', getCredentialEncryptionService().encrypt(serialized))
-  }
-
-  private getPinFingerprint(): string {
-    const encryptedPin = getDatabase().getSetting(SETTING_KEYS.web_access_pin)
-    return crypto.createHash('sha256').update(encryptedPin || '').digest('hex')
   }
 
   private async handleAuth(ws: AuthenticatedWebSocket, msg: AuthMessage): Promise<void> {
