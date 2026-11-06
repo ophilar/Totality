@@ -69,7 +69,11 @@ export function getBetterSQLiteService(): BetterSQLiteService {
 export const getDatabase = getBetterSQLiteService
 
 export class BetterSQLiteService {
-  readonly playbackTargetProfiles = new PlaybackTargetProfileRepository()
+  private playbackTargetProfileRepository?: PlaybackTargetProfileRepository
+  get playbackTargetProfiles(): PlaybackTargetProfileRepository {
+    return this.playbackTargetProfileRepository ??= new PlaybackTargetProfileRepository()
+  }
+
   readonly mediaRemuxJobs = new MediaRemuxJobRepository(() => {
     if (!this.db) throw new Error('Database not initialized')
     return this.db
