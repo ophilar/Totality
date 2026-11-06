@@ -18,7 +18,8 @@ const mockGetPlaybackTargetProfile = vi.fn<() => Promise<PlaybackTargetProfile |
 // Mock database getter before importing QualityAnalyzer
 vi.mock('../../src/main/database/getDatabase', () => ({
   getDatabase: vi.fn(() => ({
-    config: { getSetting: mockGetSetting, getSettingsByPrefix: mockGetSettingsByPrefix },
+    getSetting: mockGetSetting,
+    getSettingsByPrefix: mockGetSettingsByPrefix,
     playbackTargetProfiles: { get: mockGetPlaybackTargetProfile },
     upsertQualityScore: vi.fn(),
   })),
