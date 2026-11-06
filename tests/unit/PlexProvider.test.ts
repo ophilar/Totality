@@ -13,6 +13,8 @@ const mockFetchJSON = vi.hoisted(() => vi.fn())
 const mockFetchWithTimeout = vi.hoisted(() => vi.fn())
 const mockGetMediaItems = vi.hoisted(() => vi.fn())
 const mockDeleteMediaItem = vi.hoisted(() => vi.fn())
+const mockGetMusicTracks = vi.hoisted(() => vi.fn(() => []))
+const mockUpdateSourceScanTime = vi.hoisted(() => vi.fn())
 
 vi.mock('../../src/main/services/utils/httpClient', () => ({
   fetchJSON: mockFetchJSON,
@@ -31,6 +33,10 @@ vi.mock('../../src/main/database/getDatabase', () => ({
   getDatabase: vi.fn(() => ({
     getMediaItems: mockGetMediaItems,
     deleteMediaItem: mockDeleteMediaItem,
+    getMusicTracks: mockGetMusicTracks,
+    updateSourceScanTime: mockUpdateSourceScanTime,
+    startBatch: vi.fn(),
+    endBatch: vi.fn(),
   })),
 }))
 
@@ -191,8 +197,33 @@ function createProviderWithServer(token = 'test-token'): PlexProvider {
 // ---------------------------------------------------------------------------
 
 describe('PlexProvider', () => {
+  describe('full scan inventory selection', () => {
+    const sinceTimestamp = new Date('2026-01-01T00:00:00.000Z')
+
+    it('requests the full inventory when forceFullScan overrides a timestamp', async () => {
+      const provider = createProviderWithServer()
+      const fetchItems = vi.spyOn(provider as any, 'getPlexLibraryItems')
+        .mockRejectedValueOnce(new Error('Stop after inventory request'))
+      const result = await provider.scanLibrary('lib-1', { sinceTimestamp, forceFullScan: true })
+      expect(fetchItems).toHaveBeenCalledExactlyOnceWith('lib-1', undefined)
+      expect(result.success).toBe(false)
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+
+    it('preserves time filtering on genuinely incremental scans', async () => {
+      const provider = createProviderWithServer()
+      const fetchItems = vi.spyOn(provider as any, 'getPlexLibraryItems')
+        .mockRejectedValueOnce(new Error('Stop after inventory request'))
+      await provider.scanLibrary('lib-1', { sinceTimestamp })
+      expect(fetchItems).toHaveBeenCalledExactlyOnceWith('lib-1', sinceTimestamp)
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
+    mockGetMediaItems.mockReset().mockReturnValue([])
+    mockGetMusicTracks.mockReset().mockReturnValue([])
   })
 
   // ========================================================================
@@ -691,6 +722,61 @@ describe('PlexProvider', () => {
     })
   })
 
+  describe('scan reconciliation failures', () => {
+    it('rejects missing Plex metadata during incremental item discovery', async () => {
+      const provider = createProviderWithServer()
+      vi.spyOn(provider as any, 'getPlexItemMetadata').mockResolvedValue(null)
+      await expect((provider as any).fetchAndProcessMissingItems(['missing-1'], 'lib-1', 'movie', {}))
+        .rejects.toThrow('Failed to process Plex item missing-1: Metadata unavailable')
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+
+    it('treats empty episode inventories as incomplete', async () => {
+      const provider = createProviderWithServer()
+      vi.spyOn(provider as any, 'paginatedPlexFetch').mockResolvedValue([{ ratingKey: 'show-1' }])
+      vi.spyOn(provider, 'getAllEpisodes').mockResolvedValue([])
+      await expect((provider as any).getPlexLibraryItemIds('lib-1', 'show'))
+        .rejects.toThrow('Incomplete Plex episode inventory')
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+
+    it('aborts reconciliation and preserves scan timestamp on a failed addition', async () => {
+      const provider = createProviderWithServer()
+      vi.spyOn(provider as any, 'getPlexLibraryItems').mockResolvedValue([])
+      vi.spyOn(provider as any, 'getPlexLibraryType').mockResolvedValue('movie')
+      vi.spyOn(provider as any, 'getPlexLibraryItemIds').mockResolvedValue(new Set(['missing-1']))
+      vi.spyOn(provider as any, 'fetchAndProcessMissingItems').mockRejectedValue(new Error('Failed to add media'))
+      const result = await provider.scanLibrary('lib-1', { sinceTimestamp: new Date('2026-01-01') })
+      expect(result.success).toBe(false)
+      expect(result.errors.join(' ')).toContain('Failed to add media')
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+      expect(mockUpdateSourceScanTime).not.toHaveBeenCalled()
+    })
+
+    it('rejects video media without playable source metadata', async () => {
+      const provider = createProviderWithServer()
+      vi.spyOn(provider as any, 'getPlexLibraryItems').mockResolvedValue([makeMovieItem()])
+      vi.spyOn(provider as any, 'getPlexItemMetadata').mockResolvedValue(makeMovieItem({ Media: undefined }))
+      const result = await provider.scanLibrary('lib-1')
+      expect(result.success).toBe(false)
+      expect(result.errors.join(' ')).toContain('has no media data')
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+      expect(mockUpdateSourceScanTime).not.toHaveBeenCalled()
+    })
+
+    it('propagates artist-processing failures from Plex music scans', async () => {
+      const provider = createProviderWithServer()
+      vi.spyOn(provider as any, 'getMusicArtists').mockResolvedValue([{ ratingKey: 'artist-1', title: 'Artist' }])
+      vi.spyOn(provider as any, 'getMusicAlbums').mockResolvedValue([])
+      vi.spyOn(provider as any, 'convertToMusicArtist').mockImplementation(() => { throw new Error('Invalid artist') })
+      const result = await provider.scanMusicLibrary('music-library')
+      expect(result.success).toBe(false)
+      expect(result.errors.join(' ')).toContain('Invalid artist')
+      expect(mockUpdateSourceScanTime).not.toHaveBeenCalled()
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+  })
+
   // ========================================================================
   // removeStaleItems (safety guard)
   // ========================================================================
@@ -703,13 +789,11 @@ describe('PlexProvider', () => {
       ])
 
       const provider = createProviderWithServer()
-      const removed = await (provider as any).removeStaleItems(
+      await expect((provider as any).removeStaleItems(
         new Set<string>(), // empty — simulates Plex API failure
         'movie',
         'lib-1'
-      )
-
-      expect(removed).toBe(0)
+      )).rejects.toThrow('Incomplete Plex movie inventory')
       expect(mockDeleteMediaItem).not.toHaveBeenCalled()
     })
 

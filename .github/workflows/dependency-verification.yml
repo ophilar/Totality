@@ -14,8 +14,11 @@ on:
       - 'scripts/**'
       - 'vite.config.ts'
       - 'vitest.config.ts'
+      - 'vitest.upgrade.config.ts'
       - 'tsconfig*.json'
       - 'electron-builder.yml'
+  push:
+    branches: [fixes, timelines]
   workflow_dispatch:
 
 permissions:
@@ -27,7 +30,23 @@ concurrency:
 
 jobs:
   verify:
-    name: Test (${{ matrix.os }})
+    name: Fast validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run test:run
+      - run: npx tsc --noEmit
+
+  certify:
+    name: Release certification (${{ matrix.os }})
+    if: github.event_name != 'pull_request'
+    needs: verify
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -41,13 +60,25 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npm run test:run
       - name: Audit production dependencies
         if: runner.os == 'Linux'
         run: npm audit --omit=dev --audit-level=moderate
-      - name: Typecheck
-        if: runner.os == 'Linux'
-        run: npx tsc --noEmit
       - name: Build application
-        if: runner.os == 'Linux'
         run: npx vite build
+      - name: Check out upstream 0.4.2 schema
+        if: runner.os == 'Linux'
+        uses: actions/checkout@v5
+        with:
+          repository: bbidwell85/Totality
+          ref: v0.4.2
+          path: legacy
+      - name: Verify real database upgrade
+        if: runner.os == 'Linux'
+        run: |
+          npm rebuild better-sqlite3 --build-from-source
+          npx vitest run --config vitest.upgrade.config.ts
+          npx electron-rebuild
+      - name: Package application
+        run: npx electron-builder --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'

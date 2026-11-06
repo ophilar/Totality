@@ -227,6 +227,48 @@ describe('BetterSQLiteService — Media Items', () => {
     expect(count).toBe(2)
   })
 
+  it('merges partial local edition scans without losing sibling versions', () => {
+    const id = service.upsertMediaItem(makeMediaItem({ source_type: 'local', plex_id: 'canonical-movie' }))
+    const version = (filePath: string, resolution: string, height: number) => ({
+      media_item_id: id, version_source: 'local_file',
+      file_path: filePath, file_size: 1234, duration: 7200,
+      resolution, width: 1920, height,
+      video_codec: 'H264', video_bitrate: 2000, audio_codec: 'AAC',
+      audio_channels: 2, audio_bitrate: 128,
+      quality_tier: resolution, tier_quality: 'MEDIUM',
+      tier_score: 80, is_best: false,
+    })
+
+    service.syncMediaItemVersions(id, [
+      version('/movies/theatrical.mkv', '1080p', 1080),
+      version('/movies/extended.mkv', '4K', 2160),
+    ])
+    expect(service.getMediaItemByPath('/movies/extended.mkv')?.id).toBe(id)
+
+    service.syncMediaItemVersions(id, [
+      version('/movies/theatrical.mkv', '1080p', 1080),
+    ], 'merge')
+    expect(service.getMediaItemVersions(id).map(v => v.file_path).sort()).toEqual([
+      '/movies/extended.mkv', '/movies/theatrical.mkv',
+    ])
+
+    service.updateBestVersion(id, new Set(['/movies/theatrical.mkv']))
+    expect(service.getMediaItem(id)?.file_path).toBe('/movies/theatrical.mkv')
+    expect(service.getMediaItem(id)?.version_count).toBe(2)
+  })
+
+  it('global TV search returns series identity rather than episode identity', () => {
+    service.upsertMediaItem(makeMediaItem({
+      plex_id: 'episode-1', type: 'episode', title: 'Pilot',
+      series_title: 'Example Series', season_number: 1, episode_number: 1,
+      tmdb_id: '111', series_tmdb_id: '999',
+    }))
+
+    const results = service.globalSearch('Example Series')
+    expect(results.tvShows).toHaveLength(1)
+    expect(results.tvShows[0].tmdb_id).toBe('999')
+  })
+
   it('deleteMediaItem removes item and cascades', () => {
     const id = service.upsertMediaItem(makeMediaItem())
     service.deleteMediaItem(id)

@@ -52,7 +52,7 @@ export class CredentialEncryptionService {
     // Check if safeStorage is available on this platform
     this.isAvailable = safeStorage.isEncryptionAvailable()
     if (!this.isAvailable) {
-      console.warn('[CredentialEncryption] safeStorage not available - credentials will be stored in plain text')
+      console.warn('[CredentialEncryption] OS credential encryption unavailable; sensitive writes will be rejected')
     } else {
       console.log('[CredentialEncryption] Encryption available using OS secure storage')
     }
@@ -70,9 +70,8 @@ export class CredentialEncryptionService {
    * Returns the encrypted value prefixed with 'ENC:' for identification
    */
   encrypt(value: string): string {
-    if (!this.isAvailable || !value) {
-      return value
-    }
+    if (!value) return value
+    if (!this.isAvailable) throw new Error('OS credential encryption unavailable')
 
     try {
       const encrypted = safeStorage.encryptString(value)
@@ -91,14 +90,13 @@ export class CredentialEncryptionService {
    * Only decrypts values that have the 'ENC:' prefix
    */
   decrypt(value: string): string {
-    if (!this.isAvailable || !value) {
-      return value
-    }
+    if (!value) return value
 
     // Only decrypt values with our prefix
     if (!value.startsWith(ENCRYPTED_PREFIX)) {
       return value
     }
+    if (!this.isAvailable) throw new Error('OS credential encryption unavailable')
 
     try {
       const encryptedBase64 = value.slice(ENCRYPTED_PREFIX.length)
@@ -126,9 +124,7 @@ export class CredentialEncryptionService {
    * Returns a new object with sensitive fields encrypted
    */
   encryptConnectionConfig(config: Record<string, unknown>): Record<string, unknown> {
-    if (!this.isAvailable || !config) {
-      return config
-    }
+    if (!config) return config
 
     const encrypted: Record<string, unknown> = { ...config }
 
@@ -175,9 +171,7 @@ export class CredentialEncryptionService {
    * Encrypt a setting value if it's a sensitive key
    */
   encryptSetting(key: string, value: string): string {
-    if (!this.isAvailable || !this.isSensitiveSetting(key)) {
-      return value
-    }
+    if (!this.isSensitiveSetting(key)) return value
 
     // Don't re-encrypt already encrypted values
     if (this.isEncrypted(value)) {
