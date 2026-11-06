@@ -109,7 +109,7 @@ export class WishlistCompletionService {
 
       for (const item of movieItems) {
         const verified = item.tmdb_id
-          ? foundMovies.has(item.tmdb_id)
+          ? foundMovies.get(item.tmdb_id)?.type === 'movie'
           : db.getMediaItems({ type: 'movie', searchQuery: item.title }).filter(
               movie => movie.title.toLocaleLowerCase() === item.title.toLocaleLowerCase() && movie.year === item.year,
             ).length === 1
