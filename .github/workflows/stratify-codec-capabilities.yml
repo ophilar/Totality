@@ -1,0 +1,41 @@
+name: Extract hardware capability and output codec policy
+on:
+  push:
+    branches: [integration/stratify-release-stack-20261106]
+    paths: [.github/workflows/stratify-codec-capabilities.yml]
+permissions:
+  contents: write
+jobs:
+  extract:
+    if: github.repository == 'ophilar/Totality'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Isolate codec and GPU capabilities from transcoding execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Totality Integration'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin upstream/05-playback-target-rules optimization
+          git switch -C upstream/06-codec-capabilities origin/upstream/05-playback-target-rules
+          mkdir -p 'src/main/services/utils' && git show 'origin/optimization:src/main/services/utils/GpuDetector.ts' > 'src/main/services/utils/GpuDetector.ts'
+          mkdir -p 'src/main/services' && git show 'origin/optimization:src/main/services/TranscodingCapabilities.ts' > 'src/main/services/TranscodingCapabilities.ts'
+          mkdir -p 'src/main/services/transcoding' && git show 'origin/optimization:src/main/services/transcoding/OptimizationCodecPolicy.ts' > 'src/main/services/transcoding/OptimizationCodecPolicy.ts'
+          mkdir -p 'tests/unit/services' && git show 'origin/optimization:tests/unit/services/OptimizationCodecPolicy.test.ts' > 'tests/unit/services/OptimizationCodecPolicy.test.ts'
+          git add 'src/main/services/utils/GpuDetector.ts' 'src/main/services/TranscodingCapabilities.ts' 'src/main/services/transcoding/OptimizationCodecPolicy.ts' 'tests/unit/services/OptimizationCodecPolicy.test.ts'
+          git commit -m 'feat(compat): separate GPU and output codec capability policy'
+          git push origin HEAD:refs/heads/upstream/06-codec-capabilities
+      - name: Verify capability policy independently
+        run: |
+          npm ci --no-audit --no-fund
+          npm run test:run
+          npm run typecheck
+          npx vite build
+          npm run lint
