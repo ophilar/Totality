@@ -7,6 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ipcMain } from 'electron'
+import { z } from 'zod'
 
 // Track registered handlers
 const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>()
@@ -86,6 +87,7 @@ vi.mock('fs/promises', () => ({
 
 // Import AFTER mocks
 const { registerDatabaseHandlers } = await import('../../src/main/ipc/database')
+const { createValidatedIpcHandler, createValidatedIpcHandlerWithEvent, createIpcHandler, createIpcHandlerWithEvent, createSyncHandler } = await import('../../src/main/ipc/utils/createHandler')
 
 describe('IPC Handler Registration', () => {
   beforeEach(() => {
@@ -204,5 +206,50 @@ describe('IPC Handler Error Handling', () => {
 
     const handler = handlers.get('db:getMediaItemById')!
     await expect(handler({ senderFrame: { url: 'file:///test' } } as never, 1)).rejects.toThrow('Database connection lost')
+  })
+})
+
+describe('Shared IPC handler behavior', () => {
+  const event = { senderFrame: { url: 'file:///totality/index.html' }, sender: { id: 23 } } as never
+
+  beforeEach(() => {
+    handlers.clear()
+    vi.mocked(ipcMain.handle).mockClear()
+  })
+
+  it('preserves tuple validation, argument order, and transformed values', async () => {
+    createValidatedIpcHandler('test:tuple', z.tuple([z.string().trim(), z.number().int()]),
+      async (title, count) => `${title}:${count}`)
+    const invoke = handlers.get('test:tuple')!
+    await expect(invoke(event, '  film  ', 3)).resolves.toBe('film:3')
+    await expect(invoke(event, 'film', 'invalid')).rejects.toThrow('Validation failed')
+  })
+
+  it('passes authenticated event and parsed arguments to event-aware handlers', async () => {
+    createValidatedIpcHandlerWithEvent('test:event', z.tuple([z.string()]),
+      async (ipcEvent, value) => `${ipcEvent.sender.id}:${value}`)
+    await expect(handlers.get('test:event')!(event, 'ready')).resolves.toBe('23:ready')
+  })
+
+  it('preserves error propagation and calls the error hook exactly once', async () => {
+    const onError = vi.fn()
+    const failure = new Error('service failed')
+    createIpcHandler('test:failure', async () => { throw failure }, { onError })
+    await expect(handlers.get('test:failure')!(event)).rejects.toBe(failure)
+    expect(onError).toHaveBeenCalledExactlyOnceWith('test:failure', failure)
+  })
+
+  it('preserves event-aware and synchronous handler behavior', async () => {
+    createIpcHandlerWithEvent('test:with-event', async (ipcEvent, text: string) => `${ipcEvent.sender.id}:${text}`)
+    createSyncHandler('test:sync', (number: number) => number * 2)
+    await expect(handlers.get('test:with-event')!(event, 'hello')).resolves.toBe('23:hello')
+    expect(handlers.get('test:sync')!(event, 9)).toBe(18)
+  })
+
+  it('rejects missing sender frames before executing the handler', async () => {
+    const call = vi.fn(async () => 'unreachable')
+    createIpcHandler('test:unauthorized', call)
+    await expect(handlers.get('test:unauthorized')!({})).rejects.toThrow('Unauthorized IPC request')
+    expect(call).not.toHaveBeenCalled()
   })
 })
