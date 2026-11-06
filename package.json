@@ -88,13 +88,12 @@
     "react-window": "^2.3.4",
     "sharp": "^0.35.5",
     "standard-version": "^9.5.0",
-    "tailwindcss": "^4.2.2",
-    "typescript": "^5.2.2",
-    "typescript-eslint": "^8.33.0",
-    "vite": "^6.4.5",
-    "vite-plugin-electron": "^0.29.1",
-    "vite-plugin-electron-renderer": "^0.14.5",
-    "vitest": "^4.0.18"
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vite-plugin-electron": "^1.1.2",
+    "vite-plugin-electron-renderer": "^1.0.0",
+    "vitest": "^5.0.5"
   },
   "overrides": {
     "@electron/get": "^5.1.0",
