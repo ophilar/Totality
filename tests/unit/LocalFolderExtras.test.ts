@@ -318,6 +318,6 @@ describe('targeted music inventory safety', () => {
     const result = await provider.scanLibrary('music')
     expect(result.success).toBe(false)
     expect(result.errors.join(' ')).toContain('Cannot complete music inventory')
-    expect(deleteMusicTrack).not.toHaveBeenCalled()
+    expect(mockDeleteMusicTrack).not.toHaveBeenCalled()
   })
 })
