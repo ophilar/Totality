@@ -54,7 +54,7 @@ export function recommendPlaybackTargetContainer(
 export function evaluatePlaybackTarget(profile: PlaybackTargetProfile, analysis: FileAnalysisResult): PlaybackTargetEvaluation {
   if (!analysis.success) throw new Error(analysis.error || 'Media analysis failed')
   const video = analysis.video
-  if (!video || !analysis.container || analysis.overallBitrateKbps == null) throw new Error('Complete media analysis is required')
+  if (!video || !analysis.container || analysis.overallBitrate == null) throw new Error('Complete media analysis is required')
   const finding = (ok: boolean, rule: string, evidence: string): PlaybackFinding => ({ status: ok ? 'compatible' : 'incompatible', rule, evidence, source: 'local-analysis' })
   const d = profile.definition
   const allowedContainers = getPlaybackTargetContainers(profile, video)
@@ -65,7 +65,7 @@ export function evaluatePlaybackTarget(profile: PlaybackTargetProfile, analysis:
     hdr: finding(!video.hdrFormat || video.hdrFormat === 'SDR' || d.hdr.formats.includes(video.hdrFormat), 'HDR output format supported', video.hdrFormat || 'SDR'),
     audio: finding(analysis.audioTracks.length === 0 || analysis.audioTracks.some(t => d.audio.codecs.some(codec => normalizeAudioCodec(codec) === normalizeAudioCodec(t.codec)) && t.channels <= d.audio.maxChannels && (!t.hasObjectAudio || d.audio.objectAudio)), 'at least one audio stream supported by codec/channel/object-audio policy', JSON.stringify(analysis.audioTracks)),
     subtitle: { status: 'not-applicable' as const, rule: 'subtitle compatibility requires an explicitly selected subtitle stream', evidence: JSON.stringify(analysis.subtitleTracks), source: 'local-analysis' as const },
-    network: finding(analysis.overallBitrateKbps * 1000 <= d.network.sustainableBitrate, `bitrate <= ${d.network.sustainableBitrate}`, String(analysis.overallBitrateKbps * 1000)),
+    network: finding(analysis.overallBitrate * 1000 <= d.network.sustainableBitrate, `bitrate <= ${d.network.sustainableBitrate}`, String(analysis.overallBitrate * 1000)),
   }
   return { profileId: profile.id, overall: Object.values(findings).every(f => f.status !== 'incompatible') ? 'compatible' : 'incompatible', findings }
 }
