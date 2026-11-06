@@ -42,6 +42,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
         get: vi.fn().mockResolvedValue({ id: 'prof-1', name: 'Profile 1' }),
       },
       getMediaItem: vi.fn(),
+      getMediaSource: vi.fn(),
       media: {
         getItemById: vi.fn(),
       },
@@ -228,7 +229,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     mockDb.getMediaItem.mockImplementation((id: number) => ({
       id, title: `Show S01E0${id - 100}`, source_id: 'src1', file_path: sourcePath,
     }))
-    mockDb.sources.getSourceById.mockResolvedValue({ connection_config: JSON.stringify({ folderPath: path.dirname(sourcePath) }) })
+    mockDb.getMediaSource.mockReturnValue({ connection_config: JSON.stringify({ folderPath: path.dirname(sourcePath) }) })
     mockAddTasks.mockImplementation((tasks: unknown[]) => tasks.map((_, index) => `task-${index}`))
 
     mockDb.config.getSetting.mockResolvedValue(JSON.stringify({
@@ -285,7 +286,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     const sourcePath = path.resolve('src/main/services/TranscodingService.ts')
     const sourceStat = await fs.stat(sourcePath)
     mockDb.getMediaItem.mockImplementation((id: number) => ({ id, title: `Episode ${id}`, source_id: 'src1', file_path: sourcePath }))
-    mockDb.sources.getSourceById.mockResolvedValue({ connection_config: JSON.stringify({ folderPath: path.dirname(sourcePath) }) })
+    mockDb.getMediaSource.mockReturnValue({ connection_config: JSON.stringify({ folderPath: path.dirname(sourcePath) }) })
     mockAddTasks.mockReturnValue(['retry-task-102'])
     mockGetQueueState.mockReturnValue({
       currentTask: null,
