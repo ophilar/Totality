@@ -1,0 +1,45 @@
+name: Apply verified lint compatibility fixes
+on:
+  push:
+    branches: [integration/stratify-release-stack-20261106]
+    paths: [.github/workflows/fix-toolchain-lint.yml]
+permissions:
+  contents: write
+jobs:
+  correct:
+    if: github.repository == 'ophilar/Totality'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: upstream/01-toolchain-modernization
+          fetch-depth: 0
+      - name: Correct new Oxlint findings without suppressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Totality Integration'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          locations = {"src/main/services/MusicBrainzService.ts":[276,957,1028],"src/main/services/SourceManager.ts":[351],"src/main/services/KodiLocalDiscoveryService.ts":[138,153],"src/main/services/JellyfinDiscoveryService.ts":[59,82,97],"src/main/services/QualityAnalyzer.ts":[340],"src/main/services/TMDBService.ts":[381],"src/main/services/MovieCollectionService.ts":[86],"src/main/services/EmbyDiscoveryService.ts":[59,82,97],"src/main/ipc/utils/safeSend.ts":[34],"src/main/providers/kodi/KodiProvider.ts":[735],"src/renderer/src/components/sources/KodiConnectionFlow.tsx":[128]}
+          for name, line_numbers in locations.items():
+              source=Path(name)
+              lines=source.read_text().splitlines(keepends=True)
+              for line_no in line_numbers:
+                  line=lines[line_no-1]
+                  replaced,n=re.subn(r'\bcatch\s*\(\s*(?:error|err|e)\s*\)', 'catch', line)
+                  if n != 1: raise SystemExit(f'Unexpected catch declaration: {name}:{line_no}: {line}')
+                  lines[line_no-1]=replaced
+              source.write_text(''.join(lines))
+          dashboard=Path('src/renderer/src/components/dashboard/Dashboard.tsx')
+          source=dashboard.read_text()
+          old='        next.has(index) ? next.delete(index) : next.add(index)'
+          new='        if (next.has(index)) next.delete(index)\n        else next.add(index)'
+          if source.count(old)!=1: raise SystemExit('Unexpected dashboard toggle')
+          dashboard.write_text(source.replace(old,new))
+          PY
+          git add src/main src/renderer
+          git commit -m 'refactor: remove unused catch bindings and clarify dashboard toggle'
+          git push origin HEAD:refs/heads/upstream/01-toolchain-modernization
