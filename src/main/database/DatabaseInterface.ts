@@ -137,7 +137,7 @@ export interface DatabaseServiceInterface {
 
   // --- Movie Collections ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  upsertMovieCollection(data: any): void | Promise<void>
+  upsertMovieCollection(data: any): number | Promise<number>
   getMovieCollections(sourceId?: string): MovieCollection[]
   getMovieCollectionByTmdbId(tmdbCollectionId: string): MovieCollection | null
   getIncompleteMovieCollections(sourceId?: string): MovieCollection[]
