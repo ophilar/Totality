@@ -1,0 +1,39 @@
+{
+  "id": "marvel-cinematic-universe",
+  "name": "Marvel Cinematic Universe Timeline",
+  "franchise": "Marvel Cinematic Universe",
+  "description": "Chronological watch order for Marvel movies and Disney+ series.",
+  "sourceUrl": "https://www.gamesradar.com/how-to-watch-marvel-movies-in-order-mcu/",
+  "attribution": "GamesRadar+, using Marvel's official timeline and Disney+ order",
+  "groupings": [],
+  "orders": [
+    {
+      "id": "chronological",
+      "name": "MCU — Chronological Watch Order",
+      "description": "Movies and series/season entries in the guide's current order. Series entries expand to available local episodes; the source does not define every episode's position between films.",
+      "order": {
+        "kind": "list",
+        "listSelector": "div.text-copy.bodyCopy.auto > ul",
+        "itemSelector": ":scope > li",
+        "listIndex": 0,
+        "format": "title-list",
+        "minimumItems": 70,
+        "defaultType": "movie",
+        "showMarkers": [
+          "season ", "[disney plus]", "eyes of wakanda", "i am groot", "daredevil", "jessica jones",
+          "defenders", "luke cage", "iron fist", "the punisher season ", "loki", "what if", "wandavision",
+          "the falcon and the winter soldier", "hawkeye", "moon knight", "echo", "she-hulk", "ms. marvel",
+          "ironheart", "secret invasion", "agatha all along", "wonder man"
+        ],
+        "removeSuffixes": [
+          "(outside of our conception of time, but around here!)",
+          "(also outside of our conception of time!)",
+          "(multiverse)"
+        ],
+        "showSeasonRules": [
+          { "title": "Daredevil: Born Again", "season": 1 }
+        ]
+      }
+    }
+  ]
+}

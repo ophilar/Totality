@@ -18,7 +18,7 @@ on:
       - 'tsconfig*.json'
       - 'electron-builder.yml'
   push:
-    branches: [fixes]
+    branches: [fixes, timelines]
   workflow_dispatch:
 
 permissions:
