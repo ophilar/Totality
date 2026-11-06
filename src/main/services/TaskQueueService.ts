@@ -455,7 +455,7 @@ export class TaskQueueService {
     }
 
     const db = getDatabase()
-    db.setSeriesCompletenessInvalidationHandler((sourceId, libraryId) => {
+    db.setSeriesCompletenessInvalidationHandler((sourceId: string, libraryId: string) => {
       this.queueSeriesCompletenessRecovery(sourceId, libraryId)
     })
 
