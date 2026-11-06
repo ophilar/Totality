@@ -7,6 +7,21 @@ export type ProviderType = 'plex' | 'jellyfin' | 'emby' | 'kodi' | 'kodi-local' 
 export type SyncField = 'mood' | 'genre'
 
 export type SavingsCoverage = 'complete' | 'partial' | 'insufficient'
+export type EvidenceStatus = 'measured' | 'estimated' | 'insufficient'
+export type EvidenceConfidence = 'high' | 'medium' | 'low' | 'none'
+export type SavingsBasis =
+  | 'audio_stream_removal'
+  | 'subtitle_stream_removal'
+  | 'audio_stream_removal_and_transcode_model'
+  | 'audio_transcode_model'
+  | 'video_sample_encode'
+  | 'representative_video_sample_projection'
+  | 'video_bitrate_estimate'
+  | 'audio_bitrate_estimate'
+  | 'mixed_estimates'
+  | 'mixed_measured'
+  | 'mixed_measured_and_estimated'
+  | 'insufficient_data'
 
 // Media source configuration (Plex, Jellyfin, Emby, Kodi servers)
 export interface MediaSource {
