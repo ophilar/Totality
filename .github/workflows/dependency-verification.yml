@@ -18,7 +18,7 @@ on:
       - 'tsconfig*.json'
       - 'electron-builder.yml'
   push:
-    branches: [fixes, timelines, integration/optimization-rebased-candidate-20261106]
+    branches: [fixes, timelines, optimization, '0.7', '0.9']
   workflow_dispatch:
 
 permissions:
@@ -45,7 +45,7 @@ jobs:
 
   certify:
     name: Release certification (${{ matrix.os }})
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     needs: verify
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
