@@ -26,6 +26,7 @@ jobs:
 
       - run: npm ci
       - run: npm run test:run
+      - run: npm run typecheck
 
   build:
     name: Build (${{ matrix.os }})
@@ -34,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-24.04, macos-15-intel, windows-2025]
     steps:
       - uses: actions/checkout@v5
 
@@ -47,7 +48,7 @@ jobs:
 
       # macOS code signing setup
       - name: Import macOS signing certificate
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-15-intel'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -73,7 +74,7 @@ jobs:
           rm $RUNNER_TEMP/certificate.p12
 
       - name: Build and package
-        run: npx tsc && npx vite build && npx electron-builder --publish never
+        run: npx vite build && npx electron-builder --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -82,7 +83,7 @@ jobs:
 
       # Clean up keychain
       - name: Clean up keychain
-        if: matrix.os == 'macos-latest' && always()
+        if: matrix.os == 'macos-15-intel' && always()
         run: |
           security delete-keychain $RUNNER_TEMP/signing.keychain-db || true
 
