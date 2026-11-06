@@ -1,0 +1,43 @@
+name: Extract identity and path authorization foundations
+on:
+  push:
+    branches: [integration/stratify-release-stack-20261106]
+    paths: [.github/workflows/stratify-identity.yml]
+permissions:
+  contents: write
+jobs:
+  extract:
+    if: github.repository == 'ophilar/Totality'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Extract standalone code and regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Totality Integration'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin upstream/03-renderer-modernization optimization
+          git switch -C upstream/04-identity-path-foundations origin/upstream/03-renderer-modernization
+          git show 'origin/optimization:src/main/services/utils/PathUtils.ts' > 'src/main/services/utils/PathUtils.ts'
+          git show 'origin/optimization:src/main/services/MediaPathAuthorization.ts' > 'src/main/services/MediaPathAuthorization.ts'
+          git show 'origin/optimization:src/main/services/SeriesIdentityService.ts' > 'src/main/services/SeriesIdentityService.ts'
+          git show 'origin/optimization:tests/unit/services/PathUtils.test.ts' > 'tests/unit/services/PathUtils.test.ts'
+          git show 'origin/optimization:tests/unit/services/MediaPathAuthorization.test.ts' > 'tests/unit/services/MediaPathAuthorization.test.ts'
+          git show 'origin/optimization:tests/unit/services/SeriesIdentityService.test.ts' > 'tests/unit/services/SeriesIdentityService.test.ts'
+          git add 'src/main/services/utils/PathUtils.ts' 'src/main/services/MediaPathAuthorization.ts' 'src/main/services/SeriesIdentityService.ts' 'tests/unit/services/PathUtils.test.ts' 'tests/unit/services/MediaPathAuthorization.test.ts' 'tests/unit/services/SeriesIdentityService.test.ts'
+          git commit -m 'feat(core): extract path authorization and series identity primitives'
+          git push origin HEAD:refs/heads/upstream/04-identity-path-foundations
+      - name: Verify independent identity and path coverage
+        run: |
+          npm ci --no-audit --no-fund
+          npm run test:run
+          npm run typecheck
+          npx vite build
+          npm run lint
