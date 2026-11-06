@@ -522,8 +522,8 @@ export class TaskQueueService {
   restorePendingQueue(): void {
     try {
       const db = getDatabase()
-      this.isPaused = db.config.getSetting(SETTING_KEYS.task_queue_paused_on_shutdown) === 'true'
-      db.config.deleteSetting(SETTING_KEYS.task_queue_paused_on_shutdown)
+      this.isPaused = db.getSetting(SETTING_KEYS.task_queue_paused_on_shutdown) === 'true'
+      db.deleteSetting(SETTING_KEYS.task_queue_paused_on_shutdown)
       const pending = db.getPendingTasks()
       if (pending.length === 0) return
       const restoredTasks: QueuedTask[] = []
@@ -1344,7 +1344,7 @@ export class TaskQueueService {
 
   private persistPendingQueue(): void {
     const db = getDatabase()
-    db.config.setSetting(SETTING_KEYS.task_queue_paused_on_shutdown, String(this.isPaused))
+    db.setSetting(SETTING_KEYS.task_queue_paused_on_shutdown, String(this.isPaused))
     const tasks = [...(this.currentTask ? [this.currentTask] : []), ...this.queue]
     db.savePendingTasks(tasks.map(task => ({
       taskId: task.id, type: task.type, label: task.label,
