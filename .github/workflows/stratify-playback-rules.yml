@@ -1,0 +1,53 @@
+name: Extract pure playback target compatibility rules
+on:
+  push:
+    branches: [integration/stratify-release-stack-20261106]
+    paths: [.github/workflows/stratify-playback-rules.yml]
+permissions:
+  contents: write
+jobs:
+  extract:
+    if: github.repository == 'ophilar/Totality'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Extract read-only compatibility evaluator and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Totality Integration'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin upstream/04-identity-path-foundations optimization
+          git switch -C upstream/05-playback-target-rules origin/upstream/04-identity-path-foundations
+          mkdir -p 'src/main/types' && git show 'origin/optimization:src/main/types/playbackTarget.ts' > 'src/main/types/playbackTarget.ts'
+          mkdir -p 'src/shared' && git show 'origin/optimization:src/shared/playbackTargetValidation.ts' > 'src/shared/playbackTargetValidation.ts'
+          mkdir -p 'tests/unit' && git show 'origin/optimization:tests/unit/PlaybackTargetCompatibility.test.ts' > 'tests/unit/PlaybackTargetCompatibility.test.ts'
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+          p=Path('src/main/services/MediaNormalizer.ts')
+          original=p.read_text()
+          updated=subprocess.check_output(['git','show','origin/optimization:src/main/services/MediaNormalizer.ts'],text=True)
+          start=updated.index('/** Playback profiles store levels as decimal tenths')
+          end=updated.index('export function normalizeSubtitleFormat',start)
+          addition=updated[start:end]
+          anchor='export function normalizeSubtitleFormat'
+          if original.count(anchor)!=1 or 'export function normalizeVideoLevel' in original: raise SystemExit('Unexpected media normalizer')
+          p.write_text(original.replace(anchor,addition+anchor))
+          PY
+          git add src/main/types/playbackTarget.ts src/shared/playbackTargetValidation.ts tests/unit/PlaybackTargetCompatibility.test.ts src/main/services/MediaNormalizer.ts
+          git commit -m 'feat(compat): define playback profile rules and HEVC level normalization'
+          git push origin HEAD:refs/heads/upstream/05-playback-target-rules
+      - name: Verify pure compatibility layer
+        run: |
+          npm ci --no-audit --no-fund
+          npm run test:run
+          npm run typecheck
+          npx vite build
+          npm run lint
