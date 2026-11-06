@@ -191,7 +191,7 @@ export class TaskQueueService {
     this.resolveTaskCompletion(removed)
     if (removed.type === 'optimization-preflight') {
       const payload = removed.options as { requestId: string }
-      getDatabase().config.deleteSetting(`transcoding.backgroundPreflight.${payload.requestId}`)
+      getDatabase().deleteSetting(`transcoding.backgroundPreflight.${payload.requestId}`)
     }
     console.log(`[TaskQueue] Removed task: ${taskId}`)
     this.emitQueueUpdate()
@@ -694,7 +694,7 @@ export class TaskQueueService {
         if (task.type === 'optimization-preflight') {
           const payload = task.options as { requestId: string }
           try {
-            await getDatabase().config.deleteSetting(`transcoding.backgroundPreflight.${payload.requestId}`)
+            await getDatabase().deleteSetting(`transcoding.backgroundPreflight.${payload.requestId}`)
           } catch (cleanupError) {
             console.error('[TaskQueue] Failed to clear cancelled preflight migration record:', getErrorMessage(cleanupError))
           }
@@ -931,19 +931,19 @@ export class TaskQueueService {
       preflightId: payload.preflightId,
       batchId: payload.batchId,
       loadEpisodeCheckpoint: async mediaItemId => {
-        const raw = await getDatabase().config.getSetting(`${checkpointPrefix}${mediaItemId}`)
+        const raw = await getDatabase().getSetting(`${checkpointPrefix}${mediaItemId}`)
         if (!raw) return undefined
         const checkpoint = JSON.parse(raw) as ShowTranscodeEpisodeCheckpoint
         if (checkpoint.version !== 1 || checkpoint.plan.mediaItemId !== mediaItemId) throw new Error(`Invalid optimization checkpoint for media item ${mediaItemId}`)
         return checkpoint
       },
       saveEpisodeCheckpoint: async (mediaItemId, checkpoint) => {
-        await getDatabase().config.setSetting(`${checkpointPrefix}${mediaItemId}`, JSON.stringify(checkpoint))
+        await getDatabase().setSetting(`${checkpointPrefix}${mediaItemId}`, JSON.stringify(checkpoint))
       },
     })
     task.result = { preflightId: result.preflightId, batchId: result.batchId, episodeCount: result.episodeCount, mediaItemId: payload.request.mediaItemId, mediaType: payload.mediaType }
-    for (const key of Object.keys(getDatabase().config.getAllSettings()).filter(key => key.startsWith(checkpointPrefix))) await getDatabase().config.deleteSetting(key)
-    await getDatabase().config.deleteSetting(`transcoding.backgroundPreflight.${payload.requestId}`)
+    for (const key of Object.keys(getDatabase().getAllSettings()).filter(key => key.startsWith(checkpointPrefix))) await getDatabase().deleteSetting(key)
+    await getDatabase().deleteSetting(`transcoding.backgroundPreflight.${payload.requestId}`)
   }
 
   private async executeTranscode(task: QueuedTask, onProgress: (p: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void): Promise<void> {
