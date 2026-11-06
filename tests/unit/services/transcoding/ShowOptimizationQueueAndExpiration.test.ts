@@ -32,12 +32,10 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     vi.clearAllMocks()
     mockGetQueueState.mockReturnValue({ currentTask: null, queue: [], completedTasks: [], isPaused: false })
     mockDb = {
-      config: {
-        getSetting: vi.fn(),
-        setSetting: vi.fn(),
-        deleteSetting: vi.fn(),
-        getSettingsByPrefix: vi.fn().mockReturnValue({}),
-      },
+      getSetting: vi.fn(),
+      setSetting: vi.fn(),
+      deleteSetting: vi.fn(),
+      getSettingsByPrefix: vi.fn().mockReturnValue({}),
       playbackTargetProfiles: {
         get: vi.fn().mockResolvedValue({ id: 'prof-1', name: 'Profile 1' }),
       },
@@ -60,7 +58,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     const preflightId = 'expired_preflight_1'
     const expiredTime = new Date(Date.now() - 60000).toISOString()
 
-    mockDb.config.getSetting.mockResolvedValue(JSON.stringify({
+    mockDb.getSetting.mockResolvedValue(JSON.stringify({
       request: { sourceId: 'src1', libraryId: 'lib1' },
       result: {
         preflightId,
@@ -79,13 +77,13 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     }))
 
     await expect(transcodingService.getShowPreflight(preflightId)).resolves.toMatchObject({ result: { preflightId, expiresAt: expiredTime } })
-    expect(mockDb.config.deleteSetting).not.toHaveBeenCalled()
+    expect(mockDb.deleteSetting).not.toHaveBeenCalled()
     expect(mockAddTasks).not.toHaveBeenCalled()
   })
 
   it('throws when show preflight is not found', async () => {
     const transcodingService = getTranscodingService()
-    mockDb.config.getSetting.mockResolvedValue(null)
+    mockDb.getSetting.mockResolvedValue(null)
 
     await expect(transcodingService.queueShowTranscode('nonexistent')).rejects.toThrow(
       'Show transcode preflight was not found'
@@ -95,7 +93,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
 
   it('requires new measurement before approving or queuing plans from an older measurement method', async () => {
     const service = getTranscodingService()
-    mockDb.config.getSetting.mockResolvedValue(JSON.stringify({
+    mockDb.getSetting.mockResolvedValue(JSON.stringify({
       request: { sourceId: 'src1', libraryId: 'lib1', options: { optimizationMode: 'transcode' } },
       result: {
         preflightId: 'old-measurement', batchId: 'batch-old', measurementVersion: MEASUREMENT_VERSION - 1,
@@ -109,7 +107,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
 
   it('requires a new search before approving or queuing plans from an older search policy', async () => {
     const service = getTranscodingService()
-    mockDb.config.getSetting.mockResolvedValue(JSON.stringify({
+    mockDb.getSetting.mockResolvedValue(JSON.stringify({
       request: { sourceId: 'src1', libraryId: 'lib1', options: { optimizationMode: 'transcode' } },
       result: {
         preflightId: 'old-search', batchId: 'batch-old', measurementVersion: MEASUREMENT_VERSION,
@@ -138,12 +136,12 @@ describe('ShowOptimizationQueueAndPersistence', () => {
         }],
       },
     }
-    mockDb.config.getSetting.mockResolvedValue(JSON.stringify(preflight))
+    mockDb.getSetting.mockResolvedValue(JSON.stringify(preflight))
 
     await expect(service.setShowSampleApproval('sample-review', groupId, true)).resolves.toEqual([groupId])
-    const persisted = JSON.parse(mockDb.config.setSetting.mock.calls.at(-1)![1])
+    const persisted = JSON.parse(mockDb.setSetting.mock.calls.at(-1)![1])
     expect(persisted.result.sampleGroupApprovalFingerprints[groupId]).toMatch(/^[a-f0-9]{64}$/)
-    mockDb.config.getSetting.mockResolvedValue(JSON.stringify(persisted))
+    mockDb.getSetting.mockResolvedValue(JSON.stringify(persisted))
     await expect(service.getShowPreflight('sample-review')).resolves.toMatchObject({ result: { approvedSampleGroupIds: [groupId] } })
   })
 
@@ -158,13 +156,13 @@ describe('ShowOptimizationQueueAndPersistence', () => {
         episodes: [{ mediaItemId: 101, decisionStatus: 'sample_required', compatible: true, sampleRepresentativeMediaItemId: 101, samplePaths: ['sample.mkv'], sampleHashes: ['sample-hash'], sourceSha256: 'source-hash', params: { measuredCandidate: { encoder: 'qsv_h265', quality: 14, preset: 'medium', outputBytes: 100, sampledDurationSeconds: 30, vmafMean: 96, vmafP5: 93, cambiMean: 1 } } }],
       },
     }
-    mockDb.config.getSetting.mockResolvedValue(JSON.stringify(preflight))
+    mockDb.getSetting.mockResolvedValue(JSON.stringify(preflight))
     await service.setShowSampleApproval('sample-review', groupId, false)
-    mockDb.config.setSetting.mockClear()
+    mockDb.setSetting.mockClear()
     await expect(service.approveShowTranscode('sample-review')).rejects.toThrow('Review and approve every measured sample group')
-    mockDb.config.getSetting.mockResolvedValue(JSON.stringify(preflight))
+    mockDb.getSetting.mockResolvedValue(JSON.stringify(preflight))
     await service.setShowSampleApproval('sample-review', groupId, true)
-    mockDb.config.getSetting.mockResolvedValue(JSON.stringify(JSON.parse(mockDb.config.setSetting.mock.calls.at(-1)![1])))
+    mockDb.getSetting.mockResolvedValue(JSON.stringify(JSON.parse(mockDb.setSetting.mock.calls.at(-1)![1])))
     await expect(service.approveShowTranscode('sample-review')).resolves.toMatchObject({ userApproved: true, approvedSampleGroupIds: [groupId] })
   })
 
@@ -190,7 +188,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
 
   it('accepts an explicit no-target optimization without consulting the saved default', async () => {
     const transcodingService = getTranscodingService()
-    mockDb.config.getSetting.mockResolvedValue('saved-default')
+    mockDb.getSetting.mockResolvedValue('saved-default')
     mockDb.getMediaItem.mockReturnValue({
       id: 101,
       title: 'Movie',
@@ -207,7 +205,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     const result = await transcodingService.preflightShowTranscode(request)
 
     expect(result.episodes[0].reason).toContain('no local source identity')
-    expect(mockDb.config.getSetting).not.toHaveBeenCalledWith('optimization_default_target_profile_id')
+    expect(mockDb.getSetting).not.toHaveBeenCalledWith('optimization_default_target_profile_id')
     expect(mockDb.playbackTargetProfiles.get).not.toHaveBeenCalled()
   })
 
@@ -232,7 +230,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     mockDb.getMediaSource.mockReturnValue({ connection_config: JSON.stringify({ folderPath: path.dirname(sourcePath) }) })
     mockAddTasks.mockImplementation((tasks: unknown[]) => tasks.map((_, index) => `task-${index}`))
 
-    mockDb.config.getSetting.mockResolvedValue(JSON.stringify({
+    mockDb.getSetting.mockResolvedValue(JSON.stringify({
       request: { sourceId: 'src1', libraryId: 'lib1' },
       result: {
         preflightId,
@@ -277,7 +275,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     expect(queuedTasks[1].mediaItemId).toBe(102)
     expect(queuedTasks[1].label).toBe('Show S01E02 Title')
 
-    expect(mockDb.config.setSetting).toHaveBeenCalledWith(`transcoding.preflight.${preflightId}`, expect.stringContaining('queuedAt'))
+    expect(mockDb.setSetting).toHaveBeenCalledWith(`transcoding.preflight.${preflightId}`, expect.stringContaining('queuedAt'))
   })
 
   it('requeues only failed or cancelled episodes from an already queued plan', async () => {
@@ -307,7 +305,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
       sourceSha256: 'a'.repeat(64),
       options: { crf: 20 },
     })
-    mockDb.config.getSetting.mockResolvedValue(JSON.stringify({
+    mockDb.getSetting.mockResolvedValue(JSON.stringify({
       request: { sourceId: 'src1', libraryId: 'lib1' },
       result: {
         preflightId,
@@ -325,6 +323,6 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     expect(mockAddTasks).toHaveBeenCalledTimes(1)
     expect(mockAddTasks.mock.calls[0][0]).toHaveLength(1)
     expect(mockAddTasks.mock.calls[0][0][0].mediaItemId).toBe(102)
-    expect(mockDb.config.setSetting).toHaveBeenCalledWith(`transcoding.preflight.${preflightId}`, expect.stringContaining('queuedMediaItemIds'))
+    expect(mockDb.setSetting).toHaveBeenCalledWith(`transcoding.preflight.${preflightId}`, expect.stringContaining('queuedMediaItemIds'))
   })
 })
