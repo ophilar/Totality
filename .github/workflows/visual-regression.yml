@@ -1,15 +1,19 @@
-name: Totality visual comparison (0.4.2 vs 0.5)
+name: Totality visual comparison (0.4.4 vs 0.9)
 
 on:
   workflow_dispatch:
   pull_request:
-    branches: [v0.5.0-clean]
+    branches: ['0.9']
     paths:
       - 'src/renderer/**'
       - 'src/main/**'
       - 'src/preload/**'
       - 'scripts/visual-regression.mjs'
       - '.github/workflows/visual-regression.yml'
+
+concurrency:
+  group: visual-comparison-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -19,17 +23,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - name: Checkout 0.4.2 reference
-        uses: actions/checkout@v4
+      - name: Checkout 0.4.4 reference
+        uses: actions/checkout@v5
         with:
-          ref: integration/upstream-v0.4.2-base
+          ref: master
           path: baseline
       - name: Checkout candidate
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: candidate
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: npm
@@ -68,11 +72,11 @@ jobs:
           unset keyring_password
           xvfb-run -a node candidate/scripts/visual-regression.mjs capture \
             "$GITHUB_WORKSPACE/baseline" "$RUNNER_TEMP/visual-media" \
-            "$GITHUB_WORKSPACE/visual-report" 0.4.2 -
-          DB=$(node -e "process.stdout.write(require('./visual-report/0.4.2.json').dbPath)")
+            "$GITHUB_WORKSPACE/visual-report" 0.4.4 -
+          DB=$(node -e "process.stdout.write(require('./visual-report/0.4.4.json').dbPath)")
           xvfb-run -a node candidate/scripts/visual-regression.mjs capture \
             "$GITHUB_WORKSPACE/candidate" "$RUNNER_TEMP/visual-media" \
-            "$GITHUB_WORKSPACE/visual-report" 0.5 "$DB"
+            "$GITHUB_WORKSPACE/visual-report" 0.9 "$DB"
           SESSION
       - name: Generate visual difference report
         run: node candidate/scripts/visual-regression.mjs report "$GITHUB_WORKSPACE/visual-report"
@@ -80,12 +84,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: totality-042-vs-05-visual-report
+          name: totality-044-vs-09-visual-report
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 3
           path: |
             visual-report/index.html
             visual-report/*.json
-            visual-report/0.4.2/**/*.png
-            visual-report/0.5/**/*.png
+            visual-report/0.4.4/**/*.png
+            visual-report/0.9/**/*.png
             visual-report/diffs/**/*.png
