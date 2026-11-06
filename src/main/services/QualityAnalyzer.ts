@@ -193,7 +193,7 @@ export class QualityAnalyzer {
 
     try {
       const db = getDatabase()
-      const qualitySettings = await db.config.getSettingsByPrefix('quality_')
+      const qualitySettings = await db.getSettingsByPrefix('quality_')
 
       const getNum = (key: string, defaultVal: number): number => {
         const val = qualitySettings[key]
@@ -233,7 +233,7 @@ export class QualityAnalyzer {
         ? Math.max(0, Math.min(100, configuredWeight)) / 100
         : APP_CONFIG.quality.videoWeight
 
-      const targetProfileId = await db.config.getSetting(SETTING_KEYS.optimization_default_target_profile_id)
+      const targetProfileId = await db.getSetting(SETTING_KEYS.optimization_default_target_profile_id)
       if (targetProfileId) {
         const profile = await db.playbackTargetProfiles.get(targetProfileId)
         if (!profile) throw new Error(`Playback target profile ${targetProfileId} was not found`)
@@ -386,7 +386,7 @@ export class QualityAnalyzer {
     let hasApplicableMeasurements = false
     const measurement = measurementAnalysis?.optimizationMeasurement
     if (measurement && mediaItem.file_path && measurementAnalysis?.fileAnalysisFingerprint) {
-      const raw = await getDatabase().config.getSetting(`${MEASUREMENT_SETTING_PREFIX}${measurement.cacheKey}`)
+      const raw = await getDatabase().getSetting(`${MEASUREMENT_SETTING_PREFIX}${measurement.cacheKey}`)
       if (raw) {
         const cached = JSON.parse(raw) as CachedMeasurement
         if (cached.version === MEASUREMENT_VERSION && cached.complete && cached.cacheKey === measurement.cacheKey) {
@@ -667,7 +667,7 @@ export class QualityAnalyzer {
   }
 
   getSubtitleLanguageWhitelist(): string[] {
-    const configuredLanguages = getDatabase().config.getSetting(SETTING_KEYS.subtitle_preferred_languages)
+    const configuredLanguages = getDatabase().getSetting(SETTING_KEYS.subtitle_preferred_languages)
     if (!configuredLanguages?.trim()) return []
     return configuredLanguages.split(/[\s,]+/)
       .map(language => normalizeLanguage(language))
@@ -726,9 +726,9 @@ export class QualityAnalyzer {
       if (qualityScoresBatch.length === 0 && savingsBatch.length === 0) return
       try {
         if (fileAnalysis) {
-          for (const savings of savingsBatch) await db.media.updateQualitySavings(savings)
+          for (const savings of savingsBatch) await db.updateQualitySavings(savings)
         } else {
-          await db.media.upsertQualityRatings(qualityScoresBatch)
+          await db.upsertQualityRatings(qualityScoresBatch)
         }
         qualityScoresBatch.length = 0
         savingsBatch.length = 0
@@ -746,7 +746,7 @@ export class QualityAnalyzer {
 
     try {
       const seriesEpisodes = series
-        ? await db.tvShows.getEpisodes(series.title, sourceId!, series.seriesIdentityKey, libraryId!)
+        ? db.getMediaItems({ type: 'episode', sourceId, libraryId }).filter(item => item.series_identity_key === series.seriesIdentityKey)
         : undefined
       totalItems = seriesEpisodes?.length ?? db.countMediaItems(filters)
 
@@ -760,12 +760,12 @@ export class QualityAnalyzer {
         currentStage = 'loading media batch'
         const mediaItems = seriesEpisodes
           ? seriesEpisodes.slice(offset, offset + QUALITY_ANALYSIS_BATCH_SIZE)
-          : await db.media.getItems({ ...filters, limit: QUALITY_ANALYSIS_BATCH_SIZE, offset })
+          : await db.getMediaItems({ ...filters, limit: QUALITY_ANALYSIS_BATCH_SIZE, offset })
         const multiVersionItemIds = mediaItems
           .filter((item: MediaItem): item is MediaItem & { id: number } => Boolean(item.id && item.version_count && item.version_count > 1))
           .map((item: MediaItem) => item.id!)
         currentStage = 'loading media versions'
-        const versionsByMediaId = await db.media.getItemVersionsForMediaIds(multiVersionItemIds)
+        const versionsByMediaId = await db.getItemVersionsForMediaIds(multiVersionItemIds)
 
         if (fileAnalysis) {
           const workerLimit = APP_CONFIG.workers.ffprobe.defaultWorkersLimit
@@ -881,11 +881,11 @@ export class QualityAnalyzer {
               }
               if (version.id) {
                 const vScore = this.analyzeVersion(version)
-                db.media.updateVersionQuality(version.id, vScore)
+                db.updateMediaItemVersionQuality(version.id, vScore)
               }
             }
             currentStage = 'selecting best alternate version'
-            db.media.updateBestVersion(item.id)
+            db.updateBestVersion(item.id)
           }
 
           if (qualityScoresBatch.length >= QUALITY_ANALYSIS_BATCH_SIZE) {
@@ -951,7 +951,7 @@ export class QualityAnalyzer {
     coverage: { rated: number; total: number; unknown: number }
   }> {
     const db = getDatabase()
-    const scores = await db.media.getQualityScores()
+    const scores = await db.getQualityScores()
     const distribution = {
       byTier: {
         'SD': { low: 0, medium: 0, high: 0 },
