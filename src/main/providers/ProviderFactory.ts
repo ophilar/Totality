@@ -14,53 +14,37 @@ import { KodiMySQLProvider } from './kodi/KodiMySQLProvider'
 import { LocalFolderProvider } from './local/LocalFolderProvider'
 import { MediaMonkeyProvider } from './mediamonkey/MediaMonkeyProvider'
 
+type ProviderCreator = (config: SourceConfig) => MediaProvider
+
+const providerCreators: Record<ProviderType, ProviderCreator> = {
+  plex: config => new PlexProvider(config),
+  jellyfin: config => new JellyfinProvider(config),
+  emby: config => new EmbyProvider(config),
+  kodi: config => new KodiProvider(config),
+  'kodi-local': config => new KodiLocalProvider(config),
+  'kodi-mysql': config => new KodiMySQLProvider(config),
+  local: config => new LocalFolderProvider(config),
+  mediamonkey: config => new MediaMonkeyProvider(config),
+}
+
 /**
  * Create a MediaProvider instance based on the provider type
  */
 export function createProvider(type: ProviderType, config: SourceConfig): MediaProvider {
-  switch (type) {
-    case 'plex':
-      return new PlexProvider(config)
-
-    case 'jellyfin':
-      return new JellyfinProvider(config)
-
-    case 'emby':
-      return new EmbyProvider(config)
-
-    case 'kodi':
-      return new KodiProvider(config)
-
-    case 'kodi-local':
-      return new KodiLocalProvider(config)
-
-    case 'kodi-mysql':
-      return new KodiMySQLProvider(config)
-
-    case 'local':
-      return new LocalFolderProvider(config)
-
-    case 'mediamonkey':
-      return new MediaMonkeyProvider(config)
-
-    default:
-      throw new Error(`Unknown provider type: ${type}`)
-  }
-}
-
-/**
- * Check if a provider type is supported
- */
-export function isProviderSupported(type: ProviderType): boolean {
-  const supportedProviders: ProviderType[] = ['plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey']
-  return supportedProviders.includes(type)
+  const create = providerCreators[type]
+  if (!create) throw new Error(`Unknown provider type: ${type}`)
+  return create(config)
 }
 
 /**
  * Get list of all supported provider types
  */
 export function getSupportedProviders(): ProviderType[] {
-  return ['plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey']
+  return Object.keys(providerCreators) as ProviderType[]
+}
+
+export function isProviderSupported(type: string): type is ProviderType {
+  return Object.prototype.hasOwnProperty.call(providerCreators, type)
 }
 
 /**

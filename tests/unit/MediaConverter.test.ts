@@ -61,7 +61,7 @@ describe('MediaConverter.toMediaItem', () => {
     expect(item.source_type).toBe('plex')
     expect(item.library_id).toBe('lib-1')
     expect(item.video_codec).toBe('h264')
-    expect(item.video_bitrate).toBe(10000)
+    expect(item.video_bitrate_kbps).toBe(10000)
     expect(item.resolution).toBe('1080p')
   })
 
@@ -130,7 +130,7 @@ describe('MediaConverter.toMediaItem', () => {
     )
     expect(item.audio_codec).toBe('ac3')
     expect(item.audio_channels).toBe(6)
-    expect(item.audio_bitrate).toBe(448)
+    expect(item.audio_bitrate_kbps).toBe(448)
   })
 
   it('should handle subtitle tracks', () => {
@@ -284,7 +284,7 @@ describe('MediaConverter.createPlaceholder', () => {
     expect(placeholder.type).toBe('movie')
     expect(placeholder.source_id).toBe('src-1')
     expect(placeholder.resolution).toBe('SD')
-    expect(placeholder.video_bitrate).toBe(0)
+    expect(placeholder.video_bitrate_kbps).toBe(0)
     expect(placeholder.audio_channels).toBe(2)
   })
 })
@@ -296,9 +296,9 @@ describe('MediaConverter.createPlaceholder', () => {
 describe('MediaConverter.mergeUpdates', () => {
   it('should merge updates into existing item', () => {
     const existing = MediaConverter.createPlaceholder('item-1', 'Old Title', 'movie', defaultOptions)
-    const merged = MediaConverter.mergeUpdates(existing, { title: 'New Title', video_bitrate: 15000 })
+    const merged = MediaConverter.mergeUpdates(existing, { title: 'New Title', video_bitrate_kbps: 15000 })
     expect(merged.title).toBe('New Title')
-    expect(merged.video_bitrate).toBe(15000)
+    expect(merged.video_bitrate_kbps).toBe(15000)
     expect(merged.plex_id).toBe('item-1') // unchanged fields preserved
   })
 

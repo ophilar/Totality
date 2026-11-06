@@ -147,17 +147,17 @@ export function AddSourceModal({ onClose, onSuccess }: AddSourceModalProps) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 flex items-center justify-center z-150"
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-150 p-4 overflow-y-auto"
       role="dialog"
       aria-modal="true"
       aria-labelledby="add-source-modal-title"
       onClick={handleBackdropClick}
       onKeyDown={handleKeyDown}
     >
-      <div ref={modalRef} className="bg-card rounded-xl shadow-xl w-full max-w-xs mx-4 max-h-[90vh] overflow-y-auto">
+      <div ref={modalRef} className="bg-card rounded-xl shadow-xl w-full max-w-xs max-h-[calc(100vh-2rem)] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between px-3 py-2 border-b border-border/30 bg-card rounded-t-xl">
-          <h2 id="add-source-modal-title" className="text-label font-semibold">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
+          <h2 id="add-source-modal-title" className="text-sm font-semibold">
             {selectedProvider
               ? `Add ${providers.find(p => p.type === selectedProvider)?.name}`
               : 'Add Source'}
@@ -182,10 +182,10 @@ export function AddSourceModal({ onClose, onSuccess }: AddSourceModalProps) {
               {availableProviders.map((provider, index) => (
                 <button
                   key={provider.type}
-                  ref={el => buttonRefs.current[index] = el}
+                  ref={el => { buttonRefs.current[index] = el }}
                   onClick={() => setSelectedProvider(provider.type)}
                   onFocus={() => setFocusedIndex(index)}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted transition-colors text-left outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background ${focusedIndex === index ? 'bg-muted' : ''}`}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted transition-colors text-left outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background ${focusedIndex === index ? 'bg-muted' : ''}`}
                 >
                   <div className={`w-6 h-6 ${provider.color} rounded flex items-center justify-center text-white`}>
                     {provider.type === 'local' ? (
@@ -194,7 +194,7 @@ export function AddSourceModal({ onClose, onSuccess }: AddSourceModalProps) {
                       <Server className="w-3.5 h-3.5" />
                     )}
                   </div>
-                  <span className="text-label">{provider.name}</span>
+                  <span className="text-sm">{provider.name}</span>
                 </button>
               ))}
             </div>

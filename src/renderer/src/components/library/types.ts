@@ -6,6 +6,14 @@
 
 import type { ProviderType } from '../../contexts/SourceContext'
 import type { MediaSourceResponse } from '@preload/index'
+import type { AnalysisProgress as TrackedAnalysisProgress } from '@main/services/utils/ProgressTracker'
+import type {
+  MissingAlbum as DatabaseMissingAlbum,
+  MissingEpisode as DatabaseMissingEpisode,
+  MissingMovie as DatabaseMissingMovie,
+  MissingTrack as DatabaseMissingTrack,
+  MusicArtist as DatabaseMusicArtist,
+} from '@main/types/database'
 
 // Re-export for convenience
 export type { ProviderType }
@@ -17,22 +25,11 @@ export type MediaSource = MediaSourceResponse
 // Music Types
 // ============================================================================
 
-export interface MusicArtist {
-  id: number
-  source_id: string
-  source_type: ProviderType
-  provider_id: string
-  name: string
-  sort_name?: string
-  musicbrainz_id?: string
-  genres?: string
-  country?: string
-  biography?: string
-  thumb_url?: string
-  art_url?: string
-  album_count?: number
-  track_count?: number
-}
+export type MusicArtist = Omit<Pick<DatabaseMusicArtist,
+  'id' | 'source_id' | 'source_type' | 'provider_id' | 'name' | 'sort_name' |
+  'musicbrainz_id' | 'genres' | 'country' | 'biography' | 'thumb_url' | 'art_url' |
+  'album_count' | 'track_count'
+>, 'id'> & { id: number }
 
 export interface MusicAlbum {
   id: number
@@ -50,7 +47,6 @@ export interface MusicAlbum {
   track_count?: number
   duration_ms?: number
   thumb_url?: string
-  art_url?: string
   is_lossless?: boolean
   is_hi_res?: boolean
   best_audio_codec?: string
@@ -105,22 +101,31 @@ export interface MediaItem {
   season_number?: number
   episode_number?: number
   resolution: string
-  video_bitrate: number
+  video_bitrate_kbps: number
   audio_channels: number
   poster_url?: string
-  art_url?: string
   episode_thumb_url?: string
   season_poster_url?: string
-  overall_score?: number
+  overall_score?: number | null
   needs_upgrade?: boolean
-  quality_tier?: 'SD' | '720p' | '1080p' | '4K'
-  tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH'
-  tier_score?: number
+  quality_tier?: 'SD' | '720p' | '1080p' | '4K' | 'UNKNOWN'
+  tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
+  tier_score?: number | null
   tmdb_id?: string
   issues?: string
 
   // File information
   file_path?: string
+  file_size_bytes?: number
+  container?: string
+
+  // Codecs and tracks
+  video_codec?: string
+  video_profile?: string
+  audio_codec?: string
+  audio_language?: string
+  audio_tracks?: string
+  original_language?: string
 
   // Enhanced quality metadata
   hdr_format?: string
@@ -130,6 +135,14 @@ export interface MediaItem {
 
   // Multi-version
   version_count?: number
+
+  // Quality & Storage Optimization
+  evidence_status?: string | null
+  estimated_savings_bytes?: number | null
+  savings_coverage?: 'complete' | 'partial' | 'insufficient'
+  confidence?: string | null
+  savings_basis?: string | null
+  series_identity_key?: string | null
 
   // Source tracking
   source_id?: string
@@ -144,7 +157,6 @@ export interface MediaItem {
 export interface TVShow {
   title: string
   poster_url?: string
-  art_url?: string
   seasons: Map<number, TVSeason>
 }
 
@@ -165,16 +177,14 @@ export interface TVShowSummary {
   episode_count: number
   season_count: number
   poster_url?: string
-  art_url?: string
+  tmdb_id?: string | number
   source_id?: string
   source_type?: string
-}
-
-export interface MissingEpisode {
-  season_number: number
-  episode_number: number
-  title?: string
-  air_date?: string
+  library_id?: string
+  series_identity_key?: string
+  estimated_savings_bytes?: number | null
+  savings_coverage?: 'complete' | 'partial' | 'insufficient'
+  total_size_bytes?: number
 }
 
 // ============================================================================
@@ -187,33 +197,21 @@ export interface LibraryStats {
   totalEpisodes: number
   totalShows: number
   needsUpgradeCount: number
-  averageQualityScore: number
+  averageQualityScore: number | null
   // Movie-specific stats
   movieNeedsUpgradeCount: number
-  movieAverageQualityScore: number
+  movieAverageQualityScore: number | null
   // TV-specific stats
   tvNeedsUpgradeCount: number
-  tvAverageQualityScore: number
+  tvAverageQualityScore: number | null
 }
 
 // ============================================================================
 // Completeness Types
 // ============================================================================
 
-export interface MissingEpisode {
-  season_number: number
-  episode_number: number
-  title?: string
-  air_date?: string
-}
-
-export interface MissingMovie {
-  tmdb_id: string
-  title: string
-  year?: number
-  poster_path?: string
-  release_date?: string
-}
+export type MissingEpisode = DatabaseMissingEpisode
+export type MissingMovie = DatabaseMissingMovie
 
 export interface SeriesCompletenessData {
   id: number
@@ -226,6 +224,9 @@ export interface SeriesCompletenessData {
   missing_episodes: MissingEpisode[]
   completeness_percentage: number
   tmdb_id?: string
+  source_id?: string
+  library_id?: string
+  series_identity_key?: string
   poster_url?: string
   status?: string
 }
@@ -284,20 +285,8 @@ export interface ArtistCompletenessData {
   thumb_url?: string
 }
 
-export interface MissingAlbum {
-  musicbrainz_id: string
-  title: string
-  year?: number
-  album_type: 'album' | 'ep' | 'single'
-}
-
-export interface MissingTrack {
-  musicbrainz_id?: string
-  title: string
-  track_number?: number
-  disc_number?: number
-  duration_ms?: number
-}
+export type MissingAlbum = DatabaseMissingAlbum
+export type MissingTrack = DatabaseMissingTrack
 
 export interface AlbumCompletenessData {
   id?: number
@@ -316,11 +305,12 @@ export interface AlbumCompletenessData {
 // Analysis Types
 // ============================================================================
 
-export interface AnalysisProgress {
-  current: number
-  total: number
-  currentItem: string
-  phase: string
+export interface AnalysisProgress extends Omit<TrackedAnalysisProgress, 'currentItem'> {
+  currentItem?: string
+  artistsTotal?: number
+  albumsTotal?: number
+  phaseIndex?: number
+  skipped?: number
 }
 
 // ============================================================================
@@ -347,14 +337,21 @@ export interface MediaBrowserProps {
   onLibraryTabChange?: (tab: MediaViewType) => void
   // Notify parent of auto-refresh state
   onAutoRefreshChange?: (isRefreshing: boolean) => void
-  onBackdropChange?: (url: string | null) => void
+  pendingTVOptimizationAction?: TVOptimizationNavigation | null
+  onTVOptimizationActionHandled?: () => void
   // Responsive layout
   isMobile?: boolean
   isTablet?: boolean
-  // Task queue state (lifted from App.tsx for mobile scan UI)
-  taskQueueState?: unknown
-  isScanActive?: boolean
 }
+
+export type TVOptimizationNavigation =
+  | { kind: 'review'; preflightId: string }
+  | { kind: 'review-movie'; preflightId: string; mediaItemId: number }
+  | {
+      kind: 'resume'
+      requestId: string
+      entity: { seriesTitle?: string; seriesIdentityKey?: string; sourceId: string; libraryId?: string; mediaItemId?: number; seasonNumber?: number }
+    }
 
 export interface MissingItemPopupData {
   type: 'episode' | 'season' | 'movie'
@@ -389,5 +386,5 @@ export interface MatchFixModalData {
 export type TierFilter = 'all' | 'SD' | '720p' | '1080p' | '4K'
 export type QualityFilter = 'all' | 'low' | 'medium' | 'high'
 export type ViewType = 'grid' | 'list'
-export type MediaViewType = 'movies' | 'tv' | 'music'
+export type MediaViewType = 'movies' | 'tv' | 'music' | 'duplicates'
 export type MusicViewMode = 'artists' | 'albums' | 'tracks'

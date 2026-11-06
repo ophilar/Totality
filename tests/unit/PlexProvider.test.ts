@@ -75,6 +75,7 @@ const TEST_SERVER: PlexServer = {
   scheme: 'http',
   address: '192.168.1.100',
   uri: 'http://192.168.1.100:32400',
+  connectionType: 'local',
   owned: true,
   accessToken: 'test-token-123',
 }
@@ -482,6 +483,28 @@ describe('PlexProvider', () => {
       expect(result.versions).toHaveLength(1)
     })
 
+    it('stores Plex stream identities separately from audio ordinals', () => {
+      const provider = createProviderWithServer()
+      const result = (provider as any).convertToMediaItem(makeMovieItem())
+      const audioTracks = JSON.parse(result.mediaItem.audio_tracks)
+      expect(audioTracks[0].index).toBe(0)
+      expect(audioTracks[0].streamIndex).toBe(1)
+    })
+
+    it('retains the media file path when Plex omits stream metadata', () => {
+      const item = makeMovieItem()
+      item.Media![0].Part![0].Stream = []
+
+      const provider = createProviderWithServer()
+      const result = (provider as any).convertToMediaItem(item)
+
+      expect(result.mediaItem.file_path).toBe('/movies/Test Movie (2024)/Test.Movie.2024.1080p.mkv')
+      expect(result.versions[0].audio_codec).toBe('')
+      expect(result.versions[0].audio_channels).toBe(0)
+      expect(result.versions[0].audio_bitrate_kbps).toBe(0)
+      expect(result.versions[0].audio_tracks).toBe('[]')
+    })
+
     it('picks best version from multiple Media entries', () => {
       const item = makeMovieItem({
         Media: [
@@ -552,8 +575,8 @@ describe('PlexProvider', () => {
   describe('scoreVersion integration', () => {
     it('picks 4K version over 1080p in multi-version item', () => {
       // This was a bug — scoreVersion checked includes('2160') but normalizeResolution returns '4K'
-      const uhd = scoreVersion({ resolution: '4K', video_bitrate: 30000, hdr_format: 'None' })
-      const fhd = scoreVersion({ resolution: '1080p', video_bitrate: 30000, hdr_format: 'None' })
+      const uhd = scoreVersion({ resolution: '4K' })
+      const fhd = scoreVersion({ resolution: '1080p' })
 
       expect(uhd).toBeGreaterThan(fhd)
     })
@@ -909,6 +932,50 @@ describe('PlexProvider', () => {
       expect(libraries[0]).toEqual(expect.objectContaining({ id: '1', name: 'Movies', type: 'movie' }))
       expect(libraries[1]).toEqual(expect.objectContaining({ id: '2', name: 'TV Shows', type: 'show' }))
       expect(libraries[2]).toEqual(expect.objectContaining({ id: '3', name: 'Music', type: 'music' }))
+    })
+
+    it('loads and deduplicates video roots from Plex library sections', async () => {
+      mockFetchJSON.mockResolvedValue({
+        MediaContainer: {
+          Directory: [
+            { key: '1', title: 'Movies', type: 'movie', Location: [{ path: 'D:/Media/Movies' }] },
+            { key: '2', title: 'TV Shows', type: 'show', Location: [{ path: 'D:/Media/Shows' }, { path: 'D:/Media/Movies' }] },
+            { key: '3', title: 'Music', type: 'artist', Location: [{ path: 'D:/Media/Music' }] },
+          ],
+        },
+      })
+
+      const provider = createProviderWithServer()
+      const result = await provider.getLibrariesWithPaths()
+
+      expect(result.paths).toEqual(['D:/Media/Movies', 'D:/Media/Shows'])
+      expect(result.errors).toEqual([])
+      expect(result.libraries.map(library => library.id)).toEqual(['1', '2', '3'])
+      expect(mockFetchJSON).toHaveBeenCalledTimes(1)
+      expect(mockFetchJSON).toHaveBeenCalledWith(
+        expect.stringContaining('/library/sections'),
+        expect.objectContaining({ timeoutMs: 30_000 })
+      )
+    })
+
+    it('reports missing section locations with server and response-field diagnostics', async () => {
+      mockFetchJSON.mockResolvedValue({
+        MediaContainer: {
+          Directory: [
+            { key: '7', title: 'Movies', type: 'movie', count: 10 },
+          ],
+        },
+      })
+
+      const provider = createProviderWithServer()
+      const result = await provider.getLibrariesWithPaths()
+
+      expect(result.paths).toEqual([])
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0].message).toContain('Movies (7)')
+      expect(result.errors[0].message).toContain('http://192.168.1.100:32400')
+      expect(result.errors[0].message).toContain('connection: local; server owned: true')
+      expect(result.errors[0].message).toContain('library fields: count, key, title, type')
     })
   })
 })

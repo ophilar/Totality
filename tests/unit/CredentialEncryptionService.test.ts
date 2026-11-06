@@ -42,6 +42,11 @@ describe('CredentialEncryptionService — encryption unavailable', () => {
     const svc = new CredentialEncryptionService()
     expect(svc.decrypt('plain-text')).toBe('plain-text')
   })
+
+  it('decrypt() rejects encrypted credentials when OS encryption is unavailable', () => {
+    const svc = new CredentialEncryptionService()
+    expect(() => svc.decrypt('ENC:c2VjcmV0')).toThrow('OS credential encryption unavailable')
+  })
 })
 
 describe('CredentialEncryptionService — encryption available', () => {
@@ -103,7 +108,7 @@ describe('CredentialEncryptionService — encryption available', () => {
     expect(svc.hasDecryptionFailed()).toBe(false)
   })
 
-  it('encrypt() throws instead of silently storing plaintext when encryptString fails', () => {
+  it('encrypt() throws instead of storing plaintext when encryptString fails', () => {
     vi.mocked(safeStorage.encryptString).mockImplementation(() => {
       throw new Error('OS encryption error')
     })
