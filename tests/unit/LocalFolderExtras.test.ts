@@ -280,6 +280,20 @@ describe('targeted music inventory safety', () => {
 
   it('preserves the music scan cursor when a discovered track fails processing', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.promises.stat).mockResolvedValue({ size: 123, mtime: new Date(1700000000000) } as never)
+    vi.mocked(getDatabase).mockReturnValue({
+      getSetting: vi.fn((key: string) => key === 'ffprobe_batch_size' ? null : 'false'),
+      getMusicTrackByPath: vi.fn().mockReturnValue(null),
+      getMusicTracks: vi.fn().mockReturnValue([]),
+      startBatch: vi.fn(),
+      endBatch: vi.fn().mockResolvedValue(undefined),
+      updateSourceScanTime: mockUpdateSourceScanTime,
+    } as never)
+    vi.mocked(getMediaFileAnalyzer).mockReturnValue({ isAvailable: vi.fn().mockResolvedValue(false) } as never)
+    vi.mocked(getFileNameParser).mockReturnValue({
+      isAudioFile: vi.fn().mockReturnValue(true), parseMusic: mockParseMusic,
+    } as never)
+    mockUpdateSourceScanTime.mockClear()
     mockParseMusic.mockImplementationOnce(() => { throw new Error('Invalid music metadata') })
     const provider = new LocalFolderProvider({
       sourceId: 'test-local',
@@ -303,7 +317,7 @@ describe('targeted music inventory safety', () => {
     } as never)
     const result = await provider.scanLibrary('music')
     expect(result.success).toBe(false)
-    expect(result.errors.join(' ')).toContain('volume unavailable')
+    expect(result.errors.join(' ')).toContain('Cannot complete music inventory')
     expect(deleteMusicTrack).not.toHaveBeenCalled()
   })
 })
