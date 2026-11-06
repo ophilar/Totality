@@ -1874,26 +1874,6 @@ export class LocalFolderProvider implements MediaProvider {
     return index
   }
 
-  private getMovieParent(
-    db: ReturnType<typeof getDatabase>,
-    metadata: MediaMetadata,
-    libraryId: string,
-    index: Map<string, MediaItem | null>,
-  ): MediaItem | undefined {
-    const byPath = metadata.filePath ? db.getMediaItemByPath(metadata.filePath) : null
-    if (byPath) {
-      if (byPath.source_id !== this.sourceId || byPath.library_id !== libraryId || byPath.type !== 'movie') {
-        throw new Error('Local movie version belongs to a different source/library')
-      }
-      return byPath
-    }
-    const key = getMediaGroupingKey(metadata)
-    if (index.has(key) && index.get(key) === null) {
-      throw new Error('Multiple existing movie parents share this identity; manual reconciliation required')
-    }
-    return index.get(key) ?? undefined
-  }
-
   private generateItemId(filePath: string): string {
     // Create a stable ID based on the file path
     const hash = this.simpleHash(filePath)
