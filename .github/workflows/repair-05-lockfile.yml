@@ -1,0 +1,31 @@
+name: Repair 0.5 lockfile
+
+on:
+  push:
+    branches: [integration/0.5-certified-047-20261106]
+    paths: [.github/workflows/repair-05-lockfile.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Synchronize lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Commit lockfile update
+        run: |
+          git add package-lock.json
+          if ! git diff --cached --quiet; then
+            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "fix(0.5): synchronize dependency lockfile"
+            git push
+          fi
