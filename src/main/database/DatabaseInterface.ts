@@ -91,7 +91,7 @@ export interface DatabaseServiceInterface {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getSourceLibraries(sourceId: string): any[]
   toggleLibrary(sourceId: string, libraryId: string, enabled: boolean): void | Promise<void>
-  setLibraryEnabled(sourceId: string, libraryId: string, enabled: boolean): void | Promise<void>
+  setLibraryEnabled(sourceId: string, libraryId: string, libraryName: string, libraryType: string, enabled: boolean): void | Promise<void>
   setLibrariesEnabled(sourceId: string, libraries: Array<{ id: string; name: string; type: string; enabled: boolean }>): void | Promise<void>
   setLibraryUpgradeTier(sourceId: string, libraryId: string, minTier: string | null): void | Promise<void>
   getEnabledLibraryIds(sourceId: string): string[]
@@ -122,7 +122,7 @@ export interface DatabaseServiceInterface {
   countTVShows(filters?: any): number
   countTVEpisodes(filters?: TVShowFilters): number
   getLetterOffset(schema: string, letter: string, filters?: Record<string, unknown>): number
-  getEpisodeCountBySeriesTmdbId(tmdbId: string | number): number
+  getEpisodeCountBySeriesTmdbId(tmdbId: string, seasonNumber?: number): number
 
   // --- Series Completeness ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -271,7 +271,7 @@ export interface DatabaseServiceInterface {
 
   // --- Data Export/Import ---
   exportData(): Record<string, unknown[]>
-  exportWorkingCSV(options: Record<string, boolean>): string
+  exportWorkingCSV(options: { includeUpgrades: boolean; includeMissingMovies: boolean; includeMissingEpisodes: boolean; includeMissingAlbums: boolean; includeMusicUpgrades?: boolean }): string
   importData(data: Record<string, unknown[]>): { imported: number; errors: string[] }
 
   // --- Database Management ---
