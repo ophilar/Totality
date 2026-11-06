@@ -37,7 +37,7 @@ jobs:
           start=updated.index('/** Playback profiles store levels as decimal tenths')
           end=updated.index('export function normalizeSubtitleFormat',start)
           addition=updated[start:end]
-          anchor='export function normalizeSubtitleFormat'
+          anchor='// ============================================================================\n// AUDIO CODEC NORMALIZATION'
           if original.count(anchor)!=1 or 'export function normalizeVideoLevel' in original: raise SystemExit('Unexpected media normalizer')
           p.write_text(original.replace(anchor,addition+anchor))
           PY
