@@ -640,8 +640,8 @@ export class TranscodingService {
       const db = getDatabase()
       const root = path.join(app.getPath('userData'), 'transcoding-samples', 'cache')
       const [records, reviews] = await Promise.all([
-        db.config.getSettingsByPrefix(MEASUREMENT_SETTING_PREFIX),
-        db.config.getSettingsByPrefix(SHOW_PREFLIGHT_SETTING_PREFIX),
+        db.getSettingsByPrefix(MEASUREMENT_SETTING_PREFIX),
+        db.getSettingsByPrefix(SHOW_PREFLIGHT_SETTING_PREFIX),
       ])
       const protectedKeys = new Set<string>()
       const retainPath = (samplePath: string) => {
@@ -668,7 +668,7 @@ export class TranscodingService {
       const removed = await pruneMeasuredSampleCache({
         root, records, protectedKeys,
         settingPrefix: MEASUREMENT_SETTING_PREFIX,
-        deleteRecord: async key => { await db.config.deleteSetting(key) },
+        deleteRecord: async key => { await db.deleteSetting(key) },
         isActive: key => this.activePreflights > 0 || (this.sampleCacheUsers.get(key) ?? 0) > 0,
       })
       this.sampleCacheLastPrunedAt = Date.now()
@@ -700,7 +700,7 @@ export class TranscodingService {
     if (!request.sourceId.trim()) throw new Error('Source ID is required')
     if (request.mediaItemId === undefined && (!request.seriesTitle?.trim() || !request.seriesIdentityKey?.trim() || !request.libraryId?.trim())) throw new Error('TV series identity and library are required')
     const profileId = request.options.targetProfileId === undefined
-      ? await getDatabase().config.getSetting('optimization_default_target_profile_id')
+      ? await getDatabase().getSetting('optimization_default_target_profile_id')
       : request.options.targetProfileId
     const targetProfile = profileId == null ? undefined : (await getDatabase().playbackTargetProfiles.get(profileId) ?? undefined)
     if (profileId != null && !targetProfile) throw new Error(`Playback target profile ${profileId} was not found`)
@@ -1083,7 +1083,7 @@ export class TranscodingService {
                                         partialSamples: pendingSamples,
                     partialSampleHashes: await Promise.all(pendingSamples.map(sample => getSampleHash(sample.samplePath))),
                   }
-                  await getDatabase().config.setSetting(`${MEASUREMENT_SETTING_PREFIX}${measurementCacheKey}`, JSON.stringify(cacheRecord))
+                  await getDatabase().setSetting(`${MEASUREMENT_SETTING_PREFIX}${measurementCacheKey}`, JSON.stringify(cacheRecord))
                   cachedMeasurement = cacheRecord
                   measurementCacheStored = true
                 }
@@ -1370,7 +1370,7 @@ export class TranscodingService {
       operation?.signal.throwIfAborted()
     operation?.beginCommit()
     this.retainPreflight(preflightId, { request, result })
-    await getDatabase().config.setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ request, result }))
+    await getDatabase().setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ request, result }))
     const measuredResults = results.filter(plan => plan.sourceAnalysis && (plan.samplingRole || plan.decisionStatus === 'quality_threshold_unmet' || plan.decisionStatus === 'measurement_failed' || plan.decisionStatus === 'incompatible'))
     for (const plan of measuredResults) {
       const analysis = plan.sourceAnalysis!
@@ -1417,7 +1417,7 @@ export class TranscodingService {
     }
     const request: ShowTranscodeRequest = { mediaItemId, sourceId: item.source_id, libraryId: item.library_id, options }
     this.retainPreflight(id, { request, result })
-    await getDatabase().config.setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${id}`, JSON.stringify({ request, result }))
+    await getDatabase().setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${id}`, JSON.stringify({ request, result }))
     return result
   }
 
@@ -1431,7 +1431,7 @@ export class TranscodingService {
   async queueShowTranscode(preflightId: string): Promise<{ batchId: string; queuedMediaItemIds: number[]; queuedTaskIds: string[] }> {
     let preflight = this.showPreflights.get(preflightId)
     if (!preflight) {
-      const saved = await getDatabase().config.getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
+      const saved = await getDatabase().getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
       if (saved) {
         try {
           preflight = JSON.parse(saved) as { request: ShowTranscodeRequest; result: ShowTranscodePreflight }
@@ -1503,13 +1503,13 @@ export class TranscodingService {
       queuedTaskIds: [...new Set([...(preflight.result.queuedTaskIds ?? []), ...taskIds])],
     }
     this.retainPreflight(preflightId, { ...preflight, result: queued })
-    await getDatabase().config.setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ ...preflight, result: queued }))
+    await getDatabase().setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ ...preflight, result: queued }))
     getLoggingService().info('[TVOptimization]', `Queue completed: preflight=${preflightId}, batch=${preflight.result.batchId}, queuedMediaItems=${queueableEpisodes.length}`)
     return { batchId: preflight.result.batchId, queuedMediaItemIds: queueableEpisodes.map(episode => episode.mediaItemId), queuedTaskIds: taskIds }
   }
 
   async getShowPreflight(preflightId: string): Promise<{ request: ShowTranscodeRequest; result: ShowTranscodePreflight } | undefined> {
-    const raw = await getDatabase().config.getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
+    const raw = await getDatabase().getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
     if (!raw) return undefined
     const preflight = JSON.parse(raw) as { request: ShowTranscodeRequest; result: ShowTranscodePreflight }
     return { ...preflight, result: this.withCurrentSampleApprovals(preflight.result) }
@@ -1560,7 +1560,7 @@ export class TranscodingService {
   async setShowSampleApproval(preflightId: string, groupId: string, approved: boolean): Promise<string[]> {
     let preflight = this.showPreflights.get(preflightId)
     if (!preflight) {
-      const saved = await getDatabase().config.getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
+      const saved = await getDatabase().getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
       if (saved) preflight = JSON.parse(saved) as { request: ShowTranscodeRequest; result: ShowTranscodePreflight }
     }
     if (!preflight) throw new Error('Show transcode preflight was not found')
@@ -1576,7 +1576,7 @@ export class TranscodingService {
       delete result.approvalFingerprint
     }
     this.retainPreflight(preflightId, { ...preflight, result })
-    await getDatabase().config.setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ ...preflight, result }))
+    await getDatabase().setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ ...preflight, result }))
     getLoggingService().info('[TVOptimization]', 'Sample group approval updated', {
       event: approved ? 'sample-group.approved' : 'sample-group.approval-revoked',
       preflightId,
@@ -1588,7 +1588,7 @@ export class TranscodingService {
   }
 
   async findLatestShowPreflight(identity: Pick<ShowTranscodeRequest, 'sourceId' | 'libraryId' | 'seriesIdentityKey' | 'seriesTitle' | 'mediaItemId' | 'seasonNumber'>): Promise<{ request: ShowTranscodeRequest; result: ShowTranscodePreflight } | undefined> {
-    const savedPreflights = await getDatabase().config.getSettingsByPrefix(SHOW_PREFLIGHT_SETTING_PREFIX)
+    const savedPreflights = await getDatabase().getSettingsByPrefix(SHOW_PREFLIGHT_SETTING_PREFIX)
     const matches = Object.entries(savedPreflights)
       .flatMap(([key, raw]) => {
         try {
@@ -1666,7 +1666,7 @@ export class TranscodingService {
   }
 
   private async writeActivationJournal(mediaItemId: number, state: Record<string, unknown>): Promise<void> {
-    await getDatabase().config.setSetting(`transcoding.activation.${mediaItemId}`, JSON.stringify({ mediaItemId, ...state, updatedAt: new Date().toISOString() }))
+    await getDatabase().setSetting(`transcoding.activation.${mediaItemId}`, JSON.stringify({ mediaItemId, ...state, updatedAt: new Date().toISOString() }))
   }
 
   private async ensureInitialized(): Promise<void> {
@@ -1687,7 +1687,7 @@ export class TranscodingService {
 
   private async recoverActivationJournals(): Promise<void> {
     const db = getDatabase()
-    const journals = await db.config.getSettingsByPrefix('transcoding.activation.')
+    const journals = await db.getSettingsByPrefix('transcoding.activation.')
     for (const [key, value] of Object.entries(journals)) {
       const journal = JSON.parse(value as string) as {
         mediaItemId: number
@@ -1721,7 +1721,7 @@ export class TranscodingService {
       if ((journal.phase === 'source_quarantined' || journal.phase === 'prepared') && !targetExists && quarantineExists && !inputExists) {
         await fs.rename(journal.quarantinePath!, journal.inputPath)
         if (tempExists) await fs.unlink(journal.tempPath!)
-        await db.config.deleteSetting(key)
+        await db.deleteSetting(key)
         getLoggingService().info('[TranscodingService]', `Rollback completed for media item ${journal.mediaItemId} from quarantine`)
         continue
       }
@@ -1742,7 +1742,7 @@ export class TranscodingService {
           const retainedOriginalBytes = journal.mode === 'replace' ? 0 : job.sourceSize
           await db.mediaRemuxJobs.update(job.id, { status: 'promoted', actualOutputBytes: analysis.fileSizeBytes, bytesSaved: encodedReductionBytes, outputDurationMs: analysis.durationMs, outputAnalysis: JSON.stringify({ ...analysis, filePath: journal.targetPath, encodedReductionBytes, retainedOriginalBytes, physicallyReclaimedBytes: journal.mode === 'replace' ? encodedReductionBytes : 0 }) })
         }
-        await db.config.deleteSetting(key)
+        await db.deleteSetting(key)
         getLoggingService().info('[TranscodingService]', `Committed forward activation recovery for media item ${journal.mediaItemId}`)
         continue
       }
@@ -1750,7 +1750,7 @@ export class TranscodingService {
       // Crash in prepared phase where neither source was quarantined nor target placed
       if (journal.phase === 'prepared' && inputExists && !quarantineExists) {
         if (tempExists) await fs.unlink(journal.tempPath!)
-        await db.config.deleteSetting(key)
+        await db.deleteSetting(key)
         getLoggingService().info('[TranscodingService]', `Discarded prepared activation journal for media item ${journal.mediaItemId}`)
         continue
       }
@@ -1784,13 +1784,13 @@ export class TranscodingService {
         GpuDetector.detectGpus({ refresh: options.refresh || !cacheFresh })
       ])
       const gpus = await this.resolveGpuEncoderDevices(detectedGpus)
-      const persistedSelection = await getDatabase().config.getSetting('selected_transcoding_gpu_id')
+      const persistedSelection = await getDatabase().getSetting('selected_transcoding_gpu_id')
       const selectedGpuId = persistedSelection && gpus.some(gpu => gpu.id === persistedSelection)
         ? persistedSelection
         : null
       const fingerprint = await this.getCapabilitiesFingerprint(availability.ffmpeg, gpus)
       if (!options.refresh) {
-        const cachedSnapshot = await getDatabase().config.getSetting(TranscodingService.CAPABILITIES_CACHE_KEY)
+        const cachedSnapshot = await getDatabase().getSetting(TranscodingService.CAPABILITIES_CACHE_KEY)
         if (cachedSnapshot) {
           const cached = JSON.parse(cachedSnapshot) as TranscodingCapabilitiesCacheRecord
           if (cached.fingerprint === fingerprint) {
@@ -1808,7 +1808,7 @@ export class TranscodingService {
         getLoggingService().warn('[TranscodingService]', `FFmpeg capability detection: ${encoderProbe.failures.join('; ')}`)
       }
       const capabilities = buildTranscodingCapabilities(availability, gpus, selectedGpuId, encoderProbe.deviceEncoders)
-      await getDatabase().config.setSetting(TranscodingService.CAPABILITIES_CACHE_KEY, JSON.stringify({ fingerprint, detectedAt: capabilities.detectedAt, deviceEncoders: capabilities.deviceEncoders } satisfies TranscodingCapabilitiesCacheRecord))
+      await getDatabase().setSetting(TranscodingService.CAPABILITIES_CACHE_KEY, JSON.stringify({ fingerprint, detectedAt: capabilities.detectedAt, deviceEncoders: capabilities.deviceEncoders } satisfies TranscodingCapabilitiesCacheRecord))
       getLoggingService().info('[TranscodingService]', `Hardware snapshot captured at ${capabilities.detectedAt}: ${gpus.length} GPU(s), device encoders=${JSON.stringify(capabilities.deviceEncoders)}`)
       return { ...capabilities, snapshotFingerprint: fingerprint }
     })().catch(error => {
@@ -2050,7 +2050,7 @@ export class TranscodingService {
     if (gpuId !== null && !capabilities.gpus.some(gpu => gpu.id === gpuId)) {
       throw new Error(`Requested GPU ID "${gpuId}" is not available.`)
     }
-    await getDatabase().config.setSetting('selected_transcoding_gpu_id', gpuId || '')
+    await getDatabase().setSetting('selected_transcoding_gpu_id', gpuId || '')
     this.capabilitiesPromise = Promise.resolve({ ...capabilities, selectedGpuId: gpuId })
     return this.capabilitiesPromise
   }
@@ -2339,7 +2339,7 @@ export class TranscodingService {
           ? options.targetContainer === 'mp4' ? '.mp4' : '.mkv'
           : path.extname(inputPath)
       let tempBaseDir = path.dirname(inputPath)
-      const configuredTempDir = options.tempDirectory || (await db.config.getSetting('transcoding_temp_directory'))
+      const configuredTempDir = options.tempDirectory || (await db.getSetting('transcoding_temp_directory'))
       if (configuredTempDir && typeof configuredTempDir === 'string' && configuredTempDir.trim() !== '') {
         const sanitizedTemp = PathUtils.sanitizeAbsolutePath(configuredTempDir.trim())
         if (!existsSync(sanitizedTemp)) throw new Error(`Configured transcoding temporary directory does not exist: ${sanitizedTemp}`)
@@ -2352,7 +2352,7 @@ export class TranscodingService {
         `.totality_tmp_${Date.now()}_${path.basename(inputPath, path.extname(inputPath))}${outputExt}`
       ))
 
-      const configuredDefaultOutputMode = (await db.config.getSetting(SETTING_KEYS.transcoding_default_output_mode)) as 'copy' | 'quarantine-replace' | 'replace' | null
+      const configuredDefaultOutputMode = (await db.getSetting(SETTING_KEYS.transcoding_default_output_mode)) as 'copy' | 'quarantine-replace' | 'replace' | null
       const requestedOutputMode = options.outputMode || configuredDefaultOutputMode
       const effectiveOutputMode = TranscodeCommandFactory.resolveOutputMode(
         requestedOutputMode,
@@ -2512,7 +2512,7 @@ export class TranscodingService {
         this.analysisCache.delete(targetSamePath)
         getStatsCacheService().invalidate()
         if (effectiveOutputMode === 'replace') await fs.unlink(quarantinePath)
-        await db.config.deleteSetting(`transcoding.activation.${mediaItemId}`)
+        await db.deleteSetting(`transcoding.activation.${mediaItemId}`)
       } else {
         // Sibling copy
         const copyPath = path.join(path.dirname(inputPath), `${origBase} - Transcoded${outputExt}`)
@@ -2554,7 +2554,7 @@ export class TranscodingService {
             if (existsSync(activation.targetPath) && !existsSync(activation.tempPath)) await fs.rename(activation.targetPath, activation.tempPath)
             await fs.rename(activation.quarantinePath, activation.inputPath)
           }
-          await db.config.deleteSetting(`transcoding.activation.${mediaItemId}`)
+          await db.deleteSetting(`transcoding.activation.${mediaItemId}`)
         } catch (rollbackError) {
           throw new Error(`Activation failed (${getErrorMessage(error)}) and could not restore the original (${getErrorMessage(rollbackError)}); the recorded journal requires recovery`)
         }
@@ -2579,7 +2579,7 @@ export class TranscodingService {
       throw error
     } finally {
       this.activeJobs.delete(mediaItemId)
-      if (tempPath && !activated && !await db.config.getSetting(`transcoding.activation.${mediaItemId}`)) await fs.rm(tempPath, { force: true })
+      if (tempPath && !activated && !await db.getSetting(`transcoding.activation.${mediaItemId}`)) await fs.rm(tempPath, { force: true })
     }
   }
 
@@ -2858,7 +2858,7 @@ export class TranscodingService {
   }
 
   async discardShowPreflight(preflightId: string): Promise<void> {
-    const raw = await getDatabase().config.getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
+    const raw = await getDatabase().getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
     if (raw) {
       const preflight = JSON.parse(raw) as { result: ShowTranscodePreflight }
       for (const episode of preflight.result.episodes) if (episode.samplePaths) for (const sample of episode.samplePaths) if (!this.isCachedSamplePath(sample)) await fs.rm(sample, { force: true })
@@ -2868,7 +2868,7 @@ export class TranscodingService {
     if (path.dirname(directory) !== root) throw new Error('Invalid preflight sample directory')
     await fs.rm(directory, { recursive: true, force: true })
     this.showPreflights.delete(preflightId)
-    await getDatabase().config.deleteSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
+    await getDatabase().deleteSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
     getLoggingService().info('[TVOptimization]', `Preflight discarded: preflight=${preflightId}`)
   }
 
@@ -2881,7 +2881,7 @@ export class TranscodingService {
 
   private async getCachedMeasurement(cacheKey: string, sourceSha256: string, sampleDirectory: string): Promise<CachedMeasurement | undefined> {
     const settingKey = `${MEASUREMENT_SETTING_PREFIX}${cacheKey}`
-    const raw = await getDatabase().config.getSetting(settingKey)
+    const raw = await getDatabase().getSetting(settingKey)
     if (!raw) return undefined
     try {
       const cached = JSON.parse(raw) as CachedMeasurement
@@ -2948,7 +2948,7 @@ export class TranscodingService {
       return { ...cached, complete: searchComplete, searchVersion: OPTIMIZATION_SEARCH_VERSION }
     } catch (error) {
       getLoggingService().warn('[TVOptimization]', `Discarding invalid measured encode cache: cacheKey=${cacheKey}, reason=${getErrorMessage(error)}`)
-      await getDatabase().config.deleteSetting(settingKey)
+      await getDatabase().deleteSetting(settingKey)
       await fs.rm(sampleDirectory, { recursive: true, force: true })
       return undefined
     }
@@ -2961,7 +2961,7 @@ export class TranscodingService {
   async approveShowTranscode(preflightId: string): Promise<ShowTranscodePreflight> {
     let preflight = this.showPreflights.get(preflightId)
     if (!preflight) {
-      const saved = await getDatabase().config.getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
+      const saved = await getDatabase().getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
       if (saved) preflight = JSON.parse(saved) as { request: ShowTranscodeRequest; result: ShowTranscodePreflight }
     }
     if (!preflight) throw new Error('Show transcode preflight was not found')
@@ -2973,7 +2973,7 @@ export class TranscodingService {
     const approved = { ...preflight.result, userApproved: true, approvedAt: new Date().toISOString(), approvalFingerprint: this.preflightFingerprint(preflight.result) }
     getLoggingService().info('[TVOptimization]', `Preflight approved: preflight=${preflightId}, batch=${approved.batchId}, sampleRequiredEpisodes=${approved.episodes.filter(episode => episode.compatible && episode.decisionStatus === 'sample_required').length}`)
     this.retainPreflight(preflightId, { ...preflight, result: approved })
-    await getDatabase().config.setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ ...preflight, result: approved }))
+    await getDatabase().setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ ...preflight, result: approved }))
     return approved
   }
 
@@ -3009,7 +3009,7 @@ export class TranscodingService {
 
   async purgeShowQuarantine(seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string): Promise<{ purged: number }> {
     const files = await this.listShowQuarantine(seriesTitle, sourceId, seriesIdentityKey, libraryId)
-    const journals = await getDatabase().config.getSettingsByPrefix('transcoding.activation.')
+    const journals = await getDatabase().getSettingsByPrefix('transcoding.activation.')
     const journalPaths = new Set(Object.values(journals).flatMap(value => {
       const journal = JSON.parse(value as string) as { quarantinePath?: string }
       return journal.quarantinePath ? [journal.quarantinePath] : []
