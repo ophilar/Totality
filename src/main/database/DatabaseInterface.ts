@@ -259,7 +259,7 @@ export interface DatabaseServiceInterface {
   clearPendingTasks(): void
 
   // --- Person Completeness ---
-  upsertPersonCompleteness(data: Record<string, unknown>): void | Promise<void>
+  upsertPersonCompleteness(data: Record<string, unknown>): number | Promise<number>
   getPersonCompleteness(personType?: string): Array<Record<string, unknown>>
   deletePersonCompleteness(id: number): void | Promise<void>
 
