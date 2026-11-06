@@ -837,10 +837,9 @@ export class PlexProvider implements MediaProvider {
     libraryType: 'movie' | 'show',
     analyzer: ReturnType<typeof getQualityAnalyzer>,
     _onProgress?: ProgressCallback
-  ): Promise<{ addedCount: number; errors: string[] }> {
+  ): Promise<number> {
     const db = getDatabase()
     let addedCount = 0
-    const errors: string[] = []
 
     for (const ratingKey of missingIds) {
       try {
@@ -889,7 +888,7 @@ export class PlexProvider implements MediaProvider {
       }
     }
 
-    return { addedCount, errors }
+    return addedCount
   }
 
   // ============================================================================
