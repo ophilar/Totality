@@ -1,3 +1,6 @@
+import type { PlaybackTargetProfileRepository } from './repositories/PlaybackTargetProfileRepository'
+import type { MediaRemuxJobRepository } from './repositories/MediaRemuxJobRepository'
+
 import type {
   MediaItem, MediaItemVersion, MediaSource,
   QualityScore,
@@ -12,6 +15,8 @@ import type {
 } from '../types/monitoring'
 
 export interface DatabaseServiceInterface {
+  readonly playbackTargetProfiles: PlaybackTargetProfileRepository
+  readonly mediaRemuxJobs: MediaRemuxJobRepository
   // --- Lifecycle ---
   isInitialized: boolean
   initialize(): Promise<void> | void
