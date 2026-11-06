@@ -1657,9 +1657,9 @@ export class TranscodingService {
 
   private async assertAuthorizedItem(mediaItemId: number): Promise<MediaItem> {
     const db = getDatabase()
-    const item = await db.media.getItemById(mediaItemId)
+    const item = db.getMediaItem(mediaItemId)
     if (!item?.file_path || !item.source_id) throw new Error('Media item has no local source path')
-    const source = await db.sources.getSourceById(item.source_id)
+    const source = db.getMediaSource(item.source_id)
     if (!source) throw new Error('Media source was not found')
     MediaPathAuthorization.assertMediaAuthorized(item, source)
     return item
