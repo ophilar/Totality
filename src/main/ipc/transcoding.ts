@@ -67,7 +67,7 @@ function queuePreflight(requestId: string, preflightRequest: ShowTranscodeReques
 }
 
 export function resumeBackgroundPreflights(): void {
-  const pending = Object.entries(getDatabase().config.getAllSettings())
+  const pending = Object.entries(getDatabase().getAllSettings())
     .filter(([key]) => key.startsWith(BACKGROUND_PREFLIGHT_SETTING_PREFIX))
   for (const [key, raw] of pending) {
     const requestId = key.slice(BACKGROUND_PREFLIGHT_SETTING_PREFIX.length)
