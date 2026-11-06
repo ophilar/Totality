@@ -1,0 +1,52 @@
+name: Extract renderer dependency modernization
+on:
+  push:
+    branches: [integration/stratify-release-stack-20261106]
+    paths: [.github/workflows/stratify-renderer.yml]
+permissions:
+  contents: write
+jobs:
+  extract:
+    if: github.repository == 'ophilar/Totality'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Stage renderer dependency changes without feature code
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Totality Integration'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin upstream/02-native-runtime-modernization optimization
+          git switch -C upstream/03-renderer-modernization origin/upstream/02-native-runtime-modernization
+          python3 - <<'PY'
+          import json,subprocess
+          from pathlib import Path
+          target=json.loads(subprocess.check_output(['git','show','origin/optimization:package.json'],text=True))
+          current=json.loads(Path('package.json').read_text())
+          desired={"dependencies":["react","react-dom","react-window","lucide-react"],"devDependencies":["@types/react","@types/react-dom"]}
+          for group,keys in desired.items():
+              for key in keys:
+                  version=target.get(group,{}).get(key) or target.get('devDependencies',{}).get(key)
+                  if not version: raise SystemExit(f'Missing version {key}')
+                  current.setdefault(group,{})[key]=version
+          current['devDependencies'].pop('@types/react-window',None)
+          Path('package.json').write_text(json.dumps(current,indent=2)+'\n')
+          PY
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          git add package.json package-lock.json
+          git commit -m 'build: upgrade React React Window and renderer UI dependencies'
+          git push origin HEAD:refs/heads/upstream/03-renderer-modernization
+      - name: Verify renderer modernization compatibility
+        run: |
+          npm ci --no-audit --no-fund
+          npm run test:run
+          npm run typecheck
+          npx vite build
+          npm run lint
