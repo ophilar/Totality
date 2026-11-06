@@ -826,8 +826,6 @@ export class PlexProvider implements MediaProvider {
       } else {
         ids.add(item.ratingKey)
       }
-    } else {
-      for (const item of items) ids.add(item.ratingKey)
     }
 
     console.log(`[PlexProvider ${this.sourceId}] Got ${ids.size} item IDs for reconciliation`)
