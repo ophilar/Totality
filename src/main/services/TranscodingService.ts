@@ -486,9 +486,11 @@ export class TranscodingService {
     if (!request.sourceId.trim()) throw new Error('Source ID is required')
     if (request.mediaItemId === undefined && (!request.seriesTitle?.trim() || !request.seriesIdentityKey?.trim() || !request.libraryId?.trim())) throw new Error('TV series identity and library are required')
     const discoveryStartedAt = performance.now()
-    const items = request.mediaItemId === undefined
-      ? await getDatabase().tvShows.getEpisodes(request.seriesTitle!, request.sourceId, request.seriesIdentityKey!, request.libraryId!, request.seasonNumber)
-      : [await getDatabase().media.getItemById(request.mediaItemId)].filter((item): item is MediaItem => item !== null)
+    const items: MediaItem[] = request.mediaItemId === undefined
+      ? getDatabase().getMediaItems({ type: 'episode', sourceId: request.sourceId, libraryId: request.libraryId })
+        .filter(item => item.series_identity_key === request.seriesIdentityKey &&
+          (request.seasonNumber === undefined || item.season_number === request.seasonNumber))
+      : [getDatabase().getMediaItem(request.mediaItemId)].filter((item): item is MediaItem => item !== null)
     const capabilities = await this.getCapabilities()
     await getQualityAnalyzer().loadThresholdsFromDatabase()
     const av1CodecCapabilities = capabilities.encodingMatrix.codecs.find(codec => codec.codec === 'av1')
