@@ -506,7 +506,7 @@ describe('BetterSQLiteService — Media Items', () => {
     const id = service.upsertMediaItem(makeMediaItem())
     service.upsertQualityScore({ ...makeQualityScore(id, 300), tier_quality: 'HIGH', tier_score: 87, video_savings_bytes: 125 })
 
-    service.media.updateQualitySavings({
+    service.updateQualitySavings({
       media_item_id: id,
       video_savings_bytes: 250,
       estimated_savings_bytes: 450,
@@ -702,10 +702,10 @@ describe('BetterSQLiteService — Media Items', () => {
     const id = service.upsertMediaItem(makeMediaItem({ source_type: 'local', plex_id: 'canonical-movie' }))
     const version = (filePath: string, resolution: string, height: number) => ({
       media_item_id: id, version_source: 'local_file',
-      file_path: filePath, file_size: 1234, duration: 7200,
+      file_path: filePath, file_size_bytes: 1234, duration_ms: 7200,
       resolution, width: 1920, height,
-      video_codec: 'H264', video_bitrate: 2000, audio_codec: 'AAC',
-      audio_channels: 2, audio_bitrate: 128,
+      video_codec: 'H264', video_bitrate_kbps: 2000, audio_codec: 'AAC',
+      audio_channels: 2, audio_bitrate_kbps: 128,
       quality_tier: resolution, tier_quality: 'MEDIUM',
       tier_score: 80, is_best: false,
     })
@@ -761,7 +761,7 @@ describe('BetterSQLiteService — Media Items', () => {
     expect(item?.series_identity_key).toBe('tmdb:111110')
   })
 
-  it('getEpisodes retrieves episodes by canonical series_identity_key with source and library scopes', () => {
+  it('retrieves episodes by canonical series_identity_key with source and library scopes', () => {
     service.upsertMediaItem(
       makeMediaItem({
         plex_id: 'ep-single-1',
@@ -773,7 +773,8 @@ describe('BetterSQLiteService — Media Items', () => {
         episode_number: 1,
       })
     )
-    const eps = service.getEpisodes('Chernobyl', 'src-1', 'tmdb:87108', 'lib-1')
+    const eps = service.getMediaItems({ type: 'episode', sourceId: 'src-1', libraryId: 'lib-1' })
+      .filter(item => item.series_identity_key === 'tmdb:87108' )
     expect(eps.length).toBe(1)
     expect(eps[0].series_identity_key).toBe('tmdb:87108')
   })
