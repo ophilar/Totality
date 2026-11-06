@@ -1,5 +1,3 @@
-import type { BetterSQLiteService } from './BetterSQLiteService'
-
 import type {
   MediaItem, MediaItemVersion, MediaSource,
   QualityScore,
@@ -37,7 +35,7 @@ export interface DatabaseServiceInterface {
 
   // --- Media Items ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getMediaItems(filters?: any): any[]
+  getMediaItems(filters?: any, projection?: 'card'): any[]
   getMediaItem(id: number): MediaItem | null
   getMediaItemByPath(filePath: string): MediaItem | null
   getMediaItemByProviderId(providerId: string, sourceId?: string): MediaItem | null
@@ -68,7 +66,6 @@ export interface DatabaseServiceInterface {
   getQualityScore(mediaItemId: number): QualityScore | null
   getQualityScoreByMediaId(mediaItemId: number): QualityScore | null
   getQualityScores(): QualityScore[]
-  getQualityDistribution(): Record<string, unknown>
 
   // --- Media Sources ---
   getMediaSources(type?: string): MediaSource[]
@@ -106,13 +103,12 @@ export interface DatabaseServiceInterface {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getRecentlyAdded(days?: number, limit?: number): any[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getRecentlyUpgraded(days?: number): any[]
+  getRecentlyUpgraded(days?: number, sourceId?: string): any[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getRecentlyUpgradedMusic(days?: number): any[]
+  getRecentlyUpgradedMusic(days?: number, sourceId?: string): any[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getAggregatedSourceStats(): any
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getQualityDistribution(): any
 
   // --- TV Shows ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -121,7 +117,6 @@ export interface DatabaseServiceInterface {
   countTVShows(filters?: any): number
   countTVEpisodes(filters?: TVShowFilters): number
   getLetterOffset(schema: string, letter: string, filters?: Record<string, unknown>): number
-  getEpisodesForSeries(seriesTitle: string, sourceId?: string, libraryId?: string): MediaItem[]
   getEpisodeCountBySeriesTmdbId(tmdbId: string | number): number
 
   // --- Series Completeness ---
@@ -129,7 +124,6 @@ export interface DatabaseServiceInterface {
   upsertSeriesCompleteness(data: any): number | Promise<number>
   getSeriesCompleteness(sourceId?: string): SeriesCompleteness[]
   getAllSeriesCompleteness(sourceId?: string, libraryId?: string): SeriesCompleteness[]
-  getSeriesCompletenessByTitle(seriesTitle: string, sourceId?: string, libraryId?: string): SeriesCompleteness | null
   getIncompleteSeries(sourceId?: string): SeriesCompleteness[]
   deleteSeriesCompleteness(id: number): boolean | Promise<boolean>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -231,7 +225,6 @@ export interface DatabaseServiceInterface {
   getNotifications(options: any): Notification[]
   getUnreadNotifications(): Notification[]
   getNotificationCount(): NotificationCountResult
-  markNotificationRead(id: number): void | Promise<void>
   markNotificationsRead(ids: number[]): void | Promise<void>
   markAllNotificationsRead(): void | Promise<void>
   deleteNotifications(ids: number[]): void | Promise<void>
@@ -266,8 +259,8 @@ export interface DatabaseServiceInterface {
   deletePersonCompleteness(id: number): void | Promise<void>
 
   // --- Metadata Matching ---
-  updateSeriesMatch(seriesTitle: string, newTmdbId: string, sourceId: string, newTitle?: string, posterUrl?: string): void | Promise<void>
-  updateMovieMatch(mediaItemId: number, tmdbId: string, posterUrl?: string, title?: string, year?: number): void | Promise<void>
+  updateSeriesMatch(seriesIdentityKey: string, sourceId: string, libraryId: string | null | undefined, tmdbId: string, posterUrl?: string, newSeriesTitle?: string, originalLanguage?: string): number | Promise<number>
+  updateMovieMatch(mediaItemId: number, tmdbId: string, posterUrl?: string, title?: string, year?: number, originalLanguage?: string): void | Promise<void>
   updateArtistMatch(artistId: number, musicbrainzId: string): void | Promise<void>
   updateAlbumMatch(albumId: number, musicbrainzReleaseGroupId: string): void | Promise<void>
 
@@ -289,7 +282,6 @@ export interface DatabaseServiceInterface {
   syncAlbumCompletenessAfterScan(sourceId: string): number
   getEpisodeCountForSeason(seriesTmdbId: string, seasonNumber: number): number
   getEpisodeCountForSeasonEpisode(seriesTmdbId: string, seasonNumber: number, episodeNumber: number): number
-  getEpisodeCountForSeries(seriesTitle: string): number
   getSeriesCompletenessByTmdbId?(tmdbId: string): { owned_episodes: number } | null
   getMusicAlbumsByMusicbrainzIds(ids: string[]): Map<string, MusicAlbum>
   getQualityScoresByMediaItemIds(ids: number[]): Map<number, QualityScore>
