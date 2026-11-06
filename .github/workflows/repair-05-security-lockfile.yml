@@ -1,0 +1,28 @@
+name: Repair 0.5 security lockfile
+
+on:
+  push:
+    branches: [fix/0.5-security-overrides-20261106]
+    paths: [.github/workflows/repair-05-security-lockfile.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Commit synchronized lockfile
+        run: |
+          git add package-lock.json
+          if ! git diff --cached --quiet; then
+            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "fix(0.5): resolve audited transitive dependencies"
+            git push
+          fi
