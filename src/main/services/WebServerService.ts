@@ -48,6 +48,7 @@ interface AuthMessage {
 interface Session {
   expiresAt: number
   ip: string
+  pinFingerprint: string
 }
 
 interface RateLimitEntry {
@@ -150,38 +151,40 @@ export class WebServerService {
     this.tlsDir = path.join(app.getPath('userData'), 'tls')
   }
 
-  /** Load persisted sessions from database (encrypted) */
+  /** Restore only encrypted sessions issued for the currently configured PIN. */
   private loadPersistedSessions(): void {
-    try {
-      const db = getDatabase()
-      let raw = db.getSetting('web_sessions')
-      if (!raw) return
-      // Decrypt if encrypted (ENC: prefix)
-      raw = getCredentialEncryptionService().decryptSetting('web_sessions', raw)
-      const entries = JSON.parse(raw) as Array<[string, Session]>
-      const now = Date.now()
-      for (const [token, session] of entries) {
-        if (session.expiresAt > now) {
-          this.sessions.set(token, session)
-        }
+    const db = getDatabase()
+    const stored = db.getSetting('web_sessions')
+    if (!stored) return
+
+    const encryption = getCredentialEncryptionService()
+    if (!encryption.isEncrypted(stored)) {
+      db.deleteSetting('web_sessions')
+      console.warn('[WebServer] Revoked legacy plaintext web sessions')
+      return
+    }
+
+    const plain = encryption.decrypt(stored)
+    if (!plain) throw new Error('Persisted web sessions cannot be decrypted')
+    const entries = JSON.parse(plain) as Array<[string, Session]>
+    const now = Date.now()
+    const pinFingerprint = this.getPinFingerprint()
+    for (const [token, session] of entries) {
+      if (session.expiresAt > now && session.pinFingerprint === pinFingerprint) {
+        this.sessions.set(token, session)
       }
-      getLoggingService().verbose('WebServer', `Restored ${this.sessions.size} persisted sessions`)
-    } catch (err) {
-      console.warn('[WebServer] Failed to restore sessions:', (err as Error).message)
     }
   }
 
-  /** Save current sessions to database (encrypted) */
   private persistSessions(): void {
-    try {
-      const db = getDatabase()
-      const entries = Array.from(this.sessions.entries())
-      const json = JSON.stringify(entries)
-      const encrypted = getCredentialEncryptionService().encryptSetting('web_sessions', json)
-      db.setSetting('web_sessions', encrypted)
-    } catch (err) {
-      console.warn('[WebServer] Failed to persist sessions:', (err as Error).message)
-    }
+    const serialized = JSON.stringify(Array.from(this.sessions.entries()))
+    const encrypted = getCredentialEncryptionService().encrypt(serialized)
+    getDatabase().setSetting('web_sessions', encrypted)
+  }
+
+  private getPinFingerprint(): string {
+    const storedPin = getDatabase().getSetting(SETTING_KEYS.web_access_pin)
+    return crypto.createHash('sha256').update(storedPin || '').digest('hex')
   }
 
   async start(port?: number): Promise<void> {
@@ -221,11 +224,9 @@ export class WebServerService {
       if (origin) {
         try {
           const originUrl = new URL(origin)
-          const expectedPort = String(this.port)
-          const oh = originUrl.hostname.replace(/^\[|]$/g, '') // strip IPv6 brackets
-          const isLocalhost = oh === 'localhost' || oh === '127.0.0.1' || oh === '::1'
-          // Must match our port AND be either localhost or same-network (not a random website)
-          if (originUrl.port !== expectedPort || (!isLocalhost && originUrl.protocol !== 'https:' && originUrl.protocol !== 'http:')) {
+          const requestHost = new URL(`http://${req.headers.host}`).host
+          if ((originUrl.protocol !== 'http:' && originUrl.protocol !== 'https:') ||
+              originUrl.host !== requestHost) {
             console.warn(`[WebServer] Rejected WebSocket from unexpected origin: ${origin}`)
             ws.close(4003, 'Origin not allowed')
             return
@@ -249,7 +250,12 @@ export class WebServerService {
       ws.isAlive = true
 
       ws.on('pong', () => { ws.isAlive = true })
-      ws.on('message', (data) => this.handleWebSocket(ws, data))
+      ws.on('message', (data) => {
+        void this.handleWebSocket(ws, data).catch(error => {
+          console.error('[WebServer] WebSocket request failed:', error)
+          ws.send(JSON.stringify({ type: 'error', error: 'Internal server error' }))
+        })
+      })
       ws.on('close', (code, reason) => {
         this.eventThrottles.delete(ws)
         getLoggingService().verbose('WebServer', `WebSocket disconnected from ${ws.clientIp} (code: ${code}, reason: ${reason || 'none'}, clients: ${this.wss!.clients.size})`)
@@ -331,7 +337,13 @@ export class WebServerService {
           for (const [token, session] of this.sessions.entries()) {
             if (session.expiresAt < now) { this.sessions.delete(token); cleaned = true }
           }
-          if (cleaned) this.persistSessions()
+          if (cleaned) {
+            try {
+              this.persistSessions()
+            } catch (error) {
+              console.error('[WebServer] Failed to persist expired-session cleanup:', error)
+            }
+          }
           // Evict expired rate limit entries
           for (const [ip, entry] of this.rateLimits.entries()) {
             if (entry.lockedUntil < now && entry.failures === 0) this.rateLimits.delete(ip)
@@ -980,8 +992,13 @@ export class WebServerService {
 
     // Issue token
     const token = crypto.randomUUID()
-    this.sessions.set(token, { expiresAt: Date.now() + this.getSessionTimeout(), ip })
-    this.persistSessions()
+    this.sessions.set(token, { expiresAt: Date.now() + this.getSessionTimeout(), ip, pinFingerprint: this.getPinFingerprint() })
+    try {
+      this.persistSessions()
+    } catch (error) {
+      this.sessions.delete(token)
+      throw error
+    }
     ws.sessionToken = token
     ws.send(JSON.stringify({ type: 'auth', success: true, token }))
     getLoggingService().verbose('WebServer', `Authenticated client from ${ip}`)
@@ -1139,6 +1156,7 @@ export class WebServerService {
   private isValidSession(token: string, _clientIp?: string): boolean {
     const session = this.sessions.get(token)
     if (!session) return false
+    if (session.pinFingerprint !== this.getPinFingerprint()) return false
     if (session.expiresAt < Date.now()) {
       this.sessions.delete(token)
       return false
