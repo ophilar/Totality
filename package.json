@@ -43,7 +43,7 @@
     "adm-zip": "^0.6.1",
     "better-sqlite3": "^13.0.3",
     "chokidar": "^5.0.0",
-    "electron-updater": "^6.8.3",
+    "electron-updater": "^6.8.11",
     "html5-qrcode": "^2.3.8",
     "lucide-react": "^0.577.0",
     "react": "^18.2.0",
@@ -51,14 +51,14 @@
     "react-window": "^1.8.10",
     "selfsigned": "^5.5.0",
     "ws": "^8.22.0",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   },
   "optionalDependencies": {
     "mysql2": "^3.16.2",
     "sql.js": "^1.10.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.2.2",
+    "@tailwindcss/postcss": "^4.3.5",
     "@types/adm-zip": "^0.5.8",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
@@ -81,10 +81,10 @@
     "prettier": "^3.1.1",
     "sharp": "^0.35.5",
     "standard-version": "^9.5.0",
-    "tailwindcss": "^4.2.2",
+    "tailwindcss": "^4.3.5",
     "typescript": "^5.2.2",
     "typescript-eslint": "^8.33.0",
-    "vite": "^6.4.1",
+    "vite": "^6.4.5",
     "vite-plugin-electron": "^0.29.1",
     "vite-plugin-electron-renderer": "^0.14.5",
     "vitest": "^4.1.12"
