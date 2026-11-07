@@ -5,7 +5,19 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import globals from 'globals'
 
 export default tseslint.config(
-  { ignores: ['dist/**', 'dist-electron/**', 'release/**'] },
+  {
+    ignores: [
+      '**/dist/**',
+      '**/dist-electron/**',
+      '**/release/**',
+      '**/out/**',
+      '**/build/**',
+      '**/.worktrees/**',
+      '**/test-results/**',
+      '**/coverage/**',
+      '**/dev_docs/acceptance-*/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
