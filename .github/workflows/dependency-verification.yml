@@ -1,0 +1,84 @@
+name: Dependency verification
+
+on:
+  pull_request:
+    branches: [master, fixes, timelines, optimization, '0.7', '0.9']
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/dependency-verification.yml'
+      - '.github/workflows/release.yml'
+      - 'src/**'
+      - 'tests/**'
+      - 'resources/**'
+      - 'scripts/**'
+      - 'vite.config.ts'
+      - 'vitest.config.ts'
+      - 'vitest.upgrade.config.ts'
+      - 'tsconfig*.json'
+      - 'electron-builder.yml'
+  push:
+    branches: [fixes]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-verification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Fast validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run test:run
+      - run: npx tsc --noEmit
+
+  certify:
+    name: Release certification (${{ matrix.os }})
+    if: github.event_name != 'pull_request'
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Audit production dependencies
+        if: runner.os == 'Linux'
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: Build application
+        run: npx vite build
+      - name: Check out upstream 0.4.2 schema
+        if: runner.os == 'Linux'
+        uses: actions/checkout@v5
+        with:
+          repository: bbidwell85/Totality
+          ref: v0.4.2
+          path: legacy
+      - name: Verify real database upgrade
+        if: runner.os == 'Linux'
+        run: |
+          npm rebuild better-sqlite3 --build-from-source
+          npx vitest run --config vitest.upgrade.config.ts
+          npx electron-rebuild
+      - name: Package application
+        run: npx electron-builder --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
