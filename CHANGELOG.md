@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.0 — Architecture consolidation
+
+- Simplify database factory/getter ownership, IPC handlers, and media path authorization.
+- Strengthen IPC and authorization regression coverage; inherit optimization, timeline, and 0.4.7 fixes.
+
 ## 0.6.0 — Optimization foundation
 
 - Add measured media optimization, encoding policies, transcoding, compatibility checks, and review UI.

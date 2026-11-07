@@ -104,5 +104,8 @@ describe('MediaPathAuthorization', () => {
     }
     expect(() => MediaPathAuthorization.assertMediaAuthorized({ file_path: '' }, plexSource)).toThrow('Media item has no local source path')
     expect(() => MediaPathAuthorization.assertMediaAuthorized({ file_path: 'C:/movie\0.mkv' }, plexSource)).toThrow('contains null bytes')
+    const authorization = new MediaPathAuthorization(['C:/media'])
+    expect(authorization.isAuthorized('C:/movie\0.mkv')).toBe(false)
+    expect(() => authorization.assertAuthorized('C:/movie\0.mkv')).toThrow('contains null bytes')
   })
 })

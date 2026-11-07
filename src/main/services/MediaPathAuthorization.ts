@@ -13,17 +13,12 @@ export class MediaPathAuthorization {
   constructor(roots: string[]) {
     this.roots = roots
       .filter((root): root is string => typeof root === 'string' && root.trim().length > 0)
-      .map(root => path.resolve(PathUtils.sanitizeAbsolutePath(root)))
+      .map(root => PathUtils.sanitizeAbsolutePath(root))
   }
 
   isAuthorized(filePath: string): boolean {
     if (this.roots.length === 0 || !filePath) return false
-    try {
-      const sanitized = PathUtils.sanitizeAbsolutePath(filePath)
-      return this.roots.some(root => PathUtils.isWithinRoot(sanitized, root))
-    } catch {
-      return false
-    }
+    return this.roots.some(root => PathUtils.isWithinRoot(filePath, root))
   }
 
   assertAuthorized(filePath: string): true {
@@ -99,8 +94,6 @@ export class MediaPathAuthorization {
     if (!item?.file_path) {
       throw new Error('Media item has no local source path')
     }
-    PathUtils.sanitizeAbsolutePath(item.file_path)
-
     const roots = MediaPathAuthorization.extractRootsFromSource(source)
     if (roots.length === 0) {
       throw new Error('No registered library roots are available for source authorization')
