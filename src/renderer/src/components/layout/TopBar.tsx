@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { SETTING_KEYS } from '../../../../shared/settingKeys'
-import { Search, X, Home, Film, Tv, Music, Tags, ListChecks, Star, Settings, RefreshCw, Disc3, User, MessageSquare, ArrowLeft, ArrowRight, Activity, Loader2 } from 'lucide-react'
+import { Search, X, Home, ListOrdered, Film, Tv, Music, Tags, ListChecks, Star, Settings, RefreshCw, Disc3, User, MessageSquare, ArrowLeft, ArrowRight, Activity, Loader2 } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
 import { useWishlist } from '../../contexts/WishlistContext'
 import { useNavigation } from '../../contexts/NavigationContext'
@@ -25,9 +25,10 @@ interface SearchResults {
 }
 
 interface TopBarProps {
-  currentView: 'dashboard' | 'library'
+  currentView: 'dashboard' | 'library' | 'timelines'
   libraryTab: MediaViewType
   onNavigateHome: () => void
+  onNavigateTimelines: () => void
   onNavigateToLibrary: (tab: MediaViewType) => void
   onOpenSettings: () => void
   onToggleCompleteness: () => void
@@ -75,6 +76,7 @@ export function TopBar({
   currentView,
   libraryTab,
   onNavigateHome,
+  onNavigateTimelines,
   onNavigateToLibrary,
   onOpenSettings,
   onToggleCompleteness,
@@ -610,6 +612,12 @@ export function TopBar({
                 aria-label="Dashboard"
               >
                 <Home className="w-4 h-4" />
+              </button>
+
+              <button onClick={onNavigateTimelines}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${currentView === 'timelines' ? 'bg-white text-black' : 'text-white hover:bg-white/10'}`}
+                role="tab" aria-selected={currentView === 'timelines'} aria-label="Timelines">
+                <ListOrdered className="w-4 h-4" /><span>Timelines</span>
               </button>
 
               {/* Divider - only show if any library buttons will render */}
