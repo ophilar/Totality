@@ -699,6 +699,33 @@ describe('PlexProvider', () => {
     })
   })
 
+  describe('full scan inventory selection', () => {
+    const sinceTimestamp = new Date('2026-01-01T00:00:00.000Z')
+
+    it('ignores sinceTimestamp when forceFullScan is set', async () => {
+      const provider = createProviderWithServer()
+      const fetchItems = vi.spyOn(provider as any, 'getPlexLibraryItems')
+        .mockRejectedValueOnce(new Error('Stop after inventory request'))
+
+      const result = await provider.scanLibrary('lib-1', { sinceTimestamp, forceFullScan: true })
+
+      expect(fetchItems).toHaveBeenCalledExactlyOnceWith('lib-1', undefined)
+      expect(result.success).toBe(false)
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+
+    it('retains time-filtered retrieval for incremental scans', async () => {
+      const provider = createProviderWithServer()
+      const fetchItems = vi.spyOn(provider as any, 'getPlexLibraryItems')
+        .mockRejectedValueOnce(new Error('Stop after inventory request'))
+
+      await provider.scanLibrary('lib-1', { sinceTimestamp })
+
+      expect(fetchItems).toHaveBeenCalledExactlyOnceWith('lib-1', sinceTimestamp)
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+  })
+
   // ========================================================================
   // Inventory pagination must be complete before deletion reconciliation
   // ========================================================================
@@ -796,6 +823,24 @@ describe('PlexProvider', () => {
       expect(result.success).toBe(false)
       expect(result.errors.join(' ')).toContain('Invalid artist')
       expect(mockUpdateSourceScanTime).not.toHaveBeenCalled()
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('incremental addition errors', () => {
+    it('reports missing metadata rather than silently completing', async () => {
+      mockFetchJSON.mockResolvedValueOnce({ MediaContainer: { Metadata: [] } })
+      const provider = createProviderWithServer()
+      await expect((provider as any).fetchAndProcessMissingItems(['missing-1'], 'lib-1', 'movie', {}))
+        .rejects.toThrow('Failed to process Plex item missing-1: Metadata unavailable for missing-1')
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+
+    it('reports unusable media metadata instead of treating the item as added', async () => {
+      mockFetchJSON.mockResolvedValueOnce({ MediaContainer: { Metadata: [makeMovieItem({ ratingKey: 'bad-1', Media: undefined })] } })
+      const provider = createProviderWithServer()
+      await expect((provider as any).fetchAndProcessMissingItems(['bad-1'], 'lib-1', 'movie', {}))
+        .rejects.toThrow('Failed to process Plex item bad-1: Could not convert Plex metadata for bad-1')
       expect(mockDeleteMediaItem).not.toHaveBeenCalled()
     })
   })
