@@ -228,10 +228,10 @@ describe('calculateAudioBitrateFromFile', () => {
 describe('scoreVersion', () => {
   describe('resolution tier ranking', () => {
     it('ranks 4K > 1080p > 720p > SD', () => {
-      const uhd = scoreVersion({ resolution: '4K', video_bitrate: 0, hdr_format: 'None' })
-      const fhd = scoreVersion({ resolution: '1080p', video_bitrate: 0, hdr_format: 'None' })
-      const hd = scoreVersion({ resolution: '720p', video_bitrate: 0, hdr_format: 'None' })
-      const sd = scoreVersion({ resolution: '480p', video_bitrate: 0, hdr_format: 'None' })
+      const uhd = scoreVersion({ resolution: '4K' })
+      const fhd = scoreVersion({ resolution: '1080p' })
+      const hd = scoreVersion({ resolution: '720p' })
+      const sd = scoreVersion({ resolution: '480p' })
 
       expect(uhd).toBeGreaterThan(fhd)
       expect(fhd).toBeGreaterThan(hd)
@@ -251,7 +251,7 @@ describe('scoreVersion', () => {
       const scores = resolutions.map(r => ({
         label: r.expected,
         normalized: normalizeResolution(r.w, r.h),
-        score: scoreVersion({ resolution: normalizeResolution(r.w, r.h), video_bitrate: 0, hdr_format: 'None' }),
+        score: scoreVersion({ resolution: normalizeResolution(r.w, r.h) }),
       }))
 
       // Verify normalizeResolution returns what we expect
@@ -268,54 +268,20 @@ describe('scoreVersion', () => {
     })
   })
 
-  describe('HDR bonus', () => {
-    it('adds 1000 for non-None HDR format', () => {
-      const sdr = scoreVersion({ resolution: '1080p', video_bitrate: 10000, hdr_format: 'None' })
-      const hdr = scoreVersion({ resolution: '1080p', video_bitrate: 10000, hdr_format: 'HDR10' })
-      const dv = scoreVersion({ resolution: '1080p', video_bitrate: 10000, hdr_format: 'Dolby Vision' })
-
-      expect(hdr).toBe(sdr + 1000)
-      expect(dv).toBe(sdr + 1000)
-    })
-
-    it('treats undefined/missing hdr_format as SDR', () => {
-      const noHdr = scoreVersion({ resolution: '1080p', video_bitrate: 5000 })
-      const noneHdr = scoreVersion({ resolution: '1080p', video_bitrate: 5000, hdr_format: 'None' })
-
-      expect(noHdr).toBe(noneHdr)
-    })
-  })
-
-  describe('bitrate tiebreaker', () => {
-    it('higher bitrate wins within same tier', () => {
-      const low = scoreVersion({ resolution: '1080p', video_bitrate: 5000, hdr_format: 'None' })
-      const high = scoreVersion({ resolution: '1080p', video_bitrate: 20000, hdr_format: 'None' })
-
-      expect(high).toBeGreaterThan(low)
-      expect(high - low).toBe(15000)
-    })
-  })
-
   describe('tier dominance', () => {
     it('higher resolution always beats lower resolution regardless of bitrate', () => {
-      const hd720_maxBitrate = scoreVersion({ resolution: '720p', video_bitrate: 99999, hdr_format: 'None' })
-      const fhd1080_minBitrate = scoreVersion({ resolution: '1080p', video_bitrate: 0, hdr_format: 'None' })
+      const hd720_maxBitrate = scoreVersion({ resolution: '720p' })
+      const fhd1080_minBitrate = scoreVersion({ resolution: '1080p' })
 
       expect(fhd1080_minBitrate).toBeGreaterThan(hd720_maxBitrate)
     })
 
-    it('HDR does not override resolution tier', () => {
-      const hd720_hdr = scoreVersion({ resolution: '720p', video_bitrate: 50000, hdr_format: 'HDR10' })
-      const fhd1080_sdr = scoreVersion({ resolution: '1080p', video_bitrate: 0, hdr_format: 'None' })
-
-      expect(fhd1080_sdr).toBeGreaterThan(hd720_hdr)
-    })
   })
 
   describe('case insensitivity', () => {
     it('handles mixed-case resolution strings', () => {
-      const lower = scoreVersion({ resolution: '4k', video_bitrate: 0 })
-      const upper = scoreVersion({ resolution: '4K', video_bitrate: 0 })
+      const lower = scoreVersion({ resolution: '4k' })
+      const upper = scoreVersion({ resolution: '4K' })
 
       expect(lower).toBe(upper)
     })

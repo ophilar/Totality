@@ -7,8 +7,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Server, HardDrive, Film, Tv, Music, Folder } from 'lucide-react'
 import { useSources, type ProviderType } from '../../contexts/SourceContext'
-import { Button } from '../ui/Button'
-import { Select } from '../ui/Input'
+import { formatRelativeTime } from '../../utils/dateUtils'
+import { providerColors } from '../library/mediaUtils'
 import type { MediaSourceResponse, MediaLibraryResponse } from '../../../../preload/index'
 
 // Extended library type with enabled status and upgrade target
@@ -26,24 +26,13 @@ const UPGRADE_TIER_OPTIONS = [
   { value: '4K', label: 'Below 4K' },
 ]
 
-// Provider colors
-const providerColors: Record<ProviderType, string> = {
-  plex: 'bg-[#e5a00d]',
-  jellyfin: 'bg-purple-500',
-  emby: 'bg-green-500',
-  kodi: 'bg-blue-500',
-  'kodi-local': 'bg-blue-500',
-  'kodi-mysql': 'bg-blue-500',
-  mediamonkey: 'bg-orange-500',
-  local: 'bg-slate-600',
-}
-
 // Helper to parse connection config and get server URL
 function getServerUrl(source: MediaSourceResponse): string | null {
   try {
     const config = JSON.parse(source.connection_config)
     return config.serverUrl || null
-  } catch {
+  } catch (error) {
+    console.error(`[SourceCard] Invalid connection configuration for source ${source.id}:`, error)
     return null
   }
 }
@@ -343,22 +332,6 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
     }
   }
 
-  // Format last scan time
-  const formatLastScan = (dateStr?: string) => {
-    if (!dateStr) return 'Never'
-    const date = new Date(dateStr)
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffMins = Math.floor(diffMs / 60000)
-    const diffHours = Math.floor(diffMins / 60)
-    const diffDays = Math.floor(diffHours / 24)
-
-    if (diffMins < 1) return 'Just now'
-    if (diffMins < 60) return `${diffMins}m ago`
-    if (diffHours < 24) return `${diffHours}h ago`
-    return `${diffDays}d ago`
-  }
-
   return (
     <div className={`rounded-lg border ${source.is_enabled ? 'border-border' : 'border-border/50 opacity-60'} bg-card overflow-hidden`}>
       {/* Header */}
@@ -367,7 +340,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
         onClick={handleExpand}
       >
         {/* Provider icon */}
-        <div className={`w-8 h-8 ${color} rounded-lg flex items-center justify-center text-white`}>
+        <div className={`w-8 h-8 ${color} rounded-md flex items-center justify-center text-white`}>
           {source.source_type === 'local' ? (
             <HardDrive className="w-4 h-4" />
           ) : (
@@ -383,12 +356,12 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
               <span className="w-2 h-2 bg-green-500 rounded-full" title="Connected" />
             )}
             {connectionStatus === 'error' && (
-              <span className="w-2 h-2 bg-destructive rounded-full" title="Connection error" />
+              <span className="w-2 h-2 bg-red-500 rounded-full" title="Connection error" />
             )}
           </div>
-          <div className="text-caption text-muted-foreground">
+          <div className="text-xs text-muted-foreground">
             {source.source_type.charAt(0).toUpperCase() + source.source_type.slice(1)} •{' '}
-            Last scan: {formatLastScan(source.last_scan_at)}
+            Last scan: {formatRelativeTime(source.last_scan_at) ?? 'Never'}
           </div>
         </div>
 
@@ -403,7 +376,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
           }`}
         >
           <div
-            className={`w-4 h-4 bg-foreground rounded-full transition-transform ${
+            className={`w-4 h-4 bg-white rounded-full transition-transform ${
               source.is_enabled ? 'translate-x-5' : 'translate-x-0.5'
             }`}
           />
@@ -426,13 +399,13 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
           {/* Progress bar */}
           {progress && (
             <div className="space-y-1">
-              <div className="flex justify-between text-caption text-muted-foreground">
+              <div className="flex justify-between text-xs text-muted-foreground">
                 <span>Scanning: {progress.currentItem || '...'}</span>
                 <span>{Math.round(progress.percentage)}%</span>
               </div>
               <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-primary transition-[width]"
+                  className="h-full bg-primary transition-all"
                   style={{ width: `${progress.percentage}%` }}
                 />
               </div>
@@ -451,16 +424,16 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                       </svg>
                       <div className="flex-1 min-w-0">
-                        <p className="text-label font-medium text-destructive">{errorDetails.message}</p>
+                        <p className="text-sm font-medium text-destructive">{errorDetails.message}</p>
                         {errorDetails.suggestion && (
-                          <p className="text-caption text-muted-foreground mt-1">{errorDetails.suggestion}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{errorDetails.suggestion}</p>
                         )}
                         {errorDetails.isDuplicateUrl && (
                           <div className="mt-2 flex items-center gap-2">
                             <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
-                            <span className="text-caption text-amber-500">Duplicate server URL detected</span>
+                            <span className="text-xs text-amber-500">Duplicate server URL detected</span>
                           </div>
                         )}
                       </div>
@@ -473,12 +446,12 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
 
           {/* Libraries */}
           {isLoadingLibraries ? (
-            <div className="text-label text-muted-foreground">Loading libraries...</div>
+            <div className="text-sm text-muted-foreground">Loading libraries...</div>
           ) : connectionStatus === 'error' ? (
-            <div className="text-label text-muted-foreground">Unable to load libraries due to connection error</div>
+            <div className="text-sm text-muted-foreground">Unable to load libraries due to connection error</div>
           ) : libraries.length > 0 ? (
             <div className="space-y-2">
-              <div className="text-caption font-medium text-muted-foreground">Libraries</div>
+              <div className="text-xs font-medium text-muted-foreground uppercase">Libraries</div>
               {libraries.map(lib => (
                 <div
                   key={lib.id}
@@ -512,51 +485,49 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
                     ) : (
                       <Folder className="w-4 h-4 text-foreground" />
                     )}
-                    <span className={`text-label ${!lib.isEnabled ? 'text-muted-foreground' : ''}`}>{lib.name}</span>
+                    <span className={`text-sm ${!lib.isEnabled ? 'text-muted-foreground' : ''}`}>{lib.name}</span>
                     {lib.itemCount !== undefined && (
-                      <span className="text-caption text-muted-foreground">({lib.itemCount} items)</span>
+                      <span className="text-xs text-muted-foreground">({lib.itemCount} items)</span>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
                     {/* Per-library upgrade target (video/TV only) */}
                     {lib.type !== 'music' && (
-                      <Select
+                      <select
                         value={lib.upgradeMinTier ?? ''}
                         onChange={e => handleSetUpgradeTier(lib.id, e.target.value)}
                         disabled={!lib.isEnabled}
-                        inputSize="sm"
-                        className="text-caption text-muted-foreground hover:text-foreground"
+                        className="text-xs bg-background border border-border rounded px-1.5 py-0.5 text-muted-foreground hover:text-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Flag for upgrade if below this tier"
                       >
                         {UPGRADE_TIER_OPTIONS.map(o => (
                           <option key={o.value} value={o.value}>{o.label}</option>
                         ))}
-                      </Select>
+                      </select>
                     )}
-                    <Button
+                    <button
                       onClick={() => handleScanLibrary(lib.id)}
                       disabled={isScanning || !lib.isEnabled}
-                      variant="primary"
-                      size="sm"
+                      className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                       title={!lib.isEnabled ? 'Enable library to scan' : 'Scan library'}
                     >
                       Scan
-                    </Button>
+                    </button>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="text-label text-muted-foreground">No libraries found</div>
+            <div className="text-sm text-muted-foreground">No libraries found</div>
           )}
 
           {/* FFprobe Settings (Kodi-local only) */}
           {isKodiLocal && (
             <div className="space-y-2 pt-2 border-t border-border">
-              <div className="text-caption font-medium text-muted-foreground">File analysis</div>
+              <div className="text-xs font-medium text-muted-foreground uppercase">File Analysis</div>
 
               {ffprobeLoading ? (
-                <div className="text-label text-muted-foreground">Checking FFprobe availability...</div>
+                <div className="text-sm text-muted-foreground">Checking FFprobe availability...</div>
               ) : ffprobeInstalling ? (
                 <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
                   <div className="space-y-2">
@@ -565,12 +536,12 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                       </svg>
-                      <span className="text-label font-medium">{ffprobeInstallProgress?.stage || 'Installing...'}</span>
+                      <span className="text-sm font-medium">{ffprobeInstallProgress?.stage || 'Installing...'}</span>
                     </div>
                     {ffprobeInstallProgress && (
                       <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-primary transition-[width] duration-300"
+                          className="h-full bg-primary transition-all duration-300"
                           style={{ width: `${ffprobeInstallProgress.percent}%` }}
                         />
                       </div>
@@ -584,34 +555,33 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <div className="flex-1 min-w-0">
-                      <p className="text-label font-medium text-amber-500">FFprobe Not Available</p>
-                      <p className="text-caption text-muted-foreground mt-1">
+                      <p className="text-sm font-medium text-amber-500">FFprobe Not Available</p>
+                      <p className="text-xs text-muted-foreground mt-1">
                         FFprobe enables accurate file analysis for bitrate, audio tracks, and HDR data. Without it, quality data is estimated from Kodi's metadata.
                       </p>
 
                       {ffprobeCanInstall ? (
                         <div className="mt-3 space-y-2">
                           <div className="flex items-center gap-3">
-                            <Button
+                            <button
                               onClick={(e) => {
                                 e.stopPropagation()
                                 handleInstallFFprobe()
                               }}
-                              variant="primary"
-                              size="sm"
+                              className="px-3 py-1.5 text-xs font-medium rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
                             >
                               Install FFprobe
-                            </Button>
-                            <span className="text-caption text-muted-foreground">~30-80 MB download</span>
+                            </button>
+                            <span className="text-xs text-muted-foreground">~30-80 MB download</span>
                           </div>
                           {ffprobeError && (
-                            <p className="text-caption text-destructive">
+                            <p className="text-xs text-destructive">
                               Installation failed: {ffprobeError}
                             </p>
                           )}
                         </div>
                       ) : (
-                        <p className="text-caption text-muted-foreground mt-2">
+                        <p className="text-xs text-muted-foreground mt-2">
                           <span className="font-medium">Manual installation:</span>
                           {' '}
                           <a
@@ -634,12 +604,12 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <span className="w-2 h-2 bg-green-500 rounded-full" />
-                        <span className="text-label font-medium">FFprobe Available</span>
+                        <span className="text-sm font-medium">FFprobe Available</span>
                         {ffprobeVersion && (
-                          <span className="text-caption text-muted-foreground">v{ffprobeVersion}</span>
+                          <span className="text-xs text-muted-foreground">v{ffprobeVersion}</span>
                         )}
                       </div>
-                      <p className="text-caption text-muted-foreground mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         {ffprobeEnabled
                           ? 'Scans will analyze files for accurate bitrate, audio tracks, and HDR data.'
                           : 'Enable to get accurate quality data from actual files during scans.'}
@@ -656,7 +626,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
                       title={ffprobeEnabled ? 'Disable FFprobe analysis' : 'Enable FFprobe analysis'}
                     >
                       <div
-                        className={`w-4 h-4 bg-foreground rounded-full transition-transform ${
+                        className={`w-4 h-4 bg-white rounded-full transition-transform ${
                           ffprobeEnabled ? 'translate-x-5' : 'translate-x-0.5'
                         }`}
                       />
@@ -664,7 +634,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
                   </div>
                   {ffprobeEnabled && (
                     <div className="mt-2 pt-2 border-t border-border/50">
-                      <p className="text-caption text-muted-foreground">
+                      <p className="text-xs text-muted-foreground">
                         <span className="font-medium text-amber-500">Note:</span> File analysis adds time to scans depending on library size and disk speed.
                       </p>
                     </div>
@@ -676,15 +646,17 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
 
           {/* Actions */}
           <div className="flex justify-end gap-2 pt-2 border-t border-border">
-            <Button
+            <button
               onClick={handleDelete}
               disabled={isDeleting}
-              variant={confirmDelete ? 'danger' : 'danger-secondary'}
-              size="sm"
-              loading={isDeleting}
+              className={`text-xs px-3 py-1.5 rounded border disabled:opacity-50 transition-colors ${
+                confirmDelete
+                  ? 'border-destructive bg-destructive text-destructive-foreground'
+                  : 'border-destructive text-destructive hover:bg-destructive/10'
+              }`}
             >
               {isDeleting ? 'Removing...' : confirmDelete ? 'Click again to confirm' : 'Remove'}
-            </Button>
+            </button>
           </div>
         </div>
       )}

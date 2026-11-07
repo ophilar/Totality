@@ -102,7 +102,7 @@ export class TimelineResolutionEngine {
               filePath: match.file_path,
               resolution: match.resolution,
               videoCodec: match.video_codec,
-              duration: match.duration,
+              duration: match.duration_ms,
             },
       })
     }
@@ -124,14 +124,14 @@ export class TimelineResolutionEngine {
       const range = item.title.match(/seasons?\s+(\d+)(?:\s*[-–—]\s*(\d+))?/i)
       const inRange = (season: number) => !range || (season >= Number(range[1]) && season <= Number(range[2] ?? range[1]))
       const episodes = local.filter(row => this.matches(item, row) && row.season_number !== null && row.episode_number !== null && inRange(row.season_number!))
-      const identityKeys = new Set(episodes.map(row => `${row.library_id}:${(row.series_tmdb_id || normalizeMediaTitle(row.series_title || ''))}`))
+      const identityKeys = new Set(episodes.map(row => `${row.library_id}:${row.series_identity_key}`))
       if (identityKeys.size > 1) {
         append(item, episodes)
         continue
       }
 
       const missing = completeness.filter(row => {
-        if (episodes.length) return (row.tmdb_id || normalizeMediaTitle(row.series_title || '')) === (episodes[0].series_tmdb_id || normalizeMediaTitle(episodes[0].series_title || '')) && row.library_id === episodes[0].library_id
+        if (episodes.length) return row.series_identity_key === episodes[0].series_identity_key && row.library_id === episodes[0].library_id
         return item.identifiers.tmdbId
           ? row.tmdb_id === String(item.identifiers.tmdbId)
           : normalizeMediaTitle(row.series_title) === normalizeMediaTitle(item.seriesTitle || item.title.replace(/\s*\(?seasons?\s+\d+(?:\s*[-–—]\s*\d+)?\)?/i, ''))
@@ -222,18 +222,20 @@ export class TimelineResolutionEngine {
     const ids = item.identifiers
     const canonical: boolean[] = []
     if (ids.tmdbId) {
-      canonical.push(item.type === 'movie' ? row.tmdb_id === String(ids.tmdbId) : row.series_tmdb_id === String(ids.tmdbId))
+      canonical.push(item.type === 'movie' ? row.tmdb_id === String(ids.tmdbId) : row.series_tmdb_id === String(ids.tmdbId) || row.series_identity_key === `tmdb:${ids.tmdbId}`)
     }
     if (ids.tvdbId) {
-      canonical.push(false)
+      canonical.push(row.series_identity_key === `tvdb:${ids.tvdbId}`)
     }
     if (ids.imdbId) {
-      canonical.push(item.type === 'movie' ? row.imdb_id?.replace(/^tt/, '') === ids.imdbId.replace(/^tt/, '') : false)
+      canonical.push(item.type === 'movie' ? row.imdb_id?.replace(/^tt/, '') === ids.imdbId.replace(/^tt/, '') : row.series_identity_key === `imdb:${ids.imdbId}`)
     }
     if (canonical.length) {
       if (ids.tmdbId && row.tmdb_id && item.type === 'movie' && row.tmdb_id !== String(ids.tmdbId)) return false
       if (ids.tmdbId && item.type !== 'movie' && row.series_tmdb_id && row.series_tmdb_id !== String(ids.tmdbId)) return false
+      if (ids.tvdbId && row.series_identity_key?.startsWith('tvdb:') && row.series_identity_key !== `tvdb:${ids.tvdbId}`) return false
       if (ids.imdbId && item.type === 'movie' && row.imdb_id && row.imdb_id.replace(/^tt/, '') !== ids.imdbId.replace(/^tt/, '')) return false
+      if (ids.imdbId && item.type !== 'movie' && row.series_identity_key?.startsWith('imdb:') && row.series_identity_key !== `imdb:${ids.imdbId}`) return false
       return canonical.some(Boolean)
     }
     if (item.type === 'movie') {

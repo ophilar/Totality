@@ -7,10 +7,8 @@
  */
 
 import { useState, useEffect } from 'react'
-import { Database, HardDrive, FolderOpen, Film, Music } from 'lucide-react'
+import { Database, HardDrive, Film, Music } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
-import { Button } from '../ui/Button'
-import { Input } from '../ui/Input'
 import { KodiMySQLFlow } from './KodiMySQLFlow'
 
 interface KodiConnectionFlowProps {
@@ -27,17 +25,10 @@ interface KodiLocalInstallation {
   kodiRunning: boolean
 }
 
-interface MediaLibrary {
-  id: string
-  name: string
-  type: 'movie' | 'show' | 'music' | 'unknown'
-  itemCount?: number
-}
-
-type ConnectionMode = 'detecting' | 'select-mode' | 'local' | 'mysql' | 'libraries'
+type ConnectionMode = 'detecting' | 'select-mode' | 'local' | 'mysql'
 
 export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProps) {
-  const { addSource, testConnection, getLibraries, refreshSources } = useSources()
+  const { addSource, testConnection, getLibraries } = useSources()
 
   // Detection state
   const [mode, setMode] = useState<ConnectionMode>('detecting')
@@ -51,14 +42,6 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
   // Common state
   const [isConnecting, setIsConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isSuccess, setIsSuccess] = useState(false)
-
-  // Library selection state (setters kept for future library selection flow)
-   
-  const [sourceId, _setSourceId] = useState<string | null>(null)
-   
-  const [libraries, _setLibraries] = useState<MediaLibrary[]>([])
-  const [selectedLibraries, setSelectedLibraries] = useState<Set<string>>(new Set())
 
   // Auto-detect local Kodi on mount
   useEffect(() => {
@@ -80,53 +63,6 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
     } catch (err) {
       console.error('Error detecting local Kodi:', err)
       setMode('select-mode')
-    }
-  }
-
-  // Browse for Kodi database file (portable/non-standard installations)
-  const handleBrowseDatabase = async () => {
-    try {
-      const dbPath = await window.electronAPI.kodiSelectDatabase()
-      if (!dbPath) return
-
-      // Extract version number from filename (e.g., MyVideos121.db → 121)
-      const filename = dbPath.split(/[/\\]/).pop() || ''
-      const videoMatch = filename.match(/^MyVideos(\d+)\.db$/i)
-      const musicMatch = filename.match(/^MyMusic(\d+)\.db$/i)
-
-      if (!videoMatch && !musicMatch) {
-        setError('Please select a Kodi database file (MyVideosXXX.db or MyMusicXXX.db)')
-        return
-      }
-
-      // Try to find the companion database in the same directory
-      const dbDir = dbPath.replace(/[/\\][^/\\]+$/, '')
-      let videoDatabasePath = ''
-      let videoDatabaseVersion = 0
-      let musicDatabasePath: string | null = null
-      let musicDatabaseVersion: number | null = null
-
-      if (videoMatch) {
-        videoDatabasePath = dbPath
-        videoDatabaseVersion = parseInt(videoMatch[1], 10)
-      } else if (musicMatch) {
-        musicDatabasePath = dbPath
-        musicDatabaseVersion = parseInt(musicMatch[1], 10)
-      }
-
-      setLocalInstallation({
-        path: dbDir,
-        databasePath: videoDatabasePath,
-        databaseVersion: videoDatabaseVersion,
-        musicDatabasePath,
-        musicDatabaseVersion,
-        kodiRunning: false,
-      })
-      setIncludeVideoDb(videoDatabaseVersion > 0)
-      setIncludeMusicDb(musicDatabaseVersion != null && musicDatabaseVersion > 0)
-      setMode('local')
-    } catch {
-      setError('Failed to select database file')
     }
   }
 
@@ -194,72 +130,6 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
     }
   }
 
-  // Toggle library selection
-  const handleToggleLibrary = (libraryId: string) => {
-    setSelectedLibraries(prev => {
-      const next = new Set(prev)
-      if (next.has(libraryId)) {
-        next.delete(libraryId)
-      } else {
-        next.add(libraryId)
-      }
-      return next
-    })
-  }
-
-  // Select/deselect all libraries
-  const handleSelectAll = () => {
-    setSelectedLibraries(new Set(libraries.map(lib => lib.id)))
-  }
-
-  const handleDeselectAll = () => {
-    setSelectedLibraries(new Set())
-  }
-
-  // Complete setup with library selection
-  const handleComplete = async () => {
-    if (!sourceId) return
-
-    // Save library selection
-    try {
-      await window.electronAPI.sourcesSetLibrariesEnabled(
-        sourceId,
-        libraries.map(lib => ({
-          id: lib.id,
-          name: lib.name,
-          type: lib.type,
-          enabled: selectedLibraries.has(lib.id)
-        }))
-      )
-    } catch (err) {
-      console.error('Failed to save library selection:', err)
-    }
-
-    // Refresh sources list now that setup is complete
-    await refreshSources()
-
-    // Get the display name for task labels
-    const displayName = localDisplayName.trim() || 'Kodi (Local)'
-
-    // Queue library scans for all selected libraries
-    const selectedLibs = libraries.filter(l => selectedLibraries.has(l.id))
-    for (const lib of selectedLibs) {
-      try {
-        const taskType = lib.type === 'music' ? 'music-scan' : 'library-scan'
-        await window.electronAPI.taskQueueAddTask({
-          type: taskType,
-          label: `Scan ${lib.name} (${displayName})`,
-          sourceId,
-          libraryId: lib.id,
-        })
-      } catch (err) {
-        console.error('Failed to queue library scan:', err)
-      }
-    }
-
-    setIsSuccess(true)
-  }
-
   // MySQL mode - delegate to KodiMySQLFlow
   if (mode === 'mysql') {
     return (
@@ -272,120 +142,21 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
     )
   }
 
-  // Libraries selection step
-  if (mode === 'libraries') {
-    return (
-      <div className="space-y-4">
-        <div className="text-center py-4">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-muted text-foreground rounded-full mb-3">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <p className="font-medium">Connected to Kodi!</p>
-        </div>
-
-        {libraries.length > 0 && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-label font-medium">Select libraries to include:</p>
-              <div className="flex gap-2 text-caption">
-                <Button variant="tertiary" size="sm" onClick={handleSelectAll}>
-                  Select all
-                </Button>
-                <span className="text-muted-foreground">|</span>
-                <Button variant="tertiary" size="sm" onClick={handleDeselectAll}>
-                  Deselect all
-                </Button>
-              </div>
-            </div>
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {libraries.map(lib => (
-                <label
-                  key={lib.id}
-                  className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
-                    selectedLibraries.has(lib.id)
-                      ? 'bg-blue-500/10 border border-blue-500/30'
-                      : 'bg-muted/50 border border-transparent hover:bg-muted'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedLibraries.has(lib.id)}
-                    onChange={() => handleToggleLibrary(lib.id)}
-                    className="w-4 h-4 rounded border-muted-foreground text-primary focus:ring-primary focus:ring-offset-0"
-                  />
-                  <span className="text-title">
-                    {lib.type === 'movie' ? '🎬' : lib.type === 'show' ? '📺' : lib.type === 'music' ? '🎵' : '📁'}
-                  </span>
-                  <span className="text-label">{lib.name}</span>
-                  {lib.itemCount !== undefined && (
-                    <span className="text-caption text-muted-foreground">({lib.itemCount} items)</span>
-                  )}
-                </label>
-              ))}
-            </div>
-            <p className="text-caption text-muted-foreground">
-              Only selected libraries will appear in your media browser. You can change this later by expanding the source card.
-            </p>
-          </div>
-        )}
-
-        <Button
-          onClick={handleComplete}
-          disabled={selectedLibraries.size === 0}
-          variant="primary"
-          className="w-full"
-        >
-          {selectedLibraries.size === 0 ? 'Select at least one library' : 'Continue'}
-        </Button>
-      </div>
-    )
-  }
-
-  // Success state
-  if (isSuccess) {
-    return (
-      <div className="space-y-4">
-        <div className="text-center py-4">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-muted text-foreground rounded-full mb-3">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <p className="font-medium">Connected to Kodi!</p>
-          <p className="text-label text-muted-foreground mt-1">
-            Your Kodi installation has been added.
-          </p>
-        </div>
-
-        <Button
-          onClick={onSuccess}
-          variant="primary"
-          className="w-full"
-        >
-          Done
-        </Button>
-      </div>
-    )
-  }
-
   // Detecting state
   if (mode === 'detecting') {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-center gap-3 py-6">
           <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-500 border-t-transparent" />
-          <span className="text-label text-muted-foreground">Detecting local Kodi...</span>
+          <span className="text-sm text-muted-foreground">Detecting local Kodi...</span>
         </div>
 
-        <Button
+        <button
           onClick={onBack}
-          variant="secondary"
-          className="w-full"
+          className="w-full px-4 py-2 rounded-md border border-border hover:bg-muted"
         >
           Cancel
-        </Button>
+        </button>
       </div>
     )
   }
@@ -396,7 +167,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
       <div className="space-y-4">
         {/* Kodi running warning */}
         {localInstallation?.kodiRunning && (
-          <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-label">
+          <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-sm">
             <svg className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
@@ -408,7 +179,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
 
         {/* No local installation notice */}
         {!localInstallation && (
-          <div className="flex items-center gap-2 p-3 bg-muted/50 border border-border rounded-lg text-label">
+          <div className="flex items-center gap-2 p-3 bg-muted/50 border border-border rounded-lg text-sm">
             <span className="text-muted-foreground">
               No local Kodi installation found. Choose a connection method:
             </span>
@@ -426,11 +197,11 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
             >
               <HardDrive className="w-5 h-5 text-foreground shrink-0" />
               <div className="min-w-0 flex-1">
-                <div className="font-medium text-label flex items-center gap-2">
+                <div className="font-medium text-sm flex items-center gap-2">
                   Local Database
-                  <span className="text-caption text-foreground font-normal">Found</span>
+                  <span className="text-xs text-green-500 font-normal">Found</span>
                 </div>
-                <div className="text-caption text-muted-foreground">
+                <div className="text-xs text-muted-foreground">
                   {localInstallation.databaseVersion > 0 && `MyVideos${localInstallation.databaseVersion}.db`}
                   {localInstallation.databaseVersion > 0 && localInstallation.musicDatabaseVersion && ' + '}
                   {localInstallation.musicDatabaseVersion && `MyMusic${localInstallation.musicDatabaseVersion}.db`}
@@ -439,37 +210,24 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
             </button>
           )}
 
-          {/* Browse for Database option - for portable/non-standard installations */}
-          <button
-            onClick={handleBrowseDatabase}
-            className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary hover:bg-muted/50 transition-colors text-left"
-          >
-            <FolderOpen className="w-5 h-5 text-foreground shrink-0" />
-            <div className="min-w-0">
-              <div className="font-medium text-label">Browse for Database</div>
-              <div className="text-caption text-muted-foreground">Select a Kodi database file manually (portable installs)</div>
-            </div>
-          </button>
-
           <button
             onClick={() => setMode('mysql')}
             className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary hover:bg-muted/50 transition-colors text-left"
           >
             <Database className="w-5 h-5 text-foreground shrink-0" />
             <div className="min-w-0">
-              <div className="font-medium text-label">MySQL/MariaDB (Shared)</div>
-              <div className="text-caption text-muted-foreground">Connect to shared database for multi-device setups</div>
+              <div className="font-medium text-sm">MySQL/MariaDB (Shared)</div>
+              <div className="text-xs text-muted-foreground">Connect to shared database for multi-device setups</div>
             </div>
           </button>
         </div>
 
-        <Button
+        <button
           onClick={onBack}
-          variant="secondary"
-          className="w-full"
+          className="w-full px-4 py-2 rounded-md border border-border hover:bg-muted"
         >
           Back
-        </Button>
+        </button>
       </div>
     )
   }
@@ -483,7 +241,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
       <div className="space-y-4">
         {/* Database selection */}
         <div className="space-y-3">
-          <p className="text-label font-medium">Select databases to access:</p>
+          <p className="text-sm font-medium">Select databases to access:</p>
 
           {/* Video database option */}
           {hasVideoDb && (
@@ -507,8 +265,8 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
               />
               <Film className="w-5 h-5 text-foreground shrink-0" />
               <div className="min-w-0 flex-1">
-                <div className="font-medium text-label">Movies & TV Shows</div>
-                <div className="text-caption text-muted-foreground">
+                <div className="font-medium text-sm">Movies & TV Shows</div>
+                <div className="text-xs text-muted-foreground">
                   MyVideos{localInstallation.databaseVersion}.db
                 </div>
               </div>
@@ -537,8 +295,8 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
               />
               <Music className="w-5 h-5 text-foreground shrink-0" />
               <div className="min-w-0 flex-1">
-                <div className="font-medium text-label">Music</div>
-                <div className="text-caption text-muted-foreground">
+                <div className="font-medium text-sm">Music</div>
+                <div className="text-xs text-muted-foreground">
                   MyMusic{localInstallation.musicDatabaseVersion}.db
                 </div>
               </div>
@@ -547,12 +305,12 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
 
           {/* Show message if only one database found */}
           {!hasVideoDb && hasMusicDb && (
-            <p className="text-caption text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Only music database found. Video database (MyVideos*.db) not detected.
             </p>
           )}
           {hasVideoDb && !hasMusicDb && (
-            <p className="text-caption text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Only video database found. Music database (MyMusic*.db) not detected.
             </p>
           )}
@@ -560,45 +318,42 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
 
         {/* Display name */}
         <label className="block">
-          <span className="text-label font-medium">Display Name</span>
-          <Input
+          <span className="text-sm font-medium">Display Name</span>
+          <input
             type="text"
             value={localDisplayName}
             onChange={(e) => setLocalDisplayName(e.target.value)}
             placeholder="Kodi (Local)"
-            className="mt-1"
+            className="mt-1 w-full px-3 py-2 rounded-md border border-border bg-background focus:outline-hidden focus:ring-2 focus:ring-primary text-sm"
           />
         </label>
 
         {/* Error message */}
         {error && (
-          <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-label">
+          <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
             {error}
           </div>
         )}
 
         {/* Buttons */}
         <div className="flex gap-2">
-          <Button
+          <button
             onClick={() => {
               setMode('select-mode')
               setError(null)
             }}
             disabled={isConnecting}
-            variant="secondary"
-            className="flex-1"
+            className="flex-1 px-4 py-2 rounded-md border border-border hover:bg-muted disabled:opacity-50"
           >
             Back
-          </Button>
-          <Button
+          </button>
+          <button
             onClick={handleLocalConnect}
             disabled={isConnecting || (!includeVideoDb && !includeMusicDb)}
-            variant="primary"
-            loading={isConnecting}
-            className="flex-1"
+            className="flex-1 px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
             {isConnecting ? 'Connecting...' : 'Connect'}
-          </Button>
+          </button>
         </div>
       </div>
     )

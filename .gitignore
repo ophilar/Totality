@@ -45,7 +45,6 @@ CLAUDE.md
 
 # Test coverage
 coverage/
-
 # After Effects project files
 Adobe After Effects Auto-Save/
 *.aep
@@ -63,3 +62,25 @@ data/timelines/*.json
 # Audit prompts and reports
 *audit-prompt.md
 *AUDIT-REPORT.md
+
+test-results/
+
+# Database journals
+*.db-shm
+*.db-wal
+tests/tmp/
+
+# Repomix & CLI Scratch
+repomix-output.xml
+repomix-analysis.txt
+repomix.config.json
+repomix-output.txt
+.superpowers/
+
+# Local timeline data
+data/timelines/*.json
+!data/timelines/midnight-diner-release-order.json
+
+# Project Dev Docs
+dev_docs/
+

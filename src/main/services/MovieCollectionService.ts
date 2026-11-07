@@ -1,3 +1,4 @@
+
 import { getDatabase } from '../database/getDatabase'
 import { getTMDBService } from './TMDBService'
 import { getLoggingService } from './LoggingService'
@@ -74,6 +75,7 @@ export class MovieCollectionService extends CancellableOperation {
       const results = await Promise.allSettled(
         batch.map(async (movie) => {
           let tmdbId: string | null = null
+          let originalLanguage: string | undefined
 
           // Method 1: Try IMDB ID lookup via /find endpoint
           if (movie.imdb_id && movie.imdb_id.startsWith('tt')) {
@@ -81,10 +83,11 @@ export class MovieCollectionService extends CancellableOperation {
               const findResult = await tmdb.findByExternalId(movie.imdb_id, 'imdb_id')
               if (findResult.movie_results && findResult.movie_results.length > 0) {
                 tmdbId = String(findResult.movie_results[0].id)
+                originalLanguage = findResult.movie_results[0].original_language
                 console.log(`[MovieCollectionService] Found "${movie.title}" via IMDB: ${tmdbId}`)
               }
-            } catch {
-              // Continue to title search
+            } catch (error) {
+              console.debug(`[MovieCollectionService] IMDB lookup failed for ${movie.title}; trying title and year:`, error)
             }
           }
 
@@ -100,6 +103,7 @@ export class MovieCollectionService extends CancellableOperation {
                 })
                 const bestMatch = exactMatch || searchResults.results[0]
                 tmdbId = String(bestMatch.id)
+                originalLanguage = bestMatch.original_language
                 console.log(`[MovieCollectionService] Found "${movie.title}" via search: ${tmdbId}`)
               }
             } catch (error) {
@@ -109,7 +113,7 @@ export class MovieCollectionService extends CancellableOperation {
 
           if (tmdbId && movie.id) {
             // Update the movie with the TMDB ID
-            await db.updateMovieWithTMDBId(movie.id, tmdbId)
+            await db.updateMovieWithTMDBId(movie.id, tmdbId, originalLanguage)
             return { movie, tmdbId, success: true }
           }
 
@@ -217,8 +221,8 @@ export class MovieCollectionService extends CancellableOperation {
         movieMap.set(movie.tmdb_id, movie)
       } else {
         // Keep the one with higher video bitrate (better quality)
-        const existingBitrate = existing.video_bitrate || 0
-        const currentBitrate = movie.video_bitrate || 0
+        const existingBitrate = existing.video_bitrate_kbps || 0
+        const currentBitrate = movie.video_bitrate_kbps || 0
         if (currentBitrate > existingBitrate) {
           movieMap.set(movie.tmdb_id, movie)
         }

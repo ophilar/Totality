@@ -1,4 +1,5 @@
 import { getErrorMessage, isHttpError, isNodeError } from '../../services/utils/errorUtils'
+import { parseDolbyVisionProfile } from '../../services/utils/dolbyVision'
 import { retryWithBackoff } from '../../services/utils/retryWithBackoff'
 /**
  * JellyfinEmbyBase
@@ -7,7 +8,7 @@ import { retryWithBackoff } from '../../services/utils/retryWithBackoff'
  * Both servers share a very similar API since Jellyfin forked from Emby.
  */
 
-import * as path from 'path'
+import * as path from 'node:path'
 import { fetchJSON, fetchWithTimeout, buildUrl } from '../../services/utils/httpClient'
 import { getDatabase } from '../../database/getDatabase'
 import { getQualityAnalyzer } from '../../services/QualityAnalyzer'
@@ -25,7 +26,7 @@ import {
   normalizeContainer,
   hasObjectAudio,
 } from '../../services/MediaNormalizer'
-import { selectBestAudioTrack, scoreVersion } from '../utils/ProviderUtils'
+import { groupByMediaIdentity, selectBestAudioTrack, scoreVersion } from '../utils/ProviderUtils'
 import { getFileNameParser } from '../../services/FileNameParser'
 import { extractVersionNames } from '../utils/VersionNaming'
 import type {
@@ -40,7 +41,7 @@ import type {
   ScanOptions,
   SourceConfig,
 } from '../base/MediaProvider'
-import type { MediaItem, MediaItemVersion, AudioTrack, SubtitleTrack, MusicArtist, MusicAlbum, MusicTrack } from '../../types/database'
+import type { MediaItem, MediaItemVersion, AudioTrack, SubtitleTrack, MusicArtist, MusicAlbum, MusicTrack, MissingMovie } from '../../types/database'
 import {
   isLosslessCodec,
   isHiRes,
@@ -301,20 +302,10 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
     const pathPrefix = this.providerType === 'emby' ? '/emby' : ''
     let url = `${this.serverUrl}${pathPrefix}/Items/${itemId}/Images/${imageType}`
 
-    const params = new URLSearchParams()
-    if (imageTag) {
-      params.set('tag', imageTag)
-    }
     // Add auth token so images load even when server requires authentication
     // (Plex already does this with X-Plex-Token in image URLs)
     const token = this.apiKey || this.accessToken
-    if (token) {
-      params.set('api_key', token)
-    }
-    const qs = params.toString()
-    if (qs) url += `?${qs}`
-
-    return url
+    return buildUrl(url, { tag: imageTag || undefined, api_key: token || undefined })
   }
 
   /**
@@ -328,10 +319,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
     return retryWithBackoff(
       requestFn,
       {
-        maxRetries: 3,
-        initialDelay: 1000,
         maxDelay: 15000,
-        retryableStatuses: [429, 500, 502, 503, 504],
         onRetry: (attempt, error, delay) => {
           console.warn(`[${this.providerType}] ${context || 'Request'} - Retry ${attempt}/3 after ${delay}ms: ${error.message}`)
         }
@@ -424,10 +412,16 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
     try {
       const response = await fetchWithTimeout(`${this.serverUrl}/QuickConnect/Enabled`, {}, 5000)
-      if (!response.ok) return false
+      if (!response.ok) {
+        if (response.status !== 404) {
+          console.warn(`[${this.providerType}] Quick Connect availability check returned HTTP ${response.status}`)
+        }
+        return false
+      }
       const data = await response.json()
       return data === true
-    } catch {
+    } catch (error) {
+      console.warn(`[${this.providerType}] Quick Connect availability check failed:`, error)
       return false
     }
   }
@@ -857,7 +851,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
             let totalMovies = ownedTmdbIds.length
             let ownedCount = ownedTmdbIds.length
-            let missingMovies: unknown[] = []
+            let missingMovies: MissingMovie[] = []
             let completenessPercentage = 100
             let collectionPosterUrl = boxsetPosterUrl || firstMoviePosterUrl
             let collectionBackdropUrl: string | undefined
@@ -1083,16 +1077,16 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
                 // Pick best version for parent item fields
                 const best = allVersions.reduce((a, b) => scoreVersion(b) > scoreVersion(a) ? b : a)
                 canonicalItem.file_path = best.file_path
-                canonicalItem.file_size = best.file_size
-                canonicalItem.duration = best.duration
+                canonicalItem.file_size_bytes = best.file_size_bytes
+                canonicalItem.duration_ms = best.duration_ms
                 canonicalItem.resolution = best.resolution
                 canonicalItem.width = best.width
                 canonicalItem.height = best.height
                 canonicalItem.video_codec = best.video_codec
-                canonicalItem.video_bitrate = best.video_bitrate
+                canonicalItem.video_bitrate_kbps = best.video_bitrate_kbps
                 canonicalItem.audio_codec = best.audio_codec
                 canonicalItem.audio_channels = best.audio_channels
-                canonicalItem.audio_bitrate = best.audio_bitrate
+                canonicalItem.audio_bitrate_kbps = best.audio_bitrate_kbps
                 canonicalItem.video_frame_rate = best.video_frame_rate
                 canonicalItem.color_bit_depth = best.color_bit_depth
                 canonicalItem.hdr_format = best.hdr_format
@@ -1378,6 +1372,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
       videoBitrate: normalizeBitrate(videoStream?.BitRate || mediaSource?.Bitrate, 'bps'),
       videoFrameRate: normalizeFrameRate(videoStream?.RealFrameRate),
       colorBitDepth: videoStream?.BitDepth,
+      dolbyVisionProfile: parseDolbyVisionProfile(videoStream?.Profile, videoStream?.DisplayTitle, videoStream?.Title),
       hdrFormat: normalizeHdrFormat(
         videoStream?.VideoRange,
         undefined,
@@ -1466,6 +1461,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
         return {
           index,
+          streamIndex: stream.Index,
           codec: normalizeAudioCodec(stream.Codec, stream.Profile),
           channels: normalizeAudioChannels(stream.Channels, stream.ChannelLayout),
           bitrate: normalizeBitrate(streamBitrate, 'bps'),
@@ -1533,8 +1529,8 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
       }
 
       // Find best audio track using shared utility
-      const bestAudioTrack = selectBestAudioTrack(audioTracks) || audioTracks[0]
-      const audioStream = audioStreams[bestAudioTrack.index] || audioStreams[0]
+      const bestAudioTrack = selectBestAudioTrack(audioTracks)!
+      const audioStream = audioStreams[bestAudioTrack.index]
 
       const width = videoStream.Width || 0
       const height = videoStream.Height || 0
@@ -1587,16 +1583,16 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         source_type: sourceType,
         label,
         file_path: mediaSource.Path || '',
-        file_size: mediaSource.Size || 0,
-        duration: mediaSource.RunTimeTicks ? Math.floor(mediaSource.RunTimeTicks / 10000) : 0,
+        file_size_bytes: mediaSource.Size || 0,
+        duration_ms: mediaSource.RunTimeTicks ? Math.floor(mediaSource.RunTimeTicks / 10000) : 0,
         resolution,
         width,
         height,
         video_codec: normalizeVideoCodec(videoStream.Codec),
-        video_bitrate: normalizeBitrate(videoBps, 'bps'),
+        video_bitrate_kbps: normalizeBitrate(videoBps, 'bps'),
         audio_codec: normalizeAudioCodec(audioStream.Codec, audioStream.Profile),
         audio_channels: normalizeAudioChannels(audioStream.Channels, audioStream.ChannelLayout),
-        audio_bitrate: bestAudioTrack.bitrate,
+        audio_bitrate_kbps: bestAudioTrack.bitrate,
         video_frame_rate: normalizeFrameRate(videoStream.RealFrameRate),
         color_bit_depth: videoStream.BitDepth,
         hdr_format: hdrFormat,
@@ -1626,6 +1622,8 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
     // Pick the best version for parent MediaItem (highest resolution tier, then HDR, then bitrate)
     const best = versions.reduce((a, b) => scoreVersion(b) > scoreVersion(a) ? b : a)
+    const bestVideoStream = item.MediaSources?.find(source => source.Path === best.file_path)?.MediaStreams?.find(stream => stream.Type === 'Video')
+    const dolbyVisionProfile = parseDolbyVisionProfile(bestVideoStream?.Profile, bestVideoStream?.DisplayTitle, bestVideoStream?.Title)
 
     const isEpisode = item.Type === 'Episode'
 
@@ -1687,22 +1685,23 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
         season_number: item.ParentIndexNumber,
         episode_number: item.IndexNumber,
         file_path: best.file_path,
-        file_size: best.file_size,
-        duration: best.duration,
+        file_size_bytes: best.file_size_bytes,
+        duration_ms: best.duration_ms,
         resolution: best.resolution,
         width: best.width,
         height: best.height,
         video_codec: best.video_codec,
-        video_bitrate: best.video_bitrate,
+        video_bitrate_kbps: best.video_bitrate_kbps,
         audio_codec: best.audio_codec,
         audio_channels: best.audio_channels,
-        audio_bitrate: best.audio_bitrate,
+        audio_bitrate_kbps: best.audio_bitrate_kbps,
         video_frame_rate: best.video_frame_rate,
         color_bit_depth: best.color_bit_depth,
         hdr_format: best.hdr_format,
         color_space: best.color_space,
         video_profile: best.video_profile,
         video_level: best.video_level,
+        dolby_vision_profile: dolbyVisionProfile,
         audio_profile: best.audio_profile,
         audio_sample_rate: best.audio_sample_rate,
         has_object_audio: best.has_object_audio,
@@ -1729,15 +1728,6 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
   // scoreVersion extracted to ProviderUtils.scoreVersion
 
-  private normalizeGroupTitle(title: string): string {
-    return title
-      .toLowerCase()
-      .trim()
-      .replace(/\s*[-:(]\s*(director'?s?\s*cut|extended|unrated|theatrical|imax|remastered|special\s*edition|ultimate\s*edition|collector'?s?\s*edition)\s*[):]?\s*$/i, '')
-      .replace(/\s*\(\s*\)\s*$/, '')
-      .trim()
-  }
-
   /**
    * Group movie items by TMDB ID (or title+year fallback) so that multiple
    * versions of the same movie (e.g. colorized vs B&W, Director's Cut vs Theatrical)
@@ -1749,21 +1739,12 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
       return items.map(item => [item])
     }
 
-    const groups = new Map<string, JellyfinMediaItem[]>()
-
-    for (const item of items) {
-      const tmdbId = item.ProviderIds?.Tmdb
-      const groupKey = tmdbId
-        ? `tmdb:${tmdbId}`
-        : `title:${this.normalizeGroupTitle(item.Name || '')}|${item.ProductionYear || ''}`
-
-      if (!groups.has(groupKey)) {
-        groups.set(groupKey, [])
-      }
-      groups.get(groupKey)!.push(item)
-    }
-
-    return Array.from(groups.values())
+    return groupByMediaIdentity(items, item => ({
+      tmdbId: item.ProviderIds?.Tmdb,
+      imdbId: item.ProviderIds?.Imdb,
+      title: item.Name,
+      year: item.ProductionYear,
+    }))
   }
 
   // NOTE: normalizeResolution, detectHdrFormat, and detectObjectAudio are now
@@ -1794,8 +1775,8 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
 
       const bitrateMap = new Map<number, number>()
       for (const track of result.audioTracks) {
-        if (track.bitrate) {
-          bitrateMap.set(track.index, track.bitrate)
+        if (track.bitrateKbps) {
+          bitrateMap.set(track.index, track.bitrateKbps)
         }
       }
 
