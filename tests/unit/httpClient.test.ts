@@ -5,9 +5,25 @@
  * This is the HTTP layer used by ALL providers and API services.
  */
 
-import { HttpError, isHttpError, buildUrl } from '../../src/main/services/utils/httpClient'
+import { HttpError, isHttpError, buildUrl, fetchJSON } from '../../src/main/services/utils/httpClient'
 
 describe('httpClient', () => {
+  it('exposes response headers while returning the JSON body', async () => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response('{"items":[]}', {
+      headers: { 'X-Plex-Container-Total-Size': '0' },
+    }))
+    try {
+      let count: string | null = null
+      const result = await fetchJSON('https://example.com', {
+        onResponse: response => { count = response.headers.get('X-Plex-Container-Total-Size') },
+      })
+      expect(count).toBe('0')
+      expect(result).toEqual({ items: [] })
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
   describe('HttpError', () => {
     it('creates error with status and data', () => {
       const err = new HttpError(404, { message: 'Not Found' }, 'Resource not found')

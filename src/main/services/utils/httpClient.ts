@@ -60,6 +60,8 @@ export async function fetchWithTimeout(
 }
 
 export interface FetchJSONOptions extends RequestInit {
+  /** Inspect response metadata before the JSON body is read. */
+  onResponse?: (response: Response) => void
   /** Query string params — appended to the URL */
   params?: Record<string, string | number | boolean | null | undefined>
   /** Request timeout in ms (default 30 000) */
@@ -80,7 +82,7 @@ export async function fetchJSON<T>(
   url: string,
   options: FetchJSONOptions = {}
 ): Promise<T> {
-  const { params, timeoutMs = 30_000, allowStatuses, ...init } = options
+  const { params, timeoutMs = 30_000, allowStatuses, onResponse, ...init } = options
   const finalUrl = buildUrl(url, params)
   const response = await fetchWithTimeout(finalUrl, init, timeoutMs)
 
@@ -94,6 +96,7 @@ export async function fetchJSON<T>(
     throw new HttpError(response.status, data, `HTTP ${response.status}: ${response.statusText}`)
   }
 
+  onResponse?.(response)
   if (response.status === 204) return null as T
   return response.json() as Promise<T>
 }

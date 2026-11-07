@@ -766,13 +766,13 @@ export class PlexProvider implements MediaProvider {
     }
 
     const url = `${this.selectedServer.uri}/library/sections/${libraryKey}/all`
-    const items = await this.paginatedPlexFetch<PlexMediaItem>(url)
+    const items = await this.paginatedPlexFetch<PlexMediaItem>(url, undefined, true)
     const ids = new Set<string>()
 
     for (const item of items) {
       if (libraryType === 'show') {
         // For TV, we need episode ratingKeys
-        const episodes = await this.getAllEpisodes(item.ratingKey)
+        const episodes = await this.getAllEpisodes(item.ratingKey, true)
         if (episodes.length === 0) throw new Error(`Incomplete Plex episode inventory for show ${item.ratingKey}`)
         for (const ep of episodes) {
           ids.add(ep.ratingKey)
@@ -860,6 +860,7 @@ export class PlexProvider implements MediaProvider {
   private async paginatedPlexFetch<T>(
     url: string,
     params?: Record<string, unknown>,
+    requireComplete?: boolean,
     batchSize = 100
   ): Promise<T[]> {
     if (!this.selectedServer) {
@@ -869,8 +870,10 @@ export class PlexProvider implements MediaProvider {
     const allItems: T[] = []
     let offset = 0
     let hasMore = true
+    let expectedTotal: number | undefined
 
     while (hasMore) {
+      let headerTotal: string | null = null
       const responseData = await fetchJSON<{ MediaContainer?: { Metadata?: T[]; totalSize?: number; size?: number } }>(
         buildUrl(url, params as Record<string, string | number | boolean | null | undefined>),
         {
@@ -881,6 +884,7 @@ export class PlexProvider implements MediaProvider {
             'X-Plex-Container-Size': String(batchSize),
           },
           timeoutMs: 30_000,
+          onResponse: response => { headerTotal = response.headers.get('X-Plex-Container-Total-Size') },
         }
       )
 
@@ -889,13 +893,26 @@ export class PlexProvider implements MediaProvider {
       const items = container.Metadata || []
       allItems.push(...items)
 
-      const totalSize = container.totalSize
+      const parsedHeader = headerTotal === null ? undefined : Number(headerTotal)
+      const totalSize = container.totalSize ?? parsedHeader
+      if (requireComplete) {
+        if ((headerTotal !== null && (!/^\d+$/.test(headerTotal) || !Number.isSafeInteger(parsedHeader))) ||
+            (totalSize !== undefined && (!Number.isSafeInteger(totalSize) || totalSize < 0)) ||
+            (container.totalSize !== undefined && parsedHeader !== undefined && container.totalSize !== parsedHeader) ||
+            (expectedTotal !== undefined && totalSize !== undefined && expectedTotal !== totalSize)) {
+          throw new Error('Invalid or inconsistent Plex inventory count')
+        }
+        expectedTotal ??= totalSize
+        if (expectedTotal === undefined) throw new Error('Cannot reconcile Plex inventory without a total count')
+        if (allItems.length > expectedTotal) throw new Error('Plex inventory exceeds its total count')
+      }
+      const effectiveTotal = requireComplete ? expectedTotal : totalSize
       if (items.length === 0) {
-        if (totalSize != null && allItems.length < totalSize) {
-          throw new Error(`Incomplete Plex inventory: received ${allItems.length} of ${totalSize} items`)
+        if (effectiveTotal != null && allItems.length < effectiveTotal) {
+          throw new Error(`Incomplete Plex inventory: received ${allItems.length} of ${effectiveTotal} items`)
         }
         hasMore = false
-      } else if (totalSize != null && allItems.length >= totalSize) {
+      } else if (effectiveTotal != null && allItems.length >= effectiveTotal) {
         hasMore = false
       } else {
         offset += items.length
@@ -943,13 +960,13 @@ export class PlexProvider implements MediaProvider {
     }
   }
 
-  async getAllEpisodes(showKey: string): Promise<PlexMediaItem[]> {
+  async getAllEpisodes(showKey: string, requireComplete?: boolean): Promise<PlexMediaItem[]> {
     if (!this.selectedServer) {
       throw new Error('No server selected')
     }
 
     const url = `${this.selectedServer.uri}/library/metadata/${showKey}/allLeaves`
-    return this.paginatedPlexFetch<PlexMediaItem>(url)
+    return this.paginatedPlexFetch<PlexMediaItem>(url, undefined, requireComplete)
   }
 
   private async getSeasonMetadata(seasonKey: string): Promise<PlexMediaItem | null> {

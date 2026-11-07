@@ -681,6 +681,51 @@ describe('PlexProvider', () => {
   // ========================================================================
 
   describe('paginatedPlexFetch', () => {
+    it('refuses reconciliation without a total count while allowing ordinary fetches', async () => {
+      const provider = createProviderWithServer()
+      mockFetchJSON.mockResolvedValueOnce({ MediaContainer: { Metadata: [makeMovieItem()] } })
+      await expect((provider as any).getPlexLibraryItemIds('lib-1', 'movie'))
+        .rejects.toThrow('without a total count')
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+
+      mockFetchJSON
+        .mockResolvedValueOnce({ MediaContainer: { Metadata: [makeMovieItem()] } })
+        .mockResolvedValueOnce({ MediaContainer: { Metadata: [] } })
+      await expect((provider as any).paginatedPlexFetch('/library/sections/1/all'))
+        .resolves.toEqual([makeMovieItem()])
+    })
+
+    it('accepts the Plex total count from response headers for reconciliation', async () => {
+      mockFetchJSON.mockImplementationOnce((_url, options) => {
+        options.onResponse({ headers: new Headers({ 'X-Plex-Container-Total-Size': '1' }) })
+        return Promise.resolve({ MediaContainer: { Metadata: [makeMovieItem()] } })
+      })
+      const provider = createProviderWithServer()
+      await expect((provider as any).getPlexLibraryItemIds('lib-1', 'movie'))
+        .resolves.toEqual(new Set([makeMovieItem().ratingKey]))
+    })
+
+    it('rejects inconsistent counts before reconciling', async () => {
+      mockFetchJSON.mockImplementationOnce((_url, options) => {
+        options.onResponse({ headers: new Headers({ 'X-Plex-Container-Total-Size': '2' }) })
+        return Promise.resolve({ MediaContainer: { Metadata: [makeMovieItem()], totalSize: 1 } })
+      })
+      const provider = createProviderWithServer()
+      await expect((provider as any).getPlexLibraryItemIds('lib-1', 'movie'))
+        .rejects.toThrow('inconsistent Plex inventory count')
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+
+    it('rejects an incomplete episode inventory before reconciling a show', async () => {
+      mockFetchJSON
+        .mockResolvedValueOnce({ MediaContainer: { Metadata: [{ ratingKey: 'show-1' }], totalSize: 1 } })
+        .mockResolvedValueOnce({ MediaContainer: { Metadata: [{ ratingKey: 'episode-1' }] } })
+      const provider = createProviderWithServer()
+      await expect((provider as any).getPlexLibraryItemIds('lib-1', 'show'))
+        .rejects.toThrow('without a total count')
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+
     it('rejects a missing Plex response container', async () => {
       mockFetchJSON.mockResolvedValueOnce({})
       const provider = createProviderWithServer()
@@ -723,6 +768,18 @@ describe('PlexProvider', () => {
   })
 
   describe('scan reconciliation failures', () => {
+    it('preserves stored media when the reconciliation inventory has no count', async () => {
+      const provider = createProviderWithServer()
+      vi.spyOn(provider as any, 'getPlexLibraryItems').mockResolvedValue([])
+      vi.spyOn(provider as any, 'getPlexLibraryType').mockResolvedValue('movie')
+      mockFetchJSON.mockResolvedValueOnce({ MediaContainer: { Metadata: [makeMovieItem()] } })
+      const result = await provider.scanLibrary('lib-1', { sinceTimestamp: new Date('2026-01-01') })
+      expect(result.success).toBe(false)
+      expect(result.errors.join(' ')).toContain('without a total count')
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+      expect(mockUpdateSourceScanTime).not.toHaveBeenCalled()
+    })
+
     it('rejects missing Plex metadata during incremental item discovery', async () => {
       const provider = createProviderWithServer()
       vi.spyOn(provider as any, 'getPlexItemMetadata').mockResolvedValue(null)
