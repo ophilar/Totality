@@ -91,7 +91,8 @@
   },
   "overrides": {
     "app-builder-lib": {
-      "minimatch": "^11.0.5"
+      "minimatch": "^11.0.5",
+      "@electron/get": "^5.1.0"
     },
     "@electron/universal": {
       "minimatch": "^11.0.5"
