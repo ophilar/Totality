@@ -4,14 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Totality is an Electron desktop application that analyzes media library quality from multiple sources (Plex, Jellyfin, Emby, Kodi, MediaMonkey) and recommends higher-quality versions. Includes tag sync (mood/genre) across sources with bidirectional write support. Built with Electron 41, React 18, TypeScript, Vite 6, and Tailwind CSS 4.
+Totality is an Electron desktop application that analyzes media library quality from multiple sources (Plex, Jellyfin, Emby, Kodi, MediaMonkey) and recommends higher-quality versions. Includes tag sync (mood/genre) across sources with bidirectional write support. Built with Electron 44, React 18, TypeScript, Vite, and Tailwind CSS. Confirm current versions in `package.json` before changing dependencies.
 
 ## Development Commands
 
 ```bash
 npm run electron:dev     # Start Vite + Electron together (recommended for development)
-npm run build            # Run tests + TypeScript compile + Vite build + Electron Builder
-npm run lint             # Run ESLint with --max-warnings 0 (warnings are errors)
+npm run build            # Generate icon, run tests/typecheck, build renderer, package via scripts/package-electron.cjs
+npm run lint             # Run oxlint with React plugin; deny warnings
+npm run typecheck        # Run TypeScript compiler in no-emit mode
 npm run preview          # Preview Vite production build
 npm run test             # Run Vitest in watch mode
 npm run test:run         # Run all tests once
@@ -21,7 +22,7 @@ npm run generate-icons   # Generate app icons from source
 npm run electron:build   # Same as `npm run build` (alias)
 ```
 
-**Note:** `postinstall` runs `electron-rebuild` automatically after `npm install` to compile native modules (better-sqlite3) for Electron's Node ABI.
+**Note:** `postinstall` runs `electron-rebuild` after dependency installation to compile native modules for Electron's Node ABI.
 
 **Single test:** `npx vitest run tests/unit/FileNameParser.test.ts` or use `-t` to filter by test name: `npx vitest run -t "parses year"`
 
@@ -29,7 +30,7 @@ DevTools open automatically in development mode (docked to bottom).
 
 **Note:** `npm run dev` and `npm run electron:dev` are equivalent—both run Vite, which automatically starts Electron via `vite-plugin-electron`.
 
-**Build Output:** `dist/` (renderer), `dist-electron/` (main + preload), `release/` (packaged apps)
+**Build Output:** `dist/` (renderer), `dist-electron/` (main + preload), and packaging artifacts managed by `scripts/package-electron.cjs`.
 
 ## Versioning & Releases
 
@@ -239,6 +240,14 @@ Two additional client-side completeness filters applied in `loadCompletenessData
 - **`exclude_empty_seasons`** (setting): strips seasons with no owned episodes from series missing lists before displaying
 - **`collection_theatrical_lag_days`** (setting): removes missing collection movies whose `release_date` is within N days of today (avoids flagging theatrical-only releases as missing)
 
+### Optimization policy and cache ownership
+
+- Canonical defaults and bounds: `src/main/config/defaults.json` exposed through `APP_CONFIG`; FFprobe scan batching and measured-sample retention are owned there. The persisted `ffprobe_batch_size` setting may override the default only within the validated range.
+- Codec and encoder policy: `src/main/services/transcoding/OptimizationCodecPolicy.ts`, `OptimizationEncoderPolicy.ts`, and `TranscodingCapabilities.ts`. Do not hard-code codec/encoder identities in call sites.
+- File evidence: `ValidatedFileAnalysisCache.ts` is bounded transient reuse; `QualityAnalyzer.ts` owns persisted evidence. Both validate the same `FileIdentity.ts` semantics.
+- Measured samples: `TranscodingService.ts` verifies reuse by content hashes; `MeasuredSampleCacheRetention.ts` evicts only eligible unreferenced cache entries. AIRA requires SSOT, no duplicate caches, and behavioral/performance evidence rather than speculative memoization.
+- Current product acceptance remains open for real local-library/NAS disconnects and representative hardware transcodes. Passing unit tests does not establish runtime acceptance.
+
 ### Quality Analysis System
 
 **Video Quality Scoring** (`src/main/services/QualityAnalyzer.ts`):
@@ -250,6 +259,8 @@ Two additional client-side completeness filters applied in `loadCompletenessData
 6. Overall score = video × weight + audio × (1 - weight), configurable via `quality_video_weight` setting (default 70%)
 7. Quality label (LOW/MEDIUM/HIGH) derived from weighted overall score (≥75=HIGH, ≥50=MEDIUM, <50=LOW)
 8. Corrupt audio track detection: tracks with bitrate < channels × 32 kbps are skipped in best-track selection
+
+**Estimated storage savings** (`QualityAnalyzer` and `OptimizationSavingsService`): one total combines modeled video savings with saved bytes from configured audio/subtitle selection policies. Lossy audio conversion contributes only when a plan explicitly selects it. Library estimates prefer H.265 when the configured default playback target supports it, otherwise AV1 when supported. Cross-codec estimates use configured codec-efficiency ratios and measured video stream bytes, or bitrate × duration when stream byte accounting is unavailable. Same-codec estimates use the configured high bitrate threshold for the resolution as the modeled output bitrate. These estimates do not establish perceptual quality. A completed encoded sample replaces the entire modeled plan total with a whole-output sample projection. Copy/quarantine retain the source; encoding and stream-copy pruning write a temporary/replacement output and require temporary free space before replacement.
 
 **Music Quality Tiers**:
 - **Ultra**: Lossless (FLAC/ALAC/WAV) with 24-bit+ OR >48kHz sample rate
@@ -322,10 +333,8 @@ When items are deleted from a source and a rescan runs, cleanup is centralized i
 
 - **`deleteMediaItem()`**: Wrapped in SQLite transaction. For episodes: recounts `owned_episodes`/`owned_seasons`, updates `missing_episodes`/`missing_seasons` JSON (adds deleted episode to missing list), backdates `updated_at` to force re-analysis. For movies: updates `movie_collections` (removes TMDB ID from `owned_movie_ids`, adds to `missing_movies` JSON). Deletes associated versions, quality_scores, collections.
 - **`deleteMusicTrack()`**: Wrapped in transaction. Removes orphaned albums (0 tracks) and artists (0 tracks). Updates album `track_count` and artist `track_count`/`album_count`. When tracks are deleted: updates `album_completeness.missing_tracks` JSON. When albums become empty: adds album to `artist_completeness.missing_albums` JSON, updates owned counts.
-- **`cleanupOrphanedMediaData()`**: Belt-and-suspenders sweep after every scan. Validates collection ownership against actual media_items, updates series_completeness counts, removes orphaned music data. Uses LEFT JOIN pattern (not NOT IN) for performance.
-- **Safety guard**: `removeStaleItems()` refuses bulk deletion when API/DB returns 0 IDs but DB has items (prevents API failure from wiping library). All providers have this guard: Plex, Jellyfin/Emby, Kodi (JSON-RPC), KodiLocal, KodiMySQL, and LocalFolder.
-- **Pre-migration backup**: Database file is copied before schema migrations run; backup deleted after success. Protects against mid-migration failures.
-- **Integrity check**: `PRAGMA integrity_check` runs on startup for existing databases.
+- **`cleanupOrphanedMediaData()`**: Belt-and-suspenders sweep after every scan. Validates collection ownership against actual media_items, updates series_completeness counts, removes orphaned music data.
+- **Safety guard**: `removeStaleItems()` refuses bulk deletion when Plex returns 0 IDs but DB has items (prevents API failure from wiping library).
 
 ### Auto-Completeness After Scans
 
@@ -339,7 +348,7 @@ After any scan (manual rescan or live monitoring) that adds, updates, or removes
 
 ### Dashboard & Library Live Refresh
 
-- **Dashboard** reloads via `loadDashboardData()` which makes ~30 parallel `Promise.allSettled` IPC calls in 3 tiers (settings → upgrades/completeness → analytics). Debounced (300ms). Triggers: `scan:completed`, `library:updated` (all types), `exclusions-changed`, `settings:changed`, `activeSourceId` change. Rejected promises are logged via `console.warn` (not silently swallowed). Loads `collection_theatrical_lag_days` setting for collection filtering. Debounce timer cleaned up on unmount.
+- **Dashboard** reloads via `loadDashboardData()` which makes ~29 parallel `Promise.allSettled` IPC calls (settings, upgrades, completeness, exclusions, bento card stats, quality distribution, wishlist counts). Debounced (300ms). Triggers: `scan:completed`, `library:updated` (all types), `exclusions-changed`, `settings:changed`, `activeSourceId` change. Bento cards (Library, Quality, Storage) rendered above the upgrade/completeness lists.
 - **Library view** (`useLibraryEventListeners`) reloads on `library:updated` events: `type: 'media'` → `loadMedia()` + `loadCompletenessData()`; `type: 'music'` → `loadMusicData()` + `loadMusicCompletenessData()`. Also reloads on `scan:completed` when items changed. Debounced (500ms).
 - **`loadMusicData()`** reloads stats, paginated artists, paginated albums, and refreshes `selectedArtist` to update track/album counts in subtitle.
 - **`sendLibraryUpdated(type)`** in TaskQueueService accepts `'media'` or `'music'` type to route refresh correctly. Music completeness tasks emit `'music'` type.
@@ -371,7 +380,7 @@ All setting keys are defined in `src/shared/settingKeys.ts` as `SETTING_KEYS` �
 
 ### AI Chat & Analysis (Gemini)
 
-**Model:** Google Gemini `gemini-2.5-flash` via `@google/genai` SDK (free tier: 10 RPM, 250 RPD)
+**Model:** Google Gemini `gemini-flash-latest` via `@google/genai` SDK. Google updates this alias to the latest Flash release.
 
 **Architecture:**
 - **GeminiService** (`src/main/services/GeminiService.ts`): Sync constructor reads API key from DB (async causes race condition). `sendMessageWithTools()` runs agentic tool-use loop (max 10 rounds).
@@ -390,40 +399,11 @@ All setting keys are defined in `src/shared/settingKeys.ts` as `SETTING_KEYS` �
 ## Code Style
 
 - No semicolons, single quotes, 2-space indent, trailing commas (es5), 100-char line width, `arrowParens: "always"`
-- TypeScript strict mode with `noUnusedLocals` and `noUnusedParameters` — prefix unused parameters with `_` (ESLint `argsIgnorePattern: '^_'`)
-- `@typescript-eslint/no-explicit-any` is `warn` — avoid `any` but it won't block builds
-- ESLint 9 flat config (`eslint.config.js`), `typescript-eslint` v8 (unified package), `@typescript-eslint/no-require-imports` and `@typescript-eslint/no-unused-expressions` are off, `caughtErrors: 'none'` on no-unused-vars
+- TypeScript strict mode with `noUnusedLocals` and `noUnusedParameters` — prefix intentionally unused parameters with `_` where supported
+- Avoid `any`; the authoritative lint rules are in `.oxlintrc.json` and the `lint` script.
+- Current lint runner is oxlint (`.oxlintrc.json`). Do not rely on historical ESLint-specific rules or commands.
 - IPC handlers validate inputs with **Zod v4** schemas (`src/main/validation/schemas.ts`) using `validateInput(schema, input, 'context')` — note Zod v4 has different APIs from v3 (e.g., `z.object()` methods differ)
 - **Zod v4 `z.record(enum, value)` gotcha**: Unlike v3, Zod v4 treats enum-keyed records as requiring ALL enum keys. For partial records (e.g., `pollingIntervals` where only some providers are configured), use `z.record(enum, value.optional())` so missing keys pass validation as `undefined`
-
-## Design System
-
-**Authority:** `docs/SKILL.md` is the single source of truth for all UI design decisions. Every component, screen, modal, panel, and flow must follow its rules. The app is ~95% SKILL.md compliant.
-
-**Font:** Plus Jakarta Sans (variable weight, 400/500/600 only — no bold/700). Declared in `index.css` with `@font-face`.
-
-**Typography Scale** (defined in `index.css` `@layer utilities`): `text-display` (48px) · `text-h1` (32px) · `text-h2` (24px) · `text-h3` (20px) · `text-title` (17px) · `text-body-lg` (17px) · `text-body` (15px) · `text-label` (14px) · `text-caption` (13px) · `text-micro` (11px). Each includes line-height and letter-spacing. **Never use** `text-xs`, `text-sm`, `text-base`, `text-lg`, `text-xl`, `text-2xl` — use the named steps above.
-
-**Radius Scale:** `rounded` (4px, chips) · `rounded-lg` (8px, controls) · `rounded-2xl` (16px, cards/modals) · `rounded-full` (pills). **Never use** `rounded-md` (6px, off-scale).
-
-**Tokens:** `src/renderer/src/styles/design-tokens.ts` exports centralized constants for TYPE, SPACE, Z, DURATION, RADIUS, BUTTON_SIZE, CONTAINER, SHADOW.
-
-**Shared Components** (`src/renderer/src/components/ui/`): Button, Card, Input, Select, Badge, Modal. Always use these instead of inline button/input/select/card styling.
-
-### Hard Rules (enforced on all new and modified UI code)
-
-1. **No hardcoded colors.** Never write hex values or bare Tailwind color classes (`text-red-500`). Use semantic tokens: `text-foreground`, `text-destructive`, `text-muted-foreground`, etc. Exception: poster overlay badges on dark image backgrounds and provider brand colors.
-2. **No uppercase.** Sentence case everywhere. Use `font-medium` or `font-semibold` for emphasis.
-3. **No old font classes.** Never use `text-xs`, `text-sm`, `text-base`, `text-lg`, `text-xl`, `text-2xl`, `text-3xl`. Use `text-caption`, `text-label`, `text-body`, `text-title`, `text-h3`, `text-h2`, `text-h1`.
-4. **No `font-bold`.** Only weights 400 (`font-normal`), 500 (`font-medium`), 600 (`font-semibold`).
-5. **No `transition-all`.** Use `transition-colors`, `transition-opacity`, or specific `transition-[property]`.
-6. **No `rounded-md`.** Use `rounded-lg` (8px) for controls or `rounded` (4px) for chips.
-7. **No decorative boxes.** No `bg-muted/30 rounded-lg p-3` inner containers. Space groups content. `<Card variant="muted">` for top-level settings sections only.
-8. **No `bg-sidebar-gradient`.** Use `bg-card` for raised surfaces.
-9. **Selection state pattern.** Selected items use `bg-foreground text-background` (not `bg-primary`).
-10. **Color carries meaning, not mood.** Amber = warning/attention, red (`text-destructive`) = failure/destructive. Success is just `text-foreground` (the check icon IS the feedback).
-11. **Hover disabled on touch.** CSS `@media (hover: none)` handles this globally. The `.hover-scale` class is wrapped in `@media (hover: hover)`.
-12. **Shared components first.** Use `<Button>`, `<Card>`, `<Input>`, `<Select>`, `<Badge>`, `<Modal>` from `ui/`.
 
 ## Important Patterns
 
@@ -596,16 +576,6 @@ Components in `src/renderer/src/components/` organized by domain: `dashboard/`, 
 
 **Collections Display**: `MoviesView.tsx` uses append-aware `displayItems` logic to prevent scroll mixing during infinite scroll pagination. When `collectionsOnly` is true, all collections render at once (no pagination). When false, new pages are appended without re-sorting existing items.
 
-**Mobile Parallax Backdrop**: TV show, season, artist, and album detail views on mobile use a parallax scroll effect. The backdrop image (3/4 width, right-justified) translates at 0.4× scroll rate via CSS custom property `--parallax-y` set by `onScroll` handler in MediaBrowser's scroll container. Backdrop height is 130% to prevent gaps during movement. No `overflow-hidden` on backdrop containers — content sections use `relative z-[1]` to paint above the backdrop.
-
-**Mobile MediaDetails Sheet**: On mobile, the detail bottom sheet uses a unified scroll container — hero image, title, stats, actions, summary, and detail content all scroll together. Hero image parallaxes at 0.3× scroll rate (`data-hero-img` + `will-change-transform`). Sticky collapsing header: title + action buttons as a single sticky unit at `top-[12px]`. Scroll-driven title scaling (movies: font-size 24px→17px) or dissolve crossfade (episodes: full→compact format). Blur scrim (`data-sticky-scrim`) with gradient mask fades in behind sticky header. Stats/summary fade out over 150px scroll (`data-fade-content`).
-
-**Desktop MediaDetails Modal**: Unified scroll layout — no header/body split. Full-modal blur wash backdrop (`blur(80px) brightness(0.3)`, extended `inset: -100px` to fill edges). Poster/thumbnail visible in header area alongside title/stats. Blur wash dissolves in via `fade-in` CSS animation. Light/dark adaptive: dark `brightness(0.3)` at 50% opacity, light `saturate(0.6)` at 35% opacity.
-
-**Desktop Detail View Backdrops**: TV show and artist detail views have a full-viewport Plex-style blur wash rendered in `App.tsx` (driven by `onBackdropChange` callback from MediaBrowser). 2s silk-smooth dissolve transition. Sidebar is translucent (`bg-card/80 backdrop-blur-xl`) so wash shows through. Backdrop clears on tab switch (`switchView` clears all selections) and Dashboard navigation. Only active on show/artist detail — not on grid/list browsing views, season detail, or album detail.
-
-**iOS Status Bar**: `index.html` uses `viewport-fit=cover` + `apple-mobile-web-app-status-bar-style: black-translucent`. HTML height set via `--app-height` CSS variable from `window.screen.height` (CSS viewport units exclude status bar safe area on iOS standalone apps). Background color `#000` (black) as fallback for any viewport gap.
-
 ## External APIs & Rate Limits
 
 - **TMDB**: 40 req/s, 24-hour in-memory cache, `append_to_response` for batch season fetches
@@ -639,22 +609,6 @@ Sensitive credentials are encrypted at rest using Electron's `safeStorage` API, 
 
 **Important:** Encrypted credentials are tied to the OS user account. Moving the database to another machine will require re-entering credentials.
 
-### Image Proxy Whitelist
-
-The web server's image proxy (`WebServerService.ts`) only allows requests to whitelisted domains (SSRF prevention):
-- Private IPs (192.168.*, 10.*, 172.16-31.*)
-- localhost/127.0.0.1
-- `*.plex.direct`
-- `image.tmdb.org`
-- `coverartarchive.org`
-- URLs with `X-Plex-Token` parameter
-
-On the renderer side (`webTransport.ts`), `needsProxy()` exempts `*.tmdb.org` and `coverartarchive.org` from proxy rewriting in Electron mode — these load directly from the browser. In web mode (mobile), ALL images are proxied through the server's 7-day disk cache for faster loading over WAN. All other image URLs are always rewritten to `/api/proxy-image?url=...`.
-
-### Custom TLS Certificates
-
-Users can provide their own TLS cert/key by placing `custom-cert.pem` and `custom-key.pem` in `%APPDATA%\totality\tls\`. These take priority over self-signed generation. Self-signed certs auto-regenerate when network IPs change (SANs mismatch detection via `crypto.X509Certificate`).
-
 ### Electron Security Settings
 
 The application follows Electron security best practices:
@@ -671,7 +625,7 @@ The application follows Electron security best practices:
 ### Database Issues
 - Schema errors: Check `runMigrations()` in `BetterSQLiteService.ts`
 - Data not persisting: better-sqlite3 writes are durable by default (WAL mode). Check if `endBatch()` was called after `startBatch()`
-- Corruption: Delete database file and restart
+- Corruption: stop writes, back up database and logs, diagnose and restore from a verified backup; never delete the database as a routine troubleshooting step
 - **NOT NULL constraint failed**: Check if upsert code uses `|| null` for columns defined as `NOT NULL DEFAULT ''` — use `|| ''` instead
 
 ### Source Deletion
@@ -690,9 +644,9 @@ When a source is deleted via `SourceManager.removeSource()` → `db.deleteMediaS
 
 ## Testing
 
-Tests are in `tests/unit/`, configured via `vitest.config.ts`. Coverage targets `src/main/**/*.ts` excluding entry point and IPC handlers.
+Tests are in `tests/`, configured via `vitest.config.mts`. Coverage targets `src/main/**/*.ts` excluding entry point and IPC handlers.
 
 - **Globals enabled**: `describe`, `it`, `expect`, `vi` are available without importing
 - **Setup file** (`tests/setup.ts`): Mocks `electron` (app, ipcMain, safeStorage) globally
-- **Database tests**: Use sql.js via `tests/helpers/testDatabase.ts` adapter that mimics better-sqlite3 API. better-sqlite3 native module can't run in Vitest (compiled for Electron's Node ABI).
+- **Database tests**: Inspect `tests/helpers/testDatabase.ts` and current test setup for the applicable isolated database contract; do not assume a legacy sql.js adapter or treat mocks as integration coverage.
 - **Timeout**: 10 seconds per test

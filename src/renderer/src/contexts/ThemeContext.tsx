@@ -37,6 +37,10 @@ function resolveThemeCSSClass(theme: BaseTheme, mode: ThemeMode, systemIsDark: b
   return effectiveMode === 'light' ? `${theme}-light` : theme
 }
 
+export function getActiveThemeClass(): string {
+  return ALL_THEME_CLASSES.find(themeClass => document.documentElement.classList.contains(themeClass)) ?? 'dark'
+}
+
 function applyThemeToDOM(cssClass: string) {
   document.documentElement.classList.remove(...ALL_THEME_CLASSES)
   document.documentElement.classList.add(cssClass)
@@ -79,7 +83,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       setThemeState(baseTheme as BaseTheme)
       setModeState(themeMode)
       setIsLoaded(true)
-    }).catch(() => {
+    }).catch(error => {
+      console.error('[ThemeContext] Failed to load theme settings:', error)
       setIsLoaded(true)
     })
   }, [])

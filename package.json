@@ -1,16 +1,21 @@
 {
   "name": "totality",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Analyze media library quality and recommend upgrades",
   "main": "dist-electron/main/index.cjs",
   "scripts": {
     "postinstall": "electron-rebuild",
     "dev": "vite",
-    "build": "vitest run && tsc && vite build && electron-builder",
+    "build": "npm run build:app",
     "lint": "oxlint --react-plugin --deny-warnings",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "electron:dev": "vite",
-    "electron:build": "vitest run && tsc && vite build && electron-builder",
+    "electron:build": "npm run build:app",
+    "build:app": "npm run generate-windows-icon && npm run test:run && npm run typecheck && npm run renderer:build && npm run package:electron",
+    "generate-windows-icon": "node scripts/generate-icons.js --windows-only",
+    "renderer:build": "vite build",
+    "package:electron": "node scripts/package-electron.cjs",
     "generate-icons": "node scripts/generate-icons.js",
     "test": "vitest",
     "test:run": "vitest run",
@@ -20,8 +25,7 @@
     "release:beta": "standard-version --prerelease beta",
     "release:patch": "standard-version --release-as patch",
     "release:minor": "standard-version --release-as minor",
-    "release:major": "standard-version --release-as major",
-    "typecheck": "tsc --noEmit"
+    "release:major": "standard-version --release-as major"
   },
   "keywords": [
     "media",
@@ -36,10 +40,6 @@
   "license": "MIT",
   "sideEffects": false,
   "dependencies": {
-    "@dnd-kit/core": "^6.3.1",
-    "@dnd-kit/modifiers": "^9.0.0",
-    "@dnd-kit/sortable": "^10.0.0",
-    "@dnd-kit/utilities": "^3.2.2",
     "@google/genai": "^2.30.0",
     "adm-zip": "^0.6.1",
     "better-sqlite3": "^13.0.3",
@@ -50,10 +50,6 @@
     "electron-updater": "^6.8.9",
     "html5-qrcode": "^2.3.8",
     "htmlparser2": "^12.0.0",
-    "lucide-react": "^1.59.0",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1",
-    "react-window": "^2.3.4",
     "selfsigned": "^5.5.0",
     "ws": "^8.22.0",
     "zod": "^4.6.7"
@@ -63,8 +59,12 @@
     "sql.js": "^1.15.0"
   },
   "devDependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/modifiers": "^9.0.0",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@sqlite.org/sqlite-wasm": "^3.53.4-build2",
     "@tailwindcss/postcss": "^4.3.3",
-    "@types/adm-zip": "^0.5.8",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
@@ -78,8 +78,14 @@
     "cssnano": "^9.9.0",
     "electron": "^44.9.0",
     "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "lucide-react": "^1.59.0",
+    "oxlint": "^1.88.0",
     "postcss": "^8.5.30",
     "prettier": "^3.9.10",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-window": "^2.3.4",
     "sharp": "^0.35.5",
     "standard-version": "^9.5.0",
     "tailwindcss": "^4.3.3",
@@ -87,18 +93,16 @@
     "vite": "^8.3.4",
     "vite-plugin-electron": "^1.1.2",
     "vite-plugin-electron-renderer": "^1.0.0",
-    "vitest": "^5.0.5",
-    "esbuild": "^0.28.2",
-    "oxlint": "^1.88.0"
+    "vitest": "^5.0.5"
   },
   "overrides": {
-    "gaxios": {
-      "glob": "^14.0.3",
-      "minimatch": "^11.0.4"
-    },
     "@electron/get": "^5.1.0",
     "tsyringe": {
       "tslib": "^2.8.1"
+    },
+    "gaxios": {
+      "glob": "^14.0.3",
+      "minimatch": "^11.0.4"
     }
   }
 }

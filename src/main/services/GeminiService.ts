@@ -1,5 +1,7 @@
+
 import { GoogleGenAI } from '@google/genai'
 import type { Content, FunctionDeclaration, GenerateContentResponse } from '@google/genai'
+import APP_CONFIG from '../config'
 import { getDatabase } from '../database/getDatabase'
 import { getLoggingService } from './LoggingService'
 
@@ -10,7 +12,7 @@ import { getLoggingService } from './LoggingService'
  * API key is read from settings (encrypted at rest via CredentialEncryptionService).
  * Rate limits are tracked from 429 responses and surfaced to the renderer.
  *
- * Free tier limits (gemini-2.5-flash): 10 RPM, 250 RPD — no credit card required.
+ * Model aliases follow Google's latest Flash release.
  */
 
 export interface GeminiMessage {
@@ -50,12 +52,10 @@ export class RateLimitError extends Error {
 }
 
 export class GeminiService {
-  private static readonly DEFAULT_MODEL = 'gemini-2.5-flash'
-  private static readonly FAST_MODEL = 'gemini-2.5-flash'
+  private static readonly DEFAULT_MODEL = APP_CONFIG.gemini.defaultModel
 
   private client: GoogleGenAI | null = null
   private apiKey: string | null = null
-  private model: string = GeminiService.DEFAULT_MODEL
   private enabled: boolean = true
   private rateLimitedUntil: number | null = null
   private static readonly MAX_EXPLANATION_CACHE = 20
@@ -64,7 +64,6 @@ export class GeminiService {
   constructor() {
     const db = getDatabase()
     this.apiKey = db.getSetting('gemini_api_key') || null
-    this.model = db.getSetting('gemini_model') || GeminiService.DEFAULT_MODEL
     this.enabled = db.getSetting('ai_enabled') !== 'false'
 
     if (this.apiKey && this.enabled) {
@@ -73,12 +72,11 @@ export class GeminiService {
   }
 
   /**
-   * Refresh API key, model, and enabled state from database (called when settings change)
+   * Refresh API key and enabled state from database (called when settings change)
    */
   refreshApiKey(): void {
     const db = getDatabase()
     this.apiKey = db.getSetting('gemini_api_key') || null
-    this.model = db.getSetting('gemini_model') || GeminiService.DEFAULT_MODEL
     this.enabled = db.getSetting('ai_enabled') !== 'false'
 
     if (this.apiKey && this.enabled) {
@@ -225,11 +223,11 @@ export class GeminiService {
   }): Promise<{ text: string; usage: { input_tokens: number; output_tokens: number } }> {
     this.checkRateLimit()
     const client = this.getClient()
-    getLoggingService().verbose('[GeminiService]', `sendMessage: ${params.messages.length} messages, model=${this.model}`)
+    getLoggingService().verbose('[GeminiService]', `sendMessage: ${params.messages.length} messages, model=${GeminiService.DEFAULT_MODEL}`)
 
     try {
       const response = await client.models.generateContent({
-        model: this.model,
+        model: GeminiService.DEFAULT_MODEL,
         contents: this.toGeminiContents(params.messages),
         config: {
           maxOutputTokens: params.maxTokens || 4096,
@@ -277,7 +275,7 @@ export class GeminiService {
       let response: GenerateContentResponse
       try {
         response = await client.models.generateContent({
-          model: this.model,
+          model: GeminiService.DEFAULT_MODEL,
           contents,
           config: {
             maxOutputTokens: params.maxTokens || 4096,
@@ -384,7 +382,7 @@ export class GeminiService {
 
     try {
       const stream = await client.models.generateContentStream({
-        model: this.model,
+        model: GeminiService.DEFAULT_MODEL,
         contents: this.toGeminiContents(params.messages),
         config: {
           maxOutputTokens: params.maxTokens || 4096,
@@ -426,7 +424,8 @@ export class GeminiService {
     year: number | undefined,
     candidates: Array<{ id: number; title: string; year?: number; overview?: string }>,
   ): Promise<number> {
-    if (!this.isConfigured() || candidates.length <= 1) return 0
+    if (candidates.length <= 1) return 0
+    if (!this.isConfigured()) return -1
 
     try {
       this.checkRateLimit()
@@ -437,7 +436,7 @@ export class GeminiService {
       ).join('\n')
 
       const response = await client.models.generateContent({
-        model: GeminiService.FAST_MODEL,
+        model: GeminiService.DEFAULT_MODEL,
         contents: `A media file named "${filename}"${year ? ` (year: ${year})` : ''} matched multiple TMDB results. Which is the best match? Reply with ONLY the number.\n\n${candidateList}`,
         config: {
           maxOutputTokens: 20,
@@ -447,10 +446,10 @@ export class GeminiService {
       const text = (response.text || '').trim()
       const num = parseInt(text, 10)
       if (num >= 1 && num <= candidates.length) return num - 1
-      return 0
-    } catch {
-      // On any error (rate limit, etc.), fall back to first result
-      return 0
+      return -1
+    } catch (error) {
+      console.warn('[GeminiService] Title disambiguation failed:', error)
+      return -1
     }
   }
 
@@ -493,7 +492,7 @@ export class GeminiService {
 
     try {
       const response = await client.models.generateContent({
-        model: GeminiService.FAST_MODEL,
+        model: GeminiService.DEFAULT_MODEL,
         contents: `Briefly explain the quality of "${params.title}" in 2-3 sentences. Specs: ${details}. Focus on what's good/bad and if an upgrade would be worthwhile.`,
         config: {
           maxOutputTokens: 200,
@@ -521,7 +520,7 @@ export class GeminiService {
       const testClient = new GoogleGenAI({ apiKey })
 
       await testClient.models.generateContent({
-        model: GeminiService.FAST_MODEL,
+        model: GeminiService.DEFAULT_MODEL,
         contents: 'Hi',
         config: {
           maxOutputTokens: 10,

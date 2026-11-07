@@ -1,3 +1,4 @@
+
 import { getErrorMessage } from './utils/errorUtils'
 /**
  * KodiLocalDiscoveryService
@@ -11,7 +12,7 @@ import { getErrorMessage } from './utils/errorUtils'
  */
 
 import * as fs from 'fs'
-import * as path from 'path'
+import * as path from 'node:path'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 
@@ -118,26 +119,23 @@ export class KodiLocalDiscoveryService {
         // Windows: use tasklist
         const { stdout } = await execAsync('tasklist /FI "IMAGENAME eq kodi.exe" /NH')
         return stdout.toLowerCase().includes('kodi.exe')
-      } else if (platform === 'darwin') {
-        // macOS: use pgrep
-        try {
-          await execAsync('pgrep -x Kodi')
-          return true
-        } catch {
-          return false
-        }
       } else {
-        // Linux: use pgrep
-        try {
-          await execAsync('pgrep -x kodi')
-          return true
-        } catch {
-          return false
-        }
+        const processName = platform === 'darwin' ? 'Kodi' : 'kodi'
+        return await this.isProcessRunning(`pgrep -x ${processName}`)
       }
-    } catch {
-      // If command fails, assume Kodi is not running
+    } catch (error) {
+      console.debug('[KodiLocalDiscovery] Could not detect running Kodi process:', error)
       return false
+    }
+  }
+
+  private async isProcessRunning(command: string): Promise<boolean> {
+    try {
+      await execAsync(command)
+      return true
+    } catch (error) {
+      if ((error as { code?: string | number }).code === 1) return false
+      throw error
     }
   }
 
@@ -150,7 +148,8 @@ export class KodiLocalDiscoveryService {
       const fd = fs.openSync(dbPath, 'r')
       fs.closeSync(fd)
       return true
-    } catch {
+    } catch (error) {
+      console.debug(`[KodiLocalDiscovery] Database file is not readable: ${dbPath}`, error)
       return false
     }
   }

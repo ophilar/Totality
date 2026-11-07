@@ -1,13 +1,5 @@
-/**
- * Typed database interface — both BetterSQLiteService and DatabaseService must implement this.
- *
- * Replaces the `[key: string]: any` catch-all in DatabaseFactory.ts.
- * TypeScript will now catch method signature mismatches at compile time.
- *
- * Write operations use `void | Promise<void>` because BetterSQLiteService is synchronous
- * while DatabaseService (SQL.js) wraps writes in async save() calls. Callers should
- * always `await` write operations to be safe with both backends.
- */
+import type { PlaybackTargetProfileRepository } from './repositories/PlaybackTargetProfileRepository'
+import type { MediaRemuxJobRepository } from './repositories/MediaRemuxJobRepository'
 
 import type {
   MediaItem, MediaItemVersion, MediaSource,
@@ -23,6 +15,8 @@ import type {
 } from '../types/monitoring'
 
 export interface DatabaseServiceInterface {
+  readonly playbackTargetProfiles: PlaybackTargetProfileRepository
+  readonly mediaRemuxJobs: MediaRemuxJobRepository
   // --- Lifecycle ---
   isInitialized: boolean
   initialize(): Promise<void> | void
@@ -46,7 +40,7 @@ export interface DatabaseServiceInterface {
 
   // --- Media Items ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getMediaItems(filters?: any): any[]
+  getMediaItems(filters?: any, projection?: 'card'): any[]
   getMediaItem(id: number): MediaItem | null
   getMediaItemByPath(filePath: string): MediaItem | null
   getMediaItemByProviderId(providerId: string, sourceId?: string): MediaItem | null
@@ -77,7 +71,6 @@ export interface DatabaseServiceInterface {
   getQualityScore(mediaItemId: number): QualityScore | null
   getQualityScoreByMediaId(mediaItemId: number): QualityScore | null
   getQualityScores(): QualityScore[]
-  getQualityDistribution(): Record<string, unknown>
 
   // --- Media Sources ---
   getMediaSources(type?: string): MediaSource[]
@@ -98,7 +91,7 @@ export interface DatabaseServiceInterface {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getSourceLibraries(sourceId: string): any[]
   toggleLibrary(sourceId: string, libraryId: string, enabled: boolean): void | Promise<void>
-  setLibraryEnabled(sourceId: string, libraryId: string, enabled: boolean): void | Promise<void>
+  setLibraryEnabled(sourceId: string, libraryId: string, libraryName: string, libraryType: string, enabled: boolean): void | Promise<void>
   setLibrariesEnabled(sourceId: string, libraries: Array<{ id: string; name: string; type: string; enabled: boolean }>): void | Promise<void>
   setLibraryUpgradeTier(sourceId: string, libraryId: string, minTier: string | null): void | Promise<void>
   getEnabledLibraryIds(sourceId: string): string[]
@@ -115,13 +108,12 @@ export interface DatabaseServiceInterface {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getRecentlyAdded(days?: number, limit?: number): any[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getRecentlyUpgraded(days?: number): any[]
+  getRecentlyUpgraded(days?: number, sourceId?: string): any[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getRecentlyUpgradedMusic(days?: number): any[]
+  getRecentlyUpgradedMusic(days?: number, sourceId?: string): any[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getAggregatedSourceStats(): any
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getQualityDistribution(): any
 
   // --- TV Shows ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -130,15 +122,13 @@ export interface DatabaseServiceInterface {
   countTVShows(filters?: any): number
   countTVEpisodes(filters?: TVShowFilters): number
   getLetterOffset(schema: string, letter: string, filters?: Record<string, unknown>): number
-  getEpisodesForSeries(seriesTitle: string, sourceId?: string, libraryId?: string): MediaItem[]
-  getEpisodeCountBySeriesTmdbId(tmdbId: string | number): number
+  getEpisodeCountBySeriesTmdbId(tmdbId: string, seasonNumber?: number): number
 
   // --- Series Completeness ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   upsertSeriesCompleteness(data: any): number | Promise<number>
   getSeriesCompleteness(sourceId?: string): SeriesCompleteness[]
   getAllSeriesCompleteness(sourceId?: string, libraryId?: string): SeriesCompleteness[]
-  getSeriesCompletenessByTitle(seriesTitle: string, sourceId?: string, libraryId?: string): SeriesCompleteness | null
   getIncompleteSeries(sourceId?: string): SeriesCompleteness[]
   deleteSeriesCompleteness(id: number): boolean | Promise<boolean>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -147,7 +137,7 @@ export interface DatabaseServiceInterface {
 
   // --- Movie Collections ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  upsertMovieCollection(data: any): void | Promise<void>
+  upsertMovieCollection(data: any): number | Promise<number>
   getMovieCollections(sourceId?: string): MovieCollection[]
   getMovieCollectionByTmdbId(tmdbCollectionId: string): MovieCollection | null
   getIncompleteMovieCollections(sourceId?: string): MovieCollection[]
@@ -240,7 +230,6 @@ export interface DatabaseServiceInterface {
   getNotifications(options: any): Notification[]
   getUnreadNotifications(): Notification[]
   getNotificationCount(): NotificationCountResult
-  markNotificationRead(id: number): void | Promise<void>
   markNotificationsRead(ids: number[]): void | Promise<void>
   markAllNotificationsRead(): void | Promise<void>
   deleteNotifications(ids: number[]): void | Promise<void>
@@ -270,19 +259,19 @@ export interface DatabaseServiceInterface {
   clearPendingTasks(): void
 
   // --- Person Completeness ---
-  upsertPersonCompleteness(data: Record<string, unknown>): void | Promise<void>
+  upsertPersonCompleteness(data: Record<string, unknown>): number | Promise<number>
   getPersonCompleteness(personType?: string): Array<Record<string, unknown>>
   deletePersonCompleteness(id: number): void | Promise<void>
 
   // --- Metadata Matching ---
-  updateSeriesMatch(seriesTitle: string, newTmdbId: string, sourceId: string, newTitle?: string, posterUrl?: string): void | Promise<void>
-  updateMovieMatch(mediaItemId: number, tmdbId: string, posterUrl?: string, title?: string, year?: number): void | Promise<void>
+  updateSeriesMatch(seriesIdentityKey: string, sourceId: string, libraryId: string | null | undefined, tmdbId: string, posterUrl?: string, newSeriesTitle?: string, originalLanguage?: string): number | Promise<number>
+  updateMovieMatch(mediaItemId: number, tmdbId: string, posterUrl?: string, title?: string, year?: number, originalLanguage?: string): void | Promise<void>
   updateArtistMatch(artistId: number, musicbrainzId: string): void | Promise<void>
   updateAlbumMatch(albumId: number, musicbrainzReleaseGroupId: string): void | Promise<void>
 
   // --- Data Export/Import ---
   exportData(): Record<string, unknown[]>
-  exportWorkingCSV(options: Record<string, boolean>): string
+  exportWorkingCSV(options: { includeUpgrades: boolean; includeMissingMovies: boolean; includeMissingEpisodes: boolean; includeMissingAlbums: boolean; includeMusicUpgrades?: boolean }): string
   importData(data: Record<string, unknown[]>): { imported: number; errors: string[] }
 
   // --- Database Management ---
@@ -298,7 +287,6 @@ export interface DatabaseServiceInterface {
   syncAlbumCompletenessAfterScan(sourceId: string): number
   getEpisodeCountForSeason(seriesTmdbId: string, seasonNumber: number): number
   getEpisodeCountForSeasonEpisode(seriesTmdbId: string, seasonNumber: number, episodeNumber: number): number
-  getEpisodeCountForSeries(seriesTitle: string): number
   getSeriesCompletenessByTmdbId?(tmdbId: string): { owned_episodes: number } | null
   getMusicAlbumsByMusicbrainzIds(ids: string[]): Map<string, MusicAlbum>
   getQualityScoresByMediaItemIds(ids: number[]): Map<number, QualityScore>

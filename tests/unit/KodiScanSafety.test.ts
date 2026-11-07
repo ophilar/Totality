@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockGetMediaItems = vi.hoisted(() => vi.fn(() => [{ id: 1, plex_id: 'stored-1' }]))
 const mockDeleteMediaItem = vi.hoisted(() => vi.fn())
@@ -26,6 +26,7 @@ vi.mock('../../src/main/services/QualityAnalyzer', () => ({
 import { KodiProvider } from '@main/providers/kodi/KodiProvider'
 import { KodiLocalProvider } from '@main/providers/kodi/KodiLocalProvider'
 import { KodiMySQLProvider } from '@main/providers/kodi/KodiMySQLProvider'
+import { MediaConverter } from '@main/services/MediaConverter'
 
 const providers = [
   ['Kodi JSON-RPC', () => new KodiProvider({ sourceId: 'kodi-test', connectionConfig: {} })],
@@ -34,6 +35,8 @@ const providers = [
 ] as const
 
 describe('Kodi inventory safety', () => {
+  afterEach(() => vi.restoreAllMocks())
+
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetMediaItems.mockReturnValue([{ id: 1, plex_id: 'stored-1' }])
@@ -74,7 +77,7 @@ describe('Kodi inventory safety', () => {
     it(`${name}: never deletes media after conversion failure`, async () => {
       const provider = create()
       vi.spyOn(provider, 'getMovies').mockResolvedValue([{ itemId: 'new-1', title: 'Bad Movie' }] as never)
-      vi.spyOn(provider as never, 'convertMetadataToVersion' as never).mockImplementation(() => {
+      vi.spyOn(MediaConverter, 'toMediaItemVersion').mockImplementation(() => {
         throw new Error('Conversion failed')
       })
       const result = await provider.scanLibrary('movies')

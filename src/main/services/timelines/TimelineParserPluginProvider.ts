@@ -4,6 +4,7 @@ import { parseDocument } from 'htmlparser2'
 import type { AnyNode, Document, Element } from 'domhandler'
 import { removeElement, textContent } from 'domutils'
 import { getDatabase } from '../../database/getDatabase'
+import { getLoggingService } from '../LoggingService'
 import { fetchWithTimeout } from '../utils/httpClient'
 import { validateTimelineDefinition } from './TimelineValidation'
 import type { ITimelineRecipeProvider, TimelineDefinition, TimelineItem, TimelineRecipeSummary, TimelineFetchOptions } from './ITimelineRecipeProvider'
@@ -75,7 +76,7 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
       }
       stage = 'reading response body'
       const responseBody = await response.text()
-      console.debug('[TimelineParser]', `Source response: recipe=${selected.plugin.id}:${selected.order.id}, status=${response.status}, contentType=${response.headers.get('content-type') ?? 'missing'}, bodyCharacters=${responseBody.length}`)
+      getLoggingService().debug('[TimelineParser]', `Source response: recipe=${selected.plugin.id}:${selected.order.id}, status=${response.status}, contentType=${response.headers.get('content-type') ?? 'missing'}, bodyCharacters=${responseBody.length}`)
       stage = 'extracting source HTML'
       const html = selected.plugin.responseHtmlPath
         ? this.readResponsePath(JSON.parse(responseBody), selected.plugin.responseHtmlPath, selected.plugin.id)
@@ -105,7 +106,7 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
       if (rows.length === 0) throw new Error(`Parser '${selected.plugin.id}' found no timeline items.`)
       stage = 'caching parsed timeline'
       await this.cacheService.setRecipe(definition.id, definition)
-      console.debug('[TimelineParser]', `Source parsed: recipe=${definition.id}, itemCount=${rows.length}, order=${selected.order.id}`)
+      getLoggingService().debug('[TimelineParser]', `Source parsed: recipe=${definition.id}, itemCount=${rows.length}, order=${selected.order.id}`)
       return validation.value
     } catch (error) {
       if (options.signal?.aborted) throw error

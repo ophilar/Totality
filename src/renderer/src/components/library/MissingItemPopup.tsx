@@ -2,11 +2,7 @@ import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { X, EyeOff, Copy, Check } from 'lucide-react'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
-
-// Helper function to format season label (Season 0 = Specials)
-const formatSeasonLabel = (seasonNumber: number): string => {
-  return seasonNumber === 0 ? 'Specials' : `Season ${seasonNumber}`
-}
+import { formatSeasonLabel } from './mediaUtils'
 
 interface SeasonDetails {
   overview: string | null
@@ -46,18 +42,21 @@ export function MissingItemPopup({
 }: MissingItemPopupProps) {
   const [seasonDetails, setSeasonDetails] = useState<SeasonDetails | null>(null)
   const [movieOverview, setMovieOverview] = useState<string | null>(null)
+  const [detailsError, setDetailsError] = useState<string | null>(null)
+  const [copyError, setCopyError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   // Fetch details from TMDB when popup opens
   useEffect(() => {
+    setDetailsError(null)
     if (type === 'season' && tmdbId && seasonNumber !== undefined) {
       window.electronAPI.seriesGetSeasonDetails(tmdbId, seasonNumber)
         .then(details => { if (details) setSeasonDetails(details) })
-        .catch(() => { /* ignore */ })
+        .catch(error => setDetailsError(error instanceof Error ? error.message : String(error)))
     } else if (type === 'movie' && tmdbId) {
       window.electronAPI.tmdbGetMovieDetails(tmdbId)
         .then(details => { if (details?.overview) setMovieOverview(details.overview) })
-        .catch(() => { /* ignore */ })
+        .catch(error => setDetailsError(error instanceof Error ? error.message : String(error)))
     }
   }, [type, tmdbId, seasonNumber])
 
@@ -82,9 +81,7 @@ export function MissingItemPopup({
   }
   const displayAirDate = seasonDetails?.airDate || airDate
   if (displayAirDate) {
-    try {
-      infoItems.push(new Date(displayAirDate).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }))
-    } catch { /* ignore */ }
+    infoItems.push(new Date(displayAirDate).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }))
   }
 
   return createPortal(
@@ -98,8 +95,8 @@ export function MissingItemPopup({
       {/* Popup */}
       <div className="relative bg-card border border-border rounded-xl shadow-xl max-w-sm w-full overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border/30 bg-card rounded-t-xl">
-          <span className="text-label font-medium capitalize">{type}</span>
+        <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
+          <span className="text-sm font-medium capitalize">{type}</span>
           <div className="flex items-center gap-1">
             <AddToWishlistButton
               mediaType={type}
@@ -135,7 +132,7 @@ export function MissingItemPopup({
         <div className="p-4 flex gap-4">
           {/* Poster — fixed size, not squeezed */}
           <div className="w-28 shrink-0">
-            <div className="aspect-2/3 bg-muted rounded-lg overflow-hidden shadow-lg shadow-black/30">
+            <div className="aspect-2/3 bg-muted rounded-md overflow-hidden shadow-lg shadow-black/30">
               {posterUrl ? (
                 <img
                   src={posterUrl}
@@ -158,7 +155,7 @@ export function MissingItemPopup({
             <div className="flex items-center gap-1.5 min-w-0">
               {tmdbId ? (
                 <h3
-                  className="font-semibold text-lg truncate text-foreground hover:underline cursor-pointer"
+                  className="font-semibold text-lg truncate text-primary hover:underline cursor-pointer"
                   onClick={() => window.electronAPI.openExternal(`https://www.themoviedb.org/${type === 'movie' ? 'movie' : 'tv'}/${tmdbId}`)}
                   title="Open on TMDb"
                 >
@@ -168,28 +165,35 @@ export function MissingItemPopup({
                 <h3 className="font-semibold text-lg truncate">{title}</h3>
               )}
               <button
-                onClick={(e) => {
+                onClick={async (e) => {
                   e.stopPropagation()
-                  navigator.clipboard.writeText(title)
-                  setCopied(true)
-                  setTimeout(() => setCopied(false), 1500)
+                  setCopyError(null)
+                  try {
+                    await navigator.clipboard.writeText(title)
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 1500)
+                  } catch (error) {
+                    setCopyError(error instanceof Error ? error.message : String(error))
+                  }
                 }}
                 className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
                 title="Copy title"
               >
-                {copied ? <Check className="w-3.5 h-3.5 text-foreground" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
+              {copyError && <span role="alert" className="ml-2 text-xs text-destructive">Could not copy title: {copyError}</span>}
             </div>
             {subtitle && (
-              <p className="text-label text-muted-foreground mt-0.5">{subtitle}</p>
+              <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>
             )}
             {infoItems.length > 0 && (
-              <p className="text-caption text-muted-foreground mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 {infoItems.join(' · ')}
               </p>
             )}
+            {detailsError && <p role="alert" className="mt-2 text-xs text-destructive">Details could not be loaded: {detailsError}</p>}
             {(seasonDetails?.overview || movieOverview) && (
-              <p className="text-caption text-muted-foreground mt-2 max-h-24 overflow-y-auto leading-relaxed">
+              <p className="text-xs text-muted-foreground mt-2 max-h-24 overflow-y-auto leading-relaxed">
                 {seasonDetails?.overview || movieOverview}
               </p>
             )}

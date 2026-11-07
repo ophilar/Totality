@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Bot, X, Send, Trash2, AlertCircle, Settings } from 'lucide-react'
 import { useChat, type ViewContext } from '../../hooks/useChat'
 import { ChatMessage } from './ChatMessage'
-import { Button } from '../ui/Button'
 
 interface ChatPanelProps {
   isOpen: boolean
@@ -15,25 +14,35 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
   const { messages, isLoading, activeTools, rateLimit, error, sendMessage, clearHistory } = useChat(viewContext)
   const [input, setInput] = useState('')
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null)
+  const [configurationError, setConfigurationError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  // Check if AI is configured
-  useEffect(() => {
-    if (isOpen) {
-      window.electronAPI.aiIsConfigured().then(setIsConfigured).catch(() => setIsConfigured(false))
+  const checkAIConfiguration = useCallback(async () => {
+    try {
+      setIsConfigured(await window.electronAPI.aiIsConfigured())
+      setConfigurationError(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('[ChatPanel] Failed to check AI configuration:', error)
+      setConfigurationError(message)
+      setIsConfigured(null)
     }
-  }, [isOpen])
+  }, [])
+
+  useEffect(() => {
+    if (isOpen) void checkAIConfiguration()
+  }, [isOpen, checkAIConfiguration])
 
   // Listen for settings changes to re-check configuration
   useEffect(() => {
     const cleanup = window.electronAPI.onSettingsChanged((data) => {
       if (data.key === 'gemini_api_key' || data.key === 'ai_enabled') {
-        window.electronAPI.aiIsConfigured().then(setIsConfigured).catch(() => setIsConfigured(false))
+        void checkAIConfiguration()
       }
     })
     return cleanup
-  }, [])
+  }, [checkAIConfiguration])
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -102,7 +111,7 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
       onClick={onClose}
     />
     <aside
-      className={`fixed top-[76px] bottom-4 right-4 w-80 bg-card rounded-2xl shadow-xl border border-border z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
+      className={`fixed top-[76px] bottom-4 left-4 sm:left-auto right-4 w-auto sm:w-80 max-w-[calc(100vw-2rem)] bg-sidebar-gradient rounded-2xl shadow-xl z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
         isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
       role="complementary"
@@ -112,57 +121,69 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
       <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
         <div className="flex items-center gap-2">
           <Bot className="w-4 h-4 text-muted-foreground" />
-          <h2 className="text-label font-semibold">AI Assistant</h2>
+          <h2 className="text-sm font-semibold">AI Assistant</h2>
         </div>
         <div className="flex items-center gap-1">
           {messages.length > 0 && (
-            <Button
-              variant="tertiary"
-              size="icon-sm"
+            <button
               onClick={clearHistory}
-              icon={<Trash2 className="w-3.5 h-3.5" />}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 focus:outline-hidden focus:ring-2 focus:ring-primary transition-colors"
               title="Clear chat history"
-            />
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
           )}
-          <Button
-            variant="tertiary"
-            size="icon-sm"
+          <button
             onClick={onClose}
-            icon={<X className="w-3.5 h-3.5" />}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 focus:outline-hidden focus:ring-2 focus:ring-primary transition-colors"
             title="Close chat"
-          />
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 
       {/* Not configured state */}
-      {isConfigured === false && (
+      {configurationError && (
+        <div role="alert" className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+          <AlertCircle className="w-8 h-8 text-destructive mb-3" />
+          <p className="text-sm font-medium mb-1">Could not check AI configuration</p>
+          <p className="text-xs text-muted-foreground mb-4">{configurationError}</p>
+          <button
+            onClick={() => void checkAIConfiguration()}
+            className="px-3 py-2 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+      {isConfigured === false && !configurationError && (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
           <Bot className="w-8 h-8 text-muted-foreground mb-3" />
-          <p className="text-label font-medium mb-1">Gemini AI not configured</p>
-          <p className="text-caption text-muted-foreground mb-4">
+          <p className="text-sm font-medium mb-1">Gemini AI not configured</p>
+          <p className="text-xs text-muted-foreground mb-4">
             Get a free Gemini API key from Google AI Studio in Settings &gt; Services.
           </p>
           {onOpenSettings && (
-            <Button
-              variant="primary"
-              size="sm"
+            <button
               onClick={onOpenSettings}
-              icon={<Settings className="w-3.5 h-3.5" />}
+              className="flex items-center gap-2 px-3 py-2 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
             >
-              Open settings
-            </Button>
+              <Settings className="w-3.5 h-3.5" />
+              Open Settings
+            </button>
           )}
         </div>
       )}
 
       {/* Messages area */}
-      {isConfigured !== false && (
+      {isConfigured !== false && !configurationError && (
         <>
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
             {messages.length === 0 && !isLoading && (
               <div className="flex flex-col items-center justify-center h-full text-center px-4">
                 <Bot className="w-8 h-8 text-muted-foreground mb-3" />
-                <p className="text-caption text-muted-foreground mb-3">
+                <p className="text-xs text-muted-foreground mb-3">
                   Ask me about your media library
                 </p>
                 <div className="space-y-1.5 w-full">
@@ -173,12 +194,15 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
                         setInput(suggestion)
                         setTimeout(() => inputRef.current?.focus(), 0)
                       }}
-                      className="w-full text-left px-3 py-2 text-caption rounded-lg transition-colors text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                      className="w-full text-left px-3 py-2 text-xs bg-muted/30 hover:bg-muted/50 rounded-lg transition-colors text-muted-foreground hover:text-foreground"
                     >
                       {suggestion}
                     </button>
                   ))}
                 </div>
+                <p className="text-[10px] text-muted-foreground/50 mt-4">
+                  Messages are processed by Google Gemini using your API key. Chat history is not saved to disk.
+                </p>
               </div>
             )}
 
@@ -195,9 +219,11 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
 
           {/* Error display */}
           {error && (
-            <div className="px-3 pb-2 flex items-center gap-2 text-caption text-destructive">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">{error}</span>
+            <div className="px-3 pb-2">
+              <div className="flex items-center gap-2 px-3 py-2 text-xs bg-destructive/10 text-destructive rounded-lg">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{error}</span>
+              </div>
             </div>
           )}
 
@@ -213,7 +239,7 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
                 placeholder="Ask about your library..."
                 disabled={isLoading || rateLimit.limited}
                 rows={1}
-                className="flex-1 px-3 py-2 bg-background border border-border/30 rounded-lg text-label resize-none focus:outline-hidden focus:ring-2 focus:ring-primary disabled:opacity-50 min-h-[36px] max-h-[100px]"
+                className="flex-1 px-3 py-2 bg-background border border-border/30 rounded-lg text-sm resize-none focus:outline-hidden focus:ring-2 focus:ring-primary disabled:opacity-50 min-h-[36px] max-h-[100px]"
                 style={{ height: 'auto' }}
                 onInput={(e) => {
                   const target = e.target as HTMLTextAreaElement
@@ -221,15 +247,14 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: Chat
                   target.style.height = Math.min(target.scrollHeight, 100) + 'px'
                 }}
               />
-              <Button
-                variant="primary"
-                size="icon-sm"
+              <button
                 onClick={handleSubmit}
                 disabled={!input.trim() || isLoading || rateLimit.limited}
-                icon={<Send className="w-4 h-4" />}
+                className="shrink-0 p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
                 title="Send message"
-                className="shrink-0"
-              />
+              >
+                <Send className="w-4 h-4" />
+              </button>
             </div>
           </div>
         </>
