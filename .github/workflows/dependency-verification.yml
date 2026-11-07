@@ -1,0 +1,68 @@
+name: Validation
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Tests, types, lint, and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run test:run
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npx vite build
+      - name: Check out upstream 0.4.2 database schema
+        uses: actions/checkout@v5
+        with:
+          repository: bbidwell85/Totality
+          ref: v0.4.2
+          path: legacy
+      - name: Verify real SQLite migrations and filesystem reconciliation
+        run: |
+          npm rebuild better-sqlite3 --build-from-source
+          npx vitest run --config vitest.upgrade.config.ts
+
+  certify:
+    name: Release certification (${{ matrix.os }})
+    if: github.event_name == 'workflow_dispatch'
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15-intel, windows-2025]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Audit production dependencies
+        if: runner.os == 'Linux'
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: Build application
+        run: npx vite build
+      - name: Package application
+        run: npx electron-builder --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
