@@ -113,6 +113,7 @@ export interface AudioTrack {
   title?: string
   profile?: string
   sampleRate?: number
+  streamIndex?: number
   isDefault?: boolean
   hasObjectAudio?: boolean
 }
