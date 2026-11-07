@@ -2,7 +2,6 @@ name: Dependency verification
 
 on:
   pull_request:
-    branches: [master, fixes, timelines, optimization, '0.7', '0.9']
     paths:
       - 'package.json'
       - 'package-lock.json'
