@@ -56,7 +56,7 @@ export class JellyfinDiscoveryService {
 
               console.log(`[JellyfinDiscovery] Found server: ${response.Name} at ${response.Address || rinfo.address}`)
             }
-          } catch (e) {
+          } catch {
             // Ignore invalid responses
             console.debug('[JellyfinDiscovery] Invalid response:', msg.toString().substring(0, 100))
           }
@@ -79,7 +79,7 @@ export class JellyfinDiscoveryService {
             for (const addr of broadcastAddresses) {
               try {
                 socket!.send(message, 0, message.length, DISCOVERY_PORT, addr)
-              } catch (e) {
+              } catch {
                 // Ignore errors for specific addresses
               }
             }
@@ -94,7 +94,7 @@ export class JellyfinDiscoveryService {
         setTimeout(() => {
           try {
             socket?.close()
-          } catch (e) {
+          } catch {
             // Ignore close errors
           }
           console.log(`[JellyfinDiscovery] Discovery complete, found ${servers.length} server(s)`)

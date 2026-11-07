@@ -337,7 +337,7 @@ export class QualityAnalyzer {
         bitrate: bestTrack.bitrate || fallback.bitrate,
         hasObjectAudio: bestTrack.hasObjectAudio || false,
       }
-    } catch (e) {
+    } catch {
       // JSON parse failed, return fallback
       return fallback
     }

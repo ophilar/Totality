@@ -273,7 +273,7 @@ export class MusicBrainzService extends CancellableOperation {
       // If we only found vinyl releases, exclude this release group
       console.log(`[MusicBrainzService] Excluding vinyl-only release group: ${releaseGroupId}`)
       return false
-    } catch (error) {
+    } catch {
       // On error, include the release group (don't exclude based on failed API call)
       console.warn(`[MusicBrainzService] Failed to check format for ${releaseGroupId}, including by default`)
       return true
@@ -954,7 +954,7 @@ export class MusicBrainzService extends CancellableOperation {
           try {
             await db.updateMusicArtistMbid(artist.id, completeness.foundMbId)
             console.log(`[MusicBrainzService] Cached MBID for artist "${artist.name}": ${completeness.foundMbId}`)
-          } catch (e) {
+          } catch {
             // Silently ignore - method may not exist yet
           }
         }
@@ -1025,7 +1025,7 @@ export class MusicBrainzService extends CancellableOperation {
             try {
               await db.updateMusicAlbumMbid(album.id, completeness.foundMbId)
               console.log(`[MusicBrainzService] Cached MBID for album "${album.title}": ${completeness.foundMbId}`)
-            } catch (e) {
+            } catch {
               // Silently ignore - method may not exist yet
             }
           }

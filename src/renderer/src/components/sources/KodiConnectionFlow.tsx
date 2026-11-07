@@ -125,7 +125,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
       setIncludeVideoDb(videoDatabaseVersion > 0)
       setIncludeMusicDb(musicDatabaseVersion != null && musicDatabaseVersion > 0)
       setMode('local')
-    } catch (err) {
+    } catch {
       setError('Failed to select database file')
     }
   }

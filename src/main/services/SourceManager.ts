@@ -348,7 +348,7 @@ export class SourceManager {
     try {
       await fs.rm(artworkPath, { recursive: true, force: true })
       console.log(`[SourceManager] Cleaned up artwork cache for ${sourceId}`)
-    } catch (error) {
+    } catch {
       // Ignore if folder doesn't exist or other errors
       console.log(`[SourceManager] No artwork cache to clean up for ${sourceId}`)
     }
