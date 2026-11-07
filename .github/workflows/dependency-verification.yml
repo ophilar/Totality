@@ -2,7 +2,7 @@ name: Dependency verification
 
 on:
   pull_request:
-    branches: [fixes, timelines, optimization, '0.7', '0.9']
+    branches: [fixes, timelines, optimization, '0.7', '0.9', 'integration/unified-release-line-20261107']
     paths:
       - 'package.json'
       - 'package-lock.json'
@@ -18,7 +18,7 @@ on:
       - 'tsconfig*.json'
       - 'electron-builder.yml'
   push:
-    branches: [fixes, timelines, optimization, '0.7', '0.9']
+    branches: [fixes, timelines, optimization, '0.7', '0.9', 'integration/unified-release-line-20261107']
   workflow_dispatch:
 
 permissions:
@@ -42,6 +42,8 @@ jobs:
       - run: npm ci
       - run: npm run test:run
       - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npx vite build
 
   certify:
     name: Release certification (${{ matrix.os }})
