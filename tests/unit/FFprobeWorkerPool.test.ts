@@ -37,12 +37,6 @@ describe('FFprobeWorkerPool', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     pool = new FFprobeWorkerPool()
-    // Reset the mock worker handlers
-    mockWorker.on.mockReset()
-    mockWorker.once.mockReset()
-    mockWorker.postMessage.mockReset()
-    mockWorker.terminate.mockReset()
-    mockWorker.removeAllListeners.mockReset()
   })
 
   describe('initialization', () => {
@@ -112,17 +106,30 @@ describe('FFprobeWorkerPool', () => {
         success: false,
         error: expect.stringContaining('queue is full'),
       }))
+
+      await pool.shutdown()
+      const accepted = await Promise.all(promises.slice(0, -1))
+      expect(accepted).toHaveLength(10003)
+      expect(accepted.every(result =>
+        result !== null &&
+        typeof result === 'object' &&
+        'error' in result &&
+        typeof result.error === 'string' &&
+        result.error.includes('shutting down')
+      )).toBe(true)
     })
   })
 
   describe('shutdown', () => {
-    it('should resolve queued tasks on shutdown', async () => {
+    it('should resolve active tasks on shutdown', async () => {
       await pool.initialize('/path/to/ffprobe')
 
-      // Queue a task (it won't be processed since worker mock doesn't respond)
+      // The worker accepts the task but has not responded
       const taskPromise = pool.analyzeFile('/test.mkv')
 
-      // Shutdown should resolve the queued task with error
+      expect(mockWorker.postMessage).toHaveBeenCalledTimes(1)
+
+      // Shutdown resolves the active task
       await pool.shutdown()
       const result = await taskPromise
       expect(result.success).toBe(false)
