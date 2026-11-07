@@ -73,7 +73,7 @@ export function BarcodeScanner({ isOpen, onClose, onAddToWishlist }: BarcodeScan
       await scanner.start(
         { facingMode: 'environment' },
         { fps: 15, qrbox: { width: 300, height: 160 }, disableFlip: false },
-        async (decodedText) => {
+        async (decodedText: string) => {
           if (!/^\d{8,14}$/.test(decodedText)) return
           if (decodedText === lastBarcodeRef.current) return
 
