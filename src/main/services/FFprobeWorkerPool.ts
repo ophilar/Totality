@@ -393,20 +393,20 @@ export class FFprobeWorkerPool {
     this.taskQueue = []
 
     // Terminate all workers
-    const terminationPromises = this.workers.map(workerInfo => {
-      return new Promise<void>((resolve) => {
-        const timeout = setTimeout(() => {
-          workerInfo.worker.terminate()
-          resolve()
-        }, 5000)
-
-        workerInfo.worker.once('exit', () => {
-          clearTimeout(timeout)
-          resolve()
-        })
-
-        workerInfo.worker.terminate()
+    const terminationPromises = this.workers.map(async workerInfo => {
+      if (workerInfo.taskTimeout) {
+        clearTimeout(workerInfo.taskTimeout)
+        workerInfo.taskTimeout = null
+      }
+      workerInfo.currentTask?.resolve({
+        success: false,
+        error: 'Worker pool shutting down',
+        filePath: workerInfo.currentTask.filePath,
+        audioTracks: [],
+        subtitleTracks: [],
       })
+      workerInfo.currentTask = null
+      await workerInfo.worker.terminate()
     })
 
     await Promise.all(terminationPromises)
