@@ -17,7 +17,7 @@ const mockWorker = {
 }
 
 vi.mock('worker_threads', () => ({
-  Worker: vi.fn(() => mockWorker),
+  Worker: vi.fn(function MockWorker() { return mockWorker }),
 }))
 
 vi.mock('os', () => ({
@@ -99,14 +99,15 @@ describe('FFprobeWorkerPool', () => {
       await pool.initialize('/path/to/ffprobe')
 
       // Fill the queue by creating tasks without workers processing them
-      // The pool won't create workers since Worker mock doesn't trigger message handlers
+      // Workers accept tasks but don't complete them because the mock sends no responses
       const promises: Promise<unknown>[] = []
-      for (let i = 0; i < 10001; i++) {
+      for (let i = 0; i < 10004; i++) {
         promises.push(pool.analyzeFile(`/test${i}.mkv`))
       }
 
-      // The 10001st task should be rejected
-      const lastResult = await promises[10000]
+      // Three workers are busy, so the 10004th task exceeds the 10000-item queue
+      expect(mockWorker.postMessage).toHaveBeenCalledTimes(3)
+      const lastResult = await promises[10003]
       expect(lastResult).toEqual(expect.objectContaining({
         success: false,
         error: expect.stringContaining('queue is full'),
