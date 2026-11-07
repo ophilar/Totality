@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, RefObject } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 
 interface UseMenuCloseOptions {
   isOpen: boolean
@@ -25,7 +25,7 @@ interface UseMenuCloseOptions {
  * )
  * ```
  */
-export function useMenuClose({ isOpen, onClose }: UseMenuCloseOptions): RefObject<HTMLDivElement | null> {
+export function useMenuClose({ isOpen, onClose }: UseMenuCloseOptions) {
   const menuRef = useRef<HTMLDivElement>(null)
 
   // Memoize onClose to prevent unnecessary effect re-runs
