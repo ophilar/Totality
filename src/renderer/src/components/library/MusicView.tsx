@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { FixedSizeList as VirtualList } from 'react-window'
+import { List } from 'react-window'
 import { Music, Disc3, User, MoreVertical, RefreshCw, X, Pencil, CircleFadingArrowUp, EyeOff, ChevronDown, ChevronUp, ChevronLeft, Copy, Check } from 'lucide-react'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import { DropdownMenu, DropdownMenuItem } from '../ui/DropdownMenu'
@@ -1530,44 +1530,42 @@ export function MusicView({
               </div>
 
               {/* Virtualized Album List */}
-              <VirtualList
-                height={Math.max(400, window.innerHeight - 280)}
-                itemCount={allFilteredAlbums.length}
-                itemSize={104}
-                width="100%"
+              <List<{
+                albums: MusicAlbum[]
+                onSelectAlbum: (album: MusicAlbum) => void
+                showSourceBadge: boolean
+                allAlbumCompleteness: Map<number, AlbumCompletenessData>
+              }>
+                style={{ height: Math.max(400, window.innerHeight - 280), width: '100%' }}
+                rowCount={allFilteredAlbums.length}
+                rowHeight={104}
                 className="scrollbar-visible"
-                itemData={{
+                rowProps={{
                   albums: allFilteredAlbums,
                   onSelectAlbum,
                   showSourceBadge,
                   allAlbumCompleteness
                 }}
-                onItemsRendered={({ visibleStopIndex }) => {
-                  if (visibleStopIndex >= allFilteredAlbums.length - 20) {
+                onRowsRendered={({ stopIndex }) => {
+                  if (stopIndex >= allFilteredAlbums.length - 20) {
                     onLoadMoreAlbums()
                   }
                 }}
-              >
-                {({ index, style, data }: { index: number; style: React.CSSProperties; data: {
-                  albums: MusicAlbum[];
-                  onSelectAlbum: (album: MusicAlbum) => void;
-                  showSourceBadge: boolean;
-                  allAlbumCompleteness: Map<number, AlbumCompletenessData>;
-                }}) => {
-                  const album = data.albums[index]
+                rowComponent={({ index, style, albums, onSelectAlbum: selectAlbum, showSourceBadge: sourceBadge, allAlbumCompleteness: completenessMap }) => {
+                  const album = albums[index]
                   return (
                     <div style={style}>
                       <AlbumListItem
                         album={album}
-                        onClick={() => data.onSelectAlbum(album)}
+                        onClick={() => selectAlbum(album)}
                         showArtist={true}
-                        showSourceBadge={data.showSourceBadge}
-                        completeness={album.id ? data.allAlbumCompleteness.get(album.id) : undefined}
+                        showSourceBadge={sourceBadge}
+                        completeness={album.id ? completenessMap.get(album.id) : undefined}
                       />
                     </div>
                   )
                 }}
-              </VirtualList>
+              />
             </div>
           ) : (
             <div className={gridClassName} style={gridStyle}>
@@ -1704,39 +1702,35 @@ export function MusicView({
               </div>
 
               {/* Virtualized Track List */}
-              <VirtualList
-                height={Math.max(400, window.innerHeight - 280)}
-                itemCount={filteredTracks.length}
-                itemSize={40}
-                width="100%"
+              <List<{
+                tracks: MusicTrack[]
+                artistNameMap: Map<number, string>
+                albumInfoMap: Map<number, { title: string; artistName?: string }>
+                columnWidths: typeof trackColumnWidths
+                setSelectedTrackForQuality: typeof setSelectedTrackForQuality
+              }>
+                style={{ height: Math.max(400, window.innerHeight - 280), width: '100%' }}
+                rowCount={filteredTracks.length}
+                rowHeight={40}
                 className="scrollbar-visible"
-                onItemsRendered={({ visibleStopIndex }: { visibleStopIndex: number }) => {
+                onRowsRendered={({ stopIndex }) => {
                   // Load more tracks when scrolling near the end
-                  if (visibleStopIndex >= filteredTracks.length - 50) {
+                  if (stopIndex >= filteredTracks.length - 50) {
                     onLoadMoreTracks()
                   }
                 }}
-                itemData={{
+                rowProps={{
                   tracks: filteredTracks,
                   artistNameMap,
                   albumInfoMap,
                   columnWidths: trackColumnWidths,
-                  setSelectedTrackForQuality,
-                  isMobile,
+                  setSelectedTrackForQuality
                 }}
-              >
-                {({ index, style, data }: { index: number; style: React.CSSProperties; data: {
-                  tracks: MusicTrack[]
-                  artistNameMap: Map<number, string>
-                  albumInfoMap: Map<number, { title: string; artistName?: string }>
-                  columnWidths: typeof trackColumnWidths
-                  setSelectedTrackForQuality: typeof setSelectedTrackForQuality
-                  isMobile: boolean
-                }}) => {
-                  const track = data.tracks[index]
+                rowComponent={({ index, style, tracks, artistNameMap: artists, albumInfoMap: albums, columnWidths, setSelectedTrackForQuality: setSelectedTrack }) => {
+                  const track = tracks[index]
                   // Use denormalized fields directly — maps may not have all entries loaded
-                  const artistName = track.artist_id ? data.artistNameMap.get(track.artist_id) : undefined
-                  const albumTitle = track.album_id ? data.albumInfoMap.get(track.album_id)?.title : undefined
+                  const artistName = track.artist_id ? artists.get(track.artist_id) : undefined
+                  const albumTitle = track.album_id ? albums.get(track.album_id)?.title : undefined
                   return (
                     <div style={style}>
                       <TrackListItem
@@ -1744,8 +1738,7 @@ export function MusicView({
                         index={index + 1}
                         artistName={artistName}
                         albumTitle={albumTitle}
-                        columnWidths={data.columnWidths}
-                        isMobile={data.isMobile}
+                        columnWidths={columnWidths}
                         onClickQuality={() => {
                           // Compute quality tier
                           const LOSSLESS_CODECS = ['flac', 'alac', 'wav', 'aiff', 'pcm', 'dsd', 'ape', 'wavpack', 'wv']
@@ -1765,7 +1758,7 @@ export function MusicView({
                           else if (bitrateKbps > 0) qualityTier = 'low'
                           else if (codecLower.includes('mp3') || codecLower.includes('aac') || codecLower.includes('ogg')) qualityTier = 'medium'
 
-                          data.setSelectedTrackForQuality({
+                          setSelectedTrack({
                             title: track.title,
                             codec: track.audio_codec,
                             bitrate: track.audio_bitrate,
@@ -1781,7 +1774,7 @@ export function MusicView({
                     </div>
                   )
                 }}
-              </VirtualList>
+              />
               {/* Track count / loading indicator */}
               <div className="px-4 py-1.5 text-caption text-muted-foreground border-t border-border flex items-center gap-2">
                 {tracksLoading && <RefreshCw className="w-3 h-3 animate-spin" />}

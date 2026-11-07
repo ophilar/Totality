@@ -378,7 +378,7 @@ export class TMDBService {
       const episode = await this.getEpisodeDetails(seriesTmdbId, seasonNumber, episodeNumber)
 
       return { seriesTmdbId, episode, seriesName }
-    } catch (error) {
+    } catch {
       // Episode might not exist in TMDB
       return null
     }

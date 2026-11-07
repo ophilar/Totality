@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useToast } from '../../contexts/ToastContext'
-import { FixedSizeList as VirtualList, VariableSizeList } from 'react-window'
+import { List, useListRef } from 'react-window'
 import { Sparkles, Library, ListChecks, Tv, Film, Music, Disc3, CircleFadingArrowUp, ChevronDown, Plus, EyeOff, HardDrive, BarChart3, Users, Search, Loader2, X, ArrowUpDown, Star } from 'lucide-react'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import { MediaDetails } from '../library/MediaDetails'
@@ -165,10 +165,10 @@ export function Dashboard({
   const [expandedSeries, setExpandedSeries] = useState<Set<number>>(new Set())
   const [expandedArtists, setExpandedArtists] = useState<Set<number>>(new Set())
 
-  // VariableSizeList refs for resetting cached sizes on expand/collapse
-  const collectionsListInstanceRef = useRef<VariableSizeList>(null)
-  const seriesListInstanceRef = useRef<VariableSizeList>(null)
-  const artistsListInstanceRef = useRef<VariableSizeList>(null)
+  // react-window List refs for resetting cached sizes on expand/collapse
+  const collectionsListInstanceRef = useListRef(null)
+  const seriesListInstanceRef = useListRef(null)
+  const artistsListInstanceRef = useListRef(null)
 
   // Measure list container heights - observe each list container directly
   useEffect(() => {
@@ -522,7 +522,7 @@ export function Dashboard({
       .sort((a, b) => a.seasonNumber - b.seasonNumber)
   }, [parseMissingEpisodes])
 
-  // Height calculation functions for VariableSizeList (connected indent design)
+  // Height calculation functions for react-window List (connected indent design)
   const getCollectionRowHeight = useCallback((index: number) => {
     const collection = collections[index]
     if (!collection || !expandedCollections.has(index)) return COLLAPSED_HEIGHT
@@ -592,22 +592,24 @@ export function Dashboard({
   // Generic toggle expand factory - creates a toggle function for any expandable list
   const createToggleExpand = useCallback(
     (
-      setExpanded: React.Dispatch<React.SetStateAction<Set<number>>>,
-      listRef: React.RefObject<VariableSizeList>
+      setExpanded: React.Dispatch<React.SetStateAction<Set<number>>>
     ) => (index: number) => {
       setExpanded(prev => {
         const next = new Set(prev)
-        next.has(index) ? next.delete(index) : next.add(index)
+        if (next.has(index)) {
+          next.delete(index)
+        } else {
+          next.add(index)
+        }
         return next
       })
-      listRef.current?.resetAfterIndex(index)
     },
     []
   )
 
-  const toggleCollectionExpand = createToggleExpand(setExpandedCollections, collectionsListInstanceRef)
-  const toggleSeriesExpand = createToggleExpand(setExpandedSeries, seriesListInstanceRef)
-  const toggleArtistExpand = createToggleExpand(setExpandedArtists, artistsListInstanceRef)
+  const toggleCollectionExpand = createToggleExpand(setExpandedCollections)
+  const toggleSeriesExpand = createToggleExpand(setExpandedSeries)
+  const toggleArtistExpand = createToggleExpand(setExpandedArtists)
 
   // Dismiss handlers for exclusions
   const dismissMovieUpgrade = useCallback(async (index: number) => {
@@ -663,7 +665,6 @@ export function Dashboard({
         completeness_percentage: newTotal > 0 ? c.owned_movies / newTotal * 100 : 100,
       }
     }).filter(c => c.total_movies > 1))
-    collectionsListInstanceRef.current?.resetAfterIndex(0)
     emitDismissCollectionMovie({ collectionId: collection.tmdb_collection_id, tmdbId: movie.tmdb_id })
     addToast({ type: 'info', title: `Hidden: ${movie.title}`, action: { label: 'Undo', onClick: async () => {
       await window.electronAPI.removeExclusion(exclusionId)
@@ -776,7 +777,6 @@ export function Dashboard({
       return a.collection_name.localeCompare(b.collection_name) * dir
     }))
     setExpandedCollections(new Set())
-    collectionsListInstanceRef.current?.resetAfterIndex(0)
   }, [collectionSortBy, completenessSortDir])
 
   useEffect(() => {
@@ -787,7 +787,6 @@ export function Dashboard({
       return a.series_title.localeCompare(b.series_title) * dir
     }))
     setExpandedSeries(new Set())
-    seriesListInstanceRef.current?.resetAfterIndex(0)
   }, [seriesSortBy, completenessSortDir])
 
   useEffect(() => {
@@ -797,7 +796,6 @@ export function Dashboard({
       return a.artist_name.localeCompare(b.artist_name) * dir
     }))
     setExpandedArtists(new Set())
-    artistsListInstanceRef.current?.resetAfterIndex(0)
   }, [artistSortBy, completenessSortDir])
 
   useEffect(() => {
@@ -1785,14 +1783,7 @@ export function Dashboard({
                       No movie upgrades needed
                     </div>
                   ) : (
-                    <VirtualList
-                      height={upgradeListHeight}
-                      itemCount={movieUpgrades.length}
-                      itemSize={MOVIE_ITEM_HEIGHT}
-                      width="100%"
-                    >
-                      {MovieUpgradeRow}
-                    </VirtualList>
+                    <List<object> style={{ height: upgradeListHeight, width: '100%' }} rowCount={movieUpgrades.length} rowHeight={MOVIE_ITEM_HEIGHT} rowProps={{}} rowComponent={MovieUpgradeRow} />
                   )
                 )}
                 {/* TV Tab Content */}
@@ -1802,14 +1793,7 @@ export function Dashboard({
                       No TV upgrades needed
                     </div>
                   ) : (
-                    <VirtualList
-                      height={upgradeListHeight}
-                      itemCount={tvUpgrades.length}
-                      itemSize={TV_ITEM_HEIGHT}
-                      width="100%"
-                    >
-                      {TvUpgradeRow}
-                    </VirtualList>
+                    <List<object> style={{ height: upgradeListHeight, width: '100%' }} rowCount={tvUpgrades.length} rowHeight={TV_ITEM_HEIGHT} rowProps={{}} rowComponent={TvUpgradeRow} />
                   )
                 )}
                 {/* Music Tab Content */}
@@ -1819,14 +1803,7 @@ export function Dashboard({
                       No music upgrades needed
                     </div>
                   ) : (
-                    <VirtualList
-                      height={upgradeListHeight}
-                      itemCount={musicUpgrades.length}
-                      itemSize={MUSIC_ITEM_HEIGHT}
-                      width="100%"
-                    >
-                      {MusicUpgradeRow}
-                    </VirtualList>
+                    <List<object> style={{ height: upgradeListHeight, width: '100%' }} rowCount={musicUpgrades.length} rowHeight={MUSIC_ITEM_HEIGHT} rowProps={{}} rowComponent={MusicUpgradeRow} />
                   )
                 )}
               </div>
@@ -1912,9 +1889,7 @@ export function Dashboard({
                       collections.length === 0 ? (
                         <div className="p-4 text-label text-muted-foreground text-center">All collections complete</div>
                       ) : (
-                        <VariableSizeList ref={collectionsListInstanceRef} height={completenessListHeight} itemCount={collections.length} itemSize={getCollectionRowHeight} width="100%">
-                          {CollectionRow}
-                        </VariableSizeList>
+                        <List<object> listRef={collectionsListInstanceRef} style={{ height: completenessListHeight, width: '100%' }} rowCount={collections.length} rowHeight={getCollectionRowHeight} rowProps={{}} rowComponent={CollectionRow} />
                       )
                     )}
                     {/* Series tab */}
@@ -1922,9 +1897,7 @@ export function Dashboard({
                       series.length === 0 ? (
                         <div className="p-4 text-label text-muted-foreground text-center">All series complete</div>
                       ) : (
-                        <VariableSizeList ref={seriesListInstanceRef} height={completenessListHeight} itemCount={series.length} itemSize={getSeriesRowHeight} width="100%">
-                          {SeriesRow}
-                        </VariableSizeList>
+                        <List<object> listRef={seriesListInstanceRef} style={{ height: completenessListHeight, width: '100%' }} rowCount={series.length} rowHeight={getSeriesRowHeight} rowProps={{}} rowComponent={SeriesRow} />
                       )
                     )}
                     {/* Music tab */}
@@ -1932,9 +1905,7 @@ export function Dashboard({
                       artists.length === 0 ? (
                         <div className="p-4 text-label text-muted-foreground text-center">All artists complete</div>
                       ) : (
-                        <VariableSizeList ref={artistsListInstanceRef} height={completenessListHeight} itemCount={artists.length} itemSize={getArtistRowHeight} width="100%">
-                          {ArtistRow}
-                        </VariableSizeList>
+                        <List<object> listRef={artistsListInstanceRef} style={{ height: completenessListHeight, width: '100%' }} rowCount={artists.length} rowHeight={getArtistRowHeight} rowProps={{}} rowComponent={ArtistRow} />
                       )
                     )}
                     {/* Filmography tab */}
