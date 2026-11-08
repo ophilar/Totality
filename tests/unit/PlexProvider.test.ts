@@ -772,6 +772,35 @@ describe('PlexProvider', () => {
       expect(mockUpdateSourceScanTime).toHaveBeenCalledOnce()
     })
 
+    it('skips new Plex entries whose Media parts contain no playable streams', async () => {
+      const provider = createProviderWithServer()
+      const incomplete = makeMovieItem({
+        Media: [{ ...makeMovieItem().Media![0], Part: [] }],
+      })
+      vi.spyOn(provider as any, 'getPlexLibraryItems').mockResolvedValue([incomplete])
+      vi.spyOn(provider as any, 'getPlexItemMetadata').mockResolvedValue(incomplete)
+      vi.spyOn(provider as any, 'getPlexLibraryItemIds').mockResolvedValue(new Set(['12345']))
+      const result = await provider.scanLibrary('lib-1')
+      expect(result.success).toBe(true)
+      expect(result.itemsScanned).toBe(0)
+      expect(mockUpdateSourceScanTime).toHaveBeenCalledOnce()
+    })
+
+    it('rejects lost playable streams for media previously indexed in the DB', async () => {
+      mockGetMediaItems.mockReturnValue([{ id: 1, plex_id: '12345', type: 'movie' }])
+      const provider = createProviderWithServer()
+      const incomplete = makeMovieItem({
+        Media: [{ ...makeMovieItem().Media![0], Part: [] }],
+      })
+      vi.spyOn(provider as any, 'getPlexLibraryItems').mockResolvedValue([incomplete])
+      vi.spyOn(provider as any, 'getPlexItemMetadata').mockResolvedValue(incomplete)
+      const result = await provider.scanLibrary('lib-1')
+      expect(result.success).toBe(false)
+      expect(result.errors.join(' ')).toContain('no valid media')
+      expect(mockUpdateSourceScanTime).not.toHaveBeenCalled()
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+
     it('rejects missing playable media for an item previously indexed in the DB', async () => {
       mockGetMediaItems.mockReturnValue([{ id: 1, plex_id: '12345', type: 'movie' }])
       const provider = createProviderWithServer()
