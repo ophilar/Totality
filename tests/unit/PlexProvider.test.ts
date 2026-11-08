@@ -15,6 +15,8 @@ const mockGetMediaItems = vi.hoisted(() => vi.fn())
 const mockDeleteMediaItem = vi.hoisted(() => vi.fn())
 const mockGetMusicTracks = vi.hoisted(() => vi.fn(() => []))
 const mockUpdateSourceScanTime = vi.hoisted(() => vi.fn())
+const mockCountMediaItems = vi.hoisted(() => vi.fn())
+const mockCleanupOrphanedMediaData = vi.hoisted(() => vi.fn())
 
 vi.mock('../../src/main/services/utils/httpClient', () => ({
   fetchJSON: mockFetchJSON,
@@ -35,6 +37,8 @@ vi.mock('../../src/main/database/getDatabase', () => ({
     deleteMediaItem: mockDeleteMediaItem,
     getMusicTracks: mockGetMusicTracks,
     updateSourceScanTime: mockUpdateSourceScanTime,
+    countMediaItems: mockCountMediaItems,
+    cleanupOrphanedMediaData: mockCleanupOrphanedMediaData,
     startBatch: vi.fn(),
     endBatch: vi.fn(),
   })),
@@ -224,6 +228,7 @@ describe('PlexProvider', () => {
     vi.clearAllMocks()
     mockGetMediaItems.mockReset().mockReturnValue([])
     mockGetMusicTracks.mockReset().mockReturnValue([])
+    mockCountMediaItems.mockReset().mockReturnValue(0)
   })
 
   // ========================================================================
@@ -744,6 +749,7 @@ describe('PlexProvider', () => {
       const provider = createProviderWithServer()
       vi.spyOn(provider as any, 'getPlexLibraryItems').mockResolvedValue([])
       vi.spyOn(provider as any, 'getPlexLibraryType').mockResolvedValue('movie')
+      vi.spyOn(provider as any, 'getLibraryItemCount').mockResolvedValue(1)
       vi.spyOn(provider as any, 'getPlexLibraryItemIds').mockResolvedValue(new Set(['missing-1']))
       vi.spyOn(provider as any, 'fetchAndProcessMissingItems').mockRejectedValue(new Error('Failed to add media'))
       const result = await provider.scanLibrary('lib-1', { sinceTimestamp: new Date('2026-01-01') })
@@ -753,7 +759,21 @@ describe('PlexProvider', () => {
       expect(mockUpdateSourceScanTime).not.toHaveBeenCalled()
     })
 
-    it('rejects video media without playable source metadata', async () => {
+    it('skips new Plex items without playable media and completes the scan', async () => {
+      const provider = createProviderWithServer()
+      vi.spyOn(provider as any, 'getPlexLibraryItems').mockResolvedValue([makeMovieItem()])
+      vi.spyOn(provider as any, 'getPlexItemMetadata').mockResolvedValue(makeMovieItem({ Media: undefined }))
+      vi.spyOn(provider as any, 'getPlexLibraryItemIds').mockResolvedValue(new Set(['12345']))
+      const result = await provider.scanLibrary('lib-1')
+      expect(result.success).toBe(true)
+      expect(result.errors).toEqual([])
+      expect(result.itemsScanned).toBe(0)
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+      expect(mockUpdateSourceScanTime).toHaveBeenCalledOnce()
+    })
+
+    it('rejects missing playable media for an item previously indexed in the DB', async () => {
+      mockGetMediaItems.mockReturnValue([{ id: 1, plex_id: '12345', type: 'movie' }])
       const provider = createProviderWithServer()
       vi.spyOn(provider as any, 'getPlexLibraryItems').mockResolvedValue([makeMovieItem()])
       vi.spyOn(provider as any, 'getPlexItemMetadata').mockResolvedValue(makeMovieItem({ Media: undefined }))
@@ -762,6 +782,74 @@ describe('PlexProvider', () => {
       expect(result.errors.join(' ')).toContain('has no media data')
       expect(mockDeleteMediaItem).not.toHaveBeenCalled()
       expect(mockUpdateSourceScanTime).not.toHaveBeenCalled()
+    })
+
+    it('rejects missing Plex metadata even for previously unseen items', async () => {
+      const provider = createProviderWithServer()
+      vi.spyOn(provider as any, 'getPlexLibraryItems').mockResolvedValue([makeMovieItem()])
+      vi.spyOn(provider as any, 'getPlexItemMetadata').mockResolvedValue(null)
+      const result = await provider.scanLibrary('lib-1')
+      expect(result.success).toBe(false)
+      expect(result.errors.join(' ')).toContain('metadata unavailable')
+      expect(mockUpdateSourceScanTime).not.toHaveBeenCalled()
+    })
+
+    it('skips unindexable media during missing-item reconciliation', async () => {
+      const provider = createProviderWithServer()
+      vi.spyOn(provider as any, 'getPlexItemMetadata').mockResolvedValue(makeMovieItem({ Media: [] }))
+      const count = await (provider as any).fetchAndProcessMissingItems(['12345'], 'lib-1', 'movie', {})
+      expect(count).toBe(0)
+      expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+
+    it('avoids a full ID reconciliation when incremental counts and identities are unchanged', async () => {
+      const provider = createProviderWithServer()
+      vi.spyOn(provider as any, 'getPlexLibraryItems').mockResolvedValue([])
+      vi.spyOn(provider as any, 'getPlexLibraryType').mockResolvedValue('movie')
+      vi.spyOn(provider as any, 'getLibraryItemCount').mockResolvedValue(5)
+      const ids = vi.spyOn(provider as any, 'getPlexLibraryItemIds')
+      mockCountMediaItems.mockReturnValue(5)
+      const result = await provider.scanLibrary('lib-1', { sinceTimestamp: new Date('2026-01-01') })
+      expect(result.success).toBe(true)
+      expect(ids).not.toHaveBeenCalled()
+      expect(mockUpdateSourceScanTime).toHaveBeenCalledOnce()
+    })
+
+    it('reconciles when Plex and DB counts differ', async () => {
+      const provider = createProviderWithServer()
+      vi.spyOn(provider as any, 'getPlexLibraryItems').mockResolvedValue([])
+      vi.spyOn(provider as any, 'getPlexLibraryType').mockResolvedValue('movie')
+      vi.spyOn(provider as any, 'getLibraryItemCount').mockResolvedValue(1)
+      const ids = vi.spyOn(provider as any, 'getPlexLibraryItemIds').mockResolvedValue(new Set(['new']))
+      vi.spyOn(provider as any, 'fetchAndProcessMissingItems').mockResolvedValue(1)
+      vi.spyOn(provider as any, 'removeStaleItems').mockResolvedValue(0)
+      const result = await provider.scanLibrary('lib-1', { sinceTimestamp: new Date('2026-01-01') })
+      expect(result.success).toBe(true)
+      expect(ids).toHaveBeenCalledOnce()
+      expect(result.itemsAdded).toBe(1)
+    })
+
+    it('reconciles replacements reported by the incremental feed even when counts match', async () => {
+      mockGetMediaItems.mockReturnValue([{ id: 1, plex_id: 'old', type: 'movie' }])
+      mockCountMediaItems.mockReturnValue(1)
+      const provider = createProviderWithServer()
+      vi.spyOn(provider as any, 'getPlexLibraryItems').mockResolvedValue([makeMovieItem({ ratingKey: 'new' })])
+      vi.spyOn(provider as any, 'getPlexItemMetadata').mockResolvedValue(makeMovieItem({ ratingKey: 'new', Media: [] }))
+      vi.spyOn(provider as any, 'getLibraryItemCount').mockResolvedValue(1)
+      const ids = vi.spyOn(provider as any, 'getPlexLibraryItemIds').mockResolvedValue(new Set(['new']))
+      vi.spyOn(provider as any, 'fetchAndProcessMissingItems').mockResolvedValue(0)
+      const remove = vi.spyOn(provider as any, 'removeStaleItems').mockResolvedValue(1)
+      const result = await provider.scanLibrary('lib-1', { sinceTimestamp: new Date('2026-01-01') })
+      expect(result.success).toBe(true)
+      expect(ids).toHaveBeenCalledOnce()
+      expect(remove).toHaveBeenCalledWith(new Set(['new']), 'movie', 'lib-1')
+    })
+
+    it('rejects a missing Plex count rather than assuming that inventory is empty', async () => {
+      const provider = createProviderWithServer()
+      mockFetchJSON.mockResolvedValueOnce({ MediaContainer: {} })
+      await expect((provider as any).getLibraryItemCount('lib-1', 'movie'))
+        .rejects.toThrow('Invalid Plex movie item count')
     })
 
     it('propagates artist-processing failures from Plex music scans', async () => {
