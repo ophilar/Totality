@@ -545,8 +545,16 @@ export class PlexProvider implements MediaProvider {
               }
 
               const detailed = metaResult.value
-              if (!detailed || !detailed.Media || detailed.Media.length === 0) {
-                result.errors.push(`Plex metadata for ${item.title} has no media data; scan incomplete`)
+              if (!detailed) {
+                result.errors.push(`Plex metadata unavailable for ${item.title}; scan incomplete`)
+                continue
+              }
+              if (!detailed.Media || detailed.Media.length === 0) {
+                if (existingPlexIds.has(item.ratingKey)) {
+                  result.errors.push(`Previously indexed Plex item ${item.title} has no media data; scan incomplete`)
+                } else {
+                  console.warn(`[PlexProvider ${this.sourceId}] Skipping ${item.title}: no media data available`)
+                }
                 continue
               }
 
@@ -613,8 +621,8 @@ export class PlexProvider implements MediaProvider {
                 } else {
                   result.itemsAdded++
                 }
-              } else {
-                result.errors.push(`Could not convert Plex metadata for ${item.title}; incomplete scan cannot verify deletions`)
+              } else if (existingPlexIds.has(item.ratingKey)) {
+                result.errors.push(`Previously indexed Plex item ${item.title} has no valid media; scan incomplete`)
               }
 
               if (onProgress) {
@@ -663,23 +671,30 @@ export class PlexProvider implements MediaProvider {
         const removedCount = await this.removeStaleItems(currentPlexIds, itemType, libraryId)
         result.itemsRemoved = removedCount
       } else if (isIncremental) {
-        // Verify the full inventory before reconciling additions or deletions.
-        // Item counts alone cannot detect replacement of one item by another.
+        // Avoid a full inventory fetch when counts match and the incremental feed
+        // contains only previously indexed IDs. New IDs trigger reconciliation even
+        // if Plex and the database report the same count (replacement with equal counts).
         const libType = libraryType || await this.getPlexLibraryType(libraryId)
         if (!libType) throw new Error(`Could not determine Plex library type for ${libraryId}`)
         const itemType = libType === 'show' ? 'episode' : 'movie'
-        const currentPlexIds = await this.getPlexLibraryItemIds(libraryId, libType)
-        const dbItems = db.getMediaItems({ type: itemType, sourceId: this.sourceId, libraryId }) as Array<{ plex_id?: string }>
-        const dbIds = new Set(dbItems.map(item => item.plex_id).filter(Boolean))
-        const missingIds = [...currentPlexIds].filter(id => !dbIds.has(id))
+        const plexCount = await this.getLibraryItemCount(libraryId, libType)
+        const dbCount = db.countMediaItems({ type: itemType, sourceId: this.sourceId, libraryId, includeDisabledLibraries: true })
+        const hasNewIds = itemsToProcess.some(item => !existingPlexIds.has(item.ratingKey))
 
-        if (missingIds.length > 0) {
-          const addedCount = await this.fetchAndProcessMissingItems(missingIds, libraryId, libType, analyzer, onProgress)
-          result.itemsAdded += addedCount
+        if (plexCount !== dbCount || hasNewIds) {
+          const currentPlexIds = await this.getPlexLibraryItemIds(libraryId, libType)
+          const dbItems = db.getMediaItems({ type: itemType, sourceId: this.sourceId, libraryId }) as Array<{ plex_id?: string }>
+          const dbIds = new Set(dbItems.map(item => item.plex_id).filter(Boolean))
+          const missingIds = [...currentPlexIds].filter(id => !dbIds.has(id))
+
+          if (missingIds.length > 0) {
+            const addedCount = await this.fetchAndProcessMissingItems(missingIds, libraryId, libType, analyzer, onProgress)
+            result.itemsAdded += addedCount
+          }
+
+          // An addition failure throws before any stale record is deleted.
+          result.itemsRemoved = await this.removeStaleItems(currentPlexIds, itemType, libraryId)
         }
-
-        // An addition failure throws before any stale record is deleted.
-        result.itemsRemoved = await this.removeStaleItems(currentPlexIds, itemType, libraryId)
       }
 
       // Clean up any orphaned data (collections, series, music validated inside)
@@ -839,7 +854,7 @@ export class PlexProvider implements MediaProvider {
           addedCount++
           console.log(`[PlexProvider ${this.sourceId}] Added missing ${itemType}: "${mediaItem.title}"`)
         } else {
-          throw new Error(`Could not convert Plex metadata for ${ratingKey}`)
+          console.warn(`[PlexProvider ${this.sourceId}] Skipping ${ratingKey}: no valid media entries found`)
         }
       } catch (error) {
         throw new Error(`Failed to process Plex item ${ratingKey}: ${getErrorMessage(error)}`)
@@ -1375,6 +1390,32 @@ export class PlexProvider implements MediaProvider {
     }
 
     return albums
+  }
+
+  /**
+   * Query the complete Plex movie/episode count without fetching its metadata.
+   */
+  private async getLibraryItemCount(libraryId: string, libraryType: 'movie' | 'show'): Promise<number> {
+    if (!this.selectedServer) throw new Error('No server selected')
+
+    const url = `${this.selectedServer.uri}/library/sections/${libraryId}/all`
+    const responseData = await fetchJSON<{ MediaContainer?: { totalSize?: number } }>(
+      buildUrl(url, { type: libraryType === 'show' ? 4 : 1 }),
+      {
+        headers: {
+          'X-Plex-Token': this.selectedServer.accessToken,
+          'X-Plex-Container-Start': '0',
+          'X-Plex-Container-Size': '0',
+          Accept: 'application/json',
+        },
+      }
+    )
+
+    const count = responseData?.MediaContainer?.totalSize
+    if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) {
+      throw new Error(`Invalid Plex ${libraryType} item count for library ${libraryId}`)
+    }
+    return count
   }
 
   /**
