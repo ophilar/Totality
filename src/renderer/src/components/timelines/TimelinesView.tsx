@@ -522,7 +522,7 @@ export function TimelinesView() {
               type="text"
               value={customImportInput}
               onChange={(e) => setCustomImportInput(e.target.value)}
-              placeholder="Parser URL, Trakt list, TMDB collection, or prompt..."
+              placeholder="Parser URL, Trakt list, or TMDB collection..."
               className="w-full px-3 py-1.5 text-xs rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             />
             <button

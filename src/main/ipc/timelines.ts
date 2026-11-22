@@ -10,7 +10,6 @@ import { LocalTimelineRecipeProvider } from '../services/timelines/LocalTimeline
 import { TimelineParserPluginProvider } from '../services/timelines/TimelineParserPluginProvider'
 import { TMDBRecipeProvider } from '../services/timelines/TMDBRecipeProvider'
 import { TraktRecipeProvider } from '../services/timelines/TraktRecipeProvider'
-import { WebGuideRecipeProvider } from '../services/timelines/WebGuideRecipeProvider'
 import { RemoteRegistryRecipeProvider } from '../services/timelines/RemoteRegistryRecipeProvider'
 import { TimelineRecipeProviderFactory } from '../services/timelines/TimelineRecipeProviderFactory'
 import { TimelineResolutionEngine, type ResolvedTimelineResult } from '../services/timelines/TimelineResolutionEngine'
@@ -28,7 +27,6 @@ const provider = new TimelineRecipeProviderFactory([
   new RemoteRegistryRecipeProvider(),
   new TraktRecipeProvider(),
   parserProvider,
-  new WebGuideRecipeProvider(),
 ])
 const playlistSync = new PlexPlaylistSyncService()
 const snapshotKey = (id: string) => `timeline_snapshot:${id}`

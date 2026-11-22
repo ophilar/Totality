@@ -64,12 +64,6 @@ vi.mock('../../src/main/services/TMDBService', () => ({
   })),
 }))
 
-vi.mock('../../src/main/services/GeminiService', () => ({
-  getGeminiService: vi.fn(() => ({
-    refreshApiKey: vi.fn(),
-  })),
-}))
-
 vi.mock('../../src/main/providers/kodi/KodiDatabaseSchema', () => ({
   invalidateNfsMappingsCache: vi.fn(),
 }))

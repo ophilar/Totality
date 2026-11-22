@@ -60,9 +60,6 @@ vi.mock('../../src/main/services/LoggingService', () => ({
 vi.mock('../../src/main/services/MusicBrainzService', () => ({
   getMusicBrainzService: vi.fn(() => ({})),
 }))
-vi.mock('../../src/main/services/GeminiService', () => ({
-  getGeminiService: vi.fn(() => ({})),
-}))
 vi.mock('../../src/main/services/MediaNormalizer', () => ({
   normalizeVideoCodec: vi.fn((c: string) => c),
   normalizeResolution: vi.fn(() => '1080p'),

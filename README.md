@@ -147,14 +147,6 @@ Track media you want to acquire:
 - **Release alerts** — track digital and physical release dates for wishlist items
 - Bulk operations and CSV export
 
-### AI Assistant
-
-AI-powered library analysis and recommendations:
-- Chat interface with library-aware context
-- 29+ tools for querying library data, managing wishlist, searching TMDB
-- Streaming report generators (quality, upgrades, completeness, storage)
-- Powered by Google Gemini (free tier supported)
-
 ### Live Monitoring
 
 Automatic library change detection:
@@ -359,7 +351,6 @@ npm run release:minor    # Force minor bump
 - **MusicBrainz API** — Music metadata and discographies (rate-limited: 1 req/s)
 - **Cover Art Archive** — Album artwork
 - **UPCitemdb** — Barcode product lookup
-- **Google Gemini** — AI assistant (free tier: 10 RPM)
 - **Trakt API** — Watchlist import
 
 ## License
