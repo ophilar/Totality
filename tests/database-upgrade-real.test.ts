@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BetterSQLiteService } from '../src/main/database/BetterSQLiteService'
 
+vi.mock('electron', () => ({ app: { getPath: () => tmpdir() } }))
+
 let temporaryDirectory: string | undefined
 
 afterEach(() => {
@@ -73,5 +75,36 @@ test('upgrades a real upstream 0.4.2 database and preserves user data', () => {
     ).get('idx_wishlist_items_status')).toEqual({ name: 'idx_wishlist_items_status' })
   } finally {
     upgraded.close()
+  }
+})
+
+test('global TV search returns the series TMDB identity using production SQLite and FTS5', () => {
+  temporaryDirectory = mkdtempSync(join(tmpdir(), 'totality-global-search-'))
+  const databasePath = join(temporaryDirectory, 'totality-v2.db')
+  const service = new BetterSQLiteService(databasePath)
+
+  try {
+    service.initialize()
+    const database = new Database(databasePath)
+    try {
+      database.prepare(`INSERT INTO media_sources (source_id, source_type, display_name)
+        VALUES (?, ?, ?)`).run('search-source', 'plex', 'Search Source')
+      database.prepare(`INSERT INTO media_items (
+        source_id, source_type, plex_id, title, type, file_path, series_title,
+        file_size, duration, resolution, width, height, video_codec, video_bitrate,
+        audio_codec, audio_channels, audio_bitrate, season_number, episode_number,
+        tmdb_id, series_tmdb_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run('search-source', 'plex', 'episode-1', 'Pilot', 'episode', '/shows/example-s01e01.mkv', 'Example Series',
+          1, 3600, '1080p', 1920, 1080, 'H264', 5000, 'AAC', 2, 192, 1, 1, '111', '999')
+    } finally {
+      database.close()
+    }
+
+    const results = service.globalSearch('Example Series')
+    expect(results.tvShows).toHaveLength(1)
+    expect(results.tvShows[0].tmdb_id).toBe('999')
+  } finally {
+    service.close()
   }
 })
