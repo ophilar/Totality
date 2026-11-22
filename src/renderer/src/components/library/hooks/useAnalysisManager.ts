@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { SETTING_KEYS } from '../../../../../shared/settingKeys'
-import type { AnalysisProgress, MediaSource } from '../types'
+import type { AnalysisProgress, MediaSource, TVShowSummary } from '../types'
+import { useToast } from '@/contexts/ToastContext'
 
 type AnalysisType = 'series' | 'collections' | 'music'
 
@@ -29,7 +30,7 @@ interface UseAnalysisManagerReturn {
   handleAnalyzeSeries: (libraryId?: string) => Promise<void>
   handleAnalyzeCollections: (libraryId?: string) => Promise<void>
   handleAnalyzeMusic: () => Promise<void>
-  handleAnalyzeSingleSeries: (seriesTitle: string) => Promise<void>
+  handleAnalyzeSingleSeries: (showOrTitle: TVShowSummary | string) => Promise<void>
   handleCancelAnalysis: (type: 'series' | 'collections' | 'music') => Promise<void>
   checkTmdbApiKey: () => Promise<void>
 }
@@ -46,6 +47,7 @@ export function useAnalysisManager({
   activeSourceLibraries,
   loadCompletenessData,
 }: UseAnalysisManagerOptions): UseAnalysisManagerReturn {
+  const { addToast } = useToast()
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress | null>(null)
   const [analysisType, setAnalysisType] = useState<AnalysisType | null>(null)
@@ -126,16 +128,34 @@ export function useAnalysisManager({
 
   // Analyze a single series for completeness
   const handleAnalyzeSingleSeries = useCallback(
-    async (seriesTitle: string) => {
+    async (showOrTitle: TVShowSummary | string) => {
       try {
-        console.log(`[useAnalysisManager] Analyzing series: ${seriesTitle}`)
-        await window.electronAPI.seriesAnalyze(seriesTitle)
+        if (typeof showOrTitle === 'object' && showOrTitle !== null) {
+          const seriesIdentityKey = showOrTitle.series_identity_key?.trim()
+          if (!seriesIdentityKey) throw new Error(`Cannot analyze ${showOrTitle.series_title} without a canonical series identity key.`)
+          console.log(`[useAnalysisManager] Analyzing series by identity: ${seriesIdentityKey} (${showOrTitle.series_title})`)
+          const result = await window.electronAPI.seriesAnalyzeByIdentity(seriesIdentityKey, showOrTitle.source_id, showOrTitle.library_id)
+          if (!result) throw new Error(`No analysis result was returned for ${showOrTitle.series_title}.`)
+        } else if (
+          typeof showOrTitle === 'string' &&
+          (showOrTitle.startsWith('tmdb:') || showOrTitle.startsWith('tvdb:') || showOrTitle.startsWith('unresolved:'))
+        ) {
+          console.log(`[useAnalysisManager] Analyzing series by identity key: ${showOrTitle}`)
+          const result = await window.electronAPI.seriesAnalyzeByIdentity(showOrTitle, activeSourceId ?? undefined)
+          if (!result) throw new Error(`No analysis result was returned for ${showOrTitle}.`)
+        } else {
+          throw new Error(
+            `Cannot analyze series without a canonical series identity key (received: "${showOrTitle}"). Title-based lookups are not permitted.`
+          )
+        }
         await loadCompletenessData()
+        addToast({ type: 'success', title: 'Series analysis complete', message: 'Completeness data has been refreshed.' })
       } catch (err) {
         console.error('Single series analysis failed:', err)
+        addToast({ type: 'error', title: 'Series analysis failed', message: err instanceof Error ? err.message : String(err) })
       }
     },
-    [loadCompletenessData]
+    [activeSourceId, addToast, loadCompletenessData]
   )
 
   // Cancel current analysis

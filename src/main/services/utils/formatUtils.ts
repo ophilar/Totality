@@ -1,3 +1,4 @@
+
 /**
  * Shared format utilities for the main process.
  * Used by various main process services.

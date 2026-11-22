@@ -2,7 +2,8 @@
  * Types for Live Monitoring and Notification System
  */
 
-export type ProviderType = 'plex' | 'jellyfin' | 'emby' | 'kodi' | 'kodi-local' | 'kodi-mysql' | 'local' | 'mediamonkey'
+import type { ProviderType } from './database'
+export type { ProviderType } from './database'
 
 // =============================================================================
 // Monitoring Configuration

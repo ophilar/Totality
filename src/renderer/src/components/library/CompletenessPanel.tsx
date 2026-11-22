@@ -1,11 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { SETTING_KEYS } from '../../../../shared/settingKeys'
-import { X, RefreshCw, Tv, Film, Music, Square, Settings, Clock, ListChecks } from 'lucide-react'
+import { X, RefreshCw, Tv, Film, Music, Square, Settings, Clock, Loader2, ListChecks } from 'lucide-react'
 import { AnimatedNumber } from '../ui/AnimatedNumber'
-import { Button } from '../ui/Button'
-import { Select } from '../ui/Input'
-
-type CompletenessTaskType = 'series-completeness' | 'collection-completeness' | 'music-completeness'
+import type { QueueState, TaskType } from '@main/types/taskQueue'
+import type { AnalysisProgress } from './types'
 
 interface SeriesStats {
   totalSeries: number
@@ -30,18 +28,6 @@ interface MusicStats {
   incompleteArtists: number
   totalMissingAlbums: number
   averageCompleteness: number
-}
-
-interface AnalysisProgress {
-  current: number
-  total: number
-  currentItem: string
-  phase: string
-  // Enhanced fields for music analysis
-  artistsTotal?: number
-  albumsTotal?: number
-  phaseIndex?: number
-  skipped?: number  // Number of items skipped (already recently analyzed)
 }
 
 interface CompletenessPanelProps {
@@ -86,8 +72,7 @@ export function CompletenessPanel({
   libraries = []
 }: CompletenessPanelProps) {
   const [isKeyConfigured, setIsKeyConfigured] = useState(false)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [queueState, setQueueState] = useState<any>(null)
+  const [queueState, setQueueState] = useState<QueueState | null>(null)
   const [selectedMovieLibraryId, setSelectedMovieLibraryId] = useState<string>('')
   const [selectedShowLibraryId, setSelectedShowLibraryId] = useState<string>('')
 
@@ -100,7 +85,7 @@ export function CompletenessPanel({
   const collectionsButtonRef = useRef<HTMLButtonElement>(null)
   const musicButtonRef = useRef<HTMLButtonElement>(null)
   // Helper to check if a task type is queued or running
-  const getTaskStatus = useCallback((taskType: CompletenessTaskType): 'queued' | 'running' | null => {
+  const getTaskStatus = useCallback((taskType: TaskType): 'queued' | 'running' | null => {
     if (!queueState) return null
 
     // Check if currently running
@@ -109,8 +94,7 @@ export function CompletenessPanel({
     }
 
     // Check if queued
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const isQueued = queueState.queue?.some((task: any) => task.type === taskType)
+    const isQueued = queueState.queue.some(task => task.type === taskType)
     if (isQueued) return 'queued'
 
     return null
@@ -130,8 +114,7 @@ export function CompletenessPanel({
     loadQueueState()
 
     // Subscribe to queue updates
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cleanup = window.electronAPI.onTaskQueueUpdated?.((state: any) => {
+    const cleanup = window.electronAPI.onTaskQueueUpdated?.((state) => {
       setQueueState(state)
     })
 
@@ -296,7 +279,7 @@ export function CompletenessPanel({
     <aside
       ref={panelRef}
       id="completeness-panel"
-      className={`fixed top-[76px] bottom-4 right-4 w-80 bg-card rounded-2xl shadow-xl border border-border z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
+      className={`fixed top-[76px] bottom-4 left-4 sm:left-auto right-4 w-auto sm:w-80 max-w-[calc(100vw-2rem)] bg-sidebar-gradient rounded-2xl shadow-xl z-[46] slide-panel flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
         isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
       onKeyDown={handleKeyDown}
@@ -307,62 +290,62 @@ export function CompletenessPanel({
       <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
         <div className="flex items-center gap-2">
           <ListChecks className="w-4 h-4 text-muted-foreground" />
-          <h2 className="text-label font-semibold" id="completeness-panel-title">Completeness</h2>
+          <h2 className="text-sm font-semibold" id="completeness-panel-title">Completeness</h2>
         </div>
-        <Button
+        <button
           ref={closeButtonRef}
-          variant="tertiary"
-          size="icon-sm"
           onClick={onClose}
-          icon={<X className="w-4 h-4" />}
+          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary"
           aria-label="Close completeness panel"
-        />
+        >
+          <X className="w-4 h-4" aria-hidden="true" />
+        </button>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         {/* TMDB API Key Required - show when not configured (unless user only has music) */}
         {!isKeyConfigured && !(hasMusic && !hasTV && !hasMovies) && (
-          <div>
-            <h3 className="font-medium text-foreground mb-2">TMDB API key required</h3>
-            <p className="text-caption text-muted-foreground mb-3">
+          <div className="bg-muted/30 rounded-lg p-4">
+            <h3 className="font-medium text-foreground mb-2">TMDB API Key Required</h3>
+            <p className="text-xs text-muted-foreground mb-3">
               To analyze TV/movie completeness, you need to configure a TMDB API key in Settings.
             </p>
-            <Button
+            <button
               ref={settingsButtonRef}
               onClick={() => onOpenSettings?.('services')}
-              size="sm"
-              icon={<Settings className="w-4 h-4" />}
+              className="flex items-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 focus:outline-hidden"
             >
-              Open settings
-            </Button>
+              <Settings className="w-4 h-4" />
+              Open Settings
+            </button>
           </div>
         )}
 
         {/* No libraries message - show when no libraries and API key is configured */}
         {!hasTV && !hasMovies && !hasMusic && isKeyConfigured && (
-          <div className="text-label text-muted-foreground text-center py-8">
+          <div className="text-sm text-muted-foreground text-center py-8">
             No libraries available for completeness analysis.
           </div>
         )}
 
         {/* Analysis Progress - show for any analysis (music doesn't need TMDB key) */}
         {isAnalyzing && analysisProgress && (
-          <div className="space-y-3">
+          <div className="bg-muted/50 rounded-lg p-4 space-y-3">
             {/* Header with label and count */}
             <div className="flex justify-between items-start">
               <div className="flex-1 min-w-0">
-                <h4 className="text-label font-medium text-foreground">
+                <h4 className="text-sm font-medium text-foreground">
                   {getAnalysisInfo().label}
                 </h4>
                 {getAnalysisInfo().description && (
-                  <p className="text-caption text-muted-foreground mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     {getAnalysisInfo().description}
                   </p>
                 )}
               </div>
               {analysisProgress.total > 0 && analysisType !== 'music' && (
-                <span className="text-label font-medium text-muted-foreground ml-2 whitespace-nowrap">
+                <span className="text-sm font-medium text-muted-foreground ml-2 whitespace-nowrap">
                   {analysisProgress.current} / {analysisProgress.total}
                 </span>
               )}
@@ -373,11 +356,11 @@ export function CompletenessPanel({
               <div className="space-y-1">
                 <div className="w-full bg-muted rounded-full h-2">
                   <div
-                    className="bg-primary h-2 rounded-full transition-[width] duration-300"
+                    className="bg-primary h-2 rounded-full transition-all duration-300"
                     style={{ width: `${Math.min((analysisProgress.current / analysisProgress.total) * 100, 100)}%` }}
                   />
                 </div>
-                <div className="flex justify-between text-caption text-muted-foreground">
+                <div className="flex justify-between text-xs text-muted-foreground">
                   <span>{Math.round((analysisProgress.current / analysisProgress.total) * 100)}%</span>
                 </div>
               </div>
@@ -386,7 +369,7 @@ export function CompletenessPanel({
             {/* Current item - hide for music since it's in the description */}
             {analysisProgress.currentItem && analysisType !== 'music' && (
               <div className="pt-1 border-t border-border/30">
-                <p className="text-caption text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   <span className="text-muted-foreground/70">Current: </span>
                   <span className="font-medium text-foreground truncate block">{analysisProgress.currentItem}</span>
                 </p>
@@ -404,75 +387,89 @@ export function CompletenessPanel({
             </div>
 
             {seriesStats ? (
-              <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-label">
-                <span className="text-muted-foreground">Total</span>
-                <AnimatedNumber value={seriesStats.totalSeries} className="font-medium text-right" />
-                <span className="text-muted-foreground">Complete</span>
-                <AnimatedNumber value={seriesStats.completeSeries} className="font-medium text-right" />
-                <span className="text-muted-foreground">Incomplete</span>
-                <AnimatedNumber value={seriesStats.incompleteSeries} className="font-medium text-right" />
-                <span className="text-muted-foreground">Missing episodes</span>
-                <AnimatedNumber value={seriesStats.totalMissingEpisodes} className="font-medium text-right" />
+              <div className="bg-muted/30 rounded-lg p-3 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Total</span>
+                  <AnimatedNumber value={seriesStats.totalSeries} className="font-medium" />
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Complete</span>
+                  <AnimatedNumber value={seriesStats.completeSeries} className="font-medium text-foreground" />
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Incomplete</span>
+                  <AnimatedNumber value={seriesStats.incompleteSeries} className="font-medium text-foreground" />
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Missing</span>
+                  <AnimatedNumber value={seriesStats.totalMissingEpisodes} className="font-medium text-foreground" />
+                </div>
               </div>
             ) : (
-              <p className="text-label text-muted-foreground">No series data yet</p>
+              <p className="text-sm text-muted-foreground">No series data yet</p>
             )}
 
             {showLibraries.length >= 2 && (
-              <Select
-                inputSize="sm"
+              <select
                 value={selectedShowLibraryId}
                 onChange={(e) => setSelectedShowLibraryId(e.target.value)}
-                className="w-full"
+                className="w-full px-2.5 py-1 bg-card border border-border rounded-md text-xs text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
               >
                 <option value="">All Libraries</option>
                 {showLibraries.map(lib => (
                   <option key={lib.id} value={lib.id}>{lib.name}</option>
                 ))}
-              </Select>
+              </select>
             )}
 
             {(() => {
               const taskStatus = getTaskStatus('series-completeness')
               if (isAnalyzing && analysisType === 'series') {
                 return (
-                  <Button
+                  <button
                     ref={seriesButtonRef}
                     onClick={() => onCancel('series')}
-                    variant="danger"
-                    size="sm"
-                    className="w-full justify-center"
-                    icon={<Square className="w-4 h-4" />}
+                    className={`w-full flex items-center justify-center gap-2 px-4 py-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 text-sm focus:outline-hidden`}
                   >
-                    Stop analysis
-                  </Button>
+                    <Square className="w-4 h-4" />
+                    Stop Analysis
+                  </button>
                 )
               }
               if (taskStatus === 'running') {
                 return (
-                  <Button ref={seriesButtonRef} disabled loading size="sm" className="w-full justify-center">
+                  <button
+                    ref={seriesButtonRef}
+                    disabled
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary/70 text-primary-foreground rounded-md text-sm cursor-not-allowed"
+                  >
+                    <Loader2 className="w-4 h-4 animate-spin" />
                     Analyzing...
-                  </Button>
+                  </button>
                 )
               }
               if (taskStatus === 'queued') {
                 return (
-                  <Button ref={seriesButtonRef} disabled variant="secondary" size="sm" className="w-full justify-center" icon={<Clock className="w-4 h-4" />}>
+                  <button
+                    ref={seriesButtonRef}
+                    disabled
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-muted text-muted-foreground rounded-md text-sm cursor-not-allowed"
+                  >
+                    <Clock className="w-4 h-4" />
                     Queued
-                  </Button>
+                  </button>
                 )
               }
               return (
-                <Button
+                <button
                   ref={seriesButtonRef}
                   onClick={handleAnalyzeSeries}
                   disabled={!isKeyConfigured}
-                  size="sm"
-                  className="w-full justify-center"
-                  icon={<RefreshCw className="w-4 h-4" />}
+                  className={`w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm focus:outline-hidden`}
                 >
-                  Analyze series
-                </Button>
+                  <RefreshCw className="w-4 h-4" />
+                  Analyze Series
+                </button>
               )
             })()}
           </div>
@@ -487,75 +484,89 @@ export function CompletenessPanel({
             </div>
 
             {collectionStats ? (
-              <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-label">
-                <span className="text-muted-foreground">Total</span>
-                <AnimatedNumber value={collectionStats.total} className="font-medium text-right" />
-                <span className="text-muted-foreground">Complete</span>
-                <AnimatedNumber value={collectionStats.complete} className="font-medium text-right" />
-                <span className="text-muted-foreground">Incomplete</span>
-                <AnimatedNumber value={collectionStats.incomplete} className="font-medium text-right" />
-                <span className="text-muted-foreground">Missing movies</span>
-                <AnimatedNumber value={collectionStats.totalMissing} className="font-medium text-right" />
+              <div className="bg-muted/30 rounded-lg p-3 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Total</span>
+                  <AnimatedNumber value={collectionStats.total} className="font-medium" />
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Complete</span>
+                  <AnimatedNumber value={collectionStats.complete} className="font-medium text-foreground" />
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Incomplete</span>
+                  <AnimatedNumber value={collectionStats.incomplete} className="font-medium text-foreground" />
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Missing</span>
+                  <AnimatedNumber value={collectionStats.totalMissing} className="font-medium text-foreground" />
+                </div>
               </div>
             ) : (
-              <p className="text-label text-muted-foreground">No collection data yet</p>
+              <p className="text-sm text-muted-foreground">No collection data yet</p>
             )}
 
             {movieLibraries.length >= 2 && (
-              <Select
-                inputSize="sm"
+              <select
                 value={selectedMovieLibraryId}
                 onChange={(e) => setSelectedMovieLibraryId(e.target.value)}
-                className="w-full"
+                className="w-full px-2.5 py-1 bg-card border border-border rounded-md text-xs text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
               >
                 <option value="">All Libraries</option>
                 {movieLibraries.map(lib => (
                   <option key={lib.id} value={lib.id}>{lib.name}</option>
                 ))}
-              </Select>
+              </select>
             )}
 
             {(() => {
               const taskStatus = getTaskStatus('collection-completeness')
               if (isAnalyzing && analysisType === 'collections') {
                 return (
-                  <Button
+                  <button
                     ref={collectionsButtonRef}
                     onClick={() => onCancel('collections')}
-                    variant="danger"
-                    size="sm"
-                    className="w-full justify-center"
-                    icon={<Square className="w-4 h-4" />}
+                    className={`w-full flex items-center justify-center gap-2 px-4 py-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 text-sm focus:outline-hidden`}
                   >
-                    Stop analysis
-                  </Button>
+                    <Square className="w-4 h-4" />
+                    Stop Analysis
+                  </button>
                 )
               }
               if (taskStatus === 'running') {
                 return (
-                  <Button ref={collectionsButtonRef} disabled loading size="sm" className="w-full justify-center">
+                  <button
+                    ref={collectionsButtonRef}
+                    disabled
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary/70 text-primary-foreground rounded-md text-sm cursor-not-allowed"
+                  >
+                    <Loader2 className="w-4 h-4 animate-spin" />
                     Analyzing...
-                  </Button>
+                  </button>
                 )
               }
               if (taskStatus === 'queued') {
                 return (
-                  <Button ref={collectionsButtonRef} disabled variant="secondary" size="sm" className="w-full justify-center" icon={<Clock className="w-4 h-4" />}>
+                  <button
+                    ref={collectionsButtonRef}
+                    disabled
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-muted text-muted-foreground rounded-md text-sm cursor-not-allowed"
+                  >
+                    <Clock className="w-4 h-4" />
                     Queued
-                  </Button>
+                  </button>
                 )
               }
               return (
-                <Button
+                <button
                   ref={collectionsButtonRef}
                   onClick={handleAnalyzeCollections}
                   disabled={!isKeyConfigured}
-                  size="sm"
-                  className="w-full justify-center"
-                  icon={<RefreshCw className="w-4 h-4" />}
+                  className={`w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm focus:outline-hidden`}
                 >
-                  Analyze collections
-                </Button>
+                  <RefreshCw className="w-4 h-4" />
+                  Analyze Collections
+                </button>
               )
             })()}
           </div>
@@ -570,63 +581,92 @@ export function CompletenessPanel({
             </div>
 
             {musicStats ? (
-              <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-label">
-                <span className="text-muted-foreground">Total</span>
-                <AnimatedNumber value={musicStats.totalArtists} className="font-medium text-right" />
-                <span className="text-muted-foreground">Complete</span>
-                <AnimatedNumber value={musicStats.completeArtists} className="font-medium text-right" />
-                <span className="text-muted-foreground">Incomplete</span>
-                <AnimatedNumber value={musicStats.incompleteArtists} className="font-medium text-right" />
-                <span className="text-muted-foreground">Missing albums</span>
-                <AnimatedNumber value={musicStats.totalMissingAlbums} className="font-medium text-right" />
+              <div className="bg-muted/30 rounded-lg p-3 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Total</span>
+                  <AnimatedNumber value={musicStats.totalArtists} className="font-medium" />
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Complete</span>
+                  <AnimatedNumber value={musicStats.completeArtists} className="font-medium text-foreground" />
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Incomplete</span>
+                  <AnimatedNumber value={musicStats.incompleteArtists} className="font-medium text-foreground" />
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Missing</span>
+                  <AnimatedNumber value={musicStats.totalMissingAlbums} className="font-medium text-foreground" />
+                </div>
               </div>
             ) : (
-              <p className="text-label text-muted-foreground">No music data yet</p>
+              <p className="text-sm text-muted-foreground">No music data yet</p>
             )}
 
             {(() => {
               const taskStatus = getTaskStatus('music-completeness')
               if (isAnalyzing && analysisType === 'music') {
                 return (
-                  <Button
+                  <button
                     ref={musicButtonRef}
                     onClick={() => onCancel('music')}
-                    variant="danger"
-                    size="sm"
-                    className="w-full justify-center"
-                    icon={<Square className="w-4 h-4" />}
+                    className={`w-full flex items-center justify-center gap-2 px-4 py-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 text-sm focus:outline-hidden`}
                   >
-                    Stop analysis
-                  </Button>
+                    <Square className="w-4 h-4" />
+                    Stop Analysis
+                  </button>
                 )
               }
               if (taskStatus === 'running') {
                 return (
-                  <Button ref={musicButtonRef} disabled loading size="sm" className="w-full justify-center">
+                  <button
+                    ref={musicButtonRef}
+                    disabled
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary/70 text-primary-foreground rounded-md text-sm cursor-not-allowed"
+                  >
+                    <Loader2 className="w-4 h-4 animate-spin" />
                     Analyzing...
-                  </Button>
+                  </button>
                 )
               }
               if (taskStatus === 'queued') {
                 return (
-                  <Button ref={musicButtonRef} disabled variant="secondary" size="sm" className="w-full justify-center" icon={<Clock className="w-4 h-4" />}>
+                  <button
+                    ref={musicButtonRef}
+                    disabled
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-muted text-muted-foreground rounded-md text-sm cursor-not-allowed"
+                  >
+                    <Clock className="w-4 h-4" />
                     Queued
-                  </Button>
+                  </button>
                 )
               }
               return (
-                <Button
+                <button
                   ref={musicButtonRef}
                   onClick={handleAnalyzeMusic}
-                  size="sm"
-                  className="w-full justify-center"
-                  icon={<RefreshCw className="w-4 h-4" />}
+                  className={`w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm focus:outline-hidden`}
                 >
-                  Analyze music
-                </Button>
+                  <RefreshCw className="w-4 h-4" />
+                  Analyze Music
+                </button>
               )
             })()}
 
+            <p className="text-xs text-muted-foreground">
+              Analyzes artist discographies and album track completeness using the public MusicBrainz API.
+              May take time due to rate limits.
+            </p>
+          </div>
+        )}
+
+        {/* Info Note - show when any section is visible */}
+        {(hasMusic || (isKeyConfigured && (hasTV || hasMovies))) && (
+          <div className="text-xs text-muted-foreground bg-muted/30 rounded-lg p-3">
+            <p>
+              Completeness analysis uses TMDB for TV/movies and MusicBrainz for music to find missing content.
+              Run analysis after adding new content to your library.
+            </p>
           </div>
         )}
       </div>

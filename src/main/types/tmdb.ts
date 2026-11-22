@@ -3,6 +3,7 @@
 
 export interface TMDBMovieDetails {
   id: number
+  original_language: string
   title: string
   original_title: string
   release_date: string
@@ -51,6 +52,7 @@ export interface TMDBCollectionPart {
 
 export interface TMDBTVShowDetails {
   id: number
+  original_language: string
   name: string
   original_name: string
   overview: string
@@ -113,6 +115,7 @@ export interface TMDBEpisode {
 // Search result types
 export interface TMDBMovieSearchResult {
   id: number
+  original_language: string
   title: string
   original_title: string
   release_date: string
@@ -126,6 +129,7 @@ export interface TMDBMovieSearchResult {
 
 export interface TMDBTVSearchResult {
   id: number
+  original_language: string
   name: string
   original_name: string
   first_air_date: string

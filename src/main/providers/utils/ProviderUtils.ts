@@ -6,20 +6,11 @@
  */
 
 import { AudioCodecRanker } from '../../services/AudioCodecRanker'
-
-/**
- * Audio track interface for provider utilities
- */
-export interface AudioTrackInfo {
-  index: number
-  codec: string
-  channels: number
-  bitrate: number
-  hasObjectAudio?: boolean
-  language?: string
-  title?: string
-  isDefault?: boolean
-}
+import type { AudioTrackInfo } from '../../services/AudioCodecRanker'
+import { isCommentaryTrack } from '../../services/utils/audioTrackUtils'
+import { getVideoResolutionRank, getVideoResolutionTier } from '../../services/VideoResolutionTier'
+export { isCommentaryTrack } from '../../services/utils/audioTrackUtils'
+export type { AudioTrackInfo } from '../../services/AudioCodecRanker'
 
 /**
  * Select the best audio track from a list based on quality ranking
@@ -41,26 +32,7 @@ export function selectBestAudioTrack<T extends AudioTrackInfo>(audioTracks: T[])
   const nonCommentary = audioTracks.filter(t => !isCommentaryTrack(t))
   const candidates = nonCommentary.length > 0 ? nonCommentary : audioTracks
 
-  return candidates.reduce((best, current) => {
-    const bestTier = AudioCodecRanker.getTier(best.codec, best.hasObjectAudio || false)
-    const currentTier = AudioCodecRanker.getTier(current.codec, current.hasObjectAudio || false)
-
-    if (currentTier > bestTier) return current
-    if (bestTier > currentTier) return best
-    if (current.channels > best.channels) return current
-    if (best.channels > current.channels) return best
-    if (current.bitrate > best.bitrate) return current
-    return best
-  }, candidates[0])
-}
-
-/**
- * Check if an audio track is a commentary track based on its title
- */
-export function isCommentaryTrack(track: { title?: string }): boolean {
-  if (!track.title) return false
-  const t = track.title.toLowerCase()
-  return t.includes('commentary')
+  return AudioCodecRanker.selectBestTrack(candidates)
 }
 
 /**
@@ -157,19 +129,50 @@ export function calculateAudioBitrateFromFile(
  * @returns true if the bitrate looks like an estimated value
  */
 /**
- * Score a media version for best-version selection across multi-version items.
- * Higher score = better quality. Ranks by resolution tier, then HDR, then bitrate.
+ * Rank a media version by its resolution tier for canonical version selection.
  *
  * Used by all providers to pick the "primary" version when an item has multiple files.
  */
-export function scoreVersion(v: { resolution: string; video_bitrate: number; hdr_format?: string }): number {
-  const res = v.resolution.toLowerCase()
-  const tierRank = res === '4k' || res.includes('2160') ? 4
-    : res.includes('1080') ? 3
-    : res.includes('720') ? 2
-    : 1
-  const hdrBonus = v.hdr_format && v.hdr_format !== 'None' ? 1000 : 0
-  return tierRank * 100000 + hdrBonus + v.video_bitrate
+export function scoreVersion(v: { resolution: string; height?: number }): number {
+  const rank = getVideoResolutionRank(getVideoResolutionTier(v.resolution, v.height))
+  return rank === null ? 0 : rank + 1
+}
+
+export function normalizeGroupTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/\s*[-:(]\s*(director'?s?\s*cut|extended|unrated|theatrical|imax|remastered|special\s*edition|ultimate\s*edition|collector'?s?\s*edition)\s*[):]?\s*$/i, '')
+    .replace(/\s*\(\s*\)\s*$/, '')
+    .trim()
+}
+
+export interface MediaGroupingIdentity {
+  tmdbId?: string | number | null
+  imdbId?: string | null
+  title?: string | null
+  year?: number | null
+}
+
+/** All movie grouping and existing-parent lookup must use the same identity. */
+export function getMediaGroupingKey(item: MediaGroupingIdentity): string {
+  return item.tmdbId ? `tmdb:${item.tmdbId}`
+    : item.imdbId ? `imdb:${item.imdbId}`
+    : `title:${normalizeGroupTitle(item.title || '')}|${item.year || ''}`
+}
+
+export function groupByMediaIdentity<T>(
+  items: readonly T[],
+  getIdentity: (item: T) => MediaGroupingIdentity,
+): T[][] {
+  const groups = new Map<string, T[]>()
+  for (const item of items) {
+    const identity = getMediaGroupingKey(getIdentity(item))
+    const group = groups.get(identity)
+    if (group) group.push(item)
+    else groups.set(identity, [item])
+  }
+  return [...groups.values()]
 }
 
 export function isEstimatedBitrate(bitrate: number): boolean {

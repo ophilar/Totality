@@ -44,6 +44,8 @@ interface MatchFixModalProps {
   filePath?: string    // File path for context
   artistName?: string  // For album searches
   sourceId?: string    // For series
+  libraryId?: string   // For series
+  seriesIdentityKey?: string // For series
   mediaItemId?: number // For movies
   artistId?: number    // For artists
   albumId?: number     // For albums
@@ -59,6 +61,8 @@ export function MatchFixModal({
   filePath,
   artistName,
   sourceId,
+  libraryId,
+  seriesIdentityKey,
   mediaItemId,
   artistId,
   albumId,
@@ -82,8 +86,11 @@ export function MatchFixModal({
       setSearchResults([])
       setSelectedResult(null)
       setError(null)
+      if (type === 'series' && (!seriesIdentityKey || !sourceId)) {
+        setError('Series identity key and source ID are required to fix series match.')
+      }
     }
-  }, [isOpen, currentTitle])
+  }, [isOpen, currentTitle, type, seriesIdentityKey, sourceId])
 
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return
@@ -131,13 +138,15 @@ export function MatchFixModal({
     try {
       switch (type) {
         case 'series':
-          if (sourceId) {
-            await window.electronAPI.seriesFixMatch(
-              currentTitle,
-              sourceId,
-              (selectedResult as TMDBSearchResult).id
-            )
+          if (!seriesIdentityKey || !sourceId) {
+            throw new Error('Series identity key and source ID are required to fix series match')
           }
+          await window.electronAPI.seriesFixMatch(
+            seriesIdentityKey,
+            sourceId,
+            libraryId || undefined,
+            (selectedResult as TMDBSearchResult).id
+          )
           break
         case 'movie':
           if (mediaItemId !== undefined) {
@@ -172,7 +181,7 @@ export function MatchFixModal({
     } finally {
       setIsFixing(false)
     }
-  }, [selectedResult, type, currentTitle, sourceId, mediaItemId, artistId, albumId, onMatchFixed, onClose])
+  }, [selectedResult, type, seriesIdentityKey, sourceId, libraryId, mediaItemId, artistId, albumId, onMatchFixed, onClose])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -238,33 +247,33 @@ export function MatchFixModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-200 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
     >
       <div
         ref={modalRef}
-        className="bg-card rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden border border-border"
+        className="bg-card rounded-xl shadow-2xl w-full max-w-2xl max-h-[calc(100vh-2rem)] min-h-0 flex flex-col overflow-hidden border border-border"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border/30">
+        <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
           <div className="min-w-0 flex-1 mr-4">
             <h2 className="text-title font-semibold">Fix {getTypeLabel()} match</h2>
-            <p className="text-label text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Current: <span className="text-foreground">{currentTitle}</span>
             </p>
             {filePath && (
-              <p className="text-caption text-muted-foreground/70 truncate mt-1" title={filePath}>
+              <p className="text-xs text-muted-foreground/70 truncate mt-1" title={filePath}>
                 {filePath}
               </p>
             )}
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-muted transition-colors shrink-0"
+            className="p-2 rounded-md hover:bg-muted transition-colors shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
@@ -280,7 +289,7 @@ export function MatchFixModal({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={`Search for ${getTypeLabel().toLowerCase()}...`}
-                className="w-full pl-10 pr-4 py-2 bg-background border border-border rounded-lg text-label focus:outline-hidden focus:ring-2 focus:ring-primary"
+                className="w-full pl-10 pr-4 py-2 bg-background border border-border rounded-lg text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
                 autoFocus
               />
             </div>
@@ -289,14 +298,14 @@ export function MatchFixModal({
               disabled={isSearching || !searchQuery.trim()}
               loading={isSearching}
               size="sm"
-              icon={!isSearching ? <Search className="w-4 h-4" /> : undefined}
+              icon={<Search className="w-4 h-4" />}
             >
               Search
             </Button>
           </div>
 
           {error && (
-            <p className="mt-2 text-label text-destructive">{error}</p>
+            <p className="mt-2 text-sm text-red-500">{error}</p>
           )}
         </div>
 
@@ -311,13 +320,12 @@ export function MatchFixModal({
           <div className="space-y-2">
             {searchResults.map((result, index) => {
               const isSelected = selectedResult === result
+              const isArtistType = type === 'artist'
               const title = getResultTitle(result)
               const year = getResultYear(result)
               const score = getResultScore(result)
               const poster = getResultPoster(result)
               const subtitle = getResultSubtitle(result)
-
-              const isArtistType = type === 'artist'
 
               return (
                 <button
@@ -329,7 +337,7 @@ export function MatchFixModal({
                       : 'hover:bg-muted/50'
                   }`}
                 >
-                  {/* Poster/Thumbnail — circle for artists, portrait for movies/shows */}
+                  {/* Poster/Thumbnail */}
                   <div className={`shrink-0 bg-muted overflow-hidden ${isArtistType ? 'w-12 h-12 rounded-full' : 'w-12 h-16 rounded'}`}>
                     {poster ? (
                       <img
@@ -339,7 +347,7 @@ export function MatchFixModal({
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                        <User className="w-6 h-6" />
+                        {isArtistType ? <User className="w-6 h-6" /> : <span className="text-xs">No image</span>}
                       </div>
                     )}
                   </div>
@@ -353,7 +361,7 @@ export function MatchFixModal({
                       )}
                     </div>
 
-                    <div className={`flex items-center gap-3 mt-1 text-label ${isSelected ? 'opacity-70' : 'text-muted-foreground'}`}>
+                    <div className={`flex items-center gap-3 mt-1 text-sm ${isSelected ? 'opacity-70' : 'text-muted-foreground'}`}>
                       {year && (
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
@@ -372,7 +380,7 @@ export function MatchFixModal({
                     </div>
 
                     {'overview' in result && result.overview && (
-                      <p className={`mt-1 text-caption line-clamp-2 ${isSelected ? 'opacity-70' : 'text-muted-foreground'}`}>
+                      <p className={`mt-1 text-xs line-clamp-2 ${isSelected ? 'opacity-70' : 'text-muted-foreground'}`}>
                         {result.overview}
                       </p>
                     )}
@@ -388,13 +396,7 @@ export function MatchFixModal({
           <Button variant="tertiary" size="sm" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            size="sm"
-            onClick={handleFixMatch}
-            disabled={!selectedResult || isFixing}
-            loading={isFixing}
-            icon={!isFixing ? <Check className="w-4 h-4" /> : undefined}
-          >
+          <Button size="sm" onClick={handleFixMatch} disabled={!selectedResult || isFixing} loading={isFixing} icon={<Check className="w-4 h-4" />}>
             Apply match
           </Button>
         </div>

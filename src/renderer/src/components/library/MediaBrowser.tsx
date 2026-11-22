@@ -1,29 +1,24 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { SETTING_KEYS } from '../../../../shared/settingKeys'
-import { isWebMode as isWebModeCheck } from '../../services/webTransport'
-import { stateToHash, replaceHash } from '../../services/hashRouting'
-import { MobileScanBanner } from '../mobile/MobileScanBanner'
-import MobileAlphabetScrubber from '../mobile/MobileAlphabetScrubber'
-import { MobileScanButton } from '../mobile/MobileScanButton'
 import { MediaDetails } from './MediaDetails'
 import { CompletenessPanel } from './CompletenessPanel'
 import { MissingItemPopup } from './MissingItemPopup'
 import { CollectionModal } from './CollectionModal'
 import { MatchFixModal } from './MatchFixModal'
 import { WishlistPanel } from '../wishlist/WishlistPanel'
-import { ActivityPanel } from '../ui/ActivityPanel'
 import { MoviesView } from './MoviesView'
+import { SharedOptimizationDialog } from './TranscodeModal'
 import { TVShowsView } from './TVShowsView'
 import { MusicView } from './MusicView'
-import { Grid3x3, List, Search, X, Library, Layers, Music, Disc3, User, RefreshCw, Film, Tv, CircleFadingArrowUp, Settings, Star, Home, SlidersHorizontal } from 'lucide-react'
+import { DuplicatesView } from './DuplicatesView'
+import { Grid3x3, List, Search, X, Library, Layers, Music, Disc3, User, RefreshCw, Film, Tv, Settings, Star, Home } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
 import { useNavigation } from '../../contexts/NavigationContext'
 import { useWishlist } from '../../contexts/WishlistContext'
 import { useToast } from '../../contexts/ToastContext'
 import logoImage from '../../assets/totality_header_logo.png'
 import { MoviePlaceholder, TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
-import { Select } from '../ui/Input'
 
 // Import extracted hooks (more hooks available in ./hooks for gradual migration)
 import {
@@ -39,7 +34,7 @@ import {
   useMoviePagination,
   useTVShowPagination,
 } from './hooks'
-import { usePagination } from './hooks/usePagination'
+import { LIBRARY_PAGE_SIZE, usePagination } from './hooks/usePagination'
 import {
   emitDismissUpgrade,
 } from '../../utils/dismissEvents'
@@ -63,6 +58,7 @@ import type {
   ArtistCompletenessData,
   AlbumCompletenessData,
   MediaBrowserProps,
+  MediaViewType,
 } from './types'
 
 export function MediaBrowser({
@@ -79,14 +75,16 @@ export function MediaBrowser({
   libraryTab,
   onLibraryTabChange,
   onAutoRefreshChange,
-  onBackdropChange,
+  pendingTVOptimizationAction,
+  onTVOptimizationActionHandled,
   isMobile = false,
   isTablet = false,
-  taskQueueState,
-  isScanActive = false,
 }: MediaBrowserProps) {
   const { sources, activeSourceId, scanProgress, setActiveSource, markLibraryAsNew } = useSources()
   const { addToast } = useToast()
+  const reportViewPreferenceError = useCallback((error: unknown) => {
+    addToast({ type: 'error', title: 'View preference failed', message: error instanceof Error ? error.message : String(error) })
+  }, [addToast])
   const { count: wishlistCount } = useWishlist()
   const { pendingNavigation, clearNavigation, pushNavState } = useNavigation()
 
@@ -112,12 +110,8 @@ export function MediaBrowser({
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false) // For background incremental scan on app start
   const hasInitialLoadRef = useRef(false) // Track if initial load is complete
   const hasAutoSwitchedRef = useRef(false) // Track if auto-switch has been done (to prevent loop)
-  const mountedRef = useRef(true)
-  const isWebModeFlag = useMemo(() => isWebModeCheck(), [])
-  useEffect(() => { return () => { mountedRef.current = false } }, [])
-
   const [stats, setStats] = useState<LibraryStats | null>(null)
-  const [view, setView] = useState<'movies' | 'tv' | 'music'>('movies')
+  const [view, setView] = useState<MediaViewType>('movies')
 
   // Music state (artists, albums, tracks pagination provided by usePagination hooks below)
   const [musicStats, setMusicStats] = useState<MusicStats | null>(null)
@@ -131,7 +125,6 @@ export function MediaBrowser({
   const [albumSortColumn, setAlbumSortColumn] = useState<'title' | 'artist'>('title')
   const [albumSortDirection, setAlbumSortDirection] = useState<'asc' | 'desc'>('asc')
   const [searchInput, setSearchInput] = useState('')
-
   // Filters (extracted to useLibraryFilters hook)
   const {
     tierFilter, setTierFilter,
@@ -141,16 +134,11 @@ export function MediaBrowser({
   } = useLibraryFilters(searchInput)
    
   // Centralized view switcher — resets filters to prevent cross-tab contamination
-  const switchView = useCallback((newView: 'movies' | 'tv' | 'music') => {
+  const switchView = useCallback((newView: MediaViewType) => {
     setView(newView)
     setTierFilter('all')
     setQualityFilter('all')
     setAlphabetFilter(null)
-    setSelectedShow(null)
-    setSelectedSeason(null)
-    setSelectedArtist(null)
-    setSelectedAlbum(null)
-    setAlbumTracks([])
   }, [setTierFilter, setQualityFilter, setAlphabetFilter])
 
   // Compute search dropdown position from the search container ref
@@ -170,8 +158,11 @@ export function MediaBrowser({
   const [searchQuery, _setSearchQuery] = useState('')
   const [showSearchResults, setShowSearchResults] = useState(false)
   const [searchResultIndex, setSearchResultIndex] = useState(-1)
-  const [searchTrackResults, setSearchTrackResults] = useState<Array<{ id: number; title: string; album_id: number; album_title?: string; artist_name?: string; thumb_url?: string; needs_upgrade: boolean; type: 'track' }>>([])
-  const searchTrackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [searchData, setSearchData] = useState<Awaited<ReturnType<typeof window.electronAPI.mediaSearch>>>(
+    { movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: [] }
+  )
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const searchRequestIdRef = useRef(0)
   const searchContainerRef = useRef<HTMLDivElement>(null)
   const searchDropdownRef = useRef<HTMLDivElement>(null)
   const searchPortalRef = useRef<HTMLDivElement>(null)
@@ -185,28 +176,45 @@ export function MediaBrowser({
   // Filter refs - using Map for dynamic buttons
   const tierFilterRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
   const qualityFilterRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
+  const alphabetFilterRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const gridViewRef = useRef<HTMLButtonElement>(null)
   const listViewRef = useRef<HTMLButtonElement>(null)
   const [selectedMediaId, setSelectedMediaId] = useState<number | null>(null)
+  const [optimizingMovieId, setOptimizingMovieId] = useState<number | null>(null)
+  const [initialMoviePreflightId, setInitialMoviePreflightId] = useState<string | null>(null)
   const [detailRefreshKey, setDetailRefreshKey] = useState(0) // Increment to force detail view refresh
-  const { viewType, gridScale, setViewType, setGridScale, viewPrefsLoadedRef, loadViewPrefs } = useViewPreferences(view)
+  const { viewType, gridScale, setViewType, setGridScale, viewPrefsLoadedRef, loadViewPrefs } = useViewPreferences(view, reportViewPreferenceError)
+
+  useEffect(() => {
+    if (pendingTVOptimizationAction?.kind !== 'review-movie') return
+    setOptimizingMovieId(pendingTVOptimizationAction.mediaItemId)
+    setInitialMoviePreflightId(pendingTVOptimizationAction.preflightId)
+    onTVOptimizationActionHandled?.()
+  }, [pendingTVOptimizationAction, onTVOptimizationActionHandled])
 
   // Library filter within current view (declared early — needed by pagination hooks)
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null)
 
   // Movie and TV show pagination (extracted hooks)
   const {
-    paginatedMovies, setPaginatedMovies, totalMovieCount, moviesLoading,
+    paginatedMovies, setPaginatedMovies, totalMovieCount, moviesLoading, optimizationSummary, refreshOptimizationSummary,
     movieSortBy, setMovieSortBy, loadPaginatedMovies, loadMoreMovies,
-  } = useMoviePagination({ activeSourceId, activeLibraryId, tierFilter: debouncedTierFilter, qualityFilter: debouncedQualityFilter, searchQuery, alphabetFilter, isMobile })
+  } = useMoviePagination({ activeSourceId, activeLibraryId, tierFilter: debouncedTierFilter, qualityFilter: debouncedQualityFilter, searchQuery })
+
+  const refreshMovieOptimizationData = useCallback(async () => {
+    await Promise.all([loadPaginatedMovies(true), refreshOptimizationSummary()])
+  }, [loadPaginatedMovies, refreshOptimizationSummary])
+  const handleMovieOptimizationCompleted = useCallback(() => {
+    void refreshMovieOptimizationData()
+  }, [refreshMovieOptimizationData])
 
   const {
     paginatedShows, totalShowCount, totalEpisodeCount, showsLoading,
     tvSortBy, setTvSortBy,
     selectedShowEpisodes, setSelectedShowEpisodes, selectedShowEpisodesLoading,
     loadPaginatedShows, loadMoreShows, loadSelectedShowEpisodes,
-  } = useTVShowPagination({ activeSourceId, activeLibraryId, searchQuery, alphabetFilter, isMobile })
+  } = useTVShowPagination({ activeSourceId, activeLibraryId, searchQuery })
 
   // Music pagination (artists, tracks, albums via generic hook)
   const {
@@ -214,7 +222,7 @@ export function MediaBrowser({
     totalCount: totalArtistCount, loading: artistsLoading,
     load: loadPaginatedArtists, loadMore: loadMoreArtists,
   } = usePagination<MusicArtist>({
-    pageSize: isMobile ? 100 : 200,
+    pageSize: LIBRARY_PAGE_SIZE,
     fetchItems: (f) => window.electronAPI.musicGetArtists(f) as Promise<MusicArtist[]>,
     fetchCount: (f) => window.electronAPI.musicCountArtists(f) as Promise<number>,
     buildFilters: () => {
@@ -222,10 +230,9 @@ export function MediaBrowser({
       if (activeSourceId) f.sourceId = activeSourceId
       if (activeLibraryId) f.libraryId = activeLibraryId
       if (searchQuery.trim()) f.searchQuery = searchQuery.trim()
-      if (alphabetFilter) f.alphabetFilter = alphabetFilter
       return f
     },
-    deps: [activeSourceId, activeLibraryId, searchQuery, alphabetFilter],
+    deps: [activeSourceId, activeLibraryId, searchQuery],
   })
 
   const {
@@ -233,7 +240,7 @@ export function MediaBrowser({
     totalCount: totalTrackCount, loading: tracksLoading,
     load: loadPaginatedTracks, loadMore: loadMoreTracks,
   } = usePagination<MusicTrack>({
-    pageSize: isMobile ? 100 : 500,
+    pageSize: 500,
     fetchItems: (f) => window.electronAPI.musicGetTracks(f) as Promise<MusicTrack[]>,
     fetchCount: (f) => window.electronAPI.musicCountTracks(f) as Promise<number>,
     buildFilters: () => {
@@ -251,7 +258,7 @@ export function MediaBrowser({
     totalCount: totalAlbumCount, loading: albumsLoading,
     load: loadPaginatedAlbums, loadMore: loadMoreAlbums,
   } = usePagination<MusicAlbum>({
-    pageSize: isMobile ? 50 : 200,
+    pageSize: LIBRARY_PAGE_SIZE,
     fetchItems: (f) => window.electronAPI.musicGetAlbums(f) as Promise<MusicAlbum[]>,
     fetchCount: (f) => window.electronAPI.musicCountAlbums(f) as Promise<number>,
     buildFilters: () => {
@@ -266,14 +273,12 @@ export function MediaBrowser({
         f.artistId = selectedArtist.id
         f.artistName = selectedArtist.name
       }
-      if (alphabetFilter && !selectedArtist) f.alphabetFilter = alphabetFilter
       return f
     },
-    deps: [activeSourceId, activeLibraryId, searchQuery, albumSortColumn, albumSortDirection, selectedArtist, alphabetFilter],
+    deps: [activeSourceId, activeLibraryId, searchQuery, albumSortColumn, albumSortDirection, selectedArtist],
   })
 
   const [collectionsOnly, setCollectionsOnly] = useState(false)
-  const [showMobileFilters, setShowMobileFilters] = useState(false)
 
   // TV Show navigation
   const [selectedShow, setSelectedShow] = useState<string | null>(null)
@@ -291,20 +296,6 @@ export function MediaBrowser({
   const [includeEps, setIncludeEps] = useState(true)
   const [includeSingles, setIncludeSingles] = useState(true)
   // isAnalyzing, analysisProgress, analysisType, tmdbApiKeySet, analysis handlers: see useAnalysisManager hook below
-
-  // Sync drill-down state to URL hash (web mode only)
-  useEffect(() => {
-    if (!isWebModeFlag) return
-    replaceHash(stateToHash({
-      view: 'library',
-      tab: view,
-      showTitle: selectedShow || undefined,
-      seasonNumber: selectedSeason ?? undefined,
-      artistId: selectedArtist?.id,
-      albumId: selectedAlbum?.id,
-      mediaId: selectedMediaId ?? undefined,
-    }))
-  }, [isWebModeFlag, view, selectedShow, selectedSeason, selectedArtist?.id, selectedAlbum?.id, selectedMediaId])
 
   // Collection modal state + helpers (extracted hook)
   const {
@@ -334,6 +325,31 @@ export function MediaBrowser({
     setActiveLibraryId(null)
   }, [view, activeSourceId])
 
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger shortcuts when typing in input fields
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return
+      }
+
+      // W - Toggle wishlist panel
+      if (e.key === 'w' || e.key === 'W') {
+        e.preventDefault()
+        setShowWishlistPanel(prev => {
+          const newState = !prev
+          if (newState) setShowCompletenessPanel(false)
+          return newState
+        })
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Handle navigation state restore (back/forward from history stack)
   useEffect(() => {
     const handleRestore = (e: Event) => {
@@ -356,7 +372,7 @@ export function MediaBrowser({
         const album = musicAlbums.find((a: { id?: number }) => a.id === state.selectedAlbum.id)
         setSelectedAlbum(album || null)
         if (album?.id) {
-          window.electronAPI.musicGetTracksByAlbum(album.id).then((tracks: unknown[]) => { if (mountedRef.current) setAlbumTracks(tracks as never[]) })
+          window.electronAPI.musicGetTracksByAlbum(album.id).then((tracks: unknown[]) => setAlbumTracks(tracks as never[]))
         }
       } else {
         setSelectedAlbum(null)
@@ -376,11 +392,10 @@ export function MediaBrowser({
   }, [initialTab, switchView])
 
   // Sync view with external libraryTab prop (one-way: prop → state)
-  // Only set the view — don't call switchView() which clears selections,
-  // because pendingNavigation may have just set them (race condition).
+  // Only update when prop changes, not on every render
   useEffect(() => {
     if (libraryTab && libraryTab !== view) {
-      setView(libraryTab)
+      switchView(libraryTab)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [libraryTab])
@@ -539,7 +554,7 @@ export function MediaBrowser({
   // Load music stats (non-blocking background load)
   const loadMusicData = async () => {
     try {
-      const mStats = await window.electronAPI.musicGetStats(activeSourceId || undefined, activeLibraryId || undefined)
+      const mStats = await window.electronAPI.musicGetStats(activeSourceId || undefined)
       setMusicStats(mStats as MusicStats)
     } catch (err) {
       console.warn('Failed to load music stats:', err)
@@ -554,7 +569,9 @@ export function MediaBrowser({
         const artists = await window.electronAPI.musicGetArtists({ sourceId: activeSourceId || undefined })
         const fresh = (artists as MusicArtist[]).find(a => a.id === selectedArtist.id)
         if (fresh) setSelectedArtist(fresh)
-      } catch { /* ignore */ }
+      } catch (error) {
+        console.warn('Failed to refresh selected artist after music update:', error)
+      }
     }
   }
 
@@ -572,7 +589,7 @@ export function MediaBrowser({
       loadPaginatedArtists(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, musicViewMode, activeSourceId, activeLibraryId, searchQuery, alphabetFilter])
+  }, [view, musicViewMode, activeSourceId, activeLibraryId, searchQuery])
 
   // Trigger server-side album loading when albums tab is active and filters change
   useEffect(() => {
@@ -580,7 +597,7 @@ export function MediaBrowser({
       loadPaginatedAlbums(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, musicViewMode, activeSourceId, activeLibraryId, searchQuery, albumSortColumn, albumSortDirection, selectedArtist, alphabetFilter])
+  }, [view, musicViewMode, activeSourceId, activeLibraryId, searchQuery, albumSortColumn, albumSortDirection, selectedArtist])
 
   // Trigger server-side movie loading when movies view is active and filters change
   useEffect(() => {
@@ -588,7 +605,7 @@ export function MediaBrowser({
       loadPaginatedMovies(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, activeSourceId, activeLibraryId, debouncedTierFilter, debouncedQualityFilter, searchQuery, alphabetFilter])
+  }, [view, activeSourceId, activeLibraryId, debouncedTierFilter, debouncedQualityFilter, searchQuery])
 
   // Trigger server-side TV show loading when TV view is active and filters change
   useEffect(() => {
@@ -596,17 +613,20 @@ export function MediaBrowser({
       loadPaginatedShows(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, activeSourceId, activeLibraryId, searchQuery, alphabetFilter])
+  }, [view, activeSourceId, activeLibraryId, searchQuery])
 
   // Load episodes when a show is selected
   useEffect(() => {
     if (selectedShow) {
-      loadSelectedShowEpisodes(selectedShow)
+      const summary = paginatedShows.find(s => s.series_title === selectedShow || s.series_identity_key === selectedShow)
+      if (summary) {
+        loadSelectedShowEpisodes(summary)
+      }
     } else {
       setSelectedShowEpisodes([])
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedShow, loadSelectedShowEpisodes])
+  }, [selectedShow, paginatedShows, loadSelectedShowEpisodes])
 
   // Event listeners and initial data load placed after loadMusicCompletenessData (see below)
 
@@ -674,8 +694,11 @@ export function MediaBrowser({
   const reloadAfterRescan = useCallback(async () => {
     loadPaginatedMovies(true)
     loadPaginatedShows(true)
-    if (selectedShow) await loadSelectedShowEpisodes(selectedShow)
-  }, [loadPaginatedMovies, loadPaginatedShows, selectedShow, loadSelectedShowEpisodes])
+    if (selectedShow) {
+      const matched = paginatedShows.find(s => s.series_title === selectedShow || s.series_identity_key === selectedShow)
+      if (matched) await loadSelectedShowEpisodes(matched)
+    }
+  }, [loadPaginatedMovies, loadPaginatedShows, paginatedShows, selectedShow, loadSelectedShowEpisodes])
 
   const {
     matchFixModal, setMatchFixModal,
@@ -717,7 +740,10 @@ export function MediaBrowser({
         try {
           const parsed = JSON.parse(json || '[]') as Array<{ musicbrainz_id?: string }>
           return JSON.stringify(parsed.filter(item => !excludedAlbumIds.has(item.musicbrainz_id ?? null)))
-        } catch { return json || '[]' }
+        } catch (error) {
+          console.error('[MediaBrowser] Invalid artist completeness data:', error)
+          return json || '[]'
+        }
       }
 
       // Index by artist name, filtering exclusions
@@ -743,7 +769,7 @@ export function MediaBrowser({
       // Calculate stats with real-time EP/Singles filtering
       const effectiveEps = overrideEps ?? includeEps
       const effectiveSingles = overrideSingles ?? includeSingles
-      const freshStats = await window.electronAPI.musicGetStats(activeSourceId || undefined, activeLibraryId || undefined) as MusicStats | null
+      const freshStats = await window.electronAPI.musicGetStats(activeSourceId || undefined) as MusicStats | null
       const totalArtists = freshStats?.totalArtists ?? completenessData.length
       const analyzedArtists = completenessData.length
 
@@ -790,8 +816,11 @@ export function MediaBrowser({
   const reloadMediaForEvents = useCallback(async () => {
     loadPaginatedMovies(true)
     loadPaginatedShows(true)
-    if (selectedShow) loadSelectedShowEpisodes(selectedShow)
-  }, [loadPaginatedMovies, loadPaginatedShows, selectedShow, loadSelectedShowEpisodes])
+    if (selectedShow) {
+      const matched = paginatedShows.find(s => s.series_title === selectedShow || s.series_identity_key === selectedShow)
+      if (matched) loadSelectedShowEpisodes(matched)
+    }
+  }, [loadPaginatedMovies, loadPaginatedShows, paginatedShows, selectedShow, loadSelectedShowEpisodes])
 
   // Load EP/Singles inclusion settings
   const loadEpSingleSettings = useCallback(async () => {
@@ -828,15 +857,12 @@ export function MediaBrowser({
     })
     loadCompletenessData()
     loadMusicData()
-    // Defer music completeness to music tab — saves ~1.4MB on movies/TV views
-    if (view === 'music') {
-      loadMusicCompletenessData()
-    }
+    loadMusicCompletenessData()
     loadEpSingleSettings()
     checkTmdbApiKey()
     // Load per-tab view preferences (delegated to useViewPreferences hook)
     if (!viewPrefsLoadedRef.current) {
-      loadViewPrefs(view)
+      void loadViewPrefs(view).catch(reportViewPreferenceError)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSourceId])
@@ -844,15 +870,7 @@ export function MediaBrowser({
   // Apply per-tab view preferences when switching tabs
   useEffect(() => {
     if (!viewPrefsLoadedRef.current) return
-    loadViewPrefs(view)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view])
-
-  // Load music completeness on-demand when switching to music tab
-  useEffect(() => {
-    if (view === 'music' && artistCompleteness.size === 0) {
-      loadMusicCompletenessData()
-    }
+    void loadViewPrefs(view).catch(reportViewPreferenceError)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view])
 
@@ -884,28 +902,12 @@ export function MediaBrowser({
       season.episodes.sort((a, b) => (a.episode_number || 0) - (b.episode_number || 0))
     })
 
-    // Get art_url from episodes first, fall back to show summary
-    const showSummary = paginatedShows.find(s => s.series_title === selectedShow)
-    const artUrl = selectedShowEpisodes[0]?.art_url || showSummary?.art_url
-
     return {
       title: selectedShow,
       poster_url: selectedShowEpisodes[0]?.poster_url,
-      art_url: artUrl,
       seasons
     }
-  }, [selectedShow, selectedShowEpisodes, paginatedShows])
-
-  // Desktop backdrop: notify parent of active backdrop URL
-  useEffect(() => {
-    if (isMobile || !onBackdropChange) return
-    const url = selectedShow
-      ? (selectedShowData?.art_url || selectedShowData?.poster_url || null)
-      : selectedArtist
-        ? (selectedArtist.art_url || selectedArtist.thumb_url || null)
-        : null
-    onBackdropChange(url)
-  }, [isMobile, selectedShow, selectedShowData, selectedArtist, onBackdropChange])
+  }, [selectedShow, selectedShowEpisodes])
 
   const filterItem = useCallback((item: MediaItem): boolean => {
     // Search filter
@@ -923,186 +925,132 @@ export function MediaBrowser({
 
     // Quality filter (use debounced value)
     if (debouncedQualityFilter !== 'all') {
-      const tierQuality = (item.tier_quality || 'MEDIUM').toLowerCase()
+      const tierQuality = (item.tier_quality || 'UNKNOWN').toLowerCase()
       if (tierQuality !== debouncedQualityFilter) return false
     }
 
     return true
   }, [searchQuery, debouncedTierFilter, debouncedQualityFilter])
 
-  // Alphabet navigation — server-side filter for desktop, offset-jump for mobile
+  // Smooth scroll with ease-in-out cubic easing
+  const smoothScrollTo = useCallback((element: HTMLElement, targetTop: number, duration = 400) => {
+    const start = element.scrollTop
+    const distance = targetTop - start
+    if (Math.abs(distance) < 1) return
+    const startTime = performance.now()
+    function step(currentTime: number) {
+      const elapsed = currentTime - startTime
+      const progress = Math.min(elapsed / duration, 1)
+      const ease = progress < 0.5
+        ? 4 * progress * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 3) / 2
+      element.scrollTop = start + distance * ease
+      if (progress < 1) requestAnimationFrame(step)
+    }
+    requestAnimationFrame(step)
+  }, [])
+
+  // Alphabet navigation — smooth scroll to the first item starting with the selected letter
   const scrollToLetter = useCallback((letter: string | null) => {
     setAlphabetFilter(letter)
-    const container = scrollContainerRef.current
-    if (container) container.scrollTop = 0
-  }, [setAlphabetFilter])
 
-  // Mobile scrubber: jump to letter offset without filtering
-  const handleMobileScrubLetter = useCallback(async (letter: string | null) => {
     if (!letter) {
-      // Reset to beginning
-      if (view === 'movies') loadPaginatedMovies(true, 0)
-      else if (view === 'tv') loadPaginatedShows(true, 0)
-      else if (view === 'music') {
-        if (musicViewMode === 'albums') loadPaginatedAlbums(true, 0)
-        else loadPaginatedArtists(true, 0)
-      }
+      // "All" — scroll to top
       const container = scrollContainerRef.current
-      if (container) container.scrollTop = 0
+      if (container) smoothScrollTo(container, 0)
       return
     }
 
-    const tableMap = { movies: 'movies', tv: 'tvshows', music: musicViewMode === 'albums' ? 'albums' : 'artists' } as const
-    const table = tableMap[view]
+    const container = scrollContainerRef.current
+    if (!container) return
 
-    try {
-      const offset = await window.electronAPI.getLetterOffset({
-        table,
-        letter,
-        sourceId: activeSourceId || undefined,
-      })
-
-      // Load from that offset
-      if (view === 'movies') await loadPaginatedMovies(true, offset)
-      else if (view === 'tv') await loadPaginatedShows(true, offset)
-      else if (view === 'music') {
-        if (musicViewMode === 'albums') await loadPaginatedAlbums(true, offset)
-        else await loadPaginatedArtists(true, offset)
+    const allTitled = container.querySelectorAll('[data-title]')
+    if (letter === '#') {
+      // Find first item that starts with a non-letter character
+      for (const el of allTitled) {
+        const title = (el as HTMLElement).dataset.title || ''
+        if (title.length > 0 && !/^[A-Za-z]/.test(title)) {
+          const elTop = (el as HTMLElement).offsetTop - container.offsetTop
+          smoothScrollTo(container, elTop)
+          return
+        }
       }
-
-      // Scroll to top since we just loaded from the letter's position
-      const container = scrollContainerRef.current
-      if (container) container.scrollTop = 0
-    } catch {
-      // Fallback: just scroll to top
-      const container = scrollContainerRef.current
-      if (container) container.scrollTop = 0
+      return
     }
-  }, [view, musicViewMode, activeSourceId, loadPaginatedMovies, loadPaginatedShows, loadPaginatedArtists, loadPaginatedAlbums])
+
+    const upperLetter = letter.toUpperCase()
+    for (const el of allTitled) {
+      const title = (el as HTMLElement).dataset.title || ''
+      if (title.toUpperCase().startsWith(upperLetter)) {
+        const elTop = (el as HTMLElement).offsetTop - container.offsetTop
+        smoothScrollTo(container, elTop)
+        return
+      }
+    }
+  }, [setAlphabetFilter, smoothScrollTo])
 
   // Compute which letters have items for the current view (to dim empty letters)
+  const availableLetters = useMemo(() => {
+    const letters = new Set<string>()
+    let items: Array<{ title?: string; name?: string; series_title?: string }> = []
+
+    if (view === 'movies') items = paginatedMovies
+    else if (view === 'tv') items = paginatedShows as Array<{ series_title?: string }>
+    else if (view === 'music') items = musicArtists as Array<{ name?: string }>
+
+    for (const item of items) {
+      const title = (item.title || item.name || item.series_title || '').trim()
+      if (!title) continue
+      const first = title[0].toUpperCase()
+      if (/[A-Z]/.test(first)) letters.add(first)
+      else letters.add('#')
+    }
+    return letters
+  }, [view, paginatedMovies, paginatedShows, musicArtists])
+
   // Movies are now loaded from the server pre-filtered/sorted/paginated
   const movies = paginatedMovies
 
-  // Global search results for live preview (searches all content types)
+  // Normalize the existing database search API for the dropdown's navigation and display shape.
   const globalSearchResults = useMemo(() => {
-    if (!searchInput.trim() || searchInput.length < 2) return { movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: [] }
-
-    const query = searchInput.toLowerCase()
-    const maxResults = 5 // Max results per category
-
-    // Search movies (from loaded pages)
-    const movieResults = paginatedMovies
-      .filter(item => item.title.toLowerCase().includes(query))
-      .slice(0, maxResults)
-      .map(item => ({
-        id: item.id,
-        title: item.title,
-        year: item.year,
-        poster_url: item.poster_url,
-        needs_upgrade: item.needs_upgrade || item.tier_quality === 'LOW',
-        type: 'movie' as const
-      }))
-
-    // Search TV shows (from loaded pages)
-    const tvResults = paginatedShows
-      .filter(show => show.series_title.toLowerCase().includes(query))
-      .slice(0, maxResults)
-      .map(show => ({
-        id: show.series_title,
-        title: show.series_title,
-        poster_url: show.poster_url,
-        type: 'tv' as const
-      }))
-
-    // Search episodes (from currently selected show only)
-    const episodeResults = selectedShowEpisodes
-      .filter(item => (
-        item.title.toLowerCase().includes(query) ||
-        (item.series_title && item.series_title.toLowerCase().includes(query))
-      ))
-      .slice(0, maxResults)
-      .map(item => ({
-        id: item.id,
-        title: item.title,
-        series_title: item.series_title,
-        season_number: item.season_number,
-        episode_number: item.episode_number,
-        thumb_url: item.episode_thumb_url || item.season_poster_url || item.poster_url,
-        needs_upgrade: item.needs_upgrade || item.tier_quality === 'LOW',
-        type: 'episode' as const
-      }))
-
-    // Search music artists
-    const artistResults = musicArtists
-      .filter(artist => artist.name.toLowerCase().includes(query))
-      .slice(0, maxResults)
-      .map(artist => ({
-        id: artist.id,
-        title: artist.name,
-        thumb_url: artist.thumb_url,
-        type: 'artist' as const
-      }))
-
-    // Search music albums
-    const albumResults = musicAlbums
-      .filter(album =>
-        album.title.toLowerCase().includes(query) ||
-        album.artist_name.toLowerCase().includes(query)
-      )
-      .slice(0, maxResults)
-      .map(album => ({
-        id: album.id,
-        title: album.title,
-        subtitle: album.artist_name,
-        year: album.year,
-        thumb_url: album.thumb_url,
-        needs_upgrade: false,
-        type: 'album' as const
-      }))
-
     return {
-      movies: movieResults,
-      tvShows: tvResults,
-      episodes: episodeResults,
-      artists: artistResults,
-      albums: albumResults,
-      tracks: searchTrackResults
+      movies: searchData.movies.map(movie => ({ ...movie, type: 'movie' as const })),
+      tvShows: searchData.tvShows.map(show => ({ ...show, id: show.title, type: 'tv' as const })),
+      episodes: searchData.episodes.map(episode => ({ ...episode, thumb_url: episode.poster_url, type: 'episode' as const })),
+      artists: searchData.artists.map(artist => ({ id: artist.id, title: artist.name, thumb_url: artist.thumb_url, type: 'artist' as const })),
+      albums: searchData.albums.map(album => ({ id: album.id, title: album.title, subtitle: album.artist_name, year: album.year, thumb_url: album.thumb_url, type: 'album' as const })),
+      tracks: searchData.tracks.map(track => ({ ...track, thumb_url: track.album_thumb_url, type: 'track' as const }))
     }
-  }, [searchInput, paginatedMovies, paginatedShows, selectedShowEpisodes, musicArtists, musicAlbums, searchTrackResults])
+  }, [searchData])
 
-  // Async track search for global search dropdown (server-side query since tracks are paginated)
+  // Search all media types through the existing database search API.
   useEffect(() => {
-    if (searchTrackTimerRef.current) clearTimeout(searchTrackTimerRef.current)
-    const query = searchInput.trim().toLowerCase()
+    const requestId = ++searchRequestIdRef.current
+    const query = searchInput.trim()
     if (!query || query.length < 2) {
-      setSearchTrackResults([])
+      setSearchData({ movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: [] })
+      setSearchError(null)
       return
     }
-    searchTrackTimerRef.current = setTimeout(async () => {
+    setSearchData({ movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: [] })
+    setSearchError(null)
+    let active = true
+    const timer = setTimeout(async () => {
       try {
-        const filters: Record<string, unknown> = { searchQuery: query, limit: 5, offset: 0 }
-        if (activeSourceId) filters.sourceId = activeSourceId
-        const tracks = await window.electronAPI.musicGetTracks(filters) as MusicTrack[]
-        setSearchTrackResults(tracks.map(track => {
-          const album = musicAlbums.find(a => a.id === track.album_id)
-          return {
-            id: track.id,
-            title: track.title,
-            album_id: track.album_id || 0,
-            album_title: album?.title,
-            artist_name: album?.artist_name,
-            thumb_url: album?.thumb_url,
-            needs_upgrade: !track.is_lossless && !track.is_hi_res,
-            type: 'track' as const
-          }
-        }))
-      } catch {
-        setSearchTrackResults([])
+        const result = await window.electronAPI.mediaSearch(query)
+        if (active && requestId === searchRequestIdRef.current) setSearchData(result)
+      } catch (error) {
+        if (active && requestId === searchRequestIdRef.current) {
+          console.error('Failed to search library:', error)
+          setSearchError(error instanceof Error ? error.message : String(error))
+        }
       }
     }, 200)
-    return () => { if (searchTrackTimerRef.current) clearTimeout(searchTrackTimerRef.current) }
-  }, [searchInput, activeSourceId, musicAlbums])
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [searchInput])
 
   const hasSearchResults = globalSearchResults.movies.length > 0 ||
     globalSearchResults.tvShows.length > 0 ||
@@ -1228,17 +1176,15 @@ export function MediaBrowser({
 
     console.log('[MediaBrowser] Handling navigation:', pendingNavigation)
 
-    // Use setView() instead of switchView() — switchView clears all selections
-    // (selectedArtist, selectedAlbum, etc.) which races with the async lookups below.
     if (type === 'movie') {
-      setView('movies')
+      switchView('movies')
       setSelectedMediaId(typeof id === 'string' ? parseInt(id, 10) : id)
     } else if (type === 'tv') {
-      setView('tv')
+      switchView('tv')
       setSelectedShow(typeof id === 'string' ? id : String(id))
       setSelectedSeason(null)
     } else if (type === 'episode') {
-      setView('tv')
+      switchView('tv')
       if (pendingNavigation.seriesTitle) {
         setSelectedShow(pendingNavigation.seriesTitle)
       }
@@ -1247,45 +1193,49 @@ export function MediaBrowser({
       }
       setSelectedMediaId(typeof id === 'string' ? parseInt(id, 10) : id)
     } else if (type === 'artist') {
-      setView('music')
+      switchView('music')
       setMusicViewMode('artists')
-      // Always fetch from server — paginated array may not contain this artist
+      // Find artist by ID first, then fall back to name search
       const numId = typeof id === 'string' ? parseInt(id, 10) : id
-      window.electronAPI.musicGetArtistById(numId).then((a: unknown) => {
-        if (a) {
-          setSelectedArtist(a as MusicArtist)
-        } else if (artistName) {
-          return window.electronAPI.musicGetArtists({ searchQuery: artistName, limit: 1, offset: 0 }).then(result => {
-            const artists = result as MusicArtist[]
-            if (artists.length > 0) setSelectedArtist(artists[0])
-          })
-        }
-      }).catch(err => console.error('Failed to find artist for navigation:', err))
+      const artist = musicArtists.find(a => a.id === numId)
+      if (artist) {
+        setSelectedArtist(artist)
+      } else if (artistName) {
+        // Artist not in paginated list — search server by name
+        window.electronAPI.musicGetArtists({ searchQuery: artistName, limit: 1, offset: 0 }).then(result => {
+          const artists = result as MusicArtist[]
+          if (artists.length > 0) setSelectedArtist(artists[0])
+        }).catch(err => console.error('Failed to find artist for navigation:', err))
+      }
     } else if (type === 'album') {
-      setView('music')
+      switchView('music')
       setMusicViewMode('albums')
-      // Always fetch from server — paginated array may not contain this album
       const numId = typeof id === 'string' ? parseInt(id, 10) : id
-      window.electronAPI.musicGetAlbumById(numId).then((a: unknown) => {
-        if (a) { setSelectedAlbum(a as MusicAlbum); loadAlbumTracks((a as MusicAlbum).id) }
-      }).catch(err => console.error('Failed to find album for navigation:', err))
+      const album = musicAlbums.find(a => a.id === numId)
+      if (album) {
+        setSelectedAlbum(album)
+        loadAlbumTracks(album.id)
+      }
     } else if (type === 'track') {
-      setView('music')
+      switchView('music')
       setMusicViewMode('albums')
+      // For tracks, we need to find the track first to get its album
       const numId = typeof id === 'string' ? parseInt(id, 10) : id
-      window.electronAPI.musicGetTrackById(numId).then((result: unknown) => {
+      // Look up the track to find its album
+      window.electronAPI.musicGetTrackById(numId).then(result => {
         const track = result as MusicTrack | null
         if (track?.album_id) {
-          window.electronAPI.musicGetAlbumById(track.album_id).then((a: unknown) => {
-            if (a) { setSelectedAlbum(a as MusicAlbum); loadAlbumTracks((a as MusicAlbum).id) }
-          })
+          const album = musicAlbums.find(a => a.id === track.album_id)
+          if (album) {
+            setSelectedAlbum(album)
+            loadAlbumTracks(album.id)
+          }
         }
       }).catch(err => console.error('Failed to find track for navigation:', err))
     }
 
     clearNavigation()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingNavigation])
+  }, [pendingNavigation, musicArtists, musicAlbums, clearNavigation, switchView])
 
   if (loading && !hasInitialLoadRef.current) {
     return (
@@ -1309,12 +1259,6 @@ export function MediaBrowser({
 
   // Check if we should show empty state (handled in content area below)
   const showEmptyState = sources.length === 0
-
-  // Mobile detail view — hide controls bar so backdrop can fill to viewport top
-  const isMobileDetail = isMobile && (
-    (view === 'tv' && selectedShow) ||
-    (view === 'music' && (selectedArtist || selectedAlbum))
-  )
 
   return (
     <div className="h-screen flex flex-col">
@@ -1349,8 +1293,7 @@ export function MediaBrowser({
               }}
               onFocus={() => setShowSearchResults(true)}
               onKeyDown={handleSearchKeyDown}
-              className="w-full pl-10 pr-8 py-2 bg-muted/50 border border-border/50 text-label placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
-              style={{ borderRadius: '9999px' }}
+              className="w-full pl-10 pr-8 py-2 bg-muted/50 border border-border/50 rounded-lg text-sm placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
               aria-label="Search all libraries"
               aria-autocomplete="list"
               aria-controls="search-results-listbox"
@@ -1383,7 +1326,7 @@ export function MediaBrowser({
                 {/* Movies */}
                 {globalSearchResults.movies.length > 0 && (
                   <div role="group" aria-labelledby="search-movies-label">
-                    <div id="search-movies-label" className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
+                    <div id="search-movies-label" className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
                       <Film className="w-3 h-3" aria-hidden="true" />
                       Movies
                     </div>
@@ -1398,7 +1341,7 @@ export function MediaBrowser({
                           onClick={() => handleSearchResultClick('movie', movie.id)}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left cursor-pointer focus:outline-hidden ${
                             searchResultIndex === flatIndex
-                              ? 'bg-muted ring-2 ring-inset ring-foreground/30'
+                              ? 'bg-primary/20 ring-2 ring-inset ring-primary'
                               : 'hover:bg-muted/50'
                           }`}
                         >
@@ -1410,12 +1353,9 @@ export function MediaBrowser({
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="text-label font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{movie.title}</div>
-                            {movie.year && <div className="text-caption text-muted-foreground">{movie.year}</div>}
+                            <div className="text-sm font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{movie.title}</div>
+                            {movie.year && <div className="text-xs text-muted-foreground">{movie.year}</div>}
                           </div>
-                          {movie.needs_upgrade && (
-                            <CircleFadingArrowUp className="w-5 h-5 text-destructive shrink-0" aria-label="Upgrade recommended" />
-                          )}
                         </div>
                       )
                     })}
@@ -1425,7 +1365,7 @@ export function MediaBrowser({
                 {/* TV Shows */}
                 {globalSearchResults.tvShows.length > 0 && (
                   <div role="group" aria-labelledby="search-tv-label">
-                    <div id="search-tv-label" className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
+                    <div id="search-tv-label" className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
                       <Tv className="w-3 h-3" aria-hidden="true" />
                       TV Shows
                     </div>
@@ -1440,7 +1380,7 @@ export function MediaBrowser({
                           onClick={() => handleSearchResultClick('tv', show.id)}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left cursor-pointer focus:outline-hidden ${
                             searchResultIndex === flatIndex
-                              ? 'bg-muted ring-2 ring-inset ring-foreground/30'
+                              ? 'bg-primary/20 ring-2 ring-inset ring-primary'
                               : 'hover:bg-muted/50'
                           }`}
                         >
@@ -1452,7 +1392,7 @@ export function MediaBrowser({
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="text-label font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{show.title}</div>
+                            <div className="text-sm font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{show.title}</div>
                           </div>
                         </div>
                       )
@@ -1463,7 +1403,7 @@ export function MediaBrowser({
                 {/* Episodes */}
                 {globalSearchResults.episodes.length > 0 && (
                   <div role="group" aria-labelledby="search-episodes-label">
-                    <div id="search-episodes-label" className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
+                    <div id="search-episodes-label" className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
                       <Tv className="w-3 h-3" aria-hidden="true" />
                       Episodes
                     </div>
@@ -1478,7 +1418,7 @@ export function MediaBrowser({
                           onClick={() => handleSearchResultClick('episode', episode.id, { series_title: episode.series_title })}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left cursor-pointer focus:outline-hidden ${
                             searchResultIndex === flatIndex
-                              ? 'bg-muted ring-2 ring-inset ring-foreground/30'
+                              ? 'bg-primary/20 ring-2 ring-inset ring-primary'
                               : 'hover:bg-muted/50'
                           }`}
                         >
@@ -1490,14 +1430,11 @@ export function MediaBrowser({
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="text-label font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{episode.title}</div>
-                            <div className="text-caption text-muted-foreground truncate">
+                            <div className="text-sm font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{episode.title}</div>
+                            <div className="text-xs text-muted-foreground truncate">
                               {episode.series_title} • S{episode.season_number}E{episode.episode_number}
                             </div>
                           </div>
-                          {episode.needs_upgrade && (
-                            <CircleFadingArrowUp className="w-4 h-4 text-destructive shrink-0" aria-label="Upgrade recommended" />
-                          )}
                         </div>
                       )
                     })}
@@ -1507,7 +1444,7 @@ export function MediaBrowser({
                 {/* Artists */}
                 {globalSearchResults.artists.length > 0 && (
                   <div role="group" aria-labelledby="search-artists-label">
-                    <div id="search-artists-label" className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
+                    <div id="search-artists-label" className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
                       <User className="w-3 h-3" aria-hidden="true" />
                       Artists
                     </div>
@@ -1522,7 +1459,7 @@ export function MediaBrowser({
                           onClick={() => handleSearchResultClick('artist', artist.id)}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left cursor-pointer focus:outline-hidden ${
                             searchResultIndex === flatIndex
-                              ? 'bg-muted ring-2 ring-inset ring-foreground/30'
+                              ? 'bg-primary/20 ring-2 ring-inset ring-primary'
                               : 'hover:bg-muted/50'
                           }`}
                         >
@@ -1534,7 +1471,7 @@ export function MediaBrowser({
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="text-label font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{artist.title}</div>
+                            <div className="text-sm font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{artist.title}</div>
                           </div>
                         </div>
                       )
@@ -1545,7 +1482,7 @@ export function MediaBrowser({
                 {/* Albums */}
                 {globalSearchResults.albums.length > 0 && (
                   <div role="group" aria-labelledby="search-albums-label">
-                    <div id="search-albums-label" className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
+                    <div id="search-albums-label" className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
                       <Disc3 className="w-3 h-3" aria-hidden="true" />
                       Albums
                     </div>
@@ -1560,7 +1497,7 @@ export function MediaBrowser({
                           onClick={() => handleSearchResultClick('album', album.id)}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left cursor-pointer focus:outline-hidden ${
                             searchResultIndex === flatIndex
-                              ? 'bg-muted ring-2 ring-inset ring-foreground/30'
+                              ? 'bg-primary/20 ring-2 ring-inset ring-primary'
                               : 'hover:bg-muted/50'
                           }`}
                         >
@@ -1572,14 +1509,11 @@ export function MediaBrowser({
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="text-label font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{album.title}</div>
-                            <div className="text-caption text-muted-foreground truncate">
+                            <div className="text-sm font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{album.title}</div>
+                            <div className="text-xs text-muted-foreground truncate">
                               {album.subtitle}{album.year ? ` • ${album.year}` : ''}
                             </div>
                           </div>
-                          {album.needs_upgrade && (
-                            <CircleFadingArrowUp className="w-5 h-5 text-destructive shrink-0" aria-label="Upgrade recommended" />
-                          )}
                         </div>
                       )
                     })}
@@ -1589,7 +1523,7 @@ export function MediaBrowser({
                 {/* Tracks */}
                 {globalSearchResults.tracks.length > 0 && (
                   <div role="group" aria-labelledby="search-tracks-label">
-                    <div id="search-tracks-label" className="px-3 py-2 text-caption font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
+                    <div id="search-tracks-label" className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2" role="presentation">
                       <Music className="w-3 h-3" aria-hidden="true" />
                       Tracks
                     </div>
@@ -1604,7 +1538,7 @@ export function MediaBrowser({
                           onClick={() => handleSearchResultClick('track', track.id, { album_id: track.album_id })}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left cursor-pointer focus:outline-hidden ${
                             searchResultIndex === flatIndex
-                              ? 'bg-muted ring-2 ring-inset ring-foreground/30'
+                              ? 'bg-primary/20 ring-2 ring-inset ring-primary'
                               : 'hover:bg-muted/50'
                           }`}
                         >
@@ -1616,14 +1550,11 @@ export function MediaBrowser({
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="text-label font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{track.title}</div>
-                            <div className="text-caption text-muted-foreground truncate">
+                            <div className="text-sm font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{track.title}</div>
+                            <div className="text-xs text-muted-foreground truncate">
                               {track.album_title}{track.artist_name ? ` • ${track.artist_name}` : ''}
                             </div>
                           </div>
-                          {track.needs_upgrade && (
-                            <CircleFadingArrowUp className="w-5 h-5 text-destructive shrink-0" aria-label="Upgrade recommended" />
-                          )}
                         </div>
                       )
                     })}
@@ -1636,7 +1567,7 @@ export function MediaBrowser({
             {/* No results message (portal to theme-aware container) */}
             {showSearchResults && searchInput.length >= 2 && !hasSearchResults && searchPortalRef.current && createPortal(
               <div className="bg-card border border-border rounded-lg shadow-2xl p-4 text-foreground" style={getSearchDropdownStyle()}>
-                <div className="text-label text-muted-foreground text-center">No results found</div>
+                <div className="text-sm text-muted-foreground text-center">{searchError || 'No results found'}</div>
               </div>,
               searchPortalRef.current
             )}
@@ -1651,7 +1582,7 @@ export function MediaBrowser({
                 {onNavigateHome && (
                   <button
                     onClick={onNavigateHome}
-                    className="px-3 py-2 rounded-lg text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 bg-card text-muted-foreground hover:bg-muted"
+                    className="px-3 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 bg-card text-muted-foreground hover:bg-muted"
                     title="Return to Dashboard"
                     aria-label="Dashboard"
                   >
@@ -1677,9 +1608,9 @@ export function MediaBrowser({
                     setSelectedAlbum(null)
                   }}
                   disabled={!hasMovies}
-                  className={`px-4 py-2 rounded-lg text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     view === 'movies'
-                      ? 'bg-foreground text-background'
+                      ? 'bg-primary text-primary-foreground'
                       : 'bg-card text-muted-foreground hover:bg-muted'
                   } disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-muted/50`}
                   role="tab"
@@ -1704,9 +1635,9 @@ export function MediaBrowser({
                     setSelectedAlbum(null)
                   }}
                   disabled={!hasTV}
-                  className={`px-4 py-2 rounded-lg text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     view === 'tv'
-                      ? 'bg-foreground text-background'
+                      ? 'bg-primary text-primary-foreground'
                       : 'bg-card text-muted-foreground hover:bg-muted'
                   } disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-muted/50`}
                   role="tab"
@@ -1731,9 +1662,9 @@ export function MediaBrowser({
                     setSelectedAlbum(null)
                   }}
                   disabled={!hasMusic}
-                  className={`px-4 py-2 rounded-lg text-label font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     view === 'music'
-                      ? 'bg-foreground text-background'
+                      ? 'bg-primary text-primary-foreground'
                       : 'bg-card text-muted-foreground hover:bg-muted'
                   } disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-muted/50`}
                   role="tab"
@@ -1745,9 +1676,32 @@ export function MediaBrowser({
                   <span>Music</span>
                 </button>
 
+                {/* Duplicates Button */}
+                <button
+                  onClick={() => {
+                    setView('duplicates')
+                    onLibraryTabChange?.('duplicates')
+                    setSelectedShow(null)
+                    setSelectedSeason(null)
+                    setSelectedArtist(null)
+                    setSelectedAlbum(null)
+                  }}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                    view === 'duplicates'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-card text-muted-foreground hover:bg-muted'
+                  }`}
+                  role="tab"
+                  aria-selected={view === 'duplicates'}
+                  aria-controls="library-content"
+                >
+                  <Layers className="w-4 h-4" />
+                  <span>Duplicates</span>
+                </button>
+
                 {/* Auto-refresh indicator */}
                 {isAutoRefreshing && (
-                  <div className="flex items-center gap-1.5 px-2 py-1 text-caption text-muted-foreground" title="Checking for new content...">
+                  <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground" title="Checking for new content...">
                     <RefreshCw className="w-3 h-3 animate-spin" />
                     <span>Syncing</span>
                   </div>
@@ -1765,9 +1719,9 @@ export function MediaBrowser({
                 if (newState) setShowWishlistPanel(false)
                 setShowCompletenessPanel(newState)
               }}
-              className={`p-2.5 rounded-lg transition-colors flex items-center gap-1 shrink-0 focus:outline-hidden ${
+              className={`p-2.5 rounded-md transition-colors flex items-center gap-1 shrink-0 focus:outline-hidden ${
                 showCompletenessPanel
-                  ? 'bg-foreground text-background'
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-card text-muted-foreground hover:bg-muted'
               }`}
               aria-label={showCompletenessPanel ? 'Hide completeness panel' : 'Show completeness panel'}
@@ -1784,9 +1738,9 @@ export function MediaBrowser({
                 if (newState) setShowCompletenessPanel(false)
                 setShowWishlistPanel(newState)
               }}
-              className={`p-2.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 focus:outline-hidden ${
+              className={`p-2.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 focus:outline-hidden ${
                 showWishlistPanel
-                  ? 'bg-foreground text-background'
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-card text-muted-foreground hover:bg-muted'
               }`}
               aria-label={showWishlistPanel ? 'Hide wishlist panel' : 'Show wishlist panel'}
@@ -1796,18 +1750,17 @@ export function MediaBrowser({
               <Star className="w-4 h-4" aria-hidden="true" />
               {wishlistCount > 0 && (
                 <span
-                  className={`text-caption font-medium ${showWishlistPanel ? 'text-primary-foreground' : ''}`}
+                  className={`text-xs font-medium ${showWishlistPanel ? 'text-primary-foreground' : ''}`}
                   style={showWishlistPanel ? undefined : { color: themeAccentColor }}
                 >
                   {wishlistCount}
                 </span>
               )}
             </button>
-            <ActivityPanel />
             <button
               ref={settingsButtonRef}
               onClick={() => onOpenSettings?.()}
-              className="p-2.5 rounded-lg transition-colors shrink-0 bg-card text-muted-foreground hover:bg-muted focus:outline-hidden"
+              className="p-2.5 rounded-md transition-colors shrink-0 bg-card text-muted-foreground hover:bg-muted focus:outline-hidden"
               aria-label="Open settings"
             >
               <Settings className="w-4 h-4" aria-hidden="true" />
@@ -1828,19 +1781,17 @@ export function MediaBrowser({
         role="tabpanel"
         aria-label={`${view === 'movies' ? 'Movies' : view === 'tv' ? 'TV Shows' : 'Music'} library`}
       >
-        {/* Controls Bar — desktop: static above scroll, mobile: rendered inside scroll container */}
-        {!isMobileDetail && !isMobile && <div
-          className="shrink-0 py-3 px-4"
-        >
+        {/* Controls Bar - sticky within container */}
+        <div className={`shrink-0 py-3 ${isMobile ? 'px-2' : 'px-4'}`}>
           <div className="flex flex-col gap-2">
-            {/* Desktop: Row 1: Filters (left) | Separator | View Controls (right) */}
-            <div className="flex items-center justify-between">
+            {/* Row 1: Filters (left) | Separator | View Controls (right) */}
+            <div className={`flex items-center justify-between ${isMobile ? 'flex-wrap gap-2' : ''}`}>
               {/* Left side: Filters */}
-              <div className="flex items-center gap-4">
-                {/* Music View Mode Toggle — hidden when viewing artist/album detail */}
-                {view === 'music' && !selectedArtist && !selectedAlbum && (
+              <div className={`flex items-center ${isMobile ? 'gap-2 flex-wrap' : 'gap-4'}`}>
+                {/* Music View Mode Toggle */}
+                {view === 'music' && (
                   <div className="flex items-center gap-2">
-                    <span className="text-caption text-muted-foreground">View</span>
+                    <span className="text-xs text-muted-foreground">View</span>
                     <div className="flex gap-1">
                       {(['artists', 'albums', 'tracks'] as const).map((mode) => (
                         <button
@@ -1851,9 +1802,9 @@ export function MediaBrowser({
                             setSelectedAlbum(null)
                             setAlbumTracks([])
                           }}
-                          className={`px-2.5 py-1.5 rounded-lg text-caption transition-colors ${
+                          className={`px-2.5 py-1.5 rounded-md text-xs transition-colors ${
                             musicViewMode === mode
-                              ? 'bg-foreground text-background'
+                              ? 'bg-primary text-primary-foreground'
                               : 'bg-card text-muted-foreground hover:bg-muted'
                           }`}
                         >
@@ -1867,25 +1818,24 @@ export function MediaBrowser({
                 {/* Library Filter (shown when source has 2+ libraries of current type) */}
                 {activeSourceId && currentTypeLibraries.length >= 2 && (
                   <div className="flex items-center gap-2">
-                    <span className="text-caption text-muted-foreground">Library</span>
-                    <Select
-                      inputSize="sm"
+                    <span className="text-xs text-muted-foreground">Library</span>
+                    <select
                       value={activeLibraryId || ''}
                       onChange={(e) => setActiveLibraryId(e.target.value || null)}
-                      className="w-auto"
+                      className="px-2.5 py-1 bg-card border border-border rounded-md text-xs text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
                     >
-                      <option value="">All libraries</option>
+                      <option value="">All Libraries</option>
                       {currentTypeLibraries.map(lib => (
                         <option key={lib.id} value={lib.id}>{lib.name}</option>
                       ))}
-                    </Select>
+                    </select>
                   </div>
                 )}
 
                 {/* Resolution Tier Filter (movies only) */}
                 {view === 'movies' && (
                   <div className="flex items-center gap-2">
-                    {!isMobile && <span className="text-caption text-muted-foreground">Resolution</span>}
+                    <span className="text-xs text-muted-foreground">Resolution</span>
                     <div className="flex gap-1">
                       {['all', '4K', '1080p', '720p', 'SD'].map((tier) => (
                         <button
@@ -1895,9 +1845,9 @@ export function MediaBrowser({
                             else tierFilterRefs.current.delete(tier)
                           }}
                           onClick={() => setTierFilter(tier as typeof tierFilter)}
-                          className={`${isMobile ? 'px-3 py-2 min-h-[44px]' : 'px-2.5 py-1'} rounded-lg text-caption transition-colors focus:outline-hidden ${
+                          className={`px-2.5 py-1 rounded-md text-xs transition-colors focus:outline-hidden ${
                             tierFilter === tier
-                              ? 'bg-foreground text-background'
+                              ? 'bg-primary text-primary-foreground'
                               : 'bg-card text-muted-foreground hover:bg-muted'
                           }`}
                         >
@@ -1908,15 +1858,15 @@ export function MediaBrowser({
                   </div>
                 )}
 
-                {/* Divider between Resolution and Quality — desktop only */}
-                {view === 'movies' && !isMobile && (
+                {/* Divider between Resolution and Quality */}
+                {view === 'movies' && (
                   <div className="h-6 w-px bg-border/50" />
                 )}
 
                 {/* Quality Filter (movies + music tracks) */}
                 {(view === 'movies' || (view === 'music' && musicViewMode === 'tracks')) && (
                   <div className="flex items-center gap-2">
-                    {!isMobile && <span className="text-caption text-muted-foreground">Quality</span>}
+                    <span className="text-xs text-muted-foreground">Quality</span>
                     <div className="flex gap-1">
                       {['all', 'high', 'medium', 'low'].map((quality) => (
                         <button
@@ -1926,9 +1876,9 @@ export function MediaBrowser({
                             else qualityFilterRefs.current.delete(quality)
                           }}
                           onClick={() => setQualityFilter(quality as typeof qualityFilter)}
-                          className={`${isMobile ? 'px-3 py-2 min-h-[44px]' : 'px-2.5 py-1'} rounded-lg text-caption transition-colors focus:outline-hidden ${
+                          className={`px-2.5 py-1 rounded-md text-xs transition-colors focus:outline-hidden ${
                             qualityFilter === quality
-                              ? 'bg-foreground text-background'
+                              ? 'bg-primary text-primary-foreground'
                               : 'bg-card text-muted-foreground hover:bg-muted'
                           }`}
                         >
@@ -1942,12 +1892,12 @@ export function MediaBrowser({
                 {/* Collections Filter (movies only) */}
                 {view === 'movies' && movieCollections.length > 0 && (
                   <>
-                    {!isMobile && <div className="h-6 w-px bg-border/50" />}
+                    <div className="h-6 w-px bg-border/50" />
                     <button
                       onClick={() => setCollectionsOnly(!collectionsOnly)}
-                      className={`${isMobile ? 'px-3 py-2 min-h-[44px]' : 'px-2.5 py-1'} rounded-lg text-caption transition-colors focus:outline-hidden flex items-center gap-1.5 ${
+                      className={`px-2.5 py-1 rounded-md text-xs transition-colors focus:outline-hidden flex items-center gap-1.5 ${
                         collectionsOnly
-                          ? 'bg-foreground text-background'
+                          ? 'bg-primary text-primary-foreground'
                           : 'bg-card text-muted-foreground hover:bg-muted'
                       }`}
                       title="Show only collections"
@@ -1972,7 +1922,7 @@ export function MediaBrowser({
                       max="7"
                       value={gridScale}
                       onChange={(e) => setGridScale(Number(e.target.value))}
-                      className="w-20 h-1 bg-border/50 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-foreground [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-md"
+                      className="w-20 h-1 bg-border/50 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-md"
                     />
                   </div>
                 )}
@@ -1984,9 +1934,9 @@ export function MediaBrowser({
                     <button
                       ref={gridViewRef}
                       onClick={() => setViewType('grid')}
-                      className={`p-1.5 rounded-lg transition-colors focus:outline-hidden ${
+                      className={`p-1.5 rounded-md transition-colors focus:outline-hidden ${
                         viewType === 'grid'
-                          ? 'bg-foreground text-background'
+                          ? 'bg-primary text-primary-foreground'
                           : 'bg-card text-muted-foreground hover:bg-muted'
                       }`}
                     >
@@ -1995,9 +1945,9 @@ export function MediaBrowser({
                     <button
                       ref={listViewRef}
                       onClick={() => setViewType('list')}
-                      className={`p-1.5 rounded-lg transition-colors focus:outline-hidden ${
+                      className={`p-1.5 rounded-md transition-colors focus:outline-hidden ${
                         viewType === 'list'
-                          ? 'bg-foreground text-background'
+                          ? 'bg-primary text-primary-foreground'
                           : 'bg-card text-muted-foreground hover:bg-muted'
                       }`}
                     >
@@ -2009,160 +1959,17 @@ export function MediaBrowser({
             </div>
 
           </div>
-
-        </div>}
+        </div>
 
         {/* Scrollable Content Area with Alphabet Filter */}
         <div className="flex-1 relative min-h-0">
           {/* Main scrollable content */}
-          <div
-            ref={scrollContainerRef}
-            className={`absolute inset-0 overflow-y-auto scrollbar-visible ${isMobile ? 'px-4 pb-20' : 'px-4 pb-4'} ${isMobile ? '' : 'pr-10'}`}
-            style={isMobile && !isMobileDetail ? { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)' } : undefined}
-            onScroll={isMobile && isMobileDetail ? (e) => {
-              const el = e.currentTarget
-              el.style.setProperty('--parallax-y', `${el.scrollTop * 0.4}px`)
-            } : undefined}
-          >
-
-        {/* Mobile scan banner — shows when tasks are active */}
-        {isMobile && !isMobileDetail && <MobileScanBanner queueState={taskQueueState as Parameters<typeof MobileScanBanner>[0]['queueState']} />}
-
-        {/* Mobile controls bar + scan button */}
-        {isMobile && !isMobileDetail && (() => {
-          const hasMusicToggle = view === 'music' && !selectedArtist && !selectedAlbum
-          const hasLibraryDropdown = activeSourceId && currentTypeLibraries.length >= 2
-          const hasFilters = view === 'movies' || (view === 'music' && musicViewMode === 'tracks')
-          return (
-          <div className="pb-2">
-            <div className="flex items-center gap-2">
-              {/* Music view mode toggle */}
-              {hasMusicToggle && (
-                <div className="flex gap-1">
-                  {(['artists', 'albums', 'tracks'] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => {
-                        setMusicViewMode(mode)
-                        setSelectedArtist(null)
-                        setSelectedAlbum(null)
-                        setAlbumTracks([])
-                      }}
-                      className={`px-3 py-2 min-h-[44px] rounded-lg text-caption transition-colors ${
-                        musicViewMode === mode
-                          ? 'bg-foreground text-background'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Library dropdown */}
-              {hasLibraryDropdown && (
-                <Select
-                  inputSize="sm"
-                  value={activeLibraryId || ''}
-                  onChange={(e) => setActiveLibraryId(e.target.value || null)}
-                  className="w-auto"
-                >
-                  <option value="">All libraries</option>
-                  {currentTypeLibraries.map(lib => (
-                    <option key={lib.id} value={lib.id}>{lib.name}</option>
-                  ))}
-                </Select>
-              )}
-
-              {/* Filter icon — only show when there are filter options */}
-              {hasFilters && (
-              <button
-                onClick={() => setShowMobileFilters(!showMobileFilters)}
-                className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors ${
-                  showMobileFilters || tierFilter !== 'all' || qualityFilter !== 'all' || collectionsOnly
-                    ? 'bg-foreground text-background'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-                title="Filters"
-              >
-                <SlidersHorizontal className="w-5 h-5" />
-              </button>
-              )}
-
-              {/* Scan button — always at right edge */}
-              <div className="ml-auto">
-                <MobileScanButton
-                  sources={sources}
-                  activeSourceId={activeSourceId}
-                  currentLibraries={currentTypeLibraries}
-                  activeLibraryId={activeLibraryId}
-                  viewType={view}
-                  isScanning={isScanActive}
-                />
-              </div>
-            </div>
-
-            {/* Filter options */}
-            {hasFilters && showMobileFilters && (
-              <div className="mt-3 flex flex-col gap-3">
-                {view === 'movies' && (
-                  <div>
-                    <span className="text-caption text-muted-foreground mb-1.5 block">Resolution</span>
-                    <div className="flex gap-1 flex-wrap">
-                      {['all', '4K', '1080p', '720p', 'SD'].map((tier) => (
-                        <button
-                          key={tier}
-                          onClick={() => setTierFilter(tier as typeof tierFilter)}
-                          className={`px-3 py-2 min-h-[44px] rounded-lg text-caption transition-colors ${
-                            tierFilter === tier ? 'bg-foreground text-background' : 'bg-card text-muted-foreground hover:bg-muted'
-                          }`}
-                        >
-                          {tier === 'all' ? 'All' : tier}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {(view === 'movies' || (view === 'music' && musicViewMode === 'tracks')) && (
-                  <div>
-                    <span className="text-caption text-muted-foreground mb-1.5 block">Quality</span>
-                    <div className="flex gap-1 flex-wrap">
-                      {['all', 'high', 'medium', 'low'].map((quality) => (
-                        <button
-                          key={quality}
-                          onClick={() => setQualityFilter(quality as typeof qualityFilter)}
-                          className={`px-3 py-2 min-h-[44px] rounded-lg text-caption transition-colors ${
-                            qualityFilter === quality ? 'bg-foreground text-background' : 'bg-card text-muted-foreground hover:bg-muted'
-                          }`}
-                        >
-                          {quality.charAt(0).toUpperCase() + quality.slice(1)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {view === 'movies' && movieCollections.length > 0 && (
-                  <button
-                    onClick={() => setCollectionsOnly(!collectionsOnly)}
-                    className={`px-3 py-2 min-h-[44px] rounded-lg text-caption transition-colors flex items-center gap-1.5 self-start ${
-                      collectionsOnly ? 'bg-foreground text-background' : 'bg-card text-muted-foreground hover:bg-muted'
-                    }`}
-                  >
-                    <Layers className="w-3.5 h-3.5" />
-                    Collections only
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-          )
-        })()}
+          <div ref={scrollContainerRef} className={`absolute inset-0 overflow-y-auto scrollbar-visible ${isMobile ? 'px-2 pb-24' : 'px-4 pb-4'} ${isMobile ? '' : 'pr-10'}`}>
 
         {/* Content Display */}
         {showEmptyState ? (
           <div className="h-full flex flex-col items-center justify-center px-8">
-            <h2 className="text-h3 font-semibold text-foreground mb-2 text-center">No Media Sources</h2>
+            <h2 className="text-xl font-semibold text-foreground mb-2 text-center">No Media Sources</h2>
             <p className="text-muted-foreground text-center max-w-md">Add a media server from the sidebar to start analyzing your library</p>
           </div>
         ) : (
@@ -2183,6 +1990,8 @@ export function MediaBrowser({
               onRescan={handleRescanItem}
               onDismissUpgrade={handleDismissUpgrade}
               totalMovieCount={totalMovieCount}
+              optimizationSummary={optimizationSummary}
+              onOptimizeMovie={setOptimizingMovieId}
               moviesLoading={moviesLoading}
               movieSortBy={movieSortBy}
               onMovieSortChange={(sort) => {
@@ -2197,14 +2006,23 @@ export function MediaBrowser({
             />
           ) : view === 'tv' ? (
           <TVShowsView
+            pendingTVOptimizationAction={pendingTVOptimizationAction}
+            onTVOptimizationActionHandled={onTVOptimizationActionHandled}
             shows={paginatedShows}
             selectedShow={selectedShow}
             selectedSeason={selectedSeason}
             selectedShowData={selectedShowData}
             selectedShowLoading={selectedShowEpisodesLoading}
             onSelectShow={(show) => {
-              pushNavState({ view: 'library', tab: 'tv', selectedShow: show })
-              setSelectedShow(show)
+              if (!show) {
+                pushNavState({ view: 'library', tab: 'tv', selectedShow: null })
+                setSelectedShow(null)
+              } else {
+                const title = typeof show === 'string' ? show : show.series_title
+                pushNavState({ view: 'library', tab: 'tv', selectedShow: title })
+                setSelectedShow(title)
+                loadSelectedShowEpisodes(show)
+              }
             }}
             onSelectSeason={(season) => {
               pushNavState({ view: 'library', tab: 'tv', selectedShow, selectedSeason: season })
@@ -2218,7 +2036,17 @@ export function MediaBrowser({
             onMissingItemClick={setSelectedMissingItem}
             showSourceBadge={!activeSourceId && sources.length > 1}
             onAnalyzeSeries={handleAnalyzeSingleSeries}
-            onFixMatch={(title, sourceId, folderPath) => setMatchFixModal({ isOpen: true, type: 'series', title, sourceId, filePath: folderPath })}
+            onFixMatch={(seriesIdentityKey, title, sourceId, libraryId, folderPath) =>
+              setMatchFixModal({
+                isOpen: true,
+                type: 'series',
+                title,
+                sourceId,
+                libraryId,
+                seriesIdentityKey,
+                filePath: folderPath
+              })
+            }
             onRescanEpisode={async (episode) => {
               if (episode.source_id && episode.file_path) {
                 await handleRescanItem(episode.id, episode.source_id, episode.library_id || null, episode.file_path)
@@ -2233,12 +2061,14 @@ export function MediaBrowser({
             onLoadMoreShows={loadMoreShows}
             tvSortBy={tvSortBy}
             onTvSortChange={(sort) => {
-              setTvSortBy(sort as 'title' | 'play_count' | 'last_watched_at')
+              setTvSortBy(sort)
               setTimeout(() => loadPaginatedShows(true), 0)
             }}
             isMobile={isMobile}
             isTablet={isTablet}
           />
+        ) : view === 'duplicates' ? (
+          <DuplicatesView />
         ) : (
           <MusicView
             artists={musicArtists}
@@ -2319,16 +2149,15 @@ export function MediaBrowser({
         ))}
           </div>
 
-          {/* Mobile alphabet scrubber — jump to letter offset */}
-          {isMobile && !isMobileDetail && (
-            <MobileAlphabetScrubber scrollContainerRef={scrollContainerRef} onSelectLetter={handleMobileScrubLetter} />
-          )}
-
           {/* Vertical Alphabet Filter - positioned left of scrollbar (hidden on mobile) */}
           <div className={`absolute right-3 top-0 bottom-0 flex flex-col items-center justify-between py-2 ${isMobile ? 'hidden' : ''}`} role="group" aria-label="Filter by letter">
             <button
+              ref={(el) => {
+                if (el) alphabetFilterRefs.current.set('all', el)
+                else alphabetFilterRefs.current.delete('all')
+              }}
               onClick={() => scrollToLetter(null)}
-              className={`w-5 h-5 flex items-center justify-center text-caption font-medium transition-colors focus:outline-hidden ${
+              className={`w-5 h-5 flex items-center justify-center text-[10px] font-medium transition-colors focus:outline-hidden ${
                 alphabetFilter === null
                   ? 'text-foreground'
                   : 'text-muted-foreground hover:text-foreground'
@@ -2340,33 +2169,49 @@ export function MediaBrowser({
               All
             </button>
             <button
-              onClick={() => scrollToLetter('#')}
-              className={`w-5 h-5 flex items-center justify-center text-caption font-medium transition-colors focus:outline-hidden ${
+              ref={(el) => {
+                if (el) alphabetFilterRefs.current.set('#', el)
+                else alphabetFilterRefs.current.delete('#')
+              }}
+              onClick={() => availableLetters.has('#') && scrollToLetter('#')}
+              className={`w-5 h-5 flex items-center justify-center text-[10px] font-medium transition-colors focus:outline-hidden ${
                 alphabetFilter === '#'
                   ? 'text-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
+                  : availableLetters.has('#')
+                    ? 'text-muted-foreground hover:text-foreground'
+                    : 'text-muted-foreground/20 cursor-default'
               }`}
               title="Numbers and special characters"
               aria-label="Filter by numbers and special characters"
               aria-pressed={alphabetFilter === '#'}
+              aria-disabled={!availableLetters.has('#')}
             >
               #
             </button>
-            {Array.from('ABCDEFGHIJKLMNOPQRSTUVWXYZ').map((letter) => (
+            {Array.from('ABCDEFGHIJKLMNOPQRSTUVWXYZ').map((letter) => {
+              const hasItems = availableLetters.has(letter)
+              return (
               <button
                 key={letter}
-                onClick={() => scrollToLetter(letter)}
-                className={`w-5 h-5 flex items-center justify-center text-caption font-medium transition-colors focus:outline-hidden ${
+                ref={(el) => {
+                  if (el) alphabetFilterRefs.current.set(letter, el)
+                  else alphabetFilterRefs.current.delete(letter)
+                }}
+                onClick={() => hasItems && scrollToLetter(letter)}
+                className={`w-5 h-5 flex items-center justify-center text-[10px] font-medium transition-colors focus:outline-hidden ${
                   alphabetFilter === letter
                     ? 'text-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
+                    : hasItems
+                      ? 'text-muted-foreground hover:text-foreground'
+                      : 'text-muted-foreground/20 cursor-default'
                 }`}
-                aria-label={`Filter by letter ${letter}`}
+                aria-label={`Scroll to letter ${letter}`}
                 aria-pressed={alphabetFilter === letter}
+                aria-disabled={!hasItems}
               >
                 {letter}
               </button>
-            ))}
+              )})}
           </div>
         </div>
       </main>
@@ -2394,6 +2239,16 @@ export function MediaBrowser({
             emitDismissUpgrade({ mediaId })
           }}
         />
+      )}
+
+      {optimizingMovieId !== null && (
+        <SharedOptimizationDialog request={{
+          controller: 'media',
+          scope: { kind: 'movie', mediaId: optimizingMovieId },
+          initialPreflightId: initialMoviePreflightId ?? undefined,
+          onClose: () => { setOptimizingMovieId(null); setInitialMoviePreflightId(null) },
+          onOptimizationCompleted: handleMovieOptimizationCompleted,
+        }} />
       )}
 
       {/* Completeness Panel */}
@@ -2476,6 +2331,8 @@ export function MediaBrowser({
           filePath={matchFixModal.filePath}
           artistName={matchFixModal.artistName}
           sourceId={matchFixModal.sourceId}
+          libraryId={matchFixModal.libraryId}
+          seriesIdentityKey={matchFixModal.seriesIdentityKey}
           mediaItemId={matchFixModal.mediaItemId}
           artistId={matchFixModal.artistId}
           albumId={matchFixModal.albumId}
@@ -2486,7 +2343,10 @@ export function MediaBrowser({
             } else {
               loadPaginatedMovies(true)
               loadPaginatedShows(true)
-              if (selectedShow) loadSelectedShowEpisodes(selectedShow)
+              if (selectedShow) {
+                const matched = paginatedShows.find(s => s.series_title === selectedShow || s.series_identity_key === selectedShow)
+                if (matched) loadSelectedShowEpisodes(matched)
+              }
             }
           }}
         />

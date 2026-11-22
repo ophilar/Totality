@@ -1,16 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const mockGetSetting = vi.hoisted(() => vi.fn())
+const mockSetSetting = vi.hoisted(() => vi.fn())
 const mockGetWishlistItems = vi.hoisted(() => vi.fn())
 const mockCreateNotification = vi.hoisted(() => vi.fn())
 const mockGetMovieReleaseDates = vi.hoisted(() => vi.fn())
 const mockGetTVShowDetails = vi.hoisted(() => vi.fn())
 const mockEmitNotificationCreated = vi.hoisted(() => vi.fn())
+const mockTMDBInitialize = vi.hoisted(() => vi.fn())
 
 vi.mock('../../src/main/database/getDatabase', () => ({
   getDatabase: vi.fn(() => ({
     getSetting: mockGetSetting,
-    setSetting: vi.fn(),
+    setSetting: mockSetSetting,
     getWishlistItems: mockGetWishlistItems,
     createNotification: mockCreateNotification,
   })),
@@ -18,7 +20,7 @@ vi.mock('../../src/main/database/getDatabase', () => ({
 
 vi.mock('../../src/main/services/TMDBService', () => ({
   getTMDBService: vi.fn(() => ({
-    initialize: vi.fn(),
+    initialize: mockTMDBInitialize,
     getMovieReleaseDates: mockGetMovieReleaseDates,
     getTVShowDetails: mockGetTVShowDetails,
   })),
@@ -31,6 +33,7 @@ vi.mock('../../src/main/ipc/utils/notificationEmitter', () => ({
 vi.mock('../../src/main/services/LoggingService', () => ({
   getLoggingService: vi.fn(() => ({
     verbose: vi.fn(),
+    warn: vi.fn(),
   })),
 }))
 
@@ -42,6 +45,7 @@ describe('ReleaseAlertService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useFakeTimers()
+    mockTMDBInitialize.mockResolvedValue(undefined)
     service = new ReleaseAlertService()
   })
 
@@ -62,7 +66,7 @@ describe('ReleaseAlertService', () => {
     })
 
     it('sets up polling when enabled', async () => {
-      mockGetSetting.mockReturnValue('true')
+      mockGetSetting.mockImplementation(key => key === 'release_alerts_enabled' ? 'true' : null)
       await service.start()
       // Verify timer was created (stop clears it without error)
       service.stop()
@@ -70,8 +74,12 @@ describe('ReleaseAlertService', () => {
   })
 
   describe('stop', () => {
-    it('clears timer without error', () => {
-      expect(() => service.stop()).not.toThrow()
+    it('cancels startup checks as well as polling', async () => {
+      mockGetSetting.mockImplementation(key => key === 'release_alerts_enabled' ? 'true' : null)
+      await service.start()
+      service.stop()
+      await vi.advanceTimersByTimeAsync(15_000)
+      expect(mockGetWishlistItems).not.toHaveBeenCalled()
     })
   })
 
@@ -79,6 +87,13 @@ describe('ReleaseAlertService', () => {
   // checkForReleases
   // ==========================================================================
   describe('checkForReleases', () => {
+    it('propagates TMDB initialization failures', async () => {
+      mockTMDBInitialize.mockRejectedValue(new Error('API key unavailable'))
+
+      await expect(service.checkForReleases()).rejects.toThrow('API key unavailable')
+      expect(mockGetWishlistItems).not.toHaveBeenCalled()
+    })
+
     beforeEach(() => {
       mockGetSetting
         .mockReturnValueOnce('30')   // release_alert_days_ahead
@@ -116,6 +131,27 @@ describe('ReleaseAlertService', () => {
       expect(count).toBe(1)
       expect(mockCreateNotification).toHaveBeenCalledOnce()
       expect(mockCreateNotification.mock.calls[0][0].title).toContain('Digital')
+    })
+
+    it('persists date-specific alert IDs for a subsequent session', async () => {
+      const tomorrow = new Date()
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1)
+      const date = tomorrow.toISOString().split('T')[0]
+      mockGetWishlistItems.mockReturnValue([{ id: 1, title: 'Movie', tmdb_id: '123', media_type: 'movie' }])
+      mockGetMovieReleaseDates.mockResolvedValue({
+        results: [{ iso_3166_1: 'US', release_dates: [{ type: 4, release_date: `${date}T00:00:00.000Z` }] }],
+      })
+      await service.checkForReleases()
+      const saved = mockSetSetting.mock.calls.find(([key]) => key === 'release_alert_sent_ids')?.[1]
+      expect(JSON.parse(saved)).toContain(`123:4:${date}`)
+      const nextSession = new ReleaseAlertService()
+      mockGetSetting.mockImplementation(key => key === 'release_alerts_enabled' ? 'true'
+        : key === 'release_alert_sent_ids' ? saved : key === 'release_alert_days_ahead' ? '30' : 'US')
+      await nextSession.start()
+      const priorCalls = mockCreateNotification.mock.calls.length
+      expect(await nextSession.checkForReleases()).toBe(0)
+      expect(mockCreateNotification.mock.calls.length).toBe(priorCalls)
+      nextSession.stop()
     })
 
     it('skips releases outside date range', async () => {

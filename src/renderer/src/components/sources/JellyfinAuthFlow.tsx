@@ -7,8 +7,8 @@
 import { useState, useEffect } from 'react'
 import { Film, Tv, Music, Folder, Server, ChevronRight } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
-import { Button } from '../ui/Button'
-import { Input } from '../ui/Input'
+import { useLibrarySelection } from '../../hooks/useLibrarySelection'
+import type { MediaLibraryResponse } from '../../../../preload/index'
 
 interface JellyfinAuthFlowProps {
   onSuccess: () => void
@@ -24,13 +24,6 @@ interface DiscoveredServer {
 
 type Step = 'discover' | 'server-select' | 'auth-method' | 'libraries'
 
-interface MediaLibrary {
-  id: string
-  name: string
-  type: 'movie' | 'show' | 'music' | 'unknown'
-  itemCount?: number
-}
-
 export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: JellyfinAuthFlowProps) {
   const { getLibraries, refreshSources } = useSources()
 
@@ -45,8 +38,8 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
   const [isConnecting, setIsConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sourceId, setSourceId] = useState<string | null>(null)
-  const [libraries, setLibraries] = useState<MediaLibrary[]>([])
-  const [selectedLibraries, setSelectedLibraries] = useState<Set<string>>(new Set())
+  const [libraries, setLibraries] = useState<MediaLibraryResponse[]>([])
+  const { selectedLibraries, setSelectedLibraries, handleToggleLibrary, handleSelectAll, handleDeselectAll } = useLibrarySelection(libraries)
 
   const providerName = isEmby ? 'Emby' : 'Jellyfin'
   // Emby uses green branding, Jellyfin uses purple
@@ -150,27 +143,6 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
   }
 
   // Toggle library selection
-  const handleToggleLibrary = (libraryId: string) => {
-    setSelectedLibraries(prev => {
-      const next = new Set(prev)
-      if (next.has(libraryId)) {
-        next.delete(libraryId)
-      } else {
-        next.add(libraryId)
-      }
-      return next
-    })
-  }
-
-  // Select/deselect all libraries
-  const handleSelectAll = () => {
-    setSelectedLibraries(new Set(libraries.map(lib => lib.id)))
-  }
-
-  const handleDeselectAll = () => {
-    setSelectedLibraries(new Set())
-  }
-
   // Complete setup with library selection
   const handleComplete = async () => {
     if (!sourceId) return
@@ -222,15 +194,15 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
         {libraries.length > 0 && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-label font-medium">Select libraries to include:</p>
-              <div className="flex gap-2 text-caption">
-                <Button variant="tertiary" size="sm" onClick={handleSelectAll}>
-                  Select all
-                </Button>
+              <p className="text-sm font-medium">Select libraries to include:</p>
+              <div className="flex gap-2 text-xs">
+                <button onClick={handleSelectAll} className="text-primary hover:underline">
+                  Select All
+                </button>
                 <span className="text-muted-foreground">|</span>
-                <Button variant="tertiary" size="sm" onClick={handleDeselectAll}>
-                  Deselect all
-                </Button>
+                <button onClick={handleDeselectAll} className="text-primary hover:underline">
+                  Deselect All
+                </button>
               </div>
             </div>
             <div className="space-y-1 max-h-48 overflow-y-auto">
@@ -259,27 +231,27 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
                   <span className="text-muted-foreground">
                     {lib.type === 'movie' ? <Film className="w-5 h-5" /> : lib.type === 'show' ? <Tv className="w-5 h-5" /> : lib.type === 'music' ? <Music className="w-5 h-5" /> : <Folder className="w-5 h-5" />}
                   </span>
-                  <span className="text-label flex-1">{lib.name}</span>
+                  <span className="text-sm flex-1">{lib.name}</span>
                   {lib.itemCount !== undefined && (
-                    <span className="text-caption text-muted-foreground">({lib.itemCount} items)</span>
+                    <span className="text-xs text-muted-foreground">({lib.itemCount} items)</span>
                   )}
                 </label>
               ))}
             </div>
-            <p className="text-caption text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Only selected libraries will appear in your media browser. You can change this later.
             </p>
           </div>
         )}
 
         <div className="flex justify-end">
-          <Button
+          <button
             onClick={handleComplete}
             disabled={selectedLibraries.size === 0}
-            variant="primary"
+            className="px-6 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
           >
             {selectedLibraries.size === 0 ? 'Select at least one library' : 'Done'}
-          </Button>
+          </button>
         </div>
       </div>
     )
@@ -295,58 +267,56 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
               <Server className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="font-medium text-label">{selectedServer.name}</div>
-              <div className="text-caption text-muted-foreground truncate">{selectedServer.url}</div>
+              <div className="font-medium text-sm">{selectedServer.name}</div>
+              <div className="text-xs text-muted-foreground truncate">{selectedServer.url}</div>
             </div>
-            <Button variant="tertiary" size="sm" onClick={() => setStep('discover')}>Change</Button>
+            <button onClick={() => setStep('discover')} className="text-xs text-primary hover:underline">Change</button>
           </div>
         )}
 
         <label className="block">
-          <span className="text-label font-medium">Display Name</span>
-          <Input
+          <span className="text-sm font-medium">Display Name</span>
+          <input
             type="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder={selectedServer?.name || `My ${providerName}`}
-            className="mt-1"
+            className="mt-1 w-full px-3 py-2 rounded-md border border-border bg-background focus:outline-hidden focus:ring-1 focus:ring-primary text-sm"
           />
         </label>
 
         {/* Both Jellyfin and Emby use API key authentication */}
         <div className="space-y-3">
           <label className="block">
-            <span className="text-label font-medium">API Key</span>
-            <Input
+            <span className="text-sm font-medium">API Key</span>
+            <input
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder="Enter your API key"
-              className="mt-1"
+              className="mt-1 w-full px-3 py-2 rounded-md border border-border bg-background focus:outline-hidden focus:ring-1 focus:ring-primary text-sm"
             />
           </label>
-          <p className="text-caption text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {isEmby
               ? 'Find your API key in Emby Dashboard → Advanced → API Keys'
               : 'Find your API key in Jellyfin Dashboard → Advanced → API Keys'}
           </p>
         </div>
 
-        {error && <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-label">{error}</div>}
+        {error && <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>}
 
         <div className="flex gap-2">
-          <Button onClick={onBack} disabled={isConnecting} variant="secondary" className="flex-1">
+          <button onClick={onBack} disabled={isConnecting} className="flex-1 px-4 py-2 rounded-md border border-border hover:bg-muted disabled:opacity-50">
             Back
-          </Button>
-          <Button
+          </button>
+          <button
             onClick={handleApiKeyAuth}
             disabled={isConnecting}
-            variant="primary"
-            loading={isConnecting}
-            className="flex-1"
+            className="flex-1 px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
             {isConnecting ? 'Connecting...' : 'Connect'}
-          </Button>
+          </button>
         </div>
       </div>
     )
@@ -358,10 +328,10 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
       {discoveredServers.length > 0 && (
         <>
           <div className="flex items-center justify-between">
-            <span className="text-label font-medium">Found on your network</span>
-            <Button variant="tertiary" size="sm" onClick={handleDiscover} disabled={isDiscovering}>
+            <span className="text-sm font-medium">Found on your network</span>
+            <button onClick={handleDiscover} disabled={isDiscovering} className="text-xs text-primary hover:underline disabled:opacity-50">
               {isDiscovering ? 'Scanning...' : 'Rescan'}
-            </Button>
+            </button>
           </div>
           <div className="space-y-2">
             {discoveredServers.map((server) => (
@@ -374,8 +344,8 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
                   <Server className="w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-label">{server.name}</div>
-                  <div className="text-caption text-muted-foreground truncate">{server.address}</div>
+                  <div className="font-medium text-sm">{server.name}</div>
+                  <div className="text-xs text-muted-foreground truncate">{server.address}</div>
                 </div>
                 <ChevronRight className="w-5 h-5 text-muted-foreground" />
               </button>
@@ -383,13 +353,13 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
           </div>
           <div className="relative">
             <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
-            <div className="relative flex justify-center text-caption"><span className="bg-background px-2 text-muted-foreground">or</span></div>
+            <div className="relative flex justify-center text-xs"><span className="bg-background px-2 text-muted-foreground">or</span></div>
           </div>
         </>
       )}
 
       {discoveredServers.length === 0 && !isDiscovering && (
-        <div className="bg-muted/50 rounded-lg p-4 text-label">
+        <div className="bg-muted/50 rounded-lg p-4 text-sm">
           <p className="text-muted-foreground">
             No {providerName} servers found on your network. Enter address below.
           </p>
@@ -399,37 +369,36 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
       {isDiscovering && discoveredServers.length === 0 && (
         <div className="text-center py-8">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent mb-4" />
-          <p className="text-label text-muted-foreground">Searching for {providerName} servers...</p>
+          <p className="text-sm text-muted-foreground">Searching for {providerName} servers...</p>
         </div>
       )}
 
       <label className="block">
-        <span className="text-label font-medium">Server URL</span>
+        <span className="text-sm font-medium">Server URL</span>
         <div className="mt-1 flex gap-2">
-          <Input
+          <input
             type="url"
             value={manualUrl}
             onChange={(e) => setManualUrl(e.target.value)}
             placeholder="http://192.168.1.100:8096"
-            className="flex-1"
+            className="flex-1 px-3 py-2 rounded-md border border-border bg-background focus:outline-hidden focus:ring-1 focus:ring-primary text-sm"
             onKeyDown={(e) => e.key === 'Enter' && handleTestManualUrl()}
           />
-          <Button
+          <button
             onClick={handleTestManualUrl}
             disabled={isTestingUrl || !manualUrl.trim()}
-            variant="primary"
-            loading={isTestingUrl}
+            className="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
             {isTestingUrl ? '...' : 'Connect'}
-          </Button>
+          </button>
         </div>
       </label>
 
-      {error && <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-label">{error}</div>}
+      {error && <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>}
 
-      <Button onClick={onBack} variant="secondary" className="w-full">
+      <button onClick={onBack} className="w-full px-4 py-2 rounded-md border border-border hover:bg-muted">
         Back
-      </Button>
+      </button>
     </div>
   )
 }

@@ -62,7 +62,7 @@ export function useLibraryFilters(searchQuery: string): UseLibraryFiltersReturn 
 
       // Quality filter (use debounced value)
       if (debouncedQualityFilter !== 'all') {
-        const tierQuality = (item.tier_quality || 'MEDIUM').toLowerCase()
+        const tierQuality = (item.tier_quality || 'UNKNOWN').toLowerCase()
         if (tierQuality !== debouncedQualityFilter) return false
       }
 

@@ -47,12 +47,8 @@ export function useFocusTrap(
     // Auto-focus first element if requested
     if (autoFocusFirst) {
       const focusableElements = getFocusableElements()
-      if (focusableElements.length > 0) {
-        // Small delay to ensure the container is fully rendered
-        setTimeout(() => {
-          focusableElements[0].focus()
-        }, 0)
-      }
+      const initialFocus = focusableElements.find(el => el.hasAttribute('autofocus')) ?? focusableElements[0] ?? container
+      initialFocus.focus()
     }
 
     // Handle Tab key to trap focus

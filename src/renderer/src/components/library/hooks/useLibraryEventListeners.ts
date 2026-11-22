@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { SETTING_KEYS } from '../../../../../shared/settingKeys'
 import type { AnalysisProgress } from '../types'
+import { formatOptimizationBytes } from '../transcoding/optimizationResults'
 
 interface UseLibraryEventListenersOptions {
   activeSourceId: string | null
@@ -142,28 +143,26 @@ export function useLibraryEventListeners({
     })
 
     // Listen for task queue state updates to sync analyzing state
-    const cleanupTaskQueueUpdated = window.electronAPI.onTaskQueueUpdated?.((state: unknown) => {
-      if (state == null || typeof state !== 'object') return
-      const s = state as { currentTask: { type: string; progress?: AnalysisProgress } | null }
-      if (s.currentTask) {
-        const taskType = s.currentTask.type
+    const cleanupTaskQueueUpdated = window.electronAPI.onTaskQueueUpdated?.((state) => {
+      if (state.currentTask) {
+        const taskType = state.currentTask.type
         if (taskType === 'series-completeness') {
           setIsAnalyzing(true)
           setAnalysisType('series')
-          if (s.currentTask.progress) {
-            setAnalysisProgress(s.currentTask.progress)
+          if (state.currentTask.progress) {
+            setAnalysisProgress(state.currentTask.progress)
           }
         } else if (taskType === 'collection-completeness') {
           setIsAnalyzing(true)
           setAnalysisType('collections')
-          if (s.currentTask.progress) {
-            setAnalysisProgress(s.currentTask.progress)
+          if (state.currentTask.progress) {
+            setAnalysisProgress(state.currentTask.progress)
           }
         } else if (taskType === 'music-completeness') {
           setIsAnalyzing(true)
           setAnalysisType('music')
-          if (s.currentTask.progress) {
-            setAnalysisProgress(s.currentTask.progress)
+          if (state.currentTask.progress) {
+            setAnalysisProgress(state.currentTask.progress)
           }
         } else {
           // Non-completeness task running, reset completeness analyzing state
@@ -204,28 +203,22 @@ export function useLibraryEventListeners({
     const handleExclusionsChanged = () => {
       loadCompletenessData()
       loadMusicCompletenessData()
-      _loadStats(activeSourceId || undefined)
     }
     window.addEventListener('exclusions-changed', handleExclusionsChanged)
 
     // Listen for wishlist auto-completion
     const cleanupWishlistAutoCompleted = window.electronAPI.onWishlistAutoCompleted?.((items) => {
       if (items.length === 1) {
-        const item = items[0]
-        const message = item.reason === 'upgrade'
-          ? `"${item.title}" upgraded`
-          : `"${item.title}" found in your library`
-        addToast({ type: 'success', title: 'Wishlist item completed', message })
+        addToast({
+          type: 'success',
+          title: 'Wishlist item completed',
+          message: `"${items[0].title}" has been fulfilled`,
+        })
       } else if (items.length > 1) {
-        const found = items.filter((i) => i.reason !== 'upgrade')
-        const upgraded = items.filter((i) => i.reason === 'upgrade')
-        const parts: string[] = []
-        if (found.length > 0) parts.push(`${found.length} found in your library`)
-        if (upgraded.length > 0) parts.push(`${upgraded.length} upgraded`)
         addToast({
           type: 'success',
           title: `${items.length} wishlist items completed`,
-          message: `${parts.join(', ')} — ${items.map((i) => i.title).join(', ')}`,
+          message: items.map((i) => i.title).join(', '),
         })
       }
     })
@@ -238,11 +231,32 @@ export function useLibraryEventListeners({
         itemsChanged > 0
           ? `Added ${data.itemsAdded}, updated ${data.itemsUpdated}`
           : `${data.itemsScanned} items scanned, no changes`
+      const optimizationCandidates = data.optimizationCandidates
+      const reasonLabels: Record<string, string> = {
+        h264_video_transcode: 'H.264',
+        hevc_to_av1: 'H.265 to AV1',
+        audio_stream_pruning: 'audio pruning',
+        subtitle_stream_pruning: 'subtitle pruning',
+        dolby_vision_profile_5_mp4_remux: 'Dolby Vision remux',
+      }
+      const reasonSummary = optimizationCandidates
+        ? Object.entries(optimizationCandidates.reasonCounts)
+            .filter((entry): entry is [string, number] => entry[1] !== undefined && entry[1] > 0)
+            .map(([reason, count]) => `${reasonLabels[reason] ?? reason}: ${count}`)
+            .join(', ')
+        : ''
+      const optimizationMessage = optimizationCandidates
+        ? optimizationCandidates.candidateCount === 0
+          ? 'No optimization candidates found'
+          : `${optimizationCandidates.candidateCount} optimization candidates found${reasonSummary ? ` (${reasonSummary})` : ''}${optimizationCandidates.estimatedSavingsBytes === null ? '' : ` · about ${formatOptimizationBytes(optimizationCandidates.estimatedSavingsBytes)} estimated savings`}${optimizationCandidates.candidatesWithoutEstimate ? ` · ${optimizationCandidates.candidatesWithoutEstimate} without an estimate` : ''}`
+        : data.optimizationCandidateError
+          ? `Optimization candidates could not be calculated: ${data.optimizationCandidateError}`
+          : undefined
 
       addToast({
         type: 'success',
         title: `${data.libraryName} complete`,
-        message,
+        message: optimizationMessage ? `${message} · ${optimizationMessage}` : message,
         action: data.sourceId
           ? {
               label: 'View Library',

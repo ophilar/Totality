@@ -7,7 +7,7 @@ function makeVersion(file_path: string, resolution = '1080p', overrides: Record<
     hdr_format: 'None',
     edition: undefined as string | undefined,
     label: undefined as string | undefined,
-    video_bitrate: undefined as number | undefined,
+    video_bitrate_kbps: undefined as number | undefined,
     ...overrides,
   }
 }
@@ -180,9 +180,9 @@ describe('extractVersionNames', () => {
 
     it('deduplicates 3+ versions with same label by codec then bitrate', () => {
       const versions = [
-        makeVersion('/movies/Movie (2020) [1080p-1].mkv', '1080p', { video_codec: 'HEVC', video_bitrate: 12000 }),
-        makeVersion('/movies/Movie (2020) [1080p-2].mkv', '1080p', { video_codec: 'HEVC', video_bitrate: 8000 }),
-        makeVersion('/movies/Movie (2020) [1080p-3].mkv', '1080p', { video_codec: 'H.264', video_bitrate: 15000 }),
+        makeVersion('/movies/Movie (2020) [1080p-1].mkv', '1080p', { video_codec: 'HEVC', video_bitrate_kbps: 12000 }),
+        makeVersion('/movies/Movie (2020) [1080p-2].mkv', '1080p', { video_codec: 'HEVC', video_bitrate_kbps: 8000 }),
+        makeVersion('/movies/Movie (2020) [1080p-3].mkv', '1080p', { video_codec: 'H.264', video_bitrate_kbps: 15000 }),
       ]
       extractVersionNames(versions)
 

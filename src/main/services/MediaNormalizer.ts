@@ -1,3 +1,4 @@
+
 /**
  * MediaNormalizer Service
  *
@@ -111,6 +112,23 @@ export function normalizeVideoCodec(codec: string | null | undefined): string {
   return codec.toUpperCase()
 }
 
+/** Playback profiles store levels as decimal tenths; FFprobe reports HEVC general_level_idc. */
+export function normalizeVideoLevel(codec: string, level: number | undefined): number | undefined {
+  if (level === undefined) return undefined
+  if (normalizeVideoCodec(codec) !== 'HEVC') return level
+  if (!Number.isInteger(level) || level <= 0 || level % 3 !== 0) return undefined
+  return level / 3
+}
+
+export function normalizeSubtitleFormat(codec: string): string {
+  switch (codec.toLowerCase()) {
+    case 'subrip': return 'srt'
+    case 'hdmv_pgs_subtitle': return 'pgs'
+    case 'dvd_subtitle': return 'vobsub'
+    default: return codec.toLowerCase()
+  }
+}
+
 // ============================================================================
 // AUDIO CODEC NORMALIZATION
 // ============================================================================
@@ -119,7 +137,11 @@ export function normalizeVideoCodec(codec: string | null | undefined): string {
  * Normalize audio codec to a standard display name
  * Maps various codec identifiers to consistent names
  */
-export function normalizeAudioCodec(codec: string | null | undefined, profile?: string): string {
+export function normalizeAudioCodec(
+  codec: string | null | undefined,
+  profile?: string,
+  normalizationProfile: 'standard' | 'kodi' = 'standard'
+): string {
   if (!codec) return ''
 
   const codecLower = codec.toLowerCase().trim()
@@ -136,6 +158,10 @@ export function normalizeAudioCodec(codec: string | null | undefined, profile?: 
   // TrueHD (with or without Atmos)
   if (codecLower.includes('truehd')) {
     return 'TrueHD'
+  }
+
+  if (normalizationProfile === 'kodi' && codecLower.includes('atmos')) {
+    return 'TrueHD Atmos'
   }
 
   // DTS-HD Master Audio
@@ -180,7 +206,7 @@ export function normalizeAudioCodec(codec: string | null | undefined, profile?: 
     codecLower.includes('eac3') ||
     codecLower.includes('dolby digital plus')
   ) {
-    return 'EAC3'
+    return normalizationProfile === 'kodi' ? 'E-AC-3' : 'EAC3'
   }
 
   // AC-3 / Dolby Digital
@@ -190,7 +216,7 @@ export function normalizeAudioCodec(codec: string | null | undefined, profile?: 
     codecLower === 'a52' ||
     codecLower.includes('dolby digital')
   ) {
-    return 'AC3'
+    return normalizationProfile === 'kodi' ? 'AC-3' : 'AC3'
   }
 
   // AAC
@@ -319,6 +345,14 @@ export function normalizeResolution(
   if (h >= 480 || w >= 700) return '480p'
   if (h > 0 || w > 0) return 'SD'
   return ''
+}
+
+export function normalizeKodiResolution(width: number | null, height: number | null): string {
+  return normalizeResolution(width, height) || 'SD'
+}
+
+export function normalizeKodiAudioCodec(codec: string | null, profile?: string): string {
+  return normalizeAudioCodec(codec, profile, 'kodi')
 }
 
 // ============================================================================

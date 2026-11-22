@@ -91,12 +91,12 @@ test('global TV search returns the series TMDB identity using production SQLite 
         VALUES (?, ?, ?)`).run('search-source', 'plex', 'Search Source')
       database.prepare(`INSERT INTO media_items (
         source_id, source_type, plex_id, title, type, file_path, series_title,
-        file_size, duration, resolution, width, height, video_codec, video_bitrate,
-        audio_codec, audio_channels, audio_bitrate, season_number, episode_number,
-        tmdb_id, series_tmdb_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        file_size_bytes, duration_ms, resolution, width, height, video_codec, video_bitrate_kbps,
+        audio_codec, audio_channels, audio_bitrate_kbps, season_number, episode_number,
+        tmdb_id, series_tmdb_id, series_identity_key
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run('search-source', 'plex', 'episode-1', 'Pilot', 'episode', '/shows/example-s01e01.mkv', 'Example Series',
-          1, 3600, '1080p', 1920, 1080, 'H264', 5000, 'AAC', 2, 192, 1, 1, '111', '999')
+          1, 3_600_000, '1080p', 1920, 1080, 'H264', 5000, 'AAC', 2, 192, 1, 1, '111', '999', 'tmdb:999')
     } finally {
       database.close()
     }

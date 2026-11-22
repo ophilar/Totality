@@ -18,8 +18,3 @@ import { getDatabaseServiceSync } from './DatabaseFactory'
 export function getDatabase() {
   return getDatabaseServiceSync()
 }
-
-/**
- * Alias for getDatabase() - for compatibility with existing code
- */
-export const getDatabaseService = getDatabase

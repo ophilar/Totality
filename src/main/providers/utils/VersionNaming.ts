@@ -15,7 +15,7 @@ interface VersionInput {
   hdr_format?: string
   source_type?: string
   video_codec?: string
-  video_bitrate?: number
+  video_bitrate_kbps?: number
 }
 
 // Plex {edition-X} tag format
@@ -248,8 +248,8 @@ export function extractVersionNames<T extends VersionInput>(versions: T[]): T[] 
   // Round 2: if still colliding, append bitrate
   const labelCounts2 = countLabels(versions)
   for (const v of versions) {
-    if ((labelCounts2.get(v.label || '') || 0) > 1 && v.video_bitrate) {
-      v.label = `${v.label} ${Math.round(v.video_bitrate / 1000)}Mbps`
+    if ((labelCounts2.get(v.label || '') || 0) > 1 && v.video_bitrate_kbps) {
+      v.label = `${v.label} ${Math.round(v.video_bitrate_kbps / 1000)}Mbps`
     }
   }
 

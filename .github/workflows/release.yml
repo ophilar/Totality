@@ -14,6 +14,7 @@ permissions:
 
 jobs:
   test:
+    if: github.repository == 'bbidwell85/Totality'
     name: Test
     runs-on: ubuntu-latest
     steps:
@@ -26,15 +27,17 @@ jobs:
 
       - run: npm ci
       - run: npm run test:run
+      - run: npm run typecheck
 
   build:
+    if: github.repository == 'bbidwell85/Totality'
     name: Build (${{ matrix.os }})
     needs: test
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-24.04, macos-15-intel, windows-2025]
     steps:
       - uses: actions/checkout@v5
 
@@ -47,11 +50,15 @@ jobs:
 
       # macOS code signing setup
       - name: Import macOS signing certificate
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-15-intel'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo 'macOS signing certificate not configured; packaging unsigned artifacts'
+            exit 0
+          fi
           # Create temporary keychain
           KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
           KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
@@ -73,8 +80,9 @@ jobs:
           rm $RUNNER_TEMP/certificate.p12
 
       - name: Build and package
-        run: npx tsc && npx vite build && npx electron-builder --publish never
+        run: npx vite build && npx electron-builder --publish never
         env:
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.APPLE_CERTIFICATE != '' && 'true' || 'false' }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
@@ -82,7 +90,7 @@ jobs:
 
       # Clean up keychain
       - name: Clean up keychain
-        if: matrix.os == 'macos-latest' && always()
+        if: matrix.os == 'macos-15-intel' && always()
         run: |
           security delete-keychain $RUNNER_TEMP/signing.keychain-db || true
 

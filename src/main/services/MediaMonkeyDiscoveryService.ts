@@ -1,3 +1,4 @@
+
 /**
  * MediaMonkeyDiscoveryService
  *
@@ -9,7 +10,7 @@
  */
 
 import * as fs from 'fs'
-import * as path from 'path'
+import * as path from 'node:path'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 
@@ -84,7 +85,8 @@ export class MediaMonkeyDiscoveryService {
     try {
       const { stdout } = await execAsync('tasklist /FI "IMAGENAME eq MediaMonkey.exe" /NH')
       return stdout.toLowerCase().includes('mediamonkey.exe')
-    } catch {
+    } catch (error) {
+      console.warn('[MediaMonkeyDiscovery] Failed to check whether MediaMonkey is running:', error)
       return false
     }
   }

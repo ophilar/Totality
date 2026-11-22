@@ -1,3 +1,4 @@
+
 /**
  * ReleaseAlertService — checks TMDB release dates for wishlist items
  * and notifies when digital/physical releases are upcoming.
@@ -21,17 +22,15 @@ const RELEASE_TYPE_LABELS: Record<number, string> = {
 export class ReleaseAlertService {
   private pollingTimer: NodeJS.Timeout | null = null
   private startupTimer: NodeJS.Timeout | null = null
-  private alertedIds = new Set<string>() // "tmdbId:type" keys already alerted
+  private alertedIds = new Set<string>() // "tmdbId:type" keys already alerted this session
 
   async start(): Promise<void> {
     const db = getDatabase()
-    // Restore alerted IDs from previous sessions
-    const saved = db.getSetting('release_alert_sent_ids')
-    if (saved) {
-      try { for (const id of JSON.parse(saved)) this.alertedIds.add(id) } catch { /* ignore corrupt data */ }
-    }
+    if (this.pollingTimer) return
     const enabled = db.getSetting('release_alerts_enabled')
     if (enabled !== 'true') return
+    const persisted = db.getSetting('release_alert_sent_ids')
+    if (persisted) this.alertedIds = new Set(JSON.parse(persisted) as string[])
 
     // Run initial check after a short delay to let app settle
     this.startupTimer = setTimeout(() => {
@@ -73,11 +72,7 @@ export class ReleaseAlertService {
     // Get user's region for country-specific release dates
     const region = (db.getSetting('store_region') || 'US').toUpperCase()
 
-    try {
-      await tmdb.initialize()
-    } catch {
-      return 0
-    }
+    await tmdb.initialize()
 
     // Get active wishlist items with TMDB IDs (movies and TV)
     const wishlistItems = db.getWishlistItems({ status: 'active', limit: 200 })
@@ -110,10 +105,8 @@ export class ReleaseAlertService {
             const releaseDate = release.release_date.split('T')[0]
             if (releaseDate < today || releaseDate > cutoffStr) continue
 
-            const alertKey = `${tmdbId}:${release.type}`
+            const alertKey = `${tmdbId}:${release.type}:${releaseDate}`
             if (this.alertedIds.has(alertKey)) continue
-            this.alertedIds.add(alertKey)
-
             const typeLabel = RELEASE_TYPE_LABELS[release.type] || 'Release'
             const formattedDate = new Date(releaseDate).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
 
@@ -121,8 +114,9 @@ export class ReleaseAlertService {
               type: 'info',
               title: `${item.title} — ${typeLabel} release`,
               message: `${item.title} has a ${typeLabel.toLowerCase()} release on ${formattedDate}${release.note ? ` (${release.note})` : ''}`,
-              metadata: JSON.stringify({ release_alert_tmdb_id: tmdbId, wishlist_id: item.id, release_type: release.type }),
+              metadata: { release_alert_tmdb_id: tmdbId, wishlist_id: item.id, release_type: release.type },
             })
+            this.alertedIds.add(alertKey)
             emitNotificationCreated()
             alertCount++
 
@@ -135,32 +129,32 @@ export class ReleaseAlertService {
             if (details.next_episode_to_air) {
               const airDate = (details.next_episode_to_air as Record<string, string>).air_date
               if (airDate && airDate >= today && airDate <= cutoffStr) {
-                const alertKey = `${tmdbId}:tv`
+                const alertKey = `${tmdbId}:tv:${airDate}`
                 if (!this.alertedIds.has(alertKey)) {
-                  this.alertedIds.add(alertKey)
                   const formattedDate = new Date(airDate).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
                   db.createNotification({
                     type: 'info',
                     title: `${item.title} — New episode`,
                     message: `${item.title} has a new episode airing on ${formattedDate}`,
-                    metadata: JSON.stringify({ release_alert_tmdb_id: tmdbId, wishlist_id: item.id }),
+                    metadata: { release_alert_tmdb_id: tmdbId, wishlist_id: item.id },
                   })
+                  this.alertedIds.add(alertKey)
                   emitNotificationCreated()
                   alertCount++
                 }
               }
             }
-          } catch { /* TV details fetch failed, skip */ }
+          } catch (error) {
+            getLoggingService().warn('[ReleaseAlertService]', `Failed to fetch TV release details for ${item.title}:`, error)
+          }
         }
       } catch (err) {
-        getLoggingService().verbose('[ReleaseAlertService]', `Failed to check ${item.title}: ${(err as Error).message}`)
+        getLoggingService().warn('[ReleaseAlertService]', `Failed to check ${item.title}:`, err)
       }
     }
 
-    // Persist alerted IDs (keep last 500 to prevent unbounded growth)
-    const ids = [...this.alertedIds].slice(-500)
-    db.setSetting('release_alert_sent_ids', JSON.stringify(ids))
-
+    this.alertedIds = new Set([...this.alertedIds].slice(-500))
+    db.setSetting('release_alert_sent_ids', JSON.stringify([...this.alertedIds]))
     return alertCount
   }
 }

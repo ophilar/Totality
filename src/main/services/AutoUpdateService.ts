@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
 /**
  * AutoUpdateService - Handles automatic application updates via electron-updater
  *
@@ -72,7 +73,9 @@ export class AutoUpdateService {
       try {
         getDatabaseServiceSync().createNotification({ type: 'info', title: 'Update available', message: `Version ${info.version} is ready to download` })
         emitNotificationCreated()
-      } catch { /* ignore */ }
+      } catch (error) {
+        console.warn('[AutoUpdate] Update notification could not be created:', error)
+      }
     })
 
     autoUpdater.on('update-not-available', (_info: UpdateInfo) => {
@@ -103,7 +106,9 @@ export class AutoUpdateService {
       try {
         getDatabaseServiceSync().createNotification({ type: 'info', title: 'Update ready', message: `Version ${info.version} will install on restart` })
         emitNotificationCreated()
-      } catch { /* ignore */ }
+      } catch (error) {
+        console.warn('[AutoUpdate] Update-ready notification could not be created:', error)
+      }
     })
 
     autoUpdater.on('error', (err: Error) => {
@@ -173,8 +178,7 @@ export class AutoUpdateService {
     try {
       const db = getDatabaseServiceSync()
       if (db.forceSave) {
-        const result = db.forceSave()
-        if (result && typeof result.then === 'function') await result
+        await db.forceSave()
       }
       await db.close()
     } catch (err) {
@@ -246,7 +250,7 @@ export class AutoUpdateService {
   }
 
   private emitState(): void {
-    safeSend(this.mainWindow, 'autoUpdate:stateChanged', this.state)
+    safeSend(this.mainWindow, IPC_CHANNELS.autoUpdateStateChanged, this.state)
   }
 }
 

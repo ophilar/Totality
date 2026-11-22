@@ -19,12 +19,8 @@ function needsProxy(url: string): boolean {
   try {
     const u = new URL(url)
     const h = u.hostname
-    // In Electron (non-web mode), CDNs load directly — no proxy needed
-    // In web mode, proxy everything so images go through the 7-day disk cache
-    if (!isWebMode()) {
-      if (h === 'image.tmdb.org' || h.endsWith('.tmdb.org')) return false
-      if (h === 'coverartarchive.org') return false
-    }
+    // Don't proxy well-known public CDNs — they work directly from the browser
+    if (h === 'image.tmdb.org' || h.endsWith('.tmdb.org')) return false
     // Proxy everything else: Plex (*.plex.direct, local IPs), Jellyfin, Emby, Kodi, etc.
     return true
   } catch {
@@ -67,12 +63,9 @@ for (const [method, channel] of Object.entries(EVENT_CHANNEL_MAP)) {
 }
 
 let ws: WebSocket | null = null
-let connectPromise: Promise<void> | null = null
-let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let requestId = 0
-let reconnectAttempts = 0
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
-const eventListeners = new Map<string, Set<(...args: unknown[]) => void>>()
+const eventListeners = new Map<string, Set<Function>>()
 let sessionToken: string | null = null
 let authPromise: { resolve: (token: string) => void; reject: (e: Error) => void } | null = null
 // Auth callback for future use (e.g., auto-showing login screen)
@@ -83,85 +76,53 @@ function getWsUrl(): string {
   return `${protocol}//${location.host}`
 }
 
-let isConnecting = false
-
 function connect(): Promise<void> {
-  // Guard: already connected
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    return Promise.resolve()
-  }
-  // Guard: connection in progress — return the existing promise
-  if (isConnecting && connectPromise) {
-    return connectPromise
-  }
-
-  // Cancel any pending reconnect
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer)
-    reconnectTimer = null
-  }
-
-  // Close any stale socket before creating a new one
-  if (ws) {
-    try { ws.onclose = null; ws.close() } catch { /* ignore */ }
-    ws = null
-  }
-
-  isConnecting = true
-
-  const promise = new Promise<void>((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     ws = new WebSocket(getWsUrl())
 
     ws.onopen = () => {
-      isConnecting = false
-      reconnectAttempts = 0
-      const stored = localStorage.getItem('web_session_token')
+      // Try to restore session
+      const stored = sessionStorage.getItem('web_session_token')
       if (stored) {
         sessionToken = stored
       }
-      window.dispatchEvent(new CustomEvent('ws-status', { detail: { connected: true } }))
       resolve()
+      if (sessionToken) {
+        void sendRpc('taskQueue:getState', []).then(state => {
+          dispatchEvent('taskQueue:updated', [state])
+        }).catch(error => {
+          console.error('[WebTransport] Failed to refresh task queue after reconnect:', error)
+        })
+      }
     }
 
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
         handleMessage(data)
-      } catch {
-        console.error('[WebTransport] Failed to parse message')
+      } catch (error) {
+        console.error('[WebTransport] Failed to parse message:', error)
       }
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       ws = null
-      isConnecting = false
-      connectPromise = null
-      // Reject all pending RPC promises so callers don't hang forever
-      for (const [pendingId, { reject }] of pending.entries()) {
-        reject(new Error('WebSocket disconnected'))
-        pending.delete(pendingId)
-      }
-      requestId = 0 // Reset to avoid stale ID collisions on reconnect
-      // Notify listeners of offline status
-      window.dispatchEvent(new CustomEvent('ws-status', { detail: { connected: false } }))
-      // Reconnect with exponential backoff (1s, 1.5s, 2.25s, ... capped at 30s)
-      const delayMs = Math.min(30000, 1000 * Math.pow(1.5, reconnectAttempts))
-      reconnectAttempts++
-      reconnectTimer = setTimeout(() => {
-        reconnectTimer = null
-        connect().catch((err) => console.warn('[WebSocket] Reconnect failed:', err))
-      }, delayMs)
+      const error = new Error(`WebSocket connection closed (${event.code})`)
+      reject(error)
+      for (const request of pending.values()) request.reject(error)
+      pending.clear()
+      authPromise?.reject(error)
+      authPromise = null
+      // Reconnect after delay
+      setTimeout(() => {
+        connect().catch(error => console.error('[WebTransport] Reconnection failed:', error))
+      }, 3000)
     }
 
     ws.onerror = () => {
-      isConnecting = false
-      connectPromise = null
       reject(new Error('WebSocket connection failed'))
     }
   })
-
-  connectPromise = promise
-  return promise
 }
 
 function handleMessage(data: { type: string; [key: string]: unknown }): void {
@@ -182,23 +143,14 @@ function handleMessage(data: { type: string; [key: string]: unknown }): void {
     case 'event': {
       const channel = data.channel as string
       const args = data.args as unknown[]
-      const listeners = eventListeners.get(channel)
-      if (listeners) {
-        for (const cb of listeners) {
-          try {
-            cb(...args)
-          } catch (err) {
-            console.error('[WebTransport] Event listener error:', err)
-          }
-        }
-      }
+      dispatchEvent(channel, args)
       break
     }
 
     case 'auth': {
       if (data.success && data.token) {
         sessionToken = data.token as string
-        localStorage.setItem('web_session_token', sessionToken)
+        sessionStorage.setItem('web_session_token', sessionToken)
         authPromise?.resolve(sessionToken)
         authPromise = null
       } else {
@@ -210,44 +162,26 @@ function handleMessage(data: { type: string; [key: string]: unknown }): void {
   }
 }
 
-// Deduplication: identical RPC calls within 500ms share the same promise
-const rpcDedup = new Map<string, { promise: Promise<unknown>; timestamp: number }>()
-const RPC_DEDUP_WINDOW_MS = 500
-const RPC_TIMEOUT_MS = 30_000
-
-// Write channels are excluded from deduplication to avoid suppressing legitimate rapid operations
-const WRITE_CHANNEL_PREFIXES = ['wishlist:add', 'wishlist:update', 'wishlist:remove', 'wishlist:addBulk', 'db:setSetting', 'db:reset', 'db:upsert', 'sources:', 'mood:', 'music:fix', 'movie:fix', 'series:fix']
-
-function isWriteChannel(channel: string): boolean {
-  return WRITE_CHANNEL_PREFIXES.some(p => channel.startsWith(p))
+function dispatchEvent(channel: string, args: unknown[]): void {
+  const listeners = eventListeners.get(channel)
+  if (!listeners) return
+  for (const callback of listeners) {
+    try {
+      callback(...args)
+    } catch (error) {
+      console.error('[WebTransport] Event listener error:', error)
+    }
+  }
 }
 
 function sendRpc(channel: string, args: unknown[]): Promise<unknown> {
-  // Skip deduplication for write operations
-  if (!isWriteChannel(channel)) {
-    const dedupKey = channel + ':' + JSON.stringify(args)
-    const existing = rpcDedup.get(dedupKey)
-    if (existing && Date.now() - existing.timestamp < RPC_DEDUP_WINDOW_MS) {
-      return existing.promise
-    }
-  }
-
-  const promise = new Promise<unknown>((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       reject(new Error('Not connected'))
       return
     }
     const id = ++requestId
-    const timer = setTimeout(() => {
-      if (pending.has(id)) {
-        pending.delete(id)
-        reject(new Error(`RPC timeout: ${channel}`))
-      }
-    }, RPC_TIMEOUT_MS)
-    pending.set(id, {
-      resolve: (v: unknown) => { clearTimeout(timer); resolve(v) },
-      reject: (e: Error) => { clearTimeout(timer); reject(e) },
-    })
+    pending.set(id, { resolve, reject })
     ws.send(JSON.stringify({
       type: 'rpc',
       id,
@@ -256,15 +190,6 @@ function sendRpc(channel: string, args: unknown[]): Promise<unknown> {
       token: sessionToken,
     }))
   })
-
-  // Cache for deduplication (read-only channels only)
-  if (!isWriteChannel(channel)) {
-    const dedupKey = channel + ':' + JSON.stringify(args)
-    rpcDedup.set(dedupKey, { promise, timestamp: Date.now() })
-    setTimeout(() => rpcDedup.delete(dedupKey), RPC_DEDUP_WINDOW_MS + 10)
-  }
-
-  return promise
 }
 
 export function authenticate(pin: string): Promise<string> {
@@ -283,8 +208,7 @@ export function authenticate(pin: string): Promise<string> {
 // }
 
 export function isAuthenticated(): boolean {
-  // Check in-memory token first, then localStorage (for initial render before WebSocket connects)
-  return sessionToken !== null || !!localStorage.getItem('web_session_token')
+  return sessionToken !== null
 }
 
 export function isWebMode(): boolean {
@@ -298,20 +222,20 @@ export function isWebMode(): boolean {
 export async function initWebTransport(): Promise<void> {
   await connect()
 
-  console.log('[WebTransport] Connected. Token in localStorage:', !!localStorage.getItem('web_session_token'), 'sessionToken:', !!sessionToken)
-
   // Try authenticating with stored token by making a test RPC
   if (sessionToken) {
     try {
       await sendRpc('app:getVersion', [])
-      console.log('[WebTransport] Token validated successfully')
-    } catch (err) {
-      console.log('[WebTransport] Token validation failed:', err instanceof Error ? err.message : String(err))
-      sessionToken = null
-      localStorage.removeItem('web_session_token')
+      // Token is valid
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Unauthorized') {
+        sessionToken = null
+        sessionStorage.removeItem('web_session_token')
+        console.info('[WebTransport] Stored web session expired; authentication is required')
+      } else {
+        console.error('[WebTransport] Failed to validate stored web session:', error)
+      }
     }
-  } else {
-    console.log('[WebTransport] No session token available')
   }
 
   // Install the proxy
@@ -331,7 +255,7 @@ function createApiProxy(): unknown {
       // Event listener methods (on*)
       if (prop in EVENT_CHANNEL_MAP) {
         const channel = EVENT_CHANNEL_MAP[prop]
-        return (callback: (...args: unknown[]) => void) => {
+        return (callback: Function) => {
           if (!eventListeners.has(channel)) {
             eventListeners.set(channel, new Set())
           }

@@ -7,7 +7,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Film, Tv, Music, Folder } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
-import { Button } from '../ui/Button'
+import { useLibrarySelection } from '../../hooks/useLibrarySelection'
 import type { ServerInstanceResponse, MediaLibraryResponse } from '../../../../preload/index'
 
 interface PlexAuthFlowProps {
@@ -34,7 +34,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
   const [servers, setServers] = useState<ServerInstanceResponse[]>([])
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null)
   const [libraries, setLibraries] = useState<MediaLibraryResponse[]>([])
-  const [selectedLibraries, setSelectedLibraries] = useState<Set<string>>(new Set())
+  const { selectedLibraries, setSelectedLibraries, handleToggleLibrary, handleSelectAll, handleDeselectAll } = useLibrarySelection(libraries)
   const [sourceId, setSourceId] = useState<string | null>(null)
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -126,27 +126,6 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
   }
 
   // Toggle library selection
-  const handleToggleLibrary = (libraryId: string) => {
-    setSelectedLibraries(prev => {
-      const next = new Set(prev)
-      if (next.has(libraryId)) {
-        next.delete(libraryId)
-      } else {
-        next.add(libraryId)
-      }
-      return next
-    })
-  }
-
-  // Select/deselect all libraries
-  const handleSelectAll = () => {
-    setSelectedLibraries(new Set(libraries.map(lib => lib.id)))
-  }
-
-  const handleDeselectAll = () => {
-    setSelectedLibraries(new Set())
-  }
-
   // Complete setup
   const handleComplete = async () => {
     if (!sourceId) return
@@ -196,7 +175,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
       {/* Step: Start */}
       {step === 'start' && (
         <>
-          <div className="bg-muted/50 rounded-lg p-4 text-label">
+          <div className="bg-muted/50 rounded-lg p-4 text-sm">
             <p className="font-medium mb-2">How it works:</p>
             <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
               <li>Click "Sign in with Plex" below</li>
@@ -207,22 +186,21 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
           </div>
 
           {error && (
-            <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-label">
+            <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
               {error}
             </div>
           )}
 
           <div className="flex gap-2">
-            <Button
+            <button
               onClick={onBack}
-              variant="secondary"
-              className="flex-1"
+              className="flex-1 px-4 py-2 rounded-md border border-border hover:bg-muted"
             >
               Back
-            </Button>
+            </button>
             <button
               onClick={handleStartAuth}
-              className="flex-1 px-4 py-2 rounded-lg bg-[#e5a00d] text-white hover:bg-[#cc8f0c]"
+              className="flex-1 px-4 py-2 rounded-md bg-[#e5a00d] text-white hover:bg-[#cc8f0c]"
             >
               Sign in with Plex
             </button>
@@ -236,7 +214,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
           <div className="text-center py-8">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-[#e5a00d] border-t-transparent mb-4" />
             <p className="font-medium">Waiting for Plex sign in...</p>
-            <p className="text-label text-muted-foreground mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               Complete the sign-in process in your browser
             </p>
           </div>
@@ -247,80 +225,81 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
                 href={authUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-label text-muted-foreground hover:text-foreground hover:underline"
+                className="text-sm text-primary hover:underline"
               >
                 Click here if the browser didn't open
               </a>
             </div>
           )}
 
-          <Button
+          <button
             onClick={handleCancelAuth}
-            variant="secondary"
-            className="w-full"
+            className="w-full px-4 py-2 rounded-md border border-border hover:bg-muted"
           >
             Cancel
-          </Button>
+          </button>
         </>
       )}
 
       {/* Step: Server Selection */}
       {step === 'servers' && (
         <>
-          <p className="text-label text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Select a Plex server to connect:
           </p>
 
-          {(() => {
-            const ownedServers = servers.filter(s => s.isOwned)
-
-            return ownedServers.length === 0 ? (
-              <div className="p-4 text-center text-muted-foreground">
-                No owned servers found on your Plex account
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {ownedServers.map(server => (
-                  <button
-                    key={server.id}
-                    onClick={() => handleSelectServer(server.id)}
-                    className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-colors text-left ${
-                      selectedServerId === server.id
-                        ? 'border-primary bg-primary/10'
-                        : 'border-border hover:bg-muted'
-                    }`}
-                  >
-                    <div className="w-10 h-10 bg-[#e5a00d] rounded-lg flex items-center justify-center text-white">
-                      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z" />
-                      </svg>
+          {servers.length === 0 ? (
+            <div className="p-4 text-center text-muted-foreground">
+              No servers found on your Plex account
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {servers.map(server => (
+                <button
+                  key={server.id}
+                  onClick={() => handleSelectServer(server.id)}
+                  className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-colors text-left ${
+                    selectedServerId === server.id
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:bg-muted'
+                  }`}
+                >
+                  <div className="w-10 h-10 bg-[#e5a00d] rounded-lg flex items-center justify-center text-white">
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-medium flex items-center gap-2">
+                      {server.name}
+                      {server.isOwned && (
+                        <span className="text-xs bg-[#e5a00d]/20 text-[#e5a00d] px-1.5 py-0.5 rounded">
+                          Owned
+                        </span>
+                      )}
                     </div>
-                    <div className="flex-1">
-                      <div className="font-medium">{server.name}</div>
-                      <div className="text-label text-muted-foreground">
-                        {server.address}:{server.port}
-                        {server.isLocal && ' (Local)'}
-                      </div>
+                    <div className="text-sm text-muted-foreground">
+                      {server.address}:{server.port}
+                      {server.isLocal && ' (Local)'}
                     </div>
-                  </button>
-                ))}
-              </div>
-            )
-          })()}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
 
           {error && (
-            <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-label">
+            <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
               {error}
             </div>
           )}
 
-          <Button
+          <button
             onClick={onBack}
-            variant="secondary"
-            className="w-full"
+            className="w-full px-4 py-2 rounded-md border border-border hover:bg-muted"
           >
             Back
-          </Button>
+          </button>
         </>
       )}
 
@@ -328,7 +307,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
       {step === 'libraries' && (
         <>
           <div className="text-center py-4">
-            <div className="inline-flex items-center justify-center w-12 h-12 bg-muted text-foreground rounded-full mb-3">
+            <div className="inline-flex items-center justify-center w-12 h-12 bg-green-500/20 text-green-500 rounded-full mb-3">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
@@ -339,15 +318,21 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
           {libraries.length > 0 && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-label font-medium">Select libraries to include:</p>
-                <div className="flex gap-2 text-caption">
-                  <Button variant="tertiary" size="sm" onClick={handleSelectAll}>
-                    Select all
-                  </Button>
+                <p className="text-sm font-medium">Select libraries to include:</p>
+                <div className="flex gap-2 text-xs">
+                  <button
+                    onClick={handleSelectAll}
+                    className="text-primary hover:underline"
+                  >
+                    Select All
+                  </button>
                   <span className="text-muted-foreground">|</span>
-                  <Button variant="tertiary" size="sm" onClick={handleDeselectAll}>
-                    Deselect all
-                  </Button>
+                  <button
+                    onClick={handleDeselectAll}
+                    className="text-primary hover:underline"
+                  >
+                    Deselect All
+                  </button>
                 </div>
               </div>
               <div className="space-y-2">
@@ -369,27 +354,26 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
                     <span className="text-white">
                       {lib.type === 'movie' ? <Film className="w-5 h-5" /> : lib.type === 'show' ? <Tv className="w-5 h-5" /> : lib.type === 'music' ? <Music className="w-5 h-5" /> : <Folder className="w-5 h-5" />}
                     </span>
-                    <span className="text-label">{lib.name}</span>
+                    <span className="text-sm">{lib.name}</span>
                     {lib.itemCount !== undefined && (
-                      <span className="text-caption text-muted-foreground">({lib.itemCount} items)</span>
+                      <span className="text-xs text-muted-foreground">({lib.itemCount} items)</span>
                     )}
                   </label>
                 ))}
               </div>
-              <p className="text-caption text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Only selected libraries will appear in your media browser. You can change this later by expanding the source card.
               </p>
             </div>
           )}
 
-          <Button
+          <button
             onClick={handleComplete}
             disabled={selectedLibraries.size === 0}
-            variant="primary"
-            className="w-full"
+            className="w-full px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {selectedLibraries.size === 0 ? 'Select at least one library' : 'Done'}
-          </Button>
+          </button>
         </>
       )}
     </div>

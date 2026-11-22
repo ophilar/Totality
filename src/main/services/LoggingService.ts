@@ -1,9 +1,10 @@
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
 /**
  * LoggingService - Centralized logging with buffer and export
  *
  * Features:
  * - Intercepts console.log/warn/error/info
- * - Stores logs in circular buffer (max 500 info + 500 important entries)
+ * - Stores logs in circular buffer (max 2000 entries)
  * - Emits new logs to renderer via IPC
  * - Exports logs to file
  */
@@ -11,7 +12,7 @@
 import { BrowserWindow, app } from 'electron'
 import { safeSend } from '../ipc/utils/safeSend'
 import * as fs from 'fs/promises'
-import * as path from 'path'
+import * as path from 'node:path'
 import * as os from 'os'
 
 export type LogLevel = 'verbose' | 'debug' | 'info' | 'warn' | 'error'
@@ -49,6 +50,7 @@ class LoggingService {
   private infoLogs: LogEntry[] = [] // Circular buffer for info/debug/verbose
   private importantLogs: LogEntry[] = [] // Protected buffer for warn/error
   private mainWindow: BrowserWindow | null = null
+  private rendererConsoleListener: ((event: Electron.Event<Electron.WebContentsConsoleMessageEventParams>) => void) | null = null
   private sessionId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
   private startedAt = new Date()
   private verboseEnabled = false
@@ -64,7 +66,6 @@ class LoggingService {
 
   // File logging
   private fileLoggingEnabled = false // Starts false until initializeFileLogging()
-  private fileLoggingMinLevel: LogLevel = 'info'
   private logRetentionDays = 7
   private logDir = ''
   private writeBuffer: string[] = []
@@ -72,9 +73,6 @@ class LoggingService {
   private isWriting = false
   private currentLogDate = ''
 
-  private static readonly LEVEL_PRIORITY: Record<LogLevel, number> = {
-    verbose: 0, debug: 1, info: 2, warn: 3, error: 4,
-  }
   private static readonly FLUSH_INTERVAL_MS = 5000
   private static readonly FLUSH_BUFFER_SIZE = 50
 
@@ -135,29 +133,50 @@ class LoggingService {
   }
 
   setMainWindow(window: BrowserWindow | null): void {
+    if (this.mainWindow && this.rendererConsoleListener) {
+      this.mainWindow.webContents.removeListener('console-message', this.rendererConsoleListener)
+    }
     this.mainWindow = window
+    this.rendererConsoleListener = null
+
+    if (window) {
+      this.rendererConsoleListener = event => {
+        const level: LogLevel = event.level === 'warning' ? 'warn' : event.level === 'debug' ? 'debug' : event.level
+        const details = `at ${event.sourceId}:${event.lineNumber}`
+        this.addEntry(level, '[Renderer]', event.message, details)
+      }
+      window.webContents.on('console-message', this.rendererConsoleListener)
+    }
   }
 
   private interceptConsole(): void {
     console.log = (...args: unknown[]) => {
       this.originalConsole.log(...args)
-      try { this.captureLog('info', args) } catch { /* never crash caller */ }
+      this.captureLogSafely('info', args)
     }
     console.warn = (...args: unknown[]) => {
       this.originalConsole.warn(...args)
-      try { this.captureLog('warn', args) } catch { /* never crash caller */ }
+      this.captureLogSafely('warn', args)
     }
     console.error = (...args: unknown[]) => {
       this.originalConsole.error(...args)
-      try { this.captureLog('error', args) } catch { /* never crash caller */ }
+      this.captureLogSafely('error', args)
     }
     console.info = (...args: unknown[]) => {
       this.originalConsole.info(...args)
-      try { this.captureLog('info', args) } catch { /* never crash caller */ }
+      this.captureLogSafely('info', args)
     }
     console.debug = (...args: unknown[]) => {
       this.originalConsole.debug(...args)
-      try { this.captureLog('debug', args) } catch { /* never crash caller */ }
+      this.captureLogSafely('debug', args)
+    }
+  }
+
+  private captureLogSafely(level: LogLevel, args: unknown[]): void {
+    try {
+      this.captureLog(level, args)
+    } catch (error) {
+      this.originalConsole.error('[LoggingService] Failed to store intercepted console entry:', error)
     }
   }
 
@@ -169,26 +188,24 @@ class LoggingService {
     const source = sourceMatch ? sourceMatch[0] : '[App]'
     const cleanMessage = sourceMatch ? message.slice(sourceMatch[0].length).trim() : message
 
-    // Format additional args, with special handling for Error objects
-    const details =
-      args.length > 1
-        ? args
-            .slice(1)
-            .map((arg) => {
-              // Handle Error objects specially to capture stack trace
-              if (arg instanceof Error) {
-                return `${arg.name}: ${arg.message}\n${arg.stack || 'No stack trace'}`
-              }
-              try {
-                return typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-              } catch {
-                return String(arg)
-              }
-            })
-            .join('\n\n')
-        : undefined
-
+    const details = args.length > 1 ? this.formatDetails(args.slice(1)) : undefined
     this.addEntry(level, source, cleanMessage, details)
+  }
+
+  private formatDetails(args: unknown[]): string | undefined {
+    if (args.length === 0) return undefined
+    return args
+      .map((arg) => {
+        if (arg instanceof Error) {
+          return `${arg.name}: ${arg.message}\n${arg.stack || 'No stack trace'}`
+        }
+        try {
+          return typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+        } catch {
+          return String(arg)
+        }
+      })
+      .join('\n\n')
   }
 
   private addEntry(level: LogLevel, source: string, message: string, details?: string): void {
@@ -218,7 +235,7 @@ class LoggingService {
 
     // Emit to renderer
     if (this.mainWindow) {
-      safeSend(this.mainWindow, 'logs:new', entry)
+      safeSend(this.mainWindow, IPC_CHANNELS.logsNew, entry)
     }
 
     // Append to file buffer
@@ -249,22 +266,35 @@ class LoggingService {
     this.verboseEnabled = enabled
     this.addEntry('info', '[LoggingService]', `Verbose logging ${enabled ? 'enabled' : 'disabled'}`)
     // Persist to database
-    try {
-      if (this.dbGetter) {
-        const db = this.dbGetter()
-        db.setSetting('verbose_logging_enabled', String(enabled))
-      }
-    } catch { /* DB may not be ready */ }
+    if (!this.dbGetter) return
+    const db = this.dbGetter()
+    db.setSetting('verbose_logging_enabled', String(enabled))
   }
 
   isVerboseEnabled(): boolean {
     return this.verboseEnabled
   }
 
-  verbose(source: string, message: string, details?: string): void {
+  debug(source: string, message: unknown, ...details: unknown[]): void {
+    this.addEntry('debug', source, String(message), this.formatDetails(details))
+  }
+
+  verbose(source: string, message: unknown, ...details: unknown[]): void {
     if (this.verboseEnabled) {
-      this.addEntry('verbose', source, message, details)
+      this.addEntry('verbose', source, String(message), this.formatDetails(details))
     }
+  }
+
+  info(source: string, message: unknown, ...details: unknown[]): void {
+    this.addEntry('info', source, String(message), this.formatDetails(details))
+  }
+
+  warn(source: string, message: unknown, ...details: unknown[]): void {
+    this.addEntry('warn', source, String(message), this.formatDetails(details))
+  }
+
+  error(source: string, message: unknown, ...details: unknown[]): void {
+    this.addEntry('error', source, String(message), this.formatDetails(details))
   }
 
   getSessionInfo(): { sessionId: string; startedAt: string; uptimeMs: number } {
@@ -323,7 +353,7 @@ class LoggingService {
       }
 
       await fs.mkdir(this.logDir, { recursive: true })
-      this.rotateLogFiles().catch(() => {})
+      void this.rotateLogFiles()
       this.flushTimer = setInterval(() => this.flushBuffer(), LoggingService.FLUSH_INTERVAL_MS)
 
       this.originalConsole.log(`[LoggingService] File logging initialized: ${this.logDir}`)
@@ -334,33 +364,21 @@ class LoggingService {
   }
 
   private loadFileLoggingSettings(): void {
-    try {
-      if (!this.dbGetter) return
-      const db = this.dbGetter()
-      const enabled = db.getSetting('file_logging_enabled')
-      const minLevel = db.getSetting('file_logging_min_level')
-      const retention = db.getSetting('log_retention_days')
+    if (!this.dbGetter) throw new Error('Database getter must be configured before file logging')
+    const db = this.dbGetter()
+    const enabled = db.getSetting('file_logging_enabled')
+    const retention = db.getSetting('log_retention_days')
 
-      if (enabled !== null) this.fileLoggingEnabled = enabled !== 'false'
-      if (minLevel && minLevel in LoggingService.LEVEL_PRIORITY) {
-        this.fileLoggingMinLevel = minLevel as LogLevel
-      }
-      if (retention) this.logRetentionDays = parseInt(retention, 10) || 7
+    if (enabled !== null) this.fileLoggingEnabled = enabled !== 'false'
+    if (retention) this.logRetentionDays = parseInt(retention, 10) || 7
 
-      // Restore verbose setting
-      const verbose = db.getSetting('verbose_logging_enabled')
-      if (verbose === 'true') this.verboseEnabled = true
-    } catch {
-      // DB may not be ready; use defaults (file logging stays disabled)
-    }
+    // Restore verbose setting
+    const verbose = db.getSetting('verbose_logging_enabled')
+    if (verbose === 'true') this.verboseEnabled = true
   }
 
   private appendToFileBuffer(entry: LogEntry): void {
     if (!this.fileLoggingEnabled || !this.logDir) return
-
-    if (LoggingService.LEVEL_PRIORITY[entry.level] < LoggingService.LEVEL_PRIORITY[this.fileLoggingMinLevel]) {
-      return
-    }
 
     const level = entry.level.toUpperCase().padEnd(7)
     let line = `${entry.timestamp} [${level}] ${entry.source} ${entry.message}`
@@ -386,7 +404,7 @@ class LoggingService {
 
       if (today !== this.currentLogDate) {
         this.currentLogDate = today
-        this.rotateLogFiles().catch(() => {})
+        void this.rotateLogFiles()
       }
 
       await fs.appendFile(logFile, lines.join(''), 'utf-8')
@@ -434,11 +452,9 @@ class LoggingService {
    */
   updateFileLoggingSettings(settings: {
     enabled?: boolean
-    minLevel?: LogLevel
     retentionDays?: number
   }): void {
     if (settings.enabled !== undefined) this.fileLoggingEnabled = settings.enabled
-    if (settings.minLevel !== undefined) this.fileLoggingMinLevel = settings.minLevel
     if (settings.retentionDays !== undefined) this.logRetentionDays = settings.retentionDays
   }
 

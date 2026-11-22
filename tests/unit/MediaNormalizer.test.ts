@@ -7,6 +7,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   normalizeVideoCodec,
+  normalizeVideoLevel,
+  normalizeSubtitleFormat,
   normalizeAudioCodec,
   getFullAudioCodecName,
   normalizeResolution,
@@ -95,6 +97,27 @@ describe('normalizeVideoCodec', () => {
 
   it('should uppercase unknown codecs', () => {
     expect(normalizeVideoCodec('somecodec')).toBe('SOMECODEC')
+  })
+})
+
+describe('normalizeVideoLevel', () => {
+  it('converts HEVC general_level_idc to the playback profile scale', () => {
+    expect(normalizeVideoLevel('hevc', 120)).toBe(40)
+    expect(normalizeVideoLevel('hevc', 156)).toBe(52)
+  })
+
+  it('does not normalize levels from other codecs or accept invalid HEVC identifiers', () => {
+    expect(normalizeVideoLevel('h264', 51)).toBe(51)
+    expect(normalizeVideoLevel('hevc', 121)).toBeUndefined()
+    expect(normalizeVideoLevel('hevc', undefined)).toBeUndefined()
+  })
+})
+
+describe('normalizeSubtitleFormat', () => {
+  it('maps FFprobe subtitle codec names to profile formats', () => {
+    expect(normalizeSubtitleFormat('hdmv_pgs_subtitle')).toBe('pgs')
+    expect(normalizeSubtitleFormat('dvd_subtitle')).toBe('vobsub')
+    expect(normalizeSubtitleFormat('subrip')).toBe('srt')
   })
 })
 
