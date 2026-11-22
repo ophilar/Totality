@@ -252,9 +252,30 @@ describe('BetterSQLiteService — Media Items', () => {
       '/movies/extended.mkv', '/movies/theatrical.mkv',
     ])
 
-    service.updateBestVersion(id, new Set(['/movies/theatrical.mkv']))
-    expect(service.getMediaItem(id)?.file_path).toBe('/movies/theatrical.mkv')
     expect(service.getMediaItem(id)?.version_count).toBe(2)
+  })
+
+  it('removes unobserved editions after a complete inventory and preserves the parent', () => {
+    const id = service.upsertMediaItem(makeMediaItem({
+      source_type: 'local', plex_id: 'editioned-movie', title: 'Editioned Movie',
+    }))
+    const version = (filePath: string, resolution: string, height: number) => ({
+      media_item_id: id, version_source: 'local_file', file_path: filePath,
+      file_size: 1, duration: 100, resolution, width: height === 2160 ? 3840 : 1920, height,
+      video_codec: 'hevc', video_bitrate: 1, audio_codec: 'aac', audio_channels: 2,
+      audio_bitrate: 1, quality_tier: resolution, tier_score: height,
+    }) as any
+
+    service.syncMediaItemVersions(id, [
+      version('/movies/theatrical.mkv', '1080p', 1080),
+      version('/movies/extended.mkv', '4K', 2160),
+    ])
+
+    const observed = service.getMediaItemVersions(id).filter(v => v.file_path === '/movies/theatrical.mkv')
+    service.syncMediaItemVersions(id, observed)
+    expect(service.getMediaItemVersions(id).map(v => v.file_path)).toEqual(['/movies/theatrical.mkv'])
+    expect(service.getMediaItem(id)?.file_path).toBe('/movies/theatrical.mkv')
+    expect(service.getMediaItem(id)?.version_count).toBe(1)
   })
 
   it('deleteMediaItem removes item and cascades', () => {

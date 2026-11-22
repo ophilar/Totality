@@ -6,6 +6,7 @@ const mockGetMusicTrackByPath = vi.hoisted(() => vi.fn())
 const mockDeleteMediaItem = vi.hoisted(() => vi.fn())
 const mockDeleteMusicTrack = vi.hoisted(() => vi.fn())
 const mockUpdateSourceScanTime = vi.hoisted(() => vi.fn())
+const mockGetMediaItems = vi.hoisted(() => vi.fn())
 const mockParseMusic = vi.hoisted(() => vi.fn())
 const mockGetSetting = vi.hoisted(() => vi.fn((key: string) => key === 'ffprobe_batch_size' ? '25' : 'false'))
 
@@ -32,6 +33,7 @@ vi.mock('../../src/main/database/getDatabase', () => ({
     deleteMediaItem: mockDeleteMediaItem,
     deleteMusicTrack: mockDeleteMusicTrack,
     updateSourceScanTime: mockUpdateSourceScanTime,
+    getMediaItems: mockGetMediaItems,
     startBatch: vi.fn(),
     endBatch: vi.fn(),
   })),
@@ -185,6 +187,23 @@ describe('LocalFolderProvider scan safety', () => {
       'Cannot complete media inventory'
     )
   })
+
+  it('treats an empty incremental inventory as a successful no-op', async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    const provider = new LocalFolderProvider({
+      sourceId: 'test-local',
+      connectionConfig: { folderPath: '/media', mediaType: 'movies' },
+    } as ConstructorParameters<typeof LocalFolderProvider>[0])
+    const discoverSpy = vi.spyOn(Object.getPrototypeOf(provider), 'discoverMediaFiles').mockResolvedValue([])
+
+    const result = await provider.scanLibrary('movies', { sinceTimestamp: new Date('2026-01-01') })
+    discoverSpy.mockRestore()
+
+    expect(result.success).toBe(true)
+    expect(result.errors).toEqual([])
+    expect(mockGetMediaItems).not.toHaveBeenCalled()
+    expect(mockUpdateSourceScanTime).not.toHaveBeenCalled()
+  })
   it('retains a missing video when a targeted watcher event cannot prove deletion', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(false)
     mockGetMediaItemByPath.mockReturnValue({ id: 21 })
@@ -224,11 +243,12 @@ describe('LocalFolderProvider scan safety', () => {
       sourceId: 'test-local',
       connectionConfig: { folderPath: '/music', mediaType: 'music' },
     } as ConstructorParameters<typeof LocalFolderProvider>[0])
-    vi.spyOn(provider as any, 'discoverAudioFiles')
+    const discoverSpy = vi.spyOn(Object.getPrototypeOf(provider), 'discoverAudioFiles')
       .mockResolvedValue([{ filePath: '/music/bad.flac', relativePath: 'bad.flac' }])
     const scan = Reflect.get(provider, 'scanMusicLibrary') as
       (onProgress?: unknown, scanPath?: string) => Promise<{ success: boolean; errors: string[] }>
     const result = await scan.call(provider, undefined, '/music')
+    discoverSpy.mockRestore()
     expect(result.success).toBe(false)
     expect(result.errors.join(' ')).toContain('Invalid music metadata')
     expect(mockUpdateSourceScanTime).not.toHaveBeenCalled()

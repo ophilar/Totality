@@ -111,7 +111,6 @@ describe('TaskQueueService', () => {
         (task: QueuedTask, progress: () => void) => Promise<void>
       await expect(execute.call(service, current, () => {})).rejects.toThrow('Movies: Plex unavailable')
       expect(current.result?.itemsScanned).toBe(5)
-      expect(current.result?.failedCount).toBe(1)
       expect(current.result?.errors).toEqual(['Movies: Plex unavailable'])
     })
   })

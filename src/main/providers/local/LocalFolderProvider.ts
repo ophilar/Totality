@@ -495,13 +495,9 @@ export class LocalFolderProvider implements MediaProvider {
 
       console.log(`[LocalFolderProvider ${this.sourceId}] Found ${totalFiles} ${scanType} files`)
 
-      if (totalFiles === 0) {
-        const existingItems = db.getMediaItems({ type: scanType, sourceId: this.sourceId, libraryId })
-        if (existingItems.length > 0) {
-          result.errors.push(`Empty media inventory but ${existingItems.length} stored items exist; scan cannot verify deletions`)
-        } else {
-          result.success = true
-        }
+      // An empty incremental result only means no files changed since the cursor.
+      if (isIncremental && totalFiles === 0) {
+        result.success = true
         result.durationMs = Date.now() - startTime
         return result
       }
@@ -748,14 +744,35 @@ export class LocalFolderProvider implements MediaProvider {
         return result
       }
 
-      // A directory inventory cannot distinguish deleted media from inaccessible NAS paths.
+      // Only a complete full inventory establishes absence. Enumeration failures and
+      // processing errors return above without deleting stored media or editions.
       if (!isIncremental) {
         const existingItems = db.getMediaItems({ type: scanType, sourceId: this.sourceId, libraryId })
-        const unobserved = existingItems.filter(item => !scannedFilePaths.has(item.file_path))
-        if (unobserved.length > 0) {
-          console.warn(`[LocalFolderProvider ${this.sourceId}] Retaining ${unobserved.length} unobserved ${scanType} records pending explicit reconciliation`)
-          for (const item of unobserved) {
-            if (item.id) db.updateBestVersion(item.id, scannedFilePaths)
+        for (const item of existingItems) {
+          if (!item.id) continue
+
+          const versions = db.getMediaItemVersions(item.id)
+          if (versions.length === 0) {
+            if (!scannedFilePaths.has(item.file_path)) {
+              await db.deleteMediaItem(item.id)
+              result.itemsRemoved++
+            }
+            continue
+          }
+
+          const observedVersions = versions.filter(version => scannedFilePaths.has(version.file_path))
+          if (observedVersions.length === 0) {
+            await db.deleteMediaItem(item.id)
+            result.itemsRemoved++
+            continue
+          }
+
+          if (observedVersions.length !== versions.length) {
+            db.syncMediaItemVersions(item.id, observedVersions)
+            const canonical = db.getMediaItem(item.id)
+            if (!canonical) throw new Error('Reconciled local media parent is missing')
+            const qualityScore = await analyzer.analyzeMediaItem(canonical)
+            await db.upsertQualityScore(qualityScore)
           }
         }
       }

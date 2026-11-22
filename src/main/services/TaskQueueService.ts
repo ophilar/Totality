@@ -70,7 +70,6 @@ export interface QueuedTask {
     itemsRemoved?: number
     isFirstScan?: boolean
     errors?: string[]
-    failedCount?: number
   }
 }
 
@@ -741,7 +740,6 @@ export class TaskQueueService {
       itemsRemoved: result.itemsRemoved,
       isFirstScan,
       errors: result.errors,
-      failedCount: result.success ? result.errors.length : Math.max(1, result.errors.length),
     }
 
     if (!result.success) {
@@ -806,7 +804,6 @@ export class TaskQueueService {
       itemsUpdated: totalUpdated,
       itemsRemoved: totalRemoved,
       errors: [...scanFailures, ...scanItemErrors],
-      failedCount: scanFailures.length + scanItemErrors.length,
     }
     if (scanFailures.length > 0) {
       throw new Error(`Source scan failed for ${scanFailures.length} libraries: ${scanFailures.join(' | ')}`)

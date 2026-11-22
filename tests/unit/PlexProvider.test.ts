@@ -15,6 +15,7 @@ const mockGetMediaItems = vi.hoisted(() => vi.fn())
 const mockDeleteMediaItem = vi.hoisted(() => vi.fn())
 const mockGetMusicTracks = vi.hoisted(() => vi.fn(() => []))
 const mockUpdateSourceScanTime = vi.hoisted(() => vi.fn())
+const mockDeleteMusicTrack = vi.hoisted(() => vi.fn())
 
 vi.mock('../../src/main/services/utils/httpClient', () => ({
   fetchJSON: mockFetchJSON,
@@ -34,6 +35,7 @@ vi.mock('../../src/main/database/getDatabase', () => ({
     getMediaItems: mockGetMediaItems,
     deleteMediaItem: mockDeleteMediaItem,
     getMusicTracks: mockGetMusicTracks,
+    deleteMusicTrack: mockDeleteMusicTrack,
     updateSourceScanTime: mockUpdateSourceScanTime,
     startBatch: vi.fn(),
     endBatch: vi.fn(),
@@ -774,6 +776,24 @@ describe('PlexProvider', () => {
       expect(result.errors.join(' ')).toContain('Invalid artist')
       expect(mockUpdateSourceScanTime).not.toHaveBeenCalled()
       expect(mockDeleteMediaItem).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('music reconciliation scope', () => {
+    it('queries deletion candidates only from the scanned library', async () => {
+      const provider = createProviderWithServer()
+      vi.spyOn(provider, 'getMusicArtists').mockResolvedValue([])
+      vi.spyOn(provider, 'getMusicAlbums').mockResolvedValue([])
+      vi.spyOn(provider as any, 'fetchAndUpdateTags').mockResolvedValue(undefined)
+      mockGetMusicTracks.mockImplementation((filters?: { libraryId?: string }) =>
+        filters?.libraryId === 'music-a' ? [] : [{ id: 99, provider_id: 'other-library-track' }]
+      )
+
+      const result = await provider.scanMusicLibrary('music-a')
+
+      expect(result.success).toBe(true)
+      expect(mockGetMusicTracks).toHaveBeenCalledWith({ sourceId: provider.sourceId, libraryId: 'music-a' })
+      expect(mockDeleteMusicTrack).not.toHaveBeenCalled()
     })
   })
 

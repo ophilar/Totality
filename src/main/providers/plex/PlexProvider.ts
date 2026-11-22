@@ -1809,7 +1809,7 @@ export class PlexProvider implements MediaProvider {
 
       // Collect existing track provider IDs to track new vs updated
       const existingTrackIds = new Set(
-        (db.getMusicTracks({ sourceId: this.sourceId }) as Array<{ provider_id?: string }>)
+        (db.getMusicTracks({ sourceId: this.sourceId, libraryId }) as Array<{ provider_id?: string }>)
           .map((t: { provider_id?: string }) => t.provider_id)
           .filter(Boolean)
       )
@@ -2036,7 +2036,7 @@ export class PlexProvider implements MediaProvider {
       }
 
       // Reconcile music: remove tracks not in scanned set
-      const existingTracks = db.getMusicTracks({ sourceId: this.sourceId }) as MusicTrack[]
+      const existingTracks = db.getMusicTracks({ sourceId: this.sourceId, libraryId }) as MusicTrack[]
       const existingTrackCount = existingTracks.length
 
       // Safety guard: refuse bulk deletion when scan appears incomplete (API failures, timeouts)

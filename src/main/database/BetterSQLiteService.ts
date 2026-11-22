@@ -2525,13 +2525,10 @@ export class BetterSQLiteService {
    * Update the best version flag and sync parent media_item fields.
    * Picks the highest quality version and copies its data to the parent item.
    */
-  updateBestVersion(mediaItemId: number, observedPaths?: ReadonlySet<string>): void {
+  updateBestVersion(mediaItemId: number): void {
     if (!this.db) throw new Error('Database not initialized')
 
-    const allVersions = this.getMediaItemVersions(mediaItemId)
-    const versions = observedPaths
-      ? allVersions.filter(version => observedPaths.has(version.file_path))
-      : allVersions
+    const versions = this.getMediaItemVersions(mediaItemId)
     if (versions.length === 0) return
 
     // Rank versions: 4K=4, 1080p=3, 720p=2, SD=1, then by tier_score
@@ -2587,7 +2584,7 @@ export class BetterSQLiteService {
         best.has_object_audio ? 1 : 0,
         best.audio_tracks || null, best.subtitle_tracks || null,
         best.container || null, best.file_mtime || null,
-        allVersions.length,
+        versions.length,
         mediaItemId
       )
     })

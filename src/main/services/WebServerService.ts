@@ -163,9 +163,28 @@ export class WebServerService {
       return
     }
 
-    const plain = encryption.decrypt(stored)
-    if (!plain) throw new Error('Persisted web sessions cannot be decrypted')
-    const entries = JSON.parse(plain) as Array<[string, Session]>
+    let entries: Array<[string, Session]>
+    try {
+      const plain = encryption.decrypt(stored)
+      if (!plain) throw new Error('decryption returned no data')
+      entries = JSON.parse(plain) as Array<[string, Session]>
+      if (!Array.isArray(entries) || entries.some((entry) =>
+        !Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string' ||
+        !entry[1] || typeof entry[1] !== 'object' ||
+        typeof entry[1].expiresAt !== 'number' || typeof entry[1].ip !== 'string' ||
+        typeof entry[1].pinFingerprint !== 'string')) {
+        throw new Error('session data has an invalid structure')
+      }
+    } catch (error) {
+      this.sessions.clear()
+      console.error('[WebServer] Persisted sessions are unreadable; fresh PIN login is required:', error)
+      try {
+        db.deleteSetting('web_sessions')
+      } catch (revokeError) {
+        console.error('[WebServer] Could not remove unreadable persisted sessions:', revokeError)
+      }
+      return
+    }
     const now = Date.now()
     const pinFingerprint = this.getPinFingerprint()
     for (const [token, session] of entries) {
