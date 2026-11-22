@@ -73,6 +73,7 @@ function validateTimelineItem(value: unknown, version: unknown, index: number): 
 
 function validateIdentifiers(value: Record<string, unknown>): boolean {
   return validateOptionalPositiveInteger(value.tmdbId) && validateOptionalPositiveInteger(value.tvdbId) &&
+    validateOptionalPositiveInteger(value.seriesTmdbId) && validateOptionalPositiveInteger(value.seriesTvdbId) &&
     (value.imdbId === undefined || isNonEmptyString(value.imdbId))
 }
 

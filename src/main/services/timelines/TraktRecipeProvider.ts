@@ -64,11 +64,24 @@ export class TraktRecipeProvider implements ITimelineRecipeProvider {
       throw new Error('Trakt Client ID is required to fetch Trakt lists.')
     }
 
+    let source = listSlugOrUrl
+    if (source.startsWith('trakt-')) {
+      const decoded = decodeCanonicalId(source)
+      if (decoded) {
+        source = `${decoded.username}/${decoded.listSlug}`
+      } else {
+        const legacy = await this.cacheService.getRecipe(source, true)
+        if (!legacy?.sourceUrl) {
+          throw new Error(`Legacy Trakt timeline ID '${source}' cannot be decoded. Reopen the guide using its Trakt list URL.`)
+        }
+        source = legacy.sourceUrl
+      }
+    }
+
     // Parse username and list slug from e.g. "donxy/star-trek-chronological" or "users/donxy/lists/star-trek-chronological"
-    const canonical = listSlugOrUrl.match(/^trakt-(.+)-(.+)$/)
-    const cleaned = canonical ? `${canonical[1]}/${canonical[2]}` : listSlugOrUrl
-      .replace(/^https?:\/\/(?:www\.)?trakt\.tv\//, '')
-      .replace(/^\/?users\//, '')
+    const cleaned = source
+      .replace(/^https?:\/\/(?:www\.)?trakt\.tv\//i, '')
+      .replace(/^\/?users\//i, '')
     const parts = cleaned.split('/').filter(Boolean)
 
     let username: string
@@ -83,26 +96,35 @@ export class TraktRecipeProvider implements ITimelineRecipeProvider {
       throw new Error(`Invalid Trakt list format '${listSlugOrUrl}'. Expected 'username/list-slug'.`)
     }
 
-    const canonicalId = `trakt-${username}-${listSlug}`
+    const canonicalId = encodeCanonicalId(username, listSlug)
     const cachedByCanonical = await this.cacheService.getRecipe(canonicalId)
     if (cachedByCanonical && !options.refresh) {
       return cachedByCanonical
     }
 
-    const response = await fetchWithTimeout(`https://api.trakt.tv/users/${username}/lists/${listSlug}/items`, {
-      headers: {
-        'Content-Type': 'application/json',
-        'trakt-api-version': '2',
-        'trakt-api-key': this.traktClientId,
-      },
-      signal: options.signal,
-    }, 10000)
+    const rawItems: TraktItemResponse[] = []
+    const pageSize = 1000
+    for (let page = 1; ; page++) {
+      const response = await fetchWithTimeout(`https://api.trakt.tv/users/${encodeURIComponent(username)}/lists/${encodeURIComponent(listSlug)}/items?page=${page}&limit=${pageSize}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'trakt-api-version': '2',
+          'trakt-api-key': this.traktClientId,
+        },
+        signal: options.signal,
+      }, 10000)
 
-    if (!response.ok) {
-      throw new Error(`Trakt API error (${response.status}): Failed to fetch list '${username}/${listSlug}'.`)
+      if (!response.ok) {
+        throw new Error(`Trakt API error (${response.status}): Failed to fetch list '${username}/${listSlug}'.`)
+      }
+
+      const pageItems: unknown = await response.json()
+      if (!Array.isArray(pageItems)) throw new Error(`Trakt API returned an invalid item list for '${username}/${listSlug}'.`)
+      rawItems.push(...pageItems as TraktItemResponse[])
+      const pageCountHeader = response.headers.get('x-pagination-page-count')
+      const pageCount = pageCountHeader === null ? undefined : Number(pageCountHeader)
+      if ((pageCount !== undefined && Number.isInteger(pageCount) && page >= pageCount) || (pageCount === undefined && pageItems.length < pageSize)) break
     }
-
-    const rawItems: TraktItemResponse[] = await response.json()
     const items: TimelineItem[] = []
 
     let order = 1
@@ -112,6 +134,7 @@ export class TraktRecipeProvider implements ITimelineRecipeProvider {
           order: order++,
           type: 'movie',
           title: raw.movie.title,
+          releaseYear: raw.movie.year,
           identifiers: {
             tmdbId: raw.movie.ids.tmdb,
             imdbId: raw.movie.ids.imdb,
@@ -126,9 +149,11 @@ export class TraktRecipeProvider implements ITimelineRecipeProvider {
           seasonNumber: raw.episode.season,
           episodeNumber: raw.episode.number,
           identifiers: {
-            tmdbId: raw.episode.ids.tmdb || raw.show?.ids.tmdb,
-            tvdbId: raw.episode.ids.tvdb || raw.show?.ids.tvdb,
+            tmdbId: raw.episode.ids.tmdb,
+            tvdbId: raw.episode.ids.tvdb,
             imdbId: raw.episode.ids.imdb,
+            seriesTmdbId: raw.show?.ids.tmdb,
+            seriesTvdbId: raw.show?.ids.tvdb,
           },
         })
       } else if (raw.type === 'show' && raw.show) {
@@ -137,6 +162,7 @@ export class TraktRecipeProvider implements ITimelineRecipeProvider {
           type: 'show',
           title: raw.show.title,
           seriesTitle: raw.show.title,
+          releaseYear: raw.show.year,
           identifiers: {
             tmdbId: raw.show.ids.tmdb,
             tvdbId: raw.show.ids.tvdb,
@@ -162,5 +188,21 @@ export class TraktRecipeProvider implements ITimelineRecipeProvider {
     }
 
     return definition
+  }
+}
+
+function encodeCanonicalId(username: string, listSlug: string): string {
+  return `trakt-${Buffer.from(JSON.stringify([username, listSlug]), 'utf8').toString('base64url')}`
+}
+
+function decodeCanonicalId(id: string): { username: string; listSlug: string } | null {
+  try {
+    const encoded = id.slice('trakt-'.length)
+    const parsed: unknown = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'))
+    if (!Array.isArray(parsed) || parsed.length !== 2 || parsed.some(value => typeof value !== 'string' || !value)) return null
+    const [username, listSlug] = parsed as [string, string]
+    return encodeCanonicalId(username, listSlug) === id ? { username, listSlug } : null
+  } catch {
+    return null
   }
 }

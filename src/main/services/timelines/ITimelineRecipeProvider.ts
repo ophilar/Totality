@@ -3,6 +3,8 @@ export interface TimelineItemIdentifiers {
   tmdbId?: number
   tvdbId?: number
   imdbId?: string
+  seriesTmdbId?: number
+  seriesTvdbId?: number
 }
 
 export interface TimelineItem {

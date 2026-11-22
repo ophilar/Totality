@@ -40,7 +40,7 @@ export function TimelinesView() {
   const { addToast } = useToast()
 
   const importedSnapshot = useRef<string | null>(null)
-  const openedGuide = useRef<{ recipeId: string; refreshToken: number; snapshotId: string } | null>(null)
+  const openedGuide = useRef<{ recipeId: string; sourceId?: string; refreshToken: number; snapshotId: string } | null>(null)
   const [recipes, setRecipes] = useState<TimelineRecipeSummary[]>([])
   const [selectedRecipeId, setSelectedRecipeId] = useState<string>('')
   const [selectedTimelineResult, setSelectedTimelineResult] = useState<ResolvedTimelineResult | null>(null)
@@ -144,12 +144,12 @@ export function TimelinesView() {
       setIsResolvingTimeline(true)
       try {
         const snapshot = openedGuide.current
-        const options = snapshot?.recipeId === selectedRecipeId && snapshot.refreshToken === recipeRefreshToken ? { snapshotId: snapshot.snapshotId } : { refresh: true }
+        const options = snapshot?.recipeId === selectedRecipeId && snapshot.sourceId === resolveSourceId && snapshot.refreshToken === recipeRefreshToken ? { snapshotId: snapshot.snapshotId } : { refresh: true }
         const result = await window.electronAPI.timelinesResolveTimeline(selectedRecipeId, resolveSourceId, options, requestId, false)
         if ('cancelled' in result) return
         if ('error' in result) throw new Error(result.error)
         if (!isMounted) return
-        if (result.snapshotId) openedGuide.current = { recipeId: selectedRecipeId, refreshToken: recipeRefreshToken, snapshotId: result.snapshotId }
+        if (result.snapshotId) openedGuide.current = { recipeId: selectedRecipeId, sourceId: resolveSourceId, refreshToken: recipeRefreshToken, snapshotId: result.snapshotId }
         setSelectedTimelineResult(result)
         setCustomPlaylistTitle(result.timeline.name)
       } catch (err: unknown) {
@@ -188,7 +188,7 @@ export function TimelinesView() {
       if ('error' in result) throw new Error(result.error)
       if (timelineContextRef.current.recipeId !== submittedContext.recipeId || timelineContextRef.current.sourceId !== submittedContext.sourceId) return
       const timeline = result.timeline
-      if (result.snapshotId) openedGuide.current = { recipeId: timeline.id, refreshToken: recipeRefreshToken, snapshotId: result.snapshotId }
+      if (result.snapshotId) openedGuide.current = { recipeId: timeline.id, sourceId: resolveSourceId, refreshToken: recipeRefreshToken, snapshotId: result.snapshotId }
       importedSnapshot.current = timeline.id === selectedRecipeId ? null : timeline.id
       setSelectedTimelineResult(result)
       setCustomPlaylistTitle(timeline.name)

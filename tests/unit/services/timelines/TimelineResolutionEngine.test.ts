@@ -36,6 +36,28 @@ describe('TimelineResolutionEngine', () => {
     expect(result.items[0].reason).toMatch(/select a media source/i)
   })
 
+  it('matches an episode by its series identifier rather than its episode identifier', async () => {
+    const episodeTimeline: TimelineDefinition = {
+      ...timeline,
+      items: [{
+        order: 1, type: 'episode', title: 'Episode', seriesTitle: 'The Show', seasonNumber: 1, episodeNumber: 2,
+        identifiers: { tmdbId: 999, seriesTmdbId: 120 },
+      }],
+    }
+    const episode = media({ type: 'episode', title: 'Episode', tmdb_id: '999', series_tmdb_id: '120', series_title: 'The Show', season_number: 1, episode_number: 2 })
+    const result = await new TimelineResolutionEngine(() => [episode]).resolveTimeline(episodeTimeline, 'plex')
+    expect(result.matchedCount).toBe(1)
+  })
+
+  it('uses releaseYear when title matching a movie without canonical identifiers', async () => {
+    const titleTimeline: TimelineDefinition = {
+      ...timeline,
+      items: [{ order: 1, type: 'movie', title: 'The Fellowship of the Ring', releaseYear: 2002, identifiers: {} }],
+    }
+    const result = await new TimelineResolutionEngine(() => [media({ year: 2001 })]).resolveTimeline(titleTimeline, 'plex')
+    expect(result.matchedCount).toBe(0)
+  })
+
   it('reports malformed missing episode data with the affected series', async () => {
     const showTimeline: TimelineDefinition = {
       ...timeline,

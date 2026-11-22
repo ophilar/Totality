@@ -59,6 +59,7 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
         if (!raw) throw new Error('The saved timeline snapshot no longer exists; reopen the guide.')
         const saved = JSON.parse(raw) as ResolvedTimelineResult
         if (saved.timeline.id !== recipeId) throw new Error('The snapshot belongs to another viewing guide.')
+        if (saved.sourceId !== sourceId) throw new Error('The snapshot belongs to another media source; reopen the guide.')
         operation.complete('completed', 'Loaded the saved timeline snapshot.')
         return saved
       }

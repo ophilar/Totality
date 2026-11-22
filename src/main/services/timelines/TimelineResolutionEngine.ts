@@ -220,9 +220,12 @@ export class TimelineResolutionEngine {
     if (row.type !== (item.type === 'movie' ? 'movie' : 'episode')) return false
     if (item.type === 'episode' && (row.season_number !== item.seasonNumber || row.episode_number !== item.episodeNumber)) return false
     const ids = item.identifiers
+    const seriesTmdbId = ids.seriesTmdbId ?? ids.tmdbId
     const canonical: boolean[] = []
-    if (ids.tmdbId) {
-      canonical.push(item.type === 'movie' ? row.tmdb_id === String(ids.tmdbId) : row.series_tmdb_id === String(ids.tmdbId))
+    if (item.type === 'movie' && ids.tmdbId) {
+      canonical.push(row.tmdb_id === String(ids.tmdbId))
+    } else if (item.type !== 'movie' && seriesTmdbId) {
+      canonical.push(row.series_tmdb_id === String(seriesTmdbId))
     }
     if (ids.tvdbId) {
       canonical.push(false)
@@ -232,12 +235,13 @@ export class TimelineResolutionEngine {
     }
     if (canonical.length) {
       if (ids.tmdbId && row.tmdb_id && item.type === 'movie' && row.tmdb_id !== String(ids.tmdbId)) return false
-      if (ids.tmdbId && item.type !== 'movie' && row.series_tmdb_id && row.series_tmdb_id !== String(ids.tmdbId)) return false
+      if (seriesTmdbId && item.type !== 'movie' && row.series_tmdb_id && row.series_tmdb_id !== String(seriesTmdbId)) return false
       if (ids.imdbId && item.type === 'movie' && row.imdb_id && row.imdb_id.replace(/^tt/, '') !== ids.imdbId.replace(/^tt/, '')) return false
       return canonical.some(Boolean)
     }
     if (item.type === 'movie') {
-      return normalizeMediaTitle(row.title) === normalizeMediaTitle(item.title) && (!item.airDate || row.year === Number(item.airDate.slice(0, 4)))
+      const expectedYear = item.releaseYear ?? (item.airDate ? Number(item.airDate.slice(0, 4)) : undefined)
+      return normalizeMediaTitle(row.title) === normalizeMediaTitle(item.title) && (expectedYear === undefined || row.year === expectedYear)
     }
     const series = item.seriesTitle || (item.type === 'show' ? item.title.replace(/\s*\(?seasons?\s+\d+(?:\s*[-–—]\s*\d+)?\)?/i, '') : '')
     return Boolean(series && row.series_title && normalizeMediaTitle(row.series_title) === normalizeMediaTitle(series))
