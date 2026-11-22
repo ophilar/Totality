@@ -1,0 +1,550 @@
+{
+  "id": "midnight-diner-release-order",
+  "franchise": "Midnight Diner",
+  "name": "Midnight Diner (Release Order)",
+  "description": "Japanese Shinya Shokudo episodes and films in release order. Episode labels show season and episode numbers; the 2026 season includes only its first two released episodes.",
+  "sourceUrl": "https://www.archive.meshiya.tv/series/shinya01.html",
+  "version": 2,
+  "items": [
+    {
+      "type": "episode",
+      "title": "S01E01",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 1,
+      "episodeNumber": 1,
+      "releaseYear": 2009,
+      "identifiers": {},
+      "order": 1
+    },
+    {
+      "type": "episode",
+      "title": "S01E02",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 1,
+      "episodeNumber": 2,
+      "releaseYear": 2009,
+      "identifiers": {},
+      "order": 2
+    },
+    {
+      "type": "episode",
+      "title": "S01E03",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 1,
+      "episodeNumber": 3,
+      "releaseYear": 2009,
+      "identifiers": {},
+      "order": 3
+    },
+    {
+      "type": "episode",
+      "title": "S01E04",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 1,
+      "episodeNumber": 4,
+      "releaseYear": 2009,
+      "identifiers": {},
+      "order": 4
+    },
+    {
+      "type": "episode",
+      "title": "S01E05",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 1,
+      "episodeNumber": 5,
+      "releaseYear": 2009,
+      "identifiers": {},
+      "order": 5
+    },
+    {
+      "type": "episode",
+      "title": "S01E06",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 1,
+      "episodeNumber": 6,
+      "releaseYear": 2009,
+      "identifiers": {},
+      "order": 6
+    },
+    {
+      "type": "episode",
+      "title": "S01E07",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 1,
+      "episodeNumber": 7,
+      "releaseYear": 2009,
+      "identifiers": {},
+      "order": 7
+    },
+    {
+      "type": "episode",
+      "title": "S01E08",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 1,
+      "episodeNumber": 8,
+      "releaseYear": 2009,
+      "identifiers": {},
+      "order": 8
+    },
+    {
+      "type": "episode",
+      "title": "S01E09",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 1,
+      "episodeNumber": 9,
+      "releaseYear": 2009,
+      "identifiers": {},
+      "order": 9
+    },
+    {
+      "type": "episode",
+      "title": "S01E10",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 1,
+      "episodeNumber": 10,
+      "releaseYear": 2009,
+      "identifiers": {},
+      "order": 10
+    },
+    {
+      "type": "episode",
+      "title": "S02E01",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 2,
+      "episodeNumber": 1,
+      "releaseYear": 2011,
+      "identifiers": {},
+      "order": 11
+    },
+    {
+      "type": "episode",
+      "title": "S02E02",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 2,
+      "episodeNumber": 2,
+      "releaseYear": 2011,
+      "identifiers": {},
+      "order": 12
+    },
+    {
+      "type": "episode",
+      "title": "S02E03",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 2,
+      "episodeNumber": 3,
+      "releaseYear": 2011,
+      "identifiers": {},
+      "order": 13
+    },
+    {
+      "type": "episode",
+      "title": "S02E04",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 2,
+      "episodeNumber": 4,
+      "releaseYear": 2011,
+      "identifiers": {},
+      "order": 14
+    },
+    {
+      "type": "episode",
+      "title": "S02E05",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 2,
+      "episodeNumber": 5,
+      "releaseYear": 2011,
+      "identifiers": {},
+      "order": 15
+    },
+    {
+      "type": "episode",
+      "title": "S02E06",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 2,
+      "episodeNumber": 6,
+      "releaseYear": 2011,
+      "identifiers": {},
+      "order": 16
+    },
+    {
+      "type": "episode",
+      "title": "S02E07",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 2,
+      "episodeNumber": 7,
+      "releaseYear": 2011,
+      "identifiers": {},
+      "order": 17
+    },
+    {
+      "type": "episode",
+      "title": "S02E08",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 2,
+      "episodeNumber": 8,
+      "releaseYear": 2011,
+      "identifiers": {},
+      "order": 18
+    },
+    {
+      "type": "episode",
+      "title": "S02E09",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 2,
+      "episodeNumber": 9,
+      "releaseYear": 2011,
+      "identifiers": {},
+      "order": 19
+    },
+    {
+      "type": "episode",
+      "title": "S02E10",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 2,
+      "episodeNumber": 10,
+      "releaseYear": 2011,
+      "identifiers": {},
+      "order": 20
+    },
+    {
+      "type": "episode",
+      "title": "S03E01",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 3,
+      "episodeNumber": 1,
+      "releaseYear": 2014,
+      "identifiers": {},
+      "order": 21
+    },
+    {
+      "type": "episode",
+      "title": "S03E02",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 3,
+      "episodeNumber": 2,
+      "releaseYear": 2014,
+      "identifiers": {},
+      "order": 22
+    },
+    {
+      "type": "episode",
+      "title": "S03E03",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 3,
+      "episodeNumber": 3,
+      "releaseYear": 2014,
+      "identifiers": {},
+      "order": 23
+    },
+    {
+      "type": "episode",
+      "title": "S03E04",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 3,
+      "episodeNumber": 4,
+      "releaseYear": 2014,
+      "identifiers": {},
+      "order": 24
+    },
+    {
+      "type": "episode",
+      "title": "S03E05",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 3,
+      "episodeNumber": 5,
+      "releaseYear": 2014,
+      "identifiers": {},
+      "order": 25
+    },
+    {
+      "type": "episode",
+      "title": "S03E06",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 3,
+      "episodeNumber": 6,
+      "releaseYear": 2014,
+      "identifiers": {},
+      "order": 26
+    },
+    {
+      "type": "episode",
+      "title": "S03E07",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 3,
+      "episodeNumber": 7,
+      "releaseYear": 2014,
+      "identifiers": {},
+      "order": 27
+    },
+    {
+      "type": "episode",
+      "title": "S03E08",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 3,
+      "episodeNumber": 8,
+      "releaseYear": 2014,
+      "identifiers": {},
+      "order": 28
+    },
+    {
+      "type": "episode",
+      "title": "S03E09",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 3,
+      "episodeNumber": 9,
+      "releaseYear": 2014,
+      "identifiers": {},
+      "order": 29
+    },
+    {
+      "type": "episode",
+      "title": "S03E10",
+      "seriesTitle": "Midnight Diner",
+      "seasonNumber": 3,
+      "episodeNumber": 10,
+      "releaseYear": 2014,
+      "identifiers": {},
+      "order": 30
+    },
+    {
+      "type": "movie",
+      "title": "Midnight Diner",
+      "airDate": "2015-01-31",
+      "releaseYear": 2015,
+      "identifiers": {
+        "tmdbId": 309028
+      },
+      "order": 31
+    },
+    {
+      "type": "episode",
+      "title": "S01E01",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 1,
+      "episodeNumber": 1,
+      "releaseYear": 2016,
+      "identifiers": {},
+      "order": 32
+    },
+    {
+      "type": "episode",
+      "title": "S01E02",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 1,
+      "episodeNumber": 2,
+      "releaseYear": 2016,
+      "identifiers": {},
+      "order": 33
+    },
+    {
+      "type": "episode",
+      "title": "S01E03",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 1,
+      "episodeNumber": 3,
+      "releaseYear": 2016,
+      "identifiers": {},
+      "order": 34
+    },
+    {
+      "type": "episode",
+      "title": "S01E04",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 1,
+      "episodeNumber": 4,
+      "releaseYear": 2016,
+      "identifiers": {},
+      "order": 35
+    },
+    {
+      "type": "episode",
+      "title": "S01E05",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 1,
+      "episodeNumber": 5,
+      "releaseYear": 2016,
+      "identifiers": {},
+      "order": 36
+    },
+    {
+      "type": "episode",
+      "title": "S01E06",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 1,
+      "episodeNumber": 6,
+      "releaseYear": 2016,
+      "identifiers": {},
+      "order": 37
+    },
+    {
+      "type": "episode",
+      "title": "S01E07",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 1,
+      "episodeNumber": 7,
+      "releaseYear": 2016,
+      "identifiers": {},
+      "order": 38
+    },
+    {
+      "type": "episode",
+      "title": "S01E08",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 1,
+      "episodeNumber": 8,
+      "releaseYear": 2016,
+      "identifiers": {},
+      "order": 39
+    },
+    {
+      "type": "episode",
+      "title": "S01E09",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 1,
+      "episodeNumber": 9,
+      "releaseYear": 2016,
+      "identifiers": {},
+      "order": 40
+    },
+    {
+      "type": "episode",
+      "title": "S01E10",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 1,
+      "episodeNumber": 10,
+      "releaseYear": 2016,
+      "identifiers": {},
+      "order": 41
+    },
+    {
+      "type": "movie",
+      "title": "Midnight Diner 2",
+      "airDate": "2016-11-05",
+      "releaseYear": 2016,
+      "identifiers": {
+        "tmdbId": 429285
+      },
+      "order": 42
+    },
+    {
+      "type": "episode",
+      "title": "S02E01",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 2,
+      "episodeNumber": 1,
+      "releaseYear": 2019,
+      "identifiers": {},
+      "order": 43
+    },
+    {
+      "type": "episode",
+      "title": "S02E02",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 2,
+      "episodeNumber": 2,
+      "releaseYear": 2019,
+      "identifiers": {},
+      "order": 44
+    },
+    {
+      "type": "episode",
+      "title": "S02E03",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 2,
+      "episodeNumber": 3,
+      "releaseYear": 2019,
+      "identifiers": {},
+      "order": 45
+    },
+    {
+      "type": "episode",
+      "title": "S02E04",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 2,
+      "episodeNumber": 4,
+      "releaseYear": 2019,
+      "identifiers": {},
+      "order": 46
+    },
+    {
+      "type": "episode",
+      "title": "S02E05",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 2,
+      "episodeNumber": 5,
+      "releaseYear": 2019,
+      "identifiers": {},
+      "order": 47
+    },
+    {
+      "type": "episode",
+      "title": "S02E06",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 2,
+      "episodeNumber": 6,
+      "releaseYear": 2019,
+      "identifiers": {},
+      "order": 48
+    },
+    {
+      "type": "episode",
+      "title": "S02E07",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 2,
+      "episodeNumber": 7,
+      "releaseYear": 2019,
+      "identifiers": {},
+      "order": 49
+    },
+    {
+      "type": "episode",
+      "title": "S02E08",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 2,
+      "episodeNumber": 8,
+      "releaseYear": 2019,
+      "identifiers": {},
+      "order": 50
+    },
+    {
+      "type": "episode",
+      "title": "S02E09",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 2,
+      "episodeNumber": 9,
+      "releaseYear": 2019,
+      "identifiers": {},
+      "order": 51
+    },
+    {
+      "type": "episode",
+      "title": "S02E10",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 2,
+      "episodeNumber": 10,
+      "releaseYear": 2019,
+      "identifiers": {},
+      "order": 52
+    },
+    {
+      "type": "episode",
+      "title": "S03E01",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 3,
+      "episodeNumber": 1,
+      "releaseYear": 2026,
+      "identifiers": {},
+      "order": 53
+    },
+    {
+      "type": "episode",
+      "title": "S03E02",
+      "seriesTitle": "Midnight Diner: Tokyo Stories",
+      "seasonNumber": 3,
+      "episodeNumber": 2,
+      "releaseYear": 2026,
+      "identifiers": {},
+      "order": 54
+    }
+  ]
+}

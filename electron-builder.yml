@@ -11,6 +11,7 @@ directories:
 files:
   - dist
   - dist-electron
+  - data/timelines/midnight-diner-release-order.json
   - package.json
   - "!**/*.map"
   - "!**/*.d.ts"

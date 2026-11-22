@@ -1,0 +1,224 @@
+{
+  "id": "babylon-project",
+  "name": "The Babylon Project viewing guide",
+  "franchise": "Babylon 5",
+  "description": "The Babylon Project guide's episode and movie viewing orders.",
+  "sourceUrl": "https://babylon5.fandom.com/wiki/Viewing_Order",
+  "fetchUrl": "https://babylon5.fandom.com/api.php?action=parse&page=Viewing_Order&prop=text&format=json",
+  "responseHtmlPath": "parse.text.*",
+  "attribution": "The Babylon Project, Viewing Order guide",
+  "tableSelector": "table",
+  "headerRowSelector": "tr",
+  "rowSelector": "tr",
+  "requiredHeaders": [
+    "Episode name",
+    "Original Broadcast order",
+    "Original Broadcast numbering",
+    "Original Broadcast date",
+    "Lurker's Guide order",
+    "Historical Database order",
+    "Historical Database story dates"
+  ],
+  "fields": {
+    "title": "Episode name",
+    "broadcastNumber": "Original Broadcast numbering",
+    "airDate": "Original Broadcast date",
+    "timelineEra": "Historical Database story dates"
+  },
+  "episodeSeries": {
+    "default": "Babylon 5",
+    "titlePrefixes": [
+      {
+        "prefix": "Crusade:",
+        "seriesTitle": "Crusade"
+      }
+    ]
+  },
+  "orders": [
+    {
+      "id": "original-broadcast",
+      "name": "Babylon 5 — Original Broadcast Order",
+      "description": "US broadcast sequence, also used by the DVD releases.",
+      "order": "Original Broadcast order"
+    },
+    {
+      "id": "lurkers-guide",
+      "name": "Babylon 5 — Lurker's Guide Master List",
+      "description": "The Lurker's Guide rearrangement based on production notes and creator comments.",
+      "order": "Lurker's Guide order"
+    },
+    {
+      "id": "historical-database",
+      "name": "Babylon 5 — Historical Database Chronology",
+      "description": "In-universe chronological order from the Historical Database.",
+      "order": "Historical Database order"
+    },
+    {
+      "id": "focused-story-first",
+      "name": "Babylon 5 — Focused Story (In the Beginning first)",
+      "description": "The guide's Focused Story sequence, placing In the Beginning first.",
+      "order": {
+        "groupingId": "focused-story",
+        "placement": "first"
+      }
+    },
+    {
+      "id": "focused-story-last",
+      "name": "Babylon 5 — Focused Story (In the Beginning last)",
+      "description": "The guide's Focused Story sequence, placing In the Beginning last.",
+      "order": {
+        "groupingId": "focused-story",
+        "placement": "last"
+      }
+    }
+  ],
+  "groupings": [
+    {
+      "groupTableSelector": "table",
+      "groupHeaderRowSelector": "tr",
+      "groupRowSelector": "tr",
+      "groupHeader": "Episodes/Movies",
+      "groupOrderHeader": "Focused Story order",
+      "tieBreakHeader": "Original Broadcast order",
+      "assignments": [
+        {
+          "kind": "episode-range",
+          "seriesTitle": "Babylon 5",
+          "seasonNumber": 1,
+          "firstEpisode": 1,
+          "lastEpisode": 22,
+          "group": "The Gathering & Season One"
+        },
+        {
+          "kind": "episode-range",
+          "seriesTitle": "Babylon 5",
+          "seasonNumber": 2,
+          "firstEpisode": 1,
+          "lastEpisode": 22,
+          "group": "Season Two"
+        },
+        {
+          "kind": "episode-range",
+          "seriesTitle": "Babylon 5",
+          "seasonNumber": 3,
+          "firstEpisode": 1,
+          "lastEpisode": 22,
+          "group": "Season Three"
+        },
+        {
+          "kind": "episode-range",
+          "seriesTitle": "Babylon 5",
+          "seasonNumber": 4,
+          "firstEpisode": 1,
+          "lastEpisode": 8,
+          "group": "Season Four (Eps 1-8)"
+        },
+        {
+          "kind": "episode-range",
+          "seriesTitle": "Babylon 5",
+          "seasonNumber": 4,
+          "firstEpisode": 9,
+          "lastEpisode": 14,
+          "group": "Season Four (Eps 9-14)"
+        },
+        {
+          "kind": "episode-range",
+          "seriesTitle": "Babylon 5",
+          "seasonNumber": 4,
+          "firstEpisode": 15,
+          "lastEpisode": 21,
+          "group": "Season Four (Eps 15-21)"
+        },
+        {
+          "kind": "episode-range",
+          "seriesTitle": "Babylon 5",
+          "seasonNumber": 4,
+          "firstEpisode": 22,
+          "lastEpisode": 22,
+          "group": "S4E22 The Deconstruction of Falling Stars"
+        },
+        {
+          "kind": "episode-range",
+          "seriesTitle": "Babylon 5",
+          "seasonNumber": 5,
+          "firstEpisode": 1,
+          "lastEpisode": 17,
+          "group": "Season Five (Eps 1-17)"
+        },
+        {
+          "kind": "episode-range",
+          "seriesTitle": "Babylon 5",
+          "seasonNumber": 5,
+          "firstEpisode": 18,
+          "lastEpisode": 19,
+          "group": "Season Five (Eps 18-19)"
+        },
+        {
+          "kind": "episode-range",
+          "seriesTitle": "Babylon 5",
+          "seasonNumber": 5,
+          "firstEpisode": 20,
+          "lastEpisode": 21,
+          "group": "Season Five (Eps 20-21)"
+        },
+        {
+          "kind": "episode-range",
+          "seriesTitle": "Babylon 5",
+          "seasonNumber": 5,
+          "firstEpisode": 22,
+          "lastEpisode": 22,
+          "group": "S5E22 Sleeping in Light"
+        },
+        {
+          "kind": "episode-range",
+          "seriesTitle": "Crusade",
+          "seasonNumber": 1,
+          "firstEpisode": 1,
+          "lastEpisode": 13,
+          "group": "A Call to Arms & Crusade"
+        },
+        {
+          "kind": "movie-title",
+          "title": "The Gathering",
+          "group": "The Gathering & Season One"
+        },
+        {
+          "kind": "movie-title",
+          "title": "A Call to Arms",
+          "group": "A Call to Arms & Crusade"
+        },
+        {
+          "kind": "movie-title",
+          "title": "The Legend of the Rangers",
+          "group": "The Legend of the Rangers (TVM)"
+        },
+        {
+          "kind": "movie-title",
+          "title": "To Live and Die in Starlight",
+          "group": "The Legend of the Rangers (TVM)"
+        },
+        {
+          "kind": "movie-title",
+          "title": "The Lost Tales",
+          "group": "The Lost Tales (DTV)"
+        },
+        {
+          "kind": "movie-title",
+          "title": "In the Beginning",
+          "group": "In the Beginning"
+        },
+        {
+          "kind": "movie-title",
+          "title": "Thirdspace",
+          "group": "Thirdspace"
+        },
+        {
+          "kind": "movie-title",
+          "title": "River of Souls",
+          "group": "River of Souls"
+        }
+      ],
+      "id": "focused-story"
+    }
+  ]
+}

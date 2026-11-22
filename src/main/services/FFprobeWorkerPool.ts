@@ -259,7 +259,7 @@ export class FFprobeWorkerPool {
 
       worker.on('error', (error) => {
         console.error('[FFprobeWorkerPool] Worker error:', error)
-        this.handleWorkerError(workerInfo, error)
+        this.handleWorkerError(workerInfo, error as Error)
       })
 
       worker.on('exit', (code) => {

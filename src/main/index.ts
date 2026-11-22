@@ -77,6 +77,7 @@ import { registerWishlistHandlers } from './ipc/wishlist'
 import { registerMonitoringHandlers } from './ipc/monitoring'
 import { registerNotificationHandlers } from './ipc/notifications'
 import { registerTaskQueueHandlers } from './ipc/taskQueue'
+import { registerTimelinesHandlers } from './ipc/timelines'
 import { registerLoggingHandlers } from './ipc/logging'
 import { registerAutoUpdateHandlers } from './ipc/autoUpdate'
 import { registerMoodHandlers, setMoodMainWindow } from './ipc/mood'
@@ -523,6 +524,7 @@ app.whenReady().then(async () => {
     registerMonitoringHandlers()
     registerNotificationHandlers()
     registerTaskQueueHandlers()
+    registerTimelinesHandlers()
     registerLoggingHandlers()
     registerAutoUpdateHandlers()
     registerMoodHandlers()

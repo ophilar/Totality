@@ -7,7 +7,10 @@
  */
 
 /** Request-response channels (ipcRenderer.invoke) */
+import { TIMELINE_CHANNELS } from './timelineChannels'
+
 export const RPC_CHANNEL_MAP: Record<string, string> = {
+  ...Object.fromEntries(Object.entries(TIMELINE_CHANNELS).filter(([key]) => key.startsWith('timelines'))),
   // App lifecycle
   appReady: 'app:ready', // Note: this is ipcRenderer.send, not invoke
   getAppVersion: 'app:getVersion',

@@ -1,0 +1,31 @@
+{
+  "id": "star-wars",
+  "name": "StarWars.com Viewing Guide",
+  "franchise": "Star Wars Canon",
+  "description": "Official chronological order for canon films and series.",
+  "sourceUrl": "https://www.starwars.com/news/star-wars-movies-and-series-guide",
+  "attribution": "StarWars.com and Lucasfilm",
+  "groupings": [],
+  "orders": [
+    {
+      "id": "chronological",
+      "name": "Star Wars — Official Chronological Order",
+      "description": "Film and series order from the official guide. Series are listed as series because the source does not provide an episode-by-episode order.",
+      "order": {
+        "kind": "list",
+        "listSelector": "div.text-content.rich-text-container.full-width-text > ul",
+        "itemSelector": ":scope > li",
+        "listIndex": 1,
+        "format": "title-list",
+        "minimumItems": 20,
+        "showMarkers": ["(series,", "obi-wan kenobi"],
+        "movieMarkers": ["(movie,"],
+        "linkTypeRules": [
+          { "contains": "/films/", "type": "movie" },
+          { "contains": "/series/", "type": "show" },
+          { "contains": "/databank/the-rise-of-skywalker", "type": "movie" }
+        ]
+      }
+    }
+  ]
+}

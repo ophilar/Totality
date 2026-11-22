@@ -1,0 +1,33 @@
+{
+  "id": "dc-universe",
+  "name": "DC Universe Timeline",
+  "franchise": "DC Universe (DCU)",
+  "description": "Current watch order for James Gunn's DCU, separate from the completed DCEU.",
+  "sourceUrl": "https://guides.justwatch.com/us/james-gunn-dcu-in-order",
+  "attribution": "JustWatch editorial guide",
+  "groupings": [],
+  "orders": [
+    {
+      "id": "chronological",
+      "name": "DCU — Current Chronological Order",
+      "description": "The guide's current DCU order, including upcoming titles. Peacemaker seasons are split around Superman as described in the guide; series entries expand to available local episodes.",
+      "order": {
+        "kind": "list",
+        "listSelector": "div.article-content__text > ul",
+        "itemSelector": ":scope > li",
+        "listIndex": 1,
+        "format": "title-list",
+        "minimumItems": 8,
+        "defaultType": "movie",
+        "showMarkers": ["peacemaker", "creature commandos", "lanterns"],
+        "showSeasonSplits": [
+          {
+            "seriesTitle": "Peacemaker",
+            "seasons": [1, 2],
+            "afterTitle": "Superman"
+          }
+        ]
+      }
+    }
+  ]
+}

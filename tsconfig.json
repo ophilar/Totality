@@ -23,11 +23,11 @@
     "removeComments": true,
 
     /* Path mapping */
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/renderer/src/*"],
       "@main/*": ["./src/main/*"],
-      "@preload/*": ["./src/preload/*"]
+      "@preload/*": ["./src/preload/*"],
+      "@shared/*": ["./src/shared/*"]
     }
   },
   "include": ["src"],

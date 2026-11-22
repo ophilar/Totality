@@ -56,7 +56,7 @@ export class EmbyDiscoveryService {
 
               console.log(`[EmbyDiscovery] Found server: ${response.Name} at ${response.Address || rinfo.address}`)
             }
-          } catch (e) {
+          } catch {
             // Ignore invalid responses
             console.debug('[EmbyDiscovery] Invalid response:', msg.toString().substring(0, 100))
           }
@@ -79,7 +79,7 @@ export class EmbyDiscoveryService {
             for (const addr of broadcastAddresses) {
               try {
                 socket!.send(message, 0, message.length, DISCOVERY_PORT, addr)
-              } catch (e) {
+              } catch {
                 // Ignore errors for specific addresses
               }
             }
@@ -94,7 +94,7 @@ export class EmbyDiscoveryService {
         setTimeout(() => {
           try {
             socket?.close()
-          } catch (e) {
+          } catch {
             // Ignore close errors
           }
           console.log(`[EmbyDiscovery] Discovery complete, found ${servers.length} server(s)`)

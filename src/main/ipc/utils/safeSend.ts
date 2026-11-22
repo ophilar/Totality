@@ -31,7 +31,7 @@ export function safeSend(win: BrowserWindow | null, channel: string, ...args: un
       win.webContents.send(channel, ...args)
       sent = true
     }
-  } catch (error) {
+  } catch {
     // Silently ignore - window was likely closed during operation
   }
   // Always broadcast to web clients (except desktop-only channels)

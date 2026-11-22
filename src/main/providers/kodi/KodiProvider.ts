@@ -732,7 +732,7 @@ export class KodiProvider implements MediaProvider {
         properties: ['size'],
       })
       return result.filedetails?.size ? { size: result.filedetails.size } : null
-    } catch (error) {
+    } catch {
       // File might not be accessible or path format issue
       return null
     }

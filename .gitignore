@@ -56,6 +56,10 @@ TODO-audit-fixes.md
 quality-scoring-explained.txt
 release-notes-*.txt
 
+# User timeline recipes
+data/timelines/*.json
+!data/timelines/midnight-diner-release-order.json
+
 # Audit prompts and reports
 *audit-prompt.md
 *AUDIT-REPORT.md

@@ -1,5 +1,8 @@
 import { defineConfig } from 'vitest/config'
-import path from 'path'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   test: {
@@ -24,6 +27,9 @@ export default defineConfig({
     alias: {
       '@main': path.resolve(__dirname, 'src/main'),
       '@preload': path.resolve(__dirname, 'src/preload'),
+      '@shared': path.resolve(__dirname, 'src/shared'),
+      '@': path.resolve(__dirname, 'src/renderer/src'),
+      '@tests': path.resolve(__dirname, 'tests'),
     },
   },
 })

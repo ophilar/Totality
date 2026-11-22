@@ -9,6 +9,8 @@
 
 import { ipcMain, IpcMainInvokeEvent } from 'electron'
 import { getErrorMessage, isNodeError } from '../../services/utils/errorUtils'
+import { z } from 'zod'
+import { validateInput } from '../../validation/schemas'
 
 /**
  * Options for creating an IPC handler
@@ -152,4 +154,26 @@ export function registerHandlers(
   for (const [channel, handler] of Object.entries(handlers)) {
     createIpcHandler(channel, handler, options)
   }
+}
+
+type ValidatedArgs<TSchema extends z.ZodType> = TSchema extends z.ZodTuple
+  ? Extract<z.output<TSchema>, unknown[]>
+  : [z.output<TSchema>]
+
+export function createValidatedIpcHandler<TSchema extends z.ZodType, TReturn>(
+  channel: string, schema: TSchema, handler: (...args: ValidatedArgs<TSchema>) => Promise<TReturn>
+): void {
+  createIpcHandler(channel, async (...args: unknown[]) => {
+    const value = validateInput(schema, schema instanceof z.ZodTuple ? args : args[0], channel)
+    return handler(...((schema instanceof z.ZodTuple ? value as unknown[] : [value]) as ValidatedArgs<TSchema>))
+  })
+}
+export function createValidatedIpcHandlerWithEvent<TSchema extends z.ZodType, TReturn>(
+  channel: string, schema: TSchema,
+  handler: (event: IpcMainInvokeEvent, ...args: ValidatedArgs<TSchema>) => Promise<TReturn>
+): void {
+  createIpcHandlerWithEvent(channel, async (event, ...args: unknown[]) => {
+    const value = validateInput(schema, schema instanceof z.ZodTuple ? args : args[0], channel)
+    return handler(event, ...((schema instanceof z.ZodTuple ? value as unknown[] : [value]) as ValidatedArgs<TSchema>))
+  })
 }
