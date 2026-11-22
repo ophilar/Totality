@@ -121,6 +121,7 @@ export interface DatabaseServiceInterface {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   countTVShows(filters?: any): number
   countTVEpisodes(filters?: TVShowFilters): number
+  getEpisodes(seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string): MediaItem[]
   getLetterOffset(schema: string, letter: string, filters?: Record<string, unknown>): number
   getEpisodeCountBySeriesTmdbId(tmdbId: string, seasonNumber?: number): number
 

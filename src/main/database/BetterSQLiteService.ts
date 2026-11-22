@@ -90,6 +90,33 @@ export class BetterSQLiteService {
   private static readonly MAX_TASK_HISTORY = 500
   private static readonly MAX_ACTIVITY_LOG = 500
 
+  getEpisodes(
+    _seriesTitle: string,
+    sourceId: string,
+    seriesIdentityKey: string,
+    libraryId: string,
+  ): MediaItem[] {
+    if (!this.db) throw new Error('Database not initialized')
+    if (!seriesIdentityKey.trim()) throw new Error('seriesIdentityKey is required to retrieve episodes')
+
+    let sql = `
+      SELECT m.*, q.overall_score, q.needs_upgrade, q.quality_tier, q.tier_quality, q.tier_score, q.issues
+      FROM media_items m
+      LEFT JOIN quality_scores q ON m.id = q.media_item_id
+      WHERE m.type = 'episode' AND m.series_identity_key = ?`
+    const params: string[] = [seriesIdentityKey]
+    if (sourceId) {
+      sql += ' AND m.source_id = ?'
+      params.push(sourceId)
+    }
+    if (libraryId) {
+      sql += ' AND m.library_id = ?'
+      params.push(libraryId)
+    }
+    sql += ' ORDER BY m.season_number ASC, m.episode_number ASC'
+    return this.db.prepare(sql).all(...params) as MediaItem[]
+  }
+
   private mapMediaItem(row: Record<string, unknown>): MediaItem {
     return {
       ...row,
@@ -1276,22 +1303,22 @@ export class BetterSQLiteService {
 
     // Music storage analytics
     const musicTotal = this.db.prepare(`
-      SELECT COUNT(*) as count, COALESCE(SUM(t.file_size_bytes), 0) as size
+      SELECT COUNT(*) as count, COALESCE(SUM(t.file_size), 0) as size
       FROM music_tracks t
       LEFT JOIN library_scans ls ON t.source_id = ls.source_id AND t.library_id = ls.library_id
       WHERE (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-        AND t.file_size_bytes > 0${trackSourceFilter}
+        AND t.file_size > 0${trackSourceFilter}
     `).get(...trackParams) as { count: number; size: number } | undefined
 
     const musicByCodec = this.db.prepare(`
       SELECT
         UPPER(COALESCE(t.audio_codec, 'unknown')) as codec,
         COUNT(*) as count,
-        COALESCE(SUM(t.file_size_bytes), 0) as size
+        COALESCE(SUM(t.file_size), 0) as size
       FROM music_tracks t
       LEFT JOIN library_scans ls ON t.source_id = ls.source_id AND t.library_id = ls.library_id
       WHERE (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-        AND t.file_size_bytes > 0${trackSourceFilter}
+        AND t.file_size > 0${trackSourceFilter}
       GROUP BY UPPER(COALESCE(t.audio_codec, 'unknown'))
       ORDER BY size DESC
     `).all(...trackParams) as Array<{ codec: string; count: number; size: number }>
@@ -1306,11 +1333,11 @@ export class BetterSQLiteService {
           ELSE 'Low Lossy'
         END as tier,
         COUNT(*) as count,
-        COALESCE(SUM(t.file_size_bytes), 0) as size
+        COALESCE(SUM(t.file_size), 0) as size
       FROM music_tracks t
       LEFT JOIN library_scans ls ON t.source_id = ls.source_id AND t.library_id = ls.library_id
       WHERE (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-        AND t.file_size_bytes > 0${trackSourceFilter}
+        AND t.file_size > 0${trackSourceFilter}
       GROUP BY tier
       ORDER BY size DESC
     `).all(...trackParams) as Array<{ tier: string; count: number; size: number }>
