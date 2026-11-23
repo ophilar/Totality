@@ -3,7 +3,8 @@ import {
   isAudioDescriptionTrack,
   isAccessibilityTrack,
   isCommentaryTrack,
-  isProtectedAudioTrack
+  isProtectedAudioTrack,
+  reconcileAnalyzedAudioTracks
 } from '@main/services/utils/audioTrackUtils'
 
 describe('audioTrackUtils', () => {
@@ -86,5 +87,15 @@ describe('audioTrackUtils', () => {
       expect(isProtectedAudioTrack({ title: 'English 5.1 DTS' })).toBe(false)
       expect(isProtectedAudioTrack({ title: 'Japanese FLAC' })).toBe(false)
     })
+  })
+
+  it('matches tracks when a provider reports unknown channel or sample-rate values', () => {
+    const result = reconcileAnalyzedAudioTracks([
+      { index: 0, codec: 'AAC', channels: 0, bitrate: 128, sampleRate: 0, language: 'eng' },
+    ], [{ index: 1, codec: 'aac', channels: 2, sampleRate: 48000, isDefault: true, hasObjectAudio: false }])
+
+    expect(result.aligned).toBe(true)
+    expect(result.matchedCount).toBe(1)
+    expect(result.tracks[0].language).toBe('en')
   })
 })

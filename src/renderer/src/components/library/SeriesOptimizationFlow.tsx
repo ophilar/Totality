@@ -714,7 +714,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
         seriesIdentityKey,
         sourceId,
         libraryId,
-        options: getCleanOptions({}),
+        options: getCleanOptions({ removeUnnecessaryStreams: optimizationAudioLanguageIsKnown(language) && removeUnnecessaryStreams }),
       })
       setOptimizationDiscovery(result)
       remeasureOnPreview.current = remeasure

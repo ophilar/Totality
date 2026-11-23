@@ -80,13 +80,15 @@ export function reconcileAnalyzedAudioTracks(
     const code = normalizeLanguage(value)
     return code === 'und' ? null : code
   }
+  const sameKnownNumber = (source: number | undefined, target: number | undefined) =>
+    source === undefined || source <= 0 || target === undefined || target <= 0 || source === target
   const candidates = (source: AudioTrack): number[] => {
     const matching = [...available].filter(index => {
       const target = probed[index]
       if (normalizeAudioCodec(source.codec, source.profile) !== normalizeAudioCodec(target.codec, target.profile)
-        || source.channels !== target.channels
+        || !sameKnownNumber(source.channels, target.channels)
         || (source.streamIndex !== undefined && source.streamIndex !== target.index)
-        || (source.sampleRate !== undefined && target.sampleRate !== undefined && source.sampleRate !== target.sampleRate)) {
+        || !sameKnownNumber(source.sampleRate, target.sampleRate)) {
         return false
       }
       const fromProvider = declared(source.language)
