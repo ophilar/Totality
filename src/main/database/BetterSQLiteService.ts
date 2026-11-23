@@ -90,6 +90,86 @@ export class BetterSQLiteService {
   private static readonly MAX_TASK_HISTORY = 500
   private static readonly MAX_ACTIVITY_LOG = 500
 
+  get config() {
+    return {
+      getSetting: (key: string) => this.getSetting(key),
+      setSetting: (key: string, value: string) => this.setSetting(key, value),
+      getAllSettings: () => this.getAllSettings(),
+      deleteSetting: (key: string) => this.deleteSetting(key),
+      getSettingsByPrefix: (prefix: string) => this.getSettingsByPrefix(prefix),
+    }
+  }
+
+  get media() {
+    return {
+      getItemById: (id: number) => this.getMediaItemById(id),
+      getItemByPath: (filePath: string) => this.getMediaItemByPath(filePath),
+      updatePathAndStats: (id: number, filePath: string, analysis: unknown) => this.updatePathAndStats(id, filePath, analysis as Record<string, any>),
+      getQualityScoreByMediaId: (id: number) => this.getQualityScore(id),
+      upsertQualityScore: (score: QualityScore) => this.upsertQualityScore(score),
+      upsertQualityScores: (scores: QualityScore[]) => this.upsertQualityScores(scores),
+      getQualityScores: () => this.getQualityScores(),
+      getItems: (filters?: MediaItemFilters) => this.getMediaItems(filters),
+      updateDeepAnalysisByPath: (filePath: string, analysis: unknown, timestamp?: string) => this.updateDeepAnalysisByPath(filePath, analysis, timestamp),
+      getItemVersionsForMediaIds: (ids: number[]) => this.getItemVersionsForMediaIds(ids),
+      updateVersionQuality: (versionId: number, score: Parameters<BetterSQLiteService['updateMediaItemVersionQuality']>[1]) => this.updateMediaItemVersionQuality(versionId, score),
+      updateBestVersion: (mediaItemId: number) => this.updateBestVersion(mediaItemId),
+    }
+  }
+
+  updatePathAndStats(mediaItemId: number, newPath: string, analysis: Record<string, any>): void {
+    if (!this.db) throw new Error('Database not initialized')
+    const video = analysis.video ?? {}
+    const audio = analysis.audioTracks?.[0] ?? {}
+    const deepAnalysis = analysis.success ? JSON.stringify({ ...analysis, filePath: newPath }) : null
+    this.db.prepare(`
+      UPDATE media_items SET
+        file_path = ?, file_size_bytes = ?, duration_ms = ?, resolution = ?, width = ?, height = ?,
+        video_codec = ?, video_bitrate_kbps = ?, audio_codec = ?, audio_channels = ?, audio_bitrate_kbps = ?,
+        deep_analysis = COALESCE(?, deep_analysis),
+        deep_analysis_at = CASE WHEN ? IS NOT NULL THEN datetime('now') ELSE deep_analysis_at END,
+        audio_tracks = COALESCE(?, audio_tracks), updated_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      newPath,
+      analysis.fileSize ?? 0,
+      analysis.durationMs ?? 0,
+      video.width && video.height ? `${video.width}x${video.height}` : video.resolution ?? 'unknown',
+      video.width ?? 0,
+      video.height ?? 0,
+      video.codec ?? 'unknown',
+      video.bitrateKbps ?? video.bitrate ?? 0,
+      audio.codec ?? 'unknown',
+      audio.channels ?? 0,
+      audio.bitrateKbps ?? audio.bitrate ?? 0,
+      deepAnalysis,
+      deepAnalysis,
+      analysis.audioTracks ? JSON.stringify(analysis.audioTracks) : null,
+      mediaItemId,
+    )
+  }
+
+  updateDeepAnalysisByPath(filePath: string, analysis: unknown, timestamp?: string): void {
+    if (!this.db) throw new Error('Database not initialized')
+    this.db.prepare(
+      'UPDATE media_items SET deep_analysis = ?, deep_analysis_at = ?, updated_at = CURRENT_TIMESTAMP WHERE file_path = ?',
+    ).run(typeof analysis === 'string' ? analysis : JSON.stringify(analysis), timestamp ?? new Date().toISOString(), filePath)
+  }
+
+  get tvShows() {
+    return {
+      getEpisodes: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => this.getEpisodes(seriesTitle, sourceId, seriesIdentityKey, libraryId),
+      getCompletenessByIdentity: (identityKey: string, sourceId?: string, libraryId?: string) => this.getSeriesCompletenessByIdentity(identityKey, sourceId, libraryId),
+    }
+  }
+
+  get sources() {
+    return {
+      getSourceById: (sourceId: string) => this.getMediaSource(sourceId),
+      getSources: () => this.getMediaSources(),
+    }
+  }
+
   getEpisodes(
     _seriesTitle: string,
     sourceId: string,
