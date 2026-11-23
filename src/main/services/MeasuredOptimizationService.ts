@@ -457,7 +457,7 @@ export class MeasuredOptimizationService {
               const screeningLogPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}.screening.json`)
               ownedPaths.add(screeningLogPath)
               const screeningStartedAt = performance.now()
-              const screening = await this.measureFrameMetrics(binary, outputPath, request.inputPath, screeningLogPath, screeningFrames, { startSeconds: starts[index], durationSeconds: length }, request.signal, screeningFrames, 0, request.referenceFilter, request.referenceInputArgs)
+              const screening = await this.measureFrameMetrics(binary, outputPath, request.inputPath, screeningLogPath, screeningFrames, { startSeconds: starts[index], durationSeconds: length }, request.signal, screeningFrames, undefined, request.referenceFilter, request.referenceInputArgs)
               const reason = getImpossibleQualityReason(request.qualityProfile, [...candidateSamples.flatMap(sample => sample.vmafScores), ...screening.vmafScores], [...candidateSamples.flatMap(sample => sample.cambiScores), ...screening.cambiScores], totalFrames)
               getLoggingService().info('[MeasuredOptimization]', `stage=preliminary-scoring encoder=${candidate.encoder} quality=${candidate.quality} sample=${index} frames=${screeningFrames} durationMs=${Math.round(performance.now() - screeningStartedAt)} rejected=${Boolean(reason)}`)
               await fs.unlink(screeningLogPath)
