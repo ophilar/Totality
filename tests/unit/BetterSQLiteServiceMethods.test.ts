@@ -114,6 +114,15 @@ function makeQualityScore(mediaItemId: number, estimatedSavingsBytes: number | n
   }
 }
 
+describe('BetterSQLiteService — pending task persistence lifecycle', () => {
+  it('fails visibly when the database is not initialized', () => {
+    const service = new BetterSQLiteService()
+    expect(() => service.savePendingTasks([])).toThrow('Database not initialized')
+    expect(() => service.getPendingTasks()).toThrow('Database not initialized')
+    expect(() => service.clearPendingTasks()).toThrow('Database not initialized')
+  })
+})
+
 // Helper to create a minimal music artist
 function makeMusicArtist(overrides: Record<string, any> = {}) {
   return {

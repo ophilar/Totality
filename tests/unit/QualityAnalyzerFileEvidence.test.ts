@@ -63,6 +63,30 @@ describe('QualityAnalyzer - File Evidence Analysis Caching', () => {
     await expect(analyzer.analyzeMediaItemFileEvidence(item)).rejects.toThrow('has no local file path')
   })
 
+  it('rejects malformed persisted deep analysis instead of reusing it', async () => {
+    const item: MediaItem = {
+      plex_id: 'malformed',
+      title: 'Malformed cache',
+      type: 'movie',
+      file_path: '/media/movies/Malformed.mkv',
+      file_size_bytes: 1048576,
+      duration: 5000,
+      resolution: '1080p',
+      width: 1920,
+      height: 1080,
+      video_codec: 'h264',
+      video_bitrate_kbps: 5000,
+      audio_codec: 'aac',
+      audio_channels: 2,
+      audio_bitrate: 192,
+      deep_analysis: '{not-json',
+    }
+    mockGetMediaItemByPath.mockResolvedValue(item)
+
+    await expect(analyzer.analyzeMediaItemFileEvidence(item)).rejects.toThrow('Stored deep analysis for /media/movies/Malformed.mkv is malformed JSON')
+    expect(mockAnalyzeCompleteFile).not.toHaveBeenCalled()
+  })
+
   it('reuses cached deep analysis only with complete source identity', async () => {
     const cachedAnalysis = {
       success: true,

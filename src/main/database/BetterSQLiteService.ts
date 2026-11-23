@@ -6890,7 +6890,7 @@ export class BetterSQLiteService {
     taskId: string; type: string; label: string
     sourceId?: string; libraryId?: string; artistId?: number; createdAt: string; payload?: unknown
   }>): void {
-    if (!this.db) return
+    if (!this.db) throw new Error('Database not initialized')
     const save = this.db.transaction(() => {
       this.db!.prepare('DELETE FROM pending_tasks').run()
       const insert = this.db!.prepare(
@@ -6908,14 +6908,14 @@ export class BetterSQLiteService {
     taskId: string; type: string; label: string
     sourceId: string | null; libraryId: string | null; artistId: number | null; createdAt: string; payloadJson: string | null
   }> {
-    if (!this.db) return []
+    if (!this.db) throw new Error('Database not initialized')
     return (this.db.prepare(
       'SELECT task_id as taskId, type, label, source_id as sourceId, library_id as libraryId, artist_id as artistId, created_at as createdAt, payload_json as payloadJson FROM pending_tasks ORDER BY position ASC'
     ).all() as Array<{ taskId: string; type: string; label: string; sourceId: string | null; libraryId: string | null; artistId: number | null; createdAt: string; payloadJson: string | null }>)
   }
 
   clearPendingTasks(): void {
-    if (!this.db) return
+    if (!this.db) throw new Error('Database not initialized')
     this.db.prepare('DELETE FROM pending_tasks').run()
   }
 

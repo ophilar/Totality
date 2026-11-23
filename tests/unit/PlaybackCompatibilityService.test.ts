@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { mkdtemp, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PlaybackCompatibilityService, type ProviderPlaybackDecision } from '@main/services/PlaybackCompatibilityService'
 import type { PlaybackTargetProfile } from '@main/types/playbackTarget'
 import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
+import { fileIdentity } from '@main/services/utils/FileIdentity'
 
 const profile: PlaybackTargetProfile = {
   id: 'lg', name: 'LG TV', createdAt: '', updatedAt: '',
@@ -24,10 +28,14 @@ const analysis: FileAnalysisResult = {
   audioTracks: [{ index: 1, codec: 'dts', channels: 6, language: 'jpn', isDefault: true, hasObjectAudio: false }],
   subtitleTracks: [],
 }
-const item = {
-  id: 1, file_path: analysis.filePath, source_type: 'plex',
-  source_id: 'plex', plex_id: '123', deep_analysis: JSON.stringify(analysis),
-}
+let item: { id: number; file_path: string; source_type: string; source_id: string; plex_id: string; deep_analysis: string }
+beforeAll(async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'totality-playback-'))
+  const filePath = join(directory, 'movie.mkv')
+  await writeFile(filePath, 'test media')
+  const fileAnalysis = { ...analysis, filePath, fileAnalysisFingerprint: fileIdentity(await stat(filePath)) }
+  item = { id: 1, file_path: filePath, source_type: 'plex', source_id: 'plex', plex_id: '123', deep_analysis: JSON.stringify(fileAnalysis) }
+})
 const db = {
   media: { getItemById: async () => item },
   playbackTargetProfiles: { get: async () => profile },

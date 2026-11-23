@@ -286,8 +286,8 @@ export interface DatabaseServiceInterface {
   toggleMediaSource(sourceId: string, enabled: boolean): void | Promise<void>
   syncArtistCompletenessAfterScan(sourceId: string): number
   syncAlbumCompletenessAfterScan(sourceId: string): number
-  getEpisodeCountForSeason(seriesTmdbId: string, seasonNumber: number): number
-  getEpisodeCountForSeasonEpisode(seriesTmdbId: string, seasonNumber: number, episodeNumber: number): number
+  getEpisodeCountForSeason(seriesTitle: string, seasonNumber: number): number
+  getEpisodeCountForSeasonEpisode(seriesTitle: string, seasonNumber: number, episodeNumber: number): number
   getSeriesCompletenessByTmdbId?(tmdbId: string): { owned_episodes: number } | null
   getMusicAlbumsByMusicbrainzIds(ids: string[]): Map<string, MusicAlbum>
   getQualityScoresByMediaItemIds(ids: number[]): Map<number, QualityScore>

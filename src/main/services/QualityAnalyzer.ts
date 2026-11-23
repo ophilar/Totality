@@ -109,6 +109,16 @@ export class QualityAnalysisError extends Error {
   }
 }
 
+function parsePersistedJson<T>(raw: string, field: string): T {
+  try {
+    return JSON.parse(raw) as T
+  } catch (cause) {
+    const error = new Error(`Stored ${field} is malformed JSON`)
+    ;(error as Error & { cause?: unknown }).cause = cause
+    throw error
+  }
+}
+
 function metadataString(value: unknown, field: string): string | null {
   if (value === null || value === undefined) return null
   if (typeof value !== 'string') {
@@ -388,7 +398,7 @@ export class QualityAnalyzer {
     if (measurement && mediaItem.file_path && measurementAnalysis?.fileAnalysisFingerprint) {
       const raw = await getDatabase().getSetting(`${MEASUREMENT_SETTING_PREFIX}${measurement.cacheKey}`)
       if (raw) {
-        const cached = JSON.parse(raw) as CachedMeasurement
+        const cached = parsePersistedJson<CachedMeasurement>(raw, `optimization measurement ${measurement.cacheKey}`)
         if (cached.version === MEASUREMENT_VERSION && cached.complete && cached.cacheKey === measurement.cacheKey) {
           const source = await stat(mediaItem.file_path)
           if (measurement.sourceSize === source.size && measurement.sourceMtimeMs === source.mtimeMs &&
@@ -438,7 +448,9 @@ export class QualityAnalyzer {
 
   async analyzeMediaItem(mediaItem: MediaItem, analysis?: FileAnalysisResult): Promise<QualityScore> {
     // Never forward stale persisted evidence to savings calculations.
-    let savedAnalysis = analysis ?? (mediaItem.deep_analysis ? JSON.parse(mediaItem.deep_analysis) as FileAnalysisResult : undefined)
+    let savedAnalysis = analysis ?? (mediaItem.deep_analysis
+      ? parsePersistedJson<FileAnalysisResult>(mediaItem.deep_analysis, `deep analysis for media item ${mediaItem.id ?? mediaItem.title}`)
+      : undefined)
     if (!analysis) {
       if (savedAnalysis?.success && savedAnalysis.fileAnalysisFingerprint && mediaItem.file_path) {
         const source = await stat(mediaItem.file_path)
@@ -540,7 +552,7 @@ export class QualityAnalyzer {
       analysisOptions?: { scanBitrate?: boolean; detectVolume?: boolean; includePacketMetrics?: boolean }
     }
     const cachedAnalysis = cachedItem.deep_analysis
-      ? JSON.parse(cachedItem.deep_analysis) as PersistedFileAnalysis
+      ? parsePersistedJson<PersistedFileAnalysis>(cachedItem.deep_analysis, `deep analysis for ${filePath}`)
       : null
     // Older cache entries without full file identity must be reanalyzed once;
     // matching only size and mtime can reuse a replaced source incorrectly.

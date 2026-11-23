@@ -5,6 +5,7 @@ import { evaluatePlaybackTarget, type PlaybackTargetEvaluation, type PlaybackTar
 import { getSourceManager } from '@main/services/SourceManager'
 import { PlexPlaybackDecisionProvider } from '@main/providers/plex/PlexPlaybackDecisionProvider'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
+import { validatePersistedFileAnalysis } from '@main/services/utils/PersistedFileAnalysis'
 
 export type PlaybackDeliveryMode = 'direct-play' | 'direct-stream' | 'transcode' | 'conversion'
 export type PlaybackStreamDecision = 'copy' | 'transcode' | 'burn' | 'unknown' | 'not-applicable'
@@ -24,7 +25,8 @@ export class PlaybackCompatibilityService {
     if (!profile) throw new Error('Playback target profile was not found')
     if (!item.deep_analysis) throw new Error('Media item must be analyzed before compatibility can be evaluated')
     const analysis = JSON.parse(item.deep_analysis) as FileAnalysisResult
-    if (!analysis.success || analysis.filePath !== item.file_path) throw new Error('Persisted file analysis is invalid')
+    const invalidReason = await validatePersistedFileAnalysis(analysis, item.file_path)
+    if (invalidReason) throw new Error(`Persisted file analysis is invalid: ${invalidReason}`)
     const evaluation = evaluatePlaybackTarget(profile, analysis)
     const directPlayPresentation: PlaybackPresentationState = evaluation.overall === 'compatible' ? 'direct-play-supported' : 'direct-play-unsupported'
     if (item.source_type !== 'plex' || !item.source_id || !profile.definition.client) return { profile, evaluation, presentation: directPlayPresentation }
