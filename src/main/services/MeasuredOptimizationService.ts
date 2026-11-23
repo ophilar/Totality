@@ -449,7 +449,7 @@ export class MeasuredOptimizationService {
               const screeningLogPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}.screening.json`)
               ownedPaths.add(screeningLogPath)
               const screeningStartedAt = performance.now()
-              const screening = await this.measureFrameMetrics(binary, outputPath, request.inputPath, screeningLogPath, screeningFrames, { startSeconds: starts[index], durationSeconds: length }, request.signal, screeningFrames, undefined, request.referenceFilter, request.referenceInputArgs)
+              const screening = await this.measureFrameMetrics(binary, outputPath, request.inputPath, screeningLogPath, screeningFrames, { startSeconds: starts[index], durationSeconds: length }, request.signal, screeningFrames, 0, request.referenceFilter, request.referenceInputArgs)
               const reason = getImpossibleQualityReason(request.qualityProfile, [...candidateSamples.flatMap(sample => sample.vmafScores), ...screening.vmafScores], [...candidateSamples.flatMap(sample => sample.cambiScores), ...screening.cambiScores], totalFrames)
               getLoggingService().info('[MeasuredOptimization]', `stage=preliminary-scoring encoder=${candidate.encoder} quality=${candidate.quality} sample=${index} frames=${screeningFrames} durationMs=${Math.round(performance.now() - screeningStartedAt)} rejected=${Boolean(reason)}`)
               await fs.unlink(screeningLogPath)
@@ -460,7 +460,7 @@ export class MeasuredOptimizationService {
             }
             if (!screeningOnly) await request.onProgress?.(`Scoring sample ${index + 1} of ${starts.length} with VMAF and CAMBI`)
             const scoringStartedAt = performance.now()
-            const { vmafScores, cambiScores } = metrics ?? await this.measureFrameMetrics(binary, outputPath, request.inputPath, logPath, referenceSamples[index].frames, { startSeconds: starts[index], durationSeconds: length }, request.signal, undefined, undefined, request.referenceFilter, request.referenceInputArgs)
+            const { vmafScores, cambiScores } = metrics ?? await this.measureFrameMetrics(binary, outputPath, request.inputPath, logPath, referenceSamples[index].frames, { startSeconds: starts[index], durationSeconds: length }, request.signal, undefined, 0, request.referenceFilter, request.referenceInputArgs)
             getLoggingService().debug('[MeasuredOptimization]', 'Candidate sample evidence', { encoder: candidate.encoder, preset: candidate.preset, quality: candidate.quality, sampleIndex: index, sourcePath: request.inputPath, samplePath: outputPath, startSeconds: starts[index], durationSeconds: length, reference: sampleTimingSummary(referenceSamples[index]), output: sampleTimingSummary(outputSample), sourceSelfVmaf: sourceSelfVmafs[index], scoredFrames: vmafScores.length, vmafFirst: vmafScores.slice(0, 5), vmafLast: vmafScores.slice(-5), referenceFilter: request.referenceFilter, referenceInputArgs: request.referenceInputArgs, ffmpegArgs: args })
             getLoggingService().info('[MeasuredOptimization]', `stage=scoring encoder=${candidate.encoder} preset=${candidate.preset} quality=${candidate.quality} sample=${index} durationMs=${Math.round(performance.now() - scoringStartedAt)}`)
             sample = {
