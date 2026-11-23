@@ -10,8 +10,10 @@ vi.mock('../../src/main/database/getDatabase', () => ({
     getSetting: vi.fn(() => null),
     getSettingsByPrefix: vi.fn(() => ({})),
     upsertQualityScore: vi.fn(),
-    getMediaItemByPath: mockGetMediaItemByPath,
-    updateDeepAnalysisByPath: mockUpdateDeepAnalysisByPath,
+    media: {
+      getItemByPath: mockGetMediaItemByPath,
+      updateDeepAnalysisByPath: mockUpdateDeepAnalysisByPath,
+    },
   })),
 }))
 

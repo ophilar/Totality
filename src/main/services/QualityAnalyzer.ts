@@ -528,7 +528,7 @@ export class QualityAnalyzer {
     const db = getDatabase()
     const filePath = mediaItem.file_path
     const source = await stat(filePath)
-    const persistedItem = await ((db as any).getMediaItemByPath ? (db as any).getMediaItemByPath(filePath) : db.media?.getItemByPath(filePath))
+    const persistedItem = await db.media.getItemByPath(filePath)
     const cachedItem = persistedItem ?? mediaItem
     const requestedAnalysisOptions = {
       scanBitrate: options.scanBitrate ?? true,
@@ -575,11 +575,7 @@ export class QualityAnalyzer {
         fileAnalysisFingerprint: fileIdentity(source),
         analysisOptions: requestedAnalysisOptions,
       }
-      if ((db as any).updateDeepAnalysisByPath) {
-        await (db as any).updateDeepAnalysisByPath(filePath, analysis, new Date().toISOString())
-      } else if (db.media?.updateDeepAnalysisByPath) {
-        await db.media.updateDeepAnalysisByPath(filePath, analysis, new Date().toISOString())
-      }
+      await db.media.updateDeepAnalysisByPath(filePath, analysis, new Date().toISOString())
     }
 
     if (!analysis.success) throw new Error(analysis.error || `File analysis failed for ${mediaItem.title}`)
