@@ -1201,7 +1201,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
                 })
                 .finally(() => setBusy(false))
             }}>Analyze show using series analysis</button>
-            <p className="text-xs">Ready {preflightData.episodes.filter(ep => ep.compatible && ep.decisionStatus === 'actionable').length} · Samples {preflightData.episodes.filter(ep => ep.compatible && ep.decisionStatus === 'sample_required').length} · Blocked {preflightData.episodes.filter(ep => !ep.compatible).length}</p>
+            <p className="text-xs">Ready {preflightData.episodes.filter(ep => ep.compatible && ep.decisionStatus === 'actionable').length} · Samples {preflightData.episodes.filter(ep => ep.compatible && ep.decisionStatus === 'sample_required').length} · Needs analysis {preflightData.episodes.filter(ep => ep.decisionStatus === 'insufficient_evidence').length} · Blocked {preflightData.episodes.filter(ep => !ep.compatible && ep.decisionStatus !== 'insufficient_evidence' && ep.decisionStatus !== 'measurement_failed').length}</p>
             {/* Episodes breakdown */}
             <div className="space-y-2">
               <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">

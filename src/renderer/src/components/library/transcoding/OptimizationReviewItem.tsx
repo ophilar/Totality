@@ -34,9 +34,9 @@ export function OptimizationReviewItem<T extends OptimizationReviewItemModel>({ 
   return <section className="space-y-2 rounded-lg border border-border/30 bg-background/50 p-3 text-sm" aria-label={`${item.label}: ${optimizationDecisionLabel(item.decisionStatus)}`}>
     <div className="flex flex-wrap items-baseline justify-between gap-2">
       <h4 className="font-semibold">{item.label}</h4>
-      <div className="flex flex-wrap items-center gap-1.5">{badges}<span className="text-xs text-muted-foreground">{item.compatible ? optimizationDecisionLabel(item.decisionStatus) : 'Not compatible'}</span></div>
+      <div className="flex flex-wrap items-center gap-1.5">{badges}<span className="text-xs text-muted-foreground">{item.compatible || item.decisionStatus === 'insufficient_evidence' || item.decisionStatus === 'measurement_failed' ? optimizationDecisionLabel(item.decisionStatus) : 'Not compatible'}</span></div>
     </div>
-    {!item.compatible && item.reason && <details className="text-xs"><summary className="cursor-pointer text-muted-foreground">Why it is blocked</summary><p className="pt-1 text-muted-foreground">{item.reason}</p></details>}
+    {!item.compatible && item.decisionStatus !== 'insufficient_evidence' && item.decisionStatus !== 'measurement_failed' && item.reason && <details className="text-xs"><summary className="cursor-pointer text-muted-foreground">Why it is blocked</summary><p className="pt-1 text-muted-foreground">{item.reason}</p></details>}
     {!targetSelected && !item.targetCompatibility && <p className="text-xs text-muted-foreground">Playback compatibility not checked</p>}
     {item.params?.summary && <p className="text-xs text-muted-foreground">{item.params.summary}</p>}
     {item.params?.measuredCandidate?.searchSummary && <p className="text-xs text-muted-foreground" role="note">{item.params.measuredCandidate.searchSummary.measuredCount} candidate settings evaluated (limit {item.params.measuredCandidate.searchSummary.maximumCandidates}). {item.params.measuredCandidate.searchSummary.budgetReached ? 'Search budget reached; best tested setting, not a guaranteed global optimum.' : 'Search completed within the configured quality grid.'}</p>}
