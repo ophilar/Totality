@@ -165,6 +165,17 @@ export interface JellyfinMediaStream {
   IsForced?: boolean
 }
 
+export interface ProviderPlaylistSummary {
+  id: string
+  title: string
+  mediaType: string
+}
+
+export interface ProviderPlaylistItem {
+  id: string
+  providerItemId: string
+}
+
 // Music-specific types for Jellyfin/Emby
 export interface JellyfinMusicArtist {
   Id: string
@@ -2263,5 +2274,31 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
       result.durationMs = Date.now() - startTime
       return result
     }
+  }
+
+  async listPlaylists(): Promise<ProviderPlaylistSummary[]> {
+    const data = await fetchJSON<{ Items?: Array<{ Id: string; Name: string; MediaType?: string }> }>(
+      `${this.serverUrl}/Playlists`,
+      { headers: this.getAuthHeaders() }
+    )
+    return (data.Items ?? []).map(item => ({ id: item.Id, title: item.Name, mediaType: item.MediaType ?? 'Video' }))
+  }
+
+  async createPlaylist(title: string, providerItemIds: readonly string[]): Promise<string> {
+    if (!title.trim()) throw new Error('Playlist title is required')
+    const data = await fetchJSON<{ Id?: string }>(
+      buildUrl(`${this.serverUrl}/Playlists`, { Name: title, MediaType: 'Video', Ids: providerItemIds.join(',') }),
+      { method: 'POST', headers: this.getAuthHeaders() }
+    )
+    if (!data.Id) throw new Error(`${this.providerType} playlist creation returned no id`)
+    return data.Id
+  }
+
+  async getPlaylistItems(playlistId: string): Promise<ProviderPlaylistItem[]> {
+    const data = await fetchJSON<{ Items?: Array<{ Id: string }> }>(
+      `${this.serverUrl}/Playlists/${encodeURIComponent(playlistId)}/Items`,
+      { headers: this.getAuthHeaders() }
+    )
+    return (data.Items ?? []).map(item => ({ id: item.Id, providerItemId: item.Id }))
   }
 }
