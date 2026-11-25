@@ -16,7 +16,7 @@ import { useSources } from '@/contexts/SourceContext'
 import { useToast } from '@/contexts/ToastContext'
 import type { TimelineRecipeSummary } from '@main/services/timelines/ITimelineRecipeProvider'
 import type { ResolvedTimelineResult } from '@main/services/timelines/TimelineResolutionEngine'
-import type { PlexPlaylistSummary } from '@main/services/timelines/PlexPlaylistSyncService'
+import type { TimelinePlaylistSummary } from '@main/services/timelines/TimelinePlaylistPublisher'
 import type { TimelineParserPlugin, TimelineParserPluginInput } from '@main/services/timelines/TimelineParserPlugin'
 
 const NEW_PARSER_TEMPLATE = {
@@ -44,7 +44,7 @@ export function TimelinesView() {
   const [recipes, setRecipes] = useState<TimelineRecipeSummary[]>([])
   const [selectedRecipeId, setSelectedRecipeId] = useState<string>('')
   const [selectedTimelineResult, setSelectedTimelineResult] = useState<ResolvedTimelineResult | null>(null)
-  const [existingPlaylists, setExistingPlaylists] = useState<PlexPlaylistSummary[]>([])
+  const [existingPlaylists, setExistingPlaylists] = useState<readonly TimelinePlaylistSummary[]>([])
   const [isLoadingRecipes, setIsLoadingRecipes] = useState(false)
   const [isResolvingTimeline, setIsResolvingTimeline] = useState(false)
   const [isSyncingPlaylist, setIsSyncingPlaylist] = useState(false)
@@ -88,7 +88,7 @@ export function TimelinesView() {
     let isMounted = true
     const fetchExistingPlaylists = async () => {
       try {
-        const playlists = await window.electronAPI.timelinesGetPlexPlaylists(selectedPlexSourceId)
+        const playlists = await window.electronAPI.timelinesGetPlaylists(selectedPlexSourceId)
         if (isMounted) setExistingPlaylists(playlists)
       } catch (error) {
         if (isMounted) { setExistingPlaylists([]); addToast({ type: 'error', title: 'Plex playlists', message: String(error) }) }
@@ -310,7 +310,7 @@ export function TimelinesView() {
 
       // Refresh existing playlists so new playlist appears in dropdown immediately
       try {
-        const updatedPlaylists = await window.electronAPI.timelinesGetPlexPlaylists(selectedPlexSourceId)
+        const updatedPlaylists = await window.electronAPI.timelinesGetPlaylists(selectedPlexSourceId)
         setExistingPlaylists(updatedPlaylists)
       } catch (error) {
         addToast({ type: 'error', title: 'Playlist list refresh failed', message: String(error) })
@@ -609,15 +609,15 @@ export function TimelinesView() {
                           onChange={(e) => {
                             const key = e.target.value === 'custom-playlist-mode' ? '' : e.target.value
                             setPlaylistRatingKey(key)
-                            const selected = visibleExistingPlaylists.find(playlist => playlist.ratingKey === key)
+                            const selected = visibleExistingPlaylists.find(playlist => playlist.id === key)
                             if (selected) setCustomPlaylistTitle(selected.title)
                           }}
                           className="w-full min-w-0 px-3 py-1.5 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                         >
                           <option value="custom-playlist-mode">-- Create New / Custom Playlist --</option>
                           {visibleExistingPlaylists.map((pl) => (
-                            <option key={pl.ratingKey} value={pl.ratingKey}>
-                              {pl.title} ({pl.leafCount ?? 0} items)
+                            <option key={pl.id} value={pl.id}>
+                              {pl.title} ({pl.mediaType})
                             </option>
                           ))}
                         </select>

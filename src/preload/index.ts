@@ -7,6 +7,7 @@ import type { TimelineResolutionOperationResult } from '@main/services/timelines
 import type { TimelineParserPlugin, TimelineParserPluginInput } from '@main/services/timelines/TimelineParserPlugin'
 import type { TimelineFetchOptions, TimelineDefinition } from '@main/services/timelines/ITimelineRecipeProvider'
 import type { PlexPlaylistSummary, PlexPlaylistSyncResult } from '@main/services/timelines/PlexPlaylistSyncService'
+import type { TimelinePlaylistSummary } from '@main/services/timelines/TimelinePlaylistPublisher'
 import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
 import type { TranscodeOptions, TranscodeProgress, TranscodingParams } from '@main/services/TranscodingService'
 import type { ShowTranscodeRequest, ShowTranscodePreflight, ShowOptimizationDiscovery } from '@main/services/TranscodingService'
@@ -1873,7 +1874,7 @@ interface ExistingElectronAPI {
   timelinesResolveTimeline: (recipeId: string, sourceId: string | undefined, options: TimelineFetchOptions | undefined, requestId: string, showInActivity: boolean) => Promise<TimelineResolutionOperationResult>
   timelinesSyncPlexPlaylist: (payload: { sourceId: string; recipeId: string; playlistTitle: string; snapshotId: string; playlistRatingKey?: string; allowStale?: boolean }, requestId: string) => Promise<PlexPlaylistSyncResult | { cancelled: true }>
   timelinesGetPlexPlaylists: (sourceId: string) => Promise<PlexPlaylistSummary[]>
-  timelinesGetPlaylists: (sourceId: string) => Promise<PlexPlaylistSummary[]>
+  timelinesGetPlaylists: (sourceId: string) => Promise<readonly TimelinePlaylistSummary[]>
   timelinesPublishPlaylist: (payload: { sourceId: string; recipeId: string; playlistTitle: string; snapshotId: string; playlistRatingKey?: string; allowStale?: boolean }, requestId: string) => Promise<PlexPlaylistSyncResult | { cancelled: true }>
   timelinesCancel: (requestId: string) => Promise<void>
   transcodingGetCapabilities: (refresh?: boolean) => Promise<TranscodingCapabilities>
