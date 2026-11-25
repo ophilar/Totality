@@ -2662,6 +2662,7 @@ export class TranscodingService {
     const buildCandidates = (parameters: CandidateEncodingParameters[]) => parameters.filter(candidate => !isMeasured(candidate)).map(candidate => {
       const useGpu = !isMeasuredSoftwareEncoder(candidate.encoder)
       const candidateGpu = candidate.gpuId ? capabilities?.gpus.find(gpu => gpu.id === candidate.gpuId) : encoderGpu
+      if (useGpu && !candidateGpu) throw new Error(`Measured candidate ${candidate.encoder} has no verified GPU assignment.`)
       const candidateOptions = {
         ...options,
         useGpu,
