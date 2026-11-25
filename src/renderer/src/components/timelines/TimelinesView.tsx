@@ -63,42 +63,41 @@ export function TimelinesView() {
   const [selectedParserPluginId, setSelectedParserPluginId] = useState('')
   const [isSavingParser, setIsSavingParser] = useState(false)
 
-  // Filter sources for Plex providers
-  const plexSources = useMemo(
-    () => sources.filter((s) => s.source_type === 'plex' && s.is_enabled),
+  const playlistSources = useMemo(
+    () => sources.filter((s) => ['plex', 'jellyfin', 'emby'].includes(s.source_type) && s.is_enabled),
     [sources]
   )
 
-  const selectedPlexSourceId = useMemo(() => {
-    if (activeSourceId && plexSources.some((s) => s.source_id === activeSourceId)) {
+  const selectedPlaylistSourceId = useMemo(() => {
+    if (activeSourceId && playlistSources.some((s) => s.source_id === activeSourceId)) {
       return activeSourceId
     }
     return undefined
-  }, [activeSourceId, plexSources])
+  }, [activeSourceId, playlistSources])
 
   const resolveSourceId = activeSourceId || undefined
   const timelineContextRef = useRef({ recipeId: selectedRecipeId, sourceId: resolveSourceId })
   timelineContextRef.current = { recipeId: selectedRecipeId, sourceId: resolveSourceId }
-  const visibleExistingPlaylists = selectedPlexSourceId ? existingPlaylists : []
+  const visibleExistingPlaylists = selectedPlaylistSourceId ? existingPlaylists : []
 
   useEffect(() => {
-    if (!selectedPlexSourceId) {
+    if (!selectedPlaylistSourceId) {
       return
     }
     let isMounted = true
     const fetchExistingPlaylists = async () => {
       try {
-        const playlists = await window.electronAPI.timelinesGetPlaylists(selectedPlexSourceId)
+        const playlists = await window.electronAPI.timelinesGetPlaylists(selectedPlaylistSourceId)
         if (isMounted) setExistingPlaylists(playlists)
       } catch (error) {
-        if (isMounted) { setExistingPlaylists([]); addToast({ type: 'error', title: 'Plex playlists', message: String(error) }) }
+        if (isMounted) { setExistingPlaylists([]); addToast({ type: 'error', title: 'Playlists', message: String(error) }) }
       }
     }
     void fetchExistingPlaylists()
     return () => {
       isMounted = false
     }
-  }, [selectedPlexSourceId, addToast])
+  }, [selectedPlaylistSourceId, addToast])
 
   useEffect(() => {
     let isMounted = true
@@ -277,12 +276,12 @@ export function TimelinesView() {
     }
   }
 
-  const handleSyncToPlex = async () => {
-    if (!selectedPlexSourceId) {
+  const handlePublishPlaylist = async () => {
+    if (!selectedPlaylistSourceId) {
       addToast({
         type: 'error',
         title: 'Sync Playlist',
-        message: 'Please select an active Plex source to sync playlists.',
+        message: 'Please select an active Plex, Jellyfin, or Emby source to publish playlists.',
       })
       return
     }
@@ -292,8 +291,8 @@ export function TimelinesView() {
     setIsSyncingPlaylist(true)
     const requestId = crypto.randomUUID()
     try {
-      const result = await window.electronAPI.timelinesSyncPlexPlaylist({
-        sourceId: selectedPlexSourceId,
+      const result = await window.electronAPI.timelinesPublishPlaylist({
+        sourceId: selectedPlaylistSourceId,
         recipeId: selectedRecipeId,
         playlistTitle: customPlaylistTitle.trim() || selectedTimelineResult.timeline.name,
         snapshotId: selectedTimelineResult.snapshotId!,
@@ -304,13 +303,13 @@ export function TimelinesView() {
 
       addToast({
         type: 'success',
-        title: 'Playlist Synced',
-        message: `Successfully synced playlist '${result.playlistTitle}' with ${result.matchedItemsSynced} items to Plex!`,
+        title: 'Playlist Published',
+        message: `Successfully published playlist '${result.title}' with ${result.matchedItems} items.`,
       })
 
       // Refresh existing playlists so new playlist appears in dropdown immediately
       try {
-        const updatedPlaylists = await window.electronAPI.timelinesGetPlaylists(selectedPlexSourceId)
+        const updatedPlaylists = await window.electronAPI.timelinesGetPlaylists(selectedPlaylistSourceId)
         setExistingPlaylists(updatedPlaylists)
       } catch (error) {
         addToast({ type: 'error', title: 'Playlist list refresh failed', message: String(error) })
@@ -319,8 +318,8 @@ export function TimelinesView() {
     } catch (err: unknown) {
       addToast({
         type: 'error',
-        title: 'Plex Sync Error',
-        message: `Plex Playlist Sync failed: ${err instanceof Error ? err.message : String(err)}`,
+        title: 'Playlist Publication Error',
+        message: `Playlist publication failed: ${err instanceof Error ? err.message : String(err)}`,
       })
     } finally {
       setIsSyncingPlaylist(false)
@@ -633,8 +632,8 @@ export function TimelinesView() {
 
                     <div>
                       <button
-                        onClick={handleSyncToPlex}
-                        disabled={!selectedPlexSourceId || Boolean(selectedTimelineResult.ambiguousCount) || isSyncingPlaylist || isResolvingTimeline || selectedTimelineResult.matchedCount === 0 || !customPlaylistTitle.trim()}
+                        onClick={handlePublishPlaylist}
+                        disabled={!selectedPlaylistSourceId || Boolean(selectedTimelineResult.ambiguousCount) || isSyncingPlaylist || isResolvingTimeline || selectedTimelineResult.matchedCount === 0 || !customPlaylistTitle.trim()}
                         className="px-4 py-2 text-xs font-semibold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2 shadow-xs disabled:opacity-50 transition-all cursor-pointer"
                       >
                         {isSyncingPlaylist ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
