@@ -23,11 +23,14 @@ export const EncoderPolicySelector = memo(function EncoderPolicySelector({ value
         disabled={disabled}
         className="w-full rounded-xl border border-border/40 bg-muted/40 px-3 py-2 text-xs font-bold"
       >
-        <option value="automatic">Automatic · verified GPU first</option>
+        <option value="automatic">Automatic · benchmark all verified GPUs</option>
         <option value="hardware" disabled={!hardwareAvailable}>Verified hardware</option>
         <option value="software" disabled={!softwareAvailable}>Software</option>
         <option value="compare" disabled={!hardwareAvailable || !softwareAvailable}>Compare hardware and software</option>
       </select>
+      {value === 'automatic' && hardwareGpus.length > 0 && (
+        <p className="text-xs text-muted-foreground">Benchmarks: {hardwareGpus.map(gpu => gpu.name).join(' · ')}</p>
+      )}
       {value === 'hardware' && (
         <select
           aria-label="Hardware GPU"

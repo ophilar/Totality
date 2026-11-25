@@ -291,8 +291,7 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
         playbackCodecs: profile?.definition.video.codecs,
         playbackPolicy: 'direct-play',
       })[0] ?? ''
-      const selectedGpu = capabilities?.gpus?.find(gpu => gpu.vendor === 'Intel' && hardwareSupports(gpu, preferredCodec))
-        ?? capabilities?.gpus?.find(gpu => gpu.id === capabilities.selectedGpuId && hardwareSupports(gpu, preferredCodec))
+      const selectedGpu = capabilities?.gpus?.find(gpu => gpu.id === capabilities.selectedGpuId && hardwareSupports(gpu, preferredCodec))
         ?? capabilities?.gpus?.find(gpu => hardwareSupports(gpu, preferredCodec))
       const selectedGpuId = selectedGpu?.id ?? ''
       if (!initialPreflightId) updateConfiguration({ targetCodec: preferredCodec })
