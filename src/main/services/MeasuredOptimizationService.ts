@@ -51,10 +51,10 @@ export interface MeasuredSampleResult { candidates: MeasuredCandidate[]; vmafAva
 
 export function findReusableMeasuredSample(
   samples: MeasuredCandidateSample[],
-  candidate: Pick<MeasuredCandidate, 'encoder' | 'preset' | 'quality'>,
+  candidate: Pick<MeasuredCandidate, 'encoder' | 'gpuId' | 'preset' | 'quality'>,
   sampleIndex: number,
 ): MeasuredCandidateSample | undefined {
-  return samples.find(saved => !saved.screeningOnly && saved.encoder === candidate.encoder && saved.preset === candidate.preset && saved.quality === candidate.quality && saved.sampleIndex === sampleIndex)
+  return samples.find(saved => !saved.screeningOnly && saved.encoder === candidate.encoder && saved.gpuId === candidate.gpuId && saved.preset === candidate.preset && saved.quality === candidate.quality && saved.sampleIndex === sampleIndex)
 }
 
 export interface OutputQualityVerificationRequest {
@@ -422,7 +422,7 @@ export class MeasuredOptimizationService {
         let qualityRejectedReason: string | undefined
         for (const index of starts.keys()) {
           request.signal?.throwIfAborted()
-          const outputPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}${request.outputExtension ?? '.mkv'}`)
+          const outputPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.gpuId ?? 'software'}-${candidate.quality}-${candidate.preset}-${index}${request.outputExtension ?? '.mkv'}`)
           let sample = findReusableMeasuredSample(measuredSamples, candidate, index)
           if (!sample) {
             await request.onProgress?.(`Encoding sample ${index + 1} of ${starts.length} with ${candidate.encoder} (${candidate.quality})`)
@@ -471,8 +471,9 @@ export class MeasuredOptimizationService {
             const { vmafScores, cambiScores } = metrics ?? await this.measureFrameMetrics(binary, outputPath, request.inputPath, logPath, referenceSamples[index].frames, { startSeconds: starts[index], durationSeconds: length }, request.signal, undefined, 0, request.referenceFilter, request.referenceInputArgs)
             getLoggingService().debug('[MeasuredOptimization]', 'Candidate sample evidence', { encoder: candidate.encoder, preset: candidate.preset, quality: candidate.quality, sampleIndex: index, sourcePath: request.inputPath, samplePath: outputPath, startSeconds: starts[index], durationSeconds: length, reference: sampleTimingSummary(referenceSamples[index]), output: sampleTimingSummary(outputSample), sourceSelfVmaf: sourceSelfVmafs[index], scoredFrames: vmafScores.length, vmafFirst: vmafScores.slice(0, 5), vmafLast: vmafScores.slice(-5), referenceFilter: request.referenceFilter, referenceInputArgs: request.referenceInputArgs, ffmpegArgs: args })
             getLoggingService().info('[MeasuredOptimization]', `stage=scoring encoder=${candidate.encoder} preset=${candidate.preset} quality=${candidate.quality} sample=${index} durationMs=${Math.round(performance.now() - scoringStartedAt)}`)
-            sample = {
-              encoder: candidate.encoder,
+              sample = {
+                encoder: candidate.encoder,
+                gpuId: candidate.gpuId,
               preset: candidate.preset,
               quality: candidate.quality,
               sampleIndex: index,

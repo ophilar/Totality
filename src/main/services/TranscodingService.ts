@@ -2631,7 +2631,8 @@ export class TranscodingService {
       : undefined
     if (options.encoderPolicy !== 'software' && options.encoderPolicy !== 'automatic' && (!hardwareEncoder || !supportsMeasuredOptimizationEncoder(hardwareEncoder))) throw new Error(`The selected hardware has no validated measured-optimization support for ${options.targetCodec.toUpperCase()}.`)
     if (hardwareEncoder && !capabilities!.deviceEncoders[encoderGpu!.id]?.includes(hardwareEncoder)) throw new Error(`The selected device does not support ${hardwareEncoder} encoding.`)
-    const ladder = buildCandidateLadder(options.targetCodec, options.encoderPolicy, hardwareEncoder)
+    const automaticHardwareCandidates = automaticGpuCandidates?.map(gpu => ({ encoder: getHardwareEncoder(gpu.vendor, options.targetCodec!), gpuId: gpu.id })).filter((candidate): candidate is { encoder: string; gpuId: string } => Boolean(candidate.encoder))
+    const ladder = buildCandidateLadder(options.targetCodec, options.encoderPolicy, hardwareEncoder, automaticHardwareCandidates)
     const measuredCandidates = [...previouslyMeasured]
     let measuredSamples = [...previouslyMeasuredSamples]
     let candidateSearchRounds = 0
@@ -2652,19 +2653,20 @@ export class TranscodingService {
       candidateDomain,
       previouslyMeasuredCount: measuredCandidates.length,
     })
-    const isMeasured = (candidate: CandidateEncodingParameters) => measuredCandidates.some(measured => measured.encoder === candidate.encoder && measured.preset === candidate.preset && measured.quality === candidate.quality)
+    const isMeasured = (candidate: CandidateEncodingParameters) => measuredCandidates.some(measured => measured.encoder === candidate.encoder && measured.gpuId === candidate.gpuId && measured.preset === candidate.preset && measured.quality === candidate.quality)
     const buildCandidates = (parameters: CandidateEncodingParameters[]) => parameters.filter(candidate => !isMeasured(candidate)).map(candidate => {
       const useGpu = !isMeasuredSoftwareEncoder(candidate.encoder)
+      const candidateGpu = candidate.gpuId ? capabilities?.gpus.find(gpu => gpu.id === candidate.gpuId) : encoderGpu
       const candidateOptions = {
         ...options,
         useGpu,
-        gpuId: useGpu ? encoderGpu?.id : undefined,
-        gpuDeviceSelector: useGpu ? encoderGpu?.encoderDeviceSelector : undefined,
+        gpuId: useGpu ? candidateGpu?.id : undefined,
+        gpuDeviceSelector: useGpu ? candidateGpu?.encoderDeviceSelector : undefined,
         encoder: candidate.encoder,
         crf: candidate.quality,
         preset: candidate.preset
       }
-      return { ...candidate, outputBytes: 0, sampledDurationSeconds: 0, encodingDurationMs: 0, vmafMean: 0, vmafP5: 0, cambiMean: 0, ffmpegArgs: TranscodeCommandFactory.getBuilder(hardwareVendor, candidateOptions).buildFFmpegArgs('<input>', '<output>', candidateOptions, analysis) }
+      return { ...candidate, outputBytes: 0, sampledDurationSeconds: 0, encodingDurationMs: 0, vmafMean: 0, vmafP5: 0, cambiMean: 0, ffmpegArgs: TranscodeCommandFactory.getBuilder(candidateGpu?.vendor ?? hardwareVendor, candidateOptions).buildFFmpegArgs('<input>', '<output>', candidateOptions, analysis) }
     })
     const outputDirectory = sampleDirectory ?? path.join(app.getPath('userData'), 'transcoding-samples', randomUUID())
     try {
@@ -2732,12 +2734,12 @@ export class TranscodingService {
             validateSample,
             previouslyMeasuredSamples: measuredSamples,
             onSampleMeasured: async sample => {
-              measuredSamples = [...measuredSamples.filter(existing => existing.encoder !== sample.encoder || existing.preset !== sample.preset || existing.quality !== sample.quality || existing.sampleIndex !== sample.sampleIndex), sample]
+              measuredSamples = [...measuredSamples.filter(existing => existing.encoder !== sample.encoder || existing.gpuId !== sample.gpuId || existing.preset !== sample.preset || existing.quality !== sample.quality || existing.sampleIndex !== sample.sampleIndex), sample]
               await onMeasuredSample?.(sample)
             },
             onCandidateMeasured: async roundCandidates => onMeasuredCandidates?.([...measuredCandidates.slice(0, roundStart), ...roundCandidates], false),
           })
-          measuredCandidates.push(...measured.candidates)
+          measuredCandidates.push(...measured.candidates.map(candidate => ({ ...candidate, gpuId: candidate.gpuId ?? candidates.find(input => input.encoder === candidate.encoder && input.preset === candidate.preset && input.quality === candidate.quality)?.gpuId })))
           signal?.throwIfAborted()
           for (const candidate of measured.candidates) getLoggingService().info('[TVOptimization]', 'Measured candidate gate evidence', {
             event: 'candidate-search.candidate-measured',

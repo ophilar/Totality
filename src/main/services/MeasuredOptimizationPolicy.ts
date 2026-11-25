@@ -30,6 +30,7 @@ export interface CachedMeasurement {
 export interface MeasuredCandidateSample {
   screeningOnly?: boolean
   encoder: string
+  gpuId?: string
   preset: string
   quality: number
   sampleIndex: number
@@ -45,6 +46,7 @@ export interface MeasuredCandidateSample {
 
 export interface MeasuredCandidate {
   encoder: string
+  gpuId?: string
   preset: string
   quality: number
   outputBytes: number
@@ -66,6 +68,7 @@ export interface MeasuredCandidate {
 
 export interface CandidateEncodingParameters {
   encoder: string
+  gpuId?: string
   preset: string
   quality: number
 }
@@ -76,21 +79,22 @@ export function nextCandidateSearch(
   measuredCandidates: MeasuredCandidate[],
   profile: OptimizationQualityProfile,
 ): CandidateEncodingParameters[] {
-  const presets = [...new Map(domainCatalogue.map(candidate => [`${candidate.encoder}/${candidate.preset}`, candidate])).values()]
+  const presets = [...new Map(domainCatalogue.map(candidate => [`${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`, candidate])).values()]
   const evaluation = (candidate: MeasuredCandidate) => evaluateMeasuredCandidates(profile, [candidate])[0]
   const qualityPasses = (candidate: MeasuredCandidate) => evaluation(candidate).qualityPassed
-  const encoders = [...new Set(presets.map(candidate => candidate.encoder))]
-  for (const encoder of encoders) {
-    for (const presetCandidate of presets.filter(candidate => candidate.encoder === encoder)) {
-      const domain = domainCatalogue.filter(candidate => candidate.encoder === encoder && candidate.preset === presetCandidate.preset)
-      const measured = measuredCandidates.filter(candidate => candidate.encoder === encoder && candidate.preset === presetCandidate.preset)
+  const encoderKeys = [...new Set(presets.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}`))]
+  for (const encoderKey of encoderKeys) {
+    const [, gpuId] = encoderKey.split('/')
+    for (const presetCandidate of presets.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}` === encoderKey)) {
+      const domain = domainCatalogue.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}` === encoderKey && candidate.preset === presetCandidate.preset)
+      const measured = measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}` === encoderKey && candidate.preset === presetCandidate.preset)
       const qualities = [...new Set(domain.map(candidate => candidate.quality))].sort((a, b) => a - b)
       const tested = new Set(measured.map(candidate => candidate.quality))
       const untested = (values: number[]) => values.filter(quality => !tested.has(quality)).map(quality => domain.find(candidate => candidate.quality === quality) ?? { encoder: presetCandidate.encoder, preset: presetCandidate.preset, quality })
       if (measured.length >= MAX_MEASURED_CANDIDATES_PER_PRESET) continue
       if (measured.length === 0) {
         const middle = qualities[Math.floor((qualities.length - 1) / 2)]
-        return untested([middle])
+        return untested([middle]).map(candidate => gpuId === 'software' ? candidate : { ...candidate, gpuId })
       }
       const ordered = [...measured].sort((a, b) => a.quality - b.quality)
       const passFlags = ordered.map(qualityPasses)
@@ -120,25 +124,25 @@ export function nextCandidateSearch(
           if (!tested.has(midpoint)) next.add(midpoint)
         }
       }
-      if (next.size) return untested([...next].sort((a, b) => a - b)).slice(0, MAX_MEASURED_CANDIDATES_PER_PRESET - measured.length)
+        if (next.size) return untested([...next].sort((a, b) => a - b)).map(candidate => gpuId === 'software' ? candidate : { ...candidate, gpuId }).slice(0, MAX_MEASURED_CANDIDATES_PER_PRESET - measured.length)
     }
   }
   return []
 }
 
-export function buildCandidateLadder(targetCodec: OptimizationVideoCodec, encoderPolicy: 'automatic' | 'hardware' | 'software' | 'compare', hardwareEncoder?: string): CandidateEncodingParameters[] {
+export function buildCandidateLadder(targetCodec: OptimizationVideoCodec, encoderPolicy: 'automatic' | 'hardware' | 'software' | 'compare', hardwareEncoder?: string, hardwareCandidates?: Array<{ encoder: string; gpuId: string }>): CandidateEncodingParameters[] {
   const softwareEncoder = getOptimizationVideoCodec(targetCodec).softwareEncoder
   const hardware = hardwareEncoder ?? ''
-  const encoders = encoderPolicy === 'hardware' ? [hardware] : encoderPolicy === 'software' ? [softwareEncoder] : encoderPolicy === 'automatic' ? [hardware || softwareEncoder] : [hardware, softwareEncoder]
+  const encoders = encoderPolicy === 'hardware' ? [{ encoder: hardware, gpuId: undefined }] : encoderPolicy === 'software' ? [{ encoder: softwareEncoder, gpuId: undefined }] : encoderPolicy === 'automatic' ? (hardwareCandidates?.length ? hardwareCandidates : [{ encoder: hardware || softwareEncoder, gpuId: undefined }]) : [{ encoder: hardware, gpuId: undefined }, { encoder: softwareEncoder, gpuId: undefined }]
   if (encoders.some(encoder => !encoder)) throw new Error('A verified hardware encoder is required for hardware candidate measurement')
-  return encoders.flatMap(encoder => {
+  return encoders.flatMap(({ encoder, gpuId }) => {
     const policy = measuredOptimizationEncoderSpec(encoder, targetCodec)
     const presets = policy.presets
     const qualities = APP_CONFIG.transcoding.sampleQualityDomains[policy.qualityDomain]
     // Automatic mode should not benchmark every speed preset before it can
     // recommend a usable encode. Explicit policies retain full preset exploration.
     const selectedPresets = encoderPolicy === 'automatic' ? [presets[Math.floor(presets.length / 2)]] : [...new Set(presets)]
-    return selectedPresets.flatMap(preset => qualities.map(quality => ({ encoder, preset, quality })))
+    return selectedPresets.flatMap(preset => qualities.map(quality => ({ encoder, gpuId, preset, quality })))
   })
 }
 
