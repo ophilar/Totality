@@ -49,6 +49,14 @@ export interface MeasuredSampleRequest {
 }
 export interface MeasuredSampleResult { candidates: MeasuredCandidate[]; vmafAvailable: boolean; cambiAvailable: boolean }
 
+export function findReusableMeasuredSample(
+  samples: MeasuredCandidateSample[],
+  candidate: Pick<MeasuredCandidate, 'encoder' | 'preset' | 'quality'>,
+  sampleIndex: number,
+): MeasuredCandidateSample | undefined {
+  return samples.find(saved => !saved.screeningOnly && saved.encoder === candidate.encoder && saved.preset === candidate.preset && saved.quality === candidate.quality && saved.sampleIndex === sampleIndex)
+}
+
 export interface OutputQualityVerificationRequest {
   sourcePath: string
   outputPath: string
@@ -415,7 +423,7 @@ export class MeasuredOptimizationService {
         for (const index of starts.keys()) {
           request.signal?.throwIfAborted()
           const outputPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}${request.outputExtension ?? '.mkv'}`)
-          let sample = measuredSamples.find(saved => !saved.screeningOnly && saved.encoder === candidate.encoder && saved.preset === candidate.preset && saved.quality === candidate.quality && saved.sampleIndex === index)
+          let sample = findReusableMeasuredSample(measuredSamples, candidate, index)
           if (!sample) {
             await request.onProgress?.(`Encoding sample ${index + 1} of ${starts.length} with ${candidate.encoder} (${candidate.quality})`)
             ownedPaths.add(outputPath)

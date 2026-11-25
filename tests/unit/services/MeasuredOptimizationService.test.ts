@@ -1,6 +1,35 @@
 import { describe, expect, it } from 'vitest'
 import { resolve } from 'node:path'
-import { buildMeasuredCandidateArgs, verifyQsvQualityMode, verifySampleFrameAlignment, type SampleTimingEvidence } from '@main/services/MeasuredOptimizationService'
+import { buildMeasuredCandidateArgs, findReusableMeasuredSample, verifyQsvQualityMode, verifySampleFrameAlignment, type SampleTimingEvidence } from '@main/services/MeasuredOptimizationService'
+
+describe('findReusableMeasuredSample', () => {
+  const candidate = { encoder: 'hevc_qsv', preset: 'medium', quality: 24 }
+  const sample = {
+    encoder: candidate.encoder,
+    preset: candidate.preset,
+    quality: candidate.quality,
+    sampleIndex: 0,
+    outputBytes: 100,
+    sampledDurationSeconds: 2,
+    encodingDurationMs: 10,
+    vmafScores: [95],
+    cambiScores: [0.1],
+    sourceSelfVmaf: 100,
+    sourceCambiMean: 0.1,
+    samplePath: 'candidate.mkv',
+  }
+
+  it('reuses successful evidence while rejecting screening-only evidence for remeasurement', () => {
+    const screeningOnly = { ...sample, screeningOnly: true }
+    expect(findReusableMeasuredSample([screeningOnly], candidate, 0)).toBeUndefined()
+    expect(findReusableMeasuredSample([screeningOnly, sample], candidate, 0)).toBe(sample)
+  })
+
+  it('does not reuse evidence from a different candidate or sample position', () => {
+    expect(findReusableMeasuredSample([sample], candidate, 1)).toBeUndefined()
+    expect(findReusableMeasuredSample([sample], { ...candidate, quality: 26 }, 0)).toBeUndefined()
+  })
+})
 
 describe('buildMeasuredCandidateArgs', () => {
   it('seeks into the original source and trims before hardware filters', () => {
