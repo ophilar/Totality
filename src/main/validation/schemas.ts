@@ -574,6 +574,7 @@ export const PreflightShowTranscodeSchema = z.tuple([
     representativeMediaItemId: z.number().int().positive().optional(),
     representativeMediaItemIds: z.record(z.string().min(1), z.number().int().positive()).optional(),
     selectedMediaItemIds: z.array(z.number().int().positive()).min(1).optional(),
+    remeasure: z.boolean().optional(),
     seriesTitle: z.string().min(1).optional(),
     seriesIdentityKey: z.string().min(1).optional(),
     sourceId: z.string().min(1),

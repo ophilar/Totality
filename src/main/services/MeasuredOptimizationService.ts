@@ -393,6 +393,7 @@ export class MeasuredOptimizationService {
         const control = await this.measureFrameMetrics(binary, request.inputPath, request.inputPath, sourceControlLogPath, source.frames, window, request.signal, undefined, start)
         sourceSelfVmafs.push(control.vmafScores.reduce((sum, score) => sum + score, 0) / control.vmafScores.length)
         sourceCambiMeans.push(control.cambiScores.reduce((sum, score) => sum + score, 0) / control.cambiScores.length)
+        getLoggingService().debug('[MeasuredOptimization]', 'Source sample control', { sampleIndex: index, window, source: sampleTimingSummary(source), reference: sampleTimingSummary(reference), selfVmaf: sourceSelfVmafs[index], cambiMean: sourceCambiMeans[index] })
         await fs.unlink(sourceControlLogPath)
       }
       if (request.sourcePreparation) {
@@ -460,6 +461,7 @@ export class MeasuredOptimizationService {
             if (!screeningOnly) await request.onProgress?.(`Scoring sample ${index + 1} of ${starts.length} with VMAF and CAMBI`)
             const scoringStartedAt = performance.now()
             const { vmafScores, cambiScores } = metrics ?? await this.measureFrameMetrics(binary, outputPath, request.inputPath, logPath, referenceSamples[index].frames, { startSeconds: starts[index], durationSeconds: length }, request.signal, undefined, undefined, request.referenceFilter, request.referenceInputArgs)
+            getLoggingService().debug('[MeasuredOptimization]', 'Candidate sample evidence', { encoder: candidate.encoder, preset: candidate.preset, quality: candidate.quality, sampleIndex: index, sourcePath: request.inputPath, samplePath: outputPath, startSeconds: starts[index], durationSeconds: length, reference: sampleTimingSummary(referenceSamples[index]), output: sampleTimingSummary(outputSample), sourceSelfVmaf: sourceSelfVmafs[index], scoredFrames: vmafScores.length, vmafFirst: vmafScores.slice(0, 5), vmafLast: vmafScores.slice(-5), referenceFilter: request.referenceFilter, referenceInputArgs: request.referenceInputArgs, ffmpegArgs: args })
             getLoggingService().info('[MeasuredOptimization]', `stage=scoring encoder=${candidate.encoder} preset=${candidate.preset} quality=${candidate.quality} sample=${index} durationMs=${Math.round(performance.now() - scoringStartedAt)}`)
             sample = {
               encoder: candidate.encoder,

@@ -229,6 +229,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
   const [busy, setBusy] = useState(false)
   const [optimizationDiscovery, setOptimizationDiscovery] = useState<ShowOptimizationDiscovery | null>(null)
   const automaticCandidateDiscoveryStarted = useRef(false)
+  const remeasureOnPreview = useRef(false)
   const [selectedDiscoveryGroups, setSelectedDiscoveryGroups] = useState<string[]>([])
   const [representativeMediaItemIds, setRepresentativeMediaItemIds] = useState<Record<string, number>>({})
   const [includeOtherOperationItems, setIncludeOtherOperationItems] = useState(false)
@@ -642,9 +643,11 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
         representativeMediaItemId,
         representativeMediaItemIds,
         selectedMediaItemIds,
+        remeasure: remeasureOnPreview.current,
         options: getCleanOptions(optionOverrides)
       })
       if (started.requestId !== requestId) throw new Error('The background preflight returned a different request identity')
+      remeasureOnPreview.current = false
       activePreflightTaskId.current = started.taskId
       preflight = await new Promise<ShowTranscodePreflight>((resolve, reject) => {
         let settled = false
@@ -697,7 +700,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
     }
   }
 
-  const handleDiscoverCandidates = async () => {
+  const handleDiscoverCandidates = async (remeasure = false) => {
     setBusy(true)
     setMessage('')
     setPreflightProgress(null)
@@ -714,6 +717,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
         options: getCleanOptions({}),
       })
       setOptimizationDiscovery(result)
+      remeasureOnPreview.current = remeasure
       setSelectedDiscoveryGroups(result.groups.map(group => group.id))
       setIncludeOtherOperationItems(false)
       setRepresentativeMediaItemIds(Object.fromEntries(result.groups.map(group => [group.id, group.representativeMediaItemId])))
@@ -1011,7 +1015,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
       status={missingSettings.length ? describeMissingOptimizationSettings(missingSettings) : undefined}
       primaryAction={{
         label: busy ? <><RefreshCw className="h-4 w-4 animate-spin" />Finding candidates…</> : <><Sparkles className="h-4 w-4" />Find candidates</>,
-        onClick: () => void handleDiscoverCandidates(),
+        onClick: () => void handleDiscoverCandidates(true),
         disabled: busy || targetProfilesLoading || missingSettings.length > 0,
       }}
     /> : mode === 'candidates' ? <OptimizationDialogFooter

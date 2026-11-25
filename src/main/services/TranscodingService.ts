@@ -137,6 +137,7 @@ export interface ShowTranscodeRequest {
   representativeMediaItemId?: number
   representativeMediaItemIds?: Record<string, number>
   selectedMediaItemIds?: number[]
+  remeasure?: boolean
   seriesTitle?: string
   seriesIdentityKey?: string
   sourceId: string
@@ -1018,6 +1019,7 @@ export class TranscodingService {
                 durationSeconds: APP_CONFIG.transcoding.sampleDurationSeconds,
               },
               sampleQualityDomains: APP_CONFIG.transcoding.sampleQualityDomains,
+              ...(request.remeasure ? { remeasurement: preflightId } : {}),
             })).digest('hex')
           : undefined
         const sampleDirectory = measurementCacheKey

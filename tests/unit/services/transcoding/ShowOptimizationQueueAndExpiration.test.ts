@@ -219,6 +219,17 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     }]).success).toBe(true)
   })
 
+  it('accepts a remeasurement request for a newly discovered candidate set', () => {
+    expect(PreflightShowTranscodeSchema.safeParse([{
+      requestId: 'remeasure-candidates',
+      seasonNumber: 1,
+      selectedMediaItemIds: [123],
+      remeasure: true,
+      sourceId: 'src1',
+      options: { outputMode: 'copy' },
+    }]).success).toBe(true)
+  })
+
   it('queues authorized episodes in sequence when preflight is valid', async () => {
     const transcodingService = getTranscodingService()
     const preflightId = 'valid_preflight_1'
