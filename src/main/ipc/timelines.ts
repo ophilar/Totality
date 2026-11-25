@@ -15,6 +15,7 @@ import { RemoteRegistryRecipeProvider } from '../services/timelines/RemoteRegist
 import { TimelineRecipeProviderFactory } from '../services/timelines/TimelineRecipeProviderFactory'
 import { TimelineResolutionEngine, type ResolvedTimelineResult } from '../services/timelines/TimelineResolutionEngine'
 import { PlexPlaylistCleanupError, PlexPlaylistSyncService } from '../services/timelines/PlexPlaylistSyncService'
+import { JellyfinEmbyTimelinePlaylistPublisher } from '../services/timelines/JellyfinEmbyTimelinePlaylistPublisher'
 import { getErrorMessage } from '../services/utils/errorUtils'
 import type { ITimelineRecipeProvider } from '../services/timelines/ITimelineRecipeProvider'
 import { operationRequestRegistry } from './utils/OperationRequestRegistry'
@@ -149,11 +150,16 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
       if (resolved.timeline.id !== input.recipeId || resolved.sourceId !== input.sourceId) throw new Error('The reviewed timeline does not match the selected guide and source.')
       if (resolved.timeline.refreshError && !input.allowStale) throw new Error('Explicit approval is required to publish a stale timeline snapshot.')
       if (resolved.items.some(item => item.status === 'ambiguous')) throw new Error('Resolve ambiguous timeline matches before publishing.')
-      const providerItemIds = resolved.items.flatMap(item => item.matchedMediaItem ? [item.matchedMediaItem.providerItemId] : [])
-      const playlistId = await source.createPlaylist(input.playlistTitle, providerItemIds)
-      const items = await source.getPlaylistItems(playlistId)
-      if (items.length !== providerItemIds.length || items.some((item, index) => item.providerItemId !== providerItemIds[index])) throw new Error(`${source.providerType} playlist order verification failed`)
-      return { sourceId: input.sourceId, title: input.playlistTitle, playlistId, matchedItems: providerItemIds.length }
+      const operation = operationRequestRegistry.register(event.sender, requestId, { kind: 'plex-playlist', label: 'Publish timeline playlist', context: input.playlistTitle })
+      try {
+        const publisher = new JellyfinEmbyTimelinePlaylistPublisher(source)
+        const result = await publisher.publish({ sourceId: input.sourceId, title: input.playlistTitle, items: resolved.items, existingPlaylistId: input.playlistRatingKey, signal: operation.signal, onCommitBeginning: operation.beginCommit, onPhase: phase => operation.update({ phase }) })
+        operation.complete('completed', `Published ${result.matchedItems} items to ${source.providerType}.`, result)
+        return result
+      } catch (error) {
+        operation.complete('failed', getErrorMessage(error))
+        throw error
+      } finally { operation.dispose() }
     }
   )
   createValidatedIpcHandlerWithEvent(
