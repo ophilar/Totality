@@ -2284,6 +2284,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
   }
 
   async replacePlaylistItems(playlistId: string, providerItemIds: readonly string[], signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw new Error('Playlist replacement was cancelled.')
     const current = await this.getPlaylistItems(playlistId)
     if (current.length > 0) {
       await fetchResponse(`${this.serverUrl}/Playlists/${encodeURIComponent(playlistId)}/Items`, {
