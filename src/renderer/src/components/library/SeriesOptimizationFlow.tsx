@@ -677,6 +677,32 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
         }).catch(reject)
       })
       logOptimizationDiagnostic('TVOptimizationUI', 'info', 'preflight.returned', { requestId, scope: episode ? 'episode' : seasonNumber === undefined ? 'series' : 'season', mediaItemId: episode?.id, stage: 'review.saved', durationMs: Date.now() - requestedAt, preflightId: preflight.preflightId, batchId: preflight.batchId, episodeCount: preflight.episodeCount, compatible: preflight.episodes.filter(item => item.compatible).length, savingsBytes: preflight.estimatedSavingsBytes, savingsCoverage: preflight.savingsCoverage })
+      logOptimizationDiagnostic('TVOptimizationUI', 'info', 'review.details', {
+        preflightId: preflight.preflightId,
+        batchId: preflight.batchId,
+        compatible: preflight.compatible,
+        measurementVersion: preflight.measurementVersion,
+        capabilityFingerprint: preflight.capabilityFingerprint,
+        episodes: preflight.episodes.map(item => ({
+          mediaItemId: item.mediaItemId,
+          label: item.label,
+          compatible: item.compatible,
+          decisionStatus: item.decisionStatus,
+          reason: item.reason,
+          operations: item.operations,
+          evidenceStatus: item.evidenceStatus,
+          confidence: item.confidence,
+          savingsCoverage: item.savingsCoverage,
+          estimatedSavingsBytes: item.estimatedSavingsBytes,
+          savingsBasis: item.savingsBasis,
+          samplingRole: item.samplingRole,
+          samplingGroupKey: item.samplingGroupKey,
+          sampleRepresentativeMediaItemId: item.sampleRepresentativeMediaItemId,
+          sourceTier: item.sourceTier,
+          targetCompatibility: item.targetCompatibility,
+          measuredParameters: item.measuredParameters,
+        })),
+      })
       if (!backgroundPreflight.current) replaceReview(preflight, getCleanOptions(optionOverrides))
       return preflight
     } catch (error) {
