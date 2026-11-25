@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockFetchJSON = vi.hoisted(() => vi.fn())
 const mockFetchWithTimeout = vi.hoisted(() => vi.fn())
+const mockFetchResponse = vi.hoisted(() => vi.fn())
 const mockGetMediaItems = vi.hoisted(() => vi.fn((): Array<{ id: number; plex_id: string }> => []))
 const mockDeleteMediaItem = vi.hoisted(() => vi.fn())
 const mockCountMediaItems = vi.hoisted(() => vi.fn(() => 0))
@@ -11,6 +12,7 @@ const mockUpdateSourceScanTime = vi.hoisted(() => vi.fn())
 vi.mock('../../src/main/services/utils/httpClient', () => ({
   fetchJSON: mockFetchJSON,
   fetchWithTimeout: mockFetchWithTimeout,
+  fetchResponse: mockFetchResponse,
   buildUrl: (base: string, params?: Record<string, unknown>) => {
     if (!params) return base
     const qs = Object.entries(params)
@@ -104,7 +106,34 @@ describe('JellyfinEmbyBase (via JellyfinProvider)', () => {
     vi.clearAllMocks()
     mockGetMediaItems.mockReset().mockReturnValue([])
     mockCountMediaItems.mockReset().mockReturnValue(0)
+    mockFetchResponse.mockReset().mockResolvedValue(new Response(null, { status: 204 }))
     provider = new JellyfinProvider(makeConfig())
+  })
+
+  describe('playlist publication', () => {
+    it('creates a playlist with ordered provider item ids', async () => {
+      mockFetchJSON.mockResolvedValueOnce({ Id: 'playlist-1' })
+      await expect(provider.createPlaylist('Timeline', ['item-1', 'item-2'])).resolves.toBe('playlist-1')
+      expect(mockFetchJSON).toHaveBeenCalledWith(
+        'http://localhost:8096/Playlists?Name=Timeline&MediaType=Video&Ids=item-1%2Citem-2',
+        expect.objectContaining({ method: 'POST' })
+      )
+    })
+
+    it('replaces existing items and verifies the caller controls readback', async () => {
+      mockFetchJSON.mockResolvedValueOnce({ Items: [{ Id: 'old-1' }, { Id: 'old-2' }] })
+      await provider.replacePlaylistItems('playlist-1', ['new-1', 'new-2'])
+      expect(mockFetchResponse).toHaveBeenNthCalledWith(1, expect.stringContaining('/Playlists/playlist-1/Items'), expect.objectContaining({ method: 'DELETE' }))
+      expect(mockFetchResponse).toHaveBeenNthCalledWith(2, expect.stringContaining('/Playlists/playlist-1/Items'), expect.objectContaining({ method: 'POST' }))
+    })
+
+    it('stops replacement before mutation when cancelled', async () => {
+      const controller = new AbortController()
+      controller.abort()
+      await expect(provider.replacePlaylistItems('playlist-1', ['new-1'], controller.signal)).rejects.toThrow()
+      expect(mockFetchJSON).not.toHaveBeenCalled()
+      expect(mockFetchResponse).not.toHaveBeenCalled()
+    })
   })
 
   describe('scan-safety reconciliation', () => {
