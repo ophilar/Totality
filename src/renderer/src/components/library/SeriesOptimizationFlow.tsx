@@ -232,7 +232,6 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
   const remeasureOnPreview = useRef(false)
   const [selectedDiscoveryGroups, setSelectedDiscoveryGroups] = useState<string[]>([])
   const [representativeMediaItemIds, setRepresentativeMediaItemIds] = useState<Record<string, number>>({})
-  const remeasureOnPreview = useRef(false)
   const [includeOtherOperationItems, setIncludeOtherOperationItems] = useState(false)
   const [preparationStartedAt, setPreparationStartedAt] = useState<number>()
   const [preparationElapsedSeconds, setPreparationElapsedSeconds] = useState(0)
