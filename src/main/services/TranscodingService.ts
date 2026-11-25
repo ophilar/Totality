@@ -2636,7 +2636,7 @@ export class TranscodingService {
     const measuredCandidates = [...previouslyMeasured]
     let measuredSamples = [...previouslyMeasuredSamples]
     let candidateSearchRounds = 0
-    const maximumCandidates = new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.preset}`)).size * MAX_MEASURED_CANDIDATES_PER_PRESET
+    const maximumCandidates = new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`)).size * MAX_MEASURED_CANDIDATES_PER_PRESET
     const candidateDomain = [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}`))].map(key => {
       const [encoder, gpuId] = key.split('/')
       const candidates = ladder.filter(candidate => candidate.encoder === encoder && (candidate.gpuId ?? 'software') === gpuId)
@@ -2647,7 +2647,7 @@ export class TranscodingService {
       qualities: [...new Set(candidates.map(candidate => candidate.quality))].sort((left, right) => left - right),
       candidateCount: candidates.length,
       }
-    }))
+    })
     getLoggingService().info('[TVOptimization]', 'Measured candidate search started', {
       event: 'candidate-search.started',
       qualityProfile: options.qualityProfile,
