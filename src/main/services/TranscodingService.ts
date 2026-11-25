@@ -2755,6 +2755,7 @@ export class TranscodingService {
             sourcePath: filePath,
             qualityProfile: options.qualityProfile,
             encoder: candidate.encoder,
+            gpuId: candidate.gpuId,
             preset: candidate.preset,
             quality: candidate.quality,
             outputBytes: candidate.outputBytes,
