@@ -34,7 +34,14 @@ describe('encoder pixel depth', () => {
       gpuDeviceSelector,
     }, source)
 
-    expect(args).toContain('vpp_qsv=format=nv12')
-    expect(args).not.toContain('vpp_qsv=format=p010le')
+    if (process.platform === 'win32') {
+      expect(args).toContain('hwmap=derive_device=qsv,format=qsv')
+      expect(args).toContain('-hwaccel')
+      expect(args).toContain('d3d11va')
+      expect(args).toContain('d3d11')
+    } else {
+      expect(args).toContain('vpp_qsv=format=nv12')
+      expect(args).not.toContain('vpp_qsv=format=p010le')
+    }
   })
 })

@@ -17,6 +17,7 @@ export class IntelCommandBuilder implements ITranscodeCommandBuilder {
     const codec = options.targetCodec === 'av1' ? 'av1_qsv' : 'hevc_qsv'
     const quality = (options.crf ?? APP_CONFIG.transcoding.defaultIntelQuality).toString()
     const surfaceFormat = bitDepth === 10 ? 'p010le' : 'nv12'
+    const windowsHardwareDecode = process.platform === 'win32'
 
     const args: string[] = [
       '-y',
@@ -24,10 +25,10 @@ export class IntelCommandBuilder implements ITranscodeCommandBuilder {
         ? `qsv=selected:hw,child_device=${options.gpuDeviceSelector?.kind === 'directx' ? options.gpuDeviceSelector.index : ''},child_device_type=d3d11va`
         : `qsv=selected:hw,child_device=${options.gpuDeviceSelector?.kind === 'drm' ? options.gpuDeviceSelector.path : ''}`,
       '-filter_hw_device', 'selected',
-      '-hwaccel', 'qsv', '-hwaccel_output_format', 'qsv', '-hwaccel_device', 'selected',
+      ...(windowsHardwareDecode ? ['-hwaccel', 'd3d11va', '-hwaccel_output_format', 'd3d11'] : ['-hwaccel', 'qsv', '-hwaccel_output_format', 'qsv', '-hwaccel_device', 'selected']),
       '-i', input,
       '-fps_mode', 'passthrough',
-      '-vf', `vpp_qsv=format=${surfaceFormat}`,
+      '-vf', windowsHardwareDecode ? 'hwmap=derive_device=qsv,format=qsv' : `vpp_qsv=format=${surfaceFormat}`,
       '-c:v', codec,
       '-preset', options.preset || APP_CONFIG.transcoding.defaultIntelPreset,
       '-global_quality', quality,
