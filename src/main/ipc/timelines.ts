@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { getDatabase } from '../database/getDatabase'
 import { getSourceManager } from '../services/SourceManager'
 import { PlexProvider } from '../providers/plex/PlexProvider'
+import { JellyfinEmbyBase } from '../providers/jellyfin-emby/JellyfinEmbyBase'
 import { LocalTimelineRecipeProvider } from '../services/timelines/LocalTimelineRecipeProvider'
 import { TimelineParserPluginProvider } from '../services/timelines/TimelineParserPluginProvider'
 import { TMDBRecipeProvider } from '../services/timelines/TMDBRecipeProvider'
@@ -123,8 +124,36 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
   createValidatedIpcHandlerWithEvent(
     IPC_CHANNELS.timelinesPublishPlaylist,
     z.tuple([z.object({ sourceId: z.string().min(1), recipeId: z.string().min(1), playlistTitle: z.string().min(1), snapshotId: z.string().min(1), playlistRatingKey: z.string().optional(), allowStale: z.boolean().optional() }), z.string().min(1).max(100)]),
-    async (_event, input) => {
-      throw new Error(`Source '${input.sourceId}' does not yet expose the provider-neutral publish operation.`)
+    async (event, input, requestId) => {
+      const source = getSourceManager().getProvider(input.sourceId)
+      if (source instanceof PlexProvider) {
+        const server = source.getSelectedServer()
+        if (!server?.uri || !server.accessToken || !server.machineIdentifier) throw new Error('The selected Plex server is missing connection metadata.')
+        const operation = operationRequestRegistry.register(event.sender, requestId, { kind: 'plex-playlist', label: 'Publish timeline playlist', context: input.playlistTitle })
+        try {
+          const raw = getDatabase().getSetting(snapshotKey(input.snapshotId))
+          if (!raw) throw new Error('The reviewed timeline snapshot no longer exists; reopen the guide.')
+          const resolved = JSON.parse(raw) as ResolvedTimelineResult
+          if (resolved.timeline.id !== input.recipeId || resolved.sourceId !== input.sourceId) throw new Error('The reviewed timeline does not match the selected guide and source.')
+          if (resolved.timeline.refreshError && !input.allowStale) throw new Error('Explicit approval is required to publish a stale timeline snapshot.')
+          if (resolved.items.some(item => item.status === 'ambiguous')) throw new Error('Resolve ambiguous timeline matches before publishing.')
+          const result = await playlistSync.syncPlaylist({ serverUri: server.uri, accessToken: server.accessToken, machineIdentifier: server.machineIdentifier, playlistTitle: input.playlistTitle, items: resolved.items, sourceId: input.sourceId, playlistRatingKey: input.playlistRatingKey, signal: operation.signal, onCommitBeginning: operation.beginCommit, onPhase: phase => operation.update({ phase }) })
+          operation.complete('completed', `Published ${result.matchedItemsSynced} items to Plex.`, result)
+          return result
+        } finally { operation.dispose() }
+      }
+      if (!(source instanceof JellyfinEmbyBase)) throw new Error(`Source '${input.sourceId}' does not support playlist publication.`)
+      const raw = getDatabase().getSetting(snapshotKey(input.snapshotId))
+      if (!raw) throw new Error('The reviewed timeline snapshot no longer exists; reopen the guide.')
+      const resolved = JSON.parse(raw) as ResolvedTimelineResult
+      if (resolved.timeline.id !== input.recipeId || resolved.sourceId !== input.sourceId) throw new Error('The reviewed timeline does not match the selected guide and source.')
+      if (resolved.timeline.refreshError && !input.allowStale) throw new Error('Explicit approval is required to publish a stale timeline snapshot.')
+      if (resolved.items.some(item => item.status === 'ambiguous')) throw new Error('Resolve ambiguous timeline matches before publishing.')
+      const providerItemIds = resolved.items.flatMap(item => item.matchedMediaItem ? [item.matchedMediaItem.providerItemId] : [])
+      const playlistId = await source.createPlaylist(input.playlistTitle, providerItemIds)
+      const items = await source.getPlaylistItems(playlistId)
+      if (items.length !== providerItemIds.length || items.some((item, index) => item.providerItemId !== providerItemIds[index])) throw new Error(`${source.providerType} playlist order verification failed`)
+      return { sourceId: input.sourceId, title: input.playlistTitle, playlistId, matchedItems: providerItemIds.length }
     }
   )
   createValidatedIpcHandlerWithEvent(
