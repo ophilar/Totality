@@ -8,6 +8,9 @@ export interface ResolvedTimelineItem extends TimelineItem {
   reason?: string
   matchedMediaItem?: {
     id: number
+    /** Provider-qualified library identity used by publication adapters. */
+    providerItemId: string
+    /** @deprecated retained for Plex playlist compatibility. */
     plexId: string
     sourceId: string
     sourceType: string
@@ -96,6 +99,7 @@ export class TimelineResolutionEngine {
           ? undefined
           : {
               id: match.id,
+              providerItemId: match.plex_id,
               plexId: match.plex_id,
               sourceId: match.source_id ?? sourceId!,
               sourceType: match.source_type!,

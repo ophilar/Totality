@@ -109,6 +109,24 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
     if (!server?.uri || !server.accessToken) throw new Error(`Plex source '${id}' has no selected server connection.`)
     return playlistSync.getExistingPlaylists(server.uri, server.accessToken)
   })
+  createValidatedIpcHandler(IPC_CHANNELS.timelinesGetPlaylists, z.string().min(1), async id => {
+    const source = getSourceManager().getProvider(id)
+    if (source instanceof PlexProvider) {
+      const server = source.getSelectedServer()
+      if (!server?.uri || !server.accessToken) throw new Error(`Plex source '${id}' has no selected server connection.`)
+      return playlistSync.getExistingPlaylists(server.uri, server.accessToken)
+    }
+    const playlistProvider = source as unknown as { listPlaylists?: () => Promise<unknown> }
+    if (!playlistProvider.listPlaylists) throw new Error(`Source '${id}' does not support playlist publication.`)
+    return playlistProvider.listPlaylists()
+  })
+  createValidatedIpcHandlerWithEvent(
+    IPC_CHANNELS.timelinesPublishPlaylist,
+    z.tuple([z.object({ sourceId: z.string().min(1), recipeId: z.string().min(1), playlistTitle: z.string().min(1), snapshotId: z.string().min(1), playlistRatingKey: z.string().optional(), allowStale: z.boolean().optional() }), z.string().min(1).max(100)]),
+    async (_event, input) => {
+      throw new Error(`Source '${input.sourceId}' does not yet expose the provider-neutral publish operation.`)
+    }
+  )
   createValidatedIpcHandlerWithEvent(
     TIMELINE_CHANNELS.timelinesSyncPlexPlaylist,
     z.tuple([z.object({ sourceId: z.string().min(1), recipeId: z.string().min(1), playlistTitle: z.string().min(1), snapshotId: z.string().min(1), playlistRatingKey: z.string().optional(), allowStale: z.boolean().optional() }), z.string().min(1).max(100)]),
@@ -129,7 +147,7 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
       const match = item.matchedMediaItem
       if (!match) continue
       const current = getDatabase().getMediaItemById(match.id)
-      if (!current || current.source_id !== input.sourceId || current.source_type !== 'plex' || current.plex_id !== match.plexId) {
+      if (!current || current.source_id !== input.sourceId || current.source_type !== match.sourceType || current.plex_id !== match.providerItemId) {
         throw new Error('A timeline match changed after review; resolve the guide again before syncing.')
       }
     }
