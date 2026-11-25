@@ -2637,11 +2637,16 @@ export class TranscodingService {
     let measuredSamples = [...previouslyMeasuredSamples]
     let candidateSearchRounds = 0
     const maximumCandidates = new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.preset}`)).size * MAX_MEASURED_CANDIDATES_PER_PRESET
-    const candidateDomain = [...new Set(ladder.map(candidate => candidate.encoder))].map(encoder => ({
+    const candidateDomain = [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}`))].map(key => {
+      const [encoder, gpuId] = key.split('/')
+      const candidates = ladder.filter(candidate => candidate.encoder === encoder && (candidate.gpuId ?? 'software') === gpuId)
+      return {
       encoder,
-      presets: [...new Set(ladder.filter(candidate => candidate.encoder === encoder).map(candidate => candidate.preset))],
-      qualities: [...new Set(ladder.filter(candidate => candidate.encoder === encoder).map(candidate => candidate.quality))].sort((left, right) => left - right),
-      candidateCount: ladder.filter(candidate => candidate.encoder === encoder).length,
+      gpuId: gpuId === 'software' ? undefined : gpuId,
+      presets: [...new Set(candidates.map(candidate => candidate.preset))],
+      qualities: [...new Set(candidates.map(candidate => candidate.quality))].sort((left, right) => left - right),
+      candidateCount: candidates.length,
+      }
     }))
     getLoggingService().info('[TVOptimization]', 'Measured candidate search started', {
       event: 'candidate-search.started',
@@ -2776,8 +2781,8 @@ export class TranscodingService {
         if (measurementComplete) break
         if (!nextCandidateSearch(ladder, measuredCandidates, options.qualityProfile).length) {
           measurementComplete = true
-          const budgetReached = [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.preset}`))].some(key =>
-            measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.preset}` === key).length >= MAX_MEASURED_CANDIDATES_PER_PRESET)
+          const budgetReached = [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`))].some(key =>
+            measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}` === key).length >= MAX_MEASURED_CANDIDATES_PER_PRESET)
           for (const candidate of measuredCandidates) {
             candidate.searchSummary = { measuredCount: measuredCandidates.length, maximumCandidates, budgetReached }
           }
@@ -2788,8 +2793,8 @@ export class TranscodingService {
       signal?.throwIfAborted()
       if (measurementComplete && previouslyMeasured.length === measuredCandidates.length) await onMeasuredCandidates?.(measuredCandidates, true)
       const selected = selectMeasuredCandidate(options.qualityProfile, measuredCandidates, maximumOutputBytesPerSecond)
-      const budgetReached = [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.preset}`))].some(key =>
-        measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.preset}` === key).length >= MAX_MEASURED_CANDIDATES_PER_PRESET)
+      const budgetReached = [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`))].some(key =>
+        measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}` === key).length >= MAX_MEASURED_CANDIDATES_PER_PRESET)
       selected.searchSummary = { measuredCount: measuredCandidates.length, maximumCandidates, budgetReached }
       await onProgress?.(budgetReached
         ? `Search budget reached: recommending the best of ${measuredCandidates.length} measured candidates`
@@ -2805,7 +2810,8 @@ export class TranscodingService {
         measuredCandidateCount: measuredCandidates.length,
         budgetReached,
         maximumCandidates,
-        selectedCandidate: { encoder: selected.encoder, preset: selected.preset, quality: selected.quality },
+        selectedCandidate: { encoder: selected.encoder, gpuId: selected.gpuId, preset: selected.preset, quality: selected.quality, outputBytes: selected.outputBytes, encodingDurationMs: selected.encodingDurationMs, vmafMean: selected.vmafMean, vmafP5: selected.vmafP5, cambiMean: selected.cambiMean },
+        candidates: measuredCandidates.map(candidate => ({ encoder: candidate.encoder, gpuId: candidate.gpuId, preset: candidate.preset, quality: candidate.quality, outputBytes: candidate.outputBytes, encodingDurationMs: candidate.encodingDurationMs, vmafMean: candidate.vmafMean, vmafP5: candidate.vmafP5, cambiMean: candidate.cambiMean, qualityRejectedReason: candidate.qualityRejectedReason, playbackBlockers: candidate.playbackBlockers })),
       })
       if (!onMeasuredCandidates) for (const candidate of measuredCandidates) if (candidate !== selected) for (const sample of candidate.samplePaths!) await fs.unlink(sample)
       return { encoder: selected.encoder, crf: selected.quality, preset: selected.preset, measuredCandidate: selected }

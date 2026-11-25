@@ -180,6 +180,9 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
   }) : undefined
   const hardwareAvailable = encoderAvailability?.selectedHardware ?? false
   const softwareAvailable = encoderAvailability?.software ?? false
+  const hardwareGpus = targetCodec ? (capabilities?.gpus ?? []).filter(gpu =>
+    availableOptimizationEncoders(targetCodec, { gpus: [gpu], deviceEncoders: capabilities?.deviceEncoders ?? {}, selectedGpuId: gpu.id }).selectedHardware,
+  ) : []
   const targetProfile = targetProfiles.find(profile => profile.id === targetProfileId)
   const supportedTargetCodecs = capabilities ? supportedOptimizationCodecs({
     gpus: capabilities.gpus,
@@ -226,7 +229,8 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
       Boolean(targetCodec && availableOptimizationEncoders(targetCodec, {
         gpus: [gpu], deviceEncoders: capabilities?.deviceEncoders ?? {}, selectedGpuId: gpu.id,
       }).selectedHardware)
-    const selectedHardware = capabilities?.gpus.find(gpu => gpu.vendor === 'Intel' && supportsSelectedCodec(gpu))
+    const selectedHardware = capabilities?.gpus.find(gpu => gpu.id === options.gpuId && supportsSelectedCodec(gpu))
+      ?? capabilities?.gpus.find(gpu => gpu.id === capabilities.selectedGpuId && supportsSelectedCodec(gpu))
       ?? capabilities?.gpus.find(supportsSelectedCodec)
     setOptions(prev => ({
       ...prev,
@@ -655,7 +659,7 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
               onChange={value => updateConfiguration({ targetContainer: value as typeof targetContainer })}
             /> : undefined}
             advancedOptions={activeTab === 'presets' ? <div className="space-y-3">
-              <EncoderPolicySelector value={configuration.encoderPolicy} hardwareAvailable={hardwareAvailable} softwareAvailable={softwareAvailable} onChange={selectEncoderPolicy} disabled={settingsDisabled} />
+              <EncoderPolicySelector value={configuration.encoderPolicy} hardwareAvailable={hardwareAvailable} softwareAvailable={softwareAvailable} hardwareGpus={hardwareGpus} gpuId={options.gpuId ?? ''} onChange={selectEncoderPolicy} onGpuChange={gpuId => setOptions(previous => ({ ...previous, useGpu: true, gpuId }))} disabled={settingsDisabled} />
               <button type="button" onClick={() => void loadEncodingSettings()} disabled={status === 'generating'} className="rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-50">{status === 'generating' ? 'Preparing…' : 'Prepare encoding settings'}</button>
               <AdvancedTab options={optionsForControls} setOptions={updateTranscodeOptions} params={params} availability={availability} />
             </div> : undefined}

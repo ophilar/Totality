@@ -1,15 +1,18 @@
 import { memo } from 'react'
-import type { TranscodeOptions } from './types'
+import type { GpuInfo, TranscodeOptions } from './types'
 
 interface EncoderPolicySelectorProps {
   value: TranscodeOptions['encoderPolicy'] | ''
   hardwareAvailable: boolean
   softwareAvailable: boolean
+  hardwareGpus: readonly GpuInfo[]
+  gpuId: string
+  onGpuChange: (gpuId: string) => void
   onChange: (policy: TranscodeOptions['encoderPolicy'] | undefined) => void
   disabled?: boolean
 }
 
-export const EncoderPolicySelector = memo(function EncoderPolicySelector({ value, hardwareAvailable, softwareAvailable, onChange, disabled = false }: EncoderPolicySelectorProps) {
+export const EncoderPolicySelector = memo(function EncoderPolicySelector({ value, hardwareAvailable, softwareAvailable, hardwareGpus, gpuId, onChange, onGpuChange, disabled = false }: EncoderPolicySelectorProps) {
   return (
     <label className="block space-y-1.5">
       <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Encoder policy</span>
@@ -25,6 +28,17 @@ export const EncoderPolicySelector = memo(function EncoderPolicySelector({ value
         <option value="software" disabled={!softwareAvailable}>Software</option>
         <option value="compare" disabled={!hardwareAvailable || !softwareAvailable}>Compare hardware and software</option>
       </select>
+      {value === 'hardware' && (
+        <select
+          aria-label="Hardware GPU"
+          value={gpuId}
+          onChange={event => onGpuChange(event.target.value)}
+          disabled={disabled || hardwareGpus.length === 0}
+          className="w-full rounded-xl border border-border/40 bg-muted/40 px-3 py-2 text-xs font-bold"
+        >
+          {hardwareGpus.map(gpu => <option key={gpu.id} value={gpu.id}>{gpu.name}</option>)}
+        </select>
+      )}
     </label>
   )
 })

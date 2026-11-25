@@ -882,6 +882,9 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
   // Filter tasks belonging to transcoding
   const vendor = gpus.find(gpu => gpu.id === gpuId)?.vendor
   const hardwareEncoder = vendor && codec ? getHardwareEncoder(vendor, codec) : undefined
+  const hardwareGpus = useMemo(() => codec
+    ? gpus.filter(gpu => availableOptimizationEncoders(codec, { gpus: [gpu], deviceEncoders, selectedGpuId: gpu.id }).selectedHardware)
+    : [], [codec, deviceEncoders, gpus])
   const hardwareAvailable = Boolean(codec && availableOptimizationEncoders(codec, { gpus, deviceEncoders, selectedGpuId: gpuId }).selectedHardware)
   const softwareEncoder = codec ? getOptimizationVideoCodec(codec).softwareEncoder : undefined
   const softwareAvailable = softwareEncoder !== undefined && (deviceEncoders.software ?? []).includes(softwareEncoder)
@@ -1142,7 +1145,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
             </div>
 
             </>}
-            advancedOptions={<EncoderPolicySelector value={encoderPolicy} hardwareAvailable={hardwareAvailable} softwareAvailable={softwareAvailable} disabled={busy} onChange={policy => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'encoder.policy.selected', { encoderPolicy: policy ?? '' }); setEncoderPolicy(policy ?? '') }} />}
+            advancedOptions={<EncoderPolicySelector value={encoderPolicy} hardwareAvailable={hardwareAvailable} softwareAvailable={softwareAvailable} hardwareGpus={hardwareGpus} gpuId={gpuId} disabled={busy} onChange={policy => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'encoder.policy.selected', { encoderPolicy: policy ?? '' }); setEncoderPolicy(policy ?? '') }} onGpuChange={selectedGpuId => { logOptimizationDiagnostic('TVOptimizationUI', 'info', 'encoder.gpu.selected', { gpuId: selectedGpuId, gpuName: gpus.find(gpu => gpu.id === selectedGpuId)?.name }); setGpuId(selectedGpuId) }} />}
             />
 
             <details className="space-y-3 rounded-xl border border-border/40 bg-card/20 p-3">
