@@ -525,7 +525,9 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
     const supportsCodec = (gpu: GpuInfo) => {
       return availableOptimizationEncoders(codec, { gpus: [gpu], deviceEncoders, selectedGpuId: gpu.id }).selectedHardware
     }
-    setGpuId(gpus.find(gpu => gpu.vendor === 'Intel' && supportsCodec(gpu))?.id ?? gpus.find(supportsCodec)?.id ?? '')
+    setGpuId(currentGpuId => currentGpuId && gpus.some(gpu => gpu.id === currentGpuId && supportsCodec(gpu))
+      ? currentGpuId
+      : gpus.find(supportsCodec)?.id ?? '')
   }, [encoderCapabilitiesLoaded, encoderPolicy, codec, deviceEncoders, gpus])
 
   const subtitleList = parseLanguageWhitelist(subtitleWhitelist)
