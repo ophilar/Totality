@@ -23,18 +23,33 @@ export interface EncodingMatrix {
   codecs: Array<{ codec: EncodingCodec; capabilities: boolean[] }>
 }
 
-// Keep the encoder mapping exhaustive. Adding a new target codec must supply
-// explicit vendor support (or undefined), rather than silently picking H.264.
-const HARDWARE_ENCODERS = {
-  NVIDIA: { h264: 'nvenc_h264', hevc: 'nvenc_h265', av1: 'nvenc_av1' },
-  Intel: { h264: 'qsv_h264', hevc: 'qsv_h265', av1: 'qsv_av1' },
-  AMD: { h264: 'h264_amf', hevc: 'hevc_amf', av1: 'av1_amf' },
-  Apple: { h264: 'vt_h264', hevc: 'vt_h265', av1: undefined },
-} satisfies Record<'NVIDIA' | 'Intel' | 'AMD' | 'Apple', Record<EncodingCodec, string | undefined>>
+/** Canonical internal encoder IDs and FFmpeg probe names. */
+export interface EncoderProbeDefinition {
+  ffmpegName: string
+  codec: EncodingCodec
+  vendor?: GpuInfo['vendor']
+  arguments?: readonly string[]
+}
+
+export const ENCODER_PROBES: Readonly<Record<string, EncoderProbeDefinition>> = {
+  nvenc_h264: { ffmpegName: 'h264_nvenc', vendor: 'NVIDIA', codec: 'h264' },
+  nvenc_h265: { ffmpegName: 'hevc_nvenc', vendor: 'NVIDIA', codec: 'hevc' },
+  nvenc_av1: { ffmpegName: 'av1_nvenc', vendor: 'NVIDIA', codec: 'av1' },
+  qsv_h264: { ffmpegName: 'h264_qsv', vendor: 'Intel', codec: 'h264' },
+  qsv_h265: { ffmpegName: 'hevc_qsv', vendor: 'Intel', codec: 'hevc' },
+  qsv_av1: { ffmpegName: 'av1_qsv', vendor: 'Intel', codec: 'av1' },
+  h264_amf: { ffmpegName: 'h264_amf', vendor: 'AMD', codec: 'h264' },
+  hevc_amf: { ffmpegName: 'hevc_amf', vendor: 'AMD', codec: 'hevc' },
+  av1_amf: { ffmpegName: 'av1_amf', vendor: 'AMD', codec: 'av1' },
+  vt_h264: { ffmpegName: 'h264_videotoolbox', vendor: 'Apple', codec: 'h264', arguments: ['-allow_sw', '0'] },
+  vt_h265: { ffmpegName: 'hevc_videotoolbox', vendor: 'Apple', codec: 'hevc', arguments: ['-allow_sw', '0'] },
+  libx264: { ffmpegName: 'libx264', codec: 'h264' },
+  x265: { ffmpegName: 'libx265', codec: 'hevc' },
+  svt_av1: { ffmpegName: 'libsvtav1', codec: 'av1' },
+}
 
 export function getHardwareEncoder(vendor: GpuInfo['vendor'], codec: EncodingCodec): string | undefined {
-  const encoders = HARDWARE_ENCODERS[vendor as keyof typeof HARDWARE_ENCODERS]
-  return encoders?.[codec]
+  return Object.entries(ENCODER_PROBES).find(([, probe]) => probe.vendor === vendor && probe.codec === codec)?.[0]
 }
 
 export function resolveSelectedGpuId(gpus: GpuInfo[], persistedGpuId?: string | null): string | null {

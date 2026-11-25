@@ -41,6 +41,19 @@ describe('optimization audio evidence mapping', () => {
     expect(decision.trackRemoval.removableTrackIndexes).toEqual([])
   })
 
+  it('classifies protected audio from staged track titles', () => {
+    const tracks = mapAudioTracksForOptimization([
+      { index: 0, codec: 'aac', channels: 2, bitrate: 192, title: "Director's Commentary" },
+      { index: 1, codec: 'aac', channels: 2, bitrate: 192, title: 'English Audio Description' },
+      { index: 2, codec: 'aac', channels: 2, bitrate: 192, title: 'Hearing Impaired Track' },
+    ])
+    expect(tracks.map(track => [track.isCommentary, track.isAudioDescription, track.isAccessibility])).toEqual([
+      [true, false, false],
+      [false, true, false],
+      [false, false, true],
+    ])
+  })
+
   it('does not misassign language tags when provider and probe stream inventories differ', () => {
     const changed = [{ ...analyzedTracks[0], codec: 'flac' }, analyzedTracks[1]]
     const reconciliation = reconcileAnalyzedAudioTracks(providerTracks, changed)

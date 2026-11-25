@@ -160,9 +160,9 @@ export function mapAudioTracksForOptimization(
       isDefault: track.isDefault ?? false,
       hasObjectAudio: track.hasObjectAudio ?? false,
       reliableTag: probed !== undefined && language !== undefined,
-      isCommentary: 'isCommentary' in track ? track.isCommentary : undefined,
-      isAudioDescription: 'isAudioDescription' in track ? track.isAudioDescription : undefined,
-      isAccessibility: 'isAccessibility' in track ? track.isAccessibility : undefined,
+      isCommentary: isCommentaryTrack(track),
+      isAudioDescription: isAudioDescriptionTrack(track),
+      isAccessibility: isAccessibilityTrack(track),
     }
   })
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { availableOptimizationEncoders, supportedOptimizationCodecs, supportsMeasuredOptimizationEncoder, unsupportedOptimizationCodecReason } from '@main/services/transcoding/OptimizationEncoderPolicy'
 import { chooseOptimizationVideoCodec } from '@main/services/transcoding/OptimizationCodecPolicy'
 import { buildCandidateLadder } from '@main/services/MeasuredOptimizationPolicy'
+import { ENCODER_PROBES, getHardwareEncoder } from '@main/services/TranscodingCapabilities'
 
 describe('measured optimization encoder eligibility', () => {
   const gpus = [{ id: 'apple', vendor: 'Apple' as const }, { id: 'nvidia', vendor: 'NVIDIA' as const }]
@@ -48,5 +49,25 @@ describe('measured optimization encoder eligibility', () => {
     const supported = supportedOptimizationCodecs({ gpus, deviceEncoders })
     expect(supported).toEqual(['hevc', 'av1'])
     expect(chooseOptimizationVideoCodec('hevc', supported)).toBe('hevc')
+  })
+})
+
+describe('canonical FFmpeg encoder registry', () => {
+  it('has one internal ID and FFmpeg name for every probed encoder', () => {
+    const entries = Object.entries(ENCODER_PROBES)
+    expect(new Set(entries.map(([, definition]) => definition.ffmpegName)).size).toBe(entries.length)
+    const hardware = entries.filter(([, definition]) => definition.vendor)
+    expect(new Set(hardware.map(([, definition]) => `${definition.vendor}:${definition.codec}`)).size).toBe(hardware.length)
+    for (const [encoder, definition] of hardware) {
+      expect(getHardwareEncoder(definition.vendor!, definition.codec)).toBe(encoder)
+    }
+  })
+
+  it('preserves existing optimization encoder IDs and explicit FFmpeg names', () => {
+    expect(ENCODER_PROBES.x265.ffmpegName).toBe('libx265')
+    expect(ENCODER_PROBES.svt_av1.ffmpegName).toBe('libsvtav1')
+    expect(ENCODER_PROBES.nvenc_h265.ffmpegName).toBe('hevc_nvenc')
+    expect(ENCODER_PROBES.qsv_h265.ffmpegName).toBe('hevc_qsv')
+    expect(getHardwareEncoder('Apple', 'av1')).toBeUndefined()
   })
 })
