@@ -30,6 +30,11 @@ describe('TimelineResolutionEngine', () => {
     expect(result.items[0].status).toBe('ambiguous')
   })
 
+  it('fails explicitly when a matched media item has no provider type', async () => {
+    const engine = new TimelineResolutionEngine(() => [media({ source_type: undefined })])
+    await expect(engine.resolveTimeline(timeline, 'source-1')).rejects.toThrow('missing its provider type')
+  })
+
   it('does not resolve availability until a source is selected', async () => {
     const result = await new TimelineResolutionEngine(() => [media()]).resolveTimeline(timeline)
     expect(result.missingCount).toBe(1)

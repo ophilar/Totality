@@ -82,6 +82,7 @@ export class TimelineResolutionEngine {
 
     const append = (item: TimelineItem, candidates: MediaItem[]) => {
       const match = candidates.length === 1 ? candidates[0] : undefined
+      if (match?.id != null && !match.source_type) throw new Error(`Media item ${match.id} is missing its provider type.`)
       items.push({
         ...item,
         order: items.length + 1,
@@ -97,7 +98,7 @@ export class TimelineResolutionEngine {
               id: match.id,
               plexId: match.plex_id,
               sourceId: match.source_id ?? sourceId!,
-              sourceType: match.source_type ?? 'plex',
+              sourceType: match.source_type!,
               title: match.title,
               filePath: match.file_path,
               resolution: match.resolution,
