@@ -178,11 +178,11 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
     deviceEncoders: capabilities?.deviceEncoders ?? {},
     selectedGpuId: selectedGpu?.id,
   }) : undefined
-  const hardwareAvailable = encoderAvailability?.selectedHardware ?? false
   const softwareAvailable = encoderAvailability?.software ?? false
   const hardwareGpus = targetCodec ? (capabilities?.gpus ?? []).filter(gpu =>
     availableOptimizationEncoders(targetCodec, { gpus: [gpu], deviceEncoders: capabilities?.deviceEncoders ?? {}, selectedGpuId: gpu.id }).selectedHardware,
   ) : []
+  const hardwareAvailable = hardwareGpus.length > 0
   const targetProfile = targetProfiles.find(profile => profile.id === targetProfileId)
   const supportedTargetCodecs = capabilities ? supportedOptimizationCodecs({
     gpus: capabilities.gpus,
@@ -231,10 +231,9 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
       }).selectedHardware)
     const selectedHardware = capabilities?.gpus.find(gpu => gpu.id === options.gpuId && supportsSelectedCodec(gpu))
       ?? capabilities?.gpus.find(gpu => gpu.id === capabilities.selectedGpuId && supportsSelectedCodec(gpu))
-      ?? capabilities?.gpus.find(supportsSelectedCodec)
     setOptions(prev => ({
       ...prev,
-      useGpu: encoderPolicy === 'hardware' || (encoderPolicy !== 'software' && Boolean(selectedHardware)),
+      useGpu: encoderPolicy !== 'software' && Boolean(selectedHardware),
       gpuId: encoderPolicy === 'software' ? '' : selectedHardware?.id ?? ''
     }))
   }
@@ -292,7 +291,6 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
         playbackPolicy: 'direct-play',
       })[0] ?? ''
       const selectedGpu = capabilities?.gpus?.find(gpu => gpu.id === capabilities.selectedGpuId && hardwareSupports(gpu, preferredCodec))
-        ?? capabilities?.gpus?.find(gpu => hardwareSupports(gpu, preferredCodec))
       const selectedGpuId = selectedGpu?.id ?? ''
       if (!initialPreflightId) updateConfiguration({ targetCodec: preferredCodec })
 

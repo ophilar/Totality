@@ -527,7 +527,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
     }
     setGpuId(currentGpuId => currentGpuId && gpus.some(gpu => gpu.id === currentGpuId && supportsCodec(gpu))
       ? currentGpuId
-      : gpus.find(supportsCodec)?.id ?? '')
+      : '')
   }, [encoderCapabilitiesLoaded, encoderPolicy, codec, deviceEncoders, gpus])
 
   const subtitleList = parseLanguageWhitelist(subtitleWhitelist)
@@ -885,7 +885,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
   const hardwareGpus = useMemo(() => codec
     ? gpus.filter(gpu => availableOptimizationEncoders(codec, { gpus: [gpu], deviceEncoders, selectedGpuId: gpu.id }).selectedHardware)
     : [], [codec, deviceEncoders, gpus])
-  const hardwareAvailable = Boolean(codec && availableOptimizationEncoders(codec, { gpus, deviceEncoders, selectedGpuId: gpuId }).selectedHardware)
+  const hardwareAvailable = hardwareGpus.length > 0
   const softwareEncoder = codec ? getOptimizationVideoCodec(codec).softwareEncoder : undefined
   const softwareAvailable = softwareEncoder !== undefined && (deviceEncoders.software ?? []).includes(softwareEncoder)
   useEffect(() => {

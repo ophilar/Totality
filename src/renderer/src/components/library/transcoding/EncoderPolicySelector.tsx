@@ -39,6 +39,7 @@ export const EncoderPolicySelector = memo(function EncoderPolicySelector({ value
           disabled={disabled || hardwareGpus.length === 0}
           className="w-full rounded-xl border border-border/40 bg-muted/40 px-3 py-2 text-xs font-bold"
         >
+          <option value="" disabled>Select a verified GPU</option>
           {hardwareGpus.map(gpu => <option key={gpu.id} value={gpu.id}>{gpu.name}</option>)}
         </select>
       )}
