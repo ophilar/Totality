@@ -1071,8 +1071,10 @@ export class TranscodingService {
                   // that snapshot to avoid stale digests after an FFmpeg rewrite.
                   const hashSnapshot = new OperationFileHasher(sha256File, APP_CONFIG.transcoding.measuredSampleCache.maxConcurrentHashReads)
                   const getSampleHash = (samplePath: string) => hashSnapshot.hash(samplePath)
-                  const completedCandidateKeys = new Set(candidates.map(candidate => `${candidate.encoder}/${candidate.preset}/${candidate.quality}`))
-                  const pendingSamples = samples.filter(sample => !completedCandidateKeys.has(`${sample.encoder}/${sample.preset}/${sample.quality}`))
+                  const completedPaths = new Set(candidates.flatMap(candidate => candidate.samplePaths ?? []))
+                  const pendingSamples = samples.filter(sample => !completedPaths.has(sample.samplePath))
+                  const checkpoint = { preflightId, mediaItemId, cacheKey: measurementCacheKey, candidates: candidates.length, pendingSamples: pendingSamples.length, complete }
+                  getLoggingService().debug('[TVOptimization]', 'Hashing measurement checkpoint', checkpoint)
                   const cacheRecord: CachedMeasurement = {
                     version: MEASUREMENT_VERSION,
                     searchVersion: OPTIMIZATION_SEARCH_VERSION,
@@ -1082,10 +1084,12 @@ export class TranscodingService {
                     candidates: candidates.map(({ playbackBlockers: _playbackBlockers, ...candidate }) => candidate),
                     sampleHashes: await Promise.all(candidates.map(candidate => Promise.all((candidate.samplePaths ?? []).map(getSampleHash)))),
                     sourcePreparation,
-                                        partialSamples: pendingSamples,
+                    partialSamples: pendingSamples,
                     partialSampleHashes: await Promise.all(pendingSamples.map(sample => getSampleHash(sample.samplePath))),
                   }
+                  getLoggingService().debug('[TVOptimization]', 'Writing measurement checkpoint', checkpoint)
                   await getDatabase().setSetting(`${MEASUREMENT_SETTING_PREFIX}${measurementCacheKey}`, JSON.stringify(cacheRecord))
+                  getLoggingService().debug('[TVOptimization]', 'Measurement checkpoint saved', checkpoint)
                   cachedMeasurement = cacheRecord
                   measurementCacheStored = true
                 }
@@ -1106,7 +1110,7 @@ export class TranscodingService {
                   false,
                   partialSamples,
                   async sample => {
-                    partialSamples = [...partialSamples.filter(existing => existing.encoder !== sample.encoder || existing.preset !== sample.preset || existing.quality !== sample.quality || existing.sampleIndex !== sample.sampleIndex), sample]
+                    partialSamples = [...partialSamples.filter(existing => existing.samplePath !== sample.samplePath), sample]
                     await persistMeasurement(cachedMeasurement?.candidates ?? [], false, partialSamples)
                   },
                   sourcePreparation,
@@ -2633,6 +2637,9 @@ export class TranscodingService {
     if (hardwareEncoder && !capabilities!.deviceEncoders[encoderGpu!.id]?.includes(hardwareEncoder)) throw new Error(`The selected device does not support ${hardwareEncoder} encoding.`)
     const automaticHardwareCandidates = automaticGpuCandidates?.map(gpu => ({ encoder: getHardwareEncoder(gpu.vendor, options.targetCodec!), gpuId: gpu.id })).filter((candidate): candidate is { encoder: string; gpuId: string } => Boolean(candidate.encoder))
     const ladder = buildCandidateLadder(options.targetCodec, options.encoderPolicy, hardwareEncoder, automaticHardwareCandidates)
+      .map(candidate => encoderGpu && options.encoderPolicy !== 'automatic' && !isMeasuredSoftwareEncoder(candidate.encoder)
+        ? { ...candidate, gpuId: encoderGpu.id }
+        : candidate)
     const measuredCandidates = [...previouslyMeasured]
     let measuredSamples = [...previouslyMeasuredSamples]
     let candidateSearchRounds = 0
@@ -2661,7 +2668,7 @@ export class TranscodingService {
     const isMeasured = (candidate: CandidateEncodingParameters) => measuredCandidates.some(measured => measured.encoder === candidate.encoder && measured.gpuId === candidate.gpuId && measured.preset === candidate.preset && measured.quality === candidate.quality)
     const buildCandidates = (parameters: CandidateEncodingParameters[]) => parameters.filter(candidate => !isMeasured(candidate)).map(candidate => {
       const useGpu = !isMeasuredSoftwareEncoder(candidate.encoder)
-      const candidateGpu = candidate.gpuId ? capabilities?.gpus.find(gpu => gpu.id === candidate.gpuId) : encoderGpu
+      const candidateGpu = candidate.gpuId ? capabilities?.gpus.find(gpu => gpu.id === candidate.gpuId) : undefined
       if (useGpu && !candidateGpu) throw new Error(`Measured candidate ${candidate.encoder} has no verified GPU assignment.`)
       const candidateOptions = {
         ...options,
@@ -2672,7 +2679,7 @@ export class TranscodingService {
         crf: candidate.quality,
         preset: candidate.preset
       }
-      return { ...candidate, outputBytes: 0, sampledDurationSeconds: 0, encodingDurationMs: 0, vmafMean: 0, vmafP5: 0, cambiMean: 0, ffmpegArgs: TranscodeCommandFactory.getBuilder(candidateGpu?.vendor ?? hardwareVendor, candidateOptions).buildFFmpegArgs('<input>', '<output>', candidateOptions, analysis) }
+      return { ...candidate, outputBytes: 0, sampledDurationSeconds: 0, encodingDurationMs: 0, vmafMean: 0, vmafP5: 0, cambiMean: 0, ffmpegArgs: TranscodeCommandFactory.getBuilder(candidateGpu?.vendor, candidateOptions).buildFFmpegArgs('<input>', '<output>', candidateOptions, analysis) }
     })
     const outputDirectory = sampleDirectory ?? path.join(app.getPath('userData'), 'transcoding-samples', randomUUID())
     try {
@@ -2714,7 +2721,7 @@ export class TranscodingService {
           candidateSearchRounds += 1
           const roundStartedAt = performance.now()
           await onProgress?.(`Measuring candidate ${measuredCandidates.length + 1} of at most ${maximumCandidates}: ${candidates[0].encoder}/${candidates[0].preset} q${candidates[0].quality}`)
-          const roundCandidates = candidates.map(({ encoder, preset, quality }) => ({ encoder, preset, quality }))
+          const roundCandidates = candidates.map(({ encoder, gpuId, preset, quality }) => ({ encoder, gpuId, preset, quality }))
           const estimatedCandidateSampleBytes = Math.ceil((plannedBitrate
             ? plannedBitrate / 8 * sampleSeconds
             : (options.maxOutputBytes ?? stat.size) * sampleSeconds / (analysis.durationMs / 1000)) * candidates.length)
@@ -2745,7 +2752,7 @@ export class TranscodingService {
             },
             onCandidateMeasured: async roundCandidates => onMeasuredCandidates?.([...measuredCandidates.slice(0, roundStart), ...roundCandidates], false),
           })
-          measuredCandidates.push(...measured.candidates.map(candidate => ({ ...candidate, gpuId: candidate.gpuId ?? candidates.find(input => input.encoder === candidate.encoder && input.preset === candidate.preset && input.quality === candidate.quality)?.gpuId })))
+          measuredCandidates.push(...measured.candidates)
           signal?.throwIfAborted()
           for (const candidate of measured.candidates) getLoggingService().info('[TVOptimization]', 'Measured candidate gate evidence', {
             event: 'candidate-search.candidate-measured',
@@ -2820,6 +2827,7 @@ export class TranscodingService {
     } catch (error) {
       getLoggingService().warn('[TVOptimization]', 'Measured candidate search failed', {
         event: 'candidate-search.failed',
+        ...searchContext,
         qualityProfile: options.qualityProfile,
         encoderPolicy: options.encoderPolicy,
         targetCodec: options.targetCodec,
@@ -2829,6 +2837,7 @@ export class TranscodingService {
           ? 'cancelled'
           : error instanceof MeasuredQualityError ? error.decisionStatus : 'measurement_failed',
         errorName: error instanceof Error ? error.name : 'UnknownError',
+        errorMessage: getErrorMessage(error),
       })
       if (!onMeasuredCandidates) await fs.rm(outputDirectory, { recursive: true, force: true })
       throw error

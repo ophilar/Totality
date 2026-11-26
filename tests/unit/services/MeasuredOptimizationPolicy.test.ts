@@ -108,6 +108,16 @@ describe('selectMeasuredCandidate', () => {
     expect(next).toEqual([])
   })
 
+  it('retains the NVIDIA device when contradictory scores select an off-ladder midpoint', () => {
+    const device = { encoder: 'nvenc_h265', gpuId: 'nvidia-device', preset: 'p6' }
+    const domain = [18, 24, 30].map(quality => ({ ...device, quality }))
+    const measured = [
+      candidate({ ...device, quality: 18, vmafMean: 93.18, vmafP5: 83.99 }),
+      candidate({ ...device, quality: 24, vmafMean: 92, vmafP5: 84.08 }),
+    ]
+    expect(nextCandidateSearch(domain, measured, 'balanced')).toEqual([{ ...device, quality: 21 }])
+  })
+
   it('automatically searches one representative speed preset but permits explicit comparisons', () => {
     const automatic = buildCandidateLadder('hevc', 'automatic', 'nvenc_h265')
     expect(new Set(automatic.map(item => item.preset)).size).toBe(1)

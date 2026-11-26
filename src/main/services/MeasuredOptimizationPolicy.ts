@@ -6,7 +6,7 @@ import type { MeasurementSourcePreparation } from './MeasuredOptimizationService
 
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
 
-export const MEASUREMENT_VERSION = 16
+export const MEASUREMENT_VERSION = 17
 export const OPTIMIZATION_SEARCH_VERSION = 3
 /** Hard bound on expensive full-sample evaluations in each encoder/preset domain. */
 export const MAX_MEASURED_CANDIDATES_PER_PRESET = 5
@@ -84,17 +84,16 @@ export function nextCandidateSearch(
   const qualityPasses = (candidate: MeasuredCandidate) => evaluation(candidate).qualityPassed
   const encoderKeys = [...new Set(presets.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}`))]
   for (const encoderKey of encoderKeys) {
-    const [, gpuId] = encoderKey.split('/')
     for (const presetCandidate of presets.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}` === encoderKey)) {
       const domain = domainCatalogue.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}` === encoderKey && candidate.preset === presetCandidate.preset)
       const measured = measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}` === encoderKey && candidate.preset === presetCandidate.preset)
       const qualities = [...new Set(domain.map(candidate => candidate.quality))].sort((a, b) => a - b)
       const tested = new Set(measured.map(candidate => candidate.quality))
-      const untested = (values: number[]) => values.filter(quality => !tested.has(quality)).map(quality => domain.find(candidate => candidate.quality === quality) ?? { encoder: presetCandidate.encoder, preset: presetCandidate.preset, quality })
+      const untested = (values: number[]) => values.filter(quality => !tested.has(quality)).map(quality => ({ ...presetCandidate, quality }))
       if (measured.length >= MAX_MEASURED_CANDIDATES_PER_PRESET) continue
       if (measured.length === 0) {
         const middle = qualities[Math.floor((qualities.length - 1) / 2)]
-        return untested([middle]).map(candidate => gpuId === 'software' ? candidate : { ...candidate, gpuId })
+        return untested([middle])
       }
       const ordered = [...measured].sort((a, b) => a.quality - b.quality)
       const passFlags = ordered.map(qualityPasses)
@@ -124,7 +123,7 @@ export function nextCandidateSearch(
           if (!tested.has(midpoint)) next.add(midpoint)
         }
       }
-        if (next.size) return untested([...next].sort((a, b) => a - b)).map(candidate => gpuId === 'software' ? candidate : { ...candidate, gpuId }).slice(0, MAX_MEASURED_CANDIDATES_PER_PRESET - measured.length)
+      if (next.size) return untested([...next].sort((a, b) => a - b)).slice(0, MAX_MEASURED_CANDIDATES_PER_PRESET - measured.length)
     }
   }
   return []
