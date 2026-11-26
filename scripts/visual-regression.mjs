@@ -1,5 +1,5 @@
 /**
- * Real-app comparison harness. Run from the 0.5 checkout; Playwright and Sharp
+ * Real-app comparison harness. Run from the candidate checkout; Playwright and Sharp
  * are installed by the visual-regression workflow, not the application runtime.
  */
 import { mkdir, readFile, writeFile, copyFile, rm } from 'node:fs/promises'
@@ -172,7 +172,7 @@ async function navigate(page, screen, viewport) {
   if (tabs[screen]) {
     if (screen === 'dashboard' && viewport === 'mobile') return false
     const tab = page.getByRole('tablist', { name: 'Navigation' }).getByRole('tab', { name: tabs[screen], exact: true })
-    // Semantic keyboard navigation remains usable when 0.4.2's tablet header
+    // Semantic keyboard navigation remains usable when 0.4.4's tablet header
     // overlaps the tab's pointer target. Pointer obstruction is reported below.
     await tab.focus()
     await tab.press('Enter')
@@ -323,8 +323,8 @@ async function compareImages(reference, candidate, output) {
   return { changed, total: a.info.width * a.info.height }
 }
 async function report(outputDir) {
-  const baseline = JSON.parse(await readFile(path.join(outputDir, '0.4.2.json'), 'utf8'))
-  const candidate = JSON.parse(await readFile(path.join(outputDir, '0.5.json'), 'utf8'))
+  const baseline = JSON.parse(await readFile(path.join(outputDir, '0.4.4.json'), 'utf8'))
+  const candidate = JSON.parse(await readFile(path.join(outputDir, 'candidate.json'), 'utf8'))
   const keys = [...new Set([...Object.keys(baseline.interactions), ...Object.keys(candidate.interactions)])].sort()
   const rows = []
   let failed = false
@@ -344,17 +344,17 @@ async function report(outputDir) {
     if (statusA.startsWith('FAILED') || statusB.startsWith('FAILED') || Boolean(a) !== Boolean(b)) failed = true
     const cell = file => file ? '<a href="' + encodeURI(file) + '"><img loading="lazy" src="' + encodeURI(file) + '"></a>' : 'not captured'
     const obstructed = [
-      '0.4.2 pointer-obstructed: ' + (baseline.pointerObstructions?.[key] || []).join(', '),
-      '0.5 pointer-obstructed: ' + (candidate.pointerObstructions?.[key] || []).join(', '),
+      '0.4.4 pointer-obstructed: ' + (baseline.pointerObstructions?.[key] || []).join(', '),
+      'candidate pointer-obstructed: ' + (candidate.pointerObstructions?.[key] || []).join(', '),
     ]
     rows.push('<tr><th>' + escapeHtml(key) + '</th><td>' + cell(a) + '</td><td>' + cell(b) + '</td><td>' + cell(overlayFile) +
       '</td><td>' + percent + '<p>' + escapeHtml(statusA) + ' / ' + escapeHtml(statusB) + '</p><p>' +
       escapeHtml(obstructed.join('\n')) + '</p></td></tr>')
   }
-  const html = '<!doctype html><html lang="en"><meta charset="utf-8"><title>Totality UI 0.4.2 vs 0.5</title>' +
+  const html = '<!doctype html><html lang="en"><meta charset="utf-8"><title>Totality UI 0.4.4 vs candidate</title>' +
     '<style>body{font:14px system-ui;background:#17181c;color:#f8f9fa;margin:24px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #555;padding:10px;vertical-align:top}img{width:100%;max-width:400px}p{white-space:pre-wrap;overflow-wrap:anywhere}a{color:#90caff}</style>' +
-    '<h1>Totality 0.4.2 vs 0.5 — real application visual comparison</h1><p>Identical fixtures and separate profiles. Pixel changes are diagnostic, not automatic regressions; a human must classify intentional redesigns.</p>' +
-    '<table><thead><tr><th>Scenario</th><th>0.4.2</th><th>0.5</th><th>Pixel overlay</th><th>Changed pixels / result</th></tr></thead><tbody>' +
+    '<h1>Totality 0.4.4 vs candidate — real application visual comparison</h1><p>Identical fixtures and separate profiles. Pixel changes are diagnostic, not automatic regressions; a human must classify intentional redesigns.</p>' +
+    '<table><thead><tr><th>Scenario</th><th>0.4.4</th><th>Candidate</th><th>Pixel overlay</th><th>Changed pixels / result</th></tr></thead><tbody>' +
     rows.join('') + '</tbody></table><h2>Errors</h2><pre>' + escapeHtml(JSON.stringify({ baseline: baseline.errors, candidate: candidate.errors }, null, 2)) + '</pre></html>'
   await writeFile(path.join(outputDir, 'index.html'), html)
   if (failed) throw new Error('Interaction or screenshot capture failures; review index.html')

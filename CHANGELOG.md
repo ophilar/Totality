@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0 — Integration and encoding hardening
+
+- Harden Jellyfin/Emby, Plex and local-library scan behavior and compatibility handling.
+- Refine FFmpeg encoder detection and transcoding policy; extend targeted regression tests.
+- Verify the integrated renderer against the 0.4.4 baseline with real Electron/Playwright screenshots.
+- Inherit the restored 0.6 wishlist identity protections and 0.7 architectural cleanup.
+
 ## 0.7.0 — Architecture consolidation
 
 - Simplify database factory/getter ownership, IPC handlers, and media path authorization.
