@@ -147,7 +147,7 @@ export default defineConfig({
             name(id) {
               if (id.includes('/node_modules/react-window/')) return 'ui'
               if (id.includes('/node_modules/react/') || id.includes('/node_modules/react-dom/')) return 'vendor'
-              return undefined
+              return null
             }
           }]
         }
