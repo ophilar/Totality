@@ -96,6 +96,12 @@ describe('IPC Validation Schemas', () => {
       expect(validateInput(SafeUrlSchema, 'http://192.168.1.1:8096', 'test')).toBe('http://192.168.1.1:8096')
     })
 
+    it('rejects non-HTTP URL protocols', () => {
+      for (const url of ['file:///tmp/file', 'ftp://example.com/file', 'javascript:alert(1)']) {
+        expect(() => validateInput(SafeUrlSchema, url)).toThrow()
+      }
+    })
+
     it('rejects non-URL strings', () => {
       expect(() => validateInput(SafeUrlSchema, 'not a url', 'test')).toThrow()
     })
@@ -505,6 +511,17 @@ describe('IPC Validation Schemas', () => {
     it('accepts empty config', () => {
       const result = validateInput(MonitoringConfigSchema, {}, 'test')
       expect(result).toBeDefined()
+    })
+
+    it('accepts sparse provider polling intervals without inserting missing providers', () => {
+      expect(validateInput(MonitoringConfigSchema, { pollingIntervals: { plex: 30 } })).toEqual({ pollingIntervals: { plex: 30 } })
+      expect(validateInput(MonitoringConfigSchema, { pollingIntervals: {} })).toEqual({ pollingIntervals: {} })
+    })
+
+    it('rejects unknown providers and invalid polling intervals', () => {
+      for (const pollingIntervals of [{ unknown: 30 }, { plex: 0 }, { plex: -1 }, { plex: 1.5 }]) {
+        expect(() => validateInput(MonitoringConfigSchema, { pollingIntervals })).toThrow('Validation failed')
+      }
     })
   })
 

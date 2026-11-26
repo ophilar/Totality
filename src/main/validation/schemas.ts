@@ -163,8 +163,8 @@ export const MonitoringConfigSchema = z.object({
   enabled: z.boolean().optional(),
   startOnLaunch: z.boolean().optional(),
   pauseDuringManualScan: z.boolean().optional(),
-  pollingIntervals: z.record(ProviderTypeSchema, z.number().int().positive().optional()).optional(),
-}).refine(() => true) // Partial<MonitoringConfig>
+  pollingIntervals: z.partialRecord(ProviderTypeSchema, z.number().int().positive().optional()).optional(),
+})
 
 /**
  * Task definition for queue
@@ -243,7 +243,7 @@ export const PlexAuthSchema = z.object({
  * Jellyfin/Emby API key authentication
  */
 export const JellyfinApiKeyAuthSchema = z.object({
-  serverUrl: z.string().url('Invalid server URL'),
+  serverUrl: z.url('Invalid server URL'),
   apiKey: z.string().min(1, 'API key is required'),
   displayName: z.string().min(1).max(100).trim(),
 })
@@ -252,7 +252,7 @@ export const JellyfinApiKeyAuthSchema = z.object({
  * Jellyfin/Emby credentials authentication
  */
 export const JellyfinCredentialsAuthSchema = z.object({
-  serverUrl: z.string().url('Invalid server URL'),
+  serverUrl: z.url('Invalid server URL'),
   username: z.string().min(1, 'Username is required').max(100),
   password: z.string().min(1, 'Password is required'),
   displayName: z.string().min(1).max(100).trim(),
@@ -341,7 +341,7 @@ export const MediaItemSchema = z.object({
   container: z.string().max(20).optional().nullable(),
   imdb_id: z.string().max(20).optional().nullable(),
   tmdb_id: z.string().max(20).optional().nullable(),
-  poster_url: z.string().url().optional().nullable(),
+  poster_url: z.url().optional().nullable(),
   series_title: z.string().max(500).optional().nullable(),
   season_number: z.number().int().min(0).optional().nullable(),
   episode_number: z.number().int().min(0).optional().nullable(),
@@ -353,8 +353,8 @@ export const MediaItemSchema = z.object({
   video_profile: z.string().max(100).optional().nullable(),
   width: z.number().int().positive().optional().nullable(),
   height: z.number().int().positive().optional().nullable(),
-  episode_thumb_url: z.string().url().optional().nullable(),
-  season_poster_url: z.string().url().optional().nullable(),
+  episode_thumb_url: z.url().optional().nullable(),
+  season_poster_url: z.url().optional().nullable(),
   user_fixed_match: z.boolean().optional().nullable(),
 }).transform(({ provider_item_id, ...item }) => ({ ...item, plex_id: provider_item_id }))
 
@@ -434,7 +434,7 @@ export const WishlistItemSchema = z.object({
   tmdb_id: z.string().max(20).optional().nullable(),
   imdb_id: z.string().max(20).optional().nullable(),
   musicbrainz_id: z.string().max(100).optional().nullable(),
-  poster_url: z.string().url().optional().nullable(),
+  poster_url: z.url().optional().nullable(),
   media_item_id: z.number().int().positive().optional().nullable(),
   current_quality_tier: z.string().max(10).optional().nullable(),
   current_quality_level: z.string().max(10).optional().nullable(),
@@ -450,7 +450,7 @@ export const WishlistItemSchema = z.object({
 /**
  * Safe URL schema (only http/https)
  */
-export const SafeUrlSchema = z.string().url().refine(
+export const SafeUrlSchema = z.url().refine(
   (url) => {
     try {
       const parsed = new URL(url)
@@ -621,7 +621,7 @@ function preprocessFilterKeys(input: unknown): unknown {
 /**
  * Validate and parse input, throwing a descriptive error on failure
  */
-export function validateInput<T>(schema: z.ZodSchema<T>, input: unknown, context?: string): T {
+export function validateInput<T>(schema: z.ZodType<T>, input: unknown, context?: string): T {
   const preprocessed = preprocessFilterKeys(input)
   const result = schema.safeParse(preprocessed)
   if (!result.success) {
@@ -634,7 +634,7 @@ export function validateInput<T>(schema: z.ZodSchema<T>, input: unknown, context
 /**
  * Safely validate input, returning null on failure instead of throwing
  */
-export function safeValidateInput<T>(schema: z.ZodSchema<T>, input: unknown): T | null {
+export function safeValidateInput<T>(schema: z.ZodType<T>, input: unknown): T | null {
   const preprocessed = preprocessFilterKeys(input)
   const result = schema.safeParse(preprocessed)
   return result.success ? result.data : null
@@ -669,6 +669,6 @@ export const CanonicalSeriesIdentityKeySchema = z.string().min(1).refine(
 )
 export const SeriesFixMatchTupleSchema = z.tuple([CanonicalSeriesIdentityKeySchema, NonEmptyStringSchema, z.string().optional().nullable(), PositiveIntSchema])
 export const SeriesIdentityTupleSchema = z.tuple([NonEmptyStringSchema, SourceIdSchema, NonEmptyStringSchema, LibraryIdSchema])
-export const JellyfinQcStatusTupleSchema = z.tuple([z.string().url(), z.string()])
-export const JellyfinQcCompleteTupleSchema = z.tuple([z.string().url(), z.string(), NonEmptyStringSchema])
-export const JellyfinAuthCredentialsTupleSchema = z.tuple([z.string().url(), z.string(), z.string(), NonEmptyStringSchema, z.boolean().optional()])
+export const JellyfinQcStatusTupleSchema = z.tuple([z.url(), z.string()])
+export const JellyfinQcCompleteTupleSchema = z.tuple([z.url(), z.string(), NonEmptyStringSchema])
+export const JellyfinAuthCredentialsTupleSchema = z.tuple([z.url(), z.string(), z.string(), NonEmptyStringSchema, z.boolean().optional()])
