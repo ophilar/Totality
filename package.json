@@ -75,7 +75,7 @@
     "@vitest/coverage-v8": "^5.0.5",
     "@vitest/ui": "^5.0.5",
     "cssnano": "^9.9.0",
-    "electron": "^44.9.0",
+    "electron": "^45.5.0",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "lucide-react": "^1.59.0",
