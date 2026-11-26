@@ -1053,7 +1053,7 @@ export class MusicBrainzService extends CancellableOperation {
           currentItem++
           continue
         }
-        const message = `album "${album.title}": ${getErrorMessage(error)}`
+        const message = `album "${album.artist_name} - ${album.title}" (ID: ${album.id}, MusicBrainz ID: ${album.musicbrainz_id ?? 'not set'}): ${getErrorMessage(error)}`
         errors.push(message)
         getLoggingService().error('[MusicBrainzService]', `Failed to analyze ${message}`, error)
       }
@@ -1077,7 +1077,7 @@ export class MusicBrainzService extends CancellableOperation {
       skipped,
     })
 
-    console.log(`[MusicBrainzService] Analysis complete: ${artistsAnalyzed} artists, ${albumsAnalyzed} albums analyzed, ${skipped} skipped (recently analyzed)`)
+    console.log(`[MusicBrainzService] Analysis complete: ${artistsAnalyzed} artists, ${albumsAnalyzed} albums analyzed, ${skipped} skipped, ${errors.length} failed`)
     return { completed: errors.length === 0, artistsAnalyzed, albumsAnalyzed, skipped, failedCount: errors.length, errors }
   }
 

@@ -238,6 +238,14 @@ describe('BetterSQLiteService — Media Items', () => {
     insertSource(service)
   })
 
+  it('persists original language through the media facade without overwriting existing values', () => {
+    const first = service.upsertMediaItem(makeMediaItem({ plex_id: 'language-1', type: 'episode', series_tmdb_id: '42' }))
+    const second = service.upsertMediaItem(makeMediaItem({ plex_id: 'language-2', type: 'episode', series_tmdb_id: '42', original_language: 'fr' }))
+    service.media.setSeriesOriginalLanguage('42', 'en')
+    expect(service.getMediaItem(first)?.original_language).toBe('en')
+    expect(service.getMediaItem(second)?.original_language).toBe('fr')
+  })
+
   it('global search identifies TV shows by series TMDB ID, not episode TMDB ID', () => {
     service.upsertMediaItem(makeMediaItem({
       plex_id: 'episode-1',

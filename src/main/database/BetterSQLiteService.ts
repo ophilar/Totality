@@ -104,6 +104,7 @@ export class BetterSQLiteService {
     return {
       getItemById: (id: number) => this.getMediaItemById(id),
       getItemByPath: (filePath: string) => this.getMediaItemByPath(filePath),
+      setSeriesOriginalLanguage: (tmdbId: string, language: string) => this.setSeriesOriginalLanguage(tmdbId, language),
       updatePathAndStats: (id: number, filePath: string, analysis: unknown) => this.updatePathAndStats(id, filePath, analysis as Record<string, any>),
       getQualityScoreByMediaId: (id: number) => this.getQualityScore(id),
       upsertQualityScore: (score: QualityScore) => this.upsertQualityScore(score),

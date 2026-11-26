@@ -815,6 +815,9 @@ export class QualityAnalyzer {
                 return { ok: true as const, item, itemIndex, itemStartedAt, savings: await this.analyzeMediaItemSavings(item, analysis) }
               } catch (error) {
                 if (signal?.aborted || isCancelled?.()) throw error
+                if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                  logging.warn('[QualityAnalyzer]', `Media file unavailable: id=${item.id}, source=${item.source_id}, library=${item.library_id}, path=${item.file_path}; verify the source path and synchronize the library`)
+                }
                 onItemFailure?.(item.id, error)
                 logging.error('[QualityAnalyzer]', `Item analysis failed: id=${item.id ?? 'unknown'}, index=${itemIndex}/${totalItems}`, error)
                 return { ok: false as const, item, itemIndex, itemStartedAt, error }
