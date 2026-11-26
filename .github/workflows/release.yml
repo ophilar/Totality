@@ -73,7 +73,7 @@ jobs:
           rm $RUNNER_TEMP/certificate.p12
 
       - name: Build and package
-        run: npx tsc && npx vite build && npx electron-builder --publish never
+        run: npm run package
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
