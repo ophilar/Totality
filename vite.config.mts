@@ -145,8 +145,9 @@ export default defineConfig({
         codeSplitting: {
           groups: [{
             name(id) {
-              if (id.includes('/node_modules/react-window/')) return 'ui'
-              if (id.includes('/node_modules/react/') || id.includes('/node_modules/react-dom/')) return 'vendor'
+              const sourceId = id.replaceAll('\\', '/')
+              if (sourceId.includes('/node_modules/react-window/')) return 'ui'
+              if (sourceId.includes('/node_modules/react/') || sourceId.includes('/node_modules/react-dom/')) return 'vendor'
               return null
             }
           }]

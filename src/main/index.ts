@@ -91,7 +91,6 @@ declare const __dirname: string
 
 // Crash handlers - ensure database integrity on unexpected errors
 // With better-sqlite3 (WAL mode): data is auto-persisted, forceSave() just checkpoints WAL
-// With SQL.js: forceSave() writes in-memory database to disk
 process.on('uncaughtException', (error) => {
   console.error('[CRASH] Uncaught exception:', error)
   try {
@@ -156,7 +155,6 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true, // Electron 20+ default; overridden on Linux by --no-sandbox above
       spellcheck: false,
-      enableWebSQL: false,
     },
     titleBarStyle: 'default',
     frame: true,
