@@ -235,7 +235,7 @@ describe('MusicBrainzService', () => {
 
       expect(result.completed).toBe(false)
       expect(result.failedCount).toBe(1)
-      expect(result.errors).toEqual(['album "Test Album": HTTP 503: Service Temporarily Unavailable'])
+      expect(result.errors).toEqual(['album "Test Artist - Test Album" (ID: 1, MusicBrainz ID: release-group-id): HTTP 503: Service Temporarily Unavailable'])
     })
   })
 })
