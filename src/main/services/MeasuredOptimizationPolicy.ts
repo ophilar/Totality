@@ -7,7 +7,7 @@ import type { MeasurementSourcePreparation } from './MeasuredOptimizationService
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
 
 export const MEASUREMENT_VERSION = 17
-export const OPTIMIZATION_SEARCH_VERSION = 3
+export const OPTIMIZATION_SEARCH_VERSION = 4
 /** Hard bound on expensive full-sample evaluations in each encoder/preset domain. */
 export const MAX_MEASURED_CANDIDATES_PER_PRESET = 5
 export const VMAF_LOW_PERCENTILE = 0.05

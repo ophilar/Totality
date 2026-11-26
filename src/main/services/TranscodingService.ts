@@ -384,7 +384,7 @@ export interface ShowTranscodePreflight {
     sourceTier?: MediaSourceTier
     adviceReason?: string
     targetCompatibility?: PlaybackTargetEvaluation
-    measuredParameters?: Pick<TranscodingParams, 'encoder' | 'crf' | 'preset'>
+    measuredParameters?: Pick<TranscodingParams, 'encoder' | 'crf' | 'preset'> & Pick<TranscodeOptions, 'gpuId'>
     sourceSha256?: string
     options?: TranscodeOptions
     params?: TranscodingParams
@@ -1066,11 +1066,19 @@ export class TranscodingService {
                 publishPreflightProgress(episode, 'Measuring encode samples for this episode')
                 let partialSamples = cachedMeasurement?.partialSamples ?? []
                 let sourcePreparation = cachedMeasurement?.sourcePreparation ?? { samples: [] }
-                const persistMeasurement = async (candidates: MeasuredCandidate[], complete: boolean, samples: MeasuredCandidateSample[]) => {
-                  // Each persisted checkpoint rehashes actual bytes; dedupe only inside
-                  // that snapshot to avoid stale digests after an FFmpeg rewrite.
+                const persistMeasurement = async (candidates: MeasuredCandidate[], complete: boolean, samples: MeasuredCandidateSample[], rewrittenPath?: string) => {
+                  const savedHashes = new Map<string, string>()
+                  cachedMeasurement?.candidates.forEach((candidate, candidateIndex) => {
+                    candidate.samplePaths?.forEach((samplePath, index) => {
+                      savedHashes.set(samplePath, cachedMeasurement!.sampleHashes[candidateIndex][index])
+                    })
+                  })
+                  cachedMeasurement?.partialSamples.forEach((sample, index) => {
+                    savedHashes.set(sample.samplePath, cachedMeasurement!.partialSampleHashes[index])
+                  })
+                  if (rewrittenPath !== undefined) savedHashes.delete(rewrittenPath)
                   const hashSnapshot = new OperationFileHasher(sha256File, APP_CONFIG.transcoding.measuredSampleCache.maxConcurrentHashReads)
-                  const getSampleHash = (samplePath: string) => hashSnapshot.hash(samplePath)
+                  const getSampleHash = (samplePath: string) => savedHashes.get(samplePath) ?? hashSnapshot.hash(samplePath)
                   const completedPaths = new Set(candidates.flatMap(candidate => candidate.samplePaths ?? []))
                   const pendingSamples = samples.filter(sample => !completedPaths.has(sample.samplePath))
                   const checkpoint = { preflightId, mediaItemId, cacheKey: measurementCacheKey, candidates: candidates.length, pendingSamples: pendingSamples.length, complete }
@@ -1111,7 +1119,7 @@ export class TranscodingService {
                   partialSamples,
                   async sample => {
                     partialSamples = [...partialSamples.filter(existing => existing.samplePath !== sample.samplePath), sample]
-                    await persistMeasurement(cachedMeasurement?.candidates ?? [], false, partialSamples)
+                    await persistMeasurement(cachedMeasurement?.candidates ?? [], false, partialSamples, sample.samplePath)
                   },
                   sourcePreparation,
                   async preparation => {
@@ -1230,7 +1238,7 @@ export class TranscodingService {
           sampleRepresentativeMediaItemId: reusableRepresentativePlan?.mediaItemId,
           sampleRepresentativeLabel: reusableRepresentativePlan?.label,
           samplePaths, sampleHashes: samplePaths ? await Promise.all(samplePaths.map(sha256File)) : undefined, changes: [...(options.targetConversion?.changes ?? []), ...audioConversions.map(track => `Convert audio stream ${track.sourceIndex} to ${track.codec.toUpperCase()} at ${track.bitrateKbps} kbps`), ...(removedSubtitleTracks.length ? [`Remove ${removedSubtitleTracks.length} subtitle stream${removedSubtitleTracks.length === 1 ? '' : 's'} excluded by the selected language policy`] : [])],
-          measuredParameters: { encoder: params.encoder, crf: params.crf, preset: params.preset },
+          measuredParameters: { encoder: params.encoder, crf: params.crf, preset: params.preset, gpuId: options.gpuId },
         }
       } catch (error) {
         return toInsufficientPlan(error)
@@ -2122,6 +2130,10 @@ export class TranscodingService {
     if (!effectiveOptions.encoderPolicy) throw new Error('Encoder policy must be explicitly selected.')
     if (effectiveOptions.encoderPolicy === 'compare' && !effectiveOptions.encoder) throw new Error('Compare policy requires measured candidates before a transcode can be submitted.')
     const hasManualOverrides = effectiveOptions.encoder && effectiveOptions.crf !== undefined && effectiveOptions.preset
+    const measuredParameters = hasManualOverrides
+      ? { encoder: effectiveOptions.encoder!, crf: effectiveOptions.crf!, preset: effectiveOptions.preset! }
+      : await this.selectMeasuredParameters(filePath, effectiveOptions)
+    if (!hasManualOverrides) Object.assign(effectiveOptions, measuredParameters)
 
     let selectedVendor: 'NVIDIA' | 'Intel' | 'AMD' | 'Apple' | 'Unknown' = 'Unknown'
     let selectedGpuIdForOptions: string | undefined
@@ -2155,10 +2167,6 @@ export class TranscodingService {
       throw new Error(`The selected device does not support ${targetCodec.toUpperCase()} encoding.`)
     }
 
-    const measuredParameters = hasManualOverrides
-      ? { encoder: effectiveOptions.encoder!, crf: effectiveOptions.crf!, preset: effectiveOptions.preset! }
-      : await this.selectMeasuredParameters(filePath, effectiveOptions)
-
     const summary = 'Explicit measured transcoding parameters'
     const videoCodec = measuredParameters.encoder
     const crf = measuredParameters.crf
@@ -2188,7 +2196,10 @@ export class TranscodingService {
     const allowedPresets = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow', 'placebo', 'hq', 'hp', 'bd', 'll', 'llhq', 'llhp', 'lossless', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'quality', '4', '6', '8']
     if (!allowedPresets.includes(preset)) throw new Error(`Invalid encoder preset: ${preset}`)
     const finalPreset = preset
-    const usesSelectedHardwareEncoder = Boolean(selectedGpuIdForOptions && videoCodec === expectedEncoder)
+    if (selectedGpuIdForOptions && videoCodec !== expectedEncoder) {
+      throw new Error(`Selected GPU cannot use the requested encoder "${videoCodec}".`)
+    }
+    const usesSelectedHardwareEncoder = Boolean(selectedGpuIdForOptions)
 
     const resolvedOptions: TranscodeOptions = {
       ...effectiveOptions,
@@ -2611,7 +2622,7 @@ export class TranscodingService {
     sourcePreparation: MeasurementSourcePreparation = { samples: [] },
     onSourcePrepared?: (preparation: MeasurementSourcePreparation) => Promise<void>,
     searchContext?: { preflightId: string; batchId: string; mediaItemId: number; groupKey?: string },
-  ): Promise<Pick<TranscodingParams, 'encoder' | 'crf' | 'preset' | 'measuredCandidate'>> {
+  ): Promise<Pick<TranscodingParams, 'encoder' | 'crf' | 'preset' | 'measuredCandidate'> & Pick<TranscodeOptions, 'gpuId' | 'useGpu'>> {
     if (!options.targetCodec) throw new Error('Measurement requires a target codec')
     if (!options.qualityProfile) throw new Error('Measurement requires a quality profile')
     if (!options.encoderPolicy) throw new Error('Measurement requires an encoder policy')
@@ -2823,7 +2834,7 @@ export class TranscodingService {
         candidates: measuredCandidates.map(candidate => ({ encoder: candidate.encoder, gpuId: candidate.gpuId, preset: candidate.preset, quality: candidate.quality, outputBytes: candidate.outputBytes, encodingDurationMs: candidate.encodingDurationMs, vmafMean: candidate.vmafMean, vmafP5: candidate.vmafP5, cambiMean: candidate.cambiMean, qualityRejectedReason: candidate.qualityRejectedReason, playbackBlockers: candidate.playbackBlockers })),
       })
       if (!onMeasuredCandidates) for (const candidate of measuredCandidates) if (candidate !== selected) for (const sample of candidate.samplePaths!) await fs.unlink(sample)
-      return { encoder: selected.encoder, crf: selected.quality, preset: selected.preset, measuredCandidate: selected }
+      return { encoder: selected.encoder, crf: selected.quality, preset: selected.preset, gpuId: selected.gpuId, useGpu: selected.gpuId !== undefined, measuredCandidate: selected }
     } catch (error) {
       getLoggingService().warn('[TVOptimization]', 'Measured candidate search failed', {
         event: 'candidate-search.failed',
