@@ -3,9 +3,7 @@ import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
+import { buildAliases } from './buildAliases'
 
 const productionMinify = {
   compress: {
@@ -15,14 +13,6 @@ const productionMinify = {
   mangle: true
 }
 
-const commonAliases = {
-  '@': path.resolve(__dirname, './src/renderer/src'),
-  '@main': path.resolve(__dirname, './src/main'),
-  '@preload': path.resolve(__dirname, './src/preload'),
-  '@shared': path.resolve(__dirname, './src/shared'),
-  '@tests': path.resolve(__dirname, './tests')
-}
-
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
@@ -30,19 +20,19 @@ export default defineConfig({
     electron([
       {
         // Main process entry file
-        entry: path.resolve(__dirname, 'src/main/index.ts'),
+        entry: path.resolve(import.meta.dirname, 'src/main/index.ts'),
         onstart(args) {
           args.startup()
         },
         vite: {
           resolve: {
-            alias: commonAliases
+            alias: buildAliases
           },
           build: {
-            outDir: path.resolve(__dirname, 'dist-electron/main'),
+            outDir: path.resolve(import.meta.dirname, 'dist-electron/main'),
             minify: true,
             lib: {
-              entry: path.resolve(__dirname, 'src/main/index.ts'),
+              entry: path.resolve(import.meta.dirname, 'src/main/index.ts'),
               formats: ['cjs'],
               fileName: () => 'index.cjs'
             },
@@ -65,16 +55,16 @@ export default defineConfig({
       },
       {
         // FFprobe worker thread
-        entry: path.resolve(__dirname, 'src/main/workers/ffprobe-worker.ts'),
+        entry: path.resolve(import.meta.dirname, 'src/main/workers/ffprobe-worker.ts'),
         vite: {
           resolve: {
-            alias: commonAliases
+            alias: buildAliases
           },
           build: {
-            outDir: path.resolve(__dirname, 'dist-electron/main'),
+            outDir: path.resolve(import.meta.dirname, 'dist-electron/main'),
             minify: true,
             lib: {
-              entry: path.resolve(__dirname, 'src/main/workers/ffprobe-worker.ts'),
+              entry: path.resolve(import.meta.dirname, 'src/main/workers/ffprobe-worker.ts'),
               formats: ['cjs'],
               fileName: () => 'ffprobe-worker.cjs'
             },
@@ -91,19 +81,19 @@ export default defineConfig({
       },
       {
         // Preload scripts
-        entry: path.resolve(__dirname, 'src/preload/index.ts'),
+        entry: path.resolve(import.meta.dirname, 'src/preload/index.ts'),
         onstart(args) {
           args.reload()
         },
         vite: {
           resolve: {
-            alias: commonAliases
+            alias: buildAliases
           },
           build: {
-            outDir: path.resolve(__dirname, 'dist-electron/preload'),
+            outDir: path.resolve(import.meta.dirname, 'dist-electron/preload'),
             minify: true,
             lib: {
-              entry: path.resolve(__dirname, 'src/preload/index.ts'),
+              entry: path.resolve(import.meta.dirname, 'src/preload/index.ts'),
               formats: ['cjs'],
               fileName: () => 'index.cjs'
             },
@@ -125,13 +115,7 @@ export default defineConfig({
     include: ['react-window']
   },
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src/renderer/src'),
-      '@main': path.resolve(__dirname, './src/main'),
-      '@preload': path.resolve(__dirname, './src/preload'),
-      '@shared': path.resolve(__dirname, './src/shared'),
-      '@tests': path.resolve(__dirname, './tests')
-    }
+    alias: buildAliases
   },
   root: './src/renderer',
   build: {
