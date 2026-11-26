@@ -7,6 +7,14 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+const productionMinify = {
+  compress: {
+    dropDebugger: true,
+    treeshake: { manualPureFunctions: ['console.log', 'console.debug', 'console.info'] }
+  },
+  mangle: true
+}
+
 const commonAliases = {
   '@': path.resolve(__dirname, './src/renderer/src'),
   '@main': path.resolve(__dirname, './src/main'),
@@ -32,13 +40,13 @@ export default defineConfig({
           },
           build: {
             outDir: path.resolve(__dirname, 'dist-electron/main'),
-            minify: 'esbuild',
+            minify: true,
             lib: {
               entry: path.resolve(__dirname, 'src/main/index.ts'),
               formats: ['cjs'],
               fileName: () => 'index.cjs'
             },
-            rollupOptions: {
+            rolldownOptions: {
               external: [
                 'electron', 'electron-updater', 'sql.js', 'better-sqlite3', 'mysql2',
                 'fsevents', 'chokidar', '@google/genai', 'jsdom', 'ws', 'selfsigned',
@@ -47,14 +55,11 @@ export default defineConfig({
                 'fs/promises', 'stream/promises', 'node:url', 'node:fs/promises',
               ],
               output: {
+                minify: productionMinify,
                 format: 'cjs',
                 entryFileNames: 'index.cjs'
               }
             }
-          },
-          esbuild: {
-            drop: ['debugger'],
-            pure: ['console.log', 'console.debug', 'console.info'],
           }
         }
       },
@@ -67,23 +72,20 @@ export default defineConfig({
           },
           build: {
             outDir: path.resolve(__dirname, 'dist-electron/main'),
-            minify: 'esbuild',
+            minify: true,
             lib: {
               entry: path.resolve(__dirname, 'src/main/workers/ffprobe-worker.ts'),
               formats: ['cjs'],
               fileName: () => 'ffprobe-worker.cjs'
             },
-            rollupOptions: {
+            rolldownOptions: {
               external: ['worker_threads', 'child_process', 'fs', 'node:path'],
               output: {
+                minify: productionMinify,
                 format: 'cjs',
                 entryFileNames: 'ffprobe-worker.cjs'
               }
             }
-          },
-          esbuild: {
-            drop: ['debugger'],
-            pure: ['console.log', 'console.debug', 'console.info'],
           }
         }
       },
@@ -99,23 +101,20 @@ export default defineConfig({
           },
           build: {
             outDir: path.resolve(__dirname, 'dist-electron/preload'),
-            minify: 'esbuild',
+            minify: true,
             lib: {
               entry: path.resolve(__dirname, 'src/preload/index.ts'),
               formats: ['cjs'],
               fileName: () => 'index.cjs'
             },
-            rollupOptions: {
+            rolldownOptions: {
               external: ['electron'],
               output: {
+                minify: productionMinify,
                 format: 'cjs',
                 entryFileNames: 'index.cjs'
               }
             }
-          },
-          esbuild: {
-            drop: ['debugger'],
-            pure: ['console.log', 'console.debug', 'console.info'],
           }
         }
       }
@@ -138,17 +137,19 @@ export default defineConfig({
   build: {
     outDir: '../../dist',
     emptyOutDir: true,
-    minify: 'esbuild',
+    minify: true,
     sourcemap: false,
-    esbuild: {
-      drop: ['debugger'],
-      pure: ['console.log', 'console.debug', 'console.info'],
-    },
-    rollupOptions: {
+    rolldownOptions: {
       output: {
-        manualChunks(id) {
-          if (id.includes('/node_modules/react-window/')) return 'ui'
-          if (id.includes('/node_modules/react/') || id.includes('/node_modules/react-dom/')) return 'vendor'
+        minify: productionMinify,
+        codeSplitting: {
+          groups: [{
+            name(id) {
+              if (id.includes('/node_modules/react-window/')) return 'ui'
+              if (id.includes('/node_modules/react/') || id.includes('/node_modules/react-dom/')) return 'vendor'
+              return undefined
+            }
+          }]
         }
       }
     }
