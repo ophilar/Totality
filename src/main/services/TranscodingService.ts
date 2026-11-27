@@ -1780,6 +1780,27 @@ export class TranscodingService {
     await this.recoverActivationJournals()
   }
 
+  private async verifyActivationOutput(filePath: string, analysis: FileAnalysisResult): Promise<void> {
+    const fingerprint = analysis.sourceFingerprint
+    if (!analysis.success || !fingerprint || (await fs.stat(filePath)).size !== fingerprint.size || await sha256File(filePath) !== fingerprint.sha256) {
+      throw new Error(`Activation output differs from verified evidence: ${filePath}`)
+    }
+  }
+
+  private async publishActivationOutput(tempPath: string, targetPath: string): Promise<void> {
+    // A same-volume hard link publishes the verified output without replacing any
+    // existing destination. If interrupted between link and unlink, resume only
+    // when both names reference the same file.
+    try {
+      await fs.link(tempPath, targetPath)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      const [temp, target] = await Promise.all([fs.stat(tempPath), fs.lstat(targetPath)])
+      if (!target.isFile() || temp.dev !== target.dev || temp.ino !== target.ino) throw error
+    }
+    await fs.unlink(tempPath)
+  }
+
   private async recoverActivationJournals(): Promise<void> {
     const db = getDatabase()
     const journals = await db.getSettingsByPrefix('transcoding.activation.')
@@ -1804,9 +1825,21 @@ export class TranscodingService {
       let quarantineExists = await exists(journal.quarantinePath)
       let tempExists = await exists(journal.tempPath)
 
+      const job = await db.mediaRemuxJobs.getLatest(journal.mediaItemId)
+      if (!job || job.sourcePath !== journal.inputPath || (job.quarantinePath !== null && job.quarantinePath !== journal.quarantinePath)) {
+        throw new Error(`Activation recovery cannot identify the original job for media item ${journal.mediaItemId}`)
+      }
+      if (quarantineExists && await sha256File(journal.quarantinePath!) !== job.sourceSha256) throw new Error('Quarantined source differs from its recorded fingerprint')
+
       if ((journal.phase === 'prepared' || journal.phase === 'source_quarantined') && tempExists && journal.targetPath && journal.quarantinePath && journal.outputStats?.success && journal.mode) {
-        if (!quarantineExists) await fs.rename(journal.inputPath, journal.quarantinePath)
-        await fs.rename(journal.tempPath!, journal.targetPath)
+        await this.verifyActivationOutput(journal.tempPath!, journal.outputStats)
+        if (!quarantineExists) {
+          if (path.resolve(journal.inputPath) !== path.resolve(journal.targetPath) && targetExists) throw new Error('Activation destination already exists')
+          if (await sha256File(journal.inputPath) !== job.sourceSha256) throw new Error('Source changed before activation recovery')
+          await db.mediaRemuxJobs.update(job.id, { quarantinePath: journal.quarantinePath })
+          await fs.rename(journal.inputPath, journal.quarantinePath)
+        }
+        await this.publishActivationOutput(journal.tempPath!, journal.targetPath)
         targetExists = true
         quarantineExists = true
         tempExists = false
@@ -1814,7 +1847,7 @@ export class TranscodingService {
 
       // Crash occurred after source was quarantined but before target was placed
       if ((journal.phase === 'source_quarantined' || journal.phase === 'prepared') && !targetExists && quarantineExists && !inputExists) {
-        await fs.rename(journal.quarantinePath!, journal.inputPath)
+        await this.publishActivationOutput(journal.quarantinePath!, journal.inputPath)
         if (tempExists) await fs.unlink(journal.tempPath!)
         await db.deleteSetting(key)
         getLoggingService().info('[TranscodingService]', `Rollback completed for media item ${journal.mediaItemId} from quarantine`)
@@ -1824,19 +1857,20 @@ export class TranscodingService {
       // Crash occurred after target file was successfully placed/activated
       if ((journal.phase === 'output_activated' || journal.phase === 'source_quarantined' || (journal.phase === 'prepared' && quarantineExists && !tempExists)) && targetExists && journal.targetPath) {
         // Ensure database points to the newly activated target path
-        const analysis = journal.outputStats ?? await getMediaFileAnalyzer().analyzeFile(journal.targetPath)
-        if (!analysis.success) throw new Error('Activation recovery requires verified output analysis')
+        const analysis = journal.outputStats
+        if (!analysis) throw new Error('Activation recovery requires recorded verified output analysis')
+        await this.verifyActivationOutput(journal.targetPath, analysis)
         await db.media.updatePathAndStats(journal.mediaItemId, journal.targetPath, { ...analysis, filePath: journal.targetPath })
         this.analysisCache.delete(journal.inputPath)
         this.analysisCache.delete(journal.targetPath)
         getStatsCacheService().invalidate()
-        if (journal.mode === 'replace' && quarantineExists) await fs.unlink(journal.quarantinePath!)
-        const job = await db.mediaRemuxJobs.getLatest(journal.mediaItemId)
-        if (job && job.sourcePath === journal.inputPath && job.quarantinePath === journal.quarantinePath) {
+        if (job.quarantinePath !== journal.quarantinePath && !quarantineExists) throw new Error('Activation recovery has no matching quarantine evidence')
+        {
           const encodedReductionBytes = job.sourceSize - analysis.fileSizeBytes!
           const retainedOriginalBytes = journal.mode === 'replace' ? 0 : job.sourceSize
           await db.mediaRemuxJobs.update(job.id, { status: 'promoted', actualOutputBytes: analysis.fileSizeBytes, bytesSaved: encodedReductionBytes, outputDurationMs: analysis.durationMs, outputAnalysis: JSON.stringify({ ...analysis, filePath: journal.targetPath, encodedReductionBytes, retainedOriginalBytes, physicallyReclaimedBytes: journal.mode === 'replace' ? encodedReductionBytes : 0 }) })
         }
+        if (journal.mode === 'replace' && quarantineExists) await fs.unlink(journal.quarantinePath!)
         await db.deleteSetting(key)
         getLoggingService().info('[TranscodingService]', `Committed forward activation recovery for media item ${journal.mediaItemId}`)
         continue
@@ -2575,7 +2609,11 @@ export class TranscodingService {
       const targetSamePath = path.join(path.dirname(inputPath), origBase + outputExt)
 
       if (effectiveOutputMode === 'replace' || effectiveOutputMode === 'quarantine-replace') {
-        const quarantinePath = path.join(path.dirname(inputPath), `${origBase}.${effectiveOutputMode === 'replace' ? 'activation' : 'quarantine'}-${Date.now()}${origExt}`)
+        controller.signal.throwIfAborted()
+        if (path.resolve(inputPath) !== path.resolve(targetSamePath) && existsSync(targetSamePath)) throw new Error('Activation destination already exists')
+        await this.verifyActivationOutput(tempPath, outputAnalysis)
+        if (await sha256File(inputPath) !== sourceSha256) throw new Error('Source file changed before activation')
+        const quarantinePath = path.join(path.dirname(inputPath), `${origBase}.${effectiveOutputMode === 'replace' ? 'activation' : 'quarantine'}-${Date.now()}-${randomUUID()}${origExt}`)
         const outputStats = { ...outputAnalysis, filePath: targetSamePath }
         activation = { inputPath, tempPath, targetPath: targetSamePath, quarantinePath }
         const journal = { inputPath, tempPath, targetPath: targetSamePath, quarantinePath, outputStats, mode: effectiveOutputMode }
@@ -2583,15 +2621,15 @@ export class TranscodingService {
         await db.mediaRemuxJobs.update(optimizationJobId!, { quarantinePath })
         await fs.rename(inputPath, quarantinePath)
         await this.writeActivationJournal(mediaItemId, { ...journal, phase: 'source_quarantined' })
-        if (path.resolve(tempPath) !== path.resolve(targetSamePath)) await fs.rename(tempPath, targetSamePath)
+        if (await sha256File(quarantinePath) !== sourceSha256) throw new Error('Quarantined source differs from its recorded fingerprint')
+        await this.publishActivationOutput(tempPath, targetSamePath)
         await this.writeActivationJournal(mediaItemId, { ...journal, phase: 'output_activated' })
         await db.media.updatePathAndStats(mediaItemId, targetSamePath, outputStats)
         activated = true
         this.analysisCache.delete(inputPath)
         this.analysisCache.delete(targetSamePath)
         getStatsCacheService().invalidate()
-        if (effectiveOutputMode === 'replace') await fs.unlink(quarantinePath)
-        await db.deleteSetting(`transcoding.activation.${mediaItemId}`)
+
       } else {
         // Sibling copy
         const copyPath = path.join(path.dirname(inputPath), `${origBase} - Transcoded${outputExt}`)
@@ -2613,6 +2651,11 @@ export class TranscodingService {
         })
       }
 
+      if (activation && activated) {
+        if (effectiveOutputMode === 'replace') await fs.unlink(activation.quarantinePath)
+        await db.deleteSetting(`transcoding.activation.${mediaItemId}`)
+      }
+
       onProgress?.({ percent: 100, status: 'complete' })
       if (queuePayload) getLoggingService().info('[TVOptimization]', 'Episode execution completed', {
         event: 'conversion.completed',
@@ -2630,8 +2673,14 @@ export class TranscodingService {
       if (activation && !activated) {
         try {
           if (existsSync(activation.quarantinePath)) {
-            if (existsSync(activation.targetPath) && !existsSync(activation.tempPath)) await fs.rename(activation.targetPath, activation.tempPath)
-            await fs.rename(activation.quarantinePath, activation.inputPath)
+            // Once output publication may have occurred, preserve the journal for
+            // fingerprint-verified forward recovery rather than moving an unknown target.
+            if (!existsSync(activation.tempPath)) throw new Error('Published output requires activation recovery')
+            if (existsSync(activation.targetPath)) {
+              const [temp, target] = await Promise.all([fs.stat(activation.tempPath), fs.lstat(activation.targetPath)])
+              if (temp.dev === target.dev && temp.ino === target.ino) throw new Error('Published output requires activation recovery')
+            }
+            await this.publishActivationOutput(activation.quarantinePath, activation.inputPath)
           }
           await db.deleteSetting(`transcoding.activation.${mediaItemId}`)
         } catch (rollbackError) {
@@ -2651,7 +2700,7 @@ export class TranscodingService {
         sampleRepresentativeMediaItemId: failedQueuePayload.sampleRepresentativeMediaItemId,
         reason: msg,
       })
-      if (optimizationJobId !== null) await db.mediaRemuxJobs.update(optimizationJobId, { status: 'failed', error: msg })
+      if (optimizationJobId !== null && !activated) await db.mediaRemuxJobs.update(optimizationJobId, { status: 'failed', error: msg })
 
       onProgress?.({ percent: 0, status: 'failed', error: msg })
       if (controller.signal.aborted) return false
