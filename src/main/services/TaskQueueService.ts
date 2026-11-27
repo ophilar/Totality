@@ -979,12 +979,11 @@ export class TaskQueueService {
     const mediaItems = libraries.flatMap(library => getDatabase().getMediaItems({ sourceId: library.sourceId, libraryId: library.libraryId }).filter(item => item.file_path))
     const capabilities = await getTranscodingService().getCapabilities({ refresh: true })
     const targetProfileId = await getDatabase().getSetting(SETTING_KEYS.optimization_default_target_profile_id)
-    if (!targetProfileId) throw new Error('Optimization calibration requires a configured playback target profile')
     getLoggingService().info('[OptimizationCalibration]', 'Calibration started', {
       taskId: task.id,
       libraryCount: libraries.length,
       mediaItemCount: mediaItems.length,
-      targetProfileId,
+      targetProfileId: targetProfileId ?? null,
       stages: ['h264-to-hevc', 'hevc-to-av1'],
     })
     const measureRepresentatives = async (items: typeof mediaItems, targetCodec: 'hevc' | 'av1', stage: string): Promise<void> => {
@@ -1024,7 +1023,7 @@ export class TaskQueueService {
                 encoderPolicy: candidate.encoderPolicy,
                 gpuId: candidate.gpuId,
                 targetProfileId,
-                playbackPolicy: 'direct-play',
+                playbackPolicy: targetProfileId ? 'avoid-video-transcoding' : 'allow-transcoding',
               },
             }, {
               signal,
