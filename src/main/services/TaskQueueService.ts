@@ -1025,7 +1025,7 @@ export class TaskQueueService {
                 gpuId: candidate.gpuId,
                 targetProfileId,
                 targetContainerSelection: 'automatic',
-                playbackPolicy: targetProfileId ? 'avoid-video-transcoding' : 'allow-transcoding',
+                playbackPolicy: 'allow-transcoding',
               },
             }, {
               signal,
