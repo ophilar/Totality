@@ -1020,9 +1020,7 @@ export class TranscodingService {
           gpuId: options.gpuId,
           customArgs: options.customArgs,
           targetHdrFormat: options.targetHdrFormat,
-          measurementSampleDurationSeconds: options.measurementSampleDurationSeconds,
           measurementCandidateBudget: options.measurementCandidateBudget,
-          measurementSamplePositions: options.measurementSamplePositions,
           videoTransformation: options.targetConversion && {
             width: options.targetConversion.width,
             height: options.targetConversion.height,
