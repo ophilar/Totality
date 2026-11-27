@@ -977,12 +977,14 @@ export class TaskQueueService {
     }
     const mediaItems = libraries.flatMap(library => getDatabase().getMediaItems({ sourceId: library.sourceId, libraryId: library.libraryId }).filter(item => item.file_path))
     const targetProfileId = await getDatabase().getSetting(SETTING_KEYS.optimization_default_target_profile_id)
+    const taskOptions = task.options as { includeAv1?: unknown } | undefined
+    const includeAv1 = taskOptions?.includeAv1 === true
     getLoggingService().info('[OptimizationCalibration]', 'Calibration started', {
       taskId: task.id,
       libraryCount: libraries.length,
       mediaItemCount: mediaItems.length,
       targetProfileId: targetProfileId ?? null,
-      stages: ['h264-to-hevc', 'hevc-to-av1'],
+      stages: includeAv1 ? ['h264-to-hevc', 'hevc-to-av1'] : ['h264-to-hevc'],
     })
     const measureRepresentatives = async (items: typeof mediaItems, targetCodec: 'hevc' | 'av1', stage: string): Promise<void> => {
       const groups = new Map<string, Map<string, typeof mediaItems[number]>>()
@@ -1056,8 +1058,10 @@ export class TaskQueueService {
     }
     const h264Items = mediaItems.filter(item => item.file_path && String(item.video_codec ?? '').toLowerCase() === 'h264')
     await measureRepresentatives(h264Items, 'hevc', 'measuring-h264-to-hevc')
-    const hevcItems = mediaItems.filter(item => item.file_path && ['hevc', 'h265'].includes(String(item.video_codec ?? '').toLowerCase()))
-    await measureRepresentatives(hevcItems, 'av1', 'measuring-hevc-to-av1')
+    if (includeAv1) {
+      const hevcItems = mediaItems.filter(item => item.file_path && ['hevc', 'h265'].includes(String(item.video_codec ?? '').toLowerCase()))
+      await measureRepresentatives(hevcItems, 'av1', 'measuring-hevc-to-av1')
+    }
     const measuredFormats = new Set(measurements.map(measurement => `${measurement.sourceCodec}:${measurement.groupKey}`))
     for (const item of mediaItems) {
       const formatKey = `${item.source_id ?? ''}:${item.library_id ?? ''}:${item.type}:${String(item.hdr_format ?? 'SDR').toLowerCase()}`

@@ -39,6 +39,7 @@ export function DataManagementTab() {
   const [calibrationProgress, setCalibrationProgress] = useState<string>()
   const [calibrationResult, setCalibrationResult] = useState<string>()
   const [calibrationRunning, setCalibrationRunning] = useState(false)
+  const [includeAv1Calibration, setIncludeAv1Calibration] = useState(false)
   useEffect(() => {
     if (!showCSVExportModal) return
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -207,7 +208,7 @@ export function DataManagementTab() {
     setMessage(null)
     try {
       const requestId = crypto.randomUUID()
-      const result = await window.electronAPI.startOptimizationCalibration(requestId)
+      const result = await window.electronAPI.startOptimizationCalibration(requestId, includeAv1Calibration)
       setCalibrationTaskId(result.taskId)
       setCalibrationResult(undefined)
       setMessage({ type: 'success', text: `Optimization calibration queued (${result.taskId}).` })
@@ -481,6 +482,10 @@ export function DataManagementTab() {
               <div className="flex gap-2 shrink-0">
                 <Button variant="tertiary" size="sm" onClick={() => setShowOptimizationCleanupConfirm(true)} disabled={isCleaningOptimization} icon={<Trash2 className="w-3.5 h-3.5" />}>Clean up</Button>
                 {calibrationRunning && <Button variant="tertiary" size="sm" onClick={handleCancelCalibration}>Cancel</Button>}
+                <label className="flex items-center gap-2 text-caption text-muted-foreground" title="Include HEVC to AV1 calibration">
+                  <Toggle checked={includeAv1Calibration} onChange={setIncludeAv1Calibration} disabled={isCalibrating || calibrationRunning} />
+                  AV1 stage
+                </label>
                 <Button variant="primary" size="sm" onClick={handleOptimizationCalibration} disabled={isCalibrating || calibrationRunning} icon={isCalibrating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Gauge className="w-3.5 h-3.5" />}>Calibrate</Button>
               </div>
             </div>
