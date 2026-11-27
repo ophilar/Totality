@@ -1043,7 +1043,7 @@ export class TaskQueueService {
             }, {
               signal,
               beginCommit: () => undefined,
-              waitUntilRunning: async () => undefined,
+              waitUntilRunning: async () => { signal.throwIfAborted() },
               update: update => onProgress({ phase: update.phase ?? stage, current: update.progress?.current, total: update.progress?.total, currentItem: item.title }),
               preflightId: `calibration_${task.id}_${item.id}`,
               batchId: `calibration_${task.id}`,
@@ -1051,26 +1051,39 @@ export class TaskQueueService {
                 if (complete) measuredCandidates = candidates
               },
             })
+            signal.throwIfAborted()
             const episode = preflight.episodes[0]
             if (!episode?.params?.measuredCandidate || measuredCandidates.length === 0) throw new Error(episode?.reason ?? 'Calibration preflight did not produce measured candidates')
+            for (let index = measurements.length - 1; index >= 0; index--) {
+              if (typeof measurements[index].key === 'string' && (measurements[index].key as string).startsWith(`${measurementKeyPrefix}:`)) measurements.splice(index, 1)
+            }
             for (const measuredCandidate of measuredCandidates) {
-              measurements.push({ key: `${measurementKeyPrefix}:${measuredCandidate.encoder}:${measuredCandidate.gpuId ?? 'software'}`, stage, role, groupKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'measured', measuredCandidate, encoder: measuredCandidate.encoder, gpuId: measuredCandidate.gpuId, preset: measuredCandidate.preset, crf: measuredCandidate.quality })
+              measurements.push({ key: `${measurementKeyPrefix}:${JSON.stringify([measuredCandidate.encoder, measuredCandidate.gpuId ?? null, measuredCandidate.preset, measuredCandidate.quality])}`, stage, role, groupKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'measured', measuredCandidate, encoder: measuredCandidate.encoder, gpuId: measuredCandidate.gpuId, preset: measuredCandidate.preset, crf: measuredCandidate.quality })
             }
           } catch (error) {
-            measurements.push({ key: `${measurementKeyPrefix}:${candidate.encoderPolicy}`, stage, role, groupKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'unvalidated', reason: error instanceof Error ? error.message : String(error) })
+            signal.throwIfAborted()
+            const failureKey = `${measurementKeyPrefix}:${candidate.encoderPolicy}`
+            for (let index = measurements.length - 1; index >= 0; index--) {
+              if (measurements[index].key === failureKey) measurements.splice(index, 1)
+            }
+            measurements.push({ key: failureKey, stage, role, groupKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'unvalidated', reason: error instanceof Error ? error.message : String(error) })
           }
           await saveCheckpoint()
         }
       }
       const workerCount = Math.min(APP_CONFIG.transcoding.calibrationRepresentativeConcurrency, representatives.length)
-      await Promise.all(Array.from({ length: workerCount }, async () => {
+      const results = await Promise.allSettled(Array.from({ length: workerCount }, async () => {
         while (true) {
+          signal.throwIfAborted()
           const index = nextRepresentativeIndex++
           const representative = representatives[index]
           if (!representative) return
           await processRepresentative(representative)
         }
       }))
+      const failed = results.find(result => result.status === 'rejected')
+      if (failed?.status === 'rejected') throw failed.reason
+      signal.throwIfAborted()
     }
     const h264Items = mediaItems.filter(item => normalizeVideoCodec(item.video_codec) === 'H.264')
     getLoggingService().info('[OptimizationCalibration]', 'Calibration source codecs inventoried', {
@@ -1093,7 +1106,7 @@ export class TaskQueueService {
       const sourceCodec = normalizeVideoCodec(item.video_codec)
       const stage = sourceCodec === 'H.264' ? 'measuring-h264-to-hevc' : sourceCodec === 'HEVC' && includeAv1 ? 'measuring-hevc-to-av1' : 'unsupported-source'
       if (stage === 'unsupported-source' && !measuredFormats.has(`${item.video_codec}:${formatKey}`)) {
-        measurements.push({ key: `unsupported:${formatKey}`, stage, role: 'unvalidated', groupKey: formatKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec: 'hevc', status: 'unvalidated', reason: `Source codec ${item.video_codec ?? 'unknown'} is not covered by the enabled calibration stages` })
+        measurements.push({ key: `unsupported:${JSON.stringify([formatKey, item.video_codec ?? null])}`, stage, role: 'unvalidated', groupKey: formatKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec: 'hevc', status: 'unvalidated', reason: `Source codec ${item.video_codec ?? 'unknown'} is not covered by the enabled calibration stages` })
         measuredFormats.add(`${item.video_codec}:${formatKey}`)
       }
     }
@@ -1108,6 +1121,7 @@ export class TaskQueueService {
       return [{ sourceCodec: measurement.sourceCodec, targetCodec: measurement.targetCodec as 'hevc' | 'av1', encoder: String(candidate.encoder ?? measurement.encoder ?? ''), gpuId: typeof candidate.gpuId === 'string' ? candidate.gpuId : typeof measurement.gpuId === 'string' ? measurement.gpuId : undefined, preset: String(candidate.preset ?? measurement.preset ?? ''), quality: candidate.quality, outputBytes: candidate.outputBytes, sampledDurationSeconds: candidate.sampledDurationSeconds, measuredAt: new Date().toISOString() }]
     })
     const profileStatus = entries.length > 0 ? 'validated' : 'unvalidated'
+    signal.throwIfAborted()
     if (entries.length > 0) await getTranscodingService().saveOptimizationCalibration(entries)
     const representatives = new Set(measurements.map(measurement => measurement.mediaItemId)).size
     task.result = { libraries, libraryCount: libraries.length, representatives, measurements, calibrationEntries: entries.length, calibrationStatus: profileStatus, status: 'completed', validation: 'holdout-measured', unvalidated: measurements.filter(measurement => measurement.status !== 'measured').length }
