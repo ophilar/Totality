@@ -502,9 +502,9 @@ export class TranscodingService {
       originalLanguage?: string
       subtitleLanguageWhitelist?: string[]
     } | undefined
-    const evidence = items.flatMap(item => {
+    const evidence = (await Promise.all(items.map(async item => {
       if (item.id === undefined) return []
-      const candidate = this.optimizationCandidateService.discover(item, {
+      const candidate = await this.optimizationCandidateService.discover(item, {
         av1HardwareEncodingAvailable,
         targetCodec: request.options.targetCodec,
         audioPruningEnabled: streamSelection?.audio === 'original-and-protected',
@@ -512,7 +512,7 @@ export class TranscodingService {
         subtitleLanguageWhitelist: streamSelection?.subtitleLanguageWhitelist ?? [],
       })
       return candidate.reasons.length ? [{ item: item as MediaItem & { id: number }, ...candidate }] : []
-    })
+    }))).flat()
     const candidateById = new Map(evidence.map(candidate => [candidate.item.id, candidate]))
     const videoCandidates = evidence.filter(candidate => candidate.reasons.includes('h264_video_transcode') || candidate.reasons.includes('hevc_to_av1'))
     const otherOperationCandidates: OtherOperationCandidate[] = evidence
@@ -605,10 +605,10 @@ export class TranscodingService {
     const av1HardwareEncodingAvailable = capabilities.encodingMatrix.devices.some((device, index) =>
       device.kind === 'hardware' && av1CodecCapabilities?.capabilities[index] === true)
     const qualityAnalyzer = getQualityAnalyzer()
-    const subtitleLanguageWhitelist = qualityAnalyzer.getSubtitleLanguageWhitelist()
+    const subtitleLanguageWhitelist = await qualityAnalyzer.getSubtitleLanguageWhitelist()
     const reasonCounts: OptimizationCandidateScanSummary['reasonCounts'] = {}
-    const candidates = items.flatMap(item => {
-      const candidate = this.optimizationCandidateService.discover(item, {
+    const candidates = (await Promise.all(items.map(async item => {
+      const candidate = await this.optimizationCandidateService.discover(item, {
         av1HardwareEncodingAvailable,
         targetCodec: DEFAULT_OPTIMIZATION_VIDEO_CODEC,
         audioPruningEnabled: true,
@@ -618,7 +618,7 @@ export class TranscodingService {
       if (candidate.reasons.length === 0) return []
       for (const reason of candidate.reasons) reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1
       return [candidate]
-    })
+    }))).flat()
     const measuredSavings = candidates.map(candidate => candidate.estimatedSavingsBytes).filter((value): value is number => value !== null)
     return {
       candidateCount: candidates.length,
@@ -913,7 +913,7 @@ export class TranscodingService {
           representativePlan.plan.measuredParameters
           ? representativePlan.plan
           : undefined
-        const advice = getQualityAnalyzer().getOptimizationAdvice(episode, analysis, request.options.targetCodec)
+        const advice = await getQualityAnalyzer().getOptimizationAdvice(episode, analysis, request.options.targetCodec)
         const sourcePlan = buildStreamSelectionPlan(analysis, request.options)
         audioPlan = getPlannedAudioStreams(analysis, sourcePlan)
         const removedAudioTracks = analysis.audioTracks.filter(track => !sourcePlan.audioStreamIndexes.includes(track.index))
@@ -1698,7 +1698,7 @@ export class TranscodingService {
     const db = getDatabase()
     const item = db.getMediaItem(mediaItemId)
     if (!item?.file_path || !item.source_id) throw new Error('Media item has no local source path')
-    const source = db.getMediaSource(item.source_id)
+    const source = await db.getMediaSource(item.source_id)
     if (!source) throw new Error('Media source was not found')
     MediaPathAuthorization.assertMediaAuthorized(item, source)
     return item
@@ -2103,7 +2103,7 @@ export class TranscodingService {
         height: analysis.video?.height
       }
       await getQualityAnalyzer().loadThresholdsFromDatabase()
-      const advice = getQualityAnalyzer().getOptimizationAdvice(itemToAnalyze as MediaItem, analysis)
+      const advice = await getQualityAnalyzer().getOptimizationAdvice(itemToAnalyze as MediaItem, analysis)
       if (advice.action === 'stream_pruning') {
         effectiveOptions.optimizationMode = 'remux_only'
         if (!effectiveOptions.streamSelection) {

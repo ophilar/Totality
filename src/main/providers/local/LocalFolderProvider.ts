@@ -470,13 +470,13 @@ export class LocalFolderProvider implements MediaProvider {
       await analyzer.loadThresholdsFromDatabase()
 
       // Check both FFprobe availability AND user setting (default to enabled if not set)
-      const ffprobeEnabled = db.getSetting('ffprobe_enabled') !== 'false'
+      const ffprobeEnabled = (await db.getSetting('ffprobe_enabled')) !== 'false'
       const ffprobeAvailable = ffprobeEnabled && await fileAnalyzer.isAvailable()
       const tmdbConfigured = await this.isTMDBConfigured()
 
       // Parallel FFprobe settings
-      const ffprobeParallelEnabled = db.getSetting('ffprobe_parallel_enabled') !== 'false'
-      const ffprobeBatchSize = readFfprobeBatchSize(db.getSetting('ffprobe_batch_size'), APP_CONFIG.workers.ffprobe.defaultVideoBatchSize)
+      const ffprobeParallelEnabled = (await db.getSetting('ffprobe_parallel_enabled')) !== 'false'
+      const ffprobeBatchSize = readFfprobeBatchSize(await db.getSetting('ffprobe_batch_size'), APP_CONFIG.workers.ffprobe.defaultVideoBatchSize)
 
       const scannedFilePaths = new Set<string>()
       const scanType = libraryType === 'movies' ? 'movie' : 'episode'
@@ -815,7 +815,7 @@ export class LocalFolderProvider implements MediaProvider {
       await analyzer.loadThresholdsFromDatabase()
 
       // Check both FFprobe availability AND user setting (default to enabled if not set)
-      const ffprobeEnabled = db.getSetting('ffprobe_enabled') !== 'false'
+      const ffprobeEnabled = (await db.getSetting('ffprobe_enabled')) !== 'false'
       const ffprobeAvailable = ffprobeEnabled && await fileAnalyzer.isAvailable()
       const tmdbConfigured = await this.isTMDBConfigured()
       const scanType = libraryType === 'movies' ? 'movie' : 'episode'
@@ -1005,7 +1005,7 @@ export class LocalFolderProvider implements MediaProvider {
       await getQualityAnalyzer().loadThresholdsFromDatabase()
 
       // Check both FFprobe availability AND user setting (default to enabled if not set)
-      const ffprobeEnabled = db.getSetting('ffprobe_enabled') !== 'false'
+      const ffprobeEnabled = (await db.getSetting('ffprobe_enabled')) !== 'false'
       const ffprobeAvailable = ffprobeEnabled && await fileAnalyzer.isAvailable()
 
       // Filter to only valid audio files that exist
@@ -1321,7 +1321,7 @@ export class LocalFolderProvider implements MediaProvider {
    */
   private async isMusicBrainzNameCorrectionEnabled(): Promise<boolean> {
     const db = getDatabase()
-    const setting = db.getSetting('musicbrainz_name_correction')
+    const setting = await db.getSetting('musicbrainz_name_correction')
     // Default to true if not set
     return setting !== 'false'
   }
@@ -2020,15 +2020,15 @@ export class LocalFolderProvider implements MediaProvider {
       await getQualityAnalyzer().loadThresholdsFromDatabase()
 
       // Check both FFprobe availability AND user setting (default to enabled if not set)
-      const ffprobeEnabled = db.getSetting('ffprobe_enabled') !== 'false'
+      const ffprobeEnabled = (await db.getSetting('ffprobe_enabled')) !== 'false'
       const ffprobeAvailable = ffprobeEnabled && await fileAnalyzer.isAvailable()
       const mbNameCorrectionEnabled = await this.isMusicBrainzNameCorrectionEnabled()
       const scannedFilePaths = new Set<string>()
       const mbArtistNameCache = new Map<string, string>() // parsed name -> canonical name
 
       // Parallel FFprobe settings
-      const ffprobeParallelEnabled = db.getSetting('ffprobe_parallel_enabled') !== 'false'
-      const ffprobeBatchSize = readFfprobeBatchSize(db.getSetting('ffprobe_batch_size'), APP_CONFIG.workers.ffprobe.defaultMusicBatchSize)
+      const ffprobeParallelEnabled = (await db.getSetting('ffprobe_parallel_enabled')) !== 'false'
+      const ffprobeBatchSize = readFfprobeBatchSize(await db.getSetting('ffprobe_batch_size'), APP_CONFIG.workers.ffprobe.defaultMusicBatchSize)
 
       if (mbNameCorrectionEnabled) {
         console.log(`[LocalFolderProvider ${this.sourceId}] MusicBrainz name correction enabled`)

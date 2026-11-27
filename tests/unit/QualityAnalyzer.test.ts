@@ -80,7 +80,7 @@ describe('QualityAnalyzer', () => {
     expect((await analyzer.analyzeMediaItem(item)).savings_basis).toBe('video_bitrate_estimate')
   })
 
-  it('estimates only measured subtitle bytes when an explicit language policy removes tracks', () => {
+  it('estimates only measured subtitle bytes when an explicit language policy removes tracks', async () => {
     configuredSettings.set('subtitle_preferred_languages', 'eng')
     const item = createMediaItem({ file_size_bytes: 1_000, original_language: 'en', video_codec: 'hevc' })
     const analysis = {
@@ -97,15 +97,15 @@ describe('QualityAnalyzer', () => {
       streamBytes: { 2: 10, 3: 50 },
     }
 
-    const breakdown = analyzer.getOptimizationSavingsBreakdown(item, analysis)
+    const breakdown = await analyzer.getOptimizationSavingsBreakdown(item, analysis)
     expect(breakdown.videoSavingsBytes).toBe(0)
     expect(breakdown.subtitlePruningBytes).toBe(50)
     expect(breakdown.totalEstimatedSavingsBytes).toBe(50)
     expect(breakdown.coverage).toBe('complete')
   })
 
-  it('keeps every subtitle when no language policy is configured', () => {
-    const breakdown = analyzer.getOptimizationSavingsBreakdown(createMediaItem({ original_language: 'en' }), {
+  it('keeps every subtitle when no language policy is configured', async () => {
+    const breakdown = await analyzer.getOptimizationSavingsBreakdown(createMediaItem({ original_language: 'en' }), {
       success: true,
       filePath: '/test/file.mkv',
       durationMs: 60_000,
@@ -120,8 +120,8 @@ describe('QualityAnalyzer', () => {
     expect(breakdown.coverage).toBe('complete')
   })
 
-  it('models H.264 migration from video stream bytes before encoding samples', () => {
-    const breakdown = analyzer.getOptimizationSavingsBreakdown(createMediaItem({
+  it('models H.264 migration from video stream bytes before encoding samples', async () => {
+    const breakdown = await analyzer.getOptimizationSavingsBreakdown(createMediaItem({
       file_size_bytes: 1_000_000_000,
       video_codec: 'h264',
       video_bitrate_kbps: 8_000,
@@ -139,8 +139,8 @@ describe('QualityAnalyzer', () => {
     expect(breakdown.videoSavingsBytes).toBe(200_000_000)
   })
 
-  it('does not infer achievable savings from a same-codec bitrate threshold', () => {
-    const breakdown = analyzer.getOptimizationSavingsBreakdown(createMediaItem({
+  it('does not infer achievable savings from a same-codec bitrate threshold', async () => {
+    const breakdown = await analyzer.getOptimizationSavingsBreakdown(createMediaItem({
       file_size_bytes: 10_000_000_000,
       video_codec: 'hevc',
       video_bitrate_kbps: 20_000,
@@ -157,9 +157,9 @@ describe('QualityAnalyzer', () => {
     ['hevc', 'av1', 200_000_000],
     ['av1', 'hevc', 0],
     ['av1', 'av1', 0],
-  ] as const)('models %s to %s from the source codec without applying the AVC saving twice', (sourceCodec, targetCodec, expected) => {
+  ] as const)('models %s to %s from the source codec without applying the AVC saving twice', async (sourceCodec, targetCodec, expected) => {
     const item = createMediaItem({ video_codec: sourceCodec, file_size_bytes: 1_000_000_000, duration_ms: 3_600_000 })
-    const breakdown = analyzer.getOptimizationSavingsBreakdown(item, {
+    const breakdown = await analyzer.getOptimizationSavingsBreakdown(item, {
       success: true, filePath: '/test/file.mkv', fileSizeBytes: 1_000_000_000, durationMs: 3_600_000,
       video: { index: 0, codec: sourceCodec, width: 1920, height: 1080 }, audioTracks: [], subtitleTracks: [], streamBytes: { 0: 1_000_000_000 },
     }, targetCodec)
@@ -169,7 +169,7 @@ describe('QualityAnalyzer', () => {
   it('keeps H.264 eligible for migration when configured codec factors predict no saving', async () => {
     mockGetSettingsByPrefix.mockReturnValue({ quality_codec_h265: '1' })
     await analyzer.loadThresholdsFromDatabase()
-    const advice = analyzer.getOptimizationAdvice(createMediaItem({ duration_ms: 3_600_000 }), undefined, 'hevc')
+    const advice = await analyzer.getOptimizationAdvice(createMediaItem({ duration_ms: 3_600_000 }), undefined, 'hevc')
     expect(advice.action).toBe('video_transcode')
     expect(advice.estimatedSavingsBytes).toBe(0)
   })
@@ -192,7 +192,7 @@ describe('QualityAnalyzer', () => {
     })
     await analyzer.loadThresholdsFromDatabase()
 
-    const breakdown = analyzer.getOptimizationSavingsBreakdown(createMediaItem({
+    const breakdown = await analyzer.getOptimizationSavingsBreakdown(createMediaItem({
       file_size_bytes: 10_000_000_000,
       video_codec: 'h264',
       video_bitrate_kbps: 20_000,
@@ -200,26 +200,26 @@ describe('QualityAnalyzer', () => {
     }))
 
     expect(breakdown.videoSavingsBytes).toBe(5_400_000_000)
-    const hevcSource = analyzer.getOptimizationSavingsBreakdown(createMediaItem({
+    const hevcSource = await analyzer.getOptimizationSavingsBreakdown(createMediaItem({
       video_codec: 'hevc', video_bitrate_kbps: 20_000, duration_ms: 3_600_000, file_size_bytes: 10_000_000_000,
     }))
     expect(hevcSource.videoSavingsBytes).toBe(1_800_000_000)
     configuredSettings.delete('optimization_default_target_profile_id')
     analyzer.invalidateThresholdsCache()
     await analyzer.loadThresholdsFromDatabase()
-    expect(analyzer.getOptimizationSavingsBreakdown(createMediaItem({
+    expect((await analyzer.getOptimizationSavingsBreakdown(createMediaItem({
       video_codec: 'hevc', video_bitrate_kbps: 20_000, duration_ms: 3_600_000,
-    })).videoSavingsBytes).toBe(0)
+    }))).videoSavingsBytes).toBe(0)
   })
 
-  it('leaves unsupported codecs and missing video inputs unknown', () => {
-    const unsupported = analyzer.getOptimizationSavingsBreakdown(createMediaItem({
+  it('leaves unsupported codecs and missing video inputs unknown', async () => {
+    const unsupported = await analyzer.getOptimizationSavingsBreakdown(createMediaItem({
       video_codec: 'mpeg2', video_bitrate_kbps: 8_000, duration_ms: 3_600_000,
     }))
-    const incomplete = analyzer.getOptimizationSavingsBreakdown(createMediaItem({
+    const incomplete = await analyzer.getOptimizationSavingsBreakdown(createMediaItem({
       video_codec: 'h264', video_bitrate_kbps: null, duration_ms: null,
     }))
-    const zeroBitrate = analyzer.getOptimizationSavingsBreakdown(createMediaItem({
+    const zeroBitrate = await analyzer.getOptimizationSavingsBreakdown(createMediaItem({
       video_codec: 'h264', video_bitrate_kbps: 0, duration_ms: 3_600_000,
     }))
     expect(unsupported.videoSavingsBytes).toBeNull()
@@ -227,8 +227,8 @@ describe('QualityAnalyzer', () => {
     expect(zeroBitrate.videoSavingsBytes).toBeNull()
   })
 
-  it('estimates H.264 migration before sampling and bounds inconsistent bitrate metadata by file size', () => {
-    const advice = analyzer.getOptimizationAdvice(createMediaItem({
+  it('estimates H.264 migration before sampling and bounds inconsistent bitrate metadata by file size', async () => {
+    const advice = await analyzer.getOptimizationAdvice(createMediaItem({
       file_path: 'C:/library/WEB-DL/title.mkv',
       file_size_bytes: 1_000_000_000,
       video_codec: 'h264',
@@ -262,7 +262,7 @@ describe('QualityAnalyzer', () => {
       subtitleTracks: [],
       streamBytes: { 1: 86_400_000, 2: 360_000_000 },
     }
-    const breakdown = analyzer.getOptimizationSavingsBreakdown(item, analysis)
+    const breakdown = await analyzer.getOptimizationSavingsBreakdown(item, analysis)
 
     expect(breakdown.videoSavingsBytes).toBe(1_276_800_000)
     expect(breakdown.audioPruningBytes).toBe(360_000_000)
@@ -273,7 +273,7 @@ describe('QualityAnalyzer', () => {
     expect(score.confidence).toBe('low')
   })
 
-  it('does not include audio conversion savings unless selected in a plan', () => {
+  it('does not include audio conversion savings unless selected in a plan', async () => {
     const item = createMediaItem({
       file_size_bytes: 1_000_000_000,
       duration_ms: 3_600_000,
@@ -294,7 +294,7 @@ describe('QualityAnalyzer', () => {
       streamBytes: { 1: 675_000_000, 2: 100_000_000 },
     }
 
-    const breakdown = analyzer.getOptimizationSavingsBreakdown(item, analysis)
+    const breakdown = await analyzer.getOptimizationSavingsBreakdown(item, analysis)
 
     expect(breakdown.videoSavingsBytes).toBe(112_500_000)
     expect(breakdown.audioPruningBytes).toBe(100_000_000)

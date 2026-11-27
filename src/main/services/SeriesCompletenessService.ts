@@ -260,7 +260,7 @@ export class SeriesCompletenessService extends CancellableOperation {
     // Check if source is a local drive (kodi-local or local) - these need artwork from TMDB
     let updateArtwork = false
     if (sourceId) {
-      const source = db.getMediaSourceById(sourceId)
+      const source = await db.getMediaSourceById(sourceId)
       if (source && (source.source_type === 'kodi-local' || source.source_type === 'local')) {
         updateArtwork = true
         console.log(`[SeriesCompletenessService] Will update artwork for local source: ${sourceId}`)

@@ -355,7 +355,7 @@ describe('TaskQueueService', () => {
         '1080p', 1920, 1080, 'h264', 8000, 'aac', 2, 192)`)
       const taskId = service.addTask({ type: 'media-analysis', label: 'Measure media files', options: { completedMediaItemIds: [1] } })
       const restored = new TaskQueueService()
-      restored.restorePendingQueue()
+      await restored.restorePendingQueue()
       expect(restored.getQueueState().isPaused).toBe(true)
       expect(restored.getQueueState().queue[0].options).toEqual({ completedMediaItemIds: [1] })
       const completed = restored.waitForTask(taskId)

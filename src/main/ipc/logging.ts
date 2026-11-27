@@ -122,8 +122,8 @@ export function registerLoggingHandlers(): void {
   createIpcHandler(IPC_CHANNELS.logsGetFileLoggingSettings, async () => {
     const db = getDatabase()
     return {
-      enabled: db.getSetting('file_logging_enabled') !== 'false',
-      retentionDays: parseInt(db.getSetting('log_retention_days') || '7', 10),
+      enabled: (await db.getSetting('file_logging_enabled')) !== 'false',
+      retentionDays: parseInt((await db.getSetting('log_retention_days')) || '7', 10),
     }
   })
 

@@ -1044,7 +1044,7 @@ export class KodiLocalProvider implements MediaProvider {
       await analyzer.loadThresholdsFromDatabase()
 
       // Check FFprobe availability (respects user setting)
-      const ffprobeEnabled = db.getSetting('ffprobe_enabled') !== 'false'
+      const ffprobeEnabled = (await db.getSetting('ffprobe_enabled')) !== 'false'
       const ffprobeAvailable = ffprobeEnabled && this.useFFprobeAnalysis && await this.isFFprobeAvailable()
 
       console.log(`[KodiLocalProvider ${this.sourceId}] Targeted scan - FFprobe: ${ffprobeAvailable ? 'enabled' : 'disabled'}`)

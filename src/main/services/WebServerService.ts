@@ -144,21 +144,21 @@ export class WebServerService {
   }
 
   /** Restore only encrypted sessions issued for the currently configured PIN. */
-  private loadPersistedSessions(): void {
+  private async loadPersistedSessions(): Promise<void> {
     const db = getDatabase()
-    const stored = db.getSetting('web_sessions')
+    const stored = await db.getSetting('web_sessions')
     if (!stored) return
 
     const encryption = getCredentialEncryptionService()
     if (!encryption.isEncrypted(stored)) {
-      db.deleteSetting('web_sessions')
+      await db.deleteSetting('web_sessions')
       console.warn('[WebServer] Revoked legacy plaintext web sessions')
       return
     }
 
     let entries: Array<[string, Session]>
     try {
-      const plain = encryption.decrypt(stored)
+      const plain = await encryption.decrypt(stored)
       if (!plain) throw new Error('decryption returned no data')
       entries = JSON.parse(plain) as Array<[string, Session]>
       if (!Array.isArray(entries) || entries.some((entry) =>
@@ -172,14 +172,14 @@ export class WebServerService {
       this.sessions.clear()
       console.error('[WebServer] Persisted sessions are unreadable; fresh PIN login is required:', error)
       try {
-        db.deleteSetting('web_sessions')
+        await db.deleteSetting('web_sessions')
       } catch (revokeError) {
         console.error('[WebServer] Could not remove unreadable persisted sessions:', revokeError)
       }
       return
     }
     const now = Date.now()
-    const pinFingerprint = this.getPinFingerprint()
+    const pinFingerprint = await this.getPinFingerprint()
     for (const [token, session] of entries) {
       if (session.expiresAt > now && session.pinFingerprint === pinFingerprint) {
         this.sessions.set(token, session)
@@ -187,14 +187,14 @@ export class WebServerService {
     }
   }
 
-  private persistSessions(): void {
+  private async persistSessions(): Promise<void> {
     const serialized = JSON.stringify(Array.from(this.sessions.entries()))
-    const encrypted = getCredentialEncryptionService().encrypt(serialized)
-    getDatabase().setSetting('web_sessions', encrypted)
+    const encrypted = await getCredentialEncryptionService().encrypt(serialized)
+    await getDatabase().setSetting('web_sessions', encrypted)
   }
 
-  private getPinFingerprint(): string {
-    const storedPin = getDatabase().getSetting(SETTING_KEYS.web_access_pin)
+  private async getPinFingerprint(): Promise<string> {
+    const storedPin = await getDatabase().getSetting(SETTING_KEYS.web_access_pin)
     return crypto.createHash('sha256').update(storedPin || '').digest('hex')
   }
 
@@ -202,16 +202,16 @@ export class WebServerService {
     if (this.httpServer) return
 
     // Security: require PIN to be set before allowing web access
-    if (!this.isPinRequired()) {
+    if (!await this.isPinRequired()) {
       console.warn('[WebServer] Cannot start: no PIN configured. Set a PIN in Settings → General → Web Access.')
       throw new Error('Web access requires a PIN. Set one in Settings → General → Web Access.')
     }
 
-    this.port = port || this.getConfiguredPort()
-    this.loadPersistedSessions()
+    this.port = port || await this.getConfiguredPort()
+    await this.loadPersistedSessions()
 
     // Create HTTP or HTTPS server
-    const useHttps = this.isHttpsEnabled()
+    const useHttps = await this.isHttpsEnabled()
     if (useHttps) {
       const tlsCert = await this.ensureTlsCertificate()
       this.httpServer = https.createServer(tlsCert, (req, res) => this.handleHttp(req, res))
@@ -225,7 +225,7 @@ export class WebServerService {
       perMessageDeflate: { threshold: 1024 },
     })
 
-    this.wss.on('connection', (ws: AuthenticatedWebSocket, req) => {
+    this.wss.on('connection', async (ws: AuthenticatedWebSocket, req) => {
       // Origin validation — reject connections from unexpected origins (CSRF protection)
       const origin = req.headers.origin
       if (origin) {
@@ -245,7 +245,7 @@ export class WebServerService {
       }
 
       ws.clientIp = req.socket.remoteAddress || 'unknown'
-      if (!this.isIpAllowed(ws.clientIp)) {
+      if (!await this.isIpAllowed(ws.clientIp)) {
         ws.close(4003, 'IP not allowed')
         return
       }
@@ -340,11 +340,9 @@ export class WebServerService {
             }
           }
           if (expired) {
-            try {
-              this.persistSessions()
-            } catch (error) {
+            void this.persistSessions().catch(error => {
               console.error('[WebServer] Failed to persist expired-session cleanup:', error)
-            }
+            })
           }
           // Evict expired rate limit entries
           for (const [ip, entry] of this.rateLimits.entries()) {
@@ -434,14 +432,14 @@ export class WebServerService {
   // HTTP Handler
   // ---------------------------------------------------------------------------
 
-  private handleHttp(req: http.IncomingMessage, res: http.ServerResponse): void {
+  private async handleHttp(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     try {
     this.setSecurityHeaders(res)
 
     const url = new URL(req.url || '/', `http://${req.headers.host}`)
 
     const clientIp = req.socket.remoteAddress || 'unknown'
-    if (!this.isIpAllowed(clientIp)) {
+    if (!await this.isIpAllowed(clientIp)) {
       res.writeHead(403)
       res.end('IP not allowed')
       return
@@ -767,7 +765,7 @@ export class WebServerService {
       const rpc = msg as RpcMessage
 
       // Always require authentication
-      if (!rpc.token || !this.isValidSession(rpc.token, ws.clientIp)) {
+      if (!rpc.token || !await this.isValidSession(rpc.token, ws.clientIp)) {
         ws.send(JSON.stringify({ type: 'response', id: rpc.id, error: 'Unauthorized' }))
         return
       }
@@ -780,8 +778,8 @@ export class WebServerService {
     ws.send(JSON.stringify({ type: 'error', error: 'Unknown message type' }))
   }
 
-  private isIpAllowed(ip: string): boolean {
-    const setting = getDatabase().getSetting(SETTING_KEYS.web_access_ip_allowlist)
+  private async isIpAllowed(ip: string): Promise<boolean> {
+    const setting = await getDatabase().getSetting(SETTING_KEYS.web_access_ip_allowlist)
     if (!setting?.trim()) return true
     const normalized = ip.replace(/^::ffff:/, '')
     return setting.split(',').map(value => value.trim()).filter(Boolean).includes(normalized)
@@ -799,7 +797,7 @@ export class WebServerService {
     }
 
     // Validate PIN (always required) — uses constant-time comparison
-    const storedPin = this.getStoredPin()
+    const storedPin = await this.getStoredPin()
     if (!storedPin || !timingSafeCompare(msg.pin, storedPin)) {
       const entry = this.rateLimits.get(ip) || { failures: 0, lockedUntil: 0, lockoutCount: 0, lastAttemptAt: Date.now() }
       entry.lastAttemptAt = Date.now()
@@ -841,9 +839,9 @@ export class WebServerService {
 
     // Issue IP-bound token
     const token = crypto.randomUUID()
-    this.sessions.set(token, { expiresAt: Date.now() + this.getSessionTimeout(), ip, pinFingerprint: this.getPinFingerprint() })
+    this.sessions.set(token, { expiresAt: Date.now() + await this.getSessionTimeout(), ip, pinFingerprint: await this.getPinFingerprint() })
     try {
-      this.persistSessions()
+      await this.persistSessions()
     } catch (error) {
       this.sessions.delete(token)
       throw error
@@ -940,50 +938,50 @@ export class WebServerService {
   // Helpers
   // ---------------------------------------------------------------------------
 
-  private isPinRequired(): boolean {
-    const pin = getDatabase().getSetting(SETTING_KEYS.web_access_pin)
+  private async isPinRequired(): Promise<boolean> {
+    const pin = await getDatabase().getSetting(SETTING_KEYS.web_access_pin)
     return !!pin && pin.trim().length > 0
   }
 
-  private getStoredPin(): string | null {
-    const pin = getDatabase().getSetting(SETTING_KEYS.web_access_pin)
+  private async getStoredPin(): Promise<string | null> {
+    const pin = await getDatabase().getSetting(SETTING_KEYS.web_access_pin)
     if (!pin) return null
-    return getCredentialEncryptionService().decryptSetting(SETTING_KEYS.web_access_pin, pin)
+    return await getCredentialEncryptionService().decryptSetting(SETTING_KEYS.web_access_pin, pin)
   }
 
-  private getConfiguredPort(): number {
-    const port = getDatabase().getSetting(SETTING_KEYS.web_access_port)
+  private async getConfiguredPort(): Promise<number> {
+    const port = await getDatabase().getSetting(SETTING_KEYS.web_access_port)
     const parsed = port ? parseInt(port, 10) : NaN
     return parsed > 0 && parsed < 65536 ? parsed : DEFAULT_PORT
   }
 
-  private getSessionTimeout(): number {
-    const timeout = getDatabase().getSetting(SETTING_KEYS.web_access_session_timeout)
+  private async getSessionTimeout(): Promise<number> {
+    const timeout = await getDatabase().getSetting(SETTING_KEYS.web_access_session_timeout)
     const parsed = timeout ? parseInt(timeout, 10) : NaN
     return parsed > 0 ? parsed : DEFAULT_SESSION_TIMEOUT_MS
   }
 
-  private isValidSession(token: string, clientIp?: string): boolean {
+  private async isValidSession(token: string, clientIp?: string): Promise<boolean> {
     const session = this.sessions.get(token)
     if (!session) return false
-    if (session.pinFingerprint !== this.getPinFingerprint()) return false
+    if (session.pinFingerprint !== await this.getPinFingerprint()) return false
     if (session.expiresAt < Date.now()) {
       this.sessions.delete(token)
-      this.persistSessions()
+      void this.persistSessions().catch(error => console.error('[WebServer] Failed to persist expired session:', error))
       return false
     }
     // Verify token is being used from the same IP it was issued to
     if (clientIp && session.ip !== clientIp) {
       console.warn(`[WebServer] Session token used from different IP: issued to ${session.ip}, used from ${clientIp}`)
       this.sessions.delete(token)
-      this.persistSessions()
+      void this.persistSessions().catch(error => console.error('[WebServer] Failed to persist revoked session:', error))
       return false
     }
     return true
   }
 
-  private isHttpsEnabled(): boolean {
-    const setting = getDatabase().getSetting(SETTING_KEYS.web_access_https)
+  private async isHttpsEnabled(): Promise<boolean> {
+    const setting = await getDatabase().getSetting(SETTING_KEYS.web_access_https)
     return setting !== 'false' // Default to true
   }
 

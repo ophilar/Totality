@@ -416,7 +416,7 @@ export class QualityAnalyzer {
         }
       }
     }
-    const { breakdown, audioPruningEvidence, optimizationDecision } = this.calculateOptimizationSavings(scoringItem, analysis, { measuredPlanSavingsBytes, hasApplicableMeasurements })
+    const { breakdown, audioPruningEvidence, optimizationDecision } = await this.calculateOptimizationSavings(scoringItem, analysis, { measuredPlanSavingsBytes, hasApplicableMeasurements })
     const savingSources = [
       breakdown.videoSavingsBytes === null ? null : { status: 'estimated' as const, basis: 'video_bitrate_estimate' as const },
       audioPruningEvidence.estimatedSavingsBytes === null ? null : { status: audioPruningEvidence.status, basis: audioPruningEvidence.status === 'measured' ? 'audio_stream_removal' as const : 'audio_bitrate_estimate' as const },
@@ -612,16 +612,16 @@ export class QualityAnalyzer {
     return { analysis: { ...analysis, audioTracks: reconciled.tracks } }
   }
 
-  getOptimizationSavingsBreakdown(item: MediaItem, analysis?: FileAnalysisResult, targetCodec?: 'hevc' | 'av1', policy?: { originalLanguage?: string | null; subtitleLanguageWhitelist?: readonly string[] }): OptimizationSavingsBreakdown {
+  async getOptimizationSavingsBreakdown(item: MediaItem, analysis?: FileAnalysisResult, targetCodec?: 'hevc' | 'av1', policy?: { originalLanguage?: string | null; subtitleLanguageWhitelist?: readonly string[] }): Promise<OptimizationSavingsBreakdown> {
     const analyzedItem = analysis ? mergeAnalysisIntoMediaItem(item, analysis) : item
-    return this.calculateOptimizationSavings(analyzedItem, analysis, { targetCodec, ...policy }).breakdown
+    return (await this.calculateOptimizationSavings(analyzedItem, analysis, { targetCodec, ...policy })).breakdown
   }
 
   getRemovableAudioTrackIndexes(item: MediaItem, originalLanguage: string | null | undefined = item.original_language): number[] {
     return buildOptimizationDecision({ originalLanguage, audioTracks: this.getOptimizationAudioTracks(item) }).trackRemoval.removableTrackIndexes
   }
 
-  private calculateOptimizationSavings(item: MediaItem, analysis: FileAnalysisResult | undefined, options?: { measuredPlanSavingsBytes?: number; hasApplicableMeasurements?: boolean; targetCodec?: 'hevc' | 'av1'; originalLanguage?: string | null; subtitleLanguageWhitelist?: readonly string[] }) {
+  private async calculateOptimizationSavings(item: MediaItem, analysis: FileAnalysisResult | undefined, options?: { measuredPlanSavingsBytes?: number; hasApplicableMeasurements?: boolean; targetCodec?: 'hevc' | 'av1'; originalLanguage?: string | null; subtitleLanguageWhitelist?: readonly string[] }) {
     const audioTracks = this.getOptimizationAudioTracks(item, analysis)
     const durationMs = metadataNumber(analysis?.durationMs ?? item.duration_ms, 'duration_ms')
     const optimizationDecision = buildOptimizationDecision({
@@ -630,7 +630,7 @@ export class QualityAnalyzer {
       audioTracks,
     })
     const audioPruningEvidence = this.getAudioPruningEvidence(item, analysis, optimizationDecision)
-    const subtitleWhitelist = options?.subtitleLanguageWhitelist ?? this.getSubtitleLanguageWhitelist()
+    const subtitleWhitelist = options?.subtitleLanguageWhitelist ?? await this.getSubtitleLanguageWhitelist()
     const subtitlePruningBytes = analysis && subtitleWhitelist.length > 0
       ? this.getSubtitlePruningBytes(analysis, [...subtitleWhitelist])
       : null
@@ -674,8 +674,8 @@ export class QualityAnalyzer {
     return { breakdown, audioPruningEvidence, optimizationDecision }
   }
 
-  getSubtitleLanguageWhitelist(): string[] {
-    const configuredLanguages = getDatabase().getSetting(SETTING_KEYS.subtitle_preferred_languages)
+  async getSubtitleLanguageWhitelist(): Promise<string[]> {
+    const configuredLanguages = await getDatabase().getSetting(SETTING_KEYS.subtitle_preferred_languages)
     if (!configuredLanguages?.trim()) return []
     return configuredLanguages.split(/[\s,]+/)
       .map(language => normalizeLanguage(language))
@@ -1049,7 +1049,7 @@ export class QualityAnalyzer {
     return this.getAudioPruningEvidence(item, analysis).estimatedSavingsBytes
   }
 
-  getOptimizationAdvice(item: MediaItem, analysis?: FileAnalysisResult, targetCodec?: 'hevc' | 'av1'): OptimizationAdvice {
+  async getOptimizationAdvice(item: MediaItem, analysis?: FileAnalysisResult, targetCodec?: 'hevc' | 'av1'): Promise<OptimizationAdvice> {
     const video = analysis?.video
     const hasFreshAnalysis = analysis !== undefined
     const codec = metadataString(video?.codec ?? item.video_codec, 'video codec')
@@ -1057,7 +1057,7 @@ export class QualityAnalyzer {
     const sourceTier = TrashSourceClassifier.classify(filePath)
     const audioEvidence = this.getAudioPruningEvidence(item, analysis)
     const audioSavings = audioEvidence.estimatedSavingsBytes
-    const savings = this.calculateOptimizationSavings(item, analysis, { targetCodec }).breakdown
+    const savings = (await this.calculateOptimizationSavings(item, analysis, { targetCodec })).breakdown
     const sourceCodec = normalizeVideoCodec(codec)
     const requestedCodec = targetCodec ? normalizeVideoCodec(targetCodec) : null
     const modeledTargetCodec = savings.videoTargetCodec?.toUpperCase()

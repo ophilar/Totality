@@ -139,18 +139,18 @@ export class LiveMonitoringService {
     await detectWindowsNetworkDrivesAsync()
 
     const db = getDatabase()
-    const enabled = db.getSetting('monitoring_enabled')
+    const enabled = await db.getSetting('monitoring_enabled')
     this.config.enabled = enabled === 'true'
 
-    const startOnLaunch = db.getSetting('monitoring_start_on_launch')
+    const startOnLaunch = await db.getSetting('monitoring_start_on_launch')
     this.config.startOnLaunch = startOnLaunch !== 'false' // Default true
 
-    const pauseDuringManualScan = db.getSetting('monitoring_pause_during_scan')
+    const pauseDuringManualScan = await db.getSetting('monitoring_pause_during_scan')
     this.config.pauseDuringManualScan = pauseDuringManualScan !== 'false' // Default true
 
     // Load per-provider intervals
     for (const provider of getSupportedProviders()) {
-      const interval = db.getSetting(`monitoring_interval_${provider}`)
+      const interval = await db.getSetting(`monitoring_interval_${provider}`)
       if (interval) {
         const parsed = parseInt(interval, 10)
         if (!Number.isNaN(parsed)) {
@@ -167,7 +167,7 @@ export class LiveMonitoringService {
       // Delay start to allow app initialization
       this.startupTimer = setTimeout(() => {
         this.startupTimer = null
-        this.start()
+        void this.start().catch(error => console.error('[LiveMonitoring] Failed to start monitoring:', error))
       }, LiveMonitoringService.STARTUP_DELAY_MS)
     }
   }
@@ -217,11 +217,11 @@ export class LiveMonitoringService {
     if (wasEnabled && !this.config.enabled && wasActive) {
       this.stop()
     } else if (!wasEnabled && this.config.enabled) {
-      this.start()
+      await this.start()
     } else if (wasActive && config.pollingIntervals) {
       // Restart with new intervals
       this.stop()
-      this.start()
+      await this.start()
     }
   }
 
@@ -235,7 +235,7 @@ export class LiveMonitoringService {
   /**
    * Start monitoring all enabled sources
    */
-  start(): void {
+  async start(): Promise<void> {
     if (this.isActive) {
       console.log('[LiveMonitoring] Already active')
       return
@@ -251,11 +251,9 @@ export class LiveMonitoringService {
 
     // Get all enabled sources
     const db = getDatabase()
-    const sources = db.getEnabledMediaSources()
+    const sources = await db.getEnabledMediaSources()
 
-    for (const source of sources) {
-      this.startMonitoringSource(source.source_id, source.source_type as ProviderType, source.connection_config)
-    }
+    await Promise.all(sources.map(source => this.startMonitoringSource(source.source_id, source.source_type as ProviderType, source.connection_config)))
 
     this.sendStatusUpdate()
   }
@@ -369,11 +367,11 @@ export class LiveMonitoringService {
   /**
    * Start monitoring a specific source
    */
-  private startMonitoringSource(sourceId: string, sourceType: ProviderType, connectionConfig: string): void {
+  private async startMonitoringSource(sourceId: string, sourceType: ProviderType, connectionConfig: string): Promise<void> {
     const isLocalSource = sourceType === 'local' || sourceType === 'kodi-local'
 
     if (isLocalSource) {
-      this.startFileWatcher(sourceId, sourceType, connectionConfig)
+      await this.startFileWatcher(sourceId, sourceType, connectionConfig)
     } else {
       this.startPolling(sourceId, sourceType)
     }
@@ -383,7 +381,7 @@ export class LiveMonitoringService {
    * Start file system watching for a local source using chokidar
    * Uses polling for network paths to ensure reliability
    */
-  private startFileWatcher(sourceId: string, sourceType: ProviderType, connectionConfig: string): void {
+  private async startFileWatcher(sourceId: string, sourceType: ProviderType, connectionConfig: string): Promise<void> {
     try {
       const config = JSON.parse(connectionConfig)
       let watchPath: string | undefined
@@ -402,7 +400,7 @@ export class LiveMonitoringService {
 
       // Get source display name for debug output
       const db = getDatabase()
-      const source = db.getMediaSourceById(sourceId)
+      const source = await db.getMediaSourceById(sourceId)
       const sourceName = source?.display_name || config.name || sourceId
 
       // Determine if we should use polling (for network paths)
@@ -427,7 +425,7 @@ export class LiveMonitoringService {
       watcher.on('add', (filePath) => {
         try {
           if (this.isMediaFile(filePath)) {
-            this.handleFileChange(sourceId, 'add', filePath)
+            void this.handleFileChange(sourceId, 'add', filePath).catch(error => console.error(`[LiveMonitoring] Error handling file add for ${sourceName}:`, error))
           }
         } catch (error) {
           console.error(`[LiveMonitoring] Error handling file add for ${sourceName}:`, error)
@@ -437,7 +435,7 @@ export class LiveMonitoringService {
       watcher.on('change', (filePath) => {
         try {
           if (this.isMediaFile(filePath)) {
-            this.handleFileChange(sourceId, 'change', filePath)
+            void this.handleFileChange(sourceId, 'change', filePath).catch(error => console.error(`[LiveMonitoring] Error handling file change for ${sourceName}:`, error))
           }
         } catch (error) {
           console.error(`[LiveMonitoring] Error handling file change for ${sourceName}:`, error)
@@ -447,7 +445,7 @@ export class LiveMonitoringService {
       watcher.on('unlink', (filePath) => {
         try {
           if (this.isMediaFile(filePath)) {
-            this.handleFileChange(sourceId, 'unlink', filePath)
+            void this.handleFileChange(sourceId, 'unlink', filePath).catch(error => console.error(`[LiveMonitoring] Error handling file unlink for ${sourceName}:`, error))
           }
         } catch (error) {
           console.error(`[LiveMonitoring] Error handling file unlink for ${sourceName}:`, error)
@@ -513,7 +511,7 @@ export class LiveMonitoringService {
   /**
    * Handle a file system change event
    */
-  private handleFileChange(sourceId: string, event: 'add' | 'change' | 'unlink', filePath: string): void {
+  private async handleFileChange(sourceId: string, event: 'add' | 'change' | 'unlink', filePath: string): Promise<void> {
     // Skip all file changes during manual scan to avoid interference
     if (this.shouldPause()) {
       return
@@ -521,7 +519,7 @@ export class LiveMonitoringService {
 
     // Get source name for debug output
     const db = getDatabase()
-    const source = db.getMediaSourceById(sourceId)
+    const source = await db.getMediaSourceById(sourceId)
     const sourceName = source?.display_name || sourceId
 
     console.log(`[LiveMonitoring] File ${event}: ${path.basename(filePath)}`)
@@ -592,7 +590,7 @@ export class LiveMonitoringService {
     const db = getDatabase()
 
     // Get source info
-    const source = db.getMediaSourceById(sourceId)
+    const source = await db.getMediaSourceById(sourceId)
     if (!source) {
       console.log(`[LiveMonitoring] Source ${sourceId} not found`)
       return []
@@ -782,7 +780,7 @@ export class LiveMonitoringService {
 
     // Auto-analyze affected series/collections after changes detected
     if (events.length > 0) {
-      this.autoAnalyzeCompleteness(sourceId, events)
+      await this.autoAnalyzeCompleteness(sourceId, events)
     }
 
     return events
@@ -841,7 +839,7 @@ export class LiveMonitoringService {
 
       // Get source name for debug output
       const db = getDatabase()
-      const source = db.getMediaSourceById(sourceId)
+      const source = await db.getMediaSourceById(sourceId)
       const sourceName = source?.display_name || sourceId
 
       console.log(`[LiveMonitoring] Polling ${sourceName}...`)
@@ -894,7 +892,7 @@ export class LiveMonitoringService {
     const db = getDatabase()
 
     // Get source info
-    const source = db.getMediaSourceById(sourceId)
+    const source = await db.getMediaSourceById(sourceId)
     if (!source) {
       console.log(`[LiveMonitoring] Source ${sourceId} not found`)
       return []
@@ -1088,7 +1086,7 @@ export class LiveMonitoringService {
 
     // Auto-analyze affected series/collections after changes detected
     if (events.length > 0) {
-      this.autoAnalyzeCompleteness(sourceId, events)
+      await this.autoAnalyzeCompleteness(sourceId, events)
     }
 
     return events
@@ -1188,9 +1186,9 @@ export class LiveMonitoringService {
    * For 'movie' libraries: queues a scoped collection-completeness task (requires TMDB).
    * For 'music' libraries: runs music quality analysis.
    */
-  private autoAnalyzeCompleteness(sourceId: string, events: SourceChangeEvent[]): void {
+  private async autoAnalyzeCompleteness(sourceId: string, events: SourceChangeEvent[]): Promise<void> {
     const db = getDatabase()
-    const tmdbApiKey = db.getSetting('tmdb_api_key')
+    const tmdbApiKey = await db.getSetting('tmdb_api_key')
 
     const libraries = db.getSourceLibraries(sourceId) as Array<{
       libraryId: string; libraryName: string; libraryType: string; isEnabled: boolean
@@ -1351,7 +1349,7 @@ export class LiveMonitoringService {
   addSource(sourceId: string, sourceType: ProviderType, connectionConfig: string): void {
     if (!this.isActive) return
 
-    this.startMonitoringSource(sourceId, sourceType, connectionConfig)
+    void this.startMonitoringSource(sourceId, sourceType, connectionConfig).catch(error => console.error(`[LiveMonitoring] Failed to add source ${sourceId}:`, error))
   }
 
   /**

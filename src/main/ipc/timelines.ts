@@ -57,7 +57,7 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
       operation.signal.throwIfAborted()
       if (options?.snapshotId) {
         stage = 'loading saved timeline snapshot'
-        const raw = getDatabase().getSetting(snapshotKey(options.snapshotId))
+        const raw = await getDatabase().getSetting(snapshotKey(options.snapshotId))
         if (!raw) throw new Error('The saved timeline snapshot no longer exists; reopen the guide.')
         const saved = JSON.parse(raw) as ResolvedTimelineResult
         if (saved.timeline.id !== recipeId) throw new Error('The snapshot belongs to another viewing guide.')
@@ -132,7 +132,7 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
         if (!server?.uri || !server.accessToken || !server.machineIdentifier) throw new Error('The selected Plex server is missing connection metadata.')
         const operation = operationRequestRegistry.register(event.sender, requestId, { kind: 'plex-playlist', label: 'Publish timeline playlist', context: input.playlistTitle })
         try {
-          const raw = getDatabase().getSetting(snapshotKey(input.snapshotId))
+          const raw = await getDatabase().getSetting(snapshotKey(input.snapshotId))
           if (!raw) throw new Error('The reviewed timeline snapshot no longer exists; reopen the guide.')
           const resolved = JSON.parse(raw) as ResolvedTimelineResult
           if (resolved.timeline.id !== input.recipeId || resolved.sourceId !== input.sourceId) throw new Error('The reviewed timeline does not match the selected guide and source.')
@@ -144,7 +144,7 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
         } finally { operation.dispose() }
       }
       if (!(source instanceof JellyfinEmbyBase)) throw new Error(`Source '${input.sourceId}' does not support playlist publication.`)
-      const raw = getDatabase().getSetting(snapshotKey(input.snapshotId))
+      const raw = await getDatabase().getSetting(snapshotKey(input.snapshotId))
       if (!raw) throw new Error('The reviewed timeline snapshot no longer exists; reopen the guide.')
       const resolved = JSON.parse(raw) as ResolvedTimelineResult
       if (resolved.timeline.id !== input.recipeId || resolved.sourceId !== input.sourceId) throw new Error('The reviewed timeline does not match the selected guide and source.')
@@ -172,7 +172,7 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
       context: input.playlistTitle,
     })
     try {
-    const raw = getDatabase().getSetting(snapshotKey(input.snapshotId))
+    const raw = await getDatabase().getSetting(snapshotKey(input.snapshotId))
     if (!raw) throw new Error('The reviewed timeline snapshot no longer exists; reopen the guide.')
     const resolved = JSON.parse(raw) as ResolvedTimelineResult
     if (resolved.timeline.id !== input.recipeId || resolved.sourceId !== input.sourceId) throw new Error('The reviewed timeline does not match the selected guide and source.')

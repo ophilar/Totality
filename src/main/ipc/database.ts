@@ -278,7 +278,7 @@ export function registerDatabaseHandlers() {
   // NFS Mount Mappings (for Kodi NFS path conversion)
   createIpcHandler(IPC_CHANNELS.settingsGetNfsMappings, async () => {
     try {
-      const json = db.getSetting('nfs_mount_mappings')
+      const json = await db.getSetting('nfs_mount_mappings')
       return json ? JSON.parse(json) : {}
     } catch (error) {
       console.error('Error getting NFS mappings:', error)
@@ -552,7 +552,7 @@ export function registerDatabaseHandlers() {
   createIpcHandler(IPC_CHANNELS.syncPlexWatchlist, async () => {
     try {
       // Get Plex token from saved settings
-      const plexToken = db.getSetting('plex_token')
+      const plexToken = await db.getSetting('plex_token')
       if (!plexToken) throw new Error('No Plex account connected. Add a Plex source first.')
       const { getWatchlistSyncService } = await import('../services/WatchlistSyncService')
       return await getWatchlistSyncService().syncPlex(plexToken)
@@ -577,7 +577,7 @@ export function registerDatabaseHandlers() {
 
   createIpcHandler(IPC_CHANNELS.syncFetchPlex, async () => {
     try {
-      const plexToken = db.getSetting('plex_token')
+      const plexToken = await db.getSetting('plex_token')
       if (!plexToken) throw new Error('No Plex account connected.')
       const { getWatchlistSyncService } = await import('../services/WatchlistSyncService')
       return await getWatchlistSyncService().fetchPlex(plexToken)
@@ -640,7 +640,7 @@ export function registerDatabaseHandlers() {
       console.log('[movie:searchTMDB] Got', response.results.length, 'results')
 
       // Transform results and enrich with physical/digital release dates
-      const region = (db.getSetting('store_region') || 'US').toUpperCase()
+      const region = (await db.getSetting('store_region') || 'US').toUpperCase()
       const results = await Promise.all(response.results.slice(0, 10).map(async movie => {
         let physical_release_date: string | null = null
         try {

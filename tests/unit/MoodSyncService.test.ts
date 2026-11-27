@@ -26,43 +26,43 @@ describe('MoodSyncService', () => {
   // getSources
   // ==========================================================================
   describe('getSources', () => {
-    it('filters non-TAG_SYNC providers', () => {
-      mockGetMediaSources.mockReturnValue([
+    it('filters non-TAG_SYNC providers', async () => {
+      mockGetMediaSources.mockResolvedValue([
         { source_id: 's1', display_name: 'Plex', source_type: 'plex' },
         { source_id: 's2', display_name: 'Local', source_type: 'local' },
       ])
       mockCountMusicTracks.mockReturnValue(10)
 
-      const result = service.getSources()
+      const result = await service.getSources()
       expect(result).toHaveLength(1)
       expect(result[0].sourceName).toBe('Plex')
     })
 
-    it('skips sources with 0 tracks', () => {
-      mockGetMediaSources.mockReturnValue([
+    it('skips sources with 0 tracks', async () => {
+      mockGetMediaSources.mockResolvedValue([
         { source_id: 's1', display_name: 'Plex', source_type: 'plex' },
       ])
       mockCountMusicTracks.mockReturnValue(0)
 
-      const result = service.getSources()
+      const result = await service.getSources()
       expect(result).toHaveLength(0)
     })
 
-    it('returns track counts per source', () => {
-      mockGetMediaSources.mockReturnValue([
+    it('returns track counts per source', async () => {
+      mockGetMediaSources.mockResolvedValue([
         { source_id: 's1', display_name: 'Plex', source_type: 'plex' },
       ])
       mockCountMusicTracks
         .mockReturnValueOnce(100) // totalTracks
         .mockReturnValueOnce(50)  // tracksWithMoods
 
-      const result = service.getSources('mood')
+      const result = await service.getSources('mood')
       expect(result[0].totalTracks).toBe(100)
       expect(result[0].tracksWithMoods).toBe(50)
     })
 
-    it('includes all TAG_SYNC providers', () => {
-      mockGetMediaSources.mockReturnValue([
+    it('includes all TAG_SYNC providers', async () => {
+      mockGetMediaSources.mockResolvedValue([
         { source_id: 's1', display_name: 'Plex', source_type: 'plex' },
         { source_id: 's2', display_name: 'MM', source_type: 'mediamonkey' },
         { source_id: 's3', display_name: 'Kodi', source_type: 'kodi' },
@@ -70,7 +70,7 @@ describe('MoodSyncService', () => {
       ])
       mockCountMusicTracks.mockReturnValue(5)
 
-      const result = service.getSources()
+      const result = await service.getSources()
       expect(result).toHaveLength(4)
     })
   })
@@ -79,23 +79,23 @@ describe('MoodSyncService', () => {
   // getComparison
   // ==========================================================================
   describe('getComparison', () => {
-    it('returns empty when SOT has no tracks with tags', () => {
+    it('returns empty when SOT has no tracks with tags', async () => {
       mockGetMusicTracks.mockReturnValue([])
-      const result = service.getComparison('sot-source')
+      const result = await service.getComparison('sot-source')
       expect(result).toEqual([])
     })
 
-    it('returns empty when no other TAG_SYNC sources exist', () => {
+    it('returns empty when no other TAG_SYNC sources exist', async () => {
       mockGetMusicTracks.mockReturnValue([
         { id: 1, title: 'Song', artist_name: 'Artist', mood: '["Happy"]' },
       ])
-      mockGetMediaSources.mockReturnValue([])
+      mockGetMediaSources.mockResolvedValue([])
 
-      const result = service.getComparison('sot-source')
+      const result = await service.getComparison('sot-source')
       expect(result).toEqual([])
     })
 
-    it('matches tracks by musicbrainz_id', () => {
+    it('matches tracks by musicbrainz_id', async () => {
       const sotTrack = {
         id: 1, title: 'Song', artist_name: 'Artist',
         musicbrainz_id: 'mb-123', mood: '["Happy"]',
@@ -106,18 +106,18 @@ describe('MoodSyncService', () => {
       }
 
       mockGetMusicTracks.mockReturnValueOnce([sotTrack]) // SOT tracks
-      mockGetMediaSources.mockReturnValue([
+      mockGetMediaSources.mockResolvedValue([
         { source_id: 'target', display_name: 'Target', source_type: 'plex' },
       ])
       mockCountMusicTracks.mockReturnValue(1)
       mockGetMusicTracks.mockReturnValueOnce([targetTrack]) // target tracks
 
-      const result = service.getComparison('sot-source')
+      const result = await service.getComparison('sot-source')
       expect(result).toHaveLength(1)
       expect(result[0].targets[0].hasMismatch).toBe(true)
     })
 
-    it('matches tracks by title+artist fallback', () => {
+    it('matches tracks by title+artist fallback', async () => {
       const sotTrack = {
         id: 1, title: 'Song Title', artist_name: 'Artist Name',
         mood: '["Chill"]',
@@ -128,18 +128,18 @@ describe('MoodSyncService', () => {
       }
 
       mockGetMusicTracks.mockReturnValueOnce([sotTrack])
-      mockGetMediaSources.mockReturnValue([
+      mockGetMediaSources.mockResolvedValue([
         { source_id: 'target', display_name: 'Target', source_type: 'mediamonkey' },
       ])
       mockCountMusicTracks.mockReturnValue(1)
       mockGetMusicTracks.mockReturnValueOnce([targetTrack])
 
-      const result = service.getComparison('sot-source')
+      const result = await service.getComparison('sot-source')
       expect(result).toHaveLength(1)
       expect(result[0].targets[0].hasMismatch).toBe(false)
     })
 
-    it('detects case-insensitive tag matches', () => {
+    it('detects case-insensitive tag matches', async () => {
       const sotTrack = {
         id: 1, title: 'Song', artist_name: 'Artist',
         musicbrainz_id: 'mb-1', mood: '["Happy", "Sad"]',
@@ -150,33 +150,33 @@ describe('MoodSyncService', () => {
       }
 
       mockGetMusicTracks.mockReturnValueOnce([sotTrack])
-      mockGetMediaSources.mockReturnValue([
+      mockGetMediaSources.mockResolvedValue([
         { source_id: 'target', display_name: 'Target', source_type: 'plex' },
       ])
       mockCountMusicTracks.mockReturnValue(1)
       mockGetMusicTracks.mockReturnValueOnce([targetTrack])
 
-      const result = service.getComparison('sot-source')
+      const result = await service.getComparison('sot-source')
       expect(result[0].targets[0].hasMismatch).toBe(false)
     })
 
-    it('skips SOT tracks with empty tags', () => {
+    it('skips SOT tracks with empty tags', async () => {
       const sotTrack = {
         id: 1, title: 'Song', artist_name: 'Artist', mood: null,
       }
 
       mockGetMusicTracks.mockReturnValueOnce([sotTrack])
-      mockGetMediaSources.mockReturnValue([
+      mockGetMediaSources.mockResolvedValue([
         { source_id: 'target', display_name: 'Target', source_type: 'plex' },
       ])
       mockCountMusicTracks.mockReturnValue(1)
       mockGetMusicTracks.mockReturnValueOnce([])
 
-      const result = service.getComparison('sot-source')
+      const result = await service.getComparison('sot-source')
       expect(result).toHaveLength(0)
     })
 
-    it('uses genre field when specified', () => {
+    it('uses genre field when specified', async () => {
       const sotTrack = {
         id: 1, title: 'Song', artist_name: 'Artist',
         musicbrainz_id: 'mb-1', genres: '["Rock"]',
@@ -187,13 +187,13 @@ describe('MoodSyncService', () => {
       }
 
       mockGetMusicTracks.mockReturnValueOnce([sotTrack])
-      mockGetMediaSources.mockReturnValue([
+      mockGetMediaSources.mockResolvedValue([
         { source_id: 'target', display_name: 'Target', source_type: 'plex' },
       ])
       mockCountMusicTracks.mockReturnValue(1)
       mockGetMusicTracks.mockReturnValueOnce([targetTrack])
 
-      const result = service.getComparison('sot-source', 'genre')
+      const result = await service.getComparison('sot-source', 'genre')
       expect(result).toHaveLength(1)
       expect(result[0].targets[0].hasMismatch).toBe(true)
     })

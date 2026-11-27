@@ -91,14 +91,14 @@ describe('persisted web sessions', () => {
 
   afterEach(() => vi.restoreAllMocks())
 
-  it('revokes unreadable encrypted sessions and keeps startup able to use fresh PIN login', () => {
+  it('revokes unreadable encrypted sessions and keeps startup able to use fresh PIN login', async () => {
     const service = Object.create(WebServerService.prototype) as {
-      loadPersistedSessions: () => void
+      loadPersistedSessions: () => Promise<void>
       sessions: Map<string, unknown>
     }
     service.sessions = new Map([['stale-token', {}]])
 
-    expect(() => service.loadPersistedSessions()).not.toThrow()
+    await expect(service.loadPersistedSessions()).resolves.toBeUndefined()
     expect(service.sessions.size).toBe(0)
     expect(mockDeleteSetting).toHaveBeenCalledWith('web_sessions')
     expect(console.error).toHaveBeenCalledWith(

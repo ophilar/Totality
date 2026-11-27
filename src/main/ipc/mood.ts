@@ -116,8 +116,8 @@ export function registerMoodHandlers() {
     const { sourceOfTruthId, targetSourceId, trackIds, mode = 'overwrite', field = 'mood' } = args
     const result = { synced: 0, failed: 0, cacheFailed: 0, skipped: 0, errors: [] as string[] }
 
-    const comparison = getMoodSyncService().getComparison(sourceOfTruthId, field)
-      const manager = getSourceManager()
+    const comparison = await getMoodSyncService().getComparison(sourceOfTruthId, field)
+    const manager = getSourceManager()
       const provider = manager.getProvider(targetSourceId)
 
       if (!provider) {

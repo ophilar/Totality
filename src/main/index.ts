@@ -84,6 +84,8 @@ import { fetchWithTimeout } from './services/utils/httpClient'
 import { getAutoUpdateService } from './services/AutoUpdateService'
 import { getWishlistCompletionService } from './services/WishlistCompletionService'
 import { getWebServerService, initWebServerService } from './services/WebServerService'
+import { getCredentialEncryptionService } from './services/CredentialEncryptionService'
+import type { MediaSource } from './types/database'
 import { registerWebAccessHandlers } from './ipc/webAccess'
 import { SETTING_KEYS } from '../shared/settingKeys'
 
@@ -182,12 +184,16 @@ function createWindow() {
     if (isQuitting) return
 
     const db = getDatabaseServiceSync()
-    const minimizeToTray = db.isInitialized ? db.getSetting('minimize_to_tray') : null
-
-    if (minimizeToTray === 'true') {
-      event.preventDefault()
-      win?.hide()
-    }
+    if (!db.isInitialized) return
+    event.preventDefault()
+    void db.getSetting('minimize_to_tray').then(minimizeToTray => {
+      if (minimizeToTray === 'true') win?.hide()
+      else { isQuitting = true; win?.close() }
+    }).catch(error => {
+      console.error('[Window] Failed to read minimize-to-tray setting:', error)
+      isQuitting = true
+      win?.close()
+    })
   })
 
   // Content Security Policy — defense-in-depth against XSS
@@ -526,6 +532,18 @@ app.whenReady().then(async () => {
     await db.initialize()
     console.log('Database initialized successfully (better-sqlite3)')
 
+    await getCredentialEncryptionService().migrateCredentials(
+      async () => db.getRawMediaSources().map((source: MediaSource) => ({ source_id: source.source_id, connection_config: source.connection_config })),
+      async (sourceId, connectionConfig) => {
+        const source = db.getRawMediaSources().find((candidate: MediaSource) => candidate.source_id === sourceId)
+        if (!source) throw new Error(`Media source ${sourceId} was not found during credential migration`)
+        await db.upsertMediaSource({ ...source, connection_config: connectionConfig })
+      },
+      async () => db.getRawSettings(),
+      async (key, value) => { await db.setSetting(key, value) },
+    )
+    console.log('Credential migration completed')
+
     // Note: BetterSQLiteService runs PRAGMA integrity_check during initialize().
     // If integrity fails, it logs an error but continues (data is still usable).
 
@@ -577,7 +595,7 @@ app.whenReady().then(async () => {
 
     // Initialize web server (uses captured handler map)
     const webServer = initWebServerService(webHandlerMap, VITE_DEV_SERVER_URL)
-    const webAccessEnabled = db.getSetting(SETTING_KEYS.web_access_enabled)
+    const webAccessEnabled = await db.getSetting(SETTING_KEYS.web_access_enabled)
     if (webAccessEnabled === 'true') {
       webServer.start().catch(err =>
         console.error('[WebServer] Failed to auto-start:', err)
@@ -594,8 +612,8 @@ app.whenReady().then(async () => {
     setTrayUpdateCallback(() => updateTrayMenu())
 
     // Handle "start minimized to tray" setting
-    const startMinimized = db.getSetting('start_minimized_to_tray')
-    if (startMinimized === 'true' && db.getSetting('minimize_to_tray') === 'true') {
+    const startMinimized = await db.getSetting('start_minimized_to_tray')
+    if (startMinimized === 'true' && await db.getSetting('minimize_to_tray') === 'true') {
       win?.hide()
     }
 
@@ -626,10 +644,10 @@ app.whenReady().then(async () => {
     taskQueueService.loadPersistedHistory()
     resumeBackgroundPreflights()
     const database = getDatabase()
-    if (database.getSetting('optimization.quality_reanalysis_pending') === 'true') {
+    if (await database.getSetting('optimization.quality_reanalysis_pending') === 'true') {
       taskQueueService.addTask({ type: 'quality-analysis', label: 'Refresh media quality' })
     }
-    if (database.getSetting('optimization.savings_reanalysis_pending') === 'true') {
+    if (await database.getSetting('optimization.savings_reanalysis_pending') === 'true') {
       taskQueueService.addTask({ type: 'media-analysis', label: 'Measure media files', options: { completedMediaItemIds: [] } })
     }
     console.log('Task queue service initialized')

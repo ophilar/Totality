@@ -28,11 +28,12 @@ export interface DatabaseServiceInterface {
   getDbPath(): string
 
   // --- Settings ---
-  getSetting(key: string): string | null
+  getSetting(key: string): Promise<string | null>
   setSetting(key: string, value: string): void | Promise<void>
   deleteSetting(key: string): void | Promise<void>
-  getAllSettings(): Record<string, string>
-  getSettingsByPrefix(prefix: string): Record<string, string>
+  getAllSettings(): Promise<Record<string, string>>
+  getSettingsByPrefix(prefix: string): Promise<Record<string, string>>
+  getRawSetting(key: string): string | null
 
   // --- TMDB Cache ---
   getTmdbCache(key: string): { data: string; cached_at: number } | null
@@ -73,10 +74,10 @@ export interface DatabaseServiceInterface {
   getQualityScores(): QualityScore[]
 
   // --- Media Sources ---
-  getMediaSources(type?: string): MediaSource[]
-  getEnabledMediaSources(): MediaSource[]
-  getMediaSource(sourceId: string): MediaSource | null
-  getMediaSourceById(sourceId: string): MediaSource | null
+  getMediaSources(type?: string): Promise<MediaSource[]>
+  getEnabledMediaSources(): Promise<MediaSource[]>
+  getMediaSource(sourceId: string): Promise<MediaSource | null>
+  getMediaSourceById(sourceId: string): Promise<MediaSource | null>
   upsertMediaSource(source: Partial<MediaSource> & { source_id: string; source_type: string; display_name: string }): void | Promise<void>
   deleteMediaSource(sourceId: string): void | Promise<void>
   updateSourceConnectionTime(sourceId: string): void | Promise<void>

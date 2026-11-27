@@ -51,7 +51,7 @@ export class TimelineCacheService {
     // 2. Check persistent SQLite cache
     try {
       const db = getDatabase()
-      const raw = db.getSetting(key)
+      const raw = await db.getSetting(key)
       if (raw) {
         const parsed: unknown = JSON.parse(raw)
         if (!isCacheEntry(parsed)) {
@@ -114,7 +114,7 @@ export class TimelineCacheService {
 
     try {
       const db = getDatabase()
-      const raw = db.getSetting(key)
+      const raw = await db.getSetting(key)
       if (raw) {
         const parsed: unknown = JSON.parse(raw)
         if (!isCacheEntry(parsed)) return null
@@ -168,7 +168,7 @@ export class TimelineCacheService {
       this.memoryCache.clear()
       try {
         const db = getDatabase()
-        const settings = { ...db.getSettingsByPrefix('timeline_recipe:'), ...db.getSettingsByPrefix('timeline_manifest:') }
+        const settings = { ...(await db.getSettingsByPrefix('timeline_recipe:')), ...(await db.getSettingsByPrefix('timeline_manifest:')) }
         for (const key of Object.keys(settings)) await db.deleteSetting(key)
       } catch (error) {
         throw new Error(`Cannot invalidate timeline cache: ${String(error)}`)

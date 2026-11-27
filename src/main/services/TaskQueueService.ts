@@ -516,7 +516,7 @@ export class TaskQueueService {
         })
       }
 
-      this.persistPendingQueue()
+      void this.persistPendingQueue().catch(error => console.error('[TaskQueue] Failed to persist pending queue:', getErrorMessage(error)))
     } catch (err) {
       console.error('[TaskQueue] Failed to persist interrupted tasks:', getErrorMessage(err))
     }
@@ -526,10 +526,10 @@ export class TaskQueueService {
    * Restore any tasks that were pending when the app last quit.
    * Called once on startup after loadPersistedHistory().
    */
-  restorePendingQueue(): void {
+  async restorePendingQueue(): Promise<void> {
     try {
       const db = getDatabase()
-      this.isPaused = db.getSetting(SETTING_KEYS.task_queue_paused_on_shutdown) === 'true'
+      this.isPaused = await db.getSetting(SETTING_KEYS.task_queue_paused_on_shutdown) === 'true'
       db.deleteSetting(SETTING_KEYS.task_queue_paused_on_shutdown)
       const pending = db.getPendingTasks()
       if (pending.length === 0) return
@@ -761,6 +761,7 @@ export class TaskQueueService {
     this.currentTaskAbortController = undefined
     for (const resolve of this.processingIdleWaiters.splice(0)) resolve()
 
+    await this.persistPendingQueue()
     this.emitQueueUpdate()
     this.emitTaskComplete(task)
     this.resolveTaskCompletion(task)
@@ -889,7 +890,7 @@ export class TaskQueueService {
             },
             onItemComplete: mediaItemId => {
               options.completedMediaItemIds.push(mediaItemId)
-              this.persistPendingQueue()
+              void this.persistPendingQueue().catch(error => console.error('[TaskQueue] Failed to persist pending queue:', getErrorMessage(error)))
             },
             shouldYield: () => this.queue.some(queuedTask => queuedTask.type !== 'media-analysis'),
           },
@@ -1474,7 +1475,7 @@ export class TaskQueueService {
   // ============================================================================
 
   private emitQueueUpdate(): void {
-    this.persistPendingQueue()
+    void this.persistPendingQueue().catch(error => console.error('[TaskQueue] Failed to persist pending queue:', getErrorMessage(error)))
     this.sendToRenderer('taskQueue:updated', this.getQueueState())
     for (const listener of this.stateChangeListeners) {
       try { listener() } catch { /* ignore */ }
@@ -1485,9 +1486,9 @@ export class TaskQueueService {
     this.stateChangeListeners.push(listener)
   }
 
-  private persistPendingQueue(): void {
+  private async persistPendingQueue(): Promise<void> {
     const db = getDatabase()
-    db.setSetting(SETTING_KEYS.task_queue_paused_on_shutdown, String(this.isPaused))
+    await db.setSetting(SETTING_KEYS.task_queue_paused_on_shutdown, String(this.isPaused))
     const tasks = [...(this.currentTask ? [this.currentTask] : []), ...this.queue]
     db.savePendingTasks(tasks.map(task => ({
       taskId: task.id, type: task.type, label: task.label,
@@ -1611,7 +1612,7 @@ export class TaskQueueService {
    * For 'movie' libraries → collection completeness task (requires TMDB)
    * For 'music' libraries → music quality analysis (no external API required)
    */
-  private autoQueueCompleteness(task: QueuedTask): void {
+  private async autoQueueCompleteness(task: QueuedTask): Promise<void> {
     try {
       const db = getDatabase()
 
@@ -1627,7 +1628,7 @@ export class TaskQueueService {
             (l: { isEnabled: boolean }) => l.isEnabled
           )
 
-      const tmdbApiKey = db.getSetting('tmdb_api_key')
+      const tmdbApiKey = await db.getSetting('tmdb_api_key')
 
       for (const lib of libraries) {
         if (lib.libraryType === 'show' && tmdbApiKey) {

@@ -162,7 +162,7 @@ export class MovieCollectionService extends CancellableOperation {
     const db = getDatabase()
 
     try {
-      const source = db.getMediaSourceById(sourceId)
+      const source = await db.getMediaSourceById(sourceId)
       if (!source || source.source_type !== 'plex') return posterMap
 
       const config = JSON.parse(source.connection_config)
@@ -246,7 +246,7 @@ export class MovieCollectionService extends CancellableOperation {
     console.log(`[MovieCollectionService] Cross-provider deduplication: ${allMovies.length} total movies`)
 
     // For any source that's local, we need TMDB IDs first
-    const sources = db.getMediaSources() as Array<{ id: number; source_type: string }>
+    const sources = await db.getMediaSources()
     const localSourceIds = new Set(
       sources
         .filter((s: typeof sources[0]) => s.source_type === 'kodi-local' || s.source_type === 'local')
@@ -387,14 +387,14 @@ export class MovieCollectionService extends CancellableOperation {
     const tmdb = getTMDBService()
 
     // If previous analysis was cancelled (incomplete), force full re-analysis
-    if (skipRecentlyAnalyzed && db.getSetting('collection_analysis_incomplete') === 'true') {
+    if (skipRecentlyAnalyzed && await db.getSetting('collection_analysis_incomplete') === 'true') {
       console.log('[MovieCollectionService] Previous analysis was incomplete, forcing full re-analysis')
       skipRecentlyAnalyzed = false
       db.deleteSetting('collection_analysis_incomplete')
     }
 
     // Check if TMDB API key is configured
-    const tmdbApiKey = db.getSetting('tmdb_api_key')
+    const tmdbApiKey = await db.getSetting('tmdb_api_key')
     if (!tmdbApiKey) {
       console.log('[MovieCollectionService] TMDB API key not configured, cannot analyze collections')
       throw new Error('TMDB API key not configured. Please add your API key in Settings.')
@@ -407,7 +407,7 @@ export class MovieCollectionService extends CancellableOperation {
     let isLocalSource = false
     let isPlexSource = false
     if (sourceId) {
-      const source = db.getMediaSourceById(sourceId)
+      const source = await db.getMediaSourceById(sourceId)
       if (source && (source.source_type === 'kodi-local' || source.source_type === 'local')) {
         isLocalSource = true
         console.log('[MovieCollectionService] Local source detected, will lookup missing TMDB IDs and update artwork')

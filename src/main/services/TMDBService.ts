@@ -49,7 +49,7 @@ export class TMDBService {
    */
   async initialize(): Promise<void> {
     const db = getDatabase()
-    const setting = db.getSetting('tmdb_api_key')
+    const setting = await db.getSetting('tmdb_api_key')
     this.apiKey = setting || null
 
     if (!this.apiKey || this.apiKey === '') {
@@ -64,9 +64,9 @@ export class TMDBService {
   /**
    * Refresh API key from database (called when settings change)
    */
-  refreshApiKey(): void {
+  async refreshApiKey(): Promise<void> {
     const db = getDatabase()
-    const setting = db.getSetting('tmdb_api_key')
+    const setting = await db.getSetting('tmdb_api_key')
     this.apiKey = setting || null
   }
 

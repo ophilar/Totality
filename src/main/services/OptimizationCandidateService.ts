@@ -47,7 +47,7 @@ function parseSubtitleTracks(raw: string | undefined): SubtitleTrack[] {
 }
 
 export class OptimizationCandidateService {
-  discover(item: MediaItem, policy: OptimizationCandidatePolicy): OptimizationCandidateEvidence {
+  async discover(item: MediaItem, policy: OptimizationCandidatePolicy): Promise<OptimizationCandidateEvidence> {
     const reasons: OptimizationCandidateReason[] = []
     const codec = normalizeVideoCodec(item.video_codec)
     // A selected output codec is authoritative. Hardware availability only determines
@@ -83,7 +83,7 @@ export class OptimizationCandidateService {
       : reasons.includes('h264_video_transcode')
         ? selectedVideoCodec
         : undefined
-    const components = analyzer.getOptimizationSavingsBreakdown(item, undefined, targetCodec, {
+    const components = await analyzer.getOptimizationSavingsBreakdown(item, undefined, targetCodec, {
       originalLanguage: originalAudioLanguage,
       subtitleLanguageWhitelist: policy.subtitleLanguageWhitelist,
     })

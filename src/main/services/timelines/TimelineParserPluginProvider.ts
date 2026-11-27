@@ -564,7 +564,7 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
   }
 
   private async readSavedPlugins(): Promise<TimelineParserPlugin[]> {
-    const raw = getDatabase().getSetting(SETTING_KEY)
+    const raw = await getDatabase().getSetting(SETTING_KEY)
     if (!raw) return []
     const values: unknown = JSON.parse(raw)
     if (!Array.isArray(values)) throw new Error(`Setting '${SETTING_KEY}' must contain an array of parser definitions.`)

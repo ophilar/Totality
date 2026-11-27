@@ -5,7 +5,7 @@ import { OptimizationCandidateService } from '@main/services/OptimizationCandida
 vi.mock('@main/services/QualityAnalyzer', () => ({
   getQualityAnalyzer: () => ({
     getRemovableAudioTrackIndexes: () => [],
-    getOptimizationSavingsBreakdown: (_item: unknown, _analysis: unknown, codec: string | undefined) => ({
+    getOptimizationSavingsBreakdown: async (_item: unknown, _analysis: unknown, codec: string | undefined) => ({
       videoSavingsBytes: codec ? 1000 : null,
       audioPruningBytes: null,
       subtitlePruningBytes: null,
@@ -31,34 +31,34 @@ describe('OptimizationCandidateService respects target codec', () => {
   const discover = (codec: string, target: 'hevc' | 'av1') =>
     new OptimizationCandidateService().discover(item(codec), policy(target))
 
-  it('never suggests HEVC-to-AV1 when HEVC is selected, even with AV1 hardware', () => {
-    expect(discover('HEVC', 'hevc').reasons).toEqual([])
-    expect(discover('HEVC', 'hevc').targetCodec).toBeUndefined()
+  it('never suggests HEVC-to-AV1 when HEVC is selected, even with AV1 hardware', async () => {
+    expect((await discover('HEVC', 'hevc')).reasons).toEqual([])
+    expect((await discover('HEVC', 'hevc')).targetCodec).toBeUndefined()
   })
 
-  it('suggests only the selected codec when converting H.264', () => {
-    expect(discover('H.264', 'hevc')).toMatchObject({
+  it('suggests only the selected codec when converting H.264', async () => {
+    expect(await discover('H.264', 'hevc')).toMatchObject({
       reasons: ['h264_video_transcode'],
       targetCodec: 'hevc',
     })
-    expect(discover('h264', 'av1')).toMatchObject({
+    expect(await discover('h264', 'av1')).toMatchObject({
       reasons: ['h264_video_transcode'],
       targetCodec: 'av1',
     })
   })
 
-  it('only offers HEVC-to-AV1 when AV1 is explicitly selected and executable', () => {
-    expect(discover('HEVC', 'av1')).toMatchObject({
+  it('only offers HEVC-to-AV1 when AV1 is explicitly selected and executable', async () => {
+    expect(await discover('HEVC', 'av1')).toMatchObject({
       reasons: ['hevc_to_av1'],
       targetCodec: 'av1',
     })
-    expect(new OptimizationCandidateService().discover(item('HEVC'), {
+    expect((await new OptimizationCandidateService().discover(item('HEVC'), {
       ...policy('av1'),
       av1HardwareEncodingAvailable: false,
-    }).reasons).toEqual([])
+    })).reasons).toEqual([])
   })
 
-  it('never offers an AV1-to-HEVC downgrade', () => {
-    expect(discover('AV1', 'hevc').reasons).toEqual([])
+  it('never offers an AV1-to-HEVC downgrade', async () => {
+    expect((await discover('AV1', 'hevc')).reasons).toEqual([])
   })
 })

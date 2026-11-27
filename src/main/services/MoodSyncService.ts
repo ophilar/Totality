@@ -56,9 +56,9 @@ export class MoodSyncService {
    * Get all sources that have music tracks (with tag count for each).
    * Uses count queries — does NOT load track data into memory.
    */
-  getSources(field: SyncField = 'mood'): MoodSourceInfo[] {
+  async getSources(field: SyncField = 'mood'): Promise<MoodSourceInfo[]> {
     const db = getDatabase()
-    const sources = db.getMediaSources() as Array<{ source_id: string; display_name: string; source_type: string }>
+    const sources = await db.getMediaSources()
     const result: MoodSourceInfo[] = []
 
     for (const source of sources) {
@@ -86,7 +86,7 @@ export class MoodSyncService {
    * Compare tags between a source of truth and all other sources.
    * Only loads tracks with tags from SOT, and all tracks from targets for matching.
    */
-  getComparison(sourceOfTruthId: string, field: SyncField = 'mood'): MoodComparison[] {
+  async getComparison(sourceOfTruthId: string, field: SyncField = 'mood'): Promise<MoodComparison[]> {
     const db = getDatabase()
 
     // Only load tracks WITH the tag field from source of truth
@@ -94,7 +94,7 @@ export class MoodSyncService {
     if (!sotTracks || sotTracks.length === 0) return []
 
     // Get all other sources
-    const sources = db.getMediaSources() as Array<{ source_id: string; display_name: string; source_type: string }>
+    const sources = await db.getMediaSources()
     const otherSources = sources.filter(s => s.source_id !== sourceOfTruthId && TAG_SYNC_PROVIDERS.has(s.source_type))
     if (otherSources.length === 0) return []
 

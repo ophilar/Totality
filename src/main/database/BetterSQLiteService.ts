@@ -1019,7 +1019,7 @@ export class BetterSQLiteService {
   /**
    * Get a setting value
    */
-  getSetting(key: string): string | null {
+  async getSetting(key: string): Promise<string | null> {
     if (!this.db) throw new Error('Database not initialized')
 
     const stmt = this.db.prepare('SELECT value FROM settings WHERE key = ?')
@@ -1028,28 +1028,17 @@ export class BetterSQLiteService {
     if (!row) return null
 
     // Decrypt sensitive settings
-    const sensitiveKeys = ['plex_token', 'tmdb_api_key', 'musicbrainz_api_token']
-    if (sensitiveKeys.includes(key)) {
-      const encryption = getCredentialEncryptionService()
-      return encryption.decryptSetting(key, row.value)
-    }
-
-    return row.value
+    return await getCredentialEncryptionService().decryptSetting(key, row.value)
   }
 
   /**
    * Set a setting value
    */
-  setSetting(key: string, value: string): void {
+  async setSetting(key: string, value: string): Promise<void> {
     if (!this.db) throw new Error('Database not initialized')
 
     // Encrypt sensitive settings
-    const sensitiveKeys = ['plex_token', 'tmdb_api_key', 'musicbrainz_api_token']
-    let storedValue = value
-    if (sensitiveKeys.includes(key)) {
-      const encryption = getCredentialEncryptionService()
-      storedValue = encryption.encryptSetting(key, value)
-    }
+    const storedValue = await getCredentialEncryptionService().encryptSetting(key, value)
 
     const stmt = this.db.prepare(`
       INSERT INTO settings (key, value, updated_at)
@@ -1072,7 +1061,7 @@ export class BetterSQLiteService {
   /**
    * Get all settings
    */
-  getAllSettings(): Record<string, string> {
+  async getAllSettings(): Promise<Record<string, string>> {
     if (!this.db) throw new Error('Database not initialized')
 
     const stmt = this.db.prepare('SELECT key, value FROM settings')
@@ -1082,16 +1071,28 @@ export class BetterSQLiteService {
     const settings: Record<string, string> = {}
 
     for (const row of rows) {
-      settings[row.key] = encryption.decryptSetting(row.key, row.value)
+      settings[row.key] = await encryption.decryptSetting(row.key, row.value)
     }
 
     return settings
   }
 
+  getRawSettings(): Record<string, string> {
+    if (!this.db) throw new Error('Database not initialized')
+    const rows = this.db.prepare('SELECT key, value FROM settings').all() as Array<{ key: string; value: string }>
+    return Object.fromEntries(rows.map(row => [row.key, row.value]))
+  }
+
+  getRawSetting(key: string): string | null {
+    if (!this.db) throw new Error('Database not initialized')
+    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
+    return row?.value ?? null
+  }
+
   /**
    * Get settings by prefix
    */
-  getSettingsByPrefix(prefix: string): Record<string, string> {
+  async getSettingsByPrefix(prefix: string): Promise<Record<string, string>> {
     if (!this.db) throw new Error('Database not initialized')
 
     const stmt = this.db.prepare('SELECT key, value FROM settings WHERE key LIKE ?')
@@ -1101,7 +1102,7 @@ export class BetterSQLiteService {
     const settings: Record<string, string> = {}
 
     for (const row of rows) {
-      settings[row.key] = encryption.decryptSetting(row.key, row.value)
+      settings[row.key] = await encryption.decryptSetting(row.key, row.value)
     }
 
     return settings
@@ -2976,7 +2977,7 @@ export class BetterSQLiteService {
   /**
    * Get all media sources
    */
-  getMediaSources(type?: string): MediaSource[] {
+  async getMediaSources(type?: string): Promise<MediaSource[]> {
     if (!this.db) throw new Error('Database not initialized')
 
     let sql = 'SELECT * FROM media_sources'
@@ -2991,50 +2992,55 @@ export class BetterSQLiteService {
 
     const stmt = this.db.prepare(sql)
     const sources = (params.length ? stmt.all(...params) : stmt.all()) as MediaSource[]
-    return sources.map(source => ({ ...source, connection_config: this.decryptMediaSourceConfig(source.connection_config) }))
+    return await Promise.all(sources.map(async source => ({ ...source, connection_config: await this.decryptMediaSourceConfig(source.connection_config) })))
+  }
+
+  getRawMediaSources(): MediaSource[] {
+    if (!this.db) throw new Error('Database not initialized')
+    return this.db.prepare('SELECT * FROM media_sources ORDER BY display_name').all() as MediaSource[]
   }
 
   /**
    * Get enabled media sources
    */
-  getEnabledMediaSources(): MediaSource[] {
+  async getEnabledMediaSources(): Promise<MediaSource[]> {
     if (!this.db) throw new Error('Database not initialized')
 
     const stmt = this.db.prepare('SELECT * FROM media_sources WHERE is_enabled = 1 ORDER BY display_name')
     const sources = stmt.all() as MediaSource[]
-    return sources.map(source => ({ ...source, connection_config: this.decryptMediaSourceConfig(source.connection_config) }))
+    return await Promise.all(sources.map(async source => ({ ...source, connection_config: await this.decryptMediaSourceConfig(source.connection_config) })))
   }
 
   /**
    * Get media source by ID
    */
-  getMediaSource(sourceId: string): MediaSource | null {
+  async getMediaSource(sourceId: string): Promise<MediaSource | null> {
     if (!this.db) throw new Error('Database not initialized')
 
     const stmt = this.db.prepare('SELECT * FROM media_sources WHERE source_id = ?')
     const source = stmt.get(sourceId) as MediaSource | undefined
     if (!source) return null
 
-    return { ...source, connection_config: this.decryptMediaSourceConfig(source.connection_config) }
+    return { ...source, connection_config: await this.decryptMediaSourceConfig(source.connection_config) }
   }
 
   /**
    * Get media source by ID (alias for getMediaSource for compatibility)
    */
-  getMediaSourceById(sourceId: string): MediaSource | null {
+  async getMediaSourceById(sourceId: string): Promise<MediaSource | null> {
     return this.getMediaSource(sourceId)
   }
 
   /**
    * Add or update media source
    */
-  upsertMediaSource(source: Omit<MediaSource, 'id' | 'created_at' | 'updated_at'>): void {
+  async upsertMediaSource(source: Omit<MediaSource, 'id' | 'created_at' | 'updated_at'>): Promise<void> {
     if (!this.db) throw new Error('Database not initialized')
 
     // Encrypt connection config
     const encryption = getCredentialEncryptionService()
     const config = JSON.parse(source.connection_config) as Record<string, unknown>
-    const encryptedConfig = JSON.stringify(encryption.encryptConnectionConfig(config))
+    const encryptedConfig = JSON.stringify(await encryption.encryptConnectionConfig(config))
 
     const stmt = this.db.prepare(`
       INSERT INTO media_sources (
@@ -3062,9 +3068,9 @@ export class BetterSQLiteService {
     )
   }
 
-  private decryptMediaSourceConfig(connectionConfig: string): string {
+  private async decryptMediaSourceConfig(connectionConfig: string): Promise<string> {
     const config = JSON.parse(connectionConfig) as Record<string, unknown>
-    return JSON.stringify(getCredentialEncryptionService().decryptConnectionConfig(config))
+    return JSON.stringify(await getCredentialEncryptionService().decryptConnectionConfig(config))
   }
 
   /**

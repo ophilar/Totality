@@ -32,9 +32,9 @@ vi.mock('electron', () => ({
     },
   })), { getAllWindows: vi.fn(() => []) }),
   safeStorage: {
-    isEncryptionAvailable: vi.fn(() => false),
-    encryptString: vi.fn((str: string) => Buffer.from(str)),
-    decryptString: vi.fn((buf: Buffer) => buf.toString()),
+    isAsyncEncryptionAvailable: vi.fn(async () => false),
+    encryptStringAsync: vi.fn(async (str: string) => Buffer.from(str)),
+    decryptStringAsync: vi.fn(async (buf: Buffer) => ({ result: buf.toString(), shouldReEncrypt: false })),
   },
 }))
 

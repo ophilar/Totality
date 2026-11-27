@@ -27,9 +27,9 @@ export class ReleaseAlertService {
   async start(): Promise<void> {
     const db = getDatabase()
     if (this.pollingTimer) return
-    const enabled = db.getSetting('release_alerts_enabled')
+    const enabled = await db.getSetting('release_alerts_enabled')
     if (enabled !== 'true') return
-    const persisted = db.getSetting('release_alert_sent_ids')
+    const persisted = await db.getSetting('release_alert_sent_ids')
     if (persisted) this.alertedIds = new Set(JSON.parse(persisted) as string[])
 
     // Run initial check after a short delay to let app settle
@@ -63,14 +63,14 @@ export class ReleaseAlertService {
     const db = getDatabase()
     const tmdb = getTMDBService()
 
-    const daysAhead = parseInt(db.getSetting('release_alert_days_ahead') || '30', 10)
+    const daysAhead = parseInt((await db.getSetting('release_alert_days_ahead')) || '30', 10)
     const cutoffDate = new Date()
     cutoffDate.setDate(cutoffDate.getDate() + daysAhead)
     const cutoffStr = cutoffDate.toISOString().split('T')[0]
     const today = new Date().toISOString().split('T')[0]
 
     // Get user's region for country-specific release dates
-    const region = (db.getSetting('store_region') || 'US').toUpperCase()
+    const region = ((await db.getSetting('store_region')) || 'US').toUpperCase()
 
     await tmdb.initialize()
 

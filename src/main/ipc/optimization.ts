@@ -75,7 +75,7 @@ export function registerOptimizationHandlers() {
     const qualityAnalyzer = getQualityAnalyzer()
     const { analysis, rejectionReason } = await readCurrentAnalysis(item)
     getLoggingService().debug('[Optimization]', `Recommendation evidence ${analysis ? 'reused' : 'metadata-only'}: mediaItem=${item.id}, analysisEvidence=${rejectionReason}`)
-    const savings = qualityAnalyzer.getOptimizationSavingsBreakdown(item, analysis)
+    const savings = await qualityAnalyzer.getOptimizationSavingsBreakdown(item, analysis)
     const audioTracks = qualityAnalyzer.getOptimizationAudioTracks(item, analysis)
     return buildOptimizationDecision({
       originalLanguage: item.original_language,

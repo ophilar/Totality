@@ -689,8 +689,8 @@ export class MusicBrainzService extends CancellableOperation {
     // Calculate completeness (albums weighted more heavily)
     // Read settings for whether to include EPs and singles
     const db = getDatabase()
-    const includeEps = db.getSetting('completeness_include_eps') !== 'false'
-    const includeSingles = db.getSetting('completeness_include_singles') !== 'false'
+    const includeEps = (await db.getSetting('completeness_include_eps')) !== 'false'
+    const includeSingles = (await db.getSetting('completeness_include_singles')) !== 'false'
 
     const totalItems = discography.albums.length * 3
       + (includeEps ? discography.eps.length * 2 : 0)

@@ -838,7 +838,7 @@ export function registerSourceHandlers(): void {
       const db = getDatabase()
       const item = db.getMediaItemByPath(validFilePath)
       if (!item || !item.source_id) throw new Error('File analysis requires an indexed media item')
-      const source = db.getMediaSourceById(item.source_id)
+      const source = await db.getMediaSourceById(item.source_id)
       if (!source) throw new Error('Media source was not found')
       MediaPathAuthorization.assertMediaAuthorized(item, source)
       return (await getQualityAnalyzer().analyzeMediaItemFileEvidence(item)).analysis

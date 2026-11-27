@@ -197,31 +197,31 @@ describe('BetterSQLiteService — Settings', () => {
     insertSource(service)
   })
 
-  it('setSetting and getSetting round-trip', () => {
-    service.setSetting('test_key', 'test_value')
-    expect(service.getSetting('test_key')).toBe('test_value')
+  it('setSetting and getSetting round-trip', async () => {
+    await service.setSetting('test_key', 'test_value')
+    await expect(service.getSetting('test_key')).resolves.toBe('test_value')
   })
 
-  it('setSetting overwrites existing', () => {
-    service.setSetting('key1', 'value1')
-    service.setSetting('key1', 'value2')
-    expect(service.getSetting('key1')).toBe('value2')
+  it('setSetting overwrites existing', async () => {
+    await service.setSetting('key1', 'value1')
+    await service.setSetting('key1', 'value2')
+    await expect(service.getSetting('key1')).resolves.toBe('value2')
   })
 
-  it('getSetting returns null for missing key', () => {
-    expect(service.getSetting('nonexistent')).toBeNull()
+  it('getSetting returns null for missing key', async () => {
+    await expect(service.getSetting('nonexistent')).resolves.toBeNull()
   })
 
-  it('deleteSetting removes entry', () => {
-    service.setSetting('to_delete', 'val')
-    service.deleteSetting('to_delete')
-    expect(service.getSetting('to_delete')).toBeNull()
+  it('deleteSetting removes entry', async () => {
+    await service.setSetting('to_delete', 'val')
+    await service.deleteSetting('to_delete')
+    await expect(service.getSetting('to_delete')).resolves.toBeNull()
   })
 
-  it('getAllSettings returns all entries', () => {
-    service.setSetting('s1', 'v1')
-    service.setSetting('s2', 'v2')
-    const all = service.getAllSettings()
+  it('getAllSettings returns all entries', async () => {
+    await service.setSetting('s1', 'v1')
+    await service.setSetting('s2', 'v2')
+    const all = await service.getAllSettings()
     expect(all['s1']).toBe('v1')
     expect(all['s2']).toBe('v2')
   })
@@ -462,7 +462,7 @@ describe('BetterSQLiteService — Media Items', () => {
     expect(service.getMediaItem(mediaItemId)?.file_path).toBe('/movies/primary.mkv')
   })
 
-  it('preserves quality ratings when savings semantics change', () => {
+  it('preserves quality ratings when savings semantics change', async () => {
     const id = service.upsertMediaItem(makeMediaItem())
     service.upsertQualityScore({ ...makeQualityScore(id, 300), video_savings_bytes: 125 })
     const versionId = service.upsertMediaItemVersion({
@@ -486,7 +486,7 @@ describe('BetterSQLiteService — Media Items', () => {
     testDb.prepare("UPDATE settings SET value = '1' WHERE key = 'optimization.savings_semantics_version'").run()
 
     const migratedService = new BetterSQLiteService()
-    migratedService.initialize()
+    await migratedService.initialize()
     expect(migratedService.getQualityScore(id)?.estimated_savings_bytes).toBeNull()
     expect(migratedService.getQualityScore(id)?.video_savings_bytes).toBeNull()
     expect(migratedService.getQualityScore(id)?.tier_quality).toBe('LOW')
@@ -494,26 +494,26 @@ describe('BetterSQLiteService — Media Items', () => {
     expect(migratedService.getQualityScore(id)?.overall_score).toBe(0)
     expect(migratedService.getQualityScore(id)?.quality_tier).toBe('1080p')
     expect(migratedService.getMediaItemVersions(id).find(version => version.id === versionId)?.tier_score).toBeNull()
-    expect(migratedService.getSetting('optimization.savings_reanalysis_pending')).toBe('true')
+    await expect(migratedService.getSetting('optimization.savings_reanalysis_pending')).resolves.toBe('true')
 
     migratedService.upsertQualityScore({ ...makeQualityScore(id, 450), video_savings_bytes: 125 })
     new BetterSQLiteService().initialize()
     expect(migratedService.getQualityScore(id)?.estimated_savings_bytes).toBe(450)
   })
 
-  it('invalidates version 5 savings without clearing existing quality ratings', () => {
+  it('invalidates version 5 savings without clearing existing quality ratings', async () => {
     const id = service.upsertMediaItem(makeMediaItem())
     const score = { ...makeQualityScore(id, 300), tier_quality: 'HIGH', tier_score: 87, video_savings_bytes: 125 }
     service.upsertQualityScore(score)
     testDb.prepare("UPDATE settings SET value = '5' WHERE key = 'optimization.savings_semantics_version'").run()
 
     const migratedService = new BetterSQLiteService()
-    migratedService.initialize()
+    await migratedService.initialize()
     expect(migratedService.getQualityScore(id)?.estimated_savings_bytes).toBeNull()
     expect(migratedService.getQualityScore(id)?.video_savings_bytes).toBeNull()
     expect(migratedService.getQualityScore(id)?.tier_quality).toBe('HIGH')
     expect(migratedService.getQualityScore(id)?.tier_score).toBe(87)
-    expect(migratedService.getSetting('optimization.savings_reanalysis_pending')).toBe('true')
+    await expect(migratedService.getSetting('optimization.savings_reanalysis_pending')).resolves.toBe('true')
   })
 
   it('updates savings without changing saved quality ratings', () => {
@@ -539,7 +539,7 @@ describe('BetterSQLiteService — Media Items', () => {
     })
   })
 
-  it('queues quality recovery for scores cleared by the previous 0.5 migration', () => {
+  it('queues quality recovery for scores cleared by the previous 0.5 migration', async () => {
     const id = service.upsertMediaItem(makeMediaItem())
     service.upsertQualityScore(makeQualityScore(id, null))
     testDb.prepare(`UPDATE quality_scores SET tier_quality = 'UNKNOWN', tier_score = NULL,
@@ -549,9 +549,9 @@ describe('BetterSQLiteService — Media Items', () => {
     testDb.prepare("DELETE FROM settings WHERE key = 'optimization.quality_recovery_version'").run()
 
     const migratedService = new BetterSQLiteService()
-    migratedService.initialize()
+    await migratedService.initialize()
 
-    expect(migratedService.getSetting('optimization.quality_reanalysis_pending')).toBe('true')
+    await expect(migratedService.getSetting('optimization.quality_reanalysis_pending')).resolves.toBe('true')
   })
 
   it('preserves media quality values when migrating legacy column names', () => {
@@ -1452,18 +1452,18 @@ describe('BetterSQLiteService — resetLibraryData', () => {
     insertSource(service)
   })
 
-  it('clears media data but preserves settings, sources, exclusions', () => {
+  it('clears media data but preserves settings, sources, exclusions', async () => {
     // Add data across categories
-    service.setSetting('keep_me', 'yes')
+    await service.setSetting('keep_me', 'yes')
     service.upsertMediaItem(makeMediaItem())
     service.addExclusion('media_upgrade', '1', 'ref', 'parent', 'Title')
 
     service.resetLibraryData()
 
     // Settings preserved
-    expect(service.getSetting('keep_me')).toBe('yes')
+    await expect(service.getSetting('keep_me')).resolves.toBe('yes')
     // Source preserved
-    const sources = service.getMediaSources()
+    const sources = await service.getMediaSources()
     expect(sources.length).toBe(1)
     // Exclusions preserved
     expect(service.isExcluded('media_upgrade', '1', 'ref', 'parent')).toBe(true)

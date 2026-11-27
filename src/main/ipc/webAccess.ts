@@ -27,8 +27,8 @@ export function registerWebAccessHandlers() {
   createIpcHandler(IPC_CHANNELS.webAccessGetStatus, async () => {
     const ws = getWebServerService()
     const db = getDatabase()
-    const enabled = db.getSetting(SETTING_KEYS.web_access_enabled) === 'true'
-    const port = parseInt(db.getSetting(SETTING_KEYS.web_access_port) || '9470', 10) || 9470
+    const enabled = await db.getSetting(SETTING_KEYS.web_access_enabled) === 'true'
+    const port = parseInt((await db.getSetting(SETTING_KEYS.web_access_port)) || '9470', 10) || 9470
     const running = ws?.isRunning() || false
     const connectedClients = ws?.getConnectedClients() || 0
     const localIp = getLocalIp()
@@ -38,8 +38,8 @@ export function registerWebAccessHandlers() {
       port,
       running,
       connectedClients,
-      isHttps: db.getSetting(SETTING_KEYS.web_access_https) !== 'false',
-      localUrl: running ? `${db.getSetting(SETTING_KEYS.web_access_https) !== 'false' ? 'https' : 'http'}://${localIp}:${port}` : null,
+      isHttps: await db.getSetting(SETTING_KEYS.web_access_https) !== 'false',
+      localUrl: running ? `${await db.getSetting(SETTING_KEYS.web_access_https) !== 'false' ? 'https' : 'http'}://${localIp}:${port}` : null,
     }
   })
 

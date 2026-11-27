@@ -105,7 +105,7 @@ export class SourceManager {
 
   private async loadSources(): Promise<void> {
     const db = getDatabase()
-    const sources = db.getMediaSources()
+    const sources = await db.getMediaSources()
     const unavailableSources: Array<{ name: string; type: string }> = []
 
     // Load all providers in parallel with per-source timeout
@@ -167,7 +167,7 @@ export class SourceManager {
             try {
               await this.refreshPlexLibraryPaths(provider as PlexProvider, source.source_id, db)
             } catch (error) {
-              const persistedSource = db.getMediaSourceById(source.source_id)
+              const persistedSource = await db.getMediaSourceById(source.source_id)
               if (persistedSource) {
                 const persistedConfig = JSON.parse(persistedSource.connection_config) as Record<string, unknown>
                 delete persistedConfig.plexLibraryPaths
@@ -207,7 +207,7 @@ export class SourceManager {
       const server = plexProvider.getSelectedServer()
       // Update display name to actual server name if it differs
       if (server && server.name && server.name !== source.display_name) {
-        const persistedSource = db.getMediaSourceById(source.source_id) || source
+        const persistedSource = (await db.getMediaSourceById(source.source_id)) || source
         await db.upsertMediaSource({
           ...persistedSource,
           display_name: server.name,
@@ -270,7 +270,7 @@ export class SourceManager {
     this.providers.set(sourceId, provider)
 
     // Return the full source record
-    const source = db.getMediaSourceById(sourceId)
+    const source = await db.getMediaSourceById(sourceId)
     if (!source) {
       throw new Error('Failed to retrieve created source')
     }
@@ -292,7 +292,7 @@ export class SourceManager {
     await this.initialize()
 
     const db = getDatabase()
-    const existing = db.getMediaSourceById(sourceId)
+    const existing = await db.getMediaSourceById(sourceId)
 
     if (!existing) {
       throw new Error(`Source not found: ${sourceId}`)
@@ -333,7 +333,7 @@ export class SourceManager {
     await this.initialize()
 
     const db = getDatabase()
-    const source = db.getMediaSourceById(sourceId)
+    const source = await db.getMediaSourceById(sourceId)
     const sourceName = source?.display_name || sourceId
 
     // 1. Stop live monitoring for this source
@@ -380,7 +380,7 @@ export class SourceManager {
     await this.initialize()
 
     const db = getDatabase()
-    return db.getMediaSources(type)
+    return await db.getMediaSources(type)
   }
 
   /**
@@ -390,7 +390,7 @@ export class SourceManager {
     await this.initialize()
 
     const db = getDatabase()
-    return db.getMediaSourceById(sourceId)
+    return await db.getMediaSourceById(sourceId)
   }
 
   /**
@@ -487,7 +487,7 @@ export class SourceManager {
     provider: MediaProvider,
     db: ReturnType<typeof getDatabase>,
   ): Promise<ConnectionTestResult | null> {
-    const source = db.getMediaSourceById(sourceId)
+    const source = await db.getMediaSourceById(sourceId)
     if (!source) return null
 
     try {
@@ -644,7 +644,7 @@ export class SourceManager {
     const server = provider.getSelectedServer()
     if (server) {
       const db = getDatabase()
-      const source = db.getMediaSourceById(sourceId)
+      const source = await db.getMediaSourceById(sourceId)
       if (source) {
         const config = JSON.parse(source.connection_config)
         config.serverId = server.machineIdentifier
@@ -671,7 +671,7 @@ export class SourceManager {
     for (const error of errors) {
       getLoggingService().warn('[SourceManager]', `Could not load Plex library path for ${sourceId}:`, error)
     }
-    const source = db.getMediaSourceById(sourceId)
+      const source = await db.getMediaSourceById(sourceId)
     if (!source) throw new Error(`Plex source not found: ${sourceId}`)
 
     const config = JSON.parse(source.connection_config) as Record<string, unknown>
@@ -972,7 +972,7 @@ export class SourceManager {
     await this.initialize()
 
     const db = getDatabase()
-    const enabledSources = db.getEnabledMediaSources()
+    const enabledSources = await db.getEnabledMediaSources()
     const results = new Map<string, ScanResult>()
 
     console.log(`[SourceManager] Starting incremental scan of ${enabledSources.length} sources`)
@@ -1130,7 +1130,7 @@ export class SourceManager {
     await this.initialize()
 
     const db = getDatabase()
-    const source = db.getMediaSourceById(sourceId)
+    const source = await db.getMediaSourceById(sourceId)
 
     if (!source) {
       throw new Error(`Source not found: ${sourceId}`)
