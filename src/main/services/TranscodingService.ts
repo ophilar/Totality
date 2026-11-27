@@ -912,7 +912,7 @@ export class TranscodingService {
         publishPreflightProgress(episode, 'Planning streams and target compatibility')
         const actualSamplingProfileKey = getPreflightSamplingProfileKey(episode, request.options, analysis)
         const representativePlan = samplingState.representative
-        const reusableRepresentativePlan = representativePlan && actualSamplingProfileKey !== undefined && representativePlan.profileKey === actualSamplingProfileKey &&
+        const reusableRepresentativePlan = !request.remeasure && representativePlan && actualSamplingProfileKey !== undefined && representativePlan.profileKey === actualSamplingProfileKey &&
           representativePlan.plan.compatible &&
           representativePlan.plan.decisionStatus === 'sample_required' &&
           representativePlan.plan.params?.measuredCandidate &&
@@ -1078,7 +1078,9 @@ export class TranscodingService {
               Object.assign(options, reusableRepresentativePlan.measuredParameters)
             } else {
               samplingState.sampleAttemptedEpisodeLabel = label
-              cachedMeasurement = await this.getCachedMeasurement(measurementCacheKey!, sourceSha256, sampleDirectory, (options.measurementSamplePositions ?? APP_CONFIG.transcoding.samplePositions).length)
+              cachedMeasurement = request.remeasure
+                ? undefined
+                : await this.getCachedMeasurement(measurementCacheKey!, sourceSha256, sampleDirectory, (options.measurementSamplePositions ?? APP_CONFIG.transcoding.samplePositions).length)
               if (cachedMeasurement?.complete) {
                 measurementCacheHit = true
                 publishPreflightProgress(episode, 'Reusing verified encode samples from cache')
