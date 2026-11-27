@@ -145,6 +145,7 @@ export function nextCandidateSearch(
   domainCatalogue: CandidateEncodingParameters[],
   measuredCandidates: MeasuredCandidate[],
   profile: OptimizationQualityProfile,
+  maxCandidatesPerPreset = MAX_MEASURED_CANDIDATES_PER_PRESET,
 ): CandidateEncodingParameters[] {
   const presets = [...new Map(domainCatalogue.map(candidate => [`${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`, candidate])).values()]
   const evaluation = (candidate: MeasuredCandidate) => evaluateMeasuredCandidates(profile, [candidate])[0]
@@ -157,7 +158,7 @@ export function nextCandidateSearch(
       const qualities = [...new Set(domain.map(candidate => candidate.quality))].sort((a, b) => a - b)
       const tested = new Set(measured.map(candidate => candidate.quality))
       const untested = (values: number[]) => values.filter(quality => !tested.has(quality)).map(quality => ({ ...presetCandidate, quality }))
-      if (measured.length >= MAX_MEASURED_CANDIDATES_PER_PRESET) continue
+      if (measured.length >= maxCandidatesPerPreset) continue
       if (measured.length === 0) {
         const middle = qualities[Math.floor((qualities.length - 1) / 2)]
         return untested([middle])
@@ -178,7 +179,7 @@ export function nextCandidateSearch(
           return { gap: high - low, midpoint: Math.floor((high + low) / 2) }
         }).filter(entry => entry.gap > 1 && !tested.has(entry.midpoint))
           .sort((a, b) => b.gap - a.gap)
-        if (midpointCandidates.length) return untested([midpointCandidates[0].midpoint])
+        if (midpointCandidates.length) return untested([midpointCandidates[0].midpoint]).slice(0, maxCandidatesPerPreset - measured.length)
       }
       const next = new Set<number>()
       if (measured.length === 1) {
@@ -191,7 +192,7 @@ export function nextCandidateSearch(
           if (!tested.has(midpoint)) next.add(midpoint)
         }
       }
-      if (next.size) return untested([...next].sort((a, b) => a - b)).slice(0, MAX_MEASURED_CANDIDATES_PER_PRESET - measured.length)
+      if (next.size) return untested([...next].sort((a, b) => a - b)).slice(0, maxCandidatesPerPreset - measured.length)
     }
   }
   return []

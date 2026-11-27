@@ -1026,6 +1026,8 @@ export class TaskQueueService {
                 targetProfileId,
                 targetContainerSelection: 'automatic',
                 playbackPolicy: 'allow-transcoding',
+                measurementSampleDurationSeconds: 10,
+                measurementCandidateBudget: 3,
               },
             }, {
               signal,

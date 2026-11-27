@@ -47,6 +47,7 @@ export interface MeasuredSampleRequest {
   onSampleMeasured?: (sample: MeasuredCandidateSample) => Promise<void>
   onCandidateMeasured?: (candidates: MeasuredCandidate[], complete: boolean) => Promise<void>
   candidates: Array<MeasuredCandidate & { ffmpegArgs: string[] }>
+  sampleDurationSeconds?: number
 }
 export interface MeasuredSampleResult { candidates: MeasuredCandidate[]; vmafAvailable: boolean; cambiAvailable: boolean }
 
@@ -372,7 +373,7 @@ export class MeasuredOptimizationService {
     const requiredFilters = ['libvmaf', ...(request.referenceFilter?.includes('libplacebo') ? ['libplacebo'] : [])]
     requireFfmpegFilters(filterListing, requiredFilters)
     request.signal?.throwIfAborted()
-    const length = Math.min(APP_CONFIG.transcoding.sampleDurationSeconds, durationSeconds / APP_CONFIG.transcoding.samplePositions.length)
+    const length = Math.min(request.sampleDurationSeconds ?? APP_CONFIG.transcoding.sampleDurationSeconds, durationSeconds / APP_CONFIG.transcoding.samplePositions.length)
     const starts = APP_CONFIG.transcoding.samplePositions.map(position => Math.max(0, Math.min(durationSeconds - length, durationSeconds * position - length / 2)))
     await fs.mkdir(request.outputDirectory, { recursive: true })
     const sourcePreparationKey = request.sourceSha256 && JSON.stringify({
@@ -382,7 +383,7 @@ export class MeasuredOptimizationService {
       referenceFilter: request.referenceFilter,
       referenceInputArgs: request.referenceInputArgs,
       samplePositions: APP_CONFIG.transcoding.samplePositions,
-      sampleDurationSeconds: APP_CONFIG.transcoding.sampleDurationSeconds,
+      sampleDurationSeconds: request.sampleDurationSeconds ?? APP_CONFIG.transcoding.sampleDurationSeconds,
     })
     const sourceSamples: Awaited<ReturnType<MeasuredOptimizationService['inspectWindow']>>[] = []
     const referenceSamples: Awaited<ReturnType<MeasuredOptimizationService['inspectWindow']>>[] = []

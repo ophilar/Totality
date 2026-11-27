@@ -82,6 +82,10 @@ export interface TranscodeOptions {
   measurementReferenceInput?: boolean
   targetHdrFormat?: 'SDR' | 'HDR10'
   targetConversion?: TargetTranscodePlan
+  /** Internal calibration control; normal optimization uses the configured sample duration. */
+  measurementSampleDurationSeconds?: number
+  /** Internal calibration control; normal optimization uses the configured search budget. */
+  measurementCandidateBudget?: number
 }
 
 async function sha256File(filePath: string): Promise<string> {
@@ -1015,6 +1019,8 @@ export class TranscodingService {
           gpuId: options.gpuId,
           customArgs: options.customArgs,
           targetHdrFormat: options.targetHdrFormat,
+          measurementSampleDurationSeconds: options.measurementSampleDurationSeconds,
+          measurementCandidateBudget: options.measurementCandidateBudget,
           videoTransformation: options.targetConversion && {
             width: options.targetConversion.width,
             height: options.targetConversion.height,
@@ -1039,7 +1045,7 @@ export class TranscodingService {
               measurementFingerprint,
               samplePlan: {
                 positions: APP_CONFIG.transcoding.samplePositions,
-                durationSeconds: APP_CONFIG.transcoding.sampleDurationSeconds,
+                durationSeconds: options.measurementSampleDurationSeconds ?? APP_CONFIG.transcoding.sampleDurationSeconds,
               },
               sampleQualityDomains: APP_CONFIG.transcoding.sampleQualityDomains,
               ...(request.remeasure ? { remeasurement: preflightId } : {}),
@@ -2679,7 +2685,9 @@ export class TranscodingService {
     const measuredCandidates = [...previouslyMeasured]
     let measuredSamples = [...previouslyMeasuredSamples]
     let candidateSearchRounds = 0
-    const maximumCandidates = new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`)).size * MAX_MEASURED_CANDIDATES_PER_PRESET
+    const maxCandidatesPerPreset = options.measurementCandidateBudget ?? MAX_MEASURED_CANDIDATES_PER_PRESET
+    if (!Number.isInteger(maxCandidatesPerPreset) || maxCandidatesPerPreset <= 0) throw new Error('Measured candidate budget must be a positive integer')
+    const maximumCandidates = new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`)).size * maxCandidatesPerPreset
     const candidateDomain = [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}`))].map(key => {
       const [encoder, gpuId] = key.split('/')
       const candidates = ladder.filter(candidate => candidate.encoder === encoder && (candidate.gpuId ?? 'software') === gpuId)
@@ -2721,7 +2729,8 @@ export class TranscodingService {
     try {
       const stat = await fs.stat(filePath)
       await fs.mkdir(outputDirectory, { recursive: true })
-      const sampleSeconds = Math.min(analysis.durationMs / 1000, APP_CONFIG.transcoding.sampleDurationSeconds * APP_CONFIG.transcoding.samplePositions.length)
+      const sampleDurationSeconds = options.measurementSampleDurationSeconds ?? APP_CONFIG.transcoding.sampleDurationSeconds
+      const sampleSeconds = Math.min(analysis.durationMs / 1000, sampleDurationSeconds * APP_CONFIG.transcoding.samplePositions.length)
       const maximumOutputBytesPerSecond = Math.min(options.maxOutputBytes ?? stat.size, stat.size) / (analysis.durationMs / 1000) - plannedNonVideoBytesPerSecond(analysis, options)
       const plannedBitrate = options.targetConversion?.maximumVideoBitrate
       const outputContainer = options.targetConversion?.container ?? options.targetContainer
@@ -2752,7 +2761,7 @@ export class TranscodingService {
         candidate.playbackBlockers = [...blockers]
       }
       while (!measurementComplete) {
-        const candidates = buildCandidates(nextCandidateSearch(ladder, measuredCandidates, options.qualityProfile))
+        const candidates = buildCandidates(nextCandidateSearch(ladder, measuredCandidates, options.qualityProfile, maxCandidatesPerPreset))
         if (candidates.length) {
           candidateSearchRounds += 1
           const roundStartedAt = performance.now()
@@ -2788,6 +2797,7 @@ export class TranscodingService {
               await onMeasuredSample?.(sample)
             },
             onCandidateMeasured: async roundCandidates => onMeasuredCandidates?.([...measuredCandidates.slice(0, roundStart), ...roundCandidates], false),
+            sampleDurationSeconds,
           })
           measuredCandidates.push(...measured.candidates)
           signal?.throwIfAborted()
@@ -2825,10 +2835,10 @@ export class TranscodingService {
           })
         }
         if (measurementComplete) break
-        if (!nextCandidateSearch(ladder, measuredCandidates, options.qualityProfile).length) {
+        if (!nextCandidateSearch(ladder, measuredCandidates, options.qualityProfile, maxCandidatesPerPreset).length) {
           measurementComplete = true
           const budgetReached = [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`))].some(key =>
-            measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}` === key).length >= MAX_MEASURED_CANDIDATES_PER_PRESET)
+            measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}` === key).length >= maxCandidatesPerPreset)
           for (const candidate of measuredCandidates) {
             candidate.searchSummary = { measuredCount: measuredCandidates.length, maximumCandidates, budgetReached }
           }
