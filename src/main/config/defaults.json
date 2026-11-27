@@ -173,6 +173,7 @@
       0.75
     ],
     "calibrationRepresentativesPerGroup": 4,
+    "calibrationRepresentativeConcurrency": 2,
     "calibrationCandidateBudget": 2,
     "measuredSampleCache": {
       "maxBytes": 5368709120,

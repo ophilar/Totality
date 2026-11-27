@@ -1007,7 +1007,13 @@ export class TaskQueueService {
         representativesPerGroup: APP_CONFIG.transcoding.calibrationRepresentativesPerGroup,
       })
       const candidates: Array<{ encoderPolicy: 'automatic' }> = [{ encoderPolicy: 'automatic' }]
-      for (const { item, groupKey, role } of representatives) {
+      let nextRepresentativeIndex = 0
+      let checkpointWrite = Promise.resolve()
+      const saveCheckpoint = async (): Promise<void> => {
+        checkpointWrite = checkpointWrite.then(() => getDatabase().setSetting(checkpointKey, JSON.stringify(measurements)))
+        await checkpointWrite
+      }
+      const processRepresentative = async ({ item, groupKey, role }: typeof representatives[number]): Promise<void> => {
         for (const candidate of candidates) {
           signal.throwIfAborted()
           const measurementKeyPrefix = `${stage}:${groupKey}:${role}:${item.id}`
@@ -1052,9 +1058,18 @@ export class TaskQueueService {
           } catch (error) {
             measurements.push({ key: `${measurementKeyPrefix}:${candidate.encoderPolicy}`, stage, role, groupKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'unvalidated', reason: error instanceof Error ? error.message : String(error) })
           }
-          await getDatabase().setSetting(checkpointKey, JSON.stringify(measurements))
+          await saveCheckpoint()
         }
       }
+      const workerCount = Math.min(APP_CONFIG.transcoding.calibrationRepresentativeConcurrency, representatives.length)
+      await Promise.all(Array.from({ length: workerCount }, async () => {
+        while (true) {
+          const index = nextRepresentativeIndex++
+          const representative = representatives[index]
+          if (!representative) return
+          await processRepresentative(representative)
+        }
+      }))
     }
     const h264Items = mediaItems.filter(item => item.file_path && String(item.video_codec ?? '').toLowerCase() === 'h264')
     await measureRepresentatives(h264Items, 'hevc', 'measuring-h264-to-hevc')
