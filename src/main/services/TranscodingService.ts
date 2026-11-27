@@ -1849,6 +1849,7 @@ export class TranscodingService {
       if ((journal.phase === 'source_quarantined' || journal.phase === 'prepared') && !targetExists && quarantineExists && !inputExists) {
         await this.publishActivationOutput(journal.quarantinePath!, journal.inputPath)
         if (tempExists) await fs.unlink(journal.tempPath!)
+        await db.mediaRemuxJobs.update(job.id, { status: 'failed', quarantinePath: null, error: 'Activation interrupted; original restored' })
         await db.deleteSetting(key)
         getLoggingService().info('[TranscodingService]', `Rollback completed for media item ${journal.mediaItemId} from quarantine`)
         continue
@@ -1865,12 +1866,14 @@ export class TranscodingService {
         this.analysisCache.delete(journal.targetPath)
         getStatsCacheService().invalidate()
         if (job.quarantinePath !== journal.quarantinePath && !quarantineExists) throw new Error('Activation recovery has no matching quarantine evidence')
-        {
-          const encodedReductionBytes = job.sourceSize - analysis.fileSizeBytes!
-          const retainedOriginalBytes = journal.mode === 'replace' ? 0 : job.sourceSize
-          await db.mediaRemuxJobs.update(job.id, { status: 'promoted', actualOutputBytes: analysis.fileSizeBytes, bytesSaved: encodedReductionBytes, outputDurationMs: analysis.durationMs, outputAnalysis: JSON.stringify({ ...analysis, filePath: journal.targetPath, encodedReductionBytes, retainedOriginalBytes, physicallyReclaimedBytes: journal.mode === 'replace' ? encodedReductionBytes : 0 }) })
+        const encodedReductionBytes = job.sourceSize - analysis.sourceFingerprint!.size
+        const retainedOriginalBytes = journal.mode === 'replace' ? 0 : job.sourceSize
+        await db.mediaRemuxJobs.update(job.id, { status: 'promoted', error: null, actualOutputBytes: analysis.sourceFingerprint!.size, bytesSaved: encodedReductionBytes, outputDurationMs: analysis.durationMs, outputAnalysis: JSON.stringify({ ...analysis, filePath: journal.targetPath, encodedReductionBytes, retainedOriginalBytes, physicallyReclaimedBytes: journal.mode === 'replace' ? encodedReductionBytes : 0 }) })
+        if (journal.mode === 'replace' && quarantineExists) {
+          await this.verifyActivationOutput(journal.targetPath, analysis)
+          if (await sha256File(journal.quarantinePath!) !== job.sourceSha256) throw new Error('Quarantined source changed before removal')
+          await fs.unlink(journal.quarantinePath!)
         }
-        if (journal.mode === 'replace' && quarantineExists) await fs.unlink(journal.quarantinePath!)
         await db.deleteSetting(key)
         getLoggingService().info('[TranscodingService]', `Committed forward activation recovery for media item ${journal.mediaItemId}`)
         continue
@@ -1879,6 +1882,7 @@ export class TranscodingService {
       // Crash in prepared phase where neither source was quarantined nor target placed
       if (journal.phase === 'prepared' && inputExists && !quarantineExists) {
         if (tempExists) await fs.unlink(journal.tempPath!)
+        await db.mediaRemuxJobs.update(job.id, { status: 'failed', quarantinePath: null, error: 'Activation interrupted before source quarantine' })
         await db.deleteSetting(key)
         getLoggingService().info('[TranscodingService]', `Discarded prepared activation journal for media item ${journal.mediaItemId}`)
         continue
@@ -2383,6 +2387,8 @@ export class TranscodingService {
       throw new Error('FFmpeg is not available on this system.')
     }
 
+    if (await db.getSetting(`transcoding.activation.${mediaItemId}`)) throw new Error('Previous activation must be recovered before starting another transcode')
+    if (this.activeJobs.has(mediaItemId)) throw new Error('A transcode is already active for this media item')
     const controller = new AbortController()
     this.activeJobs.set(mediaItemId, controller)
 
@@ -2629,7 +2635,6 @@ export class TranscodingService {
         this.analysisCache.delete(inputPath)
         this.analysisCache.delete(targetSamePath)
         getStatsCacheService().invalidate()
-
       } else {
         // Sibling copy
         const copyPath = path.join(path.dirname(inputPath), `${origBase} - Transcoded${outputExt}`)
@@ -2652,7 +2657,11 @@ export class TranscodingService {
       }
 
       if (activation && activated) {
-        if (effectiveOutputMode === 'replace') await fs.unlink(activation.quarantinePath)
+        if (effectiveOutputMode === 'replace') {
+          await this.verifyActivationOutput(activation.targetPath, outputAnalysis)
+          if (await sha256File(activation.quarantinePath) !== sourceSha256) throw new Error('Quarantined source changed before removal')
+          await fs.unlink(activation.quarantinePath)
+        }
         await db.deleteSetting(`transcoding.activation.${mediaItemId}`)
       }
 
@@ -2682,6 +2691,7 @@ export class TranscodingService {
             }
             await this.publishActivationOutput(activation.quarantinePath, activation.inputPath)
           }
+          if (optimizationJobId !== null) await db.mediaRemuxJobs.update(optimizationJobId, { status: 'failed', quarantinePath: null, error: getErrorMessage(error) })
           await db.deleteSetting(`transcoding.activation.${mediaItemId}`)
         } catch (rollbackError) {
           throw new Error(`Activation failed (${getErrorMessage(error)}) and could not restore the original (${getErrorMessage(rollbackError)}); the recorded journal requires recovery`)
