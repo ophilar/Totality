@@ -172,6 +172,7 @@
       0.25,
       0.75
     ],
+    "calibrationRepresentativesPerGroup": 4,
     "calibrationCandidateBudget": 2,
     "measuredSampleCache": {
       "maxBytes": 5368709120,

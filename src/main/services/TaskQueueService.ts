@@ -993,7 +993,17 @@ export class TaskQueueService {
         if (!group.has(identity)) group.set(identity, item)
         groups.set(key, group)
       }
-      const representatives = [...groups.entries()].flatMap(([groupKey, group]) => [...group.values()].slice(0, 2).map((item, index) => ({ item, groupKey, role: index === 0 ? 'calibration' as const : 'holdout' as const })))
+      const representatives = [...groups.entries()].flatMap(([groupKey, group]) => {
+        const items = [...group.values()]
+        const count = Math.min(items.length, APP_CONFIG.transcoding.calibrationRepresentativesPerGroup)
+        return Array.from({ length: count }, (_, index) => items[Math.floor(index * items.length / count)]).map((item, index) => ({ item, groupKey, role: index === 0 ? 'calibration' as const : 'holdout' as const }))
+      })
+      getLoggingService().info('[OptimizationCalibration]', 'Calibration representatives selected', {
+        stage,
+        groupCount: groups.size,
+        representativeCount: representatives.length,
+        representativesPerGroup: APP_CONFIG.transcoding.calibrationRepresentativesPerGroup,
+      })
       const candidates: Array<{ encoderPolicy: 'automatic' }> = [{ encoderPolicy: 'automatic' }]
       for (const { item, groupKey, role } of representatives) {
         for (const candidate of candidates) {
