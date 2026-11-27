@@ -23,6 +23,7 @@ import type { QueuedTask } from '@main/types/taskQueue'
 import { getPlaybackTargetContainers, recommendPlaybackTargetContainer, type PlaybackTargetProfile } from '@main/types/playbackTarget'
 import type { OptimizationQualityProfile } from '@main/services/MeasuredOptimizationPolicy'
 import { getHardwareEncoder } from '@main/services/TranscodingCapabilities'
+import { formatMediaDisplayName } from '@shared/mediaDisplayName'
 import { TaskType } from '@main/types/database'
 import { SETTING_KEYS } from '@shared/settingKeys'
 import { normalizeVideoCodec } from '@main/services/MediaNormalizer'
@@ -628,7 +629,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
     backgroundPreflight.current = false
     activePreflightRequestId.current = requestId
     setPreflightTermination(null)
-    setPreflightProgress({ phase: 'Starting review preparation', currentItem: episode ? `Loading ${episode.title}` : seasonNumber === undefined ? 'Loading series episodes' : `Loading season ${seasonNumber} episodes` })
+    setPreflightProgress({ phase: 'Starting review preparation', currentItem: episode ? `Loading ${formatMediaDisplayName(episode, show.series_title)}` : seasonNumber === undefined ? 'Loading series episodes' : `Loading season ${seasonNumber} episodes` })
     setPreflightOperationState('running')
     startedPreflightHere.current = true
     let preflight: ShowTranscodePreflight | undefined
@@ -1030,7 +1031,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
       else if (next === 'Results' && (batchSummary || queueState.currentTask || mode === 'monitoring')) setMode('monitoring')
     }}
     title={episode ? 'Optimize episode' : seasonNumber === undefined ? 'Optimize show' : `Optimize season ${seasonNumber}`}
-    subtitle={`${show.series_title}${episode ? ` · S${String(episode.season_number ?? '?').padStart(2, '0')}E${String(episode.episode_number ?? '?').padStart(2, '0')}` : `${seasonNumber === undefined ? '' : ` · Season ${seasonNumber}`}${preflightData ? ` · ${preflightData.episodeCount} items` : ''}`}`}
+    subtitle={episode ? formatMediaDisplayName(episode, show.series_title) : `${show.series_title}${seasonNumber === undefined ? '' : ` · Season ${seasonNumber}`}${preflightData ? ` · ${preflightData.episodeCount} items` : ''}`}
     leading={mode === 'monitoring' ? <Activity className="h-5 w-5 animate-pulse" /> : <Zap className="h-5 w-5 fill-current" />}
     onClose={() => void handleClose()}
     closeText={busy ? 'Continue in background' : undefined}

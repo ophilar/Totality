@@ -10,6 +10,7 @@ import { useMenuClose } from '../../hooks/useMenuClose'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { ConversionRecommendation } from './ConversionRecommendation'
 import type { AudioTrack, SubtitleTrack } from '@main/types/database'
+import { formatMediaDisplayName } from '@shared/mediaDisplayName'
 
 interface MediaDetailsProps {
   mediaId: number
@@ -190,7 +191,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
     if (!media || !onDismissUpgrade) return
     setShowMenu(false)
     const title = media.type === 'episode' && media.series_title
-      ? `${media.series_title} S${media.season_number}E${media.episode_number}`
+      ? formatMediaDisplayName(media)
       : media.title
     onDismissUpgrade(media.id, title)
     // Update local state so UI reflects immediately
@@ -486,7 +487,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
               <div className="absolute bottom-0 left-0 right-0 px-4 pb-4">
                 <h2 className="text-2xl font-extrabold text-foreground leading-tight tracking-tight">{displayTitle}</h2>
                 {media.type === 'episode' && (
-                  <p className="text-sm text-foreground/80 mt-1 font-medium">S{media.season_number}E{media.episode_number} · {media.title}</p>
+                  <p className="text-sm text-foreground/80 mt-1 font-medium">{formatMediaDisplayName(media)}</p>
                 )}
                 {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
                   <p className="text-sm text-foreground/70 font-medium">{sv?.edition || versions[0]?.edition}</p>
@@ -603,7 +604,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                       </button>
                     </div>
                     {media.type === 'episode' && (
-                      <p className="text-sm text-muted-foreground">S{media.season_number}E{media.episode_number} · {media.title}</p>
+                      <p className="text-sm text-muted-foreground">{formatMediaDisplayName(media)}</p>
                     )}
                     {(sv?.edition || (versions.length === 1 && versions[0]?.edition)) && (
                       <p className="text-sm text-muted-foreground">{sv?.edition || versions[0]?.edition}</p>

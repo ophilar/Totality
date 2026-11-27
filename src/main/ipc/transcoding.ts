@@ -10,6 +10,7 @@ import { getDatabase } from '@main/database/getDatabase'
 import { MediaPathAuthorization } from '@main/services/MediaPathAuthorization'
 import { getErrorMessage } from './utils'
 import { getTaskQueueService } from '@main/services/TaskQueueService'
+import { formatMediaDisplayName } from '@shared/mediaDisplayName'
 
 const ShowQuarantineIdentitySchema = z.tuple([
   NonEmptyStringSchema,
@@ -40,16 +41,10 @@ function queuePreflight(requestId: string, preflightRequest: ShowTranscodeReques
     ? null
     : getDatabase().media.getItemById(preflightRequest.mediaItemId)
   const seriesTitle = preflightRequest.seriesTitle ?? mediaItem?.series_title
-  const episodeCoordinates = mediaItem?.season_number != null && mediaItem.episode_number != null
-    ? `S${String(mediaItem.season_number).padStart(2, '0')}E${String(mediaItem.episode_number).padStart(2, '0')}`
-    : undefined
-  const episodeDescription = [seriesTitle, episodeCoordinates, mediaItem?.title]
-    .filter((part): part is string => Boolean(part))
-    .join(' · ')
   const target = mediaItem?.type === 'movie'
-    ? `movie: ${mediaItem.title}${mediaItem.year ? ` (${mediaItem.year})` : ''}`
+    ? `movie: ${formatMediaDisplayName(mediaItem)}${mediaItem.year ? ` (${mediaItem.year})` : ''}`
     : preflightRequest.mediaItemId !== undefined
-      ? `TV episode: ${episodeDescription || `media item ${preflightRequest.mediaItemId}`}`
+      ? `TV episode: ${formatMediaDisplayName(mediaItem, seriesTitle) || `media item ${preflightRequest.mediaItemId}`}`
       : preflightRequest.seasonNumber !== undefined
         ? `TV season: ${seriesTitle ? `${seriesTitle} · ` : ''}Season ${preflightRequest.seasonNumber}`
         : `TV show${seriesTitle ? `: ${seriesTitle}` : ''}`

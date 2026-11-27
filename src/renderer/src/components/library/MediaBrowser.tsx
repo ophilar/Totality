@@ -18,6 +18,7 @@ import { useNavigation } from '../../contexts/NavigationContext'
 import { useWishlist } from '../../contexts/WishlistContext'
 import { useToast } from '../../contexts/ToastContext'
 import logoImage from '../../assets/totality_header_logo.png'
+import { formatMediaDisplayName } from '@shared/mediaDisplayName'
 import { MoviePlaceholder, TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
 
 // Import extracted hooks (more hooks available in ./hooks for gradual migration)
@@ -1430,9 +1431,9 @@ export function MediaBrowser({
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{episode.title}</div>
+                            <div className="text-sm font-medium truncate" style={{ color: 'hsl(var(--foreground))' }}>{formatMediaDisplayName({ ...episode, type: 'episode' })}</div>
                             <div className="text-xs text-muted-foreground truncate">
-                              {episode.series_title} • S{episode.season_number}E{episode.episode_number}
+                              {episode.series_title}
                             </div>
                           </div>
                         </div>

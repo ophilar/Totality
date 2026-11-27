@@ -23,6 +23,7 @@ import { availableOptimizationEncoders, supportedOptimizationCodecs, unsupported
 import { describeMissingOptimizationSettings, getMissingOptimizationSettings } from './transcoding/readiness'
 import { SeriesOptimizationFlow, type SeriesOptimizationFlowProps } from './SeriesOptimizationFlow'
 import { OptimizationReviewSummary } from './transcoding/OptimizationReviewSummary'
+import { formatMediaDisplayName } from '@shared/mediaDisplayName'
 import { OptimizationResultsStage } from './transcoding/OptimizationResultsStage'
 import { describeOptimizationScope, optimizationScopeForSeries } from './transcoding/OptimizationScope'
 import { useOptimizationWorkflow } from './transcoding/useOptimizationWorkflow'
@@ -594,7 +595,7 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
       else if (next === 'Results' && (batchSummary || progress || status !== 'idle')) setActiveTab('monitor')
     }}
     title={media.type === 'movie' ? 'Optimize movie' : 'Optimize episode'}
-    subtitle={media.type === 'episode' ? `${media.series_title ?? media.title} · S${String(media.season_number ?? '?').padStart(2, '0')}E${String(media.episode_number ?? '?').padStart(2, '0')}` : media.title}
+    subtitle={media.type === 'episode' ? formatMediaDisplayName(media) : media.title}
     leading={<Zap className="h-5 w-5" />}
     onClose={onClose}
     wide

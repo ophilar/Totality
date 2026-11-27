@@ -9,6 +9,7 @@ import { createReadStream, type Stats } from 'node:fs'
 import * as path from 'node:path'
 import * as os from 'node:os'
 import { getDatabase } from '@main/database/getDatabase'
+import { formatMediaDisplayName } from '@shared/mediaDisplayName'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { PathUtils } from '@main/services/utils/PathUtils'
@@ -778,7 +779,7 @@ export class TranscodingService {
       progress: { current: completedInspections, total: episodes.length, currentItem: getActiveEpisodeSummary() },
     })
     const publishPreflightProgress = (episode: typeof episodes[number], phase: string) => {
-      activeEpisodeSteps.set(episode.id ?? 0, `${episode.title}: ${phase}`)
+      activeEpisodeSteps.set(episode.id ?? 0, `${formatMediaDisplayName(episode, request.seriesTitle)}: ${phase}`)
       operation?.update({
         phase: `Episode ${Math.min(completedEpisodes + 1, episodes.length)} of ${episodes.length}`,
         progress: {
@@ -799,20 +800,20 @@ export class TranscodingService {
     }
 
     const inspectEpisode = async (episode: typeof episodes[number]): Promise<PreparedEpisode> => {
-      activeEpisodeSteps.set(episode.id ?? 0, `${episode.title}: Inspecting source and playback compatibility`)
+      activeEpisodeSteps.set(episode.id ?? 0, `${formatMediaDisplayName(episode, request.seriesTitle)}: Inspecting source and playback compatibility`)
       publishInspectionProgress()
       try {
         await operation?.waitUntilRunning()
         operation?.signal.throwIfAborted()
-        if (!episode.id || !episode.file_path || !episode.source_id) throw new Error(`Episode "${episode.title}" has no local source identity`)
-        if (queuedMediaIds.has(episode.id)) throw new Error(`Episode "${episode.title}" already has a queued or running transcode`)
+        if (!episode.id || !episode.file_path || !episode.source_id) throw new Error(`Episode "${formatMediaDisplayName(episode, request.seriesTitle)}" has no local source identity`)
+        if (queuedMediaIds.has(episode.id)) throw new Error(`Episode "${formatMediaDisplayName(episode, request.seriesTitle)}" already has a queued or running transcode`)
         await this.assertAuthorizedItem(episode.id)
         const stat = await fs.stat(episode.file_path)
         const { analysis } = await getQualityAnalyzer().analyzeMediaItemFileEvidence(episode, operation?.signal)
         const video = analysis.video
         operation?.signal.throwIfAborted()
         if (!analysis.success || analysis.filePath !== episode.file_path || analysis.fileSizeBytes !== stat.size || !video) {
-          throw new Error(`File analysis is incomplete or stale for "${episode.title}"`)
+          throw new Error(`File analysis is incomplete or stale for "${formatMediaDisplayName(episode, request.seriesTitle)}"`)
         }
         this.analysisCache.set(episode.file_path, stat, analysis)
         return { episode, status: 'ready', stat, analysis: { ...analysis, video } }
@@ -862,9 +863,7 @@ export class TranscodingService {
 
     const processEpisode = async (prepared: PreparedEpisode, samplingState: SamplingGroupState): Promise<ShowTranscodePreflight['episodes'][number]> => {
       const episode = prepared.episode
-      const label = episode.type === 'movie'
-        ? `Movie: ${episode.title}`
-        : `${request.seriesTitle ?? episode.series_title ?? 'TV episode'}${episode.season_number == null ? '' : ` S${String(episode.season_number).padStart(2, '0')}E${String(episode.episode_number ?? 0).padStart(2, '0')}`} · ${episode.title}`
+      const label = formatMediaDisplayName(episode, request.seriesTitle)
       const fallbackMediaItemId = episode.id || 0
       const mediaItemId = episode.id ?? fallbackMediaItemId
       const samplingGroupKey = prepared.status === 'ready'
@@ -1178,7 +1177,7 @@ export class TranscodingService {
               }
             }
             if (!reusableRepresentativePlan && !measurementCacheHit && !measurementCacheStored) {
-              throw new Error(`Measured candidates were not cached for ${episode.title}`)
+              throw new Error(`Measured candidates were not cached for ${formatMediaDisplayName(episode, request.seriesTitle)}`)
             }
           }
         } catch (error) {
@@ -1359,7 +1358,7 @@ export class TranscodingService {
 
     const results = episodes.map(episode => {
       const result = episodeResults.get(episode.id ?? 0)
-      if (!result) throw new Error(`Preflight did not produce a result for episode ${episode.title}`)
+      if (!result) throw new Error(`Preflight did not produce a result for episode ${formatMediaDisplayName(episode, request.seriesTitle)}`)
       return result
     })
 
@@ -3045,7 +3044,7 @@ export class TranscodingService {
         if (!entry.isFile() || !entry.name.startsWith(`${base}.quarantine-`) || !/\.quarantine-\d+\.[^.]+$/.test(entry.name)) continue
         const quarantinePath = path.join(directory, entry.name)
         const stat = await fs.stat(quarantinePath)
-        files.push({ mediaItemId: episode.id, label: `${seriesTitle} S${String(episode.season_number || 0).padStart(2, '0')}E${String(episode.episode_number || 0).padStart(2, '0')} ${episode.title}`, path: quarantinePath, size: stat.size, modifiedAt: new Date(stat.mtimeMs).toISOString(), owned: ownedPaths.has(path.resolve(quarantinePath)) })
+        files.push({ mediaItemId: episode.id, label: formatMediaDisplayName(episode, seriesTitle), path: quarantinePath, size: stat.size, modifiedAt: new Date(stat.mtimeMs).toISOString(), owned: ownedPaths.has(path.resolve(quarantinePath)) })
       }
     }
     return files

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Search, X, Film, Tv, Music, User, Disc3 } from 'lucide-react'
+import { formatMediaDisplayName } from '@shared/mediaDisplayName'
 
 interface SearchResults {
   movies: Array<{ id: number; title: string; year?: number; poster_url?: string }>
@@ -138,7 +139,7 @@ export function MobileSearchOverlay({
                 {results.episodes.length > 0 && (
                   <ResultSection icon={Tv} label="Episodes">
                     {results.episodes.map((ep) => (
-                      <ResultRow key={`ep-${ep.id}`} thumb={ep.poster_url} thumbIcon={Tv} title={ep.title} subtitle={`${ep.series_title} · S${ep.season_number}E${ep.episode_number}`} onClick={() => { onSelectEpisode(ep.id); onClose() }} />
+                      <ResultRow key={`ep-${ep.id}`} thumb={ep.poster_url} thumbIcon={Tv} title={formatMediaDisplayName({ ...ep, type: 'episode' })} subtitle={ep.series_title} onClick={() => { onSelectEpisode(ep.id); onClose() }} />
                     ))}
                   </ResultSection>
                 )}

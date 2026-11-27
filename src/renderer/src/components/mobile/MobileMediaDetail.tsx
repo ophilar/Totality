@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { X, Star, Check, Play } from 'lucide-react'
 import { formatFileSize, formatBitrate, formatDuration } from '../library/mediaUtils'
 import { getResolutionColors } from '../../utils/qualityColors'
+import { formatMediaDisplayName } from '@shared/mediaDisplayName'
 import type { AudioTrack as DatabaseAudioTrack, QualityScore as DatabaseQualityScore } from '@main/types/database'
 
 interface MediaDetail {
@@ -227,12 +228,7 @@ export function MobileMediaDetail({ mediaId, onClose }: MobileMediaDetailProps) 
                 )}
               </div>
               <div className="flex-1 min-w-0 pt-1">
-                <h2 className="text-base font-semibold text-foreground leading-snug">{media.title}</h2>
-                {media.type === 'episode' && media.series_title && (
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {media.series_title} · S{media.season_number}E{media.episode_number}
-                  </p>
-                )}
+                <h2 className="text-base font-semibold text-foreground leading-snug">{media.type === 'episode' ? formatMediaDisplayName(media) : media.title}</h2>
                 <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                   {media.year && <span className="text-xs text-muted-foreground">{media.year}</span>}
                   {media.duration_ms > 0 && <span className="text-xs text-muted-foreground">{formatDuration(media.duration_ms)}</span>}

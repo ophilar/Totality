@@ -1,6 +1,7 @@
 
 import type { MediaItem, SeriesCompleteness, MissingEpisode } from '../../types/database'
 import type { TimelineDefinition, TimelineItem } from './ITimelineRecipeProvider'
+import { formatMediaDisplayName } from '../../../shared/mediaDisplayName'
 
 export interface ResolvedTimelineItem extends TimelineItem {
   order: number
@@ -158,12 +159,12 @@ export class TimelineResolutionEngine {
 
       const coordinates = new Map<string, { season: number; episode: number; title: string }>()
       for (const ep of episodes) {
-        coordinates.set(`${ep.season_number}:${ep.episode_number}`, { season: ep.season_number!, episode: ep.episode_number!, title: ep.title })
+        coordinates.set(`${ep.season_number}:${ep.episode_number}`, { season: ep.season_number!, episode: ep.episode_number!, title: formatMediaDisplayName({ type: 'episode', series_title: item.seriesTitle || item.title, season_number: ep.season_number, episode_number: ep.episode_number, title: ep.title }) })
       }
       for (const ep of missing) {
         const key = `${ep.season_number}:${ep.episode_number}`
         if (!coordinates.has(key)) {
-          coordinates.set(key, { season: ep.season_number, episode: ep.episode_number, title: ep.title || `${item.seriesTitle || item.title} S${ep.season_number}E${ep.episode_number}` })
+          coordinates.set(key, { season: ep.season_number, episode: ep.episode_number, title: formatMediaDisplayName({ type: 'episode', series_title: item.seriesTitle || item.title, season_number: ep.season_number, episode_number: ep.episode_number, title: ep.title }) })
         }
       }
 

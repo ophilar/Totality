@@ -19,6 +19,7 @@ import {
 } from '../../utils/dismissEvents'
 import { applyCollectionFilters, applySeriesFilters, applyArtistFilters, parseAutoRules, filterMissingMoviesByRules, filterMissingEpisodesByRules } from '../../utils/completenessFilters'
 import { AnimatedNumber } from '../ui/AnimatedNumber'
+import { formatMediaDisplayName } from '@shared/mediaDisplayName'
 
 // Music album with quality info from the upgrade query
 interface MusicAlbumUpgrade extends MusicAlbum {
@@ -870,10 +871,7 @@ export function Dashboard({
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm truncate">{item.series_title || item.title}</div>
-          <div className="text-xs text-muted-foreground truncate">
-            S{item.season_number}E{item.episode_number} · {item.title}
-          </div>
+          <div className="font-medium text-sm truncate">{formatMediaDisplayName({ ...item, type: 'episode' })}</div>
           <div className="text-xs text-muted-foreground mt-1">
             {item.quality_tier} · {item.tier_quality === 'UNKNOWN' ? 'Quality rating unknown' : `${item.tier_quality} quality rating`}
           </div>

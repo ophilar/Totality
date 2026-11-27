@@ -16,6 +16,7 @@ import { ScopedOptimizationSummary } from './ScopedOptimizationSummary'
 import { logOptimizationDiagnostic } from './optimizationDiagnostics'
 import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
 import { tvSortOptions, type TVShowSortBy } from './sortDefinitions'
+import { formatMediaDisplayName } from '@shared/mediaDisplayName'
 
 function plexArtworkUrl(episode: MediaItem, kind: 'episode' | 'season', url: string): string {
   return episode.source_type === 'plex' && episode.id && !isWebMode() &&
@@ -223,7 +224,7 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onOptim
         {episode.episode_thumb_url ? (
           <img
             src={plexArtworkUrl(episode, 'episode', episode.episode_thumb_url)}
-            alt={episode.title}
+            alt={formatMediaDisplayName(episode)}
             loading="lazy"
             className="w-full h-full object-cover"
             onError={(e) => {
@@ -241,7 +242,7 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onOptim
           <span className="text-sm font-semibold text-muted-foreground shrink-0">
             E{episode.episode_number}
           </span>
-          <h4 className="font-semibold truncate">{episode.title}</h4>
+          <h4 className="font-semibold truncate">{formatMediaDisplayName(episode)}</h4>
         </div>
         <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
           <span>{episode.resolution} • {(episode.video_bitrate_kbps / 1000).toFixed(1)} Mbps • {episode.audio_channels}.0 Audio</span>
@@ -1152,11 +1153,12 @@ export function TVShowsView({
               <MissingEpisodeRowWithArtwork
                 key={`missing-${item.missing.season_number}-${item.missing.episode_number}`}
                 episode={item.missing}
+                seriesTitle={selectedShowData.title}
                 tmdbId={completenessData?.tmdb_id}
                 fallbackPosterUrl={missingEpisodePoster}
                 onClick={() => onMissingItemClick({
                   type: 'episode',
-                  title: item.missing.title || `Episode ${item.missing.episode_number}`,
+                  title: formatMediaDisplayName({ type: 'episode', title: item.missing.title, series_title: selectedShowData.title, season_number: item.missing.season_number, episode_number: item.missing.episode_number }),
                   airDate: item.missing.air_date,
                   seasonNumber: item.missing.season_number,
                   episodeNumber: item.missing.episode_number,
@@ -1386,6 +1388,7 @@ const MissingSeasonCardWithArtwork = memo(({
 // Component to fetch and display missing episode with actual TMDB artwork
 const MissingEpisodeRowWithArtwork = memo(({
   episode,
+  seriesTitle,
   tmdbId,
   fallbackPosterUrl,
   onClick,
@@ -1393,6 +1396,7 @@ const MissingEpisodeRowWithArtwork = memo(({
   isMobile = false,
 }: {
   episode: MissingEpisode
+  seriesTitle: string
   tmdbId?: string
   fallbackPosterUrl?: string
   onClick: () => void
@@ -1434,7 +1438,7 @@ const MissingEpisodeRowWithArtwork = memo(({
         {stillUrl ? (
           <img
             src={stillUrl}
-            alt={episode.title || `Episode ${episode.episode_number}`}
+            alt={formatMediaDisplayName({ type: 'episode', title: episode.title, series_title: seriesTitle, season_number: episode.season_number, episode_number: episode.episode_number })}
             loading="lazy"
             className="w-full h-full object-cover grayscale opacity-50"
             onError={(e) => {
@@ -1455,7 +1459,7 @@ const MissingEpisodeRowWithArtwork = memo(({
             E{episode.episode_number}
           </span>
           <h4 className="font-semibold truncate text-muted-foreground">
-            {episode.title || 'Unknown Title'}
+            {formatMediaDisplayName({ type: 'episode', title: episode.title, series_title: seriesTitle, season_number: episode.season_number, episode_number: episode.episode_number })}
           </h4>
         </div>
         {episode.air_date && (

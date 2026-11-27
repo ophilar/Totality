@@ -15,6 +15,7 @@ import { NotificationBell } from '../ui/NotificationBell'
 import { ActivityPanel } from '../ui/ActivityPanel'
 import logoImage from '../../assets/totality_header_logo.png'
 import type { MediaViewType } from '../library/types'
+import { formatMediaDisplayName } from '@shared/mediaDisplayName'
 
 // Search results type
 interface SearchResults {
@@ -427,9 +428,9 @@ export function TopBar({
                                 )}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="text-sm font-medium truncate">{episode.title}</div>
+                                <div className="text-sm font-medium truncate">{formatMediaDisplayName({ ...episode, type: 'episode' })}</div>
                                 <div className="text-xs text-muted-foreground truncate">
-                                  {episode.series_title} · S{episode.season_number}E{episode.episode_number}
+                                  {episode.series_title}
                                 </div>
                               </div>
                             </button>
