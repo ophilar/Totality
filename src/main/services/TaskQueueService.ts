@@ -1016,6 +1016,7 @@ export class TaskQueueService {
               mediaItemId: item.id,
               sourceId: item.source_id!,
               libraryId: item.library_id,
+              remeasure: true,
               options: {
                 optimizationMode: 'transcode',
                 targetCodec,
