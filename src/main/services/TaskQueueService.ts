@@ -1,5 +1,6 @@
 import { IPC_CHANNELS } from '../../shared/ipcChannels'
 import { SETTING_KEYS } from '../../shared/settingKeys'
+import { APP_CONFIG } from '../config'
 import { getErrorMessage } from './utils/errorUtils'
 /**
  * TaskQueueService - Manages background task queue for scans and analysis
@@ -1026,9 +1027,9 @@ export class TaskQueueService {
                 targetProfileId,
                 targetContainerSelection: 'automatic',
                 playbackPolicy: 'allow-transcoding',
-                measurementSampleDurationSeconds: 10,
-                measurementCandidateBudget: 2,
-                measurementSamplePositions: [0.25, 0.75],
+                measurementSampleDurationSeconds: APP_CONFIG.transcoding.calibrationSampleDurationSeconds,
+                measurementCandidateBudget: APP_CONFIG.transcoding.calibrationCandidateBudget,
+                measurementSamplePositions: APP_CONFIG.transcoding.calibrationSamplePositions,
               },
             }, {
               signal,

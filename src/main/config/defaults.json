@@ -167,6 +167,12 @@
     "encoderProbeWidth": 640,
     "encoderProbeHeight": 360,
     "sampleDurationSeconds": 30,
+    "calibrationSampleDurationSeconds": 10,
+    "calibrationSamplePositions": [
+      0.25,
+      0.75
+    ],
+    "calibrationCandidateBudget": 2,
     "measuredSampleCache": {
       "maxBytes": 5368709120,
       "maxAgeMs": 2592000000,
