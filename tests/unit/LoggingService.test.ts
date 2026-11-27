@@ -19,6 +19,10 @@ describe('LoggingService', () => {
 
   beforeEach(() => {
     service = getLoggingService()
+    service.setDatabaseGetter(() => ({
+      getSetting: vi.fn(async () => null),
+      setSetting: vi.fn(async () => undefined),
+    }))
   })
 
   describe('getLogs', () => {
@@ -77,19 +81,19 @@ describe('LoggingService', () => {
       expect(internal.writeBuffer.join('')).toContain('[ERROR  ] [Test] error entry')
     })
 
-    it('writes verbose entries when verbose logging is enabled', () => {
+    it('writes verbose entries when verbose logging is enabled', async () => {
       const internal = service as any
       internal.fileLoggingEnabled = true
       internal.logDir = 'test-logs'
       internal.writeBuffer = []
-      service.setVerboseLogging(true)
+      await service.setVerboseLogging(true)
       internal.writeBuffer = []
 
       service.verbose('[Test]', 'verbose entry')
 
       expect(internal.writeBuffer).toHaveLength(1)
       expect(internal.writeBuffer[0]).toContain('[VERBOSE] [Test] verbose entry')
-      service.setVerboseLogging(false)
+      await service.setVerboseLogging(false)
     })
   })
 

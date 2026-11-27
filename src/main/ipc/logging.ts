@@ -16,6 +16,7 @@ import { getErrorMessage } from './utils'
 import { validateInput, BooleanSchema } from '../validation/schemas'
 import { z } from 'zod'
 import { createIpcHandler } from './utils/createHandler'
+import { SETTING_KEYS } from '../../shared/settingKeys'
 
 const FileLoggingSettingsSchema = z.object({
   enabled: z.boolean().optional(),
@@ -111,7 +112,7 @@ export function registerLoggingHandlers(): void {
 
   createIpcHandler(IPC_CHANNELS.logsSetVerbose, async (enabled: unknown) => {
     const validEnabled = validateInput(BooleanSchema, enabled, 'logs:setVerbose')
-    getLoggingService().setVerboseLogging(validEnabled)
+    await getLoggingService().setVerboseLogging(validEnabled)
     return { success: true }
   })
 
@@ -122,16 +123,16 @@ export function registerLoggingHandlers(): void {
   createIpcHandler(IPC_CHANNELS.logsGetFileLoggingSettings, async () => {
     const db = getDatabase()
     return {
-      enabled: (await db.getSetting('file_logging_enabled')) !== 'false',
-      retentionDays: parseInt((await db.getSetting('log_retention_days')) || '7', 10),
+      enabled: (await db.getSetting(SETTING_KEYS.file_logging_enabled)) !== 'false',
+      retentionDays: parseInt((await db.getSetting(SETTING_KEYS.log_retention_days)) || '7', 10),
     }
   })
 
   createIpcHandler(IPC_CHANNELS.logsSetFileLoggingSettings, async (settings: unknown) => {
     const valid = validateInput(FileLoggingSettingsSchema, settings, 'logs:setFileLoggingSettings')
     const db = getDatabase()
-    if (valid.enabled !== undefined) db.setSetting('file_logging_enabled', String(valid.enabled))
-    if (valid.retentionDays !== undefined) db.setSetting('log_retention_days', String(valid.retentionDays))
+    if (valid.enabled !== undefined) await db.setSetting(SETTING_KEYS.file_logging_enabled, String(valid.enabled))
+    if (valid.retentionDays !== undefined) await db.setSetting(SETTING_KEYS.log_retention_days, String(valid.retentionDays))
     getLoggingService().updateFileLoggingSettings(valid)
     return { success: true }
   })

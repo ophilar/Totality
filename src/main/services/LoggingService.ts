@@ -1,4 +1,5 @@
 import { IPC_CHANNELS } from '../../shared/ipcChannels'
+import { SETTING_KEYS } from '../../shared/settingKeys'
 /**
  * LoggingService - Centralized logging with buffer and export
  *
@@ -262,13 +263,11 @@ class LoggingService {
     this.addEntry('info', '[LoggingService]', 'Logs cleared')
   }
 
-  setVerboseLogging(enabled: boolean): void {
+  async setVerboseLogging(enabled: boolean): Promise<void> {
+    if (!this.dbGetter) throw new Error('Database getter must be configured before changing verbose logging')
+    await this.dbGetter().setSetting(SETTING_KEYS.verbose_logging_enabled, String(enabled))
     this.verboseEnabled = enabled
     this.addEntry('info', '[LoggingService]', `Verbose logging ${enabled ? 'enabled' : 'disabled'}`)
-    // Persist to database
-    if (!this.dbGetter) return
-    const db = this.dbGetter()
-    db.setSetting('verbose_logging_enabled', String(enabled))
   }
 
   isVerboseEnabled(): boolean {
@@ -345,7 +344,7 @@ class LoggingService {
   async initializeFileLogging(): Promise<void> {
     try {
       this.logDir = path.join(app.getPath('userData'), 'logs')
-      this.loadFileLoggingSettings()
+      await this.loadFileLoggingSettings()
 
       if (!this.fileLoggingEnabled) {
         this.originalConsole.log('[LoggingService] File logging disabled')
@@ -363,17 +362,19 @@ class LoggingService {
     }
   }
 
-  private loadFileLoggingSettings(): void {
+  private async loadFileLoggingSettings(): Promise<void> {
     if (!this.dbGetter) throw new Error('Database getter must be configured before file logging')
     const db = this.dbGetter()
-    const enabled = db.getSetting('file_logging_enabled')
-    const retention = db.getSetting('log_retention_days')
+    const [enabled, retention, verbose] = await Promise.all([
+      db.getSetting(SETTING_KEYS.file_logging_enabled),
+      db.getSetting(SETTING_KEYS.log_retention_days),
+      db.getSetting(SETTING_KEYS.verbose_logging_enabled),
+    ])
 
     if (enabled !== null) this.fileLoggingEnabled = enabled !== 'false'
     if (retention) this.logRetentionDays = parseInt(retention, 10) || 7
 
     // Restore verbose setting
-    const verbose = db.getSetting('verbose_logging_enabled')
     if (verbose === 'true') this.verboseEnabled = true
   }
 

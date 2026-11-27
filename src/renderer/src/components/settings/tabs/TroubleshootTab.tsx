@@ -227,14 +227,14 @@ export function TroubleshootTab() {
 
   const handleVerboseToggle = async () => {
     const newValue = !verboseEnabled
-    setVerboseEnabled(newValue)
     await window.electronAPI.setVerboseLogging(newValue)
+    setVerboseEnabled(newValue)
   }
 
   const handleFileLoggingSetting = async (update: { enabled?: boolean; retentionDays?: number }) => {
     const newSettings = { ...fileLoggingSettings, ...update }
-    setFileLoggingSettings(newSettings)
     await window.electronAPI.setFileLoggingSettings(update)
+    setFileLoggingSettings(newSettings)
   }
 
   // Toggle selection for a single entry, with shift-click range support
