@@ -55,6 +55,7 @@ export class TranscodeError extends Error {
 
 export interface TranscodeOptions {
   playbackPolicy?: 'allow-transcoding' | 'avoid-video-transcoding' | 'direct-play'
+  targetProfileMode?: 'advisory'
   targetCodec?: OptimizationVideoCodec
   streamSelection?: StreamSelectionPolicy
   outputMode?: 'copy' | 'quarantine-replace' | 'replace'
@@ -938,15 +939,17 @@ export class TranscodingService {
         const allowedTargetContainers = targetProfile ? getPlaybackTargetContainers(targetProfile, analysis.video) : undefined
         const sourceContainerNames = analysis.container?.split(',').map(container => container.trim().toLowerCase()) ?? []
         const requiresDolbyVisionMp4Remux = analysis.video.dolbyVisionProfile === 5 && !sourceContainerNames.some(container => ['mp4', 'm4v'].includes(container))
-        const recommendedTargetContainer = targetProfile && request.options.playbackPolicy !== 'allow-transcoding'
+        const advisoryTargetProfile = request.options.targetProfileMode === 'advisory'
+        const recommendedTargetContainer = targetProfile && (request.options.playbackPolicy !== 'allow-transcoding' || advisoryTargetProfile)
           ? recommendPlaybackTargetContainer(targetProfile, analysis.video, analysis.container)
           : undefined
         let plannedContainer: string | undefined
         if (requiresDolbyVisionMp4Remux) {
           plannedContainer = 'mp4'
         } else if (request.options.targetContainerSelection === 'automatic' && targetProfile && request.options.playbackPolicy !== 'allow-transcoding') {
-          if (!recommendedTargetContainer) throw new Error(`Playback target ${targetProfile.name} has no supported MKV or MP4 container for this episode's video format`)
-          plannedContainer = recommendedTargetContainer === 'mp4' ? 'mp4' : 'matroska'
+          if (recommendedTargetContainer) plannedContainer = recommendedTargetContainer === 'mp4' ? 'mp4' : 'matroska'
+          else if (!advisoryTargetProfile) throw new Error(`Playback target ${targetProfile.name} has no supported MKV or MP4 container for this episode's video format`)
+          else plannedContainer = sourceContainerNames[0] === 'mp4' || sourceContainerNames[0] === 'm4v' ? 'mp4' : 'matroska'
         } else if (request.options.targetContainerSelection === 'automatic') {
           const sourceContainer = sourceContainerNames[0]
           plannedContainer = sourceContainer === 'mkv' || sourceContainer === 'matroska' ? 'matroska'
@@ -956,7 +959,7 @@ export class TranscodingService {
           plannedContainer = request.options.targetContainer === 'mp4' ? 'mp4'
             : request.options.targetContainer === 'mkv' ? 'matroska'
               : analysis.container
-          if (targetProfile && request.options.playbackPolicy !== 'allow-transcoding' && (!plannedContainer || !allowedTargetContainers?.some(container => container.toLowerCase() === plannedContainer!.toLowerCase()))) {
+          if (targetProfile && request.options.playbackPolicy !== 'allow-transcoding' && !advisoryTargetProfile && (!plannedContainer || !allowedTargetContainers?.some(container => container.toLowerCase() === plannedContainer!.toLowerCase()))) {
             throw new Error(`Container ${plannedContainer ?? 'unspecified'} is not allowed by ${targetProfile.name}'s matching video/container rule`)
           }
         }
@@ -975,7 +978,7 @@ export class TranscodingService {
         }
         if (shouldEncode) {
           options.maxOutputBytes = stat.size
-          if (targetProfile && request.options.playbackPolicy !== 'allow-transcoding') options.targetConversion = buildTargetTranscodePlan(analysis, targetProfile, options)
+          if (targetProfile && request.options.playbackPolicy !== 'allow-transcoding' && request.options.targetProfileMode !== 'advisory') options.targetConversion = buildTargetTranscodePlan(analysis, targetProfile, options)
         }
         if (shouldEncode && samplingState.sampleAttemptedEpisodeLabel && !reusableRepresentativePlan) {
           const representativePlan = samplingState.sampleAttemptedPlan
@@ -1020,6 +1023,7 @@ export class TranscodingService {
           gpuId: options.gpuId,
           customArgs: options.customArgs,
           targetHdrFormat: options.targetHdrFormat,
+          targetProfileMode: options.targetProfileMode,
           measurementCandidateBudget: options.measurementCandidateBudget,
           videoTransformation: options.targetConversion && {
             width: options.targetConversion.width,
@@ -2745,7 +2749,7 @@ export class TranscodingService {
           if (sample.deepAnalysis?.peakBitrate === undefined) throw new Error('Sample has no measured peak bitrate')
           try { validateTargetTranscodeBitrate(options.targetConversion, sample) } catch (error) { blockers.push(getErrorMessage(error)) }
         }
-        if (targetProfile && options.playbackPolicy !== 'allow-transcoding') {
+        if (targetProfile && options.playbackPolicy !== 'allow-transcoding' && options.targetProfileMode !== 'advisory') {
           const evaluation = evaluatePlaybackTarget(targetProfile, sample)
           // Video samples contain no audio, subtitles, or attachments. Those are
           // validated by the executable stream plan and on the final output.
