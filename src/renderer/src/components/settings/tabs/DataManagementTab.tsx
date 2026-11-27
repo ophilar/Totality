@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect } from 'react'
-import { Loader2, FolderOpen, Download, Upload, Trash2, AlertTriangle, FileSpreadsheet, X, Database, RefreshCw, HardDrive } from 'lucide-react'
+import { Loader2, FolderOpen, Download, Upload, Trash2, AlertTriangle, FileSpreadsheet, X, Database, RefreshCw, HardDrive, Gauge } from 'lucide-react'
 import { Toggle } from '../../ui/Toggle'
 import { Button, Card } from '../../ui'
 
@@ -32,6 +32,13 @@ export function DataManagementTab() {
   const [isResettingLibrary, setIsResettingLibrary] = useState(false)
   const [showLibraryResetConfirm, setShowLibraryResetConfirm] = useState(false)
   const [showCSVExportModal, setShowCSVExportModal] = useState(false)
+  const [isCalibrating, setIsCalibrating] = useState(false)
+  const [isCleaningOptimization, setIsCleaningOptimization] = useState(false)
+  const [showOptimizationCleanupConfirm, setShowOptimizationCleanupConfirm] = useState(false)
+  const [calibrationTaskId, setCalibrationTaskId] = useState<string>()
+  const [calibrationProgress, setCalibrationProgress] = useState<string>()
+  const [calibrationResult, setCalibrationResult] = useState<string>()
+  const [calibrationRunning, setCalibrationRunning] = useState(false)
   useEffect(() => {
     if (!showCSVExportModal) return
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -67,6 +74,26 @@ export function DataManagementTab() {
   useEffect(() => {
     loadDbPath()
   }, [])
+
+  useEffect(() => window.electronAPI.onTaskQueueUpdated?.(state => {
+    const task = [state.currentTask, ...state.queue, ...state.completedTasks].find(candidate => candidate?.id === calibrationTaskId)
+    if (!task) return
+    setCalibrationProgress(task.progress?.phase ?? (task.status === 'running' ? 'Running' : undefined))
+    setCalibrationRunning(task.status === 'running' && state.currentTask?.id === calibrationTaskId)
+    if (task.status === 'completed') {
+      const calibrationEntries = typeof task.result?.calibrationEntries === 'number' ? task.result.calibrationEntries : 0
+      const measurements = Array.isArray(task.result?.measurements) ? task.result.measurements : []
+      const formats = [...new Set(measurements.map(measurement => {
+        if (!measurement || typeof measurement !== 'object') return 'Unknown'
+        const format = (measurement as { hdrFormat?: unknown }).hdrFormat
+        return typeof format === 'string' && format ? format : 'SDR'
+      }))]
+      const unvalidated = typeof task.result?.unvalidated === 'number' ? task.result.unvalidated : 0
+      setCalibrationResult(`${calibrationEntries} validated calibration groups · ${unvalidated} unvalidated · formats: ${formats.join(', ') || 'none discovered'}`)
+      setShowOptimizationCleanupConfirm(true)
+    }
+    if (task.status === 'failed' || task.status === 'cancelled') setCalibrationResult(task.error ?? `Calibration ${task.status}`)
+  }), [calibrationTaskId])
 
   const loadDbPath = async () => {
     setIsLoading(true)
@@ -172,6 +199,42 @@ export function DataManagementTab() {
       setMessage({ type: 'error', text: (error as Error).message || 'Failed to reset library data' })
     } finally {
       setIsResettingLibrary(false)
+    }
+  }
+
+  const handleOptimizationCalibration = async () => {
+    setIsCalibrating(true)
+    setMessage(null)
+    try {
+      const requestId = crypto.randomUUID()
+      const result = await window.electronAPI.startOptimizationCalibration(requestId)
+      setCalibrationTaskId(result.taskId)
+      setCalibrationResult(undefined)
+      setMessage({ type: 'success', text: `Optimization calibration queued (${result.taskId}).` })
+    } catch (error: unknown) {
+      setMessage({ type: 'error', text: (error as Error).message || 'Failed to start calibration' })
+    } finally { setIsCalibrating(false) }
+  }
+
+  const handleOptimizationCleanup = async () => {
+    setIsCleaningOptimization(true)
+    setMessage(null)
+    try {
+      await window.electronAPI.cleanupOptimizationArtifacts()
+      setMessage({ type: 'success', text: 'Optimization calibration artifacts cleaned up.' })
+      setShowOptimizationCleanupConfirm(false)
+    } catch (error: unknown) {
+      setMessage({ type: 'error', text: (error as Error).message || 'Failed to clean optimization artifacts' })
+    } finally { setIsCleaningOptimization(false) }
+  }
+
+  const handleCancelCalibration = async () => {
+    if (!calibrationRunning) return
+    try {
+      await window.electronAPI.taskQueueCancelCurrent()
+      setMessage({ type: 'success', text: 'Optimization calibration cancellation requested.' })
+    } catch (error: unknown) {
+      setMessage({ type: 'error', text: (error as Error).message || 'Failed to cancel calibration' })
     }
   }
 
@@ -385,6 +448,45 @@ export function DataManagementTab() {
               </>
             )}
           </Card>
+      </div>
+
+      <div className="space-y-2">
+        <h3 className="text-label font-medium text-foreground">Optimization Data</h3>
+        <Card variant="muted" padding="none">
+          {showOptimizationCleanupConfirm ? (
+            <div className="p-4 space-y-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-label font-medium text-foreground">Delete calibration artifacts?</p>
+                  <p className="text-caption text-muted-foreground mt-1">
+                    Calibration has finished. Remove its temporary sample files now? Saved measured profiles will be preserved.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-3 justify-end">
+                <Button variant="tertiary" size="sm" onClick={() => setShowOptimizationCleanupConfirm(false)} disabled={isCleaningOptimization}>Keep artifacts</Button>
+                <Button variant="danger-secondary" size="sm" onClick={handleOptimizationCleanup} disabled={isCleaningOptimization} icon={isCleaningOptimization ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}>Delete artifacts</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between px-4 py-3 gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <Gauge className="w-5 h-5 text-muted-foreground shrink-0" />
+                <div className="min-w-0">
+                  <span className="text-label text-foreground">Measured optimization profiles</span>
+                  <p className="text-caption text-muted-foreground">Calibrate verified encoder profiles or remove temporary sample artifacts.</p>
+                </div>
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <Button variant="tertiary" size="sm" onClick={() => setShowOptimizationCleanupConfirm(true)} disabled={isCleaningOptimization} icon={<Trash2 className="w-3.5 h-3.5" />}>Clean up</Button>
+                {calibrationRunning && <Button variant="tertiary" size="sm" onClick={handleCancelCalibration}>Cancel</Button>}
+                <Button variant="primary" size="sm" onClick={handleOptimizationCalibration} disabled={isCalibrating || calibrationRunning} icon={isCalibrating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Gauge className="w-3.5 h-3.5" />}>Calibrate</Button>
+              </div>
+            </div>
+          )}
+          {(calibrationProgress || calibrationResult) && <div className="px-4 pb-3 text-caption text-muted-foreground">{calibrationResult ?? calibrationProgress}</div>}
+        </Card>
       </div>
 
       {/* Auto-Hide Rules — moved to Library tab */}

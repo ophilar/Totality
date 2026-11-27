@@ -105,6 +105,20 @@ async function authorizedMediaPath(mediaItemId: number): Promise<string> {
 }
 
 export function registerTranscodingHandlers(): void {
+  createValidatedIpcHandler(IPC_CHANNELS.transcodingStartCalibration, z.string().min(1).max(100), async requestId => {
+    const taskId = getTaskQueueService().addTask({
+      type: 'optimization-calibration',
+      label: 'Calibrate optimization profiles',
+      options: { requestId },
+    })
+    if (!taskId) throw new Error('Optimization calibration could not be added to the task queue')
+    return { requestId, taskId }
+  })
+  createIpcHandler(IPC_CHANNELS.transcodingCleanupArtifacts, async () => {
+    await getTranscodingService().cleanupMeasuredSamples()
+    return { cleaned: true }
+  })
+
   createIpcHandler(IPC_CHANNELS.transcodingCheckAvailability, async () => {
     return await getTranscodingService().checkAvailability()
   })

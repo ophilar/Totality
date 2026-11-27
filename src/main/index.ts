@@ -80,6 +80,7 @@ import { getLiveMonitoringService } from './services/LiveMonitoringService'
 import { getTaskQueueService } from './services/TaskQueueService'
 import { setTrayUpdateCallback } from './ipc/utils/notificationEmitter'
 import { getLoggingService } from './services/LoggingService'
+import { fetchWithTimeout } from './services/utils/httpClient'
 import { getAutoUpdateService } from './services/AutoUpdateService'
 import { getWishlistCompletionService } from './services/WishlistCompletionService'
 import { getWebServerService, initWebServerService } from './services/WebServerService'
@@ -414,6 +415,55 @@ app.whenReady().then(async () => {
 
     protocol.handle('local-artwork', async (request) => {
       const url = new URL(request.url)
+
+      if (url.hostname === 'plex') {
+        const [, id, kind] = url.pathname.split('/')
+        if (!/^\d+$/.test(id) || (kind !== 'episode' && kind !== 'season')) {
+          return new Response(null, { status: 400 })
+        }
+        const item = getDatabaseServiceSync().getMediaItem(Number(id))
+        const stored = kind === 'episode' ? item?.episode_thumb_url : item?.season_poster_url
+        if (item?.source_type !== 'plex' || !stored) return new Response(null, { status: 404 })
+
+        const started = performance.now()
+        const context = { mediaItemId: item.id, sourceId: item.source_id, kind }
+        const logger = getLoggingService()
+        let endpointOrigin: string | undefined
+        let status: number | undefined
+        try {
+          const server = getSourceManager().getPlexProvider(item.source_id!)?.getSelectedServer()
+          if (!server) throw new Error('Plex source has no active connection')
+          const artworkPath = new URL(stored).pathname
+          if (!/^\/library\/metadata\/\d+\/thumb(?:\/\d+)?$/.test(artworkPath)) {
+            throw new Error('Invalid Plex artwork path')
+          }
+          const endpoint = new URL(artworkPath, server.uri)
+          endpointOrigin = endpoint.origin
+          logger.debug('[Artwork]', 'Plex artwork request started', { ...context, endpoint: endpointOrigin })
+          const response = await fetchWithTimeout(endpoint.href, {
+            headers: { 'X-Plex-Token': server.accessToken },
+            redirect: 'error',
+            signal: request.signal,
+          }, 10_000)
+          status = response.status
+          const contentType = response.headers.get('content-type')
+          if (!response.ok) {
+            await response.body?.cancel()
+            throw new Error(`Plex artwork returned HTTP ${response.status}`)
+          }
+          if (!contentType?.startsWith('image/')) {
+            await response.body?.cancel()
+            throw new Error('Plex artwork response was not an image')
+          }
+          const body = await response.arrayBuffer()
+          logger.debug('[Artwork]', 'Plex artwork loaded', { ...context, endpoint: endpoint.origin, status: response.status, durationMs: Math.round(performance.now() - started) })
+          return new Response(body, { headers: { 'Content-Type': contentType, 'Cache-Control': 'no-store' } })
+        } catch (error) {
+          const cause = error instanceof Error && 'cause' in error && error.cause instanceof Error ? error.cause : error
+          logger.warn('[Artwork]', 'Plex artwork request failed', { ...context, endpoint: endpointOrigin, status, reason: cause instanceof Error ? cause.message : String(cause), durationMs: Math.round(performance.now() - started) })
+          return new Response(null, { status: 502 })
+        }
+      }
 
       // Check if this is a direct file path request
       // URL format: local-artwork://file?path=C:\path\to\file.jpg

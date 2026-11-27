@@ -20,6 +20,7 @@ export interface LiveEncodingTabProps {
   onCancel: () => void
   onStart: () => void
   onClose: () => void
+  cancelling?: boolean
 }
 
 export function LiveEncodingTab({
@@ -29,7 +30,8 @@ export function LiveEncodingTab({
   mediaTitle,
   onCancel,
   onStart,
-  onClose
+  onClose,
+  cancelling = false
 }: LiveEncodingTabProps) {
   const { addToast } = useToast()
   const [showLogs, setShowLogs] = useState(false)
@@ -85,17 +87,19 @@ export function LiveEncodingTab({
         <OptimizationTerminalState state="complete" itemLabel={mediaTitle} onClose={onClose} />
       ) : status === 'failed' ? (
         <OptimizationTerminalState state="failed" itemLabel={mediaTitle} error={progress?.error} onClose={onClose} onRetry={onStart} />
-      ) : status === 'encoding' ? (
+      ) : status === 'encoding' || cancelling ? (
         <div className="space-y-6 py-2 animate-in fade-in duration-200">
           <OptimizationEncodingProgress
             label={mediaTitle}
-            status="Running"
+            status={cancelling ? 'Cancelling…' : 'Running'}
             percent={progress?.percent ?? null}
-            phase={progress?.status}
+            phase={progress?.phase ?? progress?.status}
+            encoder={params?.measuredCandidate?.encoder ?? params?.encoder}
+            sample={params?.measuredCandidate?.sampledDurationSeconds !== undefined ? `${params.measuredCandidate.sampledDurationSeconds.toFixed(0)}s measured` : null}
             fps={progress?.fps ? `${progress.fps} FPS` : null}
             speed={progress?.speed}
             eta={progress?.eta}
-            onCancel={onCancel}
+            onCancel={cancelling ? undefined : onCancel}
           />
 
           {/* Strategy Summary */}

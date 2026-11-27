@@ -233,6 +233,7 @@ export function TaskQueuePanel({ isOpen, onClose }: TaskQueuePanelProps) {
                   <span className="text-xs flex-1 truncate">{task.label}</span>
                   {task.status === 'failed' && <span className="text-[10px] text-red-400">Failed</span>}
                   {task.status === 'partial' && <span className="text-[10px] text-amber-400">{task.result?.failedCount} item failures</span>}
+                  {task.type === 'optimization-calibration' && task.status === 'completed' && <span className="text-[10px] text-muted-foreground">{typeof task.result?.calibrationEntries === 'number' ? `${task.result.calibrationEntries} validated` : 'No validated groups'}</span>}
                   {task.type === 'optimization-preflight' && typeof task.result?.preflightId === 'string' && (
                     <button
                       className="text-xs text-primary hover:text-primary/80"

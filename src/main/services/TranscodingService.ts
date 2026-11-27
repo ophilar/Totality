@@ -27,7 +27,7 @@ import { getQualityAnalyzer } from './QualityAnalyzer'
 import { OptimizationCandidateService, type OptimizationCandidateReason } from './OptimizationCandidateService'
 import type { MediaSourceTier } from './transcoding/TrashSourceClassifier'
 import { StreamRemuxCommandBuilder } from './transcoding/StreamRemuxCommandBuilder'
-import { buildCandidateLadder, nextCandidateSearch, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MAX_MEASURED_CANDIDATES_PER_PRESET, MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
+import { buildCandidateLadder, nextCandidateSearch, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MAX_MEASURED_CANDIDATES_PER_PRESET, MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, OPTIMIZATION_CALIBRATION_SETTING_KEY, OPTIMIZATION_CALIBRATION_VERSION, isValidOptimizationCalibrationEntry, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile, type OptimizationCalibrationEntry, type PersistedOptimizationCalibration } from './MeasuredOptimizationPolicy'
 import { buildTargetTranscodePlan, validateTargetTranscodeBitrate, type TargetTranscodePlan } from './transcoding/TargetTranscodePlan'
 import type { MeasuredCandidate, MeasuredCandidateSample } from './MeasuredOptimizationPolicy'
 import { ChildProcessMeasurementRunner, MeasuredOptimizationService, VMAF_MODEL_VERSION, type MeasurementSourcePreparation } from './MeasuredOptimizationService'
@@ -633,11 +633,11 @@ export class TranscodingService {
   /** At most once per day, prune old completed or orphaned sample artifacts.
    * Cached files referenced by reviews or active work must remain available.
    */
-  private async pruneMeasuredSamples(): Promise<void> {
+  private async pruneMeasuredSamples(failOnError = false): Promise<void> {
     if (this.activePreflights > 0) return
     if (Date.now() - this.sampleCacheLastPrunedAt < APP_CONFIG.transcoding.measuredSampleCache.pruneIntervalMs) return
     if (this.sampleCachePrunePromise) return this.sampleCachePrunePromise
-    this.sampleCachePrunePromise = (async () => {
+    const prune = (async () => {
       const db = getDatabase()
       const root = path.join(app.getPath('userData'), 'transcoding-samples', 'cache')
       const [records, reviews] = await Promise.all([
@@ -676,10 +676,34 @@ export class TranscodingService {
       if (removed.removed) getLoggingService().info('[TVOptimization]', `Pruned ${removed.removed} unused sample-cache entries (${removed.reclaimedBytes} bytes)`)
     })().catch(error => {
       getLoggingService().warn('[TVOptimization]', `Sample-cache retention deferred: ${getErrorMessage(error)}`)
+      if (failOnError) throw error
     }).finally(() => {
       this.sampleCachePrunePromise = null
     })
+    this.sampleCachePrunePromise = prune
     return this.sampleCachePrunePromise
+  }
+
+  async cleanupMeasuredSamples(): Promise<void> {
+    if (this.activePreflights > 0) throw new Error('Optimization artifacts cannot be cleaned while an optimization review is running')
+    this.sampleCacheLastPrunedAt = 0
+    await this.pruneMeasuredSamples(true)
+  }
+
+  async saveOptimizationCalibration(entries: OptimizationCalibrationEntry[]): Promise<void> {
+    if (!entries.every(isValidOptimizationCalibrationEntry)) throw new Error('Invalid optimization calibration entry')
+    const record: PersistedOptimizationCalibration = { version: OPTIMIZATION_CALIBRATION_VERSION, entries }
+    await getDatabase().setSetting(OPTIMIZATION_CALIBRATION_SETTING_KEY, JSON.stringify(record))
+  }
+
+  private async loadOptimizationCalibration(): Promise<OptimizationCalibrationEntry[]> {
+    const raw = await getDatabase().getSetting(OPTIMIZATION_CALIBRATION_SETTING_KEY)
+    if (!raw) return []
+    const record = JSON.parse(raw) as PersistedOptimizationCalibration
+    if (record.version !== OPTIMIZATION_CALIBRATION_VERSION || !Array.isArray(record.entries) || !record.entries.every(isValidOptimizationCalibrationEntry)) {
+      throw new Error('Invalid persisted optimization calibration')
+    }
+    return record.entries
   }
 
   async preflightShowTranscode(request: ShowTranscodeRequest, operation?: {
@@ -1127,6 +1151,7 @@ export class TranscodingService {
                     await persistMeasurement(cachedMeasurement?.candidates ?? [], false, partialSamples)
                   },
                   { preflightId, batchId, mediaItemId, groupKey: actualSamplingProfileKey },
+                  sourceSha256,
                 )
                 Object.assign(options, measuredParameters)
               }
@@ -2622,6 +2647,7 @@ export class TranscodingService {
     sourcePreparation: MeasurementSourcePreparation = { samples: [] },
     onSourcePrepared?: (preparation: MeasurementSourcePreparation) => Promise<void>,
     searchContext?: { preflightId: string; batchId: string; mediaItemId: number; groupKey?: string },
+    sourceSha256?: string,
   ): Promise<Pick<TranscodingParams, 'encoder' | 'crf' | 'preset' | 'measuredCandidate'> & Pick<TranscodeOptions, 'gpuId' | 'useGpu'>> {
     if (!options.targetCodec) throw new Error('Measurement requires a target codec')
     if (!options.qualityProfile) throw new Error('Measurement requires a quality profile')
@@ -2744,6 +2770,7 @@ export class TranscodingService {
           const roundStart = measuredCandidates.length
           const measured = await this.measuredOptimizationService.measure({
             inputPath: filePath,
+            sourceSha256,
             outputDirectory,
             durationMs: analysis.durationMs,
             outputExtension,
@@ -2812,7 +2839,11 @@ export class TranscodingService {
       }
       signal?.throwIfAborted()
       if (measurementComplete && previouslyMeasured.length === measuredCandidates.length) await onMeasuredCandidates?.(measuredCandidates, true)
-      const selected = selectMeasuredCandidate(options.qualityProfile, measuredCandidates, maximumOutputBytesPerSecond)
+      const calibration = (await this.loadOptimizationCalibration()).filter(entry =>
+        entry.targetCodec === options.targetCodec &&
+        normalizeVideoCodec(entry.sourceCodec).toLowerCase() === normalizeVideoCodec(analysis.video!.codec).toLowerCase()
+      )
+      const selected = selectMeasuredCandidate(options.qualityProfile, measuredCandidates, maximumOutputBytesPerSecond, calibration)
       const budgetReached = [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`))].some(key =>
         measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}` === key).length >= MAX_MEASURED_CANDIDATES_PER_PRESET)
       selected.searchSummary = { measuredCount: measuredCandidates.length, maximumCandidates, budgetReached }

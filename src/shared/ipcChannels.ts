@@ -338,6 +338,8 @@ export const IPC_CHANNELS = {
   transcodingPreflightShow: 'transcoding:preflightShow',
   transcodingDiscoverShow: 'transcoding:discoverShow',
   transcodingStartPreflightShow: 'transcoding:startPreflightShow',
+  transcodingStartCalibration: 'transcoding:startCalibration',
+  transcodingCleanupArtifacts: 'transcoding:cleanupArtifacts',
   transcodingGetShowPreflight: 'transcoding:getShowPreflight',
   transcodingFindShowPreflight: 'transcoding:findShowPreflight',
   transcodingSetShowSampleApproval: 'transcoding:setShowSampleApproval',

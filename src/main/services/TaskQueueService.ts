@@ -31,6 +31,10 @@ import type { ScanResult } from '../providers/base/MediaProvider'
 import { getWishlistCompletionService } from './WishlistCompletionService'
 import { getTMDBService } from './TMDBService'
 import { getTranscodingService } from './TranscodingService'
+import { getLoggingService } from './LoggingService'
+import type { OptimizationCalibrationEntry } from './MeasuredOptimizationPolicy'
+import { getHardwareEncoder } from './TranscodingCapabilities'
+import { supportsMeasuredOptimizationEncoder } from './transcoding/OptimizationEncoderPolicy'
 import type { OptimizationCandidateScanSummary, ShowTranscodeRequest, ShowTranscodePreflight, ShowTranscodeEpisodeCheckpoint } from './TranscodingService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { analyzeAlbumQuality } from './MusicQualityAnalyzer'
@@ -312,6 +316,8 @@ export class TaskQueueService {
         getTranscodingService().cancel()
         break
       case 'optimization-preflight':
+        break
+      case 'optimization-calibration':
         break
     }
   }
@@ -906,6 +912,10 @@ export class TaskQueueService {
         await this.executeOptimizationPreflight(task, progressCallback)
         break
 
+      case 'optimization-calibration':
+        await this.executeOptimizationCalibration(task, progressCallback)
+        break
+
       default:
         throw new Error(`Unknown task type: ${task.type}`)
     }
@@ -945,6 +955,130 @@ export class TaskQueueService {
     task.result = { preflightId: result.preflightId, batchId: result.batchId, episodeCount: result.episodeCount, mediaItemId: payload.request.mediaItemId, mediaType: payload.mediaType }
     for (const key of Object.keys(getDatabase().getAllSettings()).filter(key => key.startsWith(checkpointPrefix))) await getDatabase().deleteSetting(key)
     await getDatabase().deleteSetting(`transcoding.backgroundPreflight.${payload.requestId}`)
+  }
+
+  private async executeOptimizationCalibration(
+    task: QueuedTask,
+    onProgress: (progress: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void,
+  ): Promise<void> {
+    const signal = this.currentTaskAbortController!.signal
+    const sources = await getSourceManager().getEnabledSources()
+    const libraries: Array<{ sourceId: string; libraryId: string; name: string; type: string; itemCount?: number }> = []
+    const checkpointKey = `optimization.calibration.${task.id}`
+    const saved = await getDatabase().getSetting(checkpointKey)
+    const measurements: Array<Record<string, unknown>> = saved ? (JSON.parse(saved) as Array<Record<string, unknown>>) : []
+    for (const source of sources) {
+      signal.throwIfAborted()
+      const sourceLibraries = await getSourceManager().getLibraries(source.source_id)
+      libraries.push(...sourceLibraries
+        .filter(library => library.type === 'movie' || library.type === 'show')
+        .map(library => ({ sourceId: source.source_id, libraryId: library.id, name: library.name, type: library.type, itemCount: library.itemCount })))
+      onProgress({ phase: 'inventory', current: libraries.length, total: libraries.length, currentItem: source.source_id })
+    }
+    const mediaItems = libraries.flatMap(library => getDatabase().getMediaItems({ sourceId: library.sourceId, libraryId: library.libraryId }).filter(item => item.file_path))
+    const capabilities = await getTranscodingService().getCapabilities({ refresh: true })
+    const targetProfileId = await getDatabase().getSetting(SETTING_KEYS.optimization_default_target_profile_id)
+    if (!targetProfileId) throw new Error('Optimization calibration requires a configured playback target profile')
+    getLoggingService().info('[OptimizationCalibration]', 'Calibration started', {
+      taskId: task.id,
+      libraryCount: libraries.length,
+      mediaItemCount: mediaItems.length,
+      targetProfileId,
+      stages: ['h264-to-hevc', 'hevc-to-av1'],
+    })
+    const measureRepresentatives = async (items: typeof mediaItems, targetCodec: 'hevc' | 'av1', stage: string): Promise<void> => {
+      const groups = new Map<string, Map<string, typeof mediaItems[number]>>()
+      for (const item of items) {
+        const key = `${item.source_id ?? ''}:${item.library_id ?? ''}:${item.type}:${String(item.hdr_format ?? 'SDR').toLowerCase()}`
+        const identity = item.type === 'movie' ? `movie:${item.id}` : `series:${item.series_identity_key ?? item.series_title ?? item.id}`
+        const group = groups.get(key) ?? new Map<string, typeof item>()
+        if (!group.has(identity)) group.set(identity, item)
+        groups.set(key, group)
+      }
+      const representatives = [...groups.entries()].flatMap(([groupKey, group]) => [...group.values()].slice(0, 2).map((item, index) => ({ item, groupKey, role: index === 0 ? 'calibration' as const : 'holdout' as const })))
+      const candidates: Array<{ encoderPolicy: 'software' | 'hardware'; gpuId?: string }> = [
+        { encoderPolicy: 'software' as const },
+        ...capabilities.gpus.flatMap(gpu => {
+          const encoder = getHardwareEncoder(gpu.vendor, targetCodec)
+          return encoder && supportsMeasuredOptimizationEncoder(encoder) && capabilities.deviceEncoders[gpu.id]?.includes(encoder)
+            ? [{ encoderPolicy: 'hardware' as const, gpuId: gpu.id }]
+            : []
+        }),
+      ]
+      for (const { item, groupKey, role } of representatives) {
+        for (const candidate of candidates) {
+          signal.throwIfAborted()
+          const measurementKey = `${stage}:${groupKey}:${role}:${item.id}:${candidate.encoderPolicy}:${candidate.gpuId ?? 'software'}`
+          if (measurements.some(measurement => measurement.key === measurementKey)) continue
+          onProgress({ phase: stage, current: measurements.length, total: representatives.length * candidates.length, currentItem: item.title })
+          try {
+            const preflight = await getTranscodingService().preflightShowTranscode({
+              mediaItemId: item.id,
+              sourceId: item.source_id!,
+              libraryId: item.library_id,
+              options: {
+                optimizationMode: 'transcode',
+                targetCodec,
+                qualityProfile: 'balanced',
+                encoderPolicy: candidate.encoderPolicy,
+                gpuId: candidate.gpuId,
+                targetProfileId,
+                playbackPolicy: 'direct-play',
+              },
+            }, {
+              signal,
+              beginCommit: () => undefined,
+              waitUntilRunning: async () => undefined,
+              update: update => onProgress({ phase: update.phase ?? stage, current: update.progress?.current, total: update.progress?.total, currentItem: item.title }),
+              preflightId: `calibration_${task.id}_${item.id}_${candidate.gpuId ?? 'software'}`,
+              batchId: `calibration_${task.id}`,
+            })
+            const episode = preflight.episodes[0]
+            if (!episode?.params?.measuredCandidate) throw new Error(episode?.reason ?? 'Calibration preflight did not produce a measured candidate')
+            const measured = episode.params
+            measurements.push({ key: measurementKey, stage, role, groupKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'measured', measuredCandidate: measured.measuredCandidate, encoder: measured.encoder, gpuId: candidate.gpuId, preset: measured.preset, crf: measured.crf })
+          } catch (error) {
+            measurements.push({ key: measurementKey, stage, role, groupKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'unvalidated', reason: error instanceof Error ? error.message : String(error) })
+          }
+          await getDatabase().setSetting(checkpointKey, JSON.stringify(measurements))
+        }
+      }
+    }
+    const h264Items = mediaItems.filter(item => item.file_path && String(item.video_codec ?? '').toLowerCase() === 'h264')
+    await measureRepresentatives(h264Items, 'hevc', 'measuring-h264-to-hevc')
+    const hevcItems = mediaItems.filter(item => item.file_path && ['hevc', 'h265'].includes(String(item.video_codec ?? '').toLowerCase()))
+    await measureRepresentatives(hevcItems, 'av1', 'measuring-hevc-to-av1')
+    const measuredFormats = new Set(measurements.map(measurement => `${measurement.sourceCodec}:${measurement.groupKey}`))
+    for (const item of mediaItems) {
+      const formatKey = `${item.source_id ?? ''}:${item.library_id ?? ''}:${item.type}:${String(item.hdr_format ?? 'SDR').toLowerCase()}`
+      const sourceCodec = String(item.video_codec ?? '').toLowerCase()
+      const stage = sourceCodec === 'h264' ? 'measuring-h264-to-hevc' : ['hevc', 'h265'].includes(sourceCodec) ? 'measuring-hevc-to-av1' : 'unsupported-source'
+      if (stage === 'unsupported-source' && !measuredFormats.has(`${item.video_codec}:${formatKey}`)) measurements.push({ key: `unsupported:${formatKey}`, stage, role: 'unvalidated', groupKey: formatKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec: 'hevc', status: 'unvalidated', reason: `Source codec ${item.video_codec ?? 'unknown'} is not covered by the calibration stages` })
+    }
+    const candidateKey = (measurement: Record<string, unknown>): string => {
+      const candidate = measurement.measuredCandidate as { encoder?: unknown; gpuId?: unknown; preset?: unknown; quality?: unknown } | undefined
+      return `${measurement.stage}:${measurement.groupKey}:${String(candidate?.encoder ?? measurement.encoder ?? '')}:${String(candidate?.gpuId ?? measurement.gpuId ?? '')}:${String(candidate?.preset ?? measurement.preset ?? '')}:${String(candidate?.quality ?? measurement.crf ?? '')}`
+    }
+    const validatedCandidates = new Set(measurements.filter(measurement => measurement.role === 'holdout' && measurement.status === 'measured').map(candidateKey))
+    const entries: OptimizationCalibrationEntry[] = measurements.filter(measurement => measurement.role === 'calibration' && measurement.status === 'measured' && validatedCandidates.has(candidateKey(measurement))).flatMap(measurement => {
+      const candidate = measurement.measuredCandidate as { encoder?: unknown; gpuId?: unknown; preset?: unknown; outputBytes?: unknown; sampledDurationSeconds?: unknown; quality?: unknown } | undefined
+      if (!candidate || typeof measurement.sourceCodec !== 'string' || !measurement.sourceCodec || typeof candidate.outputBytes !== 'number' || typeof candidate.sampledDurationSeconds !== 'number' || typeof candidate.quality !== 'number') return []
+      return [{ sourceCodec: measurement.sourceCodec, targetCodec: measurement.targetCodec as 'hevc' | 'av1', encoder: String(candidate.encoder ?? measurement.encoder ?? ''), gpuId: typeof candidate.gpuId === 'string' ? candidate.gpuId : typeof measurement.gpuId === 'string' ? measurement.gpuId : undefined, preset: String(candidate.preset ?? measurement.preset ?? ''), quality: candidate.quality, outputBytes: candidate.outputBytes, sampledDurationSeconds: candidate.sampledDurationSeconds, measuredAt: new Date().toISOString() }]
+    })
+    const profileStatus = entries.length > 0 ? 'validated' : 'unvalidated'
+    if (entries.length > 0) await getTranscodingService().saveOptimizationCalibration(entries)
+    const representatives = new Set(measurements.map(measurement => measurement.mediaItemId)).size
+    task.result = { libraries, libraryCount: libraries.length, representatives, measurements, calibrationEntries: entries.length, calibrationStatus: profileStatus, status: 'completed', validation: 'holdout-measured', unvalidated: measurements.filter(measurement => measurement.status !== 'measured').length }
+    getLoggingService().info('[OptimizationCalibration]', 'Calibration completed', {
+      taskId: task.id,
+      libraryCount: libraries.length,
+      mediaItemCount: mediaItems.length,
+      measuredCount: measurements.filter(measurement => measurement.status === 'measured').length,
+      unvalidatedCount: measurements.filter(measurement => measurement.status !== 'measured').length,
+      validatedCalibrationEntries: entries.length,
+      status: profileStatus,
+    })
+    await getDatabase().deleteSetting(checkpointKey)
   }
 
   private async executeTranscode(task: QueuedTask, onProgress: (p: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void): Promise<void> {

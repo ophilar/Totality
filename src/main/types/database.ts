@@ -833,7 +833,8 @@ export enum TaskType {
   MediaAnalysis = 'media-analysis',
   Analysis = 'analysis',
   Transcode = 'transcode',
-  OptimizationPreflight = 'optimization-preflight'
+  OptimizationPreflight = 'optimization-preflight',
+  OptimizationCalibration = 'optimization-calibration'
 }
 
 export enum TaskStatus {

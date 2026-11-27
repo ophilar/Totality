@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCandidateLadder, getImpossibleQualityReason, getNonDominatedMeasuredCandidates, nextCandidateSearch, selectMeasuredCandidate, type CandidateEncodingParameters, type MeasuredCandidate } from '@main/services/MeasuredOptimizationPolicy'
+import { buildCandidateLadder, findLongestContinuousLowVmafRun, getImpossibleQualityReason, getNonDominatedMeasuredCandidates, isValidOptimizationCalibrationEntry, nextCandidateSearch, selectMeasuredCandidate, type CandidateEncodingParameters, type MeasuredCandidate } from '@main/services/MeasuredOptimizationPolicy'
 
 describe('selectMeasuredCandidate', () => {
   const candidate = (overrides: Partial<MeasuredCandidate>): MeasuredCandidate => ({
@@ -58,6 +58,23 @@ describe('selectMeasuredCandidate', () => {
 
     expect(selectMeasuredCandidate('balanced', [equalSize, larger, positiveSaving], 3)).toBe(positiveSaving)
     expect(getNonDominatedMeasuredCandidates('balanced', [equalSize, larger, positiveSaving], 3)).toEqual([positiveSaving])
+  })
+
+  it('prefers the validated GPU-specific candidate when measured sizes tie', () => {
+    const qsv = candidate({ encoder: 'qsv_h265', gpuId: 'intel', outputBytes: 90 })
+    const nvenc = candidate({ encoder: 'nvenc_h265', gpuId: 'nvidia', outputBytes: 90 })
+    expect(selectMeasuredCandidate('balanced', [nvenc, qsv], 3.1, [{
+      sourceCodec: 'H.264', targetCodec: 'hevc', encoder: 'qsv_h265', gpuId: 'intel', preset: 'medium', quality: qsv.quality,
+      outputBytes: qsv.outputBytes, sampledDurationSeconds: qsv.sampledDurationSeconds, measuredAt: new Date().toISOString(),
+    }])).toBe(qsv)
+  })
+
+  it('validates persisted calibration entries without accepting incomplete evidence', () => {
+    expect(isValidOptimizationCalibrationEntry({
+      sourceCodec: 'H.264', targetCodec: 'hevc', encoder: 'x265', preset: 'medium', quality: 22,
+      outputBytes: 100, sampledDurationSeconds: 30, measuredAt: new Date().toISOString(),
+    })).toBe(true)
+    expect(isValidOptimizationCalibrationEntry({ sourceCodec: 'H.264', targetCodec: 'hevc' })).toBe(false)
   })
 
   it('classifies an exhausted search without positive savings separately from quality rejection', () => {
@@ -124,6 +141,16 @@ describe('selectMeasuredCandidate', () => {
     expect(new Set(buildCandidateLadder('hevc', 'compare', 'nvenc_h265').map(item => item.preset)).size).toBeGreaterThan(1)
   })
 
+  it.each([
+    ['qsv_h265', 6],
+    ['nvenc_h265', 10],
+  ] as const)('tests a stronger HEVC setting for %s when the first sample misses quality', (encoder, strongestQuality) => {
+    const domain = buildCandidateLadder('hevc', 'automatic', undefined, [{ encoder, gpuId: 'device' }])
+    const [initial] = nextCandidateSearch(domain, [], 'balanced')
+    const rejected = candidate({ ...initial, vmafP5: 87 })
+    expect(nextCandidateSearch(domain, [rejected], 'balanced')).toEqual([{ ...initial, quality: strongestQuality }])
+  })
+
   it('moves to the next preset after adaptively completing the earlier preset domain', () => {
     const domain: CandidateEncodingParameters[] = ['medium', 'slow'].flatMap(preset => [18, 22, 26].map(quality => ({ encoder: 'x265', preset, quality })))
     const medium = [18, 22, 26].map(quality => candidate({ preset: 'medium', quality, vmafMean: 90, vmafP5: 85 }))
@@ -179,4 +206,28 @@ describe('selectMeasuredCandidate', () => {
       .toThrow('No measured candidate satisfies')
   })
 
+})
+
+describe('findLongestContinuousLowVmafRun', () => {
+  it('reports the longest contiguous below-profile-p5 run with frame timestamps', () => {
+    expect(findLongestContinuousLowVmafRun('balanced', [93, 91, 90, 94, 91, 90, 89], [0, 1, 2, 3, 4, 5, 6])).toEqual({
+      frameCount: 3,
+      startTimestampSeconds: 4,
+      endTimestampSeconds: 6,
+      threshold: 92,
+    })
+  })
+
+  it('does not treat an isolated low frame as a sustained run', () => {
+    expect(findLongestContinuousLowVmafRun('balanced', [95, 91, 95], [10, 11, 12])).toEqual({
+      frameCount: 1,
+      startTimestampSeconds: 11,
+      endTimestampSeconds: 11,
+      threshold: 92,
+    })
+  })
+
+  it('rejects mismatched frame evidence instead of inferring timestamps', () => {
+    expect(() => findLongestContinuousLowVmafRun('balanced', [91], [])).toThrow('equal lengths')
+  })
 })

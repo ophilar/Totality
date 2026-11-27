@@ -3,6 +3,8 @@ export function OptimizationEncodingProgress({
   status,
   percent,
   phase,
+  encoder,
+  sample,
   fps,
   speed,
   eta,
@@ -13,6 +15,8 @@ export function OptimizationEncodingProgress({
   status: string
   percent: number | null
   phase?: string | null
+  encoder?: string | null
+  sample?: string | null
   fps?: string | null
   speed?: string | null
   eta?: string | null
@@ -38,6 +42,8 @@ export function OptimizationEncodingProgress({
       <div><dt className="text-muted-foreground">Frame rate</dt><dd className="font-mono">{fps || 'Not available'}</dd></div>
       <div><dt className="text-muted-foreground">Speed</dt><dd className="font-mono">{speed || 'Not available'}</dd></div>
       <div><dt className="text-muted-foreground">Time remaining</dt><dd className="font-mono">{eta || 'Not available'}</dd></div>
+      <div><dt className="text-muted-foreground">Encoder</dt><dd className="font-mono">{encoder || 'Not available'}</dd></div>
+      <div><dt className="text-muted-foreground">Sample</dt><dd className="font-mono">{sample || 'Not available'}</dd></div>
       {elapsed && <div><dt className="text-muted-foreground">Elapsed</dt><dd className="font-mono">{elapsed}</dd></div>}
     </dl>
   </section>

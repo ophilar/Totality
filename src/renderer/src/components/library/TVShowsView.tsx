@@ -8,6 +8,7 @@ import { SharedOptimizationDialog } from './TranscodeModal'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors, formatBytes, formatSeasonLabel, getStatusBadge } from './mediaUtils'
 import type { MediaItem, TVShow, TVShowSummary, SeasonInfo, TVSeason, SeriesCompletenessData, MissingEpisode, TVOptimizationNavigation } from './types'
+import { isWebMode } from '../../services/webTransport'
 import type { ProviderType } from '../../contexts/SourceContext'
 import type { ShowTranscodePreflight } from '@main/services/TranscodingService'
 import { QualityBadges } from './QualityBadges'
@@ -15,6 +16,13 @@ import { ScopedOptimizationSummary } from './ScopedOptimizationSummary'
 import { logOptimizationDiagnostic } from './optimizationDiagnostics'
 import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
 import { tvSortOptions, type TVShowSortBy } from './sortDefinitions'
+
+function plexArtworkUrl(episode: MediaItem, kind: 'episode' | 'season', url: string): string {
+  return episode.source_type === 'plex' && episode.id && !isWebMode() &&
+    URL.canParse(url) && new URL(url).pathname.startsWith('/library/metadata/')
+    ? `local-artwork://plex/${episode.id}/${kind}`
+    : url
+}
 
 // List item component for TV shows
 const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizeSeries }: {
@@ -214,7 +222,7 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, onOptim
       <div className={`${isMobile ? 'w-24' : 'w-44'} aspect-video bg-muted overflow-hidden rounded-md shadow-md shadow-black/20 shrink-0`}>
         {episode.episode_thumb_url ? (
           <img
-            src={episode.episode_thumb_url}
+            src={plexArtworkUrl(episode, 'episode', episode.episode_thumb_url)}
             alt={episode.title}
             loading="lazy"
             className="w-full h-full object-cover"
@@ -1484,6 +1492,7 @@ const MissingEpisodeRowWithArtwork = memo(({
 })
 
 const SeasonCard = memo(({ season, showTitle, onClick, missingCount = 0 }: { season: SeasonInfo; showTitle: string; onClick: () => void; missingCount?: number }) => {
+  const artworkEpisode = season.posterUrl && season.episodes.find(episode => episode.season_poster_url === season.posterUrl)
   const cardRef = useRef<HTMLDivElement>(null)
   const owned = season.episodes.length
   const total = owned + missingCount
@@ -1504,7 +1513,7 @@ const SeasonCard = memo(({ season, showTitle, onClick, missingCount = 0 }: { sea
       <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
         {season.posterUrl ? (
           <img
-            src={season.posterUrl}
+            src={artworkEpisode ? plexArtworkUrl(artworkEpisode, 'season', season.posterUrl) : season.posterUrl}
             alt={`${showTitle} - ${formatSeasonLabel(season.seasonNumber)}`}
             loading="lazy"
             className="w-full h-full object-cover"

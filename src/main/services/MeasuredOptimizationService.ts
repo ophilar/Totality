@@ -6,7 +6,7 @@ import * as path from 'node:path'
 import { getMediaFileAnalyzer } from './MediaFileAnalyzer'
 import { PathUtils } from './utils/PathUtils'
 import { APP_CONFIG } from '@main/config'
-import { getImpossibleQualityReason, VMAF_LOW_PERCENTILE, type MeasuredCandidate, type MeasuredCandidateSample, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
+import { findLongestContinuousLowVmafRun, getImpossibleQualityReason, VMAF_LOW_PERCENTILE, type MeasuredCandidate, type MeasuredCandidateSample, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
 import { getErrorMessage } from './utils/errorUtils'
 import { requireFfmpegFilters } from './transcoding/FfmpegFilterCapabilities'
 import { getLoggingService } from './LoggingService'
@@ -30,6 +30,7 @@ export class ChildProcessMeasurementRunner implements MeasurementProcessRunner {
 }
 
 export interface MeasuredSampleRequest {
+  sourceSha256?: string
   inputPath: string
   outputDirectory: string
   durationMs: number
@@ -173,8 +174,10 @@ function sampleTimingSummary(sample: SampleTimingEvidence): object {
 export class MeasuredOptimizationService {
   private static readonly PROBE_CACHE_TTL_MS = 10 * 60 * 1000
   private static readonly MAX_PROBED_BINARIES = 8
+  private static readonly MAX_SOURCE_PREPARATIONS = 16
   private readonly filterListings = new Map<string, { value: Promise<string>; expiresAt: number }>()
   private readonly measurementFingerprints = new Map<string, { value: Promise<string>; expiresAt: number }>()
+  private readonly sourcePreparations = new Map<string, MeasurementSourcePreparation>()
 
   constructor(private readonly processRunner: MeasurementProcessRunner = new ChildProcessMeasurementRunner()) {}
 
@@ -330,6 +333,11 @@ export class MeasuredOptimizationService {
         const metrics = await this.measureFrameMetrics(binary, request.outputPath, request.sourcePath, logPath, sourceSample.frames, window, request.signal, undefined, start, request.referenceFilter, request.referenceInputArgs)
         vmafScores.push(...metrics.vmafScores)
         cambiScores.push(...metrics.cambiScores)
+        getLoggingService().info('[MeasuredOptimization]', 'Output quality window evidence', {
+          sampleIndex: index,
+          window,
+          longestContinuousLowVmafRun: findLongestContinuousLowVmafRun(request.qualityProfile, metrics.vmafScores, sourceSample.timestamps),
+        })
       }
       const failure = getImpossibleQualityReason(request.qualityProfile, vmafScores, cambiScores, vmafScores.length)
       if (failure) throw new Error(`Converted output failed ${request.qualityProfile} quality verification: ${failure}`)
@@ -367,6 +375,15 @@ export class MeasuredOptimizationService {
     const length = Math.min(APP_CONFIG.transcoding.sampleDurationSeconds, durationSeconds / APP_CONFIG.transcoding.samplePositions.length)
     const starts = APP_CONFIG.transcoding.samplePositions.map(position => Math.max(0, Math.min(durationSeconds - length, durationSeconds * position - length / 2)))
     await fs.mkdir(request.outputDirectory, { recursive: true })
+    const sourcePreparationKey = request.sourceSha256 && JSON.stringify({
+      sourceSha256: request.sourceSha256,
+      measurement: await this.getMeasurementFingerprint(),
+      durationMs: request.durationMs,
+      referenceFilter: request.referenceFilter,
+      referenceInputArgs: request.referenceInputArgs,
+      samplePositions: APP_CONFIG.transcoding.samplePositions,
+      sampleDurationSeconds: APP_CONFIG.transcoding.sampleDurationSeconds,
+    })
     const sourceSamples: Awaited<ReturnType<MeasuredOptimizationService['inspectWindow']>>[] = []
     const referenceSamples: Awaited<ReturnType<MeasuredOptimizationService['inspectWindow']>>[] = []
     const sourceSelfVmafs: number[] = []
@@ -378,9 +395,13 @@ export class MeasuredOptimizationService {
     let cleanupFailure: Error | undefined
     try {
       const preparationStartedAt = performance.now()
-      const reusedSources = Boolean(request.sourcePreparation?.samples.length)
-      if (request.sourcePreparation?.samples.length) {
-        for (const sample of request.sourcePreparation.samples) {
+      const providedSourcePreparation = Boolean(request.sourcePreparation?.samples.length)
+      const cachedSourcePreparation = request.sourcePreparation?.samples.length
+        ? request.sourcePreparation
+        : sourcePreparationKey ? this.sourcePreparations.get(sourcePreparationKey) : undefined
+      const reusedSources = Boolean(cachedSourcePreparation?.samples.length)
+      if (cachedSourcePreparation?.samples.length) {
+        for (const sample of cachedSourcePreparation.samples) {
           sourceSamples.push(sample.source)
           referenceSamples.push(sample.reference)
           sourceSelfVmafs.push(sample.sourceSelfVmaf)
@@ -411,7 +432,14 @@ export class MeasuredOptimizationService {
           sourceSelfVmaf: sourceSelfVmafs[index],
           sourceCambiMean: sourceCambiMeans[index],
         }))
-        if (!reusedSources) await request.onSourcePrepared?.(request.sourcePreparation)
+        if (sourcePreparationKey) {
+          this.sourcePreparations.delete(sourcePreparationKey)
+          this.sourcePreparations.set(sourcePreparationKey, request.sourcePreparation)
+          if (this.sourcePreparations.size > MeasuredOptimizationService.MAX_SOURCE_PREPARATIONS) {
+            this.sourcePreparations.delete(this.sourcePreparations.keys().next().value!)
+          }
+        }
+        if (!providedSourcePreparation) await request.onSourcePrepared?.(request.sourcePreparation)
       }
       getLoggingService().info('[MeasuredOptimization]', `stage=source-preparation directory=${request.outputDirectory} reused=${reusedSources} samples=${sourceSamples.length} durationMs=${Math.round(performance.now() - preparationStartedAt)}`)
       const measured: MeasuredCandidate[] = []
@@ -466,10 +494,25 @@ export class MeasuredOptimizationService {
                 screeningOnly = true
               }
             }
-            if (!screeningOnly) await request.onProgress?.(`Scoring sample ${index + 1} of ${starts.length} with VMAF and CAMBI`)
+            if (!screeningOnly) await request.onProgress?.(`Scoring sample ${index + 1} of ${starts.length} with VMAF and CAMBI: ${candidate.encoder} ${candidate.preset} q${candidate.quality}`)
+            getLoggingService().debug('[MeasuredOptimization]', 'Sample scoring started', {
+              encoder: candidate.encoder, gpuId: candidate.gpuId, preset: candidate.preset,
+              quality: candidate.quality, sampleIndex: index, sampleCount: starts.length, screeningOnly,
+            })
             const scoringStartedAt = performance.now()
             const { vmafScores, cambiScores } = metrics ?? await this.measureFrameMetrics(binary, outputPath, request.inputPath, logPath, referenceSamples[index].frames, { startSeconds: starts[index], durationSeconds: length }, request.signal, undefined, 0, request.referenceFilter, request.referenceInputArgs)
             getLoggingService().debug('[MeasuredOptimization]', 'Candidate sample evidence', { encoder: candidate.encoder, preset: candidate.preset, quality: candidate.quality, sampleIndex: index, sourcePath: request.inputPath, samplePath: outputPath, startSeconds: starts[index], durationSeconds: length, reference: sampleTimingSummary(referenceSamples[index]), output: sampleTimingSummary(outputSample), sourceSelfVmaf: sourceSelfVmafs[index], scoredFrames: vmafScores.length, vmafFirst: vmafScores.slice(0, 5), vmafLast: vmafScores.slice(-5), referenceFilter: request.referenceFilter, referenceInputArgs: request.referenceInputArgs, ffmpegArgs: args })
+            getLoggingService().info('[MeasuredOptimization]', 'Candidate quality window evidence', {
+              encoder: candidate.encoder,
+              gpuId: candidate.gpuId,
+              preset: candidate.preset,
+              quality: candidate.quality,
+              sampleIndex: index,
+              screeningOnly,
+              longestContinuousLowVmafRun: request.qualityProfile
+                ? findLongestContinuousLowVmafRun(request.qualityProfile, vmafScores, referenceSamples[index].timestamps.slice(0, vmafScores.length))
+                : undefined,
+            })
             getLoggingService().info('[MeasuredOptimization]', `stage=scoring encoder=${candidate.encoder} preset=${candidate.preset} quality=${candidate.quality} sample=${index} durationMs=${Math.round(performance.now() - scoringStartedAt)}`)
               sample = {
                 encoder: candidate.encoder,

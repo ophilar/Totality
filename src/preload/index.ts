@@ -798,6 +798,8 @@ const electronAPI = {
   // Optimization
   optimizationGetPending: () => ipcRenderer.invoke(IPC_CHANNELS.optimizationGetPending),
   optimizationGetDecision: (mediaItemId: number) => ipcRenderer.invoke(IPC_CHANNELS.optimizationGetDecision, mediaItemId),
+  startOptimizationCalibration: (requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingStartCalibration, requestId),
+  cleanupOptimizationArtifacts: () => ipcRenderer.invoke(IPC_CHANNELS.transcodingCleanupArtifacts),
 
   // TV Show Optimization & Preflight
   seriesGetEpisodesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke(IPC_CHANNELS.seriesGetEpisodesByIdentity, seriesTitle, sourceId, seriesIdentityKey, libraryId),
@@ -1906,6 +1908,8 @@ interface ExistingElectronAPI {
   preflightShow: (request: ShowTranscodeRequest & { requestId: string }) => Promise<ShowTranscodePreflight>
   discoverShowOptimization: (request: ShowTranscodeRequest & { requestId: string }) => Promise<ShowOptimizationDiscovery>
   startPreflightShow: (request: ShowTranscodeRequest & { requestId: string }) => Promise<{ requestId: string; taskId: string }>
+  startOptimizationCalibration: (requestId: string) => Promise<{ requestId: string; taskId: string }>
+  cleanupOptimizationArtifacts: () => Promise<{ cleaned: true }>
   getShowPreflight: (preflightId: string) => Promise<{ request: ShowTranscodeRequest; result: ShowTranscodePreflight } | undefined>
   findShowPreflight: (seriesIdentityKey: string, sourceId: string, libraryId: string, seriesTitle: string, mediaItemId?: number, seasonNumber?: number) => Promise<{ request: ShowTranscodeRequest; result: ShowTranscodePreflight } | undefined>
   setShowSampleApproval: (preflightId: string, groupId: string, approved: boolean) => Promise<string[]>

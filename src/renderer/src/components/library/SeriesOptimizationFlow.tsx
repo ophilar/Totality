@@ -958,7 +958,7 @@ export function SeriesOptimizationFlow({ scope, show, episode, seasonNumber, onC
   const preflightProgressPanel = busy && preflightProgress ? (
     <div role="status" aria-live="polite" className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-2">
       <div className="flex items-center justify-between gap-3 text-xs">
-        <span className="font-semibold">{preflightOperationState === 'paused' ? 'Review preparation paused' : preflightProgress.phase || (seasonNumber === undefined ? 'Preparing series review' : `Preparing Season ${seasonNumber} review`)}</span>
+        <span className="font-semibold" role="status">{preflightTermination === 'cancelling' ? 'Cancelling review…' : preflightOperationState === 'paused' ? 'Review preparation paused' : preflightProgress.phase || (seasonNumber === undefined ? 'Preparing series review' : `Preparing Season ${seasonNumber} review`)}</span>
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground tabular-nums">Elapsed {preparationElapsedSeconds}s</span>
           {typeof preflightProgress.percentage === 'number' && <span className="text-muted-foreground tabular-nums">{preflightProgress.percentage}%</span>}

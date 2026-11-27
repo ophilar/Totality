@@ -1,4 +1,5 @@
 import { measuredOptimizationEncoderSpec } from './transcoding/OptimizationEncoderPolicy'
+import { SETTING_KEYS } from '@shared/settingKeys'
 
 import { APP_CONFIG } from '@main/config'
 import { getOptimizationVideoCodec, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
@@ -7,12 +8,78 @@ import type { MeasurementSourcePreparation } from './MeasuredOptimizationService
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
 
 export const MEASUREMENT_VERSION = 17
-export const OPTIMIZATION_SEARCH_VERSION = 4
+export const OPTIMIZATION_SEARCH_VERSION = 5
 /** Hard bound on expensive full-sample evaluations in each encoder/preset domain. */
 export const MAX_MEASURED_CANDIDATES_PER_PRESET = 5
 export const VMAF_LOW_PERCENTILE = 0.05
 export const SHOW_PREFLIGHT_SETTING_PREFIX = 'transcoding.preflight.'
 export const MEASUREMENT_SETTING_PREFIX = 'transcoding.measurement.'
+export const OPTIMIZATION_CALIBRATION_SETTING_KEY = SETTING_KEYS.optimization_calibration
+export const OPTIMIZATION_CALIBRATION_VERSION = 1
+export interface OptimizationCalibrationEntry {
+  sourceCodec: string
+  targetCodec: OptimizationVideoCodec
+  encoder: string
+  gpuId?: string
+  preset: string
+  quality: number
+  outputBytes: number
+  sampledDurationSeconds: number
+  measuredAt: string
+}
+
+export interface PersistedOptimizationCalibration {
+  version: typeof OPTIMIZATION_CALIBRATION_VERSION
+  entries: OptimizationCalibrationEntry[]
+}
+
+export function isValidOptimizationCalibrationEntry(value: unknown): value is OptimizationCalibrationEntry {
+  if (!value || typeof value !== 'object') return false
+  const entry = value as Partial<OptimizationCalibrationEntry>
+  return typeof entry.sourceCodec === 'string' && entry.sourceCodec.length > 0 &&
+    (entry.targetCodec === 'hevc' || entry.targetCodec === 'av1') &&
+    typeof entry.encoder === 'string' && entry.encoder.length > 0 &&
+    typeof entry.preset === 'string' && entry.preset.length > 0 &&
+    typeof entry.quality === 'number' && Number.isFinite(entry.quality) &&
+    typeof entry.outputBytes === 'number' && Number.isFinite(entry.outputBytes) && entry.outputBytes > 0 &&
+    typeof entry.sampledDurationSeconds === 'number' && Number.isFinite(entry.sampledDurationSeconds) && entry.sampledDurationSeconds > 0 &&
+    typeof entry.measuredAt === 'string' && entry.measuredAt.length > 0
+}
+
+export interface ContinuousLowVmafRun {
+  frameCount: number
+  startTimestampSeconds: number
+  endTimestampSeconds: number
+  threshold: number
+}
+
+/** Returns the longest contiguous run of frames below the profile's low-score gate. */
+export function findLongestContinuousLowVmafRun(
+  profile: OptimizationQualityProfile,
+  vmafScores: number[],
+  timestamps: number[],
+): ContinuousLowVmafRun | undefined {
+  if (vmafScores.length !== timestamps.length) throw new Error('VMAF scores and frame timestamps must have equal lengths')
+  const threshold = QUALITY_GATES[profile].vmafP5
+  let best: ContinuousLowVmafRun | undefined
+  let currentStart = -1
+  for (let index = 0; index <= vmafScores.length; index += 1) {
+    const below = index < vmafScores.length && vmafScores[index] < threshold
+    if (below && currentStart === -1) currentStart = index
+    if (!below && currentStart !== -1) {
+      const frameCount = index - currentStart
+      const run = {
+        frameCount,
+        startTimestampSeconds: timestamps[currentStart],
+        endTimestampSeconds: timestamps[index - 1],
+        threshold,
+      }
+      if (!best || run.frameCount > best.frameCount) best = run
+      currentStart = -1
+    }
+  }
+  return best
+}
 
 export interface CachedMeasurement {
   version: number
@@ -97,6 +164,7 @@ export function nextCandidateSearch(
       }
       const ordered = [...measured].sort((a, b) => a.quality - b.quality)
       const passFlags = ordered.map(qualityPasses)
+      if (!passFlags.some(Boolean) && !tested.has(qualities[0])) return untested([qualities[0]])
       const passTransitions = passFlags.reduce((count, pass, index) => count + (index > 0 && pass !== passFlags[index - 1] ? 1 : 0), 0)
       const contradictory = passTransitions > 1 || ordered.some((candidate, index) => index > 0 && (candidate.vmafMean > ordered[index - 1].vmafMean || candidate.vmafP5 > ordered[index - 1].vmafP5))
       if (contradictory) {
@@ -193,6 +261,7 @@ export function selectMeasuredCandidate(
   profile: OptimizationQualityProfile,
   candidates: MeasuredCandidate[],
   maximumOutputBytesPerSecond?: number,
+  calibrationEntries: OptimizationCalibrationEntry[] = [],
 ): MeasuredCandidate {
   const gates = QUALITY_GATES[profile]
   const evaluations = evaluateMeasuredCandidates(profile, candidates)
@@ -201,7 +270,8 @@ export function selectMeasuredCandidate(
     .filter(evaluation => evaluation.passed)
     .map(evaluation => evaluation.candidate)
     .filter(candidate => maximumOutputBytesPerSecond === undefined || candidate.outputBytes / candidate.sampledDurationSeconds < maximumOutputBytesPerSecond)
-    .sort((left, right) => left.outputBytes - right.outputBytes || (left.encodingDurationMs ?? Number.POSITIVE_INFINITY) - (right.encodingDurationMs ?? Number.POSITIVE_INFINITY))
+    .sort((left, right) => left.outputBytes - right.outputBytes || (left.encodingDurationMs ?? Number.POSITIVE_INFINITY) - (right.encodingDurationMs ?? Number.POSITIVE_INFINITY) ||
+      Number(!calibrationEntries.some(entry => entry.encoder === left.encoder && entry.gpuId === left.gpuId && entry.preset === left.preset && entry.quality === left.quality)) - Number(!calibrationEntries.some(entry => entry.encoder === right.encoder && entry.gpuId === right.gpuId && entry.preset === right.preset && entry.quality === right.quality)))
   const selected = eligible[0]
   if (!selected) {
     const reports = evaluations.map(({ candidate, failedGates }) =>

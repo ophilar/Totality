@@ -170,6 +170,7 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
   const [status, setStatus] = useState<'idle' | 'generating' | 'queued' | 'encoding' | 'complete' | 'failed'>('idle')
   const settingsDisabled = status === 'generating' || status === 'encoding' || status === 'queued'
   const [progress, setProgress] = useState<TranscodeProgress | null>(null)
+  const [cancellationRequested, setCancellationRequested] = useState(false)
 
   const failureReportedRef = useRef(false)
   const selectedGpu = capabilities?.gpus.find(gpu => gpu.id === options.gpuId)
@@ -367,6 +368,8 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
         }
         if (p.status === 'cancelled') {
           setProgress(null)
+          setCancellationRequested(false)
+          setStatus('idle')
         }
         if (p.status === 'failed') {
           setStatus('failed')
@@ -430,6 +433,7 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
   useEffect(() => {
     if (!batchSummary) return
     if (batchSummary.outcome === 'completed') {
+      setCancellationRequested(false)
       setStatus('complete')
       setActiveTab('monitor')
       if (!completionReportedRef.current) {
@@ -437,6 +441,7 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
         onOptimizationCompleted?.()
       }
     } else if (['partly-completed', 'failed', 'cancelled'].includes(batchSummary.outcome)) {
+      setCancellationRequested(false)
       setStatus('failed')
       setActiveTab('monitor')
     }
@@ -486,6 +491,7 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
   const startTranscode = async () => {
     if (!media?.source_id || media.id === undefined) return
     failureReportedRef.current = false
+    setCancellationRequested(false)
     setStatus('generating')
     try {
       if (missingSettings.length) throw new Error(`Select ${missingSettings.join(', ')} to continue.`)
@@ -542,9 +548,12 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
   }
 
   const cancelTranscode = async () => {
+    setCancellationRequested(true)
     try {
-      await window.electronAPI.cancel(mediaId)
+      const accepted = await window.electronAPI.cancel(mediaId)
+      if (!accepted) setCancellationRequested(false)
     } catch (err: unknown) {
+      setCancellationRequested(false)
       addToast({ title: `Cancellation failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' })
     }
   }
@@ -663,7 +672,7 @@ function MediaOptimizationFlow({ scope, initialPreflightId, onClose, onOptimizat
           />}
 
           {activeTab === 'monitor' && <OptimizationResultsStage summary={batchSummary} queuePaused={queueState.isPaused} waitingCount={queueState.queue.filter(task => task.batchId === submittedBatchId).length} queueControlState={queueControlState} tasks={completedOptimizationTasks} onTogglePause={() => void toggleQueuePause()} onRetry={() => void retryFailedTasks()} onOpenQueue={() => window.dispatchEvent(new Event('taskQueue:open'))}>
-            {status !== 'queued' && (progress || status === 'complete' || status === 'failed') && !((status === 'complete' || status === 'failed') && completedOptimizationTasks.length > 0) && <LiveEncodingTab status={status} progress={progress} params={params} mediaTitle={media.title} onCancel={cancelTranscode} onStart={startTranscode} onClose={onClose} />}
+            {status !== 'queued' && (progress || cancellationRequested || status === 'complete' || status === 'failed') && !((status === 'complete' || status === 'failed') && completedOptimizationTasks.length > 0) && <LiveEncodingTab status={status} progress={progress} params={params} mediaTitle={media.title} cancelling={cancellationRequested} onCancel={cancelTranscode} onStart={startTranscode} onClose={onClose} />}
           </OptimizationResultsStage>}
 
           {activeTab === 'review' && preflight && (

@@ -23,6 +23,10 @@ export interface TranscodingParams {
   encoder?: string
   crf?: number
   preset?: string
+  measuredCandidate?: {
+    encoder?: string
+    sampledDurationSeconds?: number
+  }
   audioTracks?: Array<{ index: number; codec: string; language?: string; title?: string; channels: number; isDefault: boolean; hasObjectAudio: boolean }>
   subtitleTracks?: Array<{ index: number; codec: string; language?: string; title?: string; isDefault: boolean; isForced: boolean }>
 }
@@ -40,7 +44,7 @@ export interface PresetTemplate {
 }
 
 export type TranscodeProgress = Pick<MainTranscodeProgress,
-  'percent' | 'fps' | 'speed' | 'eta' | 'error'
+  'percent' | 'phase' | 'fps' | 'speed' | 'eta' | 'error'
 > & {
   status?: MainTranscodeProgress['status']
   mediaItemId?: number
