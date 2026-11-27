@@ -73,6 +73,25 @@ describe('measured-sample disk cache retention', () => {
     expect(await readdir(dir)).toContain(recent)
   })
 
+  it('force mode removes recent completed entries for explicit cleanup', async () => {
+    const dir = await root()
+    const recent = key('e')
+    await sample(dir, recent, new Date(now))
+    const deleteRecord = vi.fn(async () => undefined)
+    const result = await pruneMeasuredSampleCache({
+      root: dir,
+      records: { [prefix + recent]: JSON.stringify({ cacheKey: recent, complete: true }) },
+      protectedKeys: new Set(),
+      settingPrefix: prefix,
+      deleteRecord,
+      force: true,
+      now,
+    })
+    expect(result.removed).toBe(1)
+    expect(deleteRecord).toHaveBeenCalledExactlyOnceWith(prefix + recent)
+    expect(await readdir(dir)).toEqual([])
+  })
+
   it('preserves active old cache entries even when over budget', async () => {
     const dir = await root()
     const active = key('f')

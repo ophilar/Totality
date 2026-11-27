@@ -693,8 +693,51 @@ export class TranscodingService {
 
   async cleanupMeasuredSamples(): Promise<void> {
     if (this.activePreflights > 0) throw new Error('Optimization artifacts cannot be cleaned while an optimization review is running')
+    const activeOptimizationTask = getTaskQueueService().getTasks().find(task => task.type === 'optimization-preflight' || task.type === 'optimization-calibration')
+    if (activeOptimizationTask) throw new Error(`Optimization artifacts cannot be cleaned while ${activeOptimizationTask.label.toLowerCase()} is running`)
+    if (this.sampleCachePrunePromise) await this.sampleCachePrunePromise
+    const db = getDatabase()
+    const root = path.resolve(app.getPath('userData'), 'transcoding-samples')
+    const cacheRoot = path.join(root, 'cache')
+    const records = await db.getSettingsByPrefix(MEASUREMENT_SETTING_PREFIX)
+    const removedCache = await pruneMeasuredSampleCache({
+      root: cacheRoot,
+      records,
+      protectedKeys: new Set(),
+      settingPrefix: MEASUREMENT_SETTING_PREFIX,
+      deleteRecord: async key => { await db.deleteSetting(key) },
+      isActive: key => (this.sampleCacheUsers.get(key) ?? 0) > 0,
+      force: true,
+    })
+    let removedTransientEntries = 0
+    try {
+      const entries = await fs.readdir(root, { withFileTypes: true })
+      for (const entry of entries) {
+        await fs.rm(path.join(root, entry.name), { recursive: true, force: true })
+        removedTransientEntries += 1
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    const settings = await db.getAllSettings()
+    const artifactSettingPrefixes = [
+      MEASUREMENT_SETTING_PREFIX,
+      SHOW_PREFLIGHT_SETTING_PREFIX,
+      'optimization.calibration.',
+      'transcoding.backgroundPreflight.',
+      'transcoding.preflightCheckpoint.',
+    ]
+    const artifactSettings = Object.keys(settings).filter(key => artifactSettingPrefixes.some(prefix => key.startsWith(prefix)))
+    for (const key of artifactSettings) await db.deleteSetting(key)
+    this.showPreflights.clear()
+    this.sampleCacheUsers.clear()
     this.sampleCacheLastPrunedAt = 0
-    await this.pruneMeasuredSamples(true)
+    getLoggingService().info('[TVOptimization]', 'Optimization artifacts cleaned', {
+      cacheEntries: removedCache.removed,
+      reclaimedBytes: removedCache.reclaimedBytes,
+      transientEntries: removedTransientEntries,
+      settings: artifactSettings.length,
+    })
   }
 
   async saveOptimizationCalibration(entries: OptimizationCalibrationEntry[]): Promise<void> {

@@ -21,6 +21,7 @@ export interface MeasuredSampleRetentionOptions {
   settingPrefix: string
   deleteRecord: (settingKey: string) => Promise<void>
   isActive?: (key: string) => boolean
+  force?: boolean
   now?: number
   maxBytes?: number
 }
@@ -74,7 +75,7 @@ export async function pruneMeasuredSampleCache(options: MeasuredSampleRetentionO
     const ageMs = now - candidate.mtimeMs
     const expired = ageMs >= policy.maxAgeMs
     const overBudget = totalBytes > maxBytes && ageMs >= policy.minEvictionAgeMs
-    if (!expired && !(candidate.orphan && ageMs >= policy.minEvictionAgeMs) && !overBudget) continue
+    if (!options.force && !expired && !(candidate.orphan && ageMs >= policy.minEvictionAgeMs) && !overBudget) continue
     if (options.isActive?.(candidate.key)) continue
     if (!candidate.orphan) await deleteRecord(`${settingPrefix}${candidate.key}`)
     await fs.rm(candidate.directory, { recursive: true, force: true })
