@@ -977,7 +977,7 @@ export class TaskQueueService {
       onProgress({ phase: 'inventory', current: libraries.length, total: libraries.length, currentItem: source.source_id })
     }
     const mediaItems = libraries.flatMap(library => getDatabase().getMediaItems({ sourceId: library.sourceId, libraryId: library.libraryId }).filter(item => item.file_path))
-    const capabilities = await getTranscodingService().getCapabilities({ refresh: true })
+    const capabilities = await getTranscodingService().getCapabilities()
     const targetProfileId = await getDatabase().getSetting(SETTING_KEYS.optimization_default_target_profile_id)
     getLoggingService().info('[OptimizationCalibration]', 'Calibration started', {
       taskId: task.id,
@@ -1023,6 +1023,7 @@ export class TaskQueueService {
                 encoderPolicy: candidate.encoderPolicy,
                 gpuId: candidate.gpuId,
                 targetProfileId,
+                targetContainerSelection: 'automatic',
                 playbackPolicy: targetProfileId ? 'avoid-video-transcoding' : 'allow-transcoding',
               },
             }, {
