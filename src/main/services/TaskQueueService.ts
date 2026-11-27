@@ -36,6 +36,7 @@ import { getLoggingService } from './LoggingService'
 import type { OptimizationCalibrationEntry, MeasuredCandidate } from './MeasuredOptimizationPolicy'
 import type { OptimizationCandidateScanSummary, ShowTranscodeRequest, ShowTranscodePreflight, ShowTranscodeEpisodeCheckpoint } from './TranscodingService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
+import { normalizeVideoCodec } from './MediaNormalizer'
 import { analyzeAlbumQuality } from './MusicQualityAnalyzer'
 import { getArtistAlbumsCombined } from './utils/musicUtils'
 import type {
@@ -1071,18 +1072,30 @@ export class TaskQueueService {
         }
       }))
     }
-    const h264Items = mediaItems.filter(item => item.file_path && String(item.video_codec ?? '').toLowerCase() === 'h264')
+    const h264Items = mediaItems.filter(item => normalizeVideoCodec(item.video_codec) === 'H.264')
+    getLoggingService().info('[OptimizationCalibration]', 'Calibration source codecs inventoried', {
+      codecs: mediaItems.reduce<Record<string, number>>((counts, item) => {
+        const codec = normalizeVideoCodec(item.video_codec)
+        counts[codec] = (counts[codec] ?? 0) + 1
+        return counts
+      }, {}),
+      h264Sources: h264Items.length,
+    })
+    if (h264Items.length === 0 && !includeAv1) throw new Error('No H.264 sources found in configured libraries for HEVC calibration. Enable the AV1 stage to calibrate HEVC sources.')
     await measureRepresentatives(h264Items, 'hevc', 'measuring-h264-to-hevc')
     if (includeAv1) {
-      const hevcItems = mediaItems.filter(item => item.file_path && ['hevc', 'h265'].includes(String(item.video_codec ?? '').toLowerCase()))
+      const hevcItems = mediaItems.filter(item => normalizeVideoCodec(item.video_codec) === 'HEVC')
       await measureRepresentatives(hevcItems, 'av1', 'measuring-hevc-to-av1')
     }
     const measuredFormats = new Set(measurements.map(measurement => `${measurement.sourceCodec}:${measurement.groupKey}`))
     for (const item of mediaItems) {
       const formatKey = `${item.source_id ?? ''}:${item.library_id ?? ''}:${item.type}:${String(item.hdr_format ?? 'SDR').toLowerCase()}`
-      const sourceCodec = String(item.video_codec ?? '').toLowerCase()
-      const stage = sourceCodec === 'h264' ? 'measuring-h264-to-hevc' : ['hevc', 'h265'].includes(sourceCodec) ? 'measuring-hevc-to-av1' : 'unsupported-source'
-      if (stage === 'unsupported-source' && !measuredFormats.has(`${item.video_codec}:${formatKey}`)) measurements.push({ key: `unsupported:${formatKey}`, stage, role: 'unvalidated', groupKey: formatKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec: 'hevc', status: 'unvalidated', reason: `Source codec ${item.video_codec ?? 'unknown'} is not covered by the calibration stages` })
+      const sourceCodec = normalizeVideoCodec(item.video_codec)
+      const stage = sourceCodec === 'H.264' ? 'measuring-h264-to-hevc' : sourceCodec === 'HEVC' && includeAv1 ? 'measuring-hevc-to-av1' : 'unsupported-source'
+      if (stage === 'unsupported-source' && !measuredFormats.has(`${item.video_codec}:${formatKey}`)) {
+        measurements.push({ key: `unsupported:${formatKey}`, stage, role: 'unvalidated', groupKey: formatKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec: 'hevc', status: 'unvalidated', reason: `Source codec ${item.video_codec ?? 'unknown'} is not covered by the enabled calibration stages` })
+        measuredFormats.add(`${item.video_codec}:${formatKey}`)
+      }
     }
     const candidateKey = (measurement: Record<string, unknown>): string => {
       const candidate = measurement.measuredCandidate as { encoder?: unknown; gpuId?: unknown; preset?: unknown; quality?: unknown } | undefined
