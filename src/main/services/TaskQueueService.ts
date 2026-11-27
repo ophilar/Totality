@@ -33,9 +33,7 @@ import { getWishlistCompletionService } from './WishlistCompletionService'
 import { getTMDBService } from './TMDBService'
 import { getTranscodingService } from './TranscodingService'
 import { getLoggingService } from './LoggingService'
-import type { OptimizationCalibrationEntry } from './MeasuredOptimizationPolicy'
-import { getHardwareEncoder } from './TranscodingCapabilities'
-import { supportsMeasuredOptimizationEncoder } from './transcoding/OptimizationEncoderPolicy'
+import type { OptimizationCalibrationEntry, MeasuredCandidate } from './MeasuredOptimizationPolicy'
 import type { OptimizationCandidateScanSummary, ShowTranscodeRequest, ShowTranscodePreflight, ShowTranscodeEpisodeCheckpoint } from './TranscodingService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { analyzeAlbumQuality } from './MusicQualityAnalyzer'
@@ -978,7 +976,6 @@ export class TaskQueueService {
       onProgress({ phase: 'inventory', current: libraries.length, total: libraries.length, currentItem: source.source_id })
     }
     const mediaItems = libraries.flatMap(library => getDatabase().getMediaItems({ sourceId: library.sourceId, libraryId: library.libraryId }).filter(item => item.file_path))
-    const capabilities = await getTranscodingService().getCapabilities()
     const targetProfileId = await getDatabase().getSetting(SETTING_KEYS.optimization_default_target_profile_id)
     getLoggingService().info('[OptimizationCalibration]', 'Calibration started', {
       taskId: task.id,
@@ -997,21 +994,14 @@ export class TaskQueueService {
         groups.set(key, group)
       }
       const representatives = [...groups.entries()].flatMap(([groupKey, group]) => [...group.values()].slice(0, 2).map((item, index) => ({ item, groupKey, role: index === 0 ? 'calibration' as const : 'holdout' as const })))
-      const candidates: Array<{ encoderPolicy: 'software' | 'hardware'; gpuId?: string }> = [
-        { encoderPolicy: 'software' as const },
-        ...capabilities.gpus.flatMap(gpu => {
-          const encoder = getHardwareEncoder(gpu.vendor, targetCodec)
-          return encoder && supportsMeasuredOptimizationEncoder(encoder) && capabilities.deviceEncoders[gpu.id]?.includes(encoder)
-            ? [{ encoderPolicy: 'hardware' as const, gpuId: gpu.id }]
-            : []
-        }),
-      ]
+      const candidates: Array<{ encoderPolicy: 'automatic' }> = [{ encoderPolicy: 'automatic' }]
       for (const { item, groupKey, role } of representatives) {
         for (const candidate of candidates) {
           signal.throwIfAborted()
-          const measurementKey = `${stage}:${groupKey}:${role}:${item.id}:${candidate.encoderPolicy}:${candidate.gpuId ?? 'software'}`
-          if (measurements.some(measurement => measurement.key === measurementKey)) continue
+          const measurementKeyPrefix = `${stage}:${groupKey}:${role}:${item.id}`
+          if (measurements.some(measurement => typeof measurement.key === 'string' && measurement.key.startsWith(`${measurementKeyPrefix}:`) && measurement.status === 'measured')) continue
           onProgress({ phase: stage, current: measurements.length, total: representatives.length * candidates.length, currentItem: item.title })
+          let measuredCandidates: MeasuredCandidate[] = []
           try {
             const preflight = await getTranscodingService().preflightShowTranscode({
               mediaItemId: item.id,
@@ -1023,7 +1013,6 @@ export class TaskQueueService {
                 targetCodec,
                 qualityProfile: 'balanced',
                 encoderPolicy: candidate.encoderPolicy,
-                gpuId: candidate.gpuId,
                 targetProfileId,
                 targetContainerSelection: 'automatic',
                 playbackPolicy: targetProfileId ? 'avoid-video-transcoding' : 'allow-transcoding',
@@ -1037,15 +1026,19 @@ export class TaskQueueService {
               beginCommit: () => undefined,
               waitUntilRunning: async () => undefined,
               update: update => onProgress({ phase: update.phase ?? stage, current: update.progress?.current, total: update.progress?.total, currentItem: item.title }),
-              preflightId: `calibration_${task.id}_${item.id}_${candidate.gpuId ?? 'software'}`,
+              preflightId: `calibration_${task.id}_${item.id}`,
               batchId: `calibration_${task.id}`,
+              onMeasuredCandidates: async (candidates, complete) => {
+                if (complete) measuredCandidates = candidates
+              },
             })
             const episode = preflight.episodes[0]
-            if (!episode?.params?.measuredCandidate) throw new Error(episode?.reason ?? 'Calibration preflight did not produce a measured candidate')
-            const measured = episode.params
-            measurements.push({ key: measurementKey, stage, role, groupKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'measured', measuredCandidate: measured.measuredCandidate, encoder: measured.encoder, gpuId: candidate.gpuId, preset: measured.preset, crf: measured.crf })
+            if (!episode?.params?.measuredCandidate || measuredCandidates.length === 0) throw new Error(episode?.reason ?? 'Calibration preflight did not produce measured candidates')
+            for (const measuredCandidate of measuredCandidates) {
+              measurements.push({ key: `${measurementKeyPrefix}:${measuredCandidate.encoder}:${measuredCandidate.gpuId ?? 'software'}`, stage, role, groupKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'measured', measuredCandidate, encoder: measuredCandidate.encoder, gpuId: measuredCandidate.gpuId, preset: measuredCandidate.preset, crf: measuredCandidate.quality })
+            }
           } catch (error) {
-            measurements.push({ key: measurementKey, stage, role, groupKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'unvalidated', reason: error instanceof Error ? error.message : String(error) })
+            measurements.push({ key: `${measurementKeyPrefix}:${candidate.encoderPolicy}`, stage, role, groupKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'unvalidated', reason: error instanceof Error ? error.message : String(error) })
           }
           await getDatabase().setSetting(checkpointKey, JSON.stringify(measurements))
         }

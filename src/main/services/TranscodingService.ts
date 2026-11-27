@@ -722,6 +722,7 @@ export class TranscodingService {
     batchId?: string
     loadEpisodeCheckpoint?: (mediaItemId: number) => Promise<ShowTranscodeEpisodeCheckpoint | undefined>
     saveEpisodeCheckpoint?: (mediaItemId: number, checkpoint: ShowTranscodeEpisodeCheckpoint) => Promise<void>
+    onMeasuredCandidates?: (candidates: MeasuredCandidate[], complete: boolean) => Promise<void>
   }): Promise<ShowTranscodePreflight> {
     // Run cache maintenance after preflight, never on the critical response path.
     // If a prior maintenance sweep is deleting entries, wait for it before reading.
@@ -1145,6 +1146,7 @@ export class TranscodingService {
                   },
                   async (candidates, complete) => {
                     await persistMeasurement(candidates, complete, partialSamples)
+                    await operation?.onMeasuredCandidates?.(candidates, complete)
                     getLoggingService().info('[TVOptimization]', `Measured candidates cached: mediaItem=${episode.id}, cacheKey=${measurementCacheKey}, candidates=${candidates.length}`)
                   },
                   cachedMeasurement?.candidates,
