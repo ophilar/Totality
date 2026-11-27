@@ -86,6 +86,7 @@ export interface TranscodeOptions {
   measurementSampleDurationSeconds?: number
   /** Internal calibration control; normal optimization uses the configured search budget. */
   measurementCandidateBudget?: number
+  measurementSamplePositions?: readonly number[]
 }
 
 async function sha256File(filePath: string): Promise<string> {
@@ -1021,6 +1022,7 @@ export class TranscodingService {
           targetHdrFormat: options.targetHdrFormat,
           measurementSampleDurationSeconds: options.measurementSampleDurationSeconds,
           measurementCandidateBudget: options.measurementCandidateBudget,
+          measurementSamplePositions: options.measurementSamplePositions,
           videoTransformation: options.targetConversion && {
             width: options.targetConversion.width,
             height: options.targetConversion.height,
@@ -1044,7 +1046,7 @@ export class TranscodingService {
               capabilityFingerprint,
               measurementFingerprint,
               samplePlan: {
-                positions: APP_CONFIG.transcoding.samplePositions,
+                positions: options.measurementSamplePositions ?? APP_CONFIG.transcoding.samplePositions,
                 durationSeconds: options.measurementSampleDurationSeconds ?? APP_CONFIG.transcoding.sampleDurationSeconds,
               },
               sampleQualityDomains: APP_CONFIG.transcoding.sampleQualityDomains,
@@ -1073,7 +1075,7 @@ export class TranscodingService {
               Object.assign(options, reusableRepresentativePlan.measuredParameters)
             } else {
               samplingState.sampleAttemptedEpisodeLabel = label
-              cachedMeasurement = await this.getCachedMeasurement(measurementCacheKey!, sourceSha256, sampleDirectory)
+              cachedMeasurement = await this.getCachedMeasurement(measurementCacheKey!, sourceSha256, sampleDirectory, (options.measurementSamplePositions ?? APP_CONFIG.transcoding.samplePositions).length)
               if (cachedMeasurement?.complete) {
                 measurementCacheHit = true
                 publishPreflightProgress(episode, 'Reusing verified encode samples from cache')
@@ -2730,7 +2732,8 @@ export class TranscodingService {
       const stat = await fs.stat(filePath)
       await fs.mkdir(outputDirectory, { recursive: true })
       const sampleDurationSeconds = options.measurementSampleDurationSeconds ?? APP_CONFIG.transcoding.sampleDurationSeconds
-      const sampleSeconds = Math.min(analysis.durationMs / 1000, sampleDurationSeconds * APP_CONFIG.transcoding.samplePositions.length)
+      const samplePositions = options.measurementSamplePositions ?? APP_CONFIG.transcoding.samplePositions
+      const sampleSeconds = Math.min(analysis.durationMs / 1000, sampleDurationSeconds * samplePositions.length)
       const maximumOutputBytesPerSecond = Math.min(options.maxOutputBytes ?? stat.size, stat.size) / (analysis.durationMs / 1000) - plannedNonVideoBytesPerSecond(analysis, options)
       const plannedBitrate = options.targetConversion?.maximumVideoBitrate
       const outputContainer = options.targetConversion?.container ?? options.targetContainer
@@ -2798,6 +2801,7 @@ export class TranscodingService {
             },
             onCandidateMeasured: async roundCandidates => onMeasuredCandidates?.([...measuredCandidates.slice(0, roundStart), ...roundCandidates], false),
             sampleDurationSeconds,
+            samplePositions,
           })
           measuredCandidates.push(...measured.candidates)
           signal?.throwIfAborted()
@@ -2932,7 +2936,7 @@ export class TranscodingService {
     return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
   }
 
-  private async getCachedMeasurement(cacheKey: string, sourceSha256: string, sampleDirectory: string): Promise<CachedMeasurement | undefined> {
+  private async getCachedMeasurement(cacheKey: string, sourceSha256: string, sampleDirectory: string, sampleCount: number): Promise<CachedMeasurement | undefined> {
     const settingKey = `${MEASUREMENT_SETTING_PREFIX}${cacheKey}`
     const raw = await getDatabase().getSetting(settingKey)
     if (!raw) return undefined
@@ -2950,7 +2954,7 @@ export class TranscodingService {
         return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
       }
       const validSourcePreparation = cached.sourcePreparation === undefined ||
-        Array.isArray(cached.sourcePreparation.samples) && cached.sourcePreparation.samples.length === APP_CONFIG.transcoding.samplePositions.length && cached.sourcePreparation.samples.every(sample =>
+        Array.isArray(cached.sourcePreparation.samples) && cached.sourcePreparation.samples.length === sampleCount && cached.sourcePreparation.samples.every(sample =>
           hasValidTimingEvidence(sample.source) && hasValidTimingEvidence(sample.reference) &&
           Number.isFinite(sample.sourceSelfVmaf) && Number.isFinite(sample.sourceCambiMean))
       const valid = cached.version === MEASUREMENT_VERSION && cached.cacheKey === cacheKey && cached.sourceSha256 === sourceSha256 && typeof cached.complete === 'boolean' &&

@@ -48,6 +48,7 @@ export interface MeasuredSampleRequest {
   onCandidateMeasured?: (candidates: MeasuredCandidate[], complete: boolean) => Promise<void>
   candidates: Array<MeasuredCandidate & { ffmpegArgs: string[] }>
   sampleDurationSeconds?: number
+  samplePositions?: readonly number[]
 }
 export interface MeasuredSampleResult { candidates: MeasuredCandidate[]; vmafAvailable: boolean; cambiAvailable: boolean }
 
@@ -373,8 +374,9 @@ export class MeasuredOptimizationService {
     const requiredFilters = ['libvmaf', ...(request.referenceFilter?.includes('libplacebo') ? ['libplacebo'] : [])]
     requireFfmpegFilters(filterListing, requiredFilters)
     request.signal?.throwIfAborted()
-    const length = Math.min(request.sampleDurationSeconds ?? APP_CONFIG.transcoding.sampleDurationSeconds, durationSeconds / APP_CONFIG.transcoding.samplePositions.length)
-    const starts = APP_CONFIG.transcoding.samplePositions.map(position => Math.max(0, Math.min(durationSeconds - length, durationSeconds * position - length / 2)))
+    const samplePositions = request.samplePositions ?? APP_CONFIG.transcoding.samplePositions
+    const length = Math.min(request.sampleDurationSeconds ?? APP_CONFIG.transcoding.sampleDurationSeconds, durationSeconds / samplePositions.length)
+    const starts = samplePositions.map(position => Math.max(0, Math.min(durationSeconds - length, durationSeconds * position - length / 2)))
     await fs.mkdir(request.outputDirectory, { recursive: true })
     const sourcePreparationKey = request.sourceSha256 && JSON.stringify({
       sourceSha256: request.sourceSha256,
@@ -382,7 +384,7 @@ export class MeasuredOptimizationService {
       durationMs: request.durationMs,
       referenceFilter: request.referenceFilter,
       referenceInputArgs: request.referenceInputArgs,
-      samplePositions: APP_CONFIG.transcoding.samplePositions,
+      samplePositions,
       sampleDurationSeconds: request.sampleDurationSeconds ?? APP_CONFIG.transcoding.sampleDurationSeconds,
     })
     const sourceSamples: Awaited<ReturnType<MeasuredOptimizationService['inspectWindow']>>[] = []
