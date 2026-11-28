@@ -52,6 +52,39 @@ export function scopedCalibrationEntries(entries: OptimizationCalibrationEntry[]
   return scopeKey === undefined ? [] : entries.filter(entry => entry.scopeKey === scopeKey)
 }
 
+export interface CalibrationCandidateEvidence {
+  scopeKey: string
+  sourceCodec: string
+  targetCodec: OptimizationVideoCodec
+  role: 'calibration' | 'holdout'
+  mediaItemId?: number
+  measuredCandidate: MeasuredCandidate
+  preflightValidated: boolean
+}
+
+/** A failed holdout vetoes matching training evidence, even if another holdout passed. */
+export function buildValidatedCalibrationEntries(evidence: CalibrationCandidateEvidence[], measuredAt: string): OptimizationCalibrationEntry[] {
+  const key = (entry: CalibrationCandidateEvidence) => {
+    const { encoder, gpuId, preset, quality } = entry.measuredCandidate
+    return JSON.stringify([entry.scopeKey, encoder, gpuId ?? null, preset, quality])
+  }
+  const valid = (entry: CalibrationCandidateEvidence) =>
+    entry.mediaItemId !== undefined && entry.preflightValidated && isMeasuredCandidateValidForCalibration(entry.measuredCandidate)
+  const holdouts = new Map<string, CalibrationCandidateEvidence[]>()
+  for (const entry of evidence.filter(entry => entry.role === 'holdout')) {
+    const identity = key(entry)
+    const group = holdouts.get(identity) ?? []
+    group.push(entry)
+    holdouts.set(identity, group)
+  }
+  return evidence.filter(entry => entry.role === 'calibration' && valid(entry)).flatMap(entry => {
+    const matching = holdouts.get(key(entry)) ?? []
+    if (!matching.some(holdout => holdout.mediaItemId !== entry.mediaItemId && valid(holdout)) || matching.some(holdout => !valid(holdout))) return []
+    const { encoder, gpuId, preset, quality, outputBytes, sampledDurationSeconds } = entry.measuredCandidate
+    return [{ scopeKey: entry.scopeKey, sourceCodec: entry.sourceCodec, targetCodec: entry.targetCodec, encoder, gpuId, preset, quality, outputBytes, sampledDurationSeconds, measuredAt }]
+  })
+}
+
 export interface ContinuousLowVmafRun {
   frameCount: number
   startTimestampSeconds: number
@@ -362,5 +395,8 @@ function evaluateMeasuredCandidates(profile: OptimizationQualityProfile, candida
 
 /** Returns whether a measured candidate has complete, quality-passing, playback-compatible evidence. */
 export function isMeasuredCandidateValidForCalibration(candidate: MeasuredCandidate): boolean {
-  return evaluateMeasuredCandidates('balanced', [candidate])[0].passed
+  return Number.isFinite(candidate.outputBytes) && candidate.outputBytes > 0 &&
+    Number.isFinite(candidate.sampledDurationSeconds) && candidate.sampledDurationSeconds > 0 &&
+    Number.isFinite(candidate.vmafMean) && Number.isFinite(candidate.vmafP5) && Number.isFinite(candidate.cambiMean) &&
+    evaluateMeasuredCandidates('balanced', [candidate])[0].passed
 }

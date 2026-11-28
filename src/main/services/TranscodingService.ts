@@ -28,7 +28,8 @@ import { getQualityAnalyzer } from './QualityAnalyzer'
 import { OptimizationCandidateService, type OptimizationCandidateReason } from './OptimizationCandidateService'
 import type { MediaSourceTier } from './transcoding/TrashSourceClassifier'
 import { StreamRemuxCommandBuilder } from './transcoding/StreamRemuxCommandBuilder'
-import { buildCandidateLadder, nextCandidateSearch, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MAX_MEASURED_CANDIDATES_PER_PRESET, MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, OPTIMIZATION_CALIBRATION_VERSION, isValidOptimizationCalibrationEntry, scopedCalibrationEntries, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile, type OptimizationCalibrationEntry, type PersistedOptimizationCalibration } from './MeasuredOptimizationPolicy'
+import { buildCandidateLadder, nextCandidateSearch, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MAX_MEASURED_CANDIDATES_PER_PRESET, MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, scopedCalibrationEntries, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile, type OptimizationCalibrationEntry } from './MeasuredOptimizationPolicy'
+import { readOptimizationCalibrationProfile, writeOptimizationCalibrationProfile } from './OptimizationCalibrationProfile'
 import { buildTargetTranscodePlan, validateTargetTranscodeBitrate, type TargetTranscodePlan } from './transcoding/TargetTranscodePlan'
 import type { MeasuredCandidate, MeasuredCandidateSample } from './MeasuredOptimizationPolicy'
 import { ChildProcessMeasurementRunner, MeasuredOptimizationService, VMAF_MODEL_VERSION, type MeasurementSourcePreparation } from './MeasuredOptimizationService'
@@ -741,31 +742,11 @@ export class TranscodingService {
   }
 
   async saveOptimizationCalibration(entries: OptimizationCalibrationEntry[]): Promise<void> {
-    if (!entries.every(isValidOptimizationCalibrationEntry)) throw new Error('Invalid optimization calibration entry')
-    const record: PersistedOptimizationCalibration = { version: OPTIMIZATION_CALIBRATION_VERSION, entries }
-    const profilePath = path.join(app.getPath('userData'), 'optimization-profile.json')
-    const temporaryPath = `${profilePath}.${randomUUID()}.tmp`
-    try {
-      await fs.writeFile(temporaryPath, JSON.stringify(record, null, 2) + '\n', { flag: 'wx' })
-      await fs.rename(temporaryPath, profilePath)
-    } finally {
-      await fs.rm(temporaryPath, { force: true })
-    }
+    await writeOptimizationCalibrationProfile(path.join(app.getPath('userData'), 'optimization-profile.json'), entries)
   }
 
   private async loadOptimizationCalibration(): Promise<OptimizationCalibrationEntry[]> {
-    let raw: string
-    try {
-      raw = await fs.readFile(path.join(app.getPath('userData'), 'optimization-profile.json'), 'utf8')
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-      throw error
-    }
-    const record = JSON.parse(raw) as PersistedOptimizationCalibration
-    if (record.version !== OPTIMIZATION_CALIBRATION_VERSION || !Array.isArray(record.entries) || !record.entries.every(isValidOptimizationCalibrationEntry)) {
-      throw new Error('Invalid persisted optimization calibration')
-    }
-    return record.entries
+    return readOptimizationCalibrationProfile(path.join(app.getPath('userData'), 'optimization-profile.json'))
   }
 
   async preflightShowTranscode(request: ShowTranscodeRequest, operation?: {

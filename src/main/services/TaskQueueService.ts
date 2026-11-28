@@ -33,7 +33,7 @@ import { getWishlistCompletionService } from './WishlistCompletionService'
 import { getTMDBService } from './TMDBService'
 import { getTranscodingService } from './TranscodingService'
 import { getLoggingService } from './LoggingService'
-import { isMeasuredCandidateValidForCalibration, selectCalibrationRepresentatives, type OptimizationCalibrationEntry, type MeasuredCandidate } from './MeasuredOptimizationPolicy'
+import { buildValidatedCalibrationEntries, selectCalibrationRepresentatives, type CalibrationCandidateEvidence, type MeasuredCandidate } from './MeasuredOptimizationPolicy'
 import type { OptimizationCandidateScanSummary, ShowTranscodeRequest, ShowTranscodePreflight, ShowTranscodeEpisodeCheckpoint } from './TranscodingService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { normalizeVideoCodec } from './MediaNormalizer'
@@ -1022,6 +1022,8 @@ export class TaskQueueService {
           onProgress({ phase: stage, current: measurements.length, total: representatives.length * candidates.length, currentItem: item.title })
           let measuredCandidates: MeasuredCandidate[] = []
           let calibrationScopeKey: string | undefined
+          let preflightValidated = false
+          let failureReason: string | undefined
           try {
             const preflight = await getTranscodingService().preflightShowTranscode({
               mediaItemId: item.id,
@@ -1054,20 +1056,19 @@ export class TaskQueueService {
             })
             signal.throwIfAborted()
             const episode = preflight.episodes[0]
-            if (!episode?.params?.measuredCandidate || !calibrationScopeKey || measuredCandidates.length === 0) throw new Error(episode?.reason ?? 'Calibration preflight did not produce measured candidates')
-            for (let index = measurements.length - 1; index >= 0; index--) {
-              if (typeof measurements[index].key === 'string' && (measurements[index].key as string).startsWith(`${measurementKeyPrefix}:`)) measurements.splice(index, 1)
-            }
-            for (const measuredCandidate of measuredCandidates) {
-              measurements.push({ key: `${measurementKeyPrefix}:${JSON.stringify([measuredCandidate.encoder, measuredCandidate.gpuId ?? null, measuredCandidate.preset, measuredCandidate.quality])}`, stage, role, groupKey, scopeKey: calibrationScopeKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'measured', measuredCandidate, encoder: measuredCandidate.encoder, gpuId: measuredCandidate.gpuId, preset: measuredCandidate.preset, crf: measuredCandidate.quality })
-            }
+            preflightValidated = Boolean(episode?.compatible && episode.decisionStatus === 'sample_required' && episode.params?.measuredCandidate && calibrationScopeKey && measuredCandidates.length)
+            if (!preflightValidated) failureReason = episode?.reason ?? 'Calibration preflight did not produce a validated measured plan'
           } catch (error) {
             signal.throwIfAborted()
-            const failureKey = `${measurementKeyPrefix}:${candidate.encoderPolicy}`
-            for (let index = measurements.length - 1; index >= 0; index--) {
-              if (measurements[index].key === failureKey) measurements.splice(index, 1)
+            failureReason = error instanceof Error ? error.message : String(error)
+          }
+          if (calibrationScopeKey) {
+            for (const measuredCandidate of measuredCandidates) {
+              measurements.push({ key: `${measurementKeyPrefix}:${JSON.stringify([measuredCandidate.encoder, measuredCandidate.gpuId ?? null, measuredCandidate.preset, measuredCandidate.quality])}`, stage, role, groupKey, scopeKey: calibrationScopeKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'measured', preflightValidated, reason: failureReason, measuredCandidate, encoder: measuredCandidate.encoder, gpuId: measuredCandidate.gpuId, preset: measuredCandidate.preset, crf: measuredCandidate.quality })
             }
-            measurements.push({ key: failureKey, stage, role, groupKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'unvalidated', reason: error instanceof Error ? error.message : String(error) })
+          }
+          if (failureReason !== undefined) {
+            measurements.push({ key: `${measurementKeyPrefix}:${candidate.encoderPolicy}`, stage, role, groupKey, scopeKey: calibrationScopeKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'unvalidated', reason: failureReason })
           }
           await saveCheckpoint()
         }
@@ -1111,21 +1112,8 @@ export class TaskQueueService {
         measuredFormats.add(`${item.video_codec}:${formatKey}`)
       }
     }
-    const candidateKey = (measurement: Record<string, unknown>): string => {
-      const candidate = measurement.measuredCandidate as { encoder?: unknown; gpuId?: unknown; preset?: unknown; quality?: unknown } | undefined
-      return `${measurement.stage}:${measurement.groupKey}:${String(measurement.scopeKey)}:${String(candidate?.encoder ?? measurement.encoder ?? '')}:${String(candidate?.gpuId ?? measurement.gpuId ?? '')}:${String(candidate?.preset ?? measurement.preset ?? '')}:${String(candidate?.quality ?? measurement.crf ?? '')}`
-    }
-    const isValidMeasurement = (measurement: Record<string, unknown>): boolean => {
-      const candidate = measurement.measuredCandidate as MeasuredCandidate | undefined
-      return measurement.status === 'measured' && typeof measurement.scopeKey === 'string' && candidate !== undefined && isMeasuredCandidateValidForCalibration(candidate)
-    }
-    const validatedCandidates = new Set(measurements.filter(measurement => measurement.role === 'holdout' && isValidMeasurement(measurement)).map(candidateKey))
-    const rejectedHoldouts = new Set(measurements.filter(measurement => measurement.role === 'holdout' && measurement.status === 'measured' && !isValidMeasurement(measurement)).map(candidateKey))
-    const entries: OptimizationCalibrationEntry[] = measurements.filter(measurement => measurement.role === 'calibration' && isValidMeasurement(measurement) && validatedCandidates.has(candidateKey(measurement)) && !rejectedHoldouts.has(candidateKey(measurement))).flatMap(measurement => {
-      const candidate = measurement.measuredCandidate as { encoder?: unknown; gpuId?: unknown; preset?: unknown; outputBytes?: unknown; sampledDurationSeconds?: unknown; quality?: unknown } | undefined
-      if (!candidate || typeof measurement.sourceCodec !== 'string' || !measurement.sourceCodec || typeof candidate.outputBytes !== 'number' || typeof candidate.sampledDurationSeconds !== 'number' || typeof candidate.quality !== 'number') return []
-      return [{ scopeKey: measurement.scopeKey as string, sourceCodec: measurement.sourceCodec, targetCodec: measurement.targetCodec as 'hevc' | 'av1', encoder: String(candidate.encoder ?? measurement.encoder ?? ''), gpuId: typeof candidate.gpuId === 'string' ? candidate.gpuId : typeof measurement.gpuId === 'string' ? measurement.gpuId : undefined, preset: String(candidate.preset ?? measurement.preset ?? ''), quality: candidate.quality, outputBytes: candidate.outputBytes, sampledDurationSeconds: candidate.sampledDurationSeconds, measuredAt: new Date().toISOString() }]
-    })
+    const evidence = measurements.filter(measurement => measurement.status === 'measured') as unknown as CalibrationCandidateEvidence[]
+    const entries = buildValidatedCalibrationEntries(evidence, new Date().toISOString())
     const profileStatus = entries.length > 0 ? 'validated' : 'unvalidated'
     await getDatabase().deleteSetting(checkpointKey)
     signal.throwIfAborted()

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCandidateLadder, findLongestContinuousLowVmafRun, getImpossibleQualityReason, getNonDominatedMeasuredCandidates, isMeasuredCandidateValidForCalibration, isValidOptimizationCalibrationEntry, nextCandidateSearch, scopedCalibrationEntries, selectCalibrationRepresentatives, selectMeasuredCandidate, type CandidateEncodingParameters, type MeasuredCandidate } from '@main/services/MeasuredOptimizationPolicy'
+import { buildCandidateLadder, buildValidatedCalibrationEntries, findLongestContinuousLowVmafRun, getImpossibleQualityReason, getNonDominatedMeasuredCandidates, isMeasuredCandidateValidForCalibration, isValidOptimizationCalibrationEntry, nextCandidateSearch, scopedCalibrationEntries, selectCalibrationRepresentatives, selectMeasuredCandidate, type CalibrationCandidateEvidence, type CandidateEncodingParameters, type MeasuredCandidate } from '@main/services/MeasuredOptimizationPolicy'
 
 describe('selectMeasuredCandidate', () => {
   const candidate = (overrides: Partial<MeasuredCandidate>): MeasuredCandidate => ({
@@ -80,6 +80,23 @@ describe('selectMeasuredCandidate', () => {
     const accepted = candidate({ ...domain[0], outputBytes: 100 })
     expect(nextCandidateSearch(domain, [rejected], 'balanced', 2, [entry])).toEqual([domain[0]])
     expect(selectMeasuredCandidate('balanced', [rejected, accepted])).toBe(accepted)
+  })
+
+  it('requires an independent passing holdout and vetoes a completed failed holdout in the same scope', () => {
+    const training: CalibrationCandidateEvidence = {
+      scopeKey: 'scope-a', sourceCodec: 'H.264', targetCodec: 'hevc', role: 'calibration',
+      mediaItemId: 1, measuredCandidate: candidate({}), preflightValidated: true,
+    }
+    const holdout: CalibrationCandidateEvidence = { ...training, role: 'holdout', mediaItemId: 2 }
+    const failed: CalibrationCandidateEvidence = {
+      ...holdout, mediaItemId: 3, preflightValidated: false, measuredCandidate: candidate({ vmafP5: 80 }),
+    }
+    const timestamp = new Date().toISOString()
+    expect(buildValidatedCalibrationEntries([training], timestamp)).toEqual([])
+    expect(buildValidatedCalibrationEntries([training, { ...holdout, mediaItemId: 1 }], timestamp)).toEqual([])
+    expect(buildValidatedCalibrationEntries([training, holdout], timestamp)).toHaveLength(1)
+    expect(buildValidatedCalibrationEntries([training, holdout, failed], timestamp)).toEqual([])
+    expect(buildValidatedCalibrationEntries([training, holdout, { ...failed, scopeKey: 'scope-b' }], timestamp)).toHaveLength(1)
   })
 
   it('validates persisted calibration entries without accepting incomplete evidence', () => {
