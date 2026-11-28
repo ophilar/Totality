@@ -40,6 +40,24 @@ describe('StreamRemuxCommandBuilder', () => {
     expect(args).toContain('copy')
   })
 
+  it('keeps the resolved MP4 container semantics in the reviewed command template', () => {
+    const analysis: FileAnalysisResult = { ...mockAnalysis, video: { ...mockAnalysis.video!, hdrFormat: 'Dolby Vision', dolbyVisionProfile: 5 } }
+    const options: TranscodeOptions = { optimizationMode: 'remux_only', targetContainer: 'mp4' }
+    const template = TranscodeCommandFactory.buildCommandTemplate(undefined, options, analysis, '.mp4')
+    expect(template).toContain('dvh1')
+    expect(template).toContain('+faststart')
+    expect(template.at(-1)).toBe('<output>')
+    expect(template).toContain('<input>')
+    expect(() => TranscodeCommandFactory.buildCommandTemplate(undefined, options, { ...analysis, video: { ...analysis.video!, dolbyVisionProfile: undefined } }, '.mp4')).toThrow(/Profile 5/)
+  })
+
+  it('applies custom output arguments consistently and rejects unmeasured encoder overrides', () => {
+    const options: TranscodeOptions = { optimizationMode: 'transcode', targetCodec: 'hevc', encoder: 'x265', crf: 22, preset: 'medium', customArgs: '-metadata "title=Example Title"' }
+    const template = TranscodeCommandFactory.buildCommandTemplate(undefined, options, mockAnalysis, '.mkv')
+    expect(template.slice(-3)).toEqual(['-metadata', 'title=Example Title', '<output>'])
+    expect(() => TranscodeCommandFactory.buildCommandTemplate(undefined, { ...options, customArgs: '-crf 35' }, mockAnalysis, '.mkv')).toThrow('not supported by measured optimization')
+  })
+
   it('refuses a Dolby Vision MP4 remux when profile evidence is absent', () => {
     const analysis: FileAnalysisResult = { ...mockAnalysis, video: { ...mockAnalysis.video!, hdrFormat: 'Dolby Vision' } }
     expect(() => new StreamRemuxCommandBuilder().buildFFmpegArgs('in.mkv', 'out.mp4', { optimizationMode: 'remux_only' }, analysis)).toThrow(/Profile 5/)

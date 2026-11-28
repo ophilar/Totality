@@ -27,7 +27,6 @@ import { getStatsCacheService } from './StatsCacheService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { OptimizationCandidateService, type OptimizationCandidateReason } from './OptimizationCandidateService'
 import type { MediaSourceTier } from './transcoding/TrashSourceClassifier'
-import { StreamRemuxCommandBuilder } from './transcoding/StreamRemuxCommandBuilder'
 import { buildCandidateLadder, nextCandidateSearch, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MAX_MEASURED_CANDIDATES_PER_PRESET, MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, scopedCalibrationEntries, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile, type OptimizationCalibrationEntry } from './MeasuredOptimizationPolicy'
 import { readOptimizationCalibrationProfile, writeOptimizationCalibrationProfile } from './OptimizationCalibrationProfile'
 import { buildTargetTranscodePlan, validateTargetTranscodeBitrate, type TargetTranscodePlan } from './transcoding/TargetTranscodePlan'
@@ -89,6 +88,11 @@ export interface TranscodeOptions {
   /** Internal calibration control; normal optimization uses the configured search budget. */
   measurementCandidateBudget?: number
   measurementSamplePositions?: readonly number[]
+}
+
+function resolveOutputExtension(filePath: string, options: TranscodeOptions): string {
+  const container = options.targetConversion?.container ?? options.targetContainer
+  return container === 'mp4' ? '.mp4' : container === 'mkv' ? '.mkv' : path.extname(filePath)
 }
 
 async function sha256File(filePath: string): Promise<string> {
@@ -2229,21 +2233,7 @@ export class TranscodingService {
     if (effectiveOptions.optimizationMode === 'remux_only' || effectiveOptions.encoder === 'remux' || effectiveOptions.encoder === 'copy') {
       const plan = buildStreamSelectionPlan(analysis, effectiveOptions)
       effectiveOptions.audioConversions ??= buildAudioConversions(analysis, effectiveOptions)
-      const builder = new StreamRemuxCommandBuilder()
-      const ffmpegArgs = builder.buildFFmpegArgs('<input>', '<output>', effectiveOptions, analysis)
-      if (effectiveOptions.customArgs) {
-        const parts = effectiveOptions.customArgs.match(/"[^"]*"|'[^']*'|\S+/g) || []
-        const safeRegex = /^[a-zA-Z0-9\-_+=/\\:,.*"'\s]+$/
-        const outputIndex = ffmpegArgs.length - 1
-        const safeParts: string[] = []
-        for (const part of parts) {
-          const cleaned = part.replace(/^["']|["']$/g, '').trim()
-          if (cleaned && safeRegex.test(cleaned)) {
-            safeParts.push(cleaned)
-          }
-        }
-        ffmpegArgs.splice(outputIndex, 0, ...safeParts)
-      }
+      const ffmpegArgs = TranscodeCommandFactory.buildCommandTemplate(undefined, effectiveOptions, analysis, resolveOutputExtension(filePath, effectiveOptions))
       return {
         summary: effectiveOptions.audioConversions?.length
           ? `Lossless video remux with ${effectiveOptions.audioConversions.length} audio stream conversion${effectiveOptions.audioConversions.length === 1 ? '' : 's'}`
@@ -2335,20 +2325,7 @@ export class TranscodingService {
       preset: finalPreset
     }
 
-    const builder = TranscodeCommandFactory.getBuilder(usesSelectedHardwareEncoder ? selectedVendor : undefined, resolvedOptions)
-    const ffmpegArgs = builder.buildFFmpegArgs('<input>', '<output>', resolvedOptions, analysis)
-
-    // Add custom args if present
-    if (effectiveOptions.customArgs) {
-      const parts = effectiveOptions.customArgs.match(/"[^"]*"|'[^']*'|\S+/g) || []
-      const safeRegex = /^[a-zA-Z0-9\-_+=/\\:,.*"'\s]+$/
-      for (const part of parts) {
-        const cleaned = part.replace(/^["']|["']$/g, '').trim()
-        if (cleaned && safeRegex.test(cleaned)) {
-          ffmpegArgs.splice(ffmpegArgs.length - 1, 0, cleaned)
-        }
-      }
-    }
+    const ffmpegArgs = TranscodeCommandFactory.buildCommandTemplate(usesSelectedHardwareEncoder ? selectedVendor : undefined, resolvedOptions, analysis, resolveOutputExtension(filePath, resolvedOptions))
 
     const plan = buildStreamSelectionPlan(analysis, resolvedOptions)
     const expectedAudioCount = plan.audioStreamIndexes.length
@@ -2467,11 +2444,7 @@ export class TranscodingService {
       })
       await db.mediaRemuxJobs.update(optimizationJobId, { status: 'running' })
 
-      const outputExt = options.targetConversion?.container
-        ? options.targetConversion.container === 'mp4' ? '.mp4' : '.mkv'
-        : options.targetContainer
-          ? options.targetContainer === 'mp4' ? '.mp4' : '.mkv'
-          : path.extname(inputPath)
+      const outputExt = resolveOutputExtension(inputPath, options)
       let tempBaseDir = path.dirname(inputPath)
       const configuredTempDir = options.tempDirectory || (await db.getSetting('transcoding_temp_directory'))
       if (configuredTempDir && typeof configuredTempDir === 'string' && configuredTempDir.trim() !== '') {
@@ -2876,7 +2849,7 @@ export class TranscodingService {
         crf: candidate.quality,
         preset: candidate.preset
       }
-      return { ...candidate, outputBytes: 0, sampledDurationSeconds: 0, encodingDurationMs: 0, vmafMean: 0, vmafP5: 0, cambiMean: 0, ffmpegArgs: TranscodeCommandFactory.getBuilder(candidateGpu?.vendor, candidateOptions).buildFFmpegArgs('<input>', '<output>', candidateOptions, analysis) }
+      return { ...candidate, outputBytes: 0, sampledDurationSeconds: 0, encodingDurationMs: 0, vmafMean: 0, vmafP5: 0, cambiMean: 0, ffmpegArgs: TranscodeCommandFactory.buildCommandTemplate(candidateGpu?.vendor, candidateOptions, analysis, resolveOutputExtension(filePath, candidateOptions)) }
     })
     const outputDirectory = sampleDirectory ?? path.join(app.getPath('userData'), 'transcoding-samples', randomUUID())
     try {
@@ -2887,8 +2860,7 @@ export class TranscodingService {
       const sampleSeconds = Math.min(analysis.durationMs / 1000, sampleDurationSeconds * samplePositions.length)
       const maximumOutputBytesPerSecond = Math.min(options.maxOutputBytes ?? stat.size, stat.size) / (analysis.durationMs / 1000) - plannedNonVideoBytesPerSecond(analysis, options)
       const plannedBitrate = options.targetConversion?.maximumVideoBitrate
-      const outputContainer = options.targetConversion?.container ?? options.targetContainer
-      const outputExtension = outputContainer === 'mp4' ? '.mp4' : outputContainer === 'mkv' ? '.mkv' : path.extname(filePath)
+      const outputExtension = resolveOutputExtension(filePath, options)
       const targetProfile = options.targetProfileId ? await getDatabase().playbackTargetProfiles.get(options.targetProfileId) : undefined
       const calibrationScopeKey = sourceId && libraryId && mediaType ? JSON.stringify({
         sourceId,
