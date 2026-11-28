@@ -1,5 +1,4 @@
 import { measuredOptimizationEncoderSpec } from './transcoding/OptimizationEncoderPolicy'
-import { SETTING_KEYS } from '@shared/settingKeys'
 
 import { APP_CONFIG } from '@main/config'
 import { getOptimizationVideoCodec, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
@@ -9,15 +8,16 @@ import type { MediaItem } from '@main/types/database'
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
 
 export const MEASUREMENT_VERSION = 17
-export const OPTIMIZATION_SEARCH_VERSION = 5
+export const OPTIMIZATION_SEARCH_VERSION = 6
 /** Hard bound on expensive full-sample evaluations in each encoder/preset domain. */
 export const MAX_MEASURED_CANDIDATES_PER_PRESET = 5
 export const VMAF_LOW_PERCENTILE = 0.05
 export const SHOW_PREFLIGHT_SETTING_PREFIX = 'transcoding.preflight.'
 export const MEASUREMENT_SETTING_PREFIX = 'transcoding.measurement.'
-export const OPTIMIZATION_CALIBRATION_SETTING_KEY = SETTING_KEYS.optimization_calibration
-export const OPTIMIZATION_CALIBRATION_VERSION = 1
+export const OPTIMIZATION_CALIBRATION_VERSION = 2
 export interface OptimizationCalibrationEntry {
+  /** Serialized measurement context; exact equality is required before using this search prior. */
+  scopeKey: string
   sourceCodec: string
   targetCodec: OptimizationVideoCodec
   encoder: string
@@ -37,7 +37,8 @@ export interface PersistedOptimizationCalibration {
 export function isValidOptimizationCalibrationEntry(value: unknown): value is OptimizationCalibrationEntry {
   if (!value || typeof value !== 'object') return false
   const entry = value as Partial<OptimizationCalibrationEntry>
-  return typeof entry.sourceCodec === 'string' && entry.sourceCodec.length > 0 &&
+  return typeof entry.scopeKey === 'string' && entry.scopeKey.length > 0 &&
+    typeof entry.sourceCodec === 'string' && entry.sourceCodec.length > 0 &&
     (entry.targetCodec === 'hevc' || entry.targetCodec === 'av1') &&
     typeof entry.encoder === 'string' && entry.encoder.length > 0 &&
     typeof entry.preset === 'string' && entry.preset.length > 0 &&
@@ -45,6 +46,10 @@ export function isValidOptimizationCalibrationEntry(value: unknown): value is Op
     typeof entry.outputBytes === 'number' && Number.isFinite(entry.outputBytes) && entry.outputBytes > 0 &&
     typeof entry.sampledDurationSeconds === 'number' && Number.isFinite(entry.sampledDurationSeconds) && entry.sampledDurationSeconds > 0 &&
     typeof entry.measuredAt === 'string' && entry.measuredAt.length > 0
+}
+
+export function scopedCalibrationEntries(entries: OptimizationCalibrationEntry[], scopeKey: string | undefined): OptimizationCalibrationEntry[] {
+  return scopeKey === undefined ? [] : entries.filter(entry => entry.scopeKey === scopeKey)
 }
 
 export interface ContinuousLowVmafRun {
@@ -147,6 +152,7 @@ export function nextCandidateSearch(
   measuredCandidates: MeasuredCandidate[],
   profile: OptimizationQualityProfile,
   maxCandidatesPerPreset = MAX_MEASURED_CANDIDATES_PER_PRESET,
+  calibrationEntries: OptimizationCalibrationEntry[] = [],
 ): CandidateEncodingParameters[] {
   const presets = [...new Map(domainCatalogue.map(candidate => [`${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`, candidate])).values()]
   const evaluation = (candidate: MeasuredCandidate) => evaluateMeasuredCandidates(profile, [candidate])[0]
@@ -161,8 +167,13 @@ export function nextCandidateSearch(
       const untested = (values: number[]) => values.filter(quality => !tested.has(quality)).map(quality => ({ ...presetCandidate, quality }))
       if (measured.length >= maxCandidatesPerPreset) continue
       if (measured.length === 0) {
+        const prior = calibrationEntries.filter(entry =>
+          entry.encoder === presetCandidate.encoder && entry.gpuId === presetCandidate.gpuId &&
+          entry.preset === presetCandidate.preset && Number.isInteger(entry.quality) &&
+          entry.quality >= qualities[0] && entry.quality <= qualities[qualities.length - 1]
+        ).sort((left, right) => left.outputBytes / left.sampledDurationSeconds - right.outputBytes / right.sampledDurationSeconds || right.quality - left.quality)[0]
         const middle = qualities[Math.floor((qualities.length - 1) / 2)]
-        return untested([middle])
+        return untested([prior?.quality ?? middle])
       }
       const ordered = [...measured].sort((a, b) => a.quality - b.quality)
       const passFlags = ordered.map(qualityPasses)
@@ -186,6 +197,10 @@ export function nextCandidateSearch(
       if (measured.length === 1) {
         const direction = qualityPasses(measured[0]) ? qualities[qualities.length - 1] : qualities[0]
         if (!tested.has(direction)) next.add(direction)
+        else {
+          const middle = qualities[Math.floor((qualities.length - 1) / 2)]
+          if (!tested.has(middle)) next.add(middle)
+        }
       }
       for (let index = 1; index < ordered.length; index += 1) {
         if (passFlags[index] !== passFlags[index - 1]) {
@@ -285,7 +300,6 @@ export function selectMeasuredCandidate(
   profile: OptimizationQualityProfile,
   candidates: MeasuredCandidate[],
   maximumOutputBytesPerSecond?: number,
-  calibrationEntries: OptimizationCalibrationEntry[] = [],
 ): MeasuredCandidate {
   const gates = QUALITY_GATES[profile]
   const evaluations = evaluateMeasuredCandidates(profile, candidates)
@@ -294,8 +308,7 @@ export function selectMeasuredCandidate(
     .filter(evaluation => evaluation.passed)
     .map(evaluation => evaluation.candidate)
     .filter(candidate => maximumOutputBytesPerSecond === undefined || candidate.outputBytes / candidate.sampledDurationSeconds < maximumOutputBytesPerSecond)
-    .sort((left, right) => left.outputBytes - right.outputBytes || (left.encodingDurationMs ?? Number.POSITIVE_INFINITY) - (right.encodingDurationMs ?? Number.POSITIVE_INFINITY) ||
-      Number(!calibrationEntries.some(entry => entry.encoder === left.encoder && entry.gpuId === left.gpuId && entry.preset === left.preset && entry.quality === left.quality)) - Number(!calibrationEntries.some(entry => entry.encoder === right.encoder && entry.gpuId === right.gpuId && entry.preset === right.preset && entry.quality === right.quality)))
+    .sort((left, right) => left.outputBytes - right.outputBytes || (left.encodingDurationMs ?? Number.POSITIVE_INFINITY) - (right.encodingDurationMs ?? Number.POSITIVE_INFINITY))
   const selected = eligible[0]
   if (!selected) {
     const reports = evaluations.map(({ candidate, failedGates }) =>

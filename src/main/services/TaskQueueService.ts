@@ -969,8 +969,9 @@ export class TaskQueueService {
     const sources = await getSourceManager().getEnabledSources()
     const libraries: Array<{ sourceId: string; libraryId: string; name: string; type: string; itemCount?: number }> = []
     const checkpointKey = `optimization.calibration.${task.id}`
-    const saved = await getDatabase().getSetting(checkpointKey)
-    const measurements: Array<Record<string, unknown>> = saved ? (JSON.parse(saved) as Array<Record<string, unknown>>) : []
+    // Restart with fresh evidence: checkpoint records cannot establish current file,
+    // playback profile or device identity. Keep the old checkpoint until rewritten.
+    const measurements: Array<Record<string, unknown>> = []
     for (const source of sources) {
       signal.throwIfAborted()
       const sourceLibraries = await getSourceManager().getLibraries(source.source_id)
@@ -1018,9 +1019,9 @@ export class TaskQueueService {
         for (const candidate of candidates) {
           signal.throwIfAborted()
           const measurementKeyPrefix = `${stage}:${groupKey}:${role}:${item.id}`
-          if (measurements.some(measurement => typeof measurement.key === 'string' && measurement.key.startsWith(`${measurementKeyPrefix}:`) && measurement.status === 'measured')) continue
           onProgress({ phase: stage, current: measurements.length, total: representatives.length * candidates.length, currentItem: item.title })
           let measuredCandidates: MeasuredCandidate[] = []
+          let calibrationScopeKey: string | undefined
           try {
             const preflight = await getTranscodingService().preflightShowTranscode({
               mediaItemId: item.id,
@@ -1035,10 +1036,7 @@ export class TaskQueueService {
                 targetProfileId,
                 targetContainerSelection: 'automatic',
                 playbackPolicy: targetProfileId ? 'avoid-video-transcoding' : 'allow-transcoding',
-                targetProfileMode: targetProfileId ? 'advisory' : undefined,
-                measurementSampleDurationSeconds: APP_CONFIG.transcoding.calibrationSampleDurationSeconds,
                 measurementCandidateBudget: APP_CONFIG.transcoding.calibrationCandidateBudget,
-                measurementSamplePositions: APP_CONFIG.transcoding.calibrationSamplePositions,
               },
             }, {
               signal,
@@ -1047,18 +1045,21 @@ export class TaskQueueService {
               update: update => onProgress({ phase: update.phase ?? stage, current: update.progress?.current, total: update.progress?.total, currentItem: item.title }),
               preflightId: `calibration_${task.id}_${item.id}`,
               batchId: `calibration_${task.id}`,
-              onMeasuredCandidates: async (candidates, complete) => {
-                if (complete) measuredCandidates = candidates
+              onMeasuredCandidates: async (candidates, complete, scopeKey) => {
+                if (complete) {
+                  measuredCandidates = candidates
+                  calibrationScopeKey = scopeKey
+                }
               },
             })
             signal.throwIfAborted()
             const episode = preflight.episodes[0]
-            if (!episode?.params?.measuredCandidate || measuredCandidates.length === 0) throw new Error(episode?.reason ?? 'Calibration preflight did not produce measured candidates')
+            if (!episode?.params?.measuredCandidate || !calibrationScopeKey || measuredCandidates.length === 0) throw new Error(episode?.reason ?? 'Calibration preflight did not produce measured candidates')
             for (let index = measurements.length - 1; index >= 0; index--) {
               if (typeof measurements[index].key === 'string' && (measurements[index].key as string).startsWith(`${measurementKeyPrefix}:`)) measurements.splice(index, 1)
             }
             for (const measuredCandidate of measuredCandidates) {
-              measurements.push({ key: `${measurementKeyPrefix}:${JSON.stringify([measuredCandidate.encoder, measuredCandidate.gpuId ?? null, measuredCandidate.preset, measuredCandidate.quality])}`, stage, role, groupKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'measured', measuredCandidate, encoder: measuredCandidate.encoder, gpuId: measuredCandidate.gpuId, preset: measuredCandidate.preset, crf: measuredCandidate.quality })
+              measurements.push({ key: `${measurementKeyPrefix}:${JSON.stringify([measuredCandidate.encoder, measuredCandidate.gpuId ?? null, measuredCandidate.preset, measuredCandidate.quality])}`, stage, role, groupKey, scopeKey: calibrationScopeKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'measured', measuredCandidate, encoder: measuredCandidate.encoder, gpuId: measuredCandidate.gpuId, preset: measuredCandidate.preset, crf: measuredCandidate.quality })
             }
           } catch (error) {
             signal.throwIfAborted()
@@ -1112,17 +1113,18 @@ export class TaskQueueService {
     }
     const candidateKey = (measurement: Record<string, unknown>): string => {
       const candidate = measurement.measuredCandidate as { encoder?: unknown; gpuId?: unknown; preset?: unknown; quality?: unknown } | undefined
-      return `${measurement.stage}:${measurement.groupKey}:${String(candidate?.encoder ?? measurement.encoder ?? '')}:${String(candidate?.gpuId ?? measurement.gpuId ?? '')}:${String(candidate?.preset ?? measurement.preset ?? '')}:${String(candidate?.quality ?? measurement.crf ?? '')}`
+      return `${measurement.stage}:${measurement.groupKey}:${String(measurement.scopeKey)}:${String(candidate?.encoder ?? measurement.encoder ?? '')}:${String(candidate?.gpuId ?? measurement.gpuId ?? '')}:${String(candidate?.preset ?? measurement.preset ?? '')}:${String(candidate?.quality ?? measurement.crf ?? '')}`
     }
     const isValidMeasurement = (measurement: Record<string, unknown>): boolean => {
       const candidate = measurement.measuredCandidate as MeasuredCandidate | undefined
-      return measurement.status === 'measured' && candidate !== undefined && isMeasuredCandidateValidForCalibration(candidate)
+      return measurement.status === 'measured' && typeof measurement.scopeKey === 'string' && candidate !== undefined && isMeasuredCandidateValidForCalibration(candidate)
     }
     const validatedCandidates = new Set(measurements.filter(measurement => measurement.role === 'holdout' && isValidMeasurement(measurement)).map(candidateKey))
-    const entries: OptimizationCalibrationEntry[] = measurements.filter(measurement => measurement.role === 'calibration' && isValidMeasurement(measurement) && validatedCandidates.has(candidateKey(measurement))).flatMap(measurement => {
+    const rejectedHoldouts = new Set(measurements.filter(measurement => measurement.role === 'holdout' && measurement.status === 'measured' && !isValidMeasurement(measurement)).map(candidateKey))
+    const entries: OptimizationCalibrationEntry[] = measurements.filter(measurement => measurement.role === 'calibration' && isValidMeasurement(measurement) && validatedCandidates.has(candidateKey(measurement)) && !rejectedHoldouts.has(candidateKey(measurement))).flatMap(measurement => {
       const candidate = measurement.measuredCandidate as { encoder?: unknown; gpuId?: unknown; preset?: unknown; outputBytes?: unknown; sampledDurationSeconds?: unknown; quality?: unknown } | undefined
       if (!candidate || typeof measurement.sourceCodec !== 'string' || !measurement.sourceCodec || typeof candidate.outputBytes !== 'number' || typeof candidate.sampledDurationSeconds !== 'number' || typeof candidate.quality !== 'number') return []
-      return [{ sourceCodec: measurement.sourceCodec, targetCodec: measurement.targetCodec as 'hevc' | 'av1', encoder: String(candidate.encoder ?? measurement.encoder ?? ''), gpuId: typeof candidate.gpuId === 'string' ? candidate.gpuId : typeof measurement.gpuId === 'string' ? measurement.gpuId : undefined, preset: String(candidate.preset ?? measurement.preset ?? ''), quality: candidate.quality, outputBytes: candidate.outputBytes, sampledDurationSeconds: candidate.sampledDurationSeconds, measuredAt: new Date().toISOString() }]
+      return [{ scopeKey: measurement.scopeKey as string, sourceCodec: measurement.sourceCodec, targetCodec: measurement.targetCodec as 'hevc' | 'av1', encoder: String(candidate.encoder ?? measurement.encoder ?? ''), gpuId: typeof candidate.gpuId === 'string' ? candidate.gpuId : typeof measurement.gpuId === 'string' ? measurement.gpuId : undefined, preset: String(candidate.preset ?? measurement.preset ?? ''), quality: candidate.quality, outputBytes: candidate.outputBytes, sampledDurationSeconds: candidate.sampledDurationSeconds, measuredAt: new Date().toISOString() }]
     })
     const profileStatus = entries.length > 0 ? 'validated' : 'unvalidated'
     await getDatabase().deleteSetting(checkpointKey)

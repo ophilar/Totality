@@ -167,11 +167,6 @@
     "encoderProbeWidth": 640,
     "encoderProbeHeight": 360,
     "sampleDurationSeconds": 30,
-    "calibrationSampleDurationSeconds": 10,
-    "calibrationSamplePositions": [
-      0.25,
-      0.75
-    ],
     "calibrationRepresentativesPerGroup": 4,
     "calibrationRepresentativeConcurrency": 2,
     "calibrationCandidateBudget": 2,

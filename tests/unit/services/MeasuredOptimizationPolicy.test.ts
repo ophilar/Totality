@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCandidateLadder, findLongestContinuousLowVmafRun, getImpossibleQualityReason, getNonDominatedMeasuredCandidates, isMeasuredCandidateValidForCalibration, isValidOptimizationCalibrationEntry, nextCandidateSearch, selectCalibrationRepresentatives, selectMeasuredCandidate, type CandidateEncodingParameters, type MeasuredCandidate } from '@main/services/MeasuredOptimizationPolicy'
+import { buildCandidateLadder, findLongestContinuousLowVmafRun, getImpossibleQualityReason, getNonDominatedMeasuredCandidates, isMeasuredCandidateValidForCalibration, isValidOptimizationCalibrationEntry, nextCandidateSearch, scopedCalibrationEntries, selectCalibrationRepresentatives, selectMeasuredCandidate, type CandidateEncodingParameters, type MeasuredCandidate } from '@main/services/MeasuredOptimizationPolicy'
 
 describe('selectMeasuredCandidate', () => {
   const candidate = (overrides: Partial<MeasuredCandidate>): MeasuredCandidate => ({
@@ -67,18 +67,24 @@ describe('selectMeasuredCandidate', () => {
     expect(getNonDominatedMeasuredCandidates('balanced', [equalSize, larger, positiveSaving], 3)).toEqual([positiveSaving])
   })
 
-  it('prefers the validated GPU-specific candidate when measured sizes tie', () => {
-    const qsv = candidate({ encoder: 'qsv_h265', gpuId: 'intel', outputBytes: 90 })
-    const nvenc = candidate({ encoder: 'nvenc_h265', gpuId: 'nvidia', outputBytes: 90 })
-    expect(selectMeasuredCandidate('balanced', [nvenc, qsv], 3.1, [{
-      sourceCodec: 'H.264', targetCodec: 'hevc', encoder: 'qsv_h265', gpuId: 'intel', preset: 'medium', quality: qsv.quality,
-      outputBytes: qsv.outputBytes, sampledDurationSeconds: qsv.sampledDurationSeconds, measuredAt: new Date().toISOString(),
-    }])).toBe(qsv)
+  it('uses scoped calibration to change the first measured quality while preserving final measurement authority', () => {
+    const domain = [10, 14, 18, 24, 30].map(quality => ({ encoder: 'nvenc_h265', gpuId: 'nvidia', preset: 'p6', quality }))
+    const entry = {
+      scopeKey: 'library-A/HDR10/profile-1', sourceCodec: 'H.264', targetCodec: 'hevc' as const,
+      ...domain[3], outputBytes: 80, sampledDurationSeconds: 30, measuredAt: new Date().toISOString(),
+    }
+    expect(nextCandidateSearch(domain, [], 'balanced')).toEqual([domain[2]])
+    expect(nextCandidateSearch(domain, [], 'balanced', 2, scopedCalibrationEntries([entry], entry.scopeKey))).toEqual([domain[3]])
+    expect(nextCandidateSearch(domain, [], 'balanced', 2, scopedCalibrationEntries([entry], 'library-B/SDR/profile-2'))).toEqual([domain[2]])
+    const rejected = candidate({ ...domain[3], vmafP5: 80, outputBytes: 40 })
+    const accepted = candidate({ ...domain[0], outputBytes: 100 })
+    expect(nextCandidateSearch(domain, [rejected], 'balanced', 2, [entry])).toEqual([domain[0]])
+    expect(selectMeasuredCandidate('balanced', [rejected, accepted])).toBe(accepted)
   })
 
   it('validates persisted calibration entries without accepting incomplete evidence', () => {
     expect(isValidOptimizationCalibrationEntry({
-      sourceCodec: 'H.264', targetCodec: 'hevc', encoder: 'x265', preset: 'medium', quality: 22,
+      scopeKey: 'library-A/SDR/profile-1', sourceCodec: 'H.264', targetCodec: 'hevc', encoder: 'x265', preset: 'medium', quality: 22,
       outputBytes: 100, sampledDurationSeconds: 30, measuredAt: new Date().toISOString(),
     })).toBe(true)
     expect(isValidOptimizationCalibrationEntry({ sourceCodec: 'H.264', targetCodec: 'hevc' })).toBe(false)
