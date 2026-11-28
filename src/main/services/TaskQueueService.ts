@@ -1190,7 +1190,8 @@ export class TaskQueueService {
           phase: p.phase ?? p.status,
           currentItem: task.label,
         })
-      }
+      },
+      () => { this.currentTaskAbortController!.signal.throwIfAborted(); this.taskCommitStarted = true }
     )
     if (success) {
       const db = getDatabase()

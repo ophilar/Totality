@@ -437,7 +437,7 @@ export interface ShowTranscodeEpisodeCheckpoint {
  */
 export class TranscodingService {
   private static readonly CAPABILITIES_CACHE_KEY = 'transcoding.capabilities.snapshot.v2'
-  private activeJobs = new Map<number, AbortController>()
+  private activeJobs = new Map<number, { controller: AbortController; committing: boolean }>()
   private initializedPromise: Promise<void> | null = null
   private capabilitiesPromise: Promise<TranscodingCapabilities> | null = null
   private capabilitiesCachedAt = 0
@@ -469,26 +469,18 @@ export class TranscodingService {
   }
 
   cancelTranscode(mediaItemId?: number): boolean {
-    if (mediaItemId !== undefined) {
-      const controller = this.activeJobs.get(mediaItemId)
-      if (!controller) return false
-      controller.abort()
-      getLoggingService().info('[TranscodingService]', `Cancelled transcode job for media item ${mediaItemId}`)
-      return true
+    let cancelled = false
+    for (const [id, job] of this.activeJobs) {
+      if ((mediaItemId !== undefined && mediaItemId !== id) || job.committing || job.controller.signal.aborted) continue
+      job.controller.abort()
+      cancelled = true
+      getLoggingService().info('[TranscodingService]', `Cancelled transcode job for media item ${id}`)
     }
-    if (this.activeJobs.size > 0) {
-      this.abortAll()
-      return true
-    }
-    return false
+    return cancelled
   }
 
   abortAll(): void {
-    for (const [id, controller] of this.activeJobs.entries()) {
-      controller.abort()
-      getLoggingService().info('[TranscodingService]', `Aborted transcode job for media item ${id}`)
-    }
-    this.activeJobs.clear()
+    this.cancelTranscode()
   }
 
   async discoverShowOptimization(request: ShowTranscodeRequest): Promise<ShowOptimizationDiscovery> {
@@ -693,7 +685,7 @@ export class TranscodingService {
   }
 
   async cleanupMeasuredSamples(): Promise<void> {
-    if (this.activePreflights > 0) throw new Error('Optimization artifacts cannot be cleaned while an optimization review is running')
+    if (this.activePreflights > 0 || this.activeJobs.size > 0) throw new Error('Optimization artifacts cannot be cleaned while an optimization review or execution is running')
     const activeOptimizationTask = getTaskQueueService().getTasks().find(task => task.type === 'optimization-preflight' || task.type === 'optimization-calibration')
     if (activeOptimizationTask) throw new Error(`Optimization artifacts cannot be cleaned while ${activeOptimizationTask.label.toLowerCase()} is running`)
     if (this.sampleCachePrunePromise) await this.sampleCachePrunePromise
@@ -788,6 +780,7 @@ export class TranscodingService {
     if (episodes.length === 0) throw new Error(request.seasonNumber === undefined ? 'No local episodes were found for the selected show' : `No local episodes were found for season ${request.seasonNumber}`)
     if (request.mediaItemId !== undefined && (
       episodes[0].source_id !== request.sourceId ||
+      (request.libraryId !== undefined && episodes[0].library_id !== request.libraryId) ||
       (request.seriesIdentityKey !== undefined && episodes[0].series_identity_key !== request.seriesIdentityKey)
     )) {
       throw new Error('The selected episode does not belong to the requested series and source')
@@ -1879,9 +1872,10 @@ export class TranscodingService {
         this.analysisCache.delete(journal.targetPath)
         getStatsCacheService().invalidate()
         if (job.quarantinePath !== journal.quarantinePath && !quarantineExists) throw new Error('Activation recovery has no matching quarantine evidence')
+        const verifiedJobOutput = job.outputAnalysis ? JSON.parse(job.outputAnalysis) as { qualityVerification?: unknown } : undefined
         const encodedReductionBytes = job.sourceSize - analysis.sourceFingerprint!.size
         const retainedOriginalBytes = journal.mode === 'replace' ? 0 : job.sourceSize
-        await db.mediaRemuxJobs.update(job.id, { status: 'promoted', error: null, actualOutputBytes: analysis.sourceFingerprint!.size, bytesSaved: encodedReductionBytes, outputDurationMs: analysis.durationMs, outputAnalysis: JSON.stringify({ ...analysis, filePath: journal.targetPath, encodedReductionBytes, retainedOriginalBytes, physicallyReclaimedBytes: journal.mode === 'replace' ? encodedReductionBytes : 0 }) })
+        await db.mediaRemuxJobs.update(job.id, { status: 'promoted', error: null, actualOutputBytes: analysis.sourceFingerprint!.size, bytesSaved: encodedReductionBytes, outputDurationMs: analysis.durationMs, outputAnalysis: JSON.stringify({ ...analysis, filePath: journal.targetPath, encodedReductionBytes, retainedOriginalBytes, physicallyReclaimedBytes: journal.mode === 'replace' ? encodedReductionBytes : 0, qualityVerification: verifiedJobOutput?.qualityVerification }) })
         if (journal.mode === 'replace' && quarantineExists) {
           await this.verifyActivationOutput(journal.targetPath, analysis)
           if (await sha256File(journal.quarantinePath!) !== job.sourceSha256) throw new Error('Quarantined source changed before removal')
@@ -2383,11 +2377,11 @@ export class TranscodingService {
   async transcode(
     mediaItemId: number,
     options: TranscodeOptions = {},
-    onProgress?: (progress: TranscodeProgress) => void
+    onProgress?: (progress: TranscodeProgress) => void,
+    beginCommit?: () => void
   ): Promise<boolean> {
     const db = getDatabase()
-    const item = await db.media.getItemById(mediaItemId)
-    if (!item || !item.file_path) throw new Error('Media item or file path not found')
+    const item = await this.assertAuthorizedItem(mediaItemId)
 
     const availability = await this.checkAvailability()
     const engine = options.transcodingEngine
@@ -2401,7 +2395,13 @@ export class TranscodingService {
     if (await db.getSetting(`transcoding.activation.${mediaItemId}`)) throw new Error('Previous activation must be recovered before starting another transcode')
     if (this.activeJobs.has(mediaItemId)) throw new Error('A transcode is already active for this media item')
     const controller = new AbortController()
-    this.activeJobs.set(mediaItemId, controller)
+    const jobState = { controller, committing: false }
+    this.activeJobs.set(mediaItemId, jobState)
+    const commit = () => {
+      controller.signal.throwIfAborted()
+      beginCommit?.()
+      jobState.committing = true
+    }
 
     let tempPath: string | undefined
     let activated = false
@@ -2623,7 +2623,7 @@ export class TranscodingService {
       if ((effectiveOutputMode === 'quarantine-replace' || effectiveOutputMode === 'replace') && stats.size > sourceStat.size) {
         throw new Error(`Transcoded output (${Math.round(stats.size / (1024 * 1024))} MB) is larger than original source (${Math.round(sourceStat.size / (1024 * 1024))} MB). Aborting replacement to protect storage.`)
       }
-      await db.mediaRemuxJobs.update(optimizationJobId!, { status: 'verified', actualOutputBytes: stats.size, outputDurationMs: outputAnalysis.durationMs, outputAnalysis: JSON.stringify(outputAnalysis) })
+      await db.mediaRemuxJobs.update(optimizationJobId!, { status: 'verified', actualOutputBytes: stats.size, outputDurationMs: outputAnalysis.durationMs, outputAnalysis: JSON.stringify({ ...outputAnalysis, qualityVerification: outputQualityVerification }) })
 
       const origExt = path.extname(inputPath)
       const origBase = path.basename(inputPath, origExt)
@@ -2634,6 +2634,7 @@ export class TranscodingService {
         if (path.resolve(inputPath) !== path.resolve(targetSamePath) && existsSync(targetSamePath)) throw new Error('Activation destination already exists')
         await this.verifyActivationOutput(tempPath, outputAnalysis)
         if (await sha256File(inputPath) !== sourceSha256) throw new Error('Source file changed before activation')
+        commit()
         const quarantinePath = path.join(path.dirname(inputPath), `${origBase}.${effectiveOutputMode === 'replace' ? 'activation' : 'quarantine'}-${Date.now()}-${randomUUID()}${origExt}`)
         const outputStats = { ...outputAnalysis, filePath: targetSamePath }
         activation = { inputPath, tempPath, targetPath: targetSamePath, quarantinePath }
@@ -2651,6 +2652,7 @@ export class TranscodingService {
         this.analysisCache.delete(targetSamePath)
         getStatsCacheService().invalidate()
       } else {
+        commit()
         // Sibling copy
         const copyPath = path.join(path.dirname(inputPath), `${origBase} - Transcoded${outputExt}`)
         getLoggingService().info('[TranscodingService]', `Saving transcoded sibling copy: ${copyPath}`)
@@ -3260,7 +3262,7 @@ export class TranscodingService {
         }
       }
       for (const entry of entries) {
-        if (!entry.isFile() || !entry.name.startsWith(`${base}.quarantine-`) || !/\.quarantine-\d+\.[^.]+$/.test(entry.name)) continue
+        if (!entry.isFile() || !entry.name.startsWith(`${base}.quarantine-`) || !/\.quarantine-\d+(?:-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?\.[^.]+$/i.test(entry.name)) continue
         const quarantinePath = path.join(directory, entry.name)
         const stat = await fs.stat(quarantinePath)
         files.push({ mediaItemId: episode.id, label: formatMediaDisplayName(episode, seriesTitle), path: quarantinePath, size: stat.size, modifiedAt: new Date(stat.mtimeMs).toISOString(), owned: ownedPaths.has(path.resolve(quarantinePath)) })
