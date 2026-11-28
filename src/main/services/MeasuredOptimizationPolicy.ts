@@ -81,6 +81,14 @@ export function scopedCalibrationEntries(entries: OptimizationCalibrationEntry[]
   })
 }
 
+/** A completed catalogue may fail one selected quality profile and still supply
+ * evidence for the shared frontier. Infrastructure and source-integrity failures
+ * invalidate the whole observation, irrespective of catalogue progress. */
+export function isCompleteCalibrationObservation(complete: boolean, episode: { sourceSha256?: string; decisionStatus?: string } | undefined): boolean {
+  return complete && Boolean(episode?.sourceSha256) &&
+    ['sample_required', 'no_savings', 'no_positive_savings', 'quality_threshold_unmet', 'incompatible'].includes(episode?.decisionStatus ?? '')
+}
+
 export interface CalibrationCandidateEvidence {
   scopeKey: string
   sourceCodec: string

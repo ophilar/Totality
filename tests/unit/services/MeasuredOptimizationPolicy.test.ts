@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { buildCandidateLadder, calibrationInventoryKey, candidateDeviceKey, candidateFamilyKey, candidateEncodingKey, buildValidatedCalibrationEntries, findLongestContinuousLowVmafRun, getImpossibleQualityReason, getNonDominatedMeasuredCandidates, isMeasuredCandidateValidForCalibration, isValidOptimizationCalibrationEntry, nextCandidateSearch, scopedCalibrationEntries, selectCalibrationRepresentatives, selectMeasuredCandidate, type CalibrationCandidateEvidence, type CandidateEncodingParameters, type MeasuredCandidate } from '@main/services/MeasuredOptimizationPolicy'
+import { buildCandidateLadder, isCompleteCalibrationObservation, calibrationInventoryKey, candidateDeviceKey, candidateFamilyKey, candidateEncodingKey, buildValidatedCalibrationEntries, findLongestContinuousLowVmafRun, getImpossibleQualityReason, getNonDominatedMeasuredCandidates, isMeasuredCandidateValidForCalibration, isValidOptimizationCalibrationEntry, nextCandidateSearch, scopedCalibrationEntries, selectCalibrationRepresentatives, selectMeasuredCandidate, type CalibrationCandidateEvidence, type CandidateEncodingParameters, type MeasuredCandidate } from '@main/services/MeasuredOptimizationPolicy'
+
+describe('calibration observation acceptance', () => {
+  it('retains complete observations even when one profile has no suitable candidate', () => {
+    for (const decisionStatus of ['sample_required', 'quality_threshold_unmet', 'no_positive_savings', 'incompatible', 'no_savings']) {
+      expect(isCompleteCalibrationObservation(true, { sourceSha256: 'source', decisionStatus })).toBe(true)
+    }
+  })
+
+  it('rejects infrastructure failures, invalid source identity and incomplete catalogues', () => {
+    expect(isCompleteCalibrationObservation(true, { sourceSha256: 'source', decisionStatus: 'measurement_failed' })).toBe(false)
+    expect(isCompleteCalibrationObservation(true, { decisionStatus: 'sample_required' })).toBe(false)
+    expect(isCompleteCalibrationObservation(false, { sourceSha256: 'source', decisionStatus: 'sample_required' })).toBe(false)
+    expect(isCompleteCalibrationObservation(true, undefined)).toBe(false)
+  })
+})
 
 describe('selectMeasuredCandidate', () => {
   const candidate = (overrides: Partial<MeasuredCandidate>): MeasuredCandidate => ({

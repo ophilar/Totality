@@ -1070,7 +1070,7 @@ export class TranscodingService {
           : measurementCacheKey
           ? path.join(app.getPath('userData'), 'transcoding-samples', 'cache', measurementCacheKey)
           : path.join(app.getPath('userData'), 'transcoding-samples', preflightId, String(episode.id))
-        if (measurementCacheKey && !operation?.calibration) {
+        if (measurementCacheKey && !operation?.calibration && !operation?.parameterPreview) {
           analysis.optimizationMeasurement = {
             preflightId,
             cacheKey: reusableRepresentativePlan ? reusableRepresentativePlan.sourceAnalysis!.optimizationMeasurement!.cacheKey : measurementCacheKey,
@@ -1209,7 +1209,7 @@ export class TranscodingService {
               operation?.signal.throwIfAborted()
               const sampleIdentity = fileIdentity(await fs.stat(samplePath))
               const sampleHash = await sourceHasher.hashStable(samplePath, sampleIdentity)
-              if (cachedMeasurement?.sampleHashes[cachedCandidateIndex]?.[sampleIndex] !== sampleHash) throw new Error('Selected sample bytes no longer match measured evidence')
+              if (!operation?.calibration && cachedMeasurement?.sampleHashes[cachedCandidateIndex]?.[sampleIndex] !== sampleHash) throw new Error('Selected sample bytes no longer match measured evidence')
               const sample = await getMediaFileAnalyzer().analyzeCompleteFile(samplePath, { scanBitrate: true, detectVolume: false, signal: operation?.signal })
               if (!matchesFileIdentity(sampleIdentity, await fs.stat(samplePath))) throw new Error('Selected sample changed during playback validation')
               verifiedSampleHashes!.push(sampleHash)
@@ -1310,6 +1310,18 @@ export class TranscodingService {
           measuredParameters: { encoder: params.encoder, crf: params.crf, preset: params.preset, gpuId: options.gpuId },
         }
       } catch (error) {
+        // Selection can legitimately reject every candidate for one quality profile.
+        // Do not turn that outcome into valid calibration evidence if the source
+        // changed during measurement, including when candidate selection throws.
+        if (prepared.status === 'ready' && reviewedSourceSha256) {
+          try {
+            if (!matchesFileIdentity(prepared.stat, await fs.stat(episode.file_path!))) throw new Error('Source file changed during preflight; review it again')
+          } catch (identityError) {
+            reviewedSourceSha256 = undefined
+            delete prepared.analysis.optimizationMeasurement
+            return toInsufficientPlan(identityError)
+          }
+        }
         return toInsufficientPlan(error)
       }
     }

@@ -33,7 +33,7 @@ import { getWishlistCompletionService } from './WishlistCompletionService'
 import { getTMDBService } from './TMDBService'
 import { getTranscodingService } from './TranscodingService'
 import { getLoggingService } from './LoggingService'
-import { buildValidatedCalibrationEntries, candidateEncodingKey, calibrationInventoryKey, selectCalibrationRepresentatives, OPTIMIZATION_QUALITY_PROFILES, calibrationEntrySupportsProfile, type CalibrationCandidateEvidence, type EncoderRateLimits, type MeasuredCandidate } from './MeasuredOptimizationPolicy'
+import { buildValidatedCalibrationEntries, isCompleteCalibrationObservation, candidateEncodingKey, calibrationInventoryKey, selectCalibrationRepresentatives, OPTIMIZATION_QUALITY_PROFILES, calibrationEntrySupportsProfile, type CalibrationCandidateEvidence, type EncoderRateLimits, type MeasuredCandidate } from './MeasuredOptimizationPolicy'
 import type { OptimizationCandidateScanSummary, ShowTranscodeRequest, ShowTranscodePreflight, ShowTranscodeEpisodeCheckpoint } from './TranscodingService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { normalizeVideoCodec } from './MediaNormalizer'
@@ -1133,7 +1133,8 @@ export class TaskQueueService {
             })
             signal.throwIfAborted()
             const episode = preflight.episodes[0]
-            if (!preflightValidated) failureReason = episode?.reason ?? 'Calibration did not complete the candidate catalogue'
+            preflightValidated = isCompleteCalibrationObservation(preflightValidated, episode)
+            if (!preflightValidated) failureReason = episode?.reason ?? 'Calibration did not complete a valid candidate catalogue'
             else if (!calibrationScopeKey || maximumOutputBytesPerSecond === undefined || !Number.isFinite(maximumOutputBytesPerSecond) || measuredCandidates.length === 0) {
               preflightValidated = false
               failureReason = 'Calibration has no complete scoped candidate evidence'
