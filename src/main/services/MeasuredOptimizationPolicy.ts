@@ -7,8 +7,8 @@ import type { MediaItem } from '@main/types/database'
 
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
 
-export const MEASUREMENT_VERSION = 18
-export const OPTIMIZATION_SEARCH_VERSION = 8
+export const MEASUREMENT_VERSION = 19
+export const OPTIMIZATION_SEARCH_VERSION = 9
 /** Hard bound on expensive full-sample evaluations in each encoder/preset domain. */
 export const MAX_MEASURED_CANDIDATES_PER_PRESET = 5
 export const VMAF_LOW_PERCENTILE = 0.05

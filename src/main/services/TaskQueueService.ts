@@ -97,6 +97,7 @@ export class TaskQueueService {
   private progressUpdatePending = false
   private processingIdleWaiters: Array<() => void> = []
   private currentTaskAbortController?: AbortController
+  private taskCommitStarted = false
   private taskPauseRequested = false
   private taskYieldRequested = false
   private readonly taskCompletionWaiters = new Map<string, Set<(task: QueuedTask) => void>>()
@@ -254,7 +255,7 @@ export class TaskQueueService {
    */
   pauseQueue(): void {
     this.isPaused = true
-    if ((this.currentTask?.type === 'optimization-preflight' || this.currentTask?.type === 'media-analysis') && !this.taskPauseRequested) {
+    if ((this.currentTask?.type === 'optimization-preflight' || this.currentTask?.type === 'media-analysis') && !this.taskPauseRequested && !this.taskCommitStarted) {
       this.taskPauseRequested = true
       this.currentTaskAbortController?.abort(new DOMException('Task paused', 'AbortError'))
     }
@@ -290,6 +291,10 @@ export class TaskQueueService {
    */
   cancelCurrentTask(): void {
     if (!this.currentTask || this.cancelRequested) return
+    if (this.taskCommitStarted) {
+      console.info(`[TaskQueue] ${this.currentTask.label} is publishing its verified result; cancellation is closed`)
+      return
+    }
 
     console.log(`[TaskQueue] Cancelling current task: ${this.currentTask.label}`)
     this.cancelRequested = true
@@ -649,6 +654,7 @@ export class TaskQueueService {
     this.cancelRequested = false
     this.taskPauseRequested = false
     this.taskYieldRequested = false
+    this.taskCommitStarted = false
     this.currentTaskAbortController = new AbortController()
 
     task.status = 'running'
@@ -932,7 +938,7 @@ export class TaskQueueService {
     const signal = this.currentTaskAbortController!.signal
     const result: ShowTranscodePreflight = await getTranscodingService().preflightShowTranscode(payload.request, {
       signal,
-      beginCommit: () => undefined,
+      beginCommit: () => { signal.throwIfAborted(); this.taskCommitStarted = true },
       waitUntilRunning: async () => { signal.throwIfAborted() },
       update: update => onProgress({
         current: update.progress?.current,
@@ -1014,7 +1020,13 @@ export class TaskQueueService {
         representativesPerGroup: APP_CONFIG.transcoding.calibrationRepresentativesPerGroup,
       })
       const contexts = playbackContexts.filter(context => context.playbackPolicy === 'allow-transcoding' || playbackProfileSupportsOptimizationCodec(targetCodec, context.profile?.definition.video.codecs))
-      const jobs = representatives.flatMap(representative => contexts.map(context => ({ ...representative, context }))).map((job, index) => ({ ...job, index }))
+      const titleCounts = new Map<string, number>()
+      for (const representative of representatives) titleCounts.set(representative.groupKey, (titleCounts.get(representative.groupKey) ?? 0) + 1)
+      for (const [groupKey, count] of titleCounts) {
+        if (count >= 3) continue
+        for (const context of contexts) measurements.push({ stage, groupKey, contextKey: JSON.stringify([context.targetProfileId, context.playbackPolicy]), role: 'unvalidated', status: 'unvalidated', reason: `Only ${count} independent titles; two training titles and one holdout are required` })
+      }
+      const jobs = representatives.filter(representative => titleCounts.get(representative.groupKey)! >= 3).flatMap(representative => contexts.map(context => ({ ...representative, context }))).map((job, index) => ({ ...job, index }))
       let completedRepresentatives = 0
       let nextRepresentativeIndex = 0
       let checkpointWrite = Promise.resolve()
@@ -1131,17 +1143,15 @@ export class TaskQueueService {
     const validatedScopes = new Set(entries.map(entry => entry.scopeKey))
     const uncoveredScopes = [...observedScopes].filter(scope => !validatedScopes.has(scope))
     const missingProfiles = [...validatedScopes].flatMap(scope => OPTIMIZATION_QUALITY_PROFILES.filter(profile => !entries.some(entry => entry.scopeKey === scope && calibrationEntrySupportsProfile(entry, profile))).map(profile => ({ scope, profile })))
-    const incompleteCount = failedGroups.size + uncoveredScopes.length + missingProfiles.length
+    const sparseCount = measurements.filter(measurement => measurement.role === 'unvalidated' && measurement.stage !== 'unsupported-source').length
+    const incompleteCount = failedGroups.size + sparseCount + uncoveredScopes.length + missingProfiles.length
     const profileStatus = entries.length > 0 ? incompleteCount ? 'partial' : 'validated' : 'unvalidated'
-    await getDatabase().deleteSetting(checkpointKey)
     signal.throwIfAborted()
+    this.taskCommitStarted = true
     await getTranscodingService().saveOptimizationCalibration(entries)
-    if (signal.aborted) {
-      await getTranscodingService().saveOptimizationCalibration([])
-      signal.throwIfAborted()
-    }
-    const representatives = new Set(measurements.map(measurement => measurement.mediaItemId)).size
-    task.result = { libraries, libraryCount: libraries.length, representatives, measurements, calibrationEntries: entries.length, calibrationStatus: profileStatus, status: entries.length ? incompleteCount ? 'partial' : 'completed' : 'failed', validation: entries.length ? 'holdout-measured' : 'unvalidated', failedCount: incompleteCount, uncoveredScopes, missingProfiles, unvalidated: measurements.filter(measurement => measurement.status !== 'measured').length }
+    await getDatabase().deleteSetting(checkpointKey)
+    const representatives = new Set(measurements.map(measurement => measurement.mediaItemId).filter(id => id !== undefined)).size
+    task.result = { libraries, libraryCount: libraries.length, representatives, measurements, calibrationEntries: entries.length, calibrationStatus: profileStatus, status: entries.length ? incompleteCount ? 'partial' : 'completed' : 'failed', validation: entries.length ? 'holdout-measured' : 'unvalidated', failedCount: incompleteCount, sparseCount, uncoveredScopes, missingProfiles, unvalidated: measurements.filter(measurement => measurement.status !== 'measured').length }
     if (!entries.length) throw new Error('Calibration produced no validated quality-profile priors; inspect representative evidence')
     getLoggingService().info('[OptimizationCalibration]', 'Calibration completed', {
       taskId: task.id,

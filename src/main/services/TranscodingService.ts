@@ -3163,7 +3163,7 @@ export class TranscodingService {
         Array.isArray(cached.sourcePreparation.samples) && cached.sourcePreparation.samples.length === sampleCount && cached.sourcePreparation.samples.every(sample =>
           hasValidTimingEvidence(sample.source) && hasValidTimingEvidence(sample.reference) &&
           Number.isFinite(sample.sourceSelfVmaf) && Number.isFinite(sample.sourceCambiMean))
-      const valid = cached.version === MEASUREMENT_VERSION && cached.cacheKey === cacheKey && cached.sourceSha256 === sourceSha256 && typeof cached.complete === 'boolean' &&
+      const valid = cached.version === MEASUREMENT_VERSION && cached.searchVersion === OPTIMIZATION_SEARCH_VERSION && cached.cacheKey === cacheKey && cached.sourceSha256 === sourceSha256 && typeof cached.complete === 'boolean' &&
         Array.isArray(cached.candidates) && Array.isArray(cached.sampleHashes) && Array.isArray(cached.partialSamples) && Array.isArray(cached.partialSampleHashes) &&
         validSourcePreparation &&
         cached.candidates.every(candidate => Number.isFinite(candidate.outputBytes) && candidate.outputBytes > 0 &&
@@ -3194,7 +3194,7 @@ export class TranscodingService {
       if (actualHashes.some((hashes, candidateIndex) => hashes.some((hash, index) => hash !== cached.sampleHashes[candidateIndex][index]))) throw new Error('Cached sample content changed')
       const actualPartialHashes = await Promise.all(cached.partialSamples.map(sample => hashOnce(sample.samplePath)))
       if (actualPartialHashes.some((hash, index) => hash !== cached.partialSampleHashes[index])) throw new Error('Cached partial sample content changed')
-      const searchComplete = cached.searchVersion === OPTIMIZATION_SEARCH_VERSION && cached.complete
+      const searchComplete = cached.complete
       // Record actual reuse time so eligible unreferenced entries age out last.
       await fs.utimes(sampleDirectory, new Date(), new Date()).catch(error => {
         getLoggingService().warn('[TVOptimization]', `Could not update sample cache recency: ${getErrorMessage(error)}`)
@@ -3204,11 +3204,10 @@ export class TranscodingService {
         cacheKey,
         candidates: cached.candidates.length,
         sourceSamples: cached.sourcePreparation?.samples.length ?? 0,
-        previousSearchVersion: cached.searchVersion ?? 'legacy',
+        searchVersion: cached.searchVersion,
         searchComplete,
-        invalidationReason: searchComplete ? undefined : 'search domain semantics changed; continue from compatible measurements',
       })
-      return { ...cached, complete: searchComplete, searchVersion: OPTIMIZATION_SEARCH_VERSION }
+      return cached
     } catch (error) {
       getLoggingService().warn('[TVOptimization]', `Discarding invalid measured encode cache: cacheKey=${cacheKey}, reason=${getErrorMessage(error)}`)
       await getDatabase().deleteSetting(settingKey)
