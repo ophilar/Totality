@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { availableOptimizationEncoders, supportedOptimizationCodecs, supportsMeasuredOptimizationEncoder, unsupportedOptimizationCodecReason } from '@main/services/transcoding/OptimizationEncoderPolicy'
+import { availableOptimizationEncoders, supportedOptimizationCodecs, supportsMeasuredOptimizationEncoder, unsupportedOptimizationCodecReason, verifiedOptimizationDevices } from '@main/services/transcoding/OptimizationEncoderPolicy'
 import { chooseOptimizationVideoCodec } from '@main/services/transcoding/OptimizationCodecPolicy'
 import { buildCandidateLadder } from '@main/services/MeasuredOptimizationPolicy'
 import { ENCODER_PROBES, getHardwareEncoder } from '@main/services/TranscodingCapabilities'
@@ -31,6 +31,14 @@ describe('measured optimization encoder eligibility', () => {
     expect(availableOptimizationEncoders('hevc', {
       gpus, deviceEncoders, selectedGpuId: 'apple',
     })).toEqual({ software: true, hardware: true, selectedHardware: false })
+  })
+
+  it('uses only probed devices and requires both selected hardware and software for compare', () => {
+    expect(verifiedOptimizationDevices('hevc', { gpus, deviceEncoders })).toEqual([{ encoder: 'x265' }, { encoder: 'nvenc_h265', gpuId: 'nvidia' }])
+    expect(verifiedOptimizationDevices('hevc', { gpus, deviceEncoders: { ...deviceEncoders, software: [] } })).toEqual([{ encoder: 'nvenc_h265', gpuId: 'nvidia' }])
+    expect(supportedOptimizationCodecs({ gpus, deviceEncoders, encoderPolicy: 'compare', selectedGpuId: 'apple' })).toEqual([])
+    expect(supportedOptimizationCodecs({ gpus, deviceEncoders, encoderPolicy: 'compare', selectedGpuId: 'nvidia' })).toEqual(['hevc', 'av1'])
+    expect(supportedOptimizationCodecs({ gpus, deviceEncoders: { ...deviceEncoders, software: [] }, encoderPolicy: 'compare', selectedGpuId: 'nvidia' })).toEqual([])
   })
 
   it('explains unsupported targets using the same playback and encoder rules', () => {

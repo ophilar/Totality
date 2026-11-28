@@ -66,22 +66,28 @@ export interface OptimizationEncoderAvailability {
   playbackPolicy?: string
 }
 
+/** One capability-filtered device catalogue for UI, production search and calibration. */
+export function verifiedOptimizationDevices(codec: OptimizationVideoCodec, input: OptimizationEncoderAvailability): Array<{ encoder: string; gpuId?: string }> {
+  const softwareEncoder = getOptimizationVideoCodec(codec).softwareEncoder
+  const devices: Array<{ encoder: string; gpuId?: string }> = []
+  if (input.deviceEncoders.software?.includes(softwareEncoder)) devices.push({ encoder: softwareEncoder })
+  for (const gpu of input.gpus) {
+    const encoder = getHardwareEncoder(gpu.vendor, codec)
+    if (encoder && supportsMeasuredOptimizationEncoder(encoder) && input.deviceEncoders[gpu.id]?.includes(encoder)) devices.push({ encoder, gpuId: gpu.id })
+  }
+  return devices
+}
+
 export function availableOptimizationEncoders(codec: OptimizationVideoCodec, input: OptimizationEncoderAvailability): {
   software: boolean
   hardware: boolean
   selectedHardware: boolean
 } {
-  const softwareEncoder = getOptimizationVideoCodec(codec).softwareEncoder
-  const software = supportsMeasuredOptimizationEncoder(softwareEncoder) &&
-    (input.deviceEncoders.software ?? []).includes(softwareEncoder)
-  const compatibleGpu = (gpu: Pick<GpuInfo, 'id' | 'vendor'>) => {
-    const encoder = getHardwareEncoder(gpu.vendor, codec)
-    return Boolean(encoder && supportsMeasuredOptimizationEncoder(encoder) && input.deviceEncoders[gpu.id]?.includes(encoder))
-  }
+  const devices = verifiedOptimizationDevices(codec, input)
   return {
-    software,
-    hardware: input.gpus.some(compatibleGpu),
-    selectedHardware: input.gpus.some(gpu => gpu.id === input.selectedGpuId && compatibleGpu(gpu)),
+    software: devices.some(device => device.gpuId === undefined),
+    hardware: devices.some(device => device.gpuId !== undefined),
+    selectedHardware: devices.some(device => device.gpuId !== undefined && device.gpuId === input.selectedGpuId),
   }
 }
 
@@ -92,6 +98,7 @@ export function supportedOptimizationCodecs(input: OptimizationEncoderAvailabili
     const encoders = availableOptimizationEncoders(codec, input)
     if (input.encoderPolicy === 'software') return encoders.software
     if (input.encoderPolicy === 'hardware') return encoders.selectedHardware
+    if (input.encoderPolicy === 'compare') return encoders.software && encoders.selectedHardware
     return encoders.software || encoders.hardware
   })
 }
@@ -111,6 +118,7 @@ export function unsupportedOptimizationCodecReason(
   if (!input.capabilitiesLoaded) return 'Checking encoder support.'
   const label = getOptimizationVideoCodec(codec).shortLabel
   if (input.encoderPolicy === 'software') return `Software encoding for ${label} is unavailable.`
+  if (input.encoderPolicy === 'compare') return `Comparison requires verified software encoding and a selected GPU supporting ${label}.`
   if (input.encoderPolicy === 'hardware') return input.selectedGpuName
     ? `${input.selectedGpuName} cannot encode ${label} with validated measured optimization.`
     : `Choose a GPU with validated ${label} encoding support.`

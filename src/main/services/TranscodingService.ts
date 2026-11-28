@@ -39,7 +39,7 @@ import { getTaskQueueService } from './TaskQueueService'
 import { buildOptimizationSavingsBreakdown, calculateBitrateSavingsBytes, projectMeasuredSavingsBytes, sumMeasuredStreamBytes, type OptimizationSavingsCoverage, type OptimizationSavingsOperation } from './OptimizationSavingsService'
 import { normalizeAudioCodec, normalizeVideoCodec } from './MediaNormalizer'
 import { DEFAULT_OPTIMIZATION_VIDEO_CODEC, getOptimizationVideoCodec, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
-import { isMeasuredSoftwareEncoder, supportsMeasuredOptimizationEncoder, measuredOptimizationEncoderSpec } from './transcoding/OptimizationEncoderPolicy'
+import { isMeasuredSoftwareEncoder, measuredOptimizationEncoderSpec, verifiedOptimizationDevices } from './transcoding/OptimizationEncoderPolicy'
 import { ValidatedFileAnalysisCache } from './transcoding/ValidatedFileAnalysisCache'
 import { OperationFileHasher } from './transcoding/OperationFileHasher'
 import { fileIdentity, matchesFileIdentity } from './utils/FileIdentity'
@@ -931,7 +931,7 @@ export class TranscodingService {
           sourceAnalysis: prepared.status === 'ready' ? prepared.analysis : undefined,
           operations: [],
           decisionStatus,
-          qualityChoices: prepared.status === 'ready' ? getOptimizationQualityChoices(prepared.stat.size, prepared.analysis.durationMs! / 1000, plannedNonVideoBytesPerSecond(prepared.analysis, request.options), cachedMeasurement, request.options.qualityProfile) : undefined,
+          qualityChoices: prepared.status === 'ready' && cachedMeasurement ? getOptimizationQualityChoices(prepared.stat.size, prepared.analysis.durationMs! / 1000, plannedNonVideoBytesPerSecond(prepared.analysis, request.options), cachedMeasurement, request.options.qualityProfile) : undefined,
           evidenceStatus: measuredOutcome ? 'measured' : 'insufficient',
           confidence: measuredOutcome ? 'high' : 'none',
           savingsCoverage: measuredOutcome ? 'complete' : 'insufficient',
@@ -2815,32 +2815,23 @@ export class TranscodingService {
     const libraryId = searchContext?.libraryId ?? media?.library_id
     const mediaType = searchContext?.mediaType ?? media?.type
     const capabilities = await this.getCapabilities()
-    const selectedGpu = capabilities?.gpus.find(gpu => gpu.id === (options.gpuId || capabilities.selectedGpuId))
-    const automaticGpuCandidates = options.encoderPolicy === 'automatic'
-      ? capabilities?.gpus.filter(gpu => {
-        const encoder = getHardwareEncoder(gpu.vendor, options.targetCodec!)
-        return encoder !== undefined && supportsMeasuredOptimizationEncoder(encoder) && capabilities.deviceEncoders[gpu.id]?.includes(encoder)
-      })
-      : undefined
-    const automaticGpu = automaticGpuCandidates?.find(gpu => gpu.id === (options.gpuId || capabilities?.selectedGpuId)) ?? automaticGpuCandidates?.[0]
-    const encoderGpu = options.encoderPolicy === 'automatic' ? automaticGpu : selectedGpu
-    const hardwareVendor = encoderGpu?.vendor
-    const hardwareEncoder = hardwareVendor && options.encoderPolicy !== 'software'
-      ? getHardwareEncoder(hardwareVendor, options.targetCodec)
-      : undefined
-    if (options.encoderPolicy !== 'software' && options.encoderPolicy !== 'automatic' && (!hardwareEncoder || !supportsMeasuredOptimizationEncoder(hardwareEncoder))) throw new Error(`The selected hardware has no validated measured-optimization support for ${options.targetCodec.toUpperCase()}.`)
-    if (hardwareEncoder && !capabilities!.deviceEncoders[encoderGpu!.id]?.includes(hardwareEncoder)) throw new Error(`The selected device does not support ${hardwareEncoder} encoding.`)
-    const automaticHardwareCandidates = automaticGpuCandidates?.map(gpu => ({ encoder: getHardwareEncoder(gpu.vendor, options.targetCodec!), gpuId: gpu.id })).filter((candidate): candidate is { encoder: string; gpuId: string } => Boolean(candidate.encoder))
+    const devices = verifiedOptimizationDevices(options.targetCodec, capabilities)
+    const software = devices.find(device => device.gpuId === undefined)
+    const hardware = devices.filter((device): device is { encoder: string; gpuId: string } => device.gpuId !== undefined)
+    const selectedHardware = hardware.find(device => device.gpuId === (options.gpuId || capabilities.selectedGpuId))
+    if (options.encoderPolicy === 'hardware' || options.encoderPolicy === 'compare') {
+      if (!selectedHardware) throw new Error(`Select verified hardware supporting ${options.targetCodec.toUpperCase()} for measurement`)
+    }
+    if ((options.encoderPolicy === 'software' || options.encoderPolicy === 'compare') && !software) throw new Error(`Verified software encoding for ${options.targetCodec.toUpperCase()} is unavailable`)
     const ladder = searchContext?.calibration
-      ? [
-          ...(automaticHardwareCandidates ?? []).flatMap(device => buildCandidateLadder(options.targetCodec!, 'hardware', device.encoder).map(candidate => ({ ...candidate, gpuId: device.gpuId }))),
-          ...(capabilities?.deviceEncoders.software?.includes(getOptimizationVideoCodec(options.targetCodec).softwareEncoder) ? buildCandidateLadder(options.targetCodec, 'software') : []),
-        ]
-      : buildCandidateLadder(options.targetCodec, options.encoderPolicy, hardwareEncoder, automaticHardwareCandidates)
-          .map(candidate => encoderGpu && options.encoderPolicy !== 'automatic' && !isMeasuredSoftwareEncoder(candidate.encoder)
-            ? { ...candidate, gpuId: encoderGpu.id }
-            : candidate)
-    if (!ladder.length) throw new Error('No verified calibration candidates are available')
+      ? devices.flatMap(device => buildCandidateLadder(options.targetCodec!, device.gpuId === undefined ? 'software' : 'hardware', device.encoder).map(candidate => ({ ...candidate, gpuId: device.gpuId })))
+      : options.encoderPolicy === 'automatic'
+        ? hardware.length
+          ? buildCandidateLadder(options.targetCodec, 'automatic', undefined, hardware)
+          : software ? buildCandidateLadder(options.targetCodec, 'automatic', software.encoder) : []
+        : buildCandidateLadder(options.targetCodec, options.encoderPolicy, selectedHardware?.encoder)
+          .map(candidate => ({ ...candidate, gpuId: isMeasuredSoftwareEncoder(candidate.encoder) ? undefined : selectedHardware?.gpuId }))
+    if (!ladder.length) throw new Error('No verified optimization candidates are available')
     const measuredCandidates = [...previouslyMeasured]
     let measuredSamples = [...previouslyMeasuredSamples]
     let candidateSearchRounds = 0
