@@ -411,6 +411,10 @@ export class QualityAnalyzer {
               measuredPlanBasis = measurement.samplingRole === 'projected' ? 'representative_video_sample_projection' : 'video_sample_encode'
             } catch (error) {
               if (!(error instanceof MeasuredQualityError)) throw error
+              if (error.decisionStatus === 'no_positive_savings') {
+                measuredPlanSavingsBytes = 0
+                measuredPlanBasis = measurement.samplingRole === 'projected' ? 'representative_video_sample_projection' : 'video_sample_encode'
+              }
               getLoggingService().debug('[QualityAnalyzer]', `Cached measurements do not satisfy the selected requirements: mediaItem=${mediaItem.id}, cacheKey=${measurement.cacheKey}, outcome=${error.decisionStatus}`)
             }
           }

@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { MEASUREMENT_VERSION } from '../../src/main/services/MeasuredOptimizationPolicy'
+import { MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION } from '../../src/main/services/MeasuredOptimizationPolicy'
 
 const configuredSettings = new Map<string, string>()
 const mockGetSetting = vi.fn((key: string) => configuredSettings.get(key) ?? null)
@@ -43,7 +43,7 @@ describe('QualityAnalyzer', () => {
   it('reuses a measured plan total, including zero, and invalidates changed source or measurement revisions', async () => {
     const filePath = fileURLToPath(import.meta.url)
     const source = await stat(filePath)
-    const measurement = { cacheKey: 'measured-plan', qualityProfile: 'balanced', samplingRole: 'measured', sourceSize: source.size, sourceMtimeMs: source.mtimeMs }
+    const measurement = { cacheKey: 'measured-plan', qualityProfile: 'balanced', targetCodec: 'hevc', nonVideoBytesPerSecond: 0, samplingRole: 'measured', sourceSize: source.size, sourceMtimeMs: source.mtimeMs }
     const trustedAnalysis = () => JSON.stringify({
       success: true, filePath, durationMs: 60_000,
       fileAnalysisFingerprint: { size: source.size, mtimeMs: source.mtimeMs, ctimeMs: source.ctimeMs, ino: source.ino },
@@ -52,7 +52,7 @@ describe('QualityAnalyzer', () => {
     })
     const item = createMediaItem({ file_path: filePath, file_size_bytes: source.size, duration_ms: 60_000, deep_analysis: trustedAnalysis() })
     const candidate = { encoder: 'qsv_h265', quality: 18, preset: 'medium', outputBytes: source.size - 100, sampledDurationSeconds: 60, vmafMean: 95, vmafP5: 92, cambiMean: 0 }
-    const cached = { version: MEASUREMENT_VERSION, cacheKey: measurement.cacheKey, complete: true, candidates: [candidate] }
+    const cached = { version: MEASUREMENT_VERSION, searchVersion: OPTIMIZATION_SEARCH_VERSION, cacheKey: measurement.cacheKey, complete: true, candidates: [candidate] }
     configuredSettings.set('transcoding.measurement.measured-plan', JSON.stringify(cached))
     const score = await analyzer.analyzeMediaItem(item)
     expect(score.estimated_savings_bytes).toBe(100)
@@ -65,6 +65,11 @@ describe('QualityAnalyzer', () => {
     measurement.qualityProfile = 'balanced'
     item.deep_analysis = trustedAnalysis()
 
+    measurement.nonVideoBytesPerSecond = 1
+    item.deep_analysis = trustedAnalysis()
+    expect((await analyzer.analyzeMediaItem(item)).estimated_savings_bytes).toBe(40)
+    measurement.nonVideoBytesPerSecond = 0
+    item.deep_analysis = trustedAnalysis()
     candidate.outputBytes = source.size
     configuredSettings.set('transcoding.measurement.measured-plan', JSON.stringify(cached))
     expect((await analyzer.analyzeMediaItem(item)).estimated_savings_bytes).toBe(0)

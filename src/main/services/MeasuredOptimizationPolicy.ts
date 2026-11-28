@@ -351,7 +351,7 @@ export function selectCalibrationRepresentatives<T extends Pick<MediaItem, 'id' 
   if (!count) return []
   const indices = count === 1 ? [Math.floor((ordered.length - 1) / 2)] :
     Array.from({ length: count }, (_, index) => Math.round(index * (ordered.length - 1) / (count - 1)))
-  return indices.map((index, position) => ({ item: ordered[index], role: position % 2 === 0 ? 'calibration' : 'holdout' }))
+  return indices.map((index, position) => ({ item: ordered[index], role: position === 0 || position === count - 1 && count > 2 ? 'calibration' : 'holdout' }))
 }
 
 export function getImpossibleQualityReason(

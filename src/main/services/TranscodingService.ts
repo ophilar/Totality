@@ -39,7 +39,7 @@ import { getTaskQueueService } from './TaskQueueService'
 import { buildOptimizationSavingsBreakdown, calculateBitrateSavingsBytes, projectMeasuredSavingsBytes, sumMeasuredStreamBytes, type OptimizationSavingsCoverage, type OptimizationSavingsOperation } from './OptimizationSavingsService'
 import { normalizeAudioCodec, normalizeVideoCodec } from './MediaNormalizer'
 import { DEFAULT_OPTIMIZATION_VIDEO_CODEC, getOptimizationVideoCodec, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
-import { isMeasuredSoftwareEncoder, supportsMeasuredOptimizationEncoder } from './transcoding/OptimizationEncoderPolicy'
+import { isMeasuredSoftwareEncoder, supportsMeasuredOptimizationEncoder, measuredOptimizationEncoderSpec } from './transcoding/OptimizationEncoderPolicy'
 import { ValidatedFileAnalysisCache } from './transcoding/ValidatedFileAnalysisCache'
 import { OperationFileHasher } from './transcoding/OperationFileHasher'
 import { fileIdentity, matchesFileIdentity } from './utils/FileIdentity'
@@ -760,6 +760,7 @@ export class TranscodingService {
     loadEpisodeCheckpoint?: (mediaItemId: number) => Promise<ShowTranscodeEpisodeCheckpoint | undefined>
     saveEpisodeCheckpoint?: (mediaItemId: number, checkpoint: ShowTranscodeEpisodeCheckpoint) => Promise<void>
     calibration?: boolean
+    parameterPreview?: boolean
     onMeasuredCandidates?: (candidates: MeasuredCandidate[], complete: boolean, calibrationScopeKey?: string, maximumRate?: number, rateLimit?: number) => Promise<void>
   }): Promise<ShowTranscodePreflight> {
     // Run cache maintenance after preflight, never on the critical response path.
@@ -856,7 +857,7 @@ export class TranscodingService {
         if (queuedMediaIds.has(episode.id)) throw new Error(`Episode "${formatMediaDisplayName(episode, request.seriesTitle)}" already has a queued or running transcode`)
         await this.assertAuthorizedItem(episode.id)
         const stat = await fs.stat(episode.file_path)
-        const { analysis } = await getQualityAnalyzer().analyzeMediaItemFileEvidence(episode, operation?.signal, operation?.calibration ? { persist: false } : {})
+        const { analysis } = await getQualityAnalyzer().analyzeMediaItemFileEvidence(episode, operation?.signal, operation?.calibration || operation?.parameterPreview ? { persist: false } : {})
         const video = analysis.video
         operation?.signal.throwIfAborted()
         if (!analysis.success || analysis.filePath !== episode.file_path || analysis.fileSizeBytes !== stat.size || !video) {
@@ -1460,7 +1461,7 @@ export class TranscodingService {
             : 'mixed_sample_projection'
           : 'planned_operations',
     }
-    if (operation?.calibration) return result
+    if (operation?.calibration || operation?.parameterPreview) return result
     const priorReview = await this.findLatestShowPreflight({ sourceId: request.sourceId, libraryId: request.libraryId, seriesIdentityKey: request.seriesIdentityKey, seriesTitle: request.seriesTitle, mediaItemId: request.mediaItemId, seasonNumber: request.seasonNumber })
     if (priorReview) {
       const priorApprovals = priorReview.result.sampleGroupApprovalFingerprints ?? {}
@@ -1981,7 +1982,7 @@ export class TranscodingService {
 
   private getCapabilitySnapshotFingerprint(capabilities: TranscodingCapabilities): string {
     if (!capabilities.snapshotFingerprint) throw new Error('Transcoding capability snapshot has no environment fingerprint')
-    return capabilities.snapshotFingerprint
+    return createHash('sha256').update(JSON.stringify({ environment: capabilities.snapshotFingerprint, deviceEncoders: capabilities.deviceEncoders })).digest('hex')
   }
 
   private async resolveGpuEncoderDevices(gpus: GpuInfo[]): Promise<GpuInfo[]> {
@@ -2183,6 +2184,17 @@ export class TranscodingService {
    * Build transcoding parameters from explicit settings or measured samples.
    */
   async getTranscodeParameters(filePath: string, options: TranscodeOptions = {}): Promise<TranscodingParams> {
+    if ((options.optimizationMode === 'transcode' || options.optimizationMode === 'smart') && !options.encoder && options.qualityProfile && options.targetCodec && options.encoderPolicy) {
+      const item = await getDatabase().media.getItemByPath(filePath)
+      if (!item?.id || !item.source_id || !item.library_id) throw new Error('Measured optimization requires an authorized library item')
+      const signal = new AbortController().signal
+      const result = await this.preflightShowTranscode({ mediaItemId: item.id, sourceId: item.source_id, libraryId: item.library_id, options }, {
+        signal, parameterPreview: true, beginCommit: () => undefined, waitUntilRunning: async () => signal.throwIfAborted(), update: () => undefined,
+      })
+      const plan = result.episodes[0]
+      if (!plan?.compatible || !plan.params || !['sample_required', 'actionable'].includes(plan.decisionStatus ?? '')) throw new Error(plan?.reason ?? 'No validated optimization parameters are available')
+      return plan.params
+    }
     const analyzer = getMediaFileAnalyzer()
     const analysis = await this.analysisCache.get(filePath, () => analyzer.analyzeFile(filePath))
     if (!analysis.success) throw new Error(`Failed to analyze file: ${analysis.error}`)
@@ -2304,27 +2316,13 @@ export class TranscodingService {
     if (crf === undefined) throw new Error('Video quality value must be explicitly selected.')
     if (!preset) throw new Error('Encoder preset must be explicitly selected.')
 
-    // Validate parameters against allowed lists to prevent command injection
-    const allowedVideoCodecs = [
-      'svt_av1', 'svt_av1_10bit', 'x265', 'x265_10bit', 'x264',
-      'nvenc_h264', 'nvenc_h265', 'nvenc_h265_10bit', 'nvenc_av1', 'nvenc_av1_10bit', 'av1_nvenc',
-      'qsv_av1', 'qsv_h265', 'qsv_h265_10bit', 'qsv_h264',
-      'av1_amf', 'hevc_amf', 'vce_h264',
-      'vt_h264', 'vt_h265', 'hevc_videotoolbox'
-    ]
-    if (!allowedVideoCodecs.includes(videoCodec)) {
-      throw new Error(`Invalid or unsupported video encoder: ${videoCodec}`)
-    }
-
-    if (typeof crf !== 'number' || crf < 0 || crf > 51) throw new Error(`Invalid video quality value: ${String(crf)}`)
+    const encoderSpec = measuredOptimizationEncoderSpec(videoCodec, targetCodec)
+    const qualityDomain = APP_CONFIG.transcoding.sampleQualityDomains[encoderSpec.qualityDomain]
+    if (!Number.isInteger(crf) || crf < Math.min(...qualityDomain) || crf > Math.max(...qualityDomain)) throw new Error(`Invalid video quality value: ${String(crf)}`)
+    if (!encoderSpec.presets.includes(preset)) throw new Error(`Invalid encoder preset: ${preset}`)
+    if (videoCodec !== expectedEncoder) throw new Error(`Selected encoder "${videoCodec}" does not match the verified ${targetCodec} encoder "${expectedEncoder}".`)
     const finalCrf = crf
-
-    const allowedPresets = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow', 'placebo', 'hq', 'hp', 'bd', 'll', 'llhq', 'llhp', 'lossless', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'quality', '4', '6', '8']
-    if (!allowedPresets.includes(preset)) throw new Error(`Invalid encoder preset: ${preset}`)
     const finalPreset = preset
-    if (selectedGpuIdForOptions && videoCodec !== expectedEncoder) {
-      throw new Error(`Selected GPU cannot use the requested encoder "${videoCodec}".`)
-    }
     const usesSelectedHardwareEncoder = Boolean(selectedGpuIdForOptions)
 
     const resolvedOptions: TranscodeOptions = {
@@ -2431,6 +2429,7 @@ export class TranscodingService {
         const currentFingerprint = this.getCapabilitySnapshotFingerprint(await this.getCapabilities())
         if (currentFingerprint !== queuePayload.capabilityFingerprint) throw new Error('Hardware capabilities changed after review; run preflight again')
       }
+      if (!queuePayload && (options.optimizationMode === 'transcode' || options.optimizationMode === 'smart')) throw new Error('Optimization execution requires a reviewed library preflight')
       const params = queuePayload?.params ?? await this.getTranscodeParameters(inputPath, options)
       const sourceAnalysis = queuePayload?.sourceAnalysis ?? await getMediaFileAnalyzer().analyzeFile(inputPath)
       const encoderProfile = `${params.encoder}:${params.preset}:${params.crf}`
@@ -2906,7 +2905,6 @@ export class TranscodingService {
         targetProfileMode: options.targetProfileMode,
         targetProfile,
         capabilityFingerprint: capabilities ? this.getCapabilitySnapshotFingerprint(capabilities) : 'software',
-        deviceEncoders: capabilities?.deviceEncoders,
         sourceWidth: analysis.video.width,
         sourceHeight: analysis.video.height,
         sourceFrameRate: analysis.video.frameRate,
