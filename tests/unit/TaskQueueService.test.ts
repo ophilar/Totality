@@ -62,8 +62,8 @@ describe('TaskQueueService', () => {
     service.pauseQueue()
   })
 
-  afterEach(() => {
-    service.persistInterruptedTasks()
+  afterEach(async () => {
+    await service.persistInterruptedTasks()
     database.close()
     vi.clearAllMocks()
   })
@@ -116,6 +116,26 @@ describe('TaskQueueService', () => {
       expect(service.getQueueState().queue.map(task => task.id)).toEqual([first, second])
       service.reorderQueue([second, first])
       expect(service.getQueueState().queue.map(task => task.id)).toEqual([second, first])
+    })
+
+    it('completes all waiters and records cancellations when queued work is cleared', async () => {
+      const first = service.addTask({ type: 'source-scan', sourceId: 'a', label: 'A' })
+      const second = service.addTask({ type: 'source-scan', sourceId: 'b', label: 'B' })
+      const waiters = [service.waitForTask(first), service.waitForTask(second)]
+      service.clearQueue()
+      expect((await Promise.all(waiters)).map(task => task.status)).toEqual(['cancelled', 'cancelled'])
+      expect((await service.waitForTask(first)).status).toBe('cancelled')
+      expect(service.getQueueState().queue).toEqual([])
+      expect(getDatabase().getPendingTasks()).toEqual([])
+    })
+
+    it('persists the final paused state before shutdown and refuses new work', async () => {
+      const id = service.addTask({ type: 'source-scan', sourceId: 'a', label: 'A' })
+      await service.stopForShutdown()
+      await service.persistInterruptedTasks()
+      expect(getDatabase().getPendingTasks().map(task => task.taskId)).toEqual([id])
+      expect(await getDatabase().getSetting('task_queue_paused_on_shutdown')).toBe('true')
+      expect(() => service.addTask({ type: 'library-scan', label: 'Late' })).toThrow('shutting down')
     })
 
     it('should remove a queued task', () => {

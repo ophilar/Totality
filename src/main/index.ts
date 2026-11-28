@@ -369,7 +369,7 @@ app.on('before-quit', async (event) => {
       }
     },
     persistInterruptedTasks: async () => {
-      getTaskQueueService().persistInterruptedTasks()
+      await getTaskQueueService().persistInterruptedTasks()
     },
     checkpointWal: async () => {
       // WAL checkpoint
@@ -641,7 +641,7 @@ app.whenReady().then(async () => {
     }
 
     // Load persisted history and re-enqueue any tasks that were pending at last quit
-    taskQueueService.loadPersistedHistory()
+    await taskQueueService.loadPersistedHistory()
     resumeBackgroundPreflights()
     const database = getDatabase()
     if (await database.getSetting('optimization.quality_reanalysis_pending') === 'true') {

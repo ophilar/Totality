@@ -91,6 +91,7 @@ export class TaskQueueService {
   private monitoringHistory: ActivityLogEntry[] = []
   private cancelRequested = false
   private shuttingDown = false
+  private pendingQueueWrite: Promise<void> = Promise.resolve()
   private monitoringWasPausedByUs = false // Track if we paused monitoring
   private monitoringResumeTimer: ReturnType<typeof setTimeout> | null = null
   private progressThrottleTimer: NodeJS.Timeout | null = null
@@ -118,6 +119,7 @@ export class TaskQueueService {
    * Add a task to the queue
    */
   addTask(definition: TaskDefinition): string {
+    if (this.shuttingDown) throw new Error('Task queue is shutting down')
     // Check for duplicate: same type + sourceId + libraryId already queued or running
     const isDuplicate = (t: QueuedTask) => {
       if (definition.type === 'optimization-preflight') {
@@ -205,16 +207,23 @@ export class TaskQueueService {
     if (index === -1) return false
 
     const [removed] = this.queue.splice(index, 1)
-    removed.status = 'cancelled'
-    removed.completedAt = new Date().toISOString()
-    this.resolveTaskCompletion(removed)
-    if (removed.type === 'optimization-preflight') {
-      const payload = removed.options as { requestId: string }
-      getDatabase().deleteSetting(`transcoding.backgroundPreflight.${payload.requestId}`)
-    }
+    this.recordQueuedCancellation(removed)
     console.log(`[TaskQueue] Removed task: ${taskId}`)
     this.emitQueueUpdate()
     return true
+  }
+
+  private recordQueuedCancellation(task: QueuedTask): void {
+    task.status = 'cancelled'
+    task.completedAt = new Date().toISOString()
+    this.recordCompletedTask(task)
+    this.addTaskHistoryEntry(task, 'task-cancelled', `Cancelled: ${task.label}`)
+    if (task.type === 'optimization-preflight') {
+      const payload = task.options as { requestId: string }
+      getDatabase().deleteSetting(`transcoding.backgroundPreflight.${payload.requestId}`)
+    }
+    this.resolveTaskCompletion(task)
+    this.emitTaskComplete(task)
   }
 
   waitForTask(taskId: string): Promise<QueuedTask> {
@@ -245,7 +254,8 @@ export class TaskQueueService {
    * Clear all queued tasks (not the current running task)
    */
   clearQueue(): void {
-    this.queue = []
+    const cancelled = this.queue.splice(0)
+    for (const task of cancelled) this.recordQueuedCancellation(task)
     console.log(`[TaskQueue] Queue cleared`)
     this.emitQueueUpdate()
 
@@ -273,14 +283,11 @@ export class TaskQueueService {
   async stopForShutdown(): Promise<void> {
     const queueWasPaused = this.isPaused
     this.shuttingDown = true
-    const interruptedTask = this.currentTask ? structuredClone(this.currentTask) : undefined
     this.pauseQueue()
-    if (interruptedTask) this.cancelCurrentTask()
+    if (this.currentTask) this.cancelCurrentTask()
     if (this.isProcessing) await new Promise<void>(resolve => this.processingIdleWaiters.push(resolve))
-    if (interruptedTask && this.completedTasks.find(task => task.id === interruptedTask.id)?.status === 'interrupted') {
-      this.queue.unshift({ ...interruptedTask, status: 'queued', progress: undefined, completedAt: undefined, error: undefined })
-    }
     this.isPaused = queueWasPaused
+    await this.persistPendingQueue()
   }
 
   /**
@@ -432,7 +439,7 @@ export class TaskQueueService {
   /**
    * Load persisted task history from database on startup
    */
-  loadPersistedHistory(): void {
+  async loadPersistedHistory(): Promise<void> {
     try {
       const db = getDatabase()
 
@@ -480,7 +487,7 @@ export class TaskQueueService {
     })
 
     // Re-enqueue tasks that were pending when the app last quit
-    this.restorePendingQueue()
+    await this.restorePendingQueue()
 
     for (const scope of db.consumeInvalidatedSeriesCompletenessScopes()) {
       this.queueSeriesCompletenessRecovery(scope.sourceId, scope.libraryId)
@@ -492,7 +499,7 @@ export class TaskQueueService {
    * Queued tasks (and the interrupted running task) are saved to pending_tasks so
    * they can be restored on next startup. All are also logged as interrupted.
    */
-  persistInterruptedTasks(): void {
+  async persistInterruptedTasks(): Promise<void> {
     // Clear any pending progress throttle timer
     if (this.progressThrottleTimer) {
       clearTimeout(this.progressThrottleTimer)
@@ -529,9 +536,10 @@ export class TaskQueueService {
         })
       }
 
-      void this.persistPendingQueue().catch(error => console.error('[TaskQueue] Failed to persist pending queue:', getErrorMessage(error)))
+      await this.persistPendingQueue()
     } catch (err) {
       console.error('[TaskQueue] Failed to persist interrupted tasks:', getErrorMessage(err))
+      throw err
     }
   }
 
@@ -578,8 +586,8 @@ export class TaskQueueService {
         }
       }
 
-      db.clearPendingTasks()
       this.queue.push(...restoredTasks)
+      await this.persistPendingQueue()
       const restored = restoredTasks.length
       if (restored > 0) {
         this.emitQueueUpdate()
@@ -605,7 +613,9 @@ export class TaskQueueService {
     }
 
     // Remove queued tasks for this source
+    const cancelled = this.queue.filter(task => task.sourceId === sourceId)
     this.queue = this.queue.filter(task => task.sourceId !== sourceId)
+    for (const task of cancelled) this.recordQueuedCancellation(task)
 
     // Remove from completed tasks history
     this.completedTasks = this.completedTasks.filter(task => task.sourceId !== sourceId)
@@ -625,7 +635,7 @@ export class TaskQueueService {
    */
   private async processNext(): Promise<void> {
     // Don't start if paused, already processing, or queue is empty
-    if (this.isPaused || this.isProcessing || this.queue.length === 0) {
+    if (this.shuttingDown || this.isPaused || this.isProcessing || this.queue.length === 0) {
       // If queue is empty and we paused monitoring, resume after a brief delay
       // to allow post-scan operations (auto-completeness, quality analysis) to finish
       if (this.queue.length === 0 && this.monitoringWasPausedByUs) {
@@ -743,6 +753,27 @@ export class TaskQueueService {
 
     task.completedAt = new Date().toISOString()
 
+    this.recordCompletedTask(task)
+    if (task.status === 'interrupted') {
+      this.queue.unshift({ ...task, status: 'queued', progress: undefined, completedAt: undefined, error: undefined })
+    }
+    this.currentTask = null
+    this.isProcessing = false
+    this.cancelRequested = false
+    this.taskPauseRequested = false
+    this.currentTaskAbortController = undefined
+    try {
+      await this.persistPendingQueue()
+    } finally {
+      for (const resolve of this.processingIdleWaiters.splice(0)) resolve()
+      this.emitQueueUpdate()
+      this.emitTaskComplete(task)
+      this.resolveTaskCompletion(task)
+      setImmediate(() => this.processNext())
+    }
+  }
+
+  private recordCompletedTask(task: QueuedTask): void {
     // Persist completed task to database
     try {
       const db = getDatabase()
@@ -768,21 +799,6 @@ export class TaskQueueService {
       this.taskHistory = this.taskHistory.filter(entry => !entry.taskId || !evictedIds.has(entry.taskId))
     }
 
-    this.currentTask = null
-    this.isProcessing = false
-    this.cancelRequested = false
-    this.taskPauseRequested = false
-    this.currentTaskAbortController = undefined
-    for (const resolve of this.processingIdleWaiters.splice(0)) resolve()
-
-    await this.persistPendingQueue()
-    this.emitQueueUpdate()
-    this.emitTaskComplete(task)
-    this.resolveTaskCompletion(task)
-
-    // Process next task (this will resume monitoring if queue is empty)
-    // Use setImmediate to avoid growing call stack with many sequential tasks
-    setImmediate(() => this.processNext())
   }
 
   private resolveTaskCompletion(task: QueuedTask): void {
@@ -1578,13 +1594,20 @@ export class TaskQueueService {
 
   private async persistPendingQueue(): Promise<void> {
     const db = getDatabase()
-    await db.setSetting(SETTING_KEYS.task_queue_paused_on_shutdown, String(this.isPaused))
+    const paused = String(this.isPaused)
     const tasks = [...(this.currentTask ? [this.currentTask] : []), ...this.queue]
+    // SQLite saves the queue synchronously in one transaction. The asynchronous
+    // setting writes must run in order and finish before the database closes.
     db.savePendingTasks(tasks.map(task => ({
       taskId: task.id, type: task.type, label: task.label,
       sourceId: task.sourceId, libraryId: task.libraryId, artistId: task.artistId,
       createdAt: task.createdAt, payload: task,
     })))
+    const write = this.pendingQueueWrite.catch(error => {
+      console.error('[TaskQueue] Prior pause-state persistence failed:', getErrorMessage(error))
+    }).then(() => db.setSetting(SETTING_KEYS.task_queue_paused_on_shutdown, paused))
+    this.pendingQueueWrite = write
+    return write
   }
 
   /**
