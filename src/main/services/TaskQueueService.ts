@@ -33,7 +33,7 @@ import { getWishlistCompletionService } from './WishlistCompletionService'
 import { getTMDBService } from './TMDBService'
 import { getTranscodingService } from './TranscodingService'
 import { getLoggingService } from './LoggingService'
-import { buildValidatedCalibrationEntries, candidateEncodingKey, selectCalibrationRepresentatives, OPTIMIZATION_QUALITY_PROFILES, calibrationEntrySupportsProfile, type CalibrationCandidateEvidence, type MeasuredCandidate } from './MeasuredOptimizationPolicy'
+import { buildValidatedCalibrationEntries, candidateEncodingKey, calibrationInventoryKey, selectCalibrationRepresentatives, OPTIMIZATION_QUALITY_PROFILES, calibrationEntrySupportsProfile, type CalibrationCandidateEvidence, type MeasuredCandidate } from './MeasuredOptimizationPolicy'
 import type { OptimizationCandidateScanSummary, ShowTranscodeRequest, ShowTranscodePreflight, ShowTranscodeEpisodeCheckpoint } from './TranscodingService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { normalizeVideoCodec } from './MediaNormalizer'
@@ -1005,7 +1005,7 @@ export class TaskQueueService {
     const measureRepresentatives = async (items: typeof mediaItems, targetCodec: 'hevc' | 'av1', stage: string): Promise<void> => {
       const groups = new Map<string, typeof mediaItems>()
       for (const item of items) {
-        const key = JSON.stringify([item.source_id, item.library_id, item.type, item.hdr_format?.toLowerCase(), item.width, item.height, item.color_bit_depth, item.video_frame_rate])
+        const key = calibrationInventoryKey(item)
         const group = groups.get(key) ?? []
         group.push(item)
         groups.set(key, group)
@@ -1020,7 +1020,7 @@ export class TaskQueueService {
         representativesPerGroup: APP_CONFIG.transcoding.calibrationRepresentativesPerGroup,
       })
       const contexts = playbackContexts.filter(context => context.playbackPolicy === 'allow-transcoding' || playbackProfileSupportsOptimizationCodec(targetCodec, context.profile?.definition.video.codecs))
-      const titleCounts = new Map<string, number>()
+      const titleCounts = new Map([...groups.keys()].map(groupKey => [groupKey, 0]))
       for (const representative of representatives) titleCounts.set(representative.groupKey, (titleCounts.get(representative.groupKey) ?? 0) + 1)
       for (const [groupKey, count] of titleCounts) {
         if (count >= 3) continue
@@ -1128,7 +1128,7 @@ export class TaskQueueService {
     }
     const measuredFormats = new Set(measurements.map(measurement => `${measurement.sourceCodec}:${measurement.groupKey}`))
     for (const item of mediaItems) {
-      const formatKey = JSON.stringify([item.source_id, item.library_id, item.type, item.hdr_format?.toLowerCase(), item.width, item.height, item.color_bit_depth, item.video_frame_rate])
+      const formatKey = calibrationInventoryKey(item)
       const sourceCodec = normalizeVideoCodec(item.video_codec)
       const stage = sourceCodec === 'H.264' ? 'measuring-h264-to-hevc' : sourceCodec === 'HEVC' && includeAv1 ? 'measuring-hevc-to-av1' : 'unsupported-source'
       if (stage === 'unsupported-source' && !measuredFormats.has(`${item.video_codec}:${formatKey}`)) {

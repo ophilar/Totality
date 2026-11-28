@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCandidateLadder, candidateDeviceKey, candidateFamilyKey, candidateEncodingKey, buildValidatedCalibrationEntries, findLongestContinuousLowVmafRun, getImpossibleQualityReason, getNonDominatedMeasuredCandidates, isMeasuredCandidateValidForCalibration, isValidOptimizationCalibrationEntry, nextCandidateSearch, scopedCalibrationEntries, selectCalibrationRepresentatives, selectMeasuredCandidate, type CalibrationCandidateEvidence, type CandidateEncodingParameters, type MeasuredCandidate } from '@main/services/MeasuredOptimizationPolicy'
+import { buildCandidateLadder, calibrationInventoryKey, candidateDeviceKey, candidateFamilyKey, candidateEncodingKey, buildValidatedCalibrationEntries, findLongestContinuousLowVmafRun, getImpossibleQualityReason, getNonDominatedMeasuredCandidates, isMeasuredCandidateValidForCalibration, isValidOptimizationCalibrationEntry, nextCandidateSearch, scopedCalibrationEntries, selectCalibrationRepresentatives, selectMeasuredCandidate, type CalibrationCandidateEvidence, type CandidateEncodingParameters, type MeasuredCandidate } from '@main/services/MeasuredOptimizationPolicy'
 
 describe('selectMeasuredCandidate', () => {
   const candidate = (overrides: Partial<MeasuredCandidate>): MeasuredCandidate => ({
@@ -285,6 +285,21 @@ describe('findLongestContinuousLowVmafRun', () => {
 })
 
 describe('selectCalibrationRepresentatives', () => {
+  it('does not count alternate editions or unidentified episodes as independent training titles', () => {
+    const common = { file_path: 'file', width: 1920, height: 1080, video_bitrate_kbps: 5000, video_frame_rate: 24 }
+    const movies = [1, 2, 3].map(id => ({ ...common, id, type: 'movie' as const, tmdb_id: id <= 2 ? 'shared' : 'different' }))
+    expect(selectCalibrationRepresentatives(movies, 4)).toHaveLength(2)
+    const unknownEpisodes = [1, 2, 3].map(id => ({ ...common, id, type: 'episode' as const }))
+    expect(selectCalibrationRepresentatives(unknownEpisodes, 4)).toEqual([])
+  })
+
+  it('separates known Dolby Vision profile, container and color space in inventory cohorts', () => {
+    const item = { type: 'movie' as const, video_codec: 'HEVC', hdr_format: 'Dolby Vision', width: 1920, height: 1080, color_bit_depth: 10, video_frame_rate: 24, color_space: 'bt2020nc', dolby_vision_profile: 5, container: 'mkv' }
+    expect(calibrationInventoryKey(item)).toBe(calibrationInventoryKey({ ...item, container: 'matroska' }))
+    expect(calibrationInventoryKey(item)).not.toBe(calibrationInventoryKey({ ...item, dolby_vision_profile: 8 }))
+    expect(calibrationInventoryKey(item)).not.toBe(calibrationInventoryKey({ ...item, container: 'mp4' }))
+    expect(calibrationInventoryKey(item)).not.toBe(calibrationInventoryKey({ ...item, color_space: 'bt709' }))
+  })
   it('is independent of database order and uses distinct titles spanning technical strata', () => {
     const media = [1, 2, 3, 4, 5, 6].map(id => ({
       id, type: 'episode' as const, series_identity_key: id <= 2 ? 'shared' : String(id),

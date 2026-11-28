@@ -354,8 +354,38 @@ interface MeasuredCandidateEvaluation {
 
 const QUALITY_GATES: Record<OptimizationQualityProfile, QualityGates> = APP_CONFIG.transcoding.qualityGates
 
+/** Inventory grouping uses known technical metadata; the later measured scope is stricter. */
+export function calibrationInventoryKey(item: Pick<MediaItem, 'source_id' | 'library_id' | 'type' | 'video_codec' | 'hdr_format' | 'width' | 'height' | 'color_bit_depth' | 'video_frame_rate' | 'color_space' | 'dolby_vision_profile' | 'container'>): string {
+  const hdr = item.hdr_format?.trim().toLowerCase()
+  const container = item.container?.split(',')[0].trim().toLowerCase()
+  return JSON.stringify([
+    item.source_id, item.library_id, item.type, item.video_codec.trim().toLowerCase(),
+    hdr === 'none' || hdr === 'sdr' ? 'sdr' : hdr, item.width, item.height,
+    item.color_bit_depth, item.video_frame_rate, item.color_space?.trim().toLowerCase(),
+    item.dolby_vision_profile ?? null,
+    container === 'mkv' ? 'matroska' : ['mp4', 'm4v', 'mov'].includes(container ?? '') ? 'mp4' : container,
+  ])
+}
+
+type CalibrationTitle = Pick<MediaItem, 'id' | 'type' | 'series_identity_key' | 'series_title' | 'file_path' | 'width' | 'height' | 'video_bitrate_kbps' | 'video_frame_rate'> &
+  Partial<Pick<MediaItem, 'title' | 'year' | 'imdb_id' | 'tmdb_id' | 'series_tmdb_id'>>
+
+function calibrationTitleKey(item: CalibrationTitle): string | undefined {
+  if (item.type === 'episode') {
+    const series = item.series_tmdb_id ? ['tmdb', item.series_tmdb_id] :
+      item.series_identity_key?.trim() ? ['series', item.series_identity_key.trim()] :
+        item.series_title?.trim() ? ['title', item.series_title.trim().toLowerCase()] : undefined
+    return series ? JSON.stringify(['episode', ...series]) : undefined
+  }
+  // Different editions/files of one named movie are not independent holdouts.
+  const title = item.title?.trim().toLowerCase()
+  const movie = item.tmdb_id ? ['tmdb', item.tmdb_id] : item.imdb_id ? ['imdb', item.imdb_id] :
+    title ? ['title', title, item.year ?? null] : undefined
+  return movie ? JSON.stringify(['movie', ...movie]) : undefined
+}
+
 /** Select independent titles deterministically across resolution, bitrate and frame rate. */
-export function selectCalibrationRepresentatives<T extends Pick<MediaItem, 'id' | 'type' | 'series_identity_key' | 'series_title' | 'file_path' | 'width' | 'height' | 'video_bitrate_kbps' | 'video_frame_rate'>>(
+export function selectCalibrationRepresentatives<T extends CalibrationTitle>(
   items: T[], limit: number,
 ): Array<{ item: T; role: 'calibration' | 'holdout' }> {
   const compare = (left: T, right: T) =>
@@ -366,7 +396,8 @@ export function selectCalibrationRepresentatives<T extends Pick<MediaItem, 'id' 
     (left.file_path < right.file_path ? -1 : left.file_path > right.file_path ? 1 : 0)
   const titles = new Map<string, T[]>()
   for (const item of items) {
-    const identity = item.type === 'movie' ? `movie:${item.id}` : `series:${item.series_identity_key ?? item.series_title ?? item.id}`
+    const identity = calibrationTitleKey(item)
+    if (!identity) continue
     const group = titles.get(identity) ?? []
     group.push(item)
     titles.set(identity, group)
