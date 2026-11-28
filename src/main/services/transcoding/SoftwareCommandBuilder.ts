@@ -7,6 +7,7 @@ import { appendStreamMappingArgs } from './StreamSelectionPlan'
 import { applyTargetTranscodePlan } from './TargetTranscodePlan'
 import { APP_CONFIG } from '@main/config'
 import { getEncoderBitDepth } from './EncoderPixelFormat'
+import { getSoftwareSourceRateLimitKbps } from './OptimizationEncoderPolicy'
 
 export class SoftwareCommandBuilder implements ITranscodeCommandBuilder {
   buildFFmpegArgs(input: string, output: string, options: TranscodeOptions, _analysis: FileAnalysisResult): string[] {
@@ -19,7 +20,7 @@ export class SoftwareCommandBuilder implements ITranscodeCommandBuilder {
     const totalCpus = os.cpus()?.length || 4
     const softwareThreads = Math.max(1, totalCpus > 4 ? totalCpus - 2 : totalCpus - 1)
 
-    const sourceBitrate = _analysis?.video?.bitrateKbps || _analysis?.overallBitrateKbps || (_analysis?.durationMs && _analysis?.fileSizeBytes ? Math.round((_analysis.fileSizeBytes * 8) / _analysis.durationMs) : undefined)
+    const sourceBitrate = getSoftwareSourceRateLimitKbps(_analysis)
 
     const args: string[] = [
       '-y',

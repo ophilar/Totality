@@ -108,10 +108,15 @@ describe('selectMeasuredCandidate', () => {
     expect(buildValidatedCalibrationEntries(failed, timestamp).some(entry => entry.quality === 26)).toBe(false)
     const limits = [1000, 4000, 2000, 3000]
     const bounded = buildValidatedCalibrationEntries(evidence.map(entry => ({ ...entry, rateLimit: limits[entry.mediaItemId! - 1] })), timestamp)
-    expect(scopedCalibrationEntries(bounded, 'scope-a', 2500).length).toBeGreaterThan(0)
-    expect(scopedCalibrationEntries(bounded, 'scope-a', 1500)).toEqual([])
-    expect(scopedCalibrationEntries(bounded, 'scope-a', 3500)).toEqual([])
+    expect(scopedCalibrationEntries(bounded, 'scope-a', { [candidates[0].encoder]: 2500 }).length).toBeGreaterThan(0)
+    expect(scopedCalibrationEntries(bounded, 'scope-a', { [candidates[0].encoder]: 1500 })).toEqual([])
+    expect(scopedCalibrationEntries(bounded, 'scope-a', { [candidates[0].encoder]: 3500 })).toEqual([])
     expect(scopedCalibrationEntries(bounded, 'scope-a')).toEqual([])
+    const mixed = buildValidatedCalibrationEntries([...evidence.map(entry => ({ ...entry, measuredCandidate: { ...entry.measuredCandidate, encoder: 'x265', gpuId: undefined }, rateLimit: limits[entry.mediaItemId! - 1] })), ...evidence.map(entry => ({ ...entry, measuredCandidate: { ...entry.measuredCandidate, encoder: 'nvenc_h265', gpuId: 'nvidia' } }))], timestamp)
+    expect(mixed).toHaveLength(6)
+    expect(scopedCalibrationEntries(mixed, 'scope-a', { x265: 2500 })).toHaveLength(6)
+    expect(scopedCalibrationEntries(mixed, 'scope-a', { x265: 1500 }).every(entry => entry.encoder === 'nvenc_h265')).toBe(true)
+    expect(scopedCalibrationEntries(mixed, 'scope-a', { x265: 1500 })).toHaveLength(3)
   })
 
   it('validates persisted calibration entries without accepting incomplete evidence', () => {

@@ -28,7 +28,7 @@ import { getStatsCacheService } from './StatsCacheService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { OptimizationCandidateService, type OptimizationCandidateReason } from './OptimizationCandidateService'
 import type { MediaSourceTier } from './transcoding/TrashSourceClassifier'
-import { buildCandidateLadder, candidateDeviceKey, candidateFamilyKey, candidateEncodingKey, nextCandidateSearch, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MAX_MEASURED_CANDIDATES_PER_PRESET, MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, scopedCalibrationEntries, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile, type OptimizationCalibrationEntry } from './MeasuredOptimizationPolicy'
+import { buildCandidateLadder, candidateDeviceKey, candidateFamilyKey, candidateEncodingKey, nextCandidateSearch, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MAX_MEASURED_CANDIDATES_PER_PRESET, MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, scopedCalibrationEntries, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile, type OptimizationCalibrationEntry, type EncoderRateLimits } from './MeasuredOptimizationPolicy'
 import { readOptimizationCalibrationProfile, writeOptimizationCalibrationProfile } from './OptimizationCalibrationProfile'
 import { buildTargetTranscodePlan, validateTargetTranscodeBitrate } from './transcoding/TargetTranscodePlan'
 import type { MeasuredCandidate, MeasuredCandidateSample } from './MeasuredOptimizationPolicy'
@@ -39,7 +39,7 @@ import { getTaskQueueService } from './TaskQueueService'
 import { buildOptimizationSavingsBreakdown, calculateBitrateSavingsBytes, projectMeasuredOutputBytes, projectMeasuredSavingsBytes, sumMeasuredStreamBytes, type OptimizationSavingsCoverage, type OptimizationSavingsOperation } from './OptimizationSavingsService'
 import { normalizeAudioCodec, normalizeVideoCodec } from './MediaNormalizer'
 import { DEFAULT_OPTIMIZATION_VIDEO_CODEC, getOptimizationVideoCodec, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
-import { isMeasuredSoftwareEncoder, measuredOptimizationEncoderSpec, verifiedOptimizationDevices } from './transcoding/OptimizationEncoderPolicy'
+import { isMeasuredSoftwareEncoder, measuredOptimizationEncoderSpec, verifiedOptimizationDevices, getSoftwareSourceRateLimitKbps } from './transcoding/OptimizationEncoderPolicy'
 import { ValidatedFileAnalysisCache } from './transcoding/ValidatedFileAnalysisCache'
 import { OperationFileHasher } from './transcoding/OperationFileHasher'
 import { fileIdentity, matchesFileIdentity } from './utils/FileIdentity'
@@ -723,7 +723,7 @@ export class TranscodingService {
     saveEpisodeCheckpoint?: (mediaItemId: number, checkpoint: ShowTranscodeEpisodeCheckpoint) => Promise<void>
     calibration?: boolean
     parameterPreview?: boolean
-    onMeasuredCandidates?: (candidates: MeasuredCandidate[], complete: boolean, calibrationScopeKey?: string, maximumRate?: number, rateLimit?: number) => Promise<void>
+    onMeasuredCandidates?: (candidates: MeasuredCandidate[], complete: boolean, calibrationScopeKey?: string, maximumRate?: number, rateLimits?: EncoderRateLimits) => Promise<void>
   }): Promise<ShowTranscodePreflight> {
     // Run cache maintenance after preflight, never on the critical response path.
     // If a prior maintenance sweep is deleting entries, wait for it before reading.
@@ -1163,8 +1163,8 @@ export class TranscodingService {
                     publishPreflightProgress(episode, phase)
                     await operation?.waitUntilRunning()
                   },
-                  async (candidates, complete, calibrationScopeKey, maximumRate, rateLimit) => {
-                    await operation?.onMeasuredCandidates?.(candidates, complete, calibrationScopeKey, maximumRate, rateLimit)
+                  async (candidates, complete, calibrationScopeKey, maximumRate, rateLimits) => {
+                    await operation?.onMeasuredCandidates?.(candidates, complete, calibrationScopeKey, maximumRate, rateLimits)
                     await persistMeasurement(candidates, complete, partialSamples)
                     if (!operation?.calibration) getLoggingService().info('[TVOptimization]', `Measured candidates cached: mediaItem=${episode.id}, cacheKey=${measurementCacheKey}, candidates=${candidates.length}`)
                   },
@@ -2732,7 +2732,7 @@ export class TranscodingService {
     sampleDirectory?: string,
     signal?: AbortSignal,
     onProgress?: (phase: string) => Promise<void> | void,
-    onMeasuredCandidates?: (candidates: MeasuredCandidate[], complete: boolean, calibrationScopeKey?: string, maximumRate?: number, rateLimit?: number) => Promise<void>,
+    onMeasuredCandidates?: (candidates: MeasuredCandidate[], complete: boolean, calibrationScopeKey?: string, maximumRate?: number, rateLimits?: EncoderRateLimits) => Promise<void>,
     previouslyMeasured: MeasuredCandidate[] = [],
     measurementComplete = false,
     previouslyMeasuredSamples: MeasuredCandidateSample[] = [],
@@ -2829,6 +2829,9 @@ export class TranscodingService {
       const sampleSeconds = Math.min(analysis.durationMs / 1000, sampleDurationSeconds * samplePositions.length)
       const maximumOutputBytesPerSecond = Math.min(options.maxOutputBytes ?? stat.size, stat.size) / (analysis.durationMs / 1000) - plannedNonVideoBytesPerSecond(analysis, options)
       const plannedBitrate = options.targetConversion?.maximumVideoBitrate
+      const sourceSoftwareRate = getSoftwareSourceRateLimitKbps(analysis)
+      const rateLimits: EncoderRateLimits = Object.fromEntries(devices.map(device => [device.encoder,
+        plannedBitrate ?? (device.gpuId === undefined && sourceSoftwareRate !== undefined ? sourceSoftwareRate * 1000 : undefined)]))
       const outputExtension = resolveOutputExtension(filePath, options)
       const targetProfile = options.targetProfileId ? await getDatabase().playbackTargetProfiles.get(options.targetProfileId) : undefined
       const calibrationScopeKey = sourceId && libraryId && mediaType ? JSON.stringify({
@@ -2863,7 +2866,7 @@ export class TranscodingService {
         customArgs: options.customArgs,
         videoFilter: options.targetConversion?.videoFilter,
         inputArgs: options.targetConversion?.inputArgs,
-        rateControl: options.targetConversion?.maximumVideoBitrate === undefined ? 'unbounded' : 'bounded',
+        rateControl: plannedBitrate === undefined ? 'encoder-source-dependent' : 'target-bounded',
         targetWidth: options.targetConversion?.width,
         targetHeight: options.targetConversion?.height,
         targetBitDepth: options.targetConversion?.bitDepth,
@@ -2871,7 +2874,7 @@ export class TranscodingService {
         targetVideoLevel: options.targetConversion?.level,
         targetConversionHdr: options.targetConversion?.hdrFormat,
       }) : undefined
-      const calibration = scopedCalibrationEntries(activeCalibration, calibrationScopeKey, plannedBitrate)
+      const calibration = scopedCalibrationEntries(activeCalibration, calibrationScopeKey, rateLimits)
       const nextCandidates = () => searchContext?.calibration
         ? ladder.filter(candidate => !isMeasured(candidate)).slice(0, 1)
         : nextCandidateSearch(ladder, measuredCandidates, options.qualityProfile!, maxCandidatesPerPreset, calibration)
@@ -2932,7 +2935,7 @@ export class TranscodingService {
               measuredSamples = [...measuredSamples.filter(existing => candidateEncodingKey(existing) !== candidateEncodingKey(sample) || existing.sampleIndex !== sample.sampleIndex), sample]
               await onMeasuredSample?.(sample)
             },
-            onCandidateMeasured: async roundCandidates => onMeasuredCandidates?.([...measuredCandidates.slice(0, roundStart), ...roundCandidates], false, calibrationScopeKey, maximumOutputBytesPerSecond, plannedBitrate),
+            onCandidateMeasured: async roundCandidates => onMeasuredCandidates?.([...measuredCandidates.slice(0, roundStart), ...roundCandidates], false, calibrationScopeKey, maximumOutputBytesPerSecond, rateLimits),
             sampleDurationSeconds,
             samplePositions,
           })
@@ -2980,12 +2983,12 @@ export class TranscodingService {
           for (const candidate of measuredCandidates) {
             candidate.searchSummary = { measuredCount: measuredCandidates.length, maximumCandidates, budgetReached: budgetReached() }
           }
-          await onMeasuredCandidates?.(measuredCandidates, true, calibrationScopeKey, maximumOutputBytesPerSecond, plannedBitrate)
+          await onMeasuredCandidates?.(measuredCandidates, true, calibrationScopeKey, maximumOutputBytesPerSecond, rateLimits)
           break
         }
       }
       signal?.throwIfAborted()
-      if (measurementComplete && previouslyMeasured.length === measuredCandidates.length) await onMeasuredCandidates?.(measuredCandidates, true, calibrationScopeKey, maximumOutputBytesPerSecond, plannedBitrate)
+      if (measurementComplete && previouslyMeasured.length === measuredCandidates.length) await onMeasuredCandidates?.(measuredCandidates, true, calibrationScopeKey, maximumOutputBytesPerSecond, rateLimits)
       const selected = selectMeasuredCandidate(options.qualityProfile, measuredCandidates, maximumOutputBytesPerSecond)
       const reachedBudget = budgetReached()
       selected.searchSummary = { measuredCount: measuredCandidates.length, maximumCandidates, budgetReached: reachedBudget }

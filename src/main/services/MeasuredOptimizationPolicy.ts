@@ -4,11 +4,12 @@ import { APP_CONFIG } from '@main/config'
 import { getOptimizationVideoCodec, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
 import type { MeasurementSourcePreparation } from './MeasuredOptimizationService'
 import type { MediaItem } from '@main/types/database'
+import { normalizeVideoCodec } from './MediaNormalizer'
 
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
 
 export const MEASUREMENT_VERSION = 20
-export const OPTIMIZATION_SEARCH_VERSION = 10
+export const OPTIMIZATION_SEARCH_VERSION = 11
 /** Hard bound on expensive full-sample evaluations in each encoder/preset domain. */
 export const MAX_MEASURED_CANDIDATES_PER_PRESET = 5
 export const VMAF_LOW_PERCENTILE = 0.05
@@ -70,10 +71,14 @@ export function calibrationEntrySupportsProfile(entry: OptimizationCalibrationEn
   return entry.vmafMean >= gates.vmafMean && entry.vmafP5 >= gates.vmafP5 && entry.cambiMean <= gates.cambiMean
 }
 
-export function scopedCalibrationEntries(entries: OptimizationCalibrationEntry[], scopeKey: string | undefined, rateLimit?: number): OptimizationCalibrationEntry[] {
-  return scopeKey === undefined ? [] : entries.filter(entry => entry.scopeKey === scopeKey &&
-    (rateLimit === undefined ? entry.rateLimitMin === undefined && entry.rateLimitMax === undefined :
-      entry.rateLimitMin !== undefined && entry.rateLimitMax !== undefined && rateLimit >= entry.rateLimitMin && rateLimit <= entry.rateLimitMax))
+export type EncoderRateLimits = Readonly<Partial<Record<string, number>>>
+
+export function scopedCalibrationEntries(entries: OptimizationCalibrationEntry[], scopeKey: string | undefined, rateLimits: EncoderRateLimits = {}): OptimizationCalibrationEntry[] {
+  return scopeKey === undefined ? [] : entries.filter(entry => {
+    const rateLimit = rateLimits[entry.encoder]
+    return entry.scopeKey === scopeKey && (rateLimit === undefined ? entry.rateLimitMin === undefined && entry.rateLimitMax === undefined :
+      entry.rateLimitMin !== undefined && entry.rateLimitMax !== undefined && rateLimit >= entry.rateLimitMin && rateLimit <= entry.rateLimitMax)
+  })
 }
 
 export interface CalibrationCandidateEvidence {
@@ -108,23 +113,23 @@ export function buildValidatedCalibrationEntries(evidence: CalibrationCandidateE
     const holdouts = new Set(observations.filter(entry => entry.role === 'holdout').map(entry => entry.mediaItemId))
     if (training.size < 2 || !holdouts.size || training.has(undefined) || holdouts.has(undefined) || [...training].some(id => holdouts.has(id))) continue
     const expected = training.size + holdouts.size
-    const rates = observations.map(entry => entry.rateLimit)
-    const bounded = rates.every(rate => typeof rate === 'number' && Number.isFinite(rate) && rate > 0)
-    if (!bounded && rates.some(rate => rate !== undefined)) continue
-    const holdoutRates = observations.filter(entry => entry.role === 'holdout').map(entry => entry.rateLimit!)
-    const trainingRates = observations.filter(entry => entry.role === 'calibration').map(entry => entry.rateLimit!)
-    const rateLimitMin = bounded ? Math.max(Math.min(...trainingRates), Math.min(...holdoutRates)) : undefined
-    const rateLimitMax = bounded ? Math.min(Math.max(...trainingRates), Math.max(...holdoutRates)) : undefined
-    if (rateLimitMin !== undefined && rateLimitMax! < rateLimitMin) continue
     const candidates = groupCalibrationEvidence(observations, ({ measuredCandidate: candidate }) => candidateEncodingKey(candidate))
-    const aggregated: MeasuredCandidate[] = []
+    const aggregated: Array<{ candidate: MeasuredCandidate; rateLimitMin?: number; rateLimitMax?: number }> = []
     for (const group of candidates.values()) {
       if (group.length !== expected || new Set(group.map(entry => entry.mediaItemId)).size !== expected ||
         group.some(entry => !entry.preflightValidated || !Number.isFinite(entry.maximumOutputBytesPerSecond) ||
           !isMeasuredCandidateValidForCalibration(entry.measuredCandidate, 'maximum_savings') ||
           entry.measuredCandidate.outputBytes / entry.measuredCandidate.sampledDurationSeconds >= entry.maximumOutputBytesPerSecond)) continue
+      const rates = group.map(entry => entry.rateLimit)
+      const bounded = rates.every(rate => typeof rate === 'number' && Number.isFinite(rate) && rate > 0)
+      if (!bounded && rates.some(rate => rate !== undefined)) continue
+      const holdoutRates = group.filter(entry => entry.role === 'holdout').map(entry => entry.rateLimit!)
+      const trainingRates = group.filter(entry => entry.role === 'calibration').map(entry => entry.rateLimit!)
+      const rateLimitMin = bounded ? Math.max(Math.min(...trainingRates), Math.min(...holdoutRates)) : undefined
+      const rateLimitMax = bounded ? Math.min(Math.max(...trainingRates), Math.max(...holdoutRates)) : undefined
+      if (rateLimitMin !== undefined && rateLimitMax! < rateLimitMin) continue
       const samples = group.map(entry => entry.measuredCandidate)
-      aggregated.push({
+      aggregated.push({ rateLimitMin, rateLimitMax, candidate: {
         encoder: samples[0].encoder, gpuId: samples[0].gpuId, preset: samples[0].preset, quality: samples[0].quality,
         outputBytes: Math.max(...samples.map(sample => sample.outputBytes / sample.sampledDurationSeconds)),
         sampledDurationSeconds: 1,
@@ -133,11 +138,13 @@ export function buildValidatedCalibrationEntries(evidence: CalibrationCandidateE
         cambiMean: Math.max(...samples.map(sample => sample.cambiMean)),
         encodingDurationMs: samples.every(sample => sample.encodingDurationMs !== undefined)
           ? Math.max(...samples.map(sample => sample.encodingDurationMs! / sample.sampledDurationSeconds)) : undefined,
-      })
+      } })
     }
-    const families = groupCalibrationEvidence(aggregated, candidateFamilyKey)
+    // Do not let evidence at different rate bounds dominate one another.
+    const families = groupCalibrationEvidence(aggregated, entry => JSON.stringify([candidateFamilyKey(entry.candidate), entry.rateLimitMin ?? null, entry.rateLimitMax ?? null]))
     for (const family of families.values()) {
-      for (const candidate of getNonDominatedMeasuredCandidates('maximum_savings', family)) {
+      const { rateLimitMin, rateLimitMax } = family[0]
+      for (const candidate of getNonDominatedMeasuredCandidates('maximum_savings', family.map(entry => entry.candidate))) {
         const { encoder, gpuId, preset, quality, outputBytes, vmafMean, vmafP5, cambiMean, encodingDurationMs } = candidate
         result.push({ scopeKey, rateLimitMin, rateLimitMax, sourceCodec: observations[0].sourceCodec, targetCodec: observations[0].targetCodec,
           encoder, gpuId, preset, quality, outputBytesPerSecond: outputBytes, vmafMean, vmafP5, cambiMean,
@@ -359,7 +366,7 @@ export function calibrationInventoryKey(item: Pick<MediaItem, 'source_id' | 'lib
   const hdr = item.hdr_format?.trim().toLowerCase()
   const container = item.container?.split(',')[0].trim().toLowerCase()
   return JSON.stringify([
-    item.source_id, item.library_id, item.type, item.video_codec.trim().toLowerCase(),
+    item.source_id, item.library_id, item.type, normalizeVideoCodec(item.video_codec),
     hdr === 'none' || hdr === 'sdr' ? 'sdr' : hdr, item.width, item.height,
     item.color_bit_depth, item.video_frame_rate, item.color_space?.trim().toLowerCase(),
     item.dolby_vision_profile ?? null,

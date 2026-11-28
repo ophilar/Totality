@@ -1,5 +1,6 @@
 import type { APP_CONFIG } from '@main/config'
 import type { GpuInfo } from '../utils/GpuDetector'
+import type { FileAnalysisResult } from '../MediaFileAnalyzer'
 import { getHardwareEncoder } from '../TranscodingCapabilities'
 import { OPTIMIZATION_VIDEO_CODECS, getOptimizationVideoCodec, playbackProfileSupportsOptimizationCodec, type OptimizationVideoCodec } from './OptimizationCodecPolicy'
 
@@ -123,4 +124,11 @@ export function unsupportedOptimizationCodecReason(
     ? `${input.selectedGpuName} cannot encode ${label} with validated measured optimization.`
     : `Choose a GPU with validated ${label} encoding support.`
   return `No validated ${label} encoder is available.`
+}
+
+/** Software encoding caps its video rate using the source analysis when no target cap is planned. */
+export function getSoftwareSourceRateLimitKbps(analysis: FileAnalysisResult): number | undefined {
+  const rates = [analysis.video?.bitrateKbps, analysis.overallBitrateKbps,
+    analysis.durationMs && analysis.fileSizeBytes ? Math.round(analysis.fileSizeBytes * 8 / analysis.durationMs) : undefined]
+  return rates.find((rate): rate is number => typeof rate === 'number' && Number.isFinite(rate) && rate > 0)
 }
