@@ -8,18 +8,17 @@ import type { MediaItem } from '@main/types/database'
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
 
 export const MEASUREMENT_VERSION = 18
-export const OPTIMIZATION_SEARCH_VERSION = 7
+export const OPTIMIZATION_SEARCH_VERSION = 8
 /** Hard bound on expensive full-sample evaluations in each encoder/preset domain. */
 export const MAX_MEASURED_CANDIDATES_PER_PRESET = 5
 export const VMAF_LOW_PERCENTILE = 0.05
 export const SHOW_PREFLIGHT_SETTING_PREFIX = 'transcoding.preflight.'
 export const MEASUREMENT_SETTING_PREFIX = 'transcoding.measurement.'
-export const OPTIMIZATION_CALIBRATION_VERSION = 3
+export const OPTIMIZATION_CALIBRATION_VERSION = 4
 export const OPTIMIZATION_QUALITY_PROFILES = ['transparent', 'balanced', 'maximum_savings'] as const
 export interface OptimizationCalibrationEntry {
   /** Serialized measurement context; exact equality is required before using this search prior. */
   scopeKey: string
-  qualityProfile: OptimizationQualityProfile
   /** Interpolation envelope of the observed encoder rate ceilings, in bits/s. */
   rateLimitMin?: number
   rateLimitMax?: number
@@ -29,8 +28,13 @@ export interface OptimizationCalibrationEntry {
   gpuId?: string
   preset: string
   quality: number
-  outputBytes: number
-  sampledDurationSeconds: number
+  outputBytesPerSecond: number
+  vmafMean: number
+  vmafP5: number
+  cambiMean: number
+  encodingMsPerSecond?: number
+  trainingCount: number
+  holdoutCount: number
   measuredAt: string
 }
 
@@ -43,7 +47,6 @@ export function isValidOptimizationCalibrationEntry(value: unknown): value is Op
   if (!value || typeof value !== 'object') return false
   const entry = value as Partial<OptimizationCalibrationEntry>
   return typeof entry.scopeKey === 'string' && entry.scopeKey.length > 0 &&
-    OPTIMIZATION_QUALITY_PROFILES.includes(entry.qualityProfile!) &&
     ((entry.rateLimitMin === undefined && entry.rateLimitMax === undefined) ||
       (typeof entry.rateLimitMin === 'number' && Number.isFinite(entry.rateLimitMin) && entry.rateLimitMin > 0 &&
        typeof entry.rateLimitMax === 'number' && Number.isFinite(entry.rateLimitMax) && entry.rateLimitMax >= entry.rateLimitMin)) &&
@@ -52,9 +55,19 @@ export function isValidOptimizationCalibrationEntry(value: unknown): value is Op
     typeof entry.encoder === 'string' && entry.encoder.length > 0 &&
     typeof entry.preset === 'string' && entry.preset.length > 0 &&
     typeof entry.quality === 'number' && Number.isFinite(entry.quality) &&
-    typeof entry.outputBytes === 'number' && Number.isFinite(entry.outputBytes) && entry.outputBytes > 0 &&
-    typeof entry.sampledDurationSeconds === 'number' && Number.isFinite(entry.sampledDurationSeconds) && entry.sampledDurationSeconds > 0 &&
+    typeof entry.outputBytesPerSecond === 'number' && Number.isFinite(entry.outputBytesPerSecond) && entry.outputBytesPerSecond > 0 &&
+    typeof entry.vmafMean === 'number' && Number.isFinite(entry.vmafMean) &&
+    typeof entry.vmafP5 === 'number' && Number.isFinite(entry.vmafP5) &&
+    typeof entry.cambiMean === 'number' && Number.isFinite(entry.cambiMean) &&
+    (entry.encodingMsPerSecond === undefined || Number.isFinite(entry.encodingMsPerSecond) && entry.encodingMsPerSecond >= 0) &&
+    Number.isInteger(entry.trainingCount) && entry.trainingCount! >= 2 && Number.isInteger(entry.holdoutCount) && entry.holdoutCount! >= 1 &&
     typeof entry.measuredAt === 'string' && entry.measuredAt.length > 0
+}
+
+/** Profiles are views of one validated frontier, never separately persisted models. */
+export function calibrationEntrySupportsProfile(entry: OptimizationCalibrationEntry, profile: OptimizationQualityProfile): boolean {
+  const gates = QUALITY_GATES[profile]
+  return entry.vmafMean >= gates.vmafMean && entry.vmafP5 >= gates.vmafP5 && entry.cambiMean <= gates.cambiMean
 }
 
 export function scopedCalibrationEntries(entries: OptimizationCalibrationEntry[], scopeKey: string | undefined, rateLimit?: number): OptimizationCalibrationEntry[] {
@@ -123,13 +136,12 @@ export function buildValidatedCalibrationEntries(evidence: CalibrationCandidateE
       })
     }
     const families = groupCalibrationEvidence(aggregated, candidate => JSON.stringify([candidate.encoder, candidate.gpuId ?? null, candidate.preset]))
-    for (const qualityProfile of OPTIMIZATION_QUALITY_PROFILES) {
-      for (const family of families.values()) {
-        for (const candidate of getNonDominatedMeasuredCandidates(qualityProfile, family)) {
-          const { encoder, gpuId, preset, quality, outputBytes, sampledDurationSeconds } = candidate
-          result.push({ scopeKey, qualityProfile, rateLimitMin, rateLimitMax, sourceCodec: observations[0].sourceCodec, targetCodec: observations[0].targetCodec,
-            encoder, gpuId, preset, quality, outputBytes, sampledDurationSeconds, measuredAt })
-        }
+    for (const family of families.values()) {
+      for (const candidate of getNonDominatedMeasuredCandidates('maximum_savings', family)) {
+        const { encoder, gpuId, preset, quality, outputBytes, vmafMean, vmafP5, cambiMean, encodingDurationMs } = candidate
+        result.push({ scopeKey, rateLimitMin, rateLimitMax, sourceCodec: observations[0].sourceCodec, targetCodec: observations[0].targetCodec,
+          encoder, gpuId, preset, quality, outputBytesPerSecond: outputBytes, vmafMean, vmafP5, cambiMean,
+          encodingMsPerSecond: encodingDurationMs, trainingCount: training.size, holdoutCount: holdouts.size, measuredAt })
       }
     }
   }
@@ -252,10 +264,10 @@ export function nextCandidateSearch(
       if (measured.length >= maxCandidatesPerPreset) continue
       if (measured.length === 0) {
         const prior = calibrationEntries.filter(entry =>
-          entry.qualityProfile === profile && entry.encoder === presetCandidate.encoder && entry.gpuId === presetCandidate.gpuId &&
+          calibrationEntrySupportsProfile(entry, profile) && entry.encoder === presetCandidate.encoder && entry.gpuId === presetCandidate.gpuId &&
           entry.preset === presetCandidate.preset && Number.isInteger(entry.quality) &&
           entry.quality >= qualities[0] && entry.quality <= qualities[qualities.length - 1]
-        ).sort((left, right) => left.outputBytes / left.sampledDurationSeconds - right.outputBytes / right.sampledDurationSeconds || right.quality - left.quality)[0]
+        ).sort((left, right) => left.outputBytesPerSecond - right.outputBytesPerSecond || (left.encodingMsPerSecond ?? Infinity) - (right.encodingMsPerSecond ?? Infinity) || right.quality - left.quality)[0]
         const middle = qualities[Math.floor((qualities.length - 1) / 2)]
         return untested([prior?.quality ?? middle])
       }

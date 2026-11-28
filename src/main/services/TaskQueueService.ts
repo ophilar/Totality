@@ -33,7 +33,7 @@ import { getWishlistCompletionService } from './WishlistCompletionService'
 import { getTMDBService } from './TMDBService'
 import { getTranscodingService } from './TranscodingService'
 import { getLoggingService } from './LoggingService'
-import { buildValidatedCalibrationEntries, selectCalibrationRepresentatives, OPTIMIZATION_QUALITY_PROFILES, type CalibrationCandidateEvidence, type MeasuredCandidate } from './MeasuredOptimizationPolicy'
+import { buildValidatedCalibrationEntries, selectCalibrationRepresentatives, OPTIMIZATION_QUALITY_PROFILES, calibrationEntrySupportsProfile, type CalibrationCandidateEvidence, type MeasuredCandidate } from './MeasuredOptimizationPolicy'
 import type { OptimizationCandidateScanSummary, ShowTranscodeRequest, ShowTranscodePreflight, ShowTranscodeEpisodeCheckpoint } from './TranscodingService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { normalizeVideoCodec } from './MediaNormalizer'
@@ -1123,7 +1123,7 @@ export class TaskQueueService {
     const observedScopes = new Set(evidence.map(entry => entry.scopeKey))
     const validatedScopes = new Set(entries.map(entry => entry.scopeKey))
     const uncoveredScopes = [...observedScopes].filter(scope => !validatedScopes.has(scope))
-    const missingProfiles = [...validatedScopes].flatMap(scope => OPTIMIZATION_QUALITY_PROFILES.filter(profile => !entries.some(entry => entry.scopeKey === scope && entry.qualityProfile === profile)).map(profile => ({ scope, profile })))
+    const missingProfiles = [...validatedScopes].flatMap(scope => OPTIMIZATION_QUALITY_PROFILES.filter(profile => !entries.some(entry => entry.scopeKey === scope && calibrationEntrySupportsProfile(entry, profile))).map(profile => ({ scope, profile })))
     const incompleteCount = failedGroups.size + uncoveredScopes.length + missingProfiles.length
     const profileStatus = entries.length > 0 ? incompleteCount ? 'partial' : 'validated' : 'unvalidated'
     await getDatabase().deleteSetting(checkpointKey)

@@ -70,8 +70,8 @@ describe('selectMeasuredCandidate', () => {
   it('uses scoped calibration to change the first measured quality while preserving final measurement authority', () => {
     const domain = [10, 14, 18, 24, 30].map(quality => ({ encoder: 'nvenc_h265', gpuId: 'nvidia', preset: 'p6', quality }))
     const entry = {
-      scopeKey: 'library-A/HDR10/profile-1', qualityProfile: 'balanced' as const, sourceCodec: 'H.264', targetCodec: 'hevc' as const,
-      ...domain[3], outputBytes: 80, sampledDurationSeconds: 30, measuredAt: new Date().toISOString(),
+      scopeKey: 'library-A/HDR10/profile-1', sourceCodec: 'H.264', targetCodec: 'hevc' as const,
+      ...domain[3], outputBytesPerSecond: 80 / 30, vmafMean: 95, vmafP5: 92, cambiMean: 0, trainingCount: 2, holdoutCount: 2, measuredAt: new Date().toISOString(),
     }
     expect(nextCandidateSearch(domain, [], 'balanced')).toEqual([domain[2]])
     expect(nextCandidateSearch(domain, [], 'balanced', 2, scopedCalibrationEntries([entry], entry.scopeKey))).toEqual([domain[3]])
@@ -95,6 +95,7 @@ describe('selectMeasuredCandidate', () => {
       })))
     const timestamp = new Date().toISOString()
     const entries = buildValidatedCalibrationEntries(evidence, timestamp)
+    expect(entries).toHaveLength(3)
     const domain = candidates.map(({ encoder, preset, quality }) => ({ encoder, preset, quality }))
     for (const [profile, quality] of [['transparent', 18], ['balanced', 22], ['maximum_savings', 26]] as const) {
       expect(nextCandidateSearch(domain, [], profile, 5, entries)[0].quality).toBe(quality)
@@ -115,8 +116,8 @@ describe('selectMeasuredCandidate', () => {
 
   it('validates persisted calibration entries without accepting incomplete evidence', () => {
     expect(isValidOptimizationCalibrationEntry({
-      scopeKey: 'library-A/SDR/profile-1', qualityProfile: 'balanced', sourceCodec: 'H.264', targetCodec: 'hevc', encoder: 'x265', preset: 'medium', quality: 22,
-      outputBytes: 100, sampledDurationSeconds: 30, measuredAt: new Date().toISOString(),
+      scopeKey: 'library-A/SDR/profile-1', sourceCodec: 'H.264', targetCodec: 'hevc', encoder: 'x265', preset: 'medium', quality: 22,
+      outputBytesPerSecond: 100 / 30, vmafMean: 95, vmafP5: 92, cambiMean: 0, trainingCount: 2, holdoutCount: 2, measuredAt: new Date().toISOString(),
     })).toBe(true)
     expect(isValidOptimizationCalibrationEntry({ sourceCodec: 'H.264', targetCodec: 'hevc' })).toBe(false)
   })
