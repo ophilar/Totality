@@ -477,7 +477,7 @@ export class MeasuredOptimizationService {
               })
               throw error
             }
-            const logPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}.json`)
+            const logPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.gpuId ?? 'software'}-${candidate.quality}-${candidate.preset}-${index}.json`)
             ownedPaths.add(logPath)
             const totalFrames = referenceSamples.reduce((sum, sample) => sum + sample.frames, 0)
             const screeningFrames = Math.min(referenceSamples[index].frames, Math.floor(totalFrames * VMAF_LOW_PERCENTILE) + 1)
@@ -485,7 +485,7 @@ export class MeasuredOptimizationService {
             let metrics: { vmafScores: number[]; cambiScores: number[] } | undefined
             if (request.qualityProfile && screeningFrames < referenceSamples[index].frames) {
               await request.onProgress?.(`Screening sample ${index + 1} of ${starts.length} for impossible quality`)
-              const screeningLogPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}.screening.json`)
+              const screeningLogPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.gpuId ?? 'software'}-${candidate.quality}-${candidate.preset}-${index}.screening.json`)
               ownedPaths.add(screeningLogPath)
               const screeningStartedAt = performance.now()
               const screening = await this.measureFrameMetrics(binary, outputPath, request.inputPath, screeningLogPath, screeningFrames, { startSeconds: starts[index], durationSeconds: length }, request.signal, screeningFrames, undefined, request.referenceFilter, request.referenceInputArgs)

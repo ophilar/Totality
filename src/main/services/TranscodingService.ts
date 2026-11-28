@@ -1110,7 +1110,7 @@ export class TranscodingService {
         if (measurementCacheKey && !operation?.calibration) {
           analysis.optimizationMeasurement = {
             cacheKey: reusableRepresentativePlan ? reusableRepresentativePlan.sourceAnalysis!.optimizationMeasurement!.cacheKey : measurementCacheKey,
-            qualityProfile: options.qualityProfile!, sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs,
+            qualityProfile: options.qualityProfile!, targetCodec: options.targetCodec!, nonVideoBytesPerSecond: plannedNonVideoBytesPerSecond(analysis, options), sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs,
             samplingRole: reusableRepresentativePlan ? 'projected' : 'measured',
           }
         }
@@ -1232,9 +1232,9 @@ export class TranscodingService {
               publishPreflightProgress(episode, `Verifying measured sample ${sampleIndex + 1} of ${samplePaths.length}`)
               operation?.signal.throwIfAborted()
               const sample = await getMediaFileAnalyzer().analyzeCompleteFile(samplePath, { scanBitrate: true, detectVolume: false, signal: operation?.signal })
-              this.verifyPlannedStreams(analysis, sample, options, params)
+              this.verifyPlannedVideo(sample, options)
               if (targetProfile) {
-                targetCompatibility = evaluatePlaybackTarget(targetProfile, sample)
+                targetCompatibility = evaluatePlaybackTarget(targetProfile, this.withPlannedSampleStreams(analysis, sample, options))
                 if (!isCompatibleWithPlaybackPolicy(options.playbackPolicy ?? 'allow-transcoding', targetCompatibility)) throw new Error(`Measured sample is incompatible: ${Object.values(targetCompatibility.findings).filter(finding => finding.status === 'incompatible').map(finding => finding.rule).join('; ')}`)
               }
             }
@@ -2365,6 +2365,7 @@ export class TranscodingService {
       encoder: videoCodec,
       crf: finalCrf,
       preset: finalPreset,
+      measuredCandidate: 'measuredCandidate' in measuredParameters ? measuredParameters.measuredCandidate : undefined,
       sourceHdrFormat: analysis.video?.hdrFormat,
       expectedAudioCount,
       expectedSubtitleCount,
@@ -2433,7 +2434,10 @@ export class TranscodingService {
       const params = queuePayload?.params ?? await this.getTranscodeParameters(inputPath, options)
       const sourceAnalysis = queuePayload?.sourceAnalysis ?? await getMediaFileAnalyzer().analyzeFile(inputPath)
       const encoderProfile = `${params.encoder}:${params.preset}:${params.crf}`
-      const predictedOutputBytes = await db.mediaRemuxJobs.getCalibratedOutputBytes(sourceStat.size, 'transcode', encoderProfile)
+      const measured = params.measuredCandidate
+      const predictedOutputBytes = measured && sourceAnalysis.durationMs && !measured.incompleteMeasurement
+        ? Math.round((measured.outputBytes / measured.sampledDurationSeconds + plannedNonVideoBytesPerSecond(sourceAnalysis, options)) * sourceAnalysis.durationMs / 1000)
+        : null
       optimizationJobId = await db.mediaRemuxJobs.create({
         mediaItemId,
         operationKind: 'transcode',
@@ -2561,17 +2565,17 @@ export class TranscodingService {
       if (await sha256File(inputPath) !== sourceSha256) throw new Error('Source file changed during transcoding')
 
       let outputQualityVerification: Awaited<ReturnType<MeasuredOptimizationService['verifyOutputQuality']>> | undefined
-      if (queuePayload?.params?.measuredCandidate) {
-        if (!options.qualityProfile) throw new Error('Approved measured optimization has no quality profile')
-        if (!queuePayload.preflightId) throw new Error('Approved measured optimization has no saved review identity')
+      if (params.measuredCandidate) {
+        if (!options.qualityProfile) throw new Error('Measured optimization has no quality profile')
+        if (queuePayload && !queuePayload?.preflightId) throw new Error('Approved measured optimization has no saved review identity')
         if (stats.size >= sourceStat.size) throw new Error(`Verified output has no positive size saving (${stats.size} >= ${sourceStat.size} bytes)`)
-        const verificationDirectory = path.join(app.getPath('userData'), 'transcoding-samples', queuePayload.preflightId!, 'output-verification', String(mediaItemId))
+        const verificationDirectory = path.join(app.getPath('userData'), 'transcoding-samples', queuePayload?.preflightId ?? randomUUID(), 'output-verification', String(mediaItemId))
         getLoggingService().info('[TVOptimization]', 'Actual output quality verification started', {
           event: 'output-verification.started',
-          batchId: queuePayload.batchId,
-          preflightId: queuePayload.preflightId,
+          batchId: queuePayload?.batchId,
+          preflightId: queuePayload?.preflightId,
           mediaItemId,
-          sampleRepresentativeMediaItemId: queuePayload.sampleRepresentativeMediaItemId,
+          sampleRepresentativeMediaItemId: queuePayload?.sampleRepresentativeMediaItemId,
           sourceBytes: sourceStat.size,
           outputBytes: stats.size,
           qualityProfile: options.qualityProfile,
@@ -2589,10 +2593,10 @@ export class TranscodingService {
           onProgress: phase => {
             getLoggingService().info('[TVOptimization]', 'Actual output verification progress', {
               event: 'output-verification.progress',
-              batchId: queuePayload.batchId,
-              preflightId: queuePayload.preflightId,
+              batchId: queuePayload?.batchId,
+              preflightId: queuePayload?.preflightId,
               mediaItemId,
-              sampleRepresentativeMediaItemId: queuePayload.sampleRepresentativeMediaItemId,
+              sampleRepresentativeMediaItemId: queuePayload?.sampleRepresentativeMediaItemId,
               phase,
             })
             onProgress?.({ percent: 100, status: 'verifying', phase })
@@ -2600,10 +2604,10 @@ export class TranscodingService {
         })
         getLoggingService().info('[TVOptimization]', 'Actual output quality verification completed', {
           event: 'output-verification.completed',
-          batchId: queuePayload.batchId,
-          preflightId: queuePayload.preflightId,
+          batchId: queuePayload?.batchId,
+          preflightId: queuePayload?.preflightId,
           mediaItemId,
-          sampleRepresentativeMediaItemId: queuePayload.sampleRepresentativeMediaItemId,
+          sampleRepresentativeMediaItemId: queuePayload?.sampleRepresentativeMediaItemId,
           durationMs: Math.round(performance.now() - outputVerificationStartedAt),
           outputBytes: stats.size,
           verifiedSavingsBytes: sourceStat.size - stats.size,
@@ -2728,6 +2732,30 @@ export class TranscodingService {
     }
   }
 
+  private verifyPlannedVideo(outputAnalysis: FileAnalysisResult, options: TranscodeOptions): void {
+    if (!outputAnalysis.success || !outputAnalysis.video) throw new Error(outputAnalysis.error || 'Verified output has no video stream')
+    const conversion = options.targetConversion
+    if (conversion) validateTargetTranscodeBitrate(conversion, outputAnalysis)
+    if (conversion && (outputAnalysis.video.codec !== options.targetCodec || outputAnalysis.video.width !== conversion.width || outputAnalysis.video.height !== conversion.height || outputAnalysis.video.bitDepth !== conversion.bitDepth || outputAnalysis.video.hdrFormat !== conversion.hdrFormat)) throw new Error('Verified output does not match the approved video conversion')
+    if (!conversion && options.optimizationMode === 'transcode' && options.targetCodec && normalizeVideoCodec(outputAnalysis.video.codec) !== normalizeVideoCodec(options.targetCodec)) throw new Error('Verified output codec does not match the approved video codec')
+  }
+
+  /** Samples contain video only; combine observed video with the explicit retained-stream plan. */
+  private withPlannedSampleStreams(source: FileAnalysisResult, sample: FileAnalysisResult, options: TranscodeOptions): FileAnalysisResult {
+    const streams = buildStreamSelectionPlan(source, options)
+    const conversions = options.targetConversion?.audio ?? options.audioConversions ?? []
+    if (sample.overallBitrateKbps === undefined) throw new Error('Measured sample bitrate is required')
+    return {
+      ...sample,
+      overallBitrateKbps: sample.overallBitrateKbps + plannedNonVideoBytesPerSecond(source, options) * 8 / 1000,
+      audioTracks: source.audioTracks.filter(track => streams.audioStreamIndexes.includes(track.index)).map(track => {
+        const conversion = conversions.find(candidate => candidate.sourceIndex === track.index)
+        return conversion ? { ...track, codec: conversion.codec, bitrateKbps: conversion.bitrateKbps ?? track.bitrateKbps } : track
+      }),
+      subtitleTracks: source.subtitleTracks.filter(track => streams.subtitleStreamIndexes.includes(track.index)),
+    }
+  }
+
   private verifyPlannedStreams(sourceAnalysis: FileAnalysisResult, outputAnalysis: FileAnalysisResult, options: TranscodeOptions, params: TranscodingParams): void {
     if (!outputAnalysis.success || !outputAnalysis.video) throw new Error(outputAnalysis.error || 'Verified output has no video stream')
     const expectedAudioCount = params.expectedAudioCount !== undefined ? params.expectedAudioCount : params.audioTracks?.length
@@ -2738,10 +2766,7 @@ export class TranscodingService {
     if (expectedSubtitleCount !== undefined && outputAnalysis.subtitleTracks.length !== expectedSubtitleCount) {
       throw new Error(`Transcoded output verification failed: expected ${expectedSubtitleCount} subtitle streams, found ${outputAnalysis.subtitleTracks.length}`)
     }
-    const conversion = options.targetConversion
-    if (conversion) validateTargetTranscodeBitrate(conversion, outputAnalysis)
-    if (conversion && (outputAnalysis.video.codec !== options.targetCodec || outputAnalysis.video.width !== conversion.width || outputAnalysis.video.height !== conversion.height || outputAnalysis.video.bitDepth !== conversion.bitDepth || outputAnalysis.video.hdrFormat !== conversion.hdrFormat)) throw new Error('Verified output does not match the approved video conversion')
-    if (!conversion && options.optimizationMode === 'transcode' && options.targetCodec && normalizeVideoCodec(outputAnalysis.video.codec) !== normalizeVideoCodec(options.targetCodec)) throw new Error('Verified output codec does not match the approved video codec')
+    this.verifyPlannedVideo(outputAnalysis, options)
     const streamPlan = buildStreamSelectionPlan(sourceAnalysis, options)
     for (const [index, sourceIndex] of streamPlan.audioStreamIndexes.entries()) {
       const source = sourceAnalysis.audioTracks.find(track => track.index === sourceIndex)!
@@ -2917,15 +2942,11 @@ export class TranscodingService {
         const sample = await getMediaFileAnalyzer().analyzeCompleteFile(samplePath, { scanBitrate: true, detectVolume: false, signal })
         if (!sample.success) throw new Error(sample.error || 'Sample playback analysis failed')
         const blockers: string[] = []
-        if (options.targetConversion) {
-          if (sample.deepAnalysis?.peakBitrate === undefined) throw new Error('Sample has no measured peak bitrate')
-          try { validateTargetTranscodeBitrate(options.targetConversion, sample) } catch (error) { blockers.push(getErrorMessage(error)) }
-        }
+        try { this.verifyPlannedVideo(sample, options) } catch (error) { blockers.push(getErrorMessage(error)) }
         if (targetProfile && options.playbackPolicy !== 'allow-transcoding' && options.targetProfileMode !== 'advisory') {
-          const evaluation = evaluatePlaybackTarget(targetProfile, sample)
-          // Video samples contain no audio, subtitles, or attachments. Those are
-          // validated by the executable stream plan and on the final output.
-          for (const finding of [evaluation.findings.video, evaluation.findings.hdr, evaluation.findings.network]) {
+          const evaluation = evaluatePlaybackTarget(targetProfile, this.withPlannedSampleStreams(analysis, sample, options))
+          const findings = options.playbackPolicy === 'direct-play' ? Object.values(evaluation.findings) : [evaluation.findings.container, evaluation.findings.video, evaluation.findings.hdr, evaluation.findings.network, evaluation.findings.subtitle]
+          for (const finding of findings) {
             if (finding.status === 'incompatible') blockers.push(`${finding.rule}: ${finding.evidence}`)
           }
         }
@@ -3053,7 +3074,10 @@ export class TranscodingService {
         selectedCandidate: { encoder: selected.encoder, gpuId: selected.gpuId, preset: selected.preset, quality: selected.quality, outputBytes: selected.outputBytes, encodingDurationMs: selected.encodingDurationMs, vmafMean: selected.vmafMean, vmafP5: selected.vmafP5, cambiMean: selected.cambiMean },
         candidates: measuredCandidates.map(candidate => ({ encoder: candidate.encoder, gpuId: candidate.gpuId, preset: candidate.preset, quality: candidate.quality, outputBytes: candidate.outputBytes, encodingDurationMs: candidate.encodingDurationMs, vmafMean: candidate.vmafMean, vmafP5: candidate.vmafP5, cambiMean: candidate.cambiMean, qualityRejectedReason: candidate.qualityRejectedReason, playbackBlockers: candidate.playbackBlockers })),
       })
-      if (!onMeasuredCandidates) for (const candidate of measuredCandidates) if (candidate !== selected) for (const sample of candidate.samplePaths!) await fs.unlink(sample)
+      if (!onMeasuredCandidates && !sampleDirectory) {
+        await fs.rm(outputDirectory, { recursive: true, force: true })
+        selected.samplePaths = undefined
+      }
       return { encoder: selected.encoder, crf: selected.quality, preset: selected.preset, gpuId: selected.gpuId, useGpu: selected.gpuId !== undefined, measuredCandidate: selected }
     } catch (error) {
       getLoggingService().warn('[TVOptimization]', 'Measured candidate search failed', {

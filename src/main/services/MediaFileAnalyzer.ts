@@ -176,6 +176,8 @@ export interface FileAnalysisResult {
   optimizationMeasurement?: {
     cacheKey: string
     qualityProfile: import('./MeasuredOptimizationPolicy').OptimizationQualityProfile
+    targetCodec?: import('./transcoding/OptimizationCodecPolicy').OptimizationVideoCodec
+    nonVideoBytesPerSecond?: number
     sourceSize: number
     sourceMtimeMs: number
     samplingRole: 'measured' | 'projected'

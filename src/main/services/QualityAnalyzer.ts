@@ -395,7 +395,7 @@ export class QualityAnalyzer {
     let measuredPlanBasis: SavingsBasis | undefined
     let hasApplicableMeasurements = false
     const measurement = measurementAnalysis?.optimizationMeasurement
-    if (measurement && mediaItem.file_path && measurementAnalysis?.fileAnalysisFingerprint) {
+    if (measurement && measurement.targetCodec && measurement.nonVideoBytesPerSecond !== undefined && Number.isFinite(measurement.nonVideoBytesPerSecond) && measurement.nonVideoBytesPerSecond >= 0 && mediaItem.file_path && measurementAnalysis?.fileAnalysisFingerprint) {
       const raw = await getDatabase().getSetting(`${MEASUREMENT_SETTING_PREFIX}${measurement.cacheKey}`)
       if (raw) {
         const cached = parsePersistedJson<CachedMeasurement>(raw, `optimization measurement ${measurement.cacheKey}`)
@@ -405,8 +405,9 @@ export class QualityAnalyzer {
               matchesFileIdentity(measurementAnalysis.fileAnalysisFingerprint, source)) {
             hasApplicableMeasurements = true
             try {
-              const candidate = selectMeasuredCandidate(measurement.qualityProfile, cached.candidates)
-              measuredPlanSavingsBytes = projectMeasuredSavingsBytes(source.size, (measurementAnalysis?.durationMs ?? mediaItem.duration_ms!) / 1000, candidate.outputBytes, candidate.sampledDurationSeconds)
+              const durationSeconds = (measurementAnalysis?.durationMs ?? mediaItem.duration_ms!) / 1000
+              const candidate = selectMeasuredCandidate(measurement.qualityProfile, cached.candidates, source.size / durationSeconds - measurement.nonVideoBytesPerSecond)
+              measuredPlanSavingsBytes = projectMeasuredSavingsBytes(source.size, durationSeconds, candidate.outputBytes + measurement.nonVideoBytesPerSecond * candidate.sampledDurationSeconds, candidate.sampledDurationSeconds)
               measuredPlanBasis = measurement.samplingRole === 'projected' ? 'representative_video_sample_projection' : 'video_sample_encode'
             } catch (error) {
               if (!(error instanceof MeasuredQualityError)) throw error
@@ -416,7 +417,7 @@ export class QualityAnalyzer {
         }
       }
     }
-    const { breakdown, audioPruningEvidence, optimizationDecision } = await this.calculateOptimizationSavings(scoringItem, analysis, { measuredPlanSavingsBytes, hasApplicableMeasurements })
+    const { breakdown, audioPruningEvidence, optimizationDecision } = await this.calculateOptimizationSavings(scoringItem, analysis, { measuredPlanSavingsBytes, hasApplicableMeasurements, targetCodec: hasApplicableMeasurements ? measurement?.targetCodec : undefined })
     const savingSources = [
       breakdown.videoSavingsBytes === null ? null : { status: 'estimated' as const, basis: 'video_bitrate_estimate' as const },
       audioPruningEvidence.estimatedSavingsBytes === null ? null : { status: audioPruningEvidence.status, basis: audioPruningEvidence.status === 'measured' ? 'audio_stream_removal' as const : 'audio_bitrate_estimate' as const },
