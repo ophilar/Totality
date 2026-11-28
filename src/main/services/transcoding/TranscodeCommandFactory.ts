@@ -29,7 +29,7 @@ export class TranscodeCommandFactory {
   static buildCommandTemplate(vendor: string | undefined, options: TranscodeOptions, analysis: FileAnalysisResult, outputExtension: string): string[] {
     const output = `<output>${outputExtension}`
     const args = this.getBuilder(vendor, options).buildFFmpegArgs('<input>', output, options, analysis)
-    if (args.at(-1) !== output) throw new Error('Transcode command did not identify its output')
+    if (args[args.length - 1] !== output) throw new Error('Transcode command did not identify its output')
     args[args.length - 1] = '<output>'
     const customArgs = options.customArgs?.trim()
     if (customArgs) {

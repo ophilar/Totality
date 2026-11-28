@@ -27,7 +27,7 @@ import { getStatsCacheService } from './StatsCacheService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { OptimizationCandidateService, type OptimizationCandidateReason } from './OptimizationCandidateService'
 import type { MediaSourceTier } from './transcoding/TrashSourceClassifier'
-import { buildCandidateLadder, nextCandidateSearch, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MAX_MEASURED_CANDIDATES_PER_PRESET, MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, scopedCalibrationEntries, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile, type OptimizationCalibrationEntry } from './MeasuredOptimizationPolicy'
+import { buildCandidateLadder, candidateDeviceKey, candidateFamilyKey, candidateEncodingKey, nextCandidateSearch, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MAX_MEASURED_CANDIDATES_PER_PRESET, MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, scopedCalibrationEntries, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile, type OptimizationCalibrationEntry } from './MeasuredOptimizationPolicy'
 import { readOptimizationCalibrationProfile, writeOptimizationCalibrationProfile } from './OptimizationCalibrationProfile'
 import { buildTargetTranscodePlan, validateTargetTranscodeBitrate, type TargetTranscodePlan } from './transcoding/TargetTranscodePlan'
 import type { MeasuredCandidate, MeasuredCandidateSample } from './MeasuredOptimizationPolicy'
@@ -1978,14 +1978,15 @@ export class TranscodingService {
       systemRelease: os.release(),
       ffmpegPath: PathUtils.resolveExecutablePath(ffmpegPath),
       ffmpegBuild,
-      gpus: gpus.map(({ id, name, vendor, driverVersion, encoderDeviceSelector, renderDevicePath }) => ({ id, name, vendor, driverVersion, encoderDeviceSelector, renderDevicePath })),
+      gpus: [...gpus].sort((a, b) => a.id.localeCompare(b.id)).map(({ id, name, vendor, driverVersion, encoderDeviceSelector, renderDevicePath }) => ({ id, name, vendor, driverVersion, encoderDeviceSelector, renderDevicePath })),
     })
     return createHash('sha256').update(environment).digest('hex')
   }
 
   private getCapabilitySnapshotFingerprint(capabilities: TranscodingCapabilities): string {
     if (!capabilities.snapshotFingerprint) throw new Error('Transcoding capability snapshot has no environment fingerprint')
-    return createHash('sha256').update(JSON.stringify({ environment: capabilities.snapshotFingerprint, deviceEncoders: capabilities.deviceEncoders })).digest('hex')
+    const deviceEncoders = Object.entries(capabilities.deviceEncoders).sort(([a], [b]) => a.localeCompare(b)).map(([id, encoders]) => [id, [...encoders].sort()])
+    return createHash('sha256').update(JSON.stringify({ environment: capabilities.snapshotFingerprint, deviceEncoders })).digest('hex')
   }
 
   private async resolveGpuEncoderDevices(gpus: GpuInfo[]): Promise<GpuInfo[]> {
@@ -2810,16 +2811,18 @@ export class TranscodingService {
     let candidateSearchRounds = 0
     const maxCandidatesPerPreset = searchContext?.calibration ? Math.max(...Object.values(APP_CONFIG.transcoding.sampleQualityDomains).map(domain => domain.length)) : options.measurementCandidateBudget ?? MAX_MEASURED_CANDIDATES_PER_PRESET
     if (!Number.isInteger(maxCandidatesPerPreset) || maxCandidatesPerPreset <= 0) throw new Error('Measured candidate budget must be a positive integer')
-    const maximumCandidates = searchContext?.calibration ? ladder.length : new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`)).size * maxCandidatesPerPreset
-    const candidateDomain = [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}`))].map(key => {
-      const [encoder, gpuId] = key.split('/')
-      const candidates = ladder.filter(candidate => candidate.encoder === encoder && (candidate.gpuId ?? 'software') === gpuId)
+    const familyKeys = new Set(ladder.map(candidateFamilyKey))
+    const maximumCandidates = searchContext?.calibration ? ladder.length : familyKeys.size * maxCandidatesPerPreset
+    const budgetReached = () => !searchContext?.calibration && [...familyKeys].some(key =>
+      measuredCandidates.filter(candidate => candidateFamilyKey(candidate) === key).length >= maxCandidatesPerPreset)
+    const candidateDomain = [...new Map(ladder.map(candidate => [candidateDeviceKey(candidate), candidate])).values()].map(device => {
+      const candidates = ladder.filter(candidate => candidateDeviceKey(candidate) === candidateDeviceKey(device))
       return {
-      encoder,
-      gpuId: gpuId === 'software' ? undefined : gpuId,
-      presets: [...new Set(candidates.map(candidate => candidate.preset))],
-      qualities: [...new Set(candidates.map(candidate => candidate.quality))].sort((left, right) => left - right),
-      candidateCount: candidates.length,
+        encoder: device.encoder,
+        gpuId: device.gpuId,
+        presets: [...new Set(candidates.map(candidate => candidate.preset))],
+        qualities: [...new Set(candidates.map(candidate => candidate.quality))].sort((left, right) => left - right),
+        candidateCount: candidates.length,
       }
     })
     getLoggingService().info('[TVOptimization]', 'Measured candidate search started', {
@@ -2835,7 +2838,7 @@ export class TranscodingService {
       candidateDomain,
       previouslyMeasuredCount: measuredCandidates.length,
     })
-    const isMeasured = (candidate: CandidateEncodingParameters) => measuredCandidates.some(measured => measured.encoder === candidate.encoder && measured.gpuId === candidate.gpuId && measured.preset === candidate.preset && measured.quality === candidate.quality)
+    const isMeasured = (candidate: CandidateEncodingParameters) => measuredCandidates.some(measured => candidateEncodingKey(measured) === candidateEncodingKey(candidate))
     const buildCandidates = (parameters: CandidateEncodingParameters[]) => parameters.filter(candidate => !isMeasured(candidate)).map(candidate => {
       const useGpu = !isMeasuredSoftwareEncoder(candidate.encoder)
       const candidateGpu = candidate.gpuId ? capabilities?.gpus.find(gpu => gpu.id === candidate.gpuId) : undefined
@@ -2960,7 +2963,7 @@ export class TranscodingService {
             validateSample,
             previouslyMeasuredSamples: measuredSamples,
             onSampleMeasured: searchContext?.calibration ? undefined : async sample => {
-              measuredSamples = [...measuredSamples.filter(existing => existing.encoder !== sample.encoder || existing.gpuId !== sample.gpuId || existing.preset !== sample.preset || existing.quality !== sample.quality || existing.sampleIndex !== sample.sampleIndex), sample]
+              measuredSamples = [...measuredSamples.filter(existing => candidateEncodingKey(existing) !== candidateEncodingKey(sample) || existing.sampleIndex !== sample.sampleIndex), sample]
               await onMeasuredSample?.(sample)
             },
             onCandidateMeasured: async roundCandidates => onMeasuredCandidates?.([...measuredCandidates.slice(0, roundStart), ...roundCandidates], false, calibrationScopeKey, maximumOutputBytesPerSecond, plannedBitrate),
@@ -3008,10 +3011,8 @@ export class TranscodingService {
         if (measurementComplete) break
         if (!nextCandidates().length) {
           measurementComplete = true
-          const budgetReached = !searchContext?.calibration && [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`))].some(key =>
-            measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}` === key).length >= maxCandidatesPerPreset)
           for (const candidate of measuredCandidates) {
-            candidate.searchSummary = { measuredCount: measuredCandidates.length, maximumCandidates, budgetReached }
+            candidate.searchSummary = { measuredCount: measuredCandidates.length, maximumCandidates, budgetReached: budgetReached() }
           }
           await onMeasuredCandidates?.(measuredCandidates, true, calibrationScopeKey, maximumOutputBytesPerSecond, plannedBitrate)
           break
@@ -3020,10 +3021,9 @@ export class TranscodingService {
       signal?.throwIfAborted()
       if (measurementComplete && previouslyMeasured.length === measuredCandidates.length) await onMeasuredCandidates?.(measuredCandidates, true, calibrationScopeKey, maximumOutputBytesPerSecond, plannedBitrate)
       const selected = selectMeasuredCandidate(options.qualityProfile, measuredCandidates, maximumOutputBytesPerSecond)
-      const budgetReached = !searchContext?.calibration && [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`))].some(key =>
-        measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}` === key).length >= maxCandidatesPerPreset)
-      selected.searchSummary = { measuredCount: measuredCandidates.length, maximumCandidates, budgetReached }
-      await onProgress?.(budgetReached
+      const reachedBudget = budgetReached()
+      selected.searchSummary = { measuredCount: measuredCandidates.length, maximumCandidates, budgetReached: reachedBudget }
+      await onProgress?.(reachedBudget
         ? `Search budget reached: recommending the best of ${measuredCandidates.length} measured candidates`
         : `Quality search completed: compared ${measuredCandidates.length} candidates`)
       getLoggingService().info('[TVOptimization]', 'Measured candidate search completed', {
@@ -3038,7 +3038,7 @@ export class TranscodingService {
         groupKey: searchContext?.groupKey,
         rounds: candidateSearchRounds,
         measuredCandidateCount: measuredCandidates.length,
-        budgetReached,
+        budgetReached: reachedBudget,
         maximumCandidates,
         selectedCandidate: { encoder: selected.encoder, gpuId: selected.gpuId, preset: selected.preset, quality: selected.quality, outputBytes: selected.outputBytes, encodingDurationMs: selected.encodingDurationMs, vmafMean: selected.vmafMean, vmafP5: selected.vmafP5, cambiMean: selected.cambiMean },
         candidates: measuredCandidates.map(candidate => ({ encoder: candidate.encoder, gpuId: candidate.gpuId, preset: candidate.preset, quality: candidate.quality, outputBytes: candidate.outputBytes, encodingDurationMs: candidate.encodingDurationMs, vmafMean: candidate.vmafMean, vmafP5: candidate.vmafP5, cambiMean: candidate.cambiMean, qualityRejectedReason: candidate.qualityRejectedReason, playbackBlockers: candidate.playbackBlockers })),

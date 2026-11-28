@@ -8,7 +8,7 @@ import type { MediaItem } from '@main/types/database'
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
 
 export const MEASUREMENT_VERSION = 20
-export const OPTIMIZATION_SEARCH_VERSION = 9
+export const OPTIMIZATION_SEARCH_VERSION = 10
 /** Hard bound on expensive full-sample evaluations in each encoder/preset domain. */
 export const MAX_MEASURED_CANDIDATES_PER_PRESET = 5
 export const VMAF_LOW_PERCENTILE = 0.05
@@ -116,7 +116,7 @@ export function buildValidatedCalibrationEntries(evidence: CalibrationCandidateE
     const rateLimitMin = bounded ? Math.max(Math.min(...trainingRates), Math.min(...holdoutRates)) : undefined
     const rateLimitMax = bounded ? Math.min(Math.max(...trainingRates), Math.max(...holdoutRates)) : undefined
     if (rateLimitMin !== undefined && rateLimitMax! < rateLimitMin) continue
-    const candidates = groupCalibrationEvidence(observations, ({ measuredCandidate: candidate }) => JSON.stringify([candidate.encoder, candidate.gpuId ?? null, candidate.preset, candidate.quality]))
+    const candidates = groupCalibrationEvidence(observations, ({ measuredCandidate: candidate }) => candidateEncodingKey(candidate))
     const aggregated: MeasuredCandidate[] = []
     for (const group of candidates.values()) {
       if (group.length !== expected || new Set(group.map(entry => entry.mediaItemId)).size !== expected ||
@@ -135,7 +135,7 @@ export function buildValidatedCalibrationEntries(evidence: CalibrationCandidateE
           ? Math.max(...samples.map(sample => sample.encodingDurationMs! / sample.sampledDurationSeconds)) : undefined,
       })
     }
-    const families = groupCalibrationEvidence(aggregated, candidate => JSON.stringify([candidate.encoder, candidate.gpuId ?? null, candidate.preset]))
+    const families = groupCalibrationEvidence(aggregated, candidateFamilyKey)
     for (const family of families.values()) {
       for (const candidate of getNonDominatedMeasuredCandidates('maximum_savings', family)) {
         const { encoder, gpuId, preset, quality, outputBytes, vmafMean, vmafP5, cambiMean, encodingDurationMs } = candidate
@@ -242,6 +242,19 @@ export interface CandidateEncodingParameters {
   quality: number
 }
 
+/** Structured identity prevents delimiter collisions between devices, presets and qualities. */
+export function candidateDeviceKey(candidate: Pick<CandidateEncodingParameters, 'encoder' | 'gpuId'>): string {
+  return JSON.stringify([candidate.encoder, candidate.gpuId ?? null])
+}
+
+export function candidateFamilyKey(candidate: Pick<CandidateEncodingParameters, 'encoder' | 'gpuId' | 'preset'>): string {
+  return JSON.stringify([candidate.encoder, candidate.gpuId ?? null, candidate.preset])
+}
+
+export function candidateEncodingKey(candidate: CandidateEncodingParameters): string {
+  return JSON.stringify([candidate.encoder, candidate.gpuId ?? null, candidate.preset, candidate.quality])
+}
+
 /** Returns the next measurement batch for adaptive search across the configured encoder and preset domain. */
 export function nextCandidateSearch(
   domainCatalogue: CandidateEncodingParameters[],
@@ -250,22 +263,22 @@ export function nextCandidateSearch(
   maxCandidatesPerPreset = MAX_MEASURED_CANDIDATES_PER_PRESET,
   calibrationEntries: OptimizationCalibrationEntry[] = [],
 ): CandidateEncodingParameters[] {
-  const presets = [...new Map(domainCatalogue.map(candidate => [`${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`, candidate])).values()]
+  const presets = [...new Map(domainCatalogue.map(candidate => [candidateFamilyKey(candidate), candidate])).values()]
   const evaluation = (candidate: MeasuredCandidate) => evaluateMeasuredCandidates(profile, [candidate])[0]
   const qualityPasses = (candidate: MeasuredCandidate) => evaluation(candidate).qualityPassed
-  const encoderKeys = [...new Set(presets.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}`))]
+  const encoderKeys = [...new Set(presets.map(candidateDeviceKey))]
   for (const encoderKey of encoderKeys) {
-    for (const presetCandidate of presets.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}` === encoderKey)) {
-      const domain = domainCatalogue.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}` === encoderKey && candidate.preset === presetCandidate.preset)
-      const measured = measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}` === encoderKey && candidate.preset === presetCandidate.preset)
+    for (const presetCandidate of presets.filter(candidate => candidateDeviceKey(candidate) === encoderKey)) {
+      const familyKey = candidateFamilyKey(presetCandidate)
+      const domain = domainCatalogue.filter(candidate => candidateFamilyKey(candidate) === familyKey)
+      const measured = measuredCandidates.filter(candidate => candidateFamilyKey(candidate) === familyKey)
       const qualities = [...new Set(domain.map(candidate => candidate.quality))].sort((a, b) => a - b)
       const tested = new Set(measured.map(candidate => candidate.quality))
       const untested = (values: number[]) => values.filter(quality => !tested.has(quality)).map(quality => ({ ...presetCandidate, quality }))
       if (measured.length >= maxCandidatesPerPreset) continue
       if (measured.length === 0) {
         const prior = calibrationEntries.filter(entry =>
-          calibrationEntrySupportsProfile(entry, profile) && entry.encoder === presetCandidate.encoder && entry.gpuId === presetCandidate.gpuId &&
-          entry.preset === presetCandidate.preset && Number.isInteger(entry.quality) &&
+          calibrationEntrySupportsProfile(entry, profile) && candidateFamilyKey(entry) === familyKey && Number.isInteger(entry.quality) &&
           entry.quality >= qualities[0] && entry.quality <= qualities[qualities.length - 1]
         ).sort((left, right) => left.outputBytesPerSecond - right.outputBytesPerSecond || (left.encodingMsPerSecond ?? Infinity) - (right.encodingMsPerSecond ?? Infinity) || right.quality - left.quality)[0]
         const middle = qualities[Math.floor((qualities.length - 1) / 2)]

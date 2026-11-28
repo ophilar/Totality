@@ -33,7 +33,7 @@ import { getWishlistCompletionService } from './WishlistCompletionService'
 import { getTMDBService } from './TMDBService'
 import { getTranscodingService } from './TranscodingService'
 import { getLoggingService } from './LoggingService'
-import { buildValidatedCalibrationEntries, selectCalibrationRepresentatives, OPTIMIZATION_QUALITY_PROFILES, calibrationEntrySupportsProfile, type CalibrationCandidateEvidence, type MeasuredCandidate } from './MeasuredOptimizationPolicy'
+import { buildValidatedCalibrationEntries, candidateEncodingKey, selectCalibrationRepresentatives, OPTIMIZATION_QUALITY_PROFILES, calibrationEntrySupportsProfile, type CalibrationCandidateEvidence, type MeasuredCandidate } from './MeasuredOptimizationPolicy'
 import type { OptimizationCandidateScanSummary, ShowTranscodeRequest, ShowTranscodePreflight, ShowTranscodeEpisodeCheckpoint } from './TranscodingService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { normalizeVideoCodec } from './MediaNormalizer'
@@ -1088,7 +1088,7 @@ export class TaskQueueService {
           }
           if (calibrationScopeKey) {
             for (const measuredCandidate of measuredCandidates) {
-              measurements.push({ key: `${measurementKeyPrefix}:${JSON.stringify([measuredCandidate.encoder, measuredCandidate.gpuId ?? null, measuredCandidate.preset, measuredCandidate.quality])}`, stage, role, groupKey, contextKey, scopeKey: calibrationScopeKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'measured', preflightValidated, maximumOutputBytesPerSecond, rateLimit, reason: failureReason, measuredCandidate, encoder: measuredCandidate.encoder, gpuId: measuredCandidate.gpuId, preset: measuredCandidate.preset, crf: measuredCandidate.quality })
+              measurements.push({ key: `${measurementKeyPrefix}:${candidateEncodingKey(measuredCandidate)}`, stage, role, groupKey, contextKey, scopeKey: calibrationScopeKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'measured', preflightValidated, maximumOutputBytesPerSecond, rateLimit, reason: failureReason, measuredCandidate, encoder: measuredCandidate.encoder, gpuId: measuredCandidate.gpuId, preset: measuredCandidate.preset, crf: measuredCandidate.quality })
             }
           }
           if (failureReason !== undefined) {

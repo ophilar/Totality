@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { resolve } from 'node:path'
-import { buildMeasuredCandidateArgs, findReusableMeasuredSample, verifyQsvQualityMode, verifySampleFrameAlignment, type SampleTimingEvidence } from '@main/services/MeasuredOptimizationService'
+import { buildMeasuredCandidateArgs, findReusableMeasuredSample, measuredSampleStem, verifyQsvQualityMode, verifySampleFrameAlignment, type SampleTimingEvidence } from '@main/services/MeasuredOptimizationService'
 
 describe('findReusableMeasuredSample', () => {
   const candidate = { encoder: 'hevc_qsv', preset: 'medium', quality: 24 }
@@ -116,4 +116,12 @@ describe('verifySampleFrameAlignment', () => {
     expect(() => verifySampleFrameAlignment(source, { ...source, pixelFormat: 'yuv420p' })).toThrow('Encoded sample pixelFormat differs from its transformed reference')
     expect(() => verifySampleFrameAlignment(source, { ...source, colorTransfer: 'bt709' })).toThrow('Encoded sample colorTransfer differs from its transformed reference')
   })
+})
+
+it('generates stable portable and device-specific filenames for video samples and logs', () => {
+  const candidate = { encoder: 'qsv_h265', gpuId: 'linux-0000:00:02.0', preset: 'medium', quality: 22 }
+  expect(measuredSampleStem(candidate, 0)).toMatch(/^[a-f0-9]{64}-0$/)
+  expect(measuredSampleStem(candidate, 0)).toBe(measuredSampleStem({ ...candidate }, 0))
+  expect(measuredSampleStem(candidate, 0)).not.toBe(measuredSampleStem({ ...candidate, gpuId: 'other/device' }, 0))
+  expect(measuredSampleStem(candidate, 0)).not.toBe(measuredSampleStem(candidate, 1))
 })

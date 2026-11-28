@@ -6,7 +6,7 @@ import * as path from 'node:path'
 import { getMediaFileAnalyzer } from './MediaFileAnalyzer'
 import { PathUtils } from './utils/PathUtils'
 import { APP_CONFIG } from '@main/config'
-import { findLongestContinuousLowVmafRun, getImpossibleQualityReason, VMAF_LOW_PERCENTILE, type MeasuredCandidate, type MeasuredCandidateSample, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
+import { candidateEncodingKey, findLongestContinuousLowVmafRun, getImpossibleQualityReason, VMAF_LOW_PERCENTILE, type MeasuredCandidate, type MeasuredCandidateSample, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
 import { getErrorMessage } from './utils/errorUtils'
 import { requireFfmpegFilters } from './transcoding/FfmpegFilterCapabilities'
 import { getLoggingService } from './LoggingService'
@@ -59,7 +59,12 @@ export function findReusableMeasuredSample(
   candidate: Pick<MeasuredCandidate, 'encoder' | 'gpuId' | 'preset' | 'quality'>,
   sampleIndex: number,
 ): MeasuredCandidateSample | undefined {
-  return samples.find(saved => !saved.screeningOnly && saved.encoder === candidate.encoder && saved.gpuId === candidate.gpuId && saved.preset === candidate.preset && saved.quality === candidate.quality && saved.sampleIndex === sampleIndex)
+  return samples.find(saved => !saved.screeningOnly && candidateEncodingKey(saved) === candidateEncodingKey(candidate) && saved.sampleIndex === sampleIndex)
+}
+
+/** A fixed-width, filesystem-safe identity for samples and their metric logs. */
+export function measuredSampleStem(candidate: Pick<MeasuredCandidate, 'encoder' | 'gpuId' | 'preset' | 'quality'>, sampleIndex: number): string {
+  return `${createHash('sha256').update(candidateEncodingKey(candidate)).digest('hex')}-${sampleIndex}`
 }
 
 export interface OutputQualityVerificationRequest {
@@ -455,7 +460,8 @@ export class MeasuredOptimizationService {
         let qualityRejectedReason: string | undefined
         for (const index of starts.keys()) {
           request.signal?.throwIfAborted()
-          const outputPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.gpuId ?? 'software'}-${candidate.quality}-${candidate.preset}-${index}${request.outputExtension ?? '.mkv'}`)
+          const stem = measuredSampleStem(candidate, index)
+          const outputPath = path.join(request.outputDirectory, `${stem}${request.outputExtension ?? '.mkv'}`)
           let sample = findReusableMeasuredSample(measuredSamples, candidate, index)
           if (!sample) {
             await request.onProgress?.(`Encoding sample ${index + 1} of ${starts.length} with ${candidate.encoder} (${candidate.quality})`)
@@ -479,7 +485,7 @@ export class MeasuredOptimizationService {
               })
               throw error
             }
-            const logPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.gpuId ?? 'software'}-${candidate.quality}-${candidate.preset}-${index}.json`)
+            const logPath = path.join(request.outputDirectory, `${stem}.json`)
             ownedPaths.add(logPath)
             const totalFrames = referenceSamples.reduce((sum, sample) => sum + sample.frames, 0)
             const screeningFrames = Math.min(referenceSamples[index].frames, Math.floor(totalFrames * VMAF_LOW_PERCENTILE) + 1)
@@ -487,7 +493,7 @@ export class MeasuredOptimizationService {
             let metrics: { vmafScores: number[]; cambiScores: number[] } | undefined
             if (request.qualityProfile && screeningFrames < referenceSamples[index].frames) {
               await request.onProgress?.(`Screening sample ${index + 1} of ${starts.length} for impossible quality`)
-              const screeningLogPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.gpuId ?? 'software'}-${candidate.quality}-${candidate.preset}-${index}.screening.json`)
+              const screeningLogPath = path.join(request.outputDirectory, `${stem}.screening.json`)
               ownedPaths.add(screeningLogPath)
               const screeningStartedAt = performance.now()
               const screening = await this.measureFrameMetrics(binary, outputPath, request.inputPath, screeningLogPath, screeningFrames, { startSeconds: starts[index], durationSeconds: length }, request.signal, screeningFrames, undefined, request.referenceFilter, request.referenceInputArgs)

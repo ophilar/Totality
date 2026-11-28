@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCandidateLadder, buildValidatedCalibrationEntries, findLongestContinuousLowVmafRun, getImpossibleQualityReason, getNonDominatedMeasuredCandidates, isMeasuredCandidateValidForCalibration, isValidOptimizationCalibrationEntry, nextCandidateSearch, scopedCalibrationEntries, selectCalibrationRepresentatives, selectMeasuredCandidate, type CalibrationCandidateEvidence, type CandidateEncodingParameters, type MeasuredCandidate } from '@main/services/MeasuredOptimizationPolicy'
+import { buildCandidateLadder, candidateDeviceKey, candidateFamilyKey, candidateEncodingKey, buildValidatedCalibrationEntries, findLongestContinuousLowVmafRun, getImpossibleQualityReason, getNonDominatedMeasuredCandidates, isMeasuredCandidateValidForCalibration, isValidOptimizationCalibrationEntry, nextCandidateSearch, scopedCalibrationEntries, selectCalibrationRepresentatives, selectMeasuredCandidate, type CalibrationCandidateEvidence, type CandidateEncodingParameters, type MeasuredCandidate } from '@main/services/MeasuredOptimizationPolicy'
 
 describe('selectMeasuredCandidate', () => {
   const candidate = (overrides: Partial<MeasuredCandidate>): MeasuredCandidate => ({
@@ -298,4 +298,13 @@ describe('selectCalibrationRepresentatives', () => {
     expect(result.at(-1)?.item.id).toBe(6)
     expect(result.filter(entry => entry.role === 'calibration')).toHaveLength(2)
   })
+})
+
+it('preserves distinct device, family and quality identities despite delimiters in GPU IDs', () => {
+  const first = { encoder: 'enc', gpuId: 'a/b', preset: 'c', quality: 22 }
+  const second = { encoder: 'enc/a', gpuId: 'b', preset: 'c', quality: 22 }
+  expect(candidateDeviceKey(first)).not.toBe(candidateDeviceKey(second))
+  expect(candidateFamilyKey(first)).not.toBe(candidateFamilyKey(second))
+  expect(candidateEncodingKey(first)).not.toBe(candidateEncodingKey({ ...first, quality: 23 }))
+  expect(candidateDeviceKey({ encoder: 'enc' })).not.toBe(candidateDeviceKey({ encoder: 'enc', gpuId: 'software' }))
 })
