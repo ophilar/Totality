@@ -878,6 +878,7 @@ export class TranscodingService {
         ? getPreflightSamplingProfileKey(episode, request.options, prepared.analysis) ?? `unclassified:${mediaItemId}`
         : `unclassified:${mediaItemId}`
       let cachedMeasurement: CachedMeasurement | undefined
+      let reviewedSourceSha256: string | undefined
       let audioPlan: PlannedAudioStream[] | undefined
       const toInsufficientPlan = (error: unknown): ShowTranscodePreflight['episodes'][number] => {
         if (operation?.signal?.aborted) throw error
@@ -895,6 +896,7 @@ export class TranscodingService {
           hdrFormat: 'Unknown',
           sourceSize: prepared.status === 'ready' ? prepared.stat.size : 0,
           sourceMtimeMs: prepared.status === 'ready' ? prepared.stat.mtimeMs : 0,
+          sourceSha256: reviewedSourceSha256, targetProfile,
           sourceAnalysis: prepared.status === 'ready' ? prepared.analysis : undefined,
           operations: [],
           decisionStatus,
@@ -1015,6 +1017,7 @@ export class TranscodingService {
         const subtitlePruningSavings = sumMeasuredStreamBytes(analysis.streamBytes, removedSubtitleTracks.map(track => track.index))
         await operation?.waitUntilRunning()
         const sourceSha256 = await hashSource(episode.file_path)
+        reviewedSourceSha256 = sourceSha256
         const measurementOptions = {
           targetCodec: options.targetCodec,
           qualityProfile: options.qualityProfile,
@@ -1074,6 +1077,7 @@ export class TranscodingService {
           : path.join(app.getPath('userData'), 'transcoding-samples', preflightId, String(episode.id))
         if (measurementCacheKey && !operation?.calibration) {
           analysis.optimizationMeasurement = {
+            preflightId,
             cacheKey: reusableRepresentativePlan ? reusableRepresentativePlan.sourceAnalysis!.optimizationMeasurement!.cacheKey : measurementCacheKey,
             qualityProfile: options.qualityProfile!, targetCodec: options.targetCodec!, nonVideoBytesPerSecond: plannedNonVideoBytesPerSecond(analysis, options), sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs,
             samplingRole: reusableRepresentativePlan ? 'projected' : 'measured',

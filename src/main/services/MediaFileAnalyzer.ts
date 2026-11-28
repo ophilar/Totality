@@ -174,6 +174,7 @@ export interface EmbeddedMetadataTags {
 
 export interface FileAnalysisResult {
   optimizationMeasurement?: {
+    preflightId: string
     cacheKey: string
     qualityProfile: import('./MeasuredOptimizationPolicy').OptimizationQualityProfile
     targetCodec?: import('./transcoding/OptimizationCodecPolicy').OptimizationVideoCodec

@@ -18,9 +18,10 @@ import { buildStreamSelectionPlan } from './transcoding/StreamSelectionPlan'
 import { normalizeVideoCodec } from '@main/services/MediaNormalizer'
 import { getVideoResolutionTier } from './VideoResolutionTier'
 import { AudioCodecRanker } from './AudioCodecRanker'
-import { MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, MEASUREMENT_SETTING_PREFIX, MeasuredQualityError, selectMeasuredCandidate, type CachedMeasurement } from './MeasuredOptimizationPolicy'
+import { MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, MEASUREMENT_SETTING_PREFIX, SHOW_PREFLIGHT_SETTING_PREFIX, MeasuredQualityError, selectMeasuredCandidate, type CachedMeasurement } from './MeasuredOptimizationPolicy'
 import { projectMeasuredSavingsBytes } from './OptimizationSavingsService'
 import { fileIdentity, matchesFileIdentity, type FileIdentity } from './utils/FileIdentity'
+import type { ShowTranscodeRequest, ShowTranscodePreflight } from './TranscodingService'
 
 export interface OptimizationAdvice {
   action: 'video_transcode' | 'stream_pruning' | 'already_optimized'
@@ -386,6 +387,39 @@ export class QualityAnalyzer {
     }
   }
 
+  /** A cache record alone cannot establish which source and playback plan its statistics describe. */
+  private async getReviewedMeasurementSource(mediaItem: MediaItem, measurement: NonNullable<FileAnalysisResult['optimizationMeasurement']>): Promise<string | undefined> {
+    const db = getDatabase()
+    if (!measurement.preflightId || mediaItem.id === undefined) return undefined
+    const raw = await db.getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${measurement.preflightId}`)
+    if (!raw) return undefined
+    const { request, result } = parsePersistedJson<{ request: ShowTranscodeRequest; result: ShowTranscodePreflight }>(raw, `optimization review ${measurement.preflightId}`)
+    if (result.preflightId !== measurement.preflightId || result.measurementVersion !== MEASUREMENT_VERSION || result.searchVersion !== OPTIMIZATION_SEARCH_VERSION ||
+        request.sourceId !== mediaItem.source_id || request.libraryId !== undefined && request.libraryId !== mediaItem.library_id) return undefined
+    const episode = result.episodes.find(plan => plan.mediaItemId === mediaItem.id)
+    if (!episode?.sourceAnalysis || !episode.sourceSha256 || !PathUtils.arePathsEqual(episode.sourceAnalysis.filePath, mediaItem.file_path) ||
+        JSON.stringify(episode.sourceAnalysis.optimizationMeasurement) !== JSON.stringify(measurement)) return undefined
+    if (episode.targetProfile && JSON.stringify(await db.playbackTargetProfiles.get(episode.targetProfile.id)) !== JSON.stringify(episode.targetProfile)) return undefined
+    if (request.options.targetProfileId === undefined && (await db.getSetting(SETTING_KEYS.optimization_default_target_profile_id) || null) !== (episode.targetProfile?.id ?? null)) return undefined
+    if (measurement.samplingRole === 'measured') {
+      if (episode.sampleRepresentativeMediaItemId !== undefined && episode.sampleRepresentativeMediaItemId !== mediaItem.id) return undefined
+      return episode.sourceSha256
+    }
+    const representative = result.episodes.find(plan => plan.mediaItemId === episode.sampleRepresentativeMediaItemId)
+    if (!representative?.sourceSha256 || representative.mediaItemId === mediaItem.id || !representative.sourceAnalysis?.fileAnalysisFingerprint ||
+        representative.sourceAnalysis.optimizationMeasurement?.cacheKey !== measurement.cacheKey || representative.sourceAnalysis.optimizationMeasurement?.samplingRole !== 'measured') return undefined
+    const representativeItem = db.getMediaItem(representative.mediaItemId)
+    if (!representativeItem?.file_path || representativeItem.source_id !== mediaItem.source_id || representativeItem.library_id !== mediaItem.library_id ||
+        !PathUtils.arePathsEqual(representativeItem.file_path, representative.sourceAnalysis.filePath)) return undefined
+    try {
+      if (!matchesFileIdentity(representative.sourceAnalysis.fileAnalysisFingerprint, await stat(representativeItem.file_path))) return undefined
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      return undefined
+    }
+    return representative.sourceSha256
+  }
+
   private async analyzeSavings(mediaItem: MediaItem, analysis?: FileAnalysisResult, measurementAnalysis?: FileAnalysisResult): Promise<{
     savings: Omit<QualitySavings, 'media_item_id'>
     optimizationDecision: ReturnType<typeof buildOptimizationDecision>
@@ -396,10 +430,12 @@ export class QualityAnalyzer {
     let hasApplicableMeasurements = false
     const measurement = measurementAnalysis?.optimizationMeasurement
     if (measurement && measurement.targetCodec && measurement.nonVideoBytesPerSecond !== undefined && Number.isFinite(measurement.nonVideoBytesPerSecond) && measurement.nonVideoBytesPerSecond >= 0 && mediaItem.file_path && measurementAnalysis?.fileAnalysisFingerprint) {
-      const raw = await getDatabase().getSetting(`${MEASUREMENT_SETTING_PREFIX}${measurement.cacheKey}`)
+      const reviewedSourceSha256 = await this.getReviewedMeasurementSource(mediaItem, measurement)
+      const raw = reviewedSourceSha256 ? await getDatabase().getSetting(`${MEASUREMENT_SETTING_PREFIX}${measurement.cacheKey}`) : undefined
+      if (!reviewedSourceSha256) getLoggingService().debug('[QualityAnalyzer]', `Measurement review no longer applies: mediaItem=${mediaItem.id}, cacheKey=${measurement.cacheKey}`)
       if (raw) {
         const cached = parsePersistedJson<CachedMeasurement>(raw, `optimization measurement ${measurement.cacheKey}`)
-        if (cached.version === MEASUREMENT_VERSION && cached.searchVersion === OPTIMIZATION_SEARCH_VERSION && cached.complete && cached.cacheKey === measurement.cacheKey) {
+        if (cached.version === MEASUREMENT_VERSION && cached.searchVersion === OPTIMIZATION_SEARCH_VERSION && cached.complete && cached.cacheKey === measurement.cacheKey && cached.sourceSha256 === reviewedSourceSha256 && Array.isArray(cached.candidates) && cached.candidates.length > 0) {
           const source = await stat(mediaItem.file_path)
           if (measurement.sourceSize === source.size && measurement.sourceMtimeMs === source.mtimeMs &&
               matchesFileIdentity(measurementAnalysis.fileAnalysisFingerprint, source)) {

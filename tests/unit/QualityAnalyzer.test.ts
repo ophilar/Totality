@@ -43,7 +43,7 @@ describe('QualityAnalyzer', () => {
   it('reuses a measured plan total, including zero, and invalidates changed source or measurement revisions', async () => {
     const filePath = fileURLToPath(import.meta.url)
     const source = await stat(filePath)
-    const measurement = { cacheKey: 'measured-plan', qualityProfile: 'balanced', targetCodec: 'hevc', nonVideoBytesPerSecond: 0, samplingRole: 'measured', sourceSize: source.size, sourceMtimeMs: source.mtimeMs }
+    const measurement = { preflightId: 'reviewed-measured-plan', cacheKey: 'measured-plan', qualityProfile: 'balanced', targetCodec: 'hevc', nonVideoBytesPerSecond: 0, samplingRole: 'measured', sourceSize: source.size, sourceMtimeMs: source.mtimeMs }
     const trustedAnalysis = () => JSON.stringify({
       success: true, filePath, durationMs: 60_000,
       fileAnalysisFingerprint: { size: source.size, mtimeMs: source.mtimeMs, ctimeMs: source.ctimeMs, ino: source.ino },
@@ -52,7 +52,10 @@ describe('QualityAnalyzer', () => {
     })
     const item = createMediaItem({ file_path: filePath, file_size_bytes: source.size, duration_ms: 60_000, deep_analysis: trustedAnalysis() })
     const candidate = { encoder: 'qsv_h265', quality: 18, preset: 'medium', outputBytes: source.size - 100, sampledDurationSeconds: 60, vmafMean: 95, vmafP5: 92, cambiMean: 0 }
-    const cached = { version: MEASUREMENT_VERSION, searchVersion: OPTIMIZATION_SEARCH_VERSION, cacheKey: measurement.cacheKey, complete: true, candidates: [candidate] }
+    const sourceSha256 = 'a'.repeat(64)
+    const cached = { version: MEASUREMENT_VERSION, searchVersion: OPTIMIZATION_SEARCH_VERSION, cacheKey: measurement.cacheKey, sourceSha256, complete: true, candidates: [candidate] }
+    const saveReview = (targetProfile?: unknown) => configuredSettings.set(`transcoding.preflight.${measurement.preflightId}`, JSON.stringify({ request: { sourceId: item.source_id, libraryId: item.library_id, options: {} }, result: { preflightId: measurement.preflightId, measurementVersion: MEASUREMENT_VERSION, searchVersion: OPTIMIZATION_SEARCH_VERSION, episodes: [{ mediaItemId: item.id, sourceSha256, sourceAnalysis: JSON.parse(trustedAnalysis()), targetProfile }] } }))
+    saveReview()
     configuredSettings.set('transcoding.measurement.measured-plan', JSON.stringify(cached))
     const score = await analyzer.analyzeMediaItem(item)
     expect(score.estimated_savings_bytes).toBe(100)
@@ -61,18 +64,33 @@ describe('QualityAnalyzer', () => {
 
     measurement.qualityProfile = 'transparent'
     item.deep_analysis = trustedAnalysis()
+    saveReview()
     expect((await analyzer.analyzeMediaItem(item)).estimated_savings_bytes).toBeNull()
     measurement.qualityProfile = 'balanced'
     item.deep_analysis = trustedAnalysis()
 
     measurement.nonVideoBytesPerSecond = 1
     item.deep_analysis = trustedAnalysis()
+    saveReview()
     expect((await analyzer.analyzeMediaItem(item)).estimated_savings_bytes).toBe(40)
     measurement.nonVideoBytesPerSecond = 0
     item.deep_analysis = trustedAnalysis()
+    saveReview()
     candidate.outputBytes = source.size
     configuredSettings.set('transcoding.measurement.measured-plan', JSON.stringify(cached))
     expect((await analyzer.analyzeMediaItem(item)).estimated_savings_bytes).toBe(0)
+
+    cached.sourceSha256 = 'b'.repeat(64)
+    configuredSettings.set('transcoding.measurement.measured-plan', JSON.stringify(cached))
+    expect((await analyzer.analyzeMediaItem(item)).savings_basis).toBe('video_bitrate_estimate')
+    cached.sourceSha256 = sourceSha256
+    configuredSettings.set('transcoding.measurement.measured-plan', JSON.stringify(cached))
+    configuredSettings.set('optimization_default_target_profile_id', 'changed-profile')
+    expect((await analyzer.analyzeMediaItem(item)).savings_basis).toBe('video_bitrate_estimate')
+    configuredSettings.delete('optimization_default_target_profile_id')
+    configuredSettings.delete(`transcoding.preflight.${measurement.preflightId}`)
+    expect((await analyzer.analyzeMediaItem(item)).savings_basis).toBe('video_bitrate_estimate')
+    saveReview()
 
     measurement.sourceMtimeMs++
     item.deep_analysis = trustedAnalysis()
@@ -80,6 +98,7 @@ describe('QualityAnalyzer', () => {
 
     measurement.sourceMtimeMs = source.mtimeMs
     item.deep_analysis = trustedAnalysis()
+    saveReview()
     cached.version--
     configuredSettings.set('transcoding.measurement.measured-plan', JSON.stringify(cached))
     expect((await analyzer.analyzeMediaItem(item)).savings_basis).toBe('video_bitrate_estimate')
