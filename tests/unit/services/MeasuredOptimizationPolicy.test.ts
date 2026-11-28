@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCandidateLadder, findLongestContinuousLowVmafRun, getImpossibleQualityReason, getNonDominatedMeasuredCandidates, isMeasuredCandidateValidForCalibration, isValidOptimizationCalibrationEntry, nextCandidateSearch, selectMeasuredCandidate, type CandidateEncodingParameters, type MeasuredCandidate } from '@main/services/MeasuredOptimizationPolicy'
+import { buildCandidateLadder, findLongestContinuousLowVmafRun, getImpossibleQualityReason, getNonDominatedMeasuredCandidates, isMeasuredCandidateValidForCalibration, isValidOptimizationCalibrationEntry, nextCandidateSearch, selectCalibrationRepresentatives, selectMeasuredCandidate, type CandidateEncodingParameters, type MeasuredCandidate } from '@main/services/MeasuredOptimizationPolicy'
 
 describe('selectMeasuredCandidate', () => {
   const candidate = (overrides: Partial<MeasuredCandidate>): MeasuredCandidate => ({
@@ -236,5 +236,21 @@ describe('findLongestContinuousLowVmafRun', () => {
 
   it('rejects mismatched frame evidence instead of inferring timestamps', () => {
     expect(() => findLongestContinuousLowVmafRun('balanced', [91], [])).toThrow('equal lengths')
+  })
+})
+
+describe('selectCalibrationRepresentatives', () => {
+  it('is independent of database order and uses distinct titles spanning technical strata', () => {
+    const media = [1, 2, 3, 4, 5, 6].map(id => ({
+      id, type: 'episode' as const, series_identity_key: id <= 2 ? 'shared' : String(id),
+      file_path: String(id), width: id <= 3 ? 1920 : 3840, height: id <= 3 ? 1080 : 2160,
+      video_bitrate_kbps: id * 1000, video_frame_rate: 24,
+    }))
+    const result = selectCalibrationRepresentatives(media, 4)
+    expect(selectCalibrationRepresentatives([...media].reverse(), 4)).toEqual(result)
+    expect(new Set(result.map(entry => entry.item.series_identity_key)).size).toBe(4)
+    expect(result[0].item.id).toBe(1)
+    expect(result.at(-1)?.item.id).toBe(6)
+    expect(result.filter(entry => entry.role === 'calibration')).toHaveLength(1)
   })
 })

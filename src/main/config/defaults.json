@@ -182,6 +182,11 @@
       "pruneIntervalMs": 86400000,
       "maxConcurrentHashReads": 2
     },
+    "qualityGates": {
+      "transparent": { "vmafMean": 96, "vmafP5": 93, "cambiMean": 5 },
+      "balanced": { "vmafMean": 95, "vmafP5": 92, "cambiMean": 8 },
+      "maximum_savings": { "vmafMean": 93, "vmafP5": 88, "cambiMean": 12 }
+    },
     "sampleQualityDomains": {
       "x265": [
         18,

@@ -33,7 +33,7 @@ import { getWishlistCompletionService } from './WishlistCompletionService'
 import { getTMDBService } from './TMDBService'
 import { getTranscodingService } from './TranscodingService'
 import { getLoggingService } from './LoggingService'
-import { isMeasuredCandidateValidForCalibration, type OptimizationCalibrationEntry, type MeasuredCandidate } from './MeasuredOptimizationPolicy'
+import { isMeasuredCandidateValidForCalibration, selectCalibrationRepresentatives, type OptimizationCalibrationEntry, type MeasuredCandidate } from './MeasuredOptimizationPolicy'
 import type { OptimizationCandidateScanSummary, ShowTranscodeRequest, ShowTranscodePreflight, ShowTranscodeEpisodeCheckpoint } from './TranscodingService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { normalizeVideoCodec } from './MediaNormalizer'
@@ -963,6 +963,9 @@ export class TaskQueueService {
     onProgress: (progress: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void,
   ): Promise<void> {
     const signal = this.currentTaskAbortController!.signal
+    // Starting a recalibration invalidates the previous active evidence, even if inventory or measurement fails.
+    await getTranscodingService().saveOptimizationCalibration([])
+    signal.throwIfAborted()
     const sources = await getSourceManager().getEnabledSources()
     const libraries: Array<{ sourceId: string; libraryId: string; name: string; type: string; itemCount?: number }> = []
     const checkpointKey = `optimization.calibration.${task.id}`
@@ -988,19 +991,16 @@ export class TaskQueueService {
       stages: includeAv1 ? ['h264-to-hevc', 'hevc-to-av1'] : ['h264-to-hevc'],
     })
     const measureRepresentatives = async (items: typeof mediaItems, targetCodec: 'hevc' | 'av1', stage: string): Promise<void> => {
-      const groups = new Map<string, Map<string, typeof mediaItems[number]>>()
+      const groups = new Map<string, typeof mediaItems>()
       for (const item of items) {
         const key = `${item.source_id ?? ''}:${item.library_id ?? ''}:${item.type}:${String(item.hdr_format ?? 'SDR').toLowerCase()}`
-        const identity = item.type === 'movie' ? `movie:${item.id}` : `series:${item.series_identity_key ?? item.series_title ?? item.id}`
-        const group = groups.get(key) ?? new Map<string, typeof item>()
-        if (!group.has(identity)) group.set(identity, item)
+        const group = groups.get(key) ?? []
+        group.push(item)
         groups.set(key, group)
       }
-      const representatives = [...groups.entries()].flatMap(([groupKey, group]) => {
-        const items = [...group.values()]
-        const count = Math.min(items.length, APP_CONFIG.transcoding.calibrationRepresentativesPerGroup)
-        return Array.from({ length: count }, (_, index) => items[Math.floor(index * items.length / count)]).map((item, index) => ({ item, groupKey, role: index === 0 ? 'calibration' as const : 'holdout' as const }))
-      })
+      const representatives = [...groups.keys()].sort().flatMap(groupKey =>
+        selectCalibrationRepresentatives(groups.get(groupKey)!, APP_CONFIG.transcoding.calibrationRepresentativesPerGroup)
+          .map(representative => ({ ...representative, groupKey })))
       getLoggingService().info('[OptimizationCalibration]', 'Calibration representatives selected', {
         stage,
         groupCount: groups.size,
@@ -1125,8 +1125,13 @@ export class TaskQueueService {
       return [{ sourceCodec: measurement.sourceCodec, targetCodec: measurement.targetCodec as 'hevc' | 'av1', encoder: String(candidate.encoder ?? measurement.encoder ?? ''), gpuId: typeof candidate.gpuId === 'string' ? candidate.gpuId : typeof measurement.gpuId === 'string' ? measurement.gpuId : undefined, preset: String(candidate.preset ?? measurement.preset ?? ''), quality: candidate.quality, outputBytes: candidate.outputBytes, sampledDurationSeconds: candidate.sampledDurationSeconds, measuredAt: new Date().toISOString() }]
     })
     const profileStatus = entries.length > 0 ? 'validated' : 'unvalidated'
+    await getDatabase().deleteSetting(checkpointKey)
     signal.throwIfAborted()
-    if (entries.length > 0) await getTranscodingService().saveOptimizationCalibration(entries)
+    await getTranscodingService().saveOptimizationCalibration(entries)
+    if (signal.aborted) {
+      await getTranscodingService().saveOptimizationCalibration([])
+      signal.throwIfAborted()
+    }
     const representatives = new Set(measurements.map(measurement => measurement.mediaItemId)).size
     task.result = { libraries, libraryCount: libraries.length, representatives, measurements, calibrationEntries: entries.length, calibrationStatus: profileStatus, status: 'completed', validation: 'holdout-measured', unvalidated: measurements.filter(measurement => measurement.status !== 'measured').length }
     getLoggingService().info('[OptimizationCalibration]', 'Calibration completed', {
@@ -1138,7 +1143,6 @@ export class TaskQueueService {
       validatedCalibrationEntries: entries.length,
       status: profileStatus,
     })
-    await getDatabase().deleteSetting(checkpointKey)
   }
 
   private async executeTranscode(task: QueuedTask, onProgress: (p: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void): Promise<void> {

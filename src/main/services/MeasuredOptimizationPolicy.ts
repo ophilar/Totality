@@ -4,6 +4,7 @@ import { SETTING_KEYS } from '@shared/settingKeys'
 import { APP_CONFIG } from '@main/config'
 import { getOptimizationVideoCodec, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
 import type { MeasurementSourcePreparation } from './MeasuredOptimizationService'
+import type { MediaItem } from '@main/types/database'
 
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
 
@@ -227,10 +228,32 @@ interface MeasuredCandidateEvaluation {
   failedGates: string[]
 }
 
-const QUALITY_GATES: Record<OptimizationQualityProfile, QualityGates> = {
-  transparent: { vmafMean: 96, vmafP5: 93, cambiMean: 5 },
-  balanced: { vmafMean: 95, vmafP5: 92, cambiMean: 8 },
-  maximum_savings: { vmafMean: 93, vmafP5: 88, cambiMean: 12 }
+const QUALITY_GATES: Record<OptimizationQualityProfile, QualityGates> = APP_CONFIG.transcoding.qualityGates
+
+/** Select independent titles deterministically across resolution, bitrate and frame rate. */
+export function selectCalibrationRepresentatives<T extends Pick<MediaItem, 'id' | 'type' | 'series_identity_key' | 'series_title' | 'file_path' | 'width' | 'height' | 'video_bitrate_kbps' | 'video_frame_rate'>>(
+  items: T[], limit: number,
+): Array<{ item: T; role: 'calibration' | 'holdout' }> {
+  const compare = (left: T, right: T) =>
+    left.width * left.height - right.width * right.height ||
+    left.video_bitrate_kbps - right.video_bitrate_kbps ||
+    (left.video_frame_rate ?? 0) - (right.video_frame_rate ?? 0) ||
+    (left.id ?? 0) - (right.id ?? 0) ||
+    (left.file_path < right.file_path ? -1 : left.file_path > right.file_path ? 1 : 0)
+  const titles = new Map<string, T[]>()
+  for (const item of items) {
+    const identity = item.type === 'movie' ? `movie:${item.id}` : `series:${item.series_identity_key ?? item.series_title ?? item.id}`
+    const group = titles.get(identity) ?? []
+    group.push(item)
+    titles.set(identity, group)
+  }
+  const ordered = [...titles.values()].map(group => group.sort(compare)[Math.floor((group.length - 1) / 2)]).sort(compare)
+  const count = Math.min(ordered.length, limit)
+  if (!count) return []
+  const indices = count === 1 ? [Math.floor((ordered.length - 1) / 2)] :
+    Array.from({ length: count }, (_, index) => Math.round(index * (ordered.length - 1) / (count - 1)))
+  const calibrationIndex = Math.floor((count - 1) / 2)
+  return indices.map((index, position) => ({ item: ordered[index], role: position === calibrationIndex ? 'calibration' : 'holdout' }))
 }
 
 export function getImpossibleQualityReason(
