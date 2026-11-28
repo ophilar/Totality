@@ -46,6 +46,7 @@ import { fileIdentity, matchesFileIdentity } from './utils/FileIdentity'
 import { pruneMeasuredSampleCache } from './transcoding/MeasuredSampleCacheRetention'
 import { aggregateShowOptimizationMetrics } from './ShowOptimizationMetricsService'
 import { SETTING_KEYS } from '@shared/settingKeys'
+import { resolveActivationJob, type ActivationJournal } from './transcoding/ActivationJournal'
 
 export class TranscodeError extends Error {
   constructor(message: string, public readonly exitCode?: number, public readonly stderr?: string) {
@@ -1720,13 +1721,16 @@ export class TranscodingService {
     return item
   }
 
-  private async writeActivationJournal(mediaItemId: number, state: Record<string, unknown>): Promise<void> {
-    await getDatabase().setSetting(`transcoding.activation.${mediaItemId}`, JSON.stringify({ mediaItemId, ...state, updatedAt: new Date().toISOString() }))
+  private async writeActivationJournal(state: ActivationJournal): Promise<void> {
+    await getDatabase().setSetting(`transcoding.activation.${state.mediaItemId}`, JSON.stringify({ ...state, updatedAt: new Date().toISOString() }))
   }
 
   private async ensureInitialized(): Promise<void> {
     if (this.initializedPromise) return this.initializedPromise
-    this.initializedPromise = this.initializePaths()
+    this.initializedPromise = this.initializePaths().catch(error => {
+      this.initializedPromise = null
+      throw error
+    })
     return this.initializedPromise
   }
 
@@ -1742,7 +1746,7 @@ export class TranscodingService {
 
   private async verifyActivationOutput(filePath: string, analysis: FileAnalysisResult): Promise<void> {
     const fingerprint = analysis.sourceFingerprint
-    if (!analysis.success || !fingerprint || (await fs.stat(filePath)).size !== fingerprint.size || await sha256File(filePath) !== fingerprint.sha256) {
+    if (!analysis.success || !fingerprint || !(await fs.lstat(filePath)).isFile() || (await fs.stat(filePath)).size !== fingerprint.size || await sha256File(filePath) !== fingerprint.sha256) {
       throw new Error(`Activation output differs from verified evidence: ${filePath}`)
     }
   }
@@ -1765,29 +1769,31 @@ export class TranscodingService {
     const db = getDatabase()
     const journals = await db.getSettingsByPrefix('transcoding.activation.')
     for (const [key, value] of Object.entries(journals)) {
-      const journal = JSON.parse(value as string) as {
-        mediaItemId: number
-        phase: string
-        inputPath: string
-        tempPath?: string
-        targetPath?: string
-        quarantinePath?: string
-        mode?: TranscodeOptions['outputMode']
-        outputStats?: FileAnalysisResult
-      }
-      if (!journal.mediaItemId || !journal.phase || !journal.inputPath) throw new Error(`Invalid transcoding activation journal: ${key}`)
-      const exists = async (filePath: string | undefined): Promise<boolean> => {
-        if (!filePath) return false
-        try { await fs.access(filePath); return true } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error }
+      const journal = JSON.parse(value as string) as ActivationJournal
+      if (!Number.isSafeInteger(journal.mediaItemId) || journal.mediaItemId <= 0 || key !== `transcoding.activation.${journal.mediaItemId}` ||
+          journal.jobId !== undefined && (!Number.isSafeInteger(journal.jobId) || journal.jobId <= 0) ||
+          !['prepared', 'source_quarantined', 'output_activated'].includes(journal.phase) || !['replace', 'quarantine-replace'].includes(journal.mode) ||
+          ![journal.inputPath, journal.tempPath, journal.targetPath, journal.quarantinePath].every(file => typeof file === 'string' && path.isAbsolute(file)) ||
+          path.dirname(journal.inputPath) !== path.dirname(journal.targetPath) || path.dirname(journal.inputPath) !== path.dirname(journal.quarantinePath) ||
+          new Set([path.resolve(journal.tempPath), path.resolve(journal.quarantinePath), path.resolve(journal.inputPath)]).size !== 3 ||
+          [journal.tempPath, journal.quarantinePath].some(file => path.resolve(file) === path.resolve(journal.targetPath))) throw new Error(`Invalid transcoding activation journal: ${key}`)
+      const exists = async (filePath: string): Promise<boolean> => {
+        try {
+          const metadata = await fs.lstat(filePath)
+          if (!metadata.isFile()) throw new Error(`Activation path is not an ordinary file: ${filePath}`)
+          return true
+        } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error }
       }
       const inputExists = await exists(journal.inputPath)
       let targetExists = await exists(journal.targetPath)
       let quarantineExists = await exists(journal.quarantinePath)
       let tempExists = await exists(journal.tempPath)
 
-      const job = await db.mediaRemuxJobs.getLatest(journal.mediaItemId)
-      if (!job || job.sourcePath !== journal.inputPath || (job.quarantinePath !== null && job.quarantinePath !== journal.quarantinePath)) {
-        throw new Error(`Activation recovery cannot identify the original job for media item ${journal.mediaItemId}`)
+      const job = resolveActivationJob(journal, await db.mediaRemuxJobs.getActivationCandidates(journal.mediaItemId, journal.inputPath, journal.jobId))
+      if (journal.jobId === undefined) {
+        getLoggingService().info('[TranscodingService]', `Identified existing activation journal's verified job ${job.id} for media item ${journal.mediaItemId}`)
+        journal.jobId = job.id
+        await this.writeActivationJournal(journal)
       }
       if (quarantineExists && await sha256File(journal.quarantinePath!) !== job.sourceSha256) throw new Error('Quarantined source differs from its recorded fingerprint')
 
@@ -1819,13 +1825,12 @@ export class TranscodingService {
       if ((journal.phase === 'output_activated' || journal.phase === 'source_quarantined' || (journal.phase === 'prepared' && quarantineExists && !tempExists)) && targetExists && journal.targetPath) {
         // Ensure database points to the newly activated target path
         const analysis = journal.outputStats
-        if (!analysis) throw new Error('Activation recovery requires recorded verified output analysis')
+        if (!quarantineExists && (journal.mode !== 'replace' || job.status !== 'promoted' || job.quarantinePath !== journal.quarantinePath)) throw new Error('Activation recovery is missing the original quarantine file')
         await this.verifyActivationOutput(journal.targetPath, analysis)
         await db.media.updatePathAndStats(journal.mediaItemId, journal.targetPath, { ...analysis, filePath: journal.targetPath })
         this.analysisCache.delete(journal.inputPath)
         this.analysisCache.delete(journal.targetPath)
         getStatsCacheService().invalidate()
-        if (job.quarantinePath !== journal.quarantinePath && !quarantineExists) throw new Error('Activation recovery has no matching quarantine evidence')
         const verifiedJobOutput = job.outputAnalysis ? JSON.parse(job.outputAnalysis) as { qualityVerification?: unknown } : undefined
         const encodedReductionBytes = job.sourceSize - analysis.sourceFingerprint!.size
         const retainedOriginalBytes = journal.mode === 'replace' ? 0 : job.sourceSize
@@ -1842,6 +1847,7 @@ export class TranscodingService {
 
       // Crash in prepared phase where neither source was quarantined nor target placed
       if (journal.phase === 'prepared' && inputExists && !quarantineExists) {
+        if (await sha256File(journal.inputPath) !== job.sourceSha256) throw new Error('Source changed before prepared activation rollback')
         if (tempExists) await fs.unlink(journal.tempPath!)
         await db.mediaRemuxJobs.update(job.id, { status: 'failed', quarantinePath: null, error: 'Activation interrupted before source quarantine' })
         await db.deleteSetting(key)
@@ -2572,14 +2578,14 @@ export class TranscodingService {
         const quarantinePath = path.join(path.dirname(inputPath), `${origBase}.${effectiveOutputMode === 'replace' ? 'activation' : 'quarantine'}-${Date.now()}-${randomUUID()}${origExt}`)
         const outputStats = { ...outputAnalysis, filePath: targetSamePath }
         activation = { inputPath, tempPath, targetPath: targetSamePath, quarantinePath }
-        const journal = { inputPath, tempPath, targetPath: targetSamePath, quarantinePath, outputStats, mode: effectiveOutputMode }
-        await this.writeActivationJournal(mediaItemId, { ...journal, phase: 'prepared' })
+        const journal = { mediaItemId, jobId: optimizationJobId!, inputPath, tempPath, targetPath: targetSamePath, quarantinePath, outputStats, mode: effectiveOutputMode }
+        await this.writeActivationJournal({ ...journal, phase: 'prepared' })
         await db.mediaRemuxJobs.update(optimizationJobId!, { quarantinePath })
         await fs.rename(inputPath, quarantinePath)
-        await this.writeActivationJournal(mediaItemId, { ...journal, phase: 'source_quarantined' })
+        await this.writeActivationJournal({ ...journal, phase: 'source_quarantined' })
         if (await sha256File(quarantinePath) !== sourceSha256) throw new Error('Quarantined source differs from its recorded fingerprint')
         await this.publishActivationOutput(tempPath, targetSamePath)
-        await this.writeActivationJournal(mediaItemId, { ...journal, phase: 'output_activated' })
+        await this.writeActivationJournal({ ...journal, phase: 'output_activated' })
         await db.media.updatePathAndStats(mediaItemId, targetSamePath, outputStats)
         activated = true
         this.analysisCache.delete(inputPath)

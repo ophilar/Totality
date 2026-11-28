@@ -171,9 +171,19 @@ export class MediaRemuxJobRepository {
     this.db().prepare(sql).run(...params)
   }
 
+  async getActivationCandidates(mediaItemId: number, sourcePath: string, jobId?: number): Promise<MediaRemuxJob[]> {
+    const rows = this.db().prepare(`
+      SELECT * FROM media_optimization_jobs
+      WHERE media_item_id = ? AND source_path = ?
+        AND status IN ('verified', 'promoted')
+        AND (? IS NULL OR id = ?)
+    `).all(mediaItemId, sourcePath, jobId ?? null, jobId ?? null) as Record<string, unknown>[]
+    return rows.map(toCamelCaseJob)
+  }
+
   async getLatest(mediaItemId: number): Promise<MediaRemuxJob | null> {
     const row = this.db()
-      .prepare('SELECT * FROM media_optimization_jobs WHERE media_item_id = ? ORDER BY updated_at DESC LIMIT 1')
+      .prepare('SELECT * FROM media_optimization_jobs WHERE media_item_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1')
       .get(mediaItemId) as Record<string, unknown> | undefined
     return row ? toCamelCaseJob(row) : null
   }
