@@ -20,6 +20,9 @@ export interface OptimizationCalibrationEntry {
   /** Serialized measurement context; exact equality is required before using this search prior. */
   scopeKey: string
   qualityProfile: OptimizationQualityProfile
+  /** Interpolation envelope of the observed encoder rate ceilings, in bits/s. */
+  rateLimitMin?: number
+  rateLimitMax?: number
   sourceCodec: string
   targetCodec: OptimizationVideoCodec
   encoder: string
@@ -41,6 +44,9 @@ export function isValidOptimizationCalibrationEntry(value: unknown): value is Op
   const entry = value as Partial<OptimizationCalibrationEntry>
   return typeof entry.scopeKey === 'string' && entry.scopeKey.length > 0 &&
     OPTIMIZATION_QUALITY_PROFILES.includes(entry.qualityProfile!) &&
+    ((entry.rateLimitMin === undefined && entry.rateLimitMax === undefined) ||
+      (typeof entry.rateLimitMin === 'number' && Number.isFinite(entry.rateLimitMin) && entry.rateLimitMin > 0 &&
+       typeof entry.rateLimitMax === 'number' && Number.isFinite(entry.rateLimitMax) && entry.rateLimitMax >= entry.rateLimitMin)) &&
     typeof entry.sourceCodec === 'string' && entry.sourceCodec.length > 0 &&
     (entry.targetCodec === 'hevc' || entry.targetCodec === 'av1') &&
     typeof entry.encoder === 'string' && entry.encoder.length > 0 &&
@@ -51,8 +57,10 @@ export function isValidOptimizationCalibrationEntry(value: unknown): value is Op
     typeof entry.measuredAt === 'string' && entry.measuredAt.length > 0
 }
 
-export function scopedCalibrationEntries(entries: OptimizationCalibrationEntry[], scopeKey: string | undefined): OptimizationCalibrationEntry[] {
-  return scopeKey === undefined ? [] : entries.filter(entry => entry.scopeKey === scopeKey)
+export function scopedCalibrationEntries(entries: OptimizationCalibrationEntry[], scopeKey: string | undefined, rateLimit?: number): OptimizationCalibrationEntry[] {
+  return scopeKey === undefined ? [] : entries.filter(entry => entry.scopeKey === scopeKey &&
+    (rateLimit === undefined ? entry.rateLimitMin === undefined && entry.rateLimitMax === undefined :
+      entry.rateLimitMin !== undefined && entry.rateLimitMax !== undefined && rateLimit >= entry.rateLimitMin && rateLimit <= entry.rateLimitMax))
 }
 
 export interface CalibrationCandidateEvidence {
@@ -64,6 +72,7 @@ export interface CalibrationCandidateEvidence {
   measuredCandidate: MeasuredCandidate
   preflightValidated: boolean
   maximumOutputBytesPerSecond: number
+  rateLimit?: number
 }
 
 function groupCalibrationEvidence<T, K>(values: T[], key: (value: T) => K): Map<K, T[]> {
@@ -86,6 +95,14 @@ export function buildValidatedCalibrationEntries(evidence: CalibrationCandidateE
     const holdouts = new Set(observations.filter(entry => entry.role === 'holdout').map(entry => entry.mediaItemId))
     if (training.size < 2 || !holdouts.size || training.has(undefined) || holdouts.has(undefined) || [...training].some(id => holdouts.has(id))) continue
     const expected = training.size + holdouts.size
+    const rates = observations.map(entry => entry.rateLimit)
+    const bounded = rates.every(rate => typeof rate === 'number' && Number.isFinite(rate) && rate > 0)
+    if (!bounded && rates.some(rate => rate !== undefined)) continue
+    const holdoutRates = observations.filter(entry => entry.role === 'holdout').map(entry => entry.rateLimit!)
+    const trainingRates = observations.filter(entry => entry.role === 'calibration').map(entry => entry.rateLimit!)
+    const rateLimitMin = bounded ? Math.max(Math.min(...trainingRates), Math.min(...holdoutRates)) : undefined
+    const rateLimitMax = bounded ? Math.min(Math.max(...trainingRates), Math.max(...holdoutRates)) : undefined
+    if (rateLimitMin !== undefined && rateLimitMax! < rateLimitMin) continue
     const candidates = groupCalibrationEvidence(observations, ({ measuredCandidate: candidate }) => JSON.stringify([candidate.encoder, candidate.gpuId ?? null, candidate.preset, candidate.quality]))
     const aggregated: MeasuredCandidate[] = []
     for (const group of candidates.values()) {
@@ -110,7 +127,7 @@ export function buildValidatedCalibrationEntries(evidence: CalibrationCandidateE
       for (const family of families.values()) {
         for (const candidate of getNonDominatedMeasuredCandidates(qualityProfile, family)) {
           const { encoder, gpuId, preset, quality, outputBytes, sampledDurationSeconds } = candidate
-          result.push({ scopeKey, qualityProfile, sourceCodec: observations[0].sourceCodec, targetCodec: observations[0].targetCodec,
+          result.push({ scopeKey, qualityProfile, rateLimitMin, rateLimitMax, sourceCodec: observations[0].sourceCodec, targetCodec: observations[0].targetCodec,
             encoder, gpuId, preset, quality, outputBytes, sampledDurationSeconds, measuredAt })
         }
       }
@@ -429,8 +446,5 @@ function evaluateMeasuredCandidates(profile: OptimizationQualityProfile, candida
 
 /** Returns whether a measured candidate has complete, quality-passing, playback-compatible evidence. */
 export function isMeasuredCandidateValidForCalibration(candidate: MeasuredCandidate, profile: OptimizationQualityProfile = 'balanced'): boolean {
-  return Number.isFinite(candidate.outputBytes) && candidate.outputBytes > 0 &&
-    Number.isFinite(candidate.sampledDurationSeconds) && candidate.sampledDurationSeconds > 0 &&
-    Number.isFinite(candidate.vmafMean) && Number.isFinite(candidate.vmafP5) && Number.isFinite(candidate.cambiMean) &&
-    evaluateMeasuredCandidates(profile, [candidate])[0].passed
+  return evaluateMeasuredCandidates(profile, [candidate])[0].passed
 }

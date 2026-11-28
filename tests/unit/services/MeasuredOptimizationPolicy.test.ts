@@ -105,6 +105,12 @@ describe('selectMeasuredCandidate', () => {
     const failed = evidence.map(entry => entry.mediaItemId === 4 && entry.measuredCandidate.quality === 26
       ? { ...entry, measuredCandidate: { ...entry.measuredCandidate, playbackBlockers: ['incompatible'] } } : entry)
     expect(buildValidatedCalibrationEntries(failed, timestamp).some(entry => entry.quality === 26)).toBe(false)
+    const limits = [1000, 4000, 2000, 3000]
+    const bounded = buildValidatedCalibrationEntries(evidence.map(entry => ({ ...entry, rateLimit: limits[entry.mediaItemId! - 1] })), timestamp)
+    expect(scopedCalibrationEntries(bounded, 'scope-a', 2500).length).toBeGreaterThan(0)
+    expect(scopedCalibrationEntries(bounded, 'scope-a', 1500)).toEqual([])
+    expect(scopedCalibrationEntries(bounded, 'scope-a', 3500)).toEqual([])
+    expect(scopedCalibrationEntries(bounded, 'scope-a')).toEqual([])
   })
 
   it('validates persisted calibration entries without accepting incomplete evidence', () => {

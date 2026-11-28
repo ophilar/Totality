@@ -760,7 +760,7 @@ export class TranscodingService {
     loadEpisodeCheckpoint?: (mediaItemId: number) => Promise<ShowTranscodeEpisodeCheckpoint | undefined>
     saveEpisodeCheckpoint?: (mediaItemId: number, checkpoint: ShowTranscodeEpisodeCheckpoint) => Promise<void>
     calibration?: boolean
-    onMeasuredCandidates?: (candidates: MeasuredCandidate[], complete: boolean, calibrationScopeKey?: string, maximumRate?: number) => Promise<void>
+    onMeasuredCandidates?: (candidates: MeasuredCandidate[], complete: boolean, calibrationScopeKey?: string, maximumRate?: number, rateLimit?: number) => Promise<void>
   }): Promise<ShowTranscodePreflight> {
     // Run cache maintenance after preflight, never on the critical response path.
     // If a prior maintenance sweep is deleting entries, wait for it before reading.
@@ -1194,8 +1194,8 @@ export class TranscodingService {
                     publishPreflightProgress(episode, phase)
                     await operation?.waitUntilRunning()
                   },
-                  async (candidates, complete, calibrationScopeKey, maximumRate) => {
-                    await operation?.onMeasuredCandidates?.(candidates, complete, calibrationScopeKey, maximumRate)
+                  async (candidates, complete, calibrationScopeKey, maximumRate, rateLimit) => {
+                    await operation?.onMeasuredCandidates?.(candidates, complete, calibrationScopeKey, maximumRate, rateLimit)
                     await persistMeasurement(candidates, complete, partialSamples)
                     getLoggingService().info('[TVOptimization]', `Measured candidates cached: mediaItem=${episode.id}, cacheKey=${measurementCacheKey}, candidates=${candidates.length}`)
                   },
@@ -2786,7 +2786,7 @@ export class TranscodingService {
     sampleDirectory?: string,
     signal?: AbortSignal,
     onProgress?: (phase: string) => Promise<void> | void,
-    onMeasuredCandidates?: (candidates: MeasuredCandidate[], complete: boolean, calibrationScopeKey?: string, maximumRate?: number) => Promise<void>,
+    onMeasuredCandidates?: (candidates: MeasuredCandidate[], complete: boolean, calibrationScopeKey?: string, maximumRate?: number, rateLimit?: number) => Promise<void>,
     previouslyMeasured: MeasuredCandidate[] = [],
     measurementComplete = false,
     previouslyMeasuredSamples: MeasuredCandidateSample[] = [],
@@ -2926,7 +2926,7 @@ export class TranscodingService {
         customArgs: options.customArgs,
         videoFilter: options.targetConversion?.videoFilter,
         inputArgs: options.targetConversion?.inputArgs,
-        maximumVideoBitrate: options.targetConversion?.maximumVideoBitrate,
+        rateControl: options.targetConversion?.maximumVideoBitrate === undefined ? 'unbounded' : 'bounded',
         targetWidth: options.targetConversion?.width,
         targetHeight: options.targetConversion?.height,
         targetBitDepth: options.targetConversion?.bitDepth,
@@ -2934,7 +2934,7 @@ export class TranscodingService {
         targetVideoLevel: options.targetConversion?.level,
         targetConversionHdr: options.targetConversion?.hdrFormat,
       }) : undefined
-      const calibration = scopedCalibrationEntries(activeCalibration, calibrationScopeKey)
+      const calibration = scopedCalibrationEntries(activeCalibration, calibrationScopeKey, plannedBitrate)
       const nextCandidates = () => searchContext?.calibration
         ? ladder.filter(candidate => !isMeasured(candidate)).slice(0, 1)
         : nextCandidateSearch(ladder, measuredCandidates, options.qualityProfile!, maxCandidatesPerPreset, calibration)
@@ -2994,7 +2994,7 @@ export class TranscodingService {
               measuredSamples = [...measuredSamples.filter(existing => existing.encoder !== sample.encoder || existing.gpuId !== sample.gpuId || existing.preset !== sample.preset || existing.quality !== sample.quality || existing.sampleIndex !== sample.sampleIndex), sample]
               await onMeasuredSample?.(sample)
             },
-            onCandidateMeasured: async roundCandidates => onMeasuredCandidates?.([...measuredCandidates.slice(0, roundStart), ...roundCandidates], false, calibrationScopeKey, maximumOutputBytesPerSecond),
+            onCandidateMeasured: async roundCandidates => onMeasuredCandidates?.([...measuredCandidates.slice(0, roundStart), ...roundCandidates], false, calibrationScopeKey, maximumOutputBytesPerSecond, plannedBitrate),
             sampleDurationSeconds,
             samplePositions,
           })
@@ -3044,12 +3044,12 @@ export class TranscodingService {
           for (const candidate of measuredCandidates) {
             candidate.searchSummary = { measuredCount: measuredCandidates.length, maximumCandidates, budgetReached }
           }
-          await onMeasuredCandidates?.(measuredCandidates, true, calibrationScopeKey, maximumOutputBytesPerSecond)
+          await onMeasuredCandidates?.(measuredCandidates, true, calibrationScopeKey, maximumOutputBytesPerSecond, plannedBitrate)
           break
         }
       }
       signal?.throwIfAborted()
-      if (measurementComplete && previouslyMeasured.length === measuredCandidates.length) await onMeasuredCandidates?.(measuredCandidates, true, calibrationScopeKey, maximumOutputBytesPerSecond)
+      if (measurementComplete && previouslyMeasured.length === measuredCandidates.length) await onMeasuredCandidates?.(measuredCandidates, true, calibrationScopeKey, maximumOutputBytesPerSecond, plannedBitrate)
       const selected = selectMeasuredCandidate(options.qualityProfile, measuredCandidates, maximumOutputBytesPerSecond)
       const budgetReached = !searchContext?.calibration && [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`))].some(key =>
         measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}` === key).length >= maxCandidatesPerPreset)

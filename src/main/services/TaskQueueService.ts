@@ -1024,6 +1024,7 @@ export class TaskQueueService {
           let calibrationScopeKey: string | undefined
           let preflightValidated = false
           let maximumOutputBytesPerSecond: number | undefined
+          let rateLimit: number | undefined
           let failureReason: string | undefined
           try {
             const preflight = await getTranscodingService().preflightShowTranscode({
@@ -1050,10 +1051,11 @@ export class TaskQueueService {
               preflightId: `calibration_${task.id}_${item.id}`,
               batchId: `calibration_${task.id}`,
               calibration: true,
-              onMeasuredCandidates: async (candidates, complete, scopeKey, maximumRate) => {
+              onMeasuredCandidates: async (candidates, complete, scopeKey, maximumRate, encoderRateLimit) => {
                 measuredCandidates = candidates
                 calibrationScopeKey = scopeKey
                 maximumOutputBytesPerSecond = maximumRate
+                rateLimit = encoderRateLimit
                 preflightValidated = complete
               },
             })
@@ -1067,7 +1069,7 @@ export class TaskQueueService {
           }
           if (calibrationScopeKey) {
             for (const measuredCandidate of measuredCandidates) {
-              measurements.push({ key: `${measurementKeyPrefix}:${JSON.stringify([measuredCandidate.encoder, measuredCandidate.gpuId ?? null, measuredCandidate.preset, measuredCandidate.quality])}`, stage, role, groupKey, scopeKey: calibrationScopeKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'measured', preflightValidated, maximumOutputBytesPerSecond, reason: failureReason, measuredCandidate, encoder: measuredCandidate.encoder, gpuId: measuredCandidate.gpuId, preset: measuredCandidate.preset, crf: measuredCandidate.quality })
+              measurements.push({ key: `${measurementKeyPrefix}:${JSON.stringify([measuredCandidate.encoder, measuredCandidate.gpuId ?? null, measuredCandidate.preset, measuredCandidate.quality])}`, stage, role, groupKey, scopeKey: calibrationScopeKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'measured', preflightValidated, maximumOutputBytesPerSecond, rateLimit, reason: failureReason, measuredCandidate, encoder: measuredCandidate.encoder, gpuId: measuredCandidate.gpuId, preset: measuredCandidate.preset, crf: measuredCandidate.quality })
             }
           }
           if (failureReason !== undefined) {
