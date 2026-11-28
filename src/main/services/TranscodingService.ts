@@ -795,7 +795,7 @@ export class TranscodingService {
     getLoggingService().info('[TVOptimization]', `Preflight started: scope=${scope}, series=${request.seriesIdentityKey ?? 'n/a'}, season=${request.seasonNumber ?? 'all'}, mediaItem=${request.mediaItemId ?? 'all'}, source=${request.sourceId}, library=${request.libraryId ?? 'n/a'}, mode=${request.options.optimizationMode ?? 'unspecified'}, codec=${request.options.targetCodec ?? 'unspecified'}, qualityProfile=${request.options.qualityProfile ?? 'unspecified'}, encoderPolicy=${request.options.encoderPolicy ?? 'unspecified'}, container=${request.options.targetContainer ?? 'automatic'}, containerSelection=${request.options.targetContainerSelection ?? 'unspecified'}, gpu=${request.options.gpuId ?? 'selected'}`)
     const batchId = operation?.batchId ?? `batch_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
     const preflightId = operation?.preflightId ?? `${batchId}_preflight`
-    const needsHardwareSnapshot = request.options.optimizationMode !== 'remux_only' && request.options.encoderPolicy !== 'software'
+    const needsHardwareSnapshot = request.options.optimizationMode !== 'remux_only'
     const activeCalibration = operation?.calibration || request.options.optimizationMode === 'remux_only' ? [] : await this.loadOptimizationCalibration()
     const calibrationFingerprint = createHash('sha256').update(JSON.stringify(activeCalibration)).digest('hex')
     const optionsFingerprint = createHash('sha256').update(JSON.stringify({ measurementVersion: MEASUREMENT_VERSION, searchVersion: OPTIMIZATION_SEARCH_VERSION, calibrationFingerprint, qualityGates: APP_CONFIG.transcoding.qualityGates, sampleQualityDomains: APP_CONFIG.transcoding.sampleQualityDomains, samplePositions: APP_CONFIG.transcoding.samplePositions, sampleDurationSeconds: APP_CONFIG.transcoding.sampleDurationSeconds, options: request.options, representativeMediaItemId: request.representativeMediaItemId, representativeMediaItemIds: request.representativeMediaItemIds, selectedMediaItemIds: request.selectedMediaItemIds })).digest('hex')
@@ -856,7 +856,7 @@ export class TranscodingService {
         if (queuedMediaIds.has(episode.id)) throw new Error(`Episode "${formatMediaDisplayName(episode, request.seriesTitle)}" already has a queued or running transcode`)
         await this.assertAuthorizedItem(episode.id)
         const stat = await fs.stat(episode.file_path)
-        const { analysis } = await getQualityAnalyzer().analyzeMediaItemFileEvidence(episode, operation?.signal)
+        const { analysis } = await getQualityAnalyzer().analyzeMediaItemFileEvidence(episode, operation?.signal, operation?.calibration ? { persist: false } : {})
         const video = analysis.video
         operation?.signal.throwIfAborted()
         if (!analysis.success || analysis.filePath !== episode.file_path || analysis.fileSizeBytes !== stat.size || !video) {
@@ -2783,7 +2783,7 @@ export class TranscodingService {
     const sourceId = searchContext?.sourceId ?? media?.source_id
     const libraryId = searchContext?.libraryId ?? media?.library_id
     const mediaType = searchContext?.mediaType ?? media?.type
-    const capabilities = options.encoderPolicy === 'software' && !activeCalibration.length ? undefined : await this.getCapabilities()
+    const capabilities = await this.getCapabilities()
     const selectedGpu = capabilities?.gpus.find(gpu => gpu.id === (options.gpuId || capabilities.selectedGpuId))
     const automaticGpuCandidates = options.encoderPolicy === 'automatic'
       ? capabilities?.gpus.filter(gpu => {
@@ -2815,7 +2815,7 @@ export class TranscodingService {
     let candidateSearchRounds = 0
     const maxCandidatesPerPreset = searchContext?.calibration ? Math.max(...Object.values(APP_CONFIG.transcoding.sampleQualityDomains).map(domain => domain.length)) : options.measurementCandidateBudget ?? MAX_MEASURED_CANDIDATES_PER_PRESET
     if (!Number.isInteger(maxCandidatesPerPreset) || maxCandidatesPerPreset <= 0) throw new Error('Measured candidate budget must be a positive integer')
-    const maximumCandidates = new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`)).size * maxCandidatesPerPreset
+    const maximumCandidates = searchContext?.calibration ? ladder.length : new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`)).size * maxCandidatesPerPreset
     const candidateDomain = [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}`))].map(key => {
       const [encoder, gpuId] = key.split('/')
       const candidates = ladder.filter(candidate => candidate.encoder === encoder && (candidate.gpuId ?? 'software') === gpuId)
@@ -2881,6 +2881,14 @@ export class TranscodingService {
         targetProfileMode: options.targetProfileMode,
         targetProfile,
         capabilityFingerprint: capabilities ? this.getCapabilitySnapshotFingerprint(capabilities) : 'software',
+        deviceEncoders: capabilities?.deviceEncoders,
+        sourceWidth: analysis.video.width,
+        sourceHeight: analysis.video.height,
+        sourceFrameRate: analysis.video.frameRate,
+        sourceColorSpace: analysis.video.colorSpace,
+        sourceColorTransfer: analysis.video.colorTransfer,
+        sourceColorPrimaries: analysis.video.colorPrimaries,
+        sourcePixelFormat: analysis.video.pixelFormat,
         measurementVersion: MEASUREMENT_VERSION,
         searchVersion: OPTIMIZATION_SEARCH_VERSION,
         measurementFingerprint: await this.measuredOptimizationService.getMeasurementFingerprint(),
@@ -3010,7 +3018,7 @@ export class TranscodingService {
         if (measurementComplete) break
         if (!nextCandidates().length) {
           measurementComplete = true
-          const budgetReached = [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`))].some(key =>
+          const budgetReached = !searchContext?.calibration && [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`))].some(key =>
             measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}` === key).length >= maxCandidatesPerPreset)
           for (const candidate of measuredCandidates) {
             candidate.searchSummary = { measuredCount: measuredCandidates.length, maximumCandidates, budgetReached }
@@ -3022,7 +3030,7 @@ export class TranscodingService {
       signal?.throwIfAborted()
       if (measurementComplete && previouslyMeasured.length === measuredCandidates.length) await onMeasuredCandidates?.(measuredCandidates, true, calibrationScopeKey, maximumOutputBytesPerSecond)
       const selected = selectMeasuredCandidate(options.qualityProfile, measuredCandidates, maximumOutputBytesPerSecond)
-      const budgetReached = [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`))].some(key =>
+      const budgetReached = !searchContext?.calibration && [...new Set(ladder.map(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}`))].some(key =>
         measuredCandidates.filter(candidate => `${candidate.encoder}/${candidate.gpuId ?? 'software'}/${candidate.preset}` === key).length >= maxCandidatesPerPreset)
       selected.searchSummary = { measuredCount: measuredCandidates.length, maximumCandidates, budgetReached }
       await onProgress?.(budgetReached

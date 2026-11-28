@@ -33,7 +33,7 @@ import { getWishlistCompletionService } from './WishlistCompletionService'
 import { getTMDBService } from './TMDBService'
 import { getTranscodingService } from './TranscodingService'
 import { getLoggingService } from './LoggingService'
-import { buildValidatedCalibrationEntries, selectCalibrationRepresentatives, type CalibrationCandidateEvidence, type MeasuredCandidate } from './MeasuredOptimizationPolicy'
+import { buildValidatedCalibrationEntries, selectCalibrationRepresentatives, OPTIMIZATION_QUALITY_PROFILES, type CalibrationCandidateEvidence, type MeasuredCandidate } from './MeasuredOptimizationPolicy'
 import type { OptimizationCandidateScanSummary, ShowTranscodeRequest, ShowTranscodePreflight, ShowTranscodeEpisodeCheckpoint } from './TranscodingService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { normalizeVideoCodec } from './MediaNormalizer'
@@ -994,7 +994,7 @@ export class TaskQueueService {
     const measureRepresentatives = async (items: typeof mediaItems, targetCodec: 'hevc' | 'av1', stage: string): Promise<void> => {
       const groups = new Map<string, typeof mediaItems>()
       for (const item of items) {
-        const key = `${item.source_id ?? ''}:${item.library_id ?? ''}:${item.type}:${String(item.hdr_format ?? 'SDR').toLowerCase()}`
+        const key = JSON.stringify([item.source_id, item.library_id, item.type, item.hdr_format?.toLowerCase(), item.width, item.height, item.color_bit_depth, item.video_frame_rate])
         const group = groups.get(key) ?? []
         group.push(item)
         groups.set(key, group)
@@ -1107,7 +1107,7 @@ export class TaskQueueService {
     }
     const measuredFormats = new Set(measurements.map(measurement => `${measurement.sourceCodec}:${measurement.groupKey}`))
     for (const item of mediaItems) {
-      const formatKey = `${item.source_id ?? ''}:${item.library_id ?? ''}:${item.type}:${String(item.hdr_format ?? 'SDR').toLowerCase()}`
+      const formatKey = JSON.stringify([item.source_id, item.library_id, item.type, item.hdr_format?.toLowerCase(), item.width, item.height, item.color_bit_depth, item.video_frame_rate])
       const sourceCodec = normalizeVideoCodec(item.video_codec)
       const stage = sourceCodec === 'H.264' ? 'measuring-h264-to-hevc' : sourceCodec === 'HEVC' && includeAv1 ? 'measuring-hevc-to-av1' : 'unsupported-source'
       if (stage === 'unsupported-source' && !measuredFormats.has(`${item.video_codec}:${formatKey}`)) {
@@ -1118,7 +1118,12 @@ export class TaskQueueService {
     const failedGroups = new Set(measurements.filter(measurement => measurement.status === 'unvalidated' && measurement.role !== 'unvalidated').map(measurement => JSON.stringify([measurement.stage, measurement.groupKey])))
     const evidence = measurements.filter(measurement => measurement.status === 'measured' && !failedGroups.has(JSON.stringify([measurement.stage, measurement.groupKey]))) as unknown as CalibrationCandidateEvidence[]
     const entries = buildValidatedCalibrationEntries(evidence, new Date().toISOString())
-    const profileStatus = entries.length > 0 ? 'validated' : 'unvalidated'
+    const observedScopes = new Set(evidence.map(entry => entry.scopeKey))
+    const validatedScopes = new Set(entries.map(entry => entry.scopeKey))
+    const uncoveredScopes = [...observedScopes].filter(scope => !validatedScopes.has(scope))
+    const missingProfiles = [...validatedScopes].flatMap(scope => OPTIMIZATION_QUALITY_PROFILES.filter(profile => !entries.some(entry => entry.scopeKey === scope && entry.qualityProfile === profile)).map(profile => ({ scope, profile })))
+    const incompleteCount = failedGroups.size + uncoveredScopes.length + missingProfiles.length
+    const profileStatus = entries.length > 0 ? incompleteCount ? 'partial' : 'validated' : 'unvalidated'
     await getDatabase().deleteSetting(checkpointKey)
     signal.throwIfAborted()
     await getTranscodingService().saveOptimizationCalibration(entries)
@@ -1127,7 +1132,7 @@ export class TaskQueueService {
       signal.throwIfAborted()
     }
     const representatives = new Set(measurements.map(measurement => measurement.mediaItemId)).size
-    task.result = { libraries, libraryCount: libraries.length, representatives, measurements, calibrationEntries: entries.length, calibrationStatus: profileStatus, status: entries.length ? 'completed' : 'unvalidated', validation: entries.length ? 'holdout-measured' : 'unvalidated', failedCount: failedGroups.size, unvalidated: measurements.filter(measurement => measurement.status !== 'measured').length }
+    task.result = { libraries, libraryCount: libraries.length, representatives, measurements, calibrationEntries: entries.length, calibrationStatus: profileStatus, status: entries.length ? incompleteCount ? 'partial' : 'completed' : 'failed', validation: entries.length ? 'holdout-measured' : 'unvalidated', failedCount: incompleteCount, uncoveredScopes, missingProfiles, unvalidated: measurements.filter(measurement => measurement.status !== 'measured').length }
     if (!entries.length) throw new Error('Calibration produced no validated quality-profile priors; inspect representative evidence')
     getLoggingService().info('[OptimizationCalibration]', 'Calibration completed', {
       taskId: task.id,

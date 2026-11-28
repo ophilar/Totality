@@ -533,7 +533,7 @@ export class QualityAnalyzer {
   async analyzeMediaItemFileEvidence(
     mediaItem: MediaItem,
     signal?: AbortSignal,
-    options: { scanBitrate?: boolean; detectVolume?: boolean; includePacketMetrics?: boolean; requestId?: string } = {},
+    options: { scanBitrate?: boolean; detectVolume?: boolean; includePacketMetrics?: boolean; requestId?: string; persist?: boolean } = {},
   ): Promise<{ analysis: FileAnalysisResult }> {
     if (!mediaItem.file_path) throw new Error(`Media item ${mediaItem.id ?? mediaItem.title} has no local file path`)
     await this.loadThresholdsFromDatabase()
@@ -587,7 +587,7 @@ export class QualityAnalyzer {
         fileAnalysisFingerprint: fileIdentity(source),
         analysisOptions: requestedAnalysisOptions,
       }
-      await db.media.updateDeepAnalysisByPath(filePath, analysis, new Date().toISOString())
+      if (options.persist !== false) await db.media.updateDeepAnalysisByPath(filePath, analysis, new Date().toISOString())
     }
 
     if (!analysis.success) throw new Error(analysis.error || `File analysis failed for ${mediaItem.title}`)
