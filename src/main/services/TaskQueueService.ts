@@ -1001,7 +1001,31 @@ export class TaskQueueService {
     const checkpointKey = `optimization.calibration.${task.id}`
     // Restart with fresh evidence: checkpoint records cannot establish current file,
     // playback profile or device identity. Keep the old checkpoint until rewritten.
-    const measurements: Array<Record<string, unknown>> = []
+    type CalibrationRecordContext = {
+      key?: string
+      stage: string
+      groupKey: string
+      contextKey?: string
+      mediaItemId?: number
+      sourceCodec?: string
+      hdrFormat?: string
+      targetCodec?: 'hevc' | 'av1'
+      reason?: string
+    }
+    type MeasuredCalibrationRecord = CalibrationRecordContext & CalibrationCandidateEvidence & {
+      status: 'measured'
+      encoder: string
+      gpuId?: string
+      preset: string
+      crf: number
+    }
+    type UnvalidatedCalibrationRecord = CalibrationRecordContext & {
+      status: 'unvalidated'
+      role: 'calibration' | 'holdout' | 'unvalidated'
+      scopeKey?: string
+      reason: string
+    }
+    const measurements: Array<MeasuredCalibrationRecord | UnvalidatedCalibrationRecord> = []
     for (const source of sources) {
       signal.throwIfAborted()
       const sourceLibraries = await getSourceManager().getLibraries(source.source_id)
@@ -1089,7 +1113,7 @@ export class TaskQueueService {
               signal,
               beginCommit: () => undefined,
               waitUntilRunning: async () => { signal.throwIfAborted() },
-              update: update => onProgress({ phase: update.phase ?? stage, current: update.progress?.current, total: update.progress?.total, currentItem: item.title }),
+              update: update => onProgress({ phase: stage, current: completedRepresentatives, total: jobs.length, currentItem: [item.title, update.progress?.currentItem ?? update.phase].filter(Boolean).join(' · ') }),
               preflightId: `calibration_${task.id}_${stage}_${index}`,
               batchId: `calibration_${task.id}`,
               calibration: true,
@@ -1104,12 +1128,16 @@ export class TaskQueueService {
             signal.throwIfAborted()
             const episode = preflight.episodes[0]
             if (!preflightValidated) failureReason = episode?.reason ?? 'Calibration did not complete the candidate catalogue'
+            else if (!calibrationScopeKey || maximumOutputBytesPerSecond === undefined || !Number.isFinite(maximumOutputBytesPerSecond) || measuredCandidates.length === 0) {
+              preflightValidated = false
+              failureReason = 'Calibration has no complete scoped candidate evidence'
+            }
           } catch (error) {
             signal.throwIfAborted()
             preflightValidated = false
             failureReason = error instanceof Error ? error.message : String(error)
           }
-          if (calibrationScopeKey) {
+          if (calibrationScopeKey && maximumOutputBytesPerSecond !== undefined && Number.isFinite(maximumOutputBytesPerSecond)) {
             for (const measuredCandidate of measuredCandidates) {
               measurements.push({ key: `${measurementKeyPrefix}:${candidateEncodingKey(measuredCandidate)}`, stage, role, groupKey, contextKey, scopeKey: calibrationScopeKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'measured', preflightValidated, maximumOutputBytesPerSecond, rateLimit: rateLimits?.[measuredCandidate.encoder], reason: failureReason, measuredCandidate, encoder: measuredCandidate.encoder, gpuId: measuredCandidate.gpuId, preset: measuredCandidate.preset, crf: measuredCandidate.quality })
             }
@@ -1119,6 +1147,7 @@ export class TaskQueueService {
           }
           await saveCheckpoint()
           completedRepresentatives++
+          onProgress({ phase: stage, current: completedRepresentatives, total: jobs.length, currentItem: item.title })
       }
       const workerCount = Math.min(APP_CONFIG.transcoding.calibrationRepresentativeConcurrency, jobs.length)
       const results = await Promise.allSettled(Array.from({ length: workerCount }, async () => {
@@ -1155,12 +1184,12 @@ export class TaskQueueService {
       const sourceCodec = normalizeVideoCodec(item.video_codec)
       const stage = sourceCodec === 'H.264' ? 'measuring-h264-to-hevc' : sourceCodec === 'HEVC' && includeAv1 ? 'measuring-hevc-to-av1' : 'unsupported-source'
       if (stage === 'unsupported-source' && !measuredFormats.has(`${item.video_codec}:${formatKey}`)) {
-        measurements.push({ key: `unsupported:${JSON.stringify([formatKey, item.video_codec ?? null])}`, stage, role: 'unvalidated', groupKey: formatKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec: 'hevc', status: 'unvalidated', reason: `Source codec ${item.video_codec ?? 'unknown'} is not covered by the enabled calibration stages` })
+        measurements.push({ key: `unsupported:${JSON.stringify([formatKey, item.video_codec ?? null])}`, stage, role: 'unvalidated', groupKey: formatKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', status: 'unvalidated', reason: `Source codec ${item.video_codec ?? 'unknown'} is not covered by the enabled calibration stages` })
         measuredFormats.add(`${item.video_codec}:${formatKey}`)
       }
     }
     const failedGroups = new Set(measurements.filter(measurement => measurement.status === 'unvalidated' && measurement.role !== 'unvalidated').map(measurement => JSON.stringify([measurement.stage, measurement.groupKey, measurement.contextKey])))
-    const evidence = measurements.filter(measurement => measurement.status === 'measured' && !failedGroups.has(JSON.stringify([measurement.stage, measurement.groupKey, measurement.contextKey]))) as unknown as CalibrationCandidateEvidence[]
+    const evidence = measurements.filter((measurement): measurement is MeasuredCalibrationRecord => measurement.status === 'measured' && !failedGroups.has(JSON.stringify([measurement.stage, measurement.groupKey, measurement.contextKey])))
     const entries = buildValidatedCalibrationEntries(evidence, new Date().toISOString())
     const observedScopes = new Set(evidence.map(entry => entry.scopeKey))
     const validatedScopes = new Set(entries.map(entry => entry.scopeKey))

@@ -1108,6 +1108,11 @@ export class TranscodingService {
                   cachedMeasurement.candidates,
                   true,
                   cachedMeasurement.partialSamples,
+                  undefined,
+                  cachedMeasurement.sourcePreparation,
+                  undefined,
+                  { preflightId, batchId, mediaItemId, groupKey: actualSamplingProfileKey, sourceId: episode.source_id, libraryId: episode.library_id, mediaType: episode.type, activeCalibration },
+                  sourceSha256,
                 ))
               } else {
                 publishPreflightProgress(episode, 'Measuring encode samples for this episode')
