@@ -91,7 +91,7 @@ export class TaskQueueService {
   private monitoringHistory: ActivityLogEntry[] = []
   private cancelRequested = false
   private shuttingDown = false
-  private pendingQueueWrite: Promise<void> = Promise.resolve()
+  private interruptionRequested = false
   private monitoringWasPausedByUs = false // Track if we paused monitoring
   private monitoringResumeTimer: ReturnType<typeof setTimeout> | null = null
   private progressThrottleTimer: NodeJS.Timeout | null = null
@@ -312,6 +312,7 @@ export class TaskQueueService {
 
     console.log(`[TaskQueue] Cancelling current task: ${this.currentTask.label}`)
     this.cancelRequested = true
+    this.interruptionRequested = this.shuttingDown
     this.taskPauseRequested = false
     this.currentTaskAbortController?.abort(new Error('Task cancelled'))
     this.currentTask.status = 'cancelling'
@@ -444,12 +445,14 @@ export class TaskQueueService {
       const db = getDatabase()
 
       const dbTasks = db.getTaskHistory(TaskQueueService.MAX_COMPLETED_TASKS)
-      this.completedTasks = dbTasks.map((row: { taskId: string; type: string; label: string; sourceId: string | null; libraryId: string | null; status: string; error: string | null; result: string | null; createdAt: string; startedAt: string | null; completedAt: string | null }) => ({
+      this.completedTasks = dbTasks.map((row: { taskId: string; type: string; label: string; sourceId: string | null; libraryId: string | null; mediaItemId: number | null; batchId: string | null; status: string; error: string | null; result: string | null; createdAt: string; startedAt: string | null; completedAt: string | null }) => ({
         id: row.taskId,
         type: row.type as TaskType,
         label: row.label,
         sourceId: row.sourceId || undefined,
         libraryId: row.libraryId || undefined,
+        mediaItemId: row.mediaItemId ?? undefined,
+        batchId: row.batchId ?? undefined,
         status: row.status as TaskStatus,
         error: row.error || undefined,
         result: row.result ? JSON.parse(row.result) : undefined,
@@ -513,6 +516,7 @@ export class TaskQueueService {
         db.saveTaskHistory({
           taskId: this.currentTask.id, type: this.currentTask.type, label: this.currentTask.label,
           sourceId: this.currentTask.sourceId, libraryId: this.currentTask.libraryId,
+          mediaItemId: this.currentTask.mediaItemId, batchId: this.currentTask.batchId,
           status: 'interrupted', createdAt: this.currentTask.createdAt,
           startedAt: this.currentTask.startedAt, completedAt: now,
         })
@@ -527,6 +531,7 @@ export class TaskQueueService {
         db.saveTaskHistory({
           taskId: task.id, type: task.type, label: task.label,
           sourceId: task.sourceId, libraryId: task.libraryId,
+          mediaItemId: task.mediaItemId, batchId: task.batchId,
           status: 'interrupted', createdAt: task.createdAt, completedAt: now,
         })
         db.saveActivityLogEntry({
@@ -551,7 +556,6 @@ export class TaskQueueService {
     try {
       const db = getDatabase()
       this.isPaused = await db.getSetting(SETTING_KEYS.task_queue_paused_on_shutdown) === 'true'
-      db.deleteSetting(SETTING_KEYS.task_queue_paused_on_shutdown)
       const pending = db.getPendingTasks()
       if (pending.length === 0) return
       const restoredTasks: QueuedTask[] = []
@@ -669,6 +673,7 @@ export class TaskQueueService {
     const task = this.queue.shift()!
     this.currentTask = task
     this.cancelRequested = false
+    this.interruptionRequested = false
     this.taskPauseRequested = false
     this.taskYieldRequested = false
     this.taskCommitStarted = false
@@ -696,8 +701,8 @@ export class TaskQueueService {
         setImmediate(() => this.processNext())
         return
       } else if (this.cancelRequested) {
-        task.status = this.shuttingDown ? 'interrupted' : 'cancelled'
-        this.addTaskHistoryEntry(task, this.shuttingDown ? 'task-interrupted' : 'task-cancelled', `${this.shuttingDown ? 'Interrupted (app quit)' : 'Cancelled'}: ${task.label}`)
+        task.status = this.interruptionRequested ? 'interrupted' : 'cancelled'
+        this.addTaskHistoryEntry(task, this.interruptionRequested ? 'task-interrupted' : 'task-cancelled', `${this.interruptionRequested ? 'Interrupted (app quit)' : 'Cancelled'}: ${task.label}`)
       } else if ((task.result?.failedCount ?? 0) > 0) {
         task.status = 'partial'
         this.addTaskHistoryEntry(task, 'task-partial', this.formatCompletionMessage(task))
@@ -722,7 +727,7 @@ export class TaskQueueService {
         setImmediate(() => this.processNext())
         return
       } else if (isCancellation) {
-        if (task.type === 'optimization-preflight') {
+        if (task.type === 'optimization-preflight' && !this.interruptionRequested) {
           const payload = task.options as { requestId: string }
           try {
             await getDatabase().deleteSetting(`transcoding.backgroundPreflight.${payload.requestId}`)
@@ -730,9 +735,9 @@ export class TaskQueueService {
             console.error('[TaskQueue] Failed to clear cancelled preflight migration record:', getErrorMessage(cleanupError))
           }
         }
-        task.status = this.shuttingDown ? 'interrupted' : 'cancelled'
-        this.addTaskHistoryEntry(task, this.shuttingDown ? 'task-interrupted' : 'task-cancelled', `${this.shuttingDown ? 'Interrupted (app quit)' : 'Cancelled'}: ${task.label}`)
-        console.log(`[TaskQueue] Task ${this.shuttingDown ? 'interrupted for shutdown' : 'cancelled'}: ${task.label}`)
+        task.status = this.interruptionRequested ? 'interrupted' : 'cancelled'
+        this.addTaskHistoryEntry(task, this.interruptionRequested ? 'task-interrupted' : 'task-cancelled', `${this.interruptionRequested ? 'Interrupted (app quit)' : 'Cancelled'}: ${task.label}`)
+        console.log(`[TaskQueue] Task ${this.interruptionRequested ? 'interrupted for shutdown' : 'cancelled'}: ${task.label}`)
       } else {
         task.status = 'failed'
         task.error = errorMsg
@@ -780,6 +785,7 @@ export class TaskQueueService {
       db.saveTaskHistory({
         taskId: task.id, type: task.type, label: task.label,
         sourceId: task.sourceId, libraryId: task.libraryId,
+        mediaItemId: task.mediaItemId, batchId: task.batchId,
         status: task.status, error: task.error,
         result: task.result as Record<string, unknown> | undefined,
         createdAt: task.createdAt, startedAt: task.startedAt,
@@ -1622,21 +1628,12 @@ export class TaskQueueService {
   }
 
   private async persistPendingQueue(): Promise<void> {
-    const db = getDatabase()
-    const paused = String(this.isPaused)
     const tasks = [...(this.currentTask ? [this.currentTask] : []), ...this.queue]
-    // SQLite saves the queue synchronously in one transaction. The asynchronous
-    // setting writes must run in order and finish before the database closes.
-    db.savePendingTasks(tasks.map(task => ({
+    getDatabase().savePendingTasks(tasks.map(task => ({
       taskId: task.id, type: task.type, label: task.label,
       sourceId: task.sourceId, libraryId: task.libraryId, artistId: task.artistId,
       createdAt: task.createdAt, payload: task,
-    })))
-    const write = this.pendingQueueWrite.catch(error => {
-      console.error('[TaskQueue] Prior pause-state persistence failed:', getErrorMessage(error))
-    }).then(() => db.setSetting(SETTING_KEYS.task_queue_paused_on_shutdown, paused))
-    this.pendingQueueWrite = write
-    return write
+    })), this.isPaused)
   }
 
   /**

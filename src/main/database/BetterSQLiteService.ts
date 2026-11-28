@@ -55,6 +55,7 @@ import { MediaRemuxJobRepository } from './repositories/MediaRemuxJobRepository'
 import { backfillSeriesIdentityKeys } from './SeriesIdentityMigration'
 import { deriveSeriesIdentityKey } from '../services/SeriesIdentityService'
 import { QUALITY_MODEL_VERSION } from '../constants/qualityModelVersion'
+import { SETTING_KEYS } from '../../shared/settingKeys'
 
 // Singleton instance
 let serviceInstance: BetterSQLiteService | null = null
@@ -470,6 +471,8 @@ export class BetterSQLiteService {
       'ALTER TABLE media_items ADD COLUMN deep_analysis TEXT',
       'ALTER TABLE media_items ADD COLUMN deep_analysis_at TEXT',
       'ALTER TABLE pending_tasks ADD COLUMN payload_json TEXT',
+      'ALTER TABLE task_history ADD COLUMN media_item_id INTEGER',
+      'ALTER TABLE task_history ADD COLUMN batch_id TEXT',
     ]
 
     for (const statement of alterStatements) {
@@ -6785,6 +6788,8 @@ export class BetterSQLiteService {
     label: string
     sourceId?: string
     libraryId?: string
+    mediaItemId?: number
+    batchId?: string
     status: string
     error?: string
     result?: Record<string, unknown>
@@ -6799,11 +6804,11 @@ export class BetterSQLiteService {
       : null
 
     this.db.prepare(`
-      INSERT INTO task_history (task_id, type, label, source_id, library_id, status, error, result, created_at, started_at, completed_at, duration_ms)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO task_history (task_id, type, label, source_id, library_id, media_item_id, batch_id, status, error, result, created_at, started_at, completed_at, duration_ms)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       task.taskId, task.type, task.label,
-      task.sourceId || null, task.libraryId || null,
+      task.sourceId || null, task.libraryId || null, task.mediaItemId ?? null, task.batchId ?? null,
       task.status, task.error || null,
       task.result ? JSON.stringify(task.result) : null,
       task.createdAt, task.startedAt || null,
@@ -6815,22 +6820,22 @@ export class BetterSQLiteService {
 
   getTaskHistory(limit = 50, offset = 0): Array<{
     taskId: string; type: string; label: string; sourceId: string | null
-    libraryId: string | null; status: string; error: string | null
+    libraryId: string | null; mediaItemId: number | null; batchId: string | null; status: string; error: string | null
     result: string | null; createdAt: string; startedAt: string | null
     completedAt: string | null; durationMs: number | null
   }> {
     if (!this.db) throw new Error('Database not initialized')
     const rows = this.db.prepare(
-      'SELECT task_id, type, label, source_id, library_id, status, error, result, created_at, started_at, completed_at, duration_ms FROM task_history ORDER BY recorded_at DESC LIMIT ? OFFSET ?'
+      'SELECT task_id, type, label, source_id, library_id, media_item_id, batch_id, status, error, result, created_at, started_at, completed_at, duration_ms FROM task_history ORDER BY recorded_at DESC, id DESC LIMIT ? OFFSET ?'
     ).all(limit, offset) as Array<{
       task_id: string; type: string; label: string; source_id: string | null
-      library_id: string | null; status: string; error: string | null
+      library_id: string | null; media_item_id: number | null; batch_id: string | null; status: string; error: string | null
       result: string | null; created_at: string; started_at: string | null
       completed_at: string | null; duration_ms: number | null
     }>
     return rows.map(r => ({
       taskId: r.task_id, type: r.type, label: r.label,
-      sourceId: r.source_id, libraryId: r.library_id,
+      sourceId: r.source_id, libraryId: r.library_id, mediaItemId: r.media_item_id, batchId: r.batch_id,
       status: r.status, error: r.error, result: r.result,
       createdAt: r.created_at, startedAt: r.started_at,
       completedAt: r.completed_at, durationMs: r.duration_ms,
@@ -6896,10 +6901,12 @@ export class BetterSQLiteService {
   savePendingTasks(tasks: Array<{
     taskId: string; type: string; label: string
     sourceId?: string; libraryId?: string; artistId?: number; createdAt: string; payload?: unknown
-  }>): void {
+  }>, paused: boolean): void {
     if (!this.db) throw new Error('Database not initialized')
     const save = this.db.transaction(() => {
       this.db!.prepare('DELETE FROM pending_tasks').run()
+      // The paused flag is non-sensitive queue metadata, not a credential.
+      this.db!.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(SETTING_KEYS.task_queue_paused_on_shutdown, String(paused))
       const insert = this.db!.prepare(
         `INSERT INTO pending_tasks(position, task_id, type, label, source_id, library_id, artist_id, created_at, payload_json)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`

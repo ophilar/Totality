@@ -138,6 +138,23 @@ describe('TaskQueueService', () => {
       expect(() => service.addTask({ type: 'library-scan', label: 'Late' })).toThrow('shutting down')
     })
 
+    it('persists the queue and paused state atomically, retaining the previous snapshot on failure', async () => {
+      const id = service.addTask({ type: 'source-scan', sourceId: 'a', label: 'A' })
+      const circular: Record<string, unknown> = {}
+      circular.self = circular
+      expect(() => getDatabase().savePendingTasks([{ taskId: 'invalid', type: 'source-scan', label: 'Invalid', createdAt: new Date().toISOString(), payload: circular }], false)).toThrow()
+      expect(getDatabase().getPendingTasks().map(task => task.taskId)).toEqual([id])
+      expect(await getDatabase().getSetting('task_queue_paused_on_shutdown')).toBe('true')
+    })
+
+    it('retains cancelled optimization batch and media identity after restoring history', async () => {
+      const id = service.addTask({ type: 'transcode', mediaItemId: 7, batchId: 'batch-7', label: 'Film' })
+      service.removeTask(id)
+      const restored = new TaskQueueService()
+      await restored.loadPersistedHistory()
+      expect(restored.getQueueState().completedTasks.find(task => task.id === id)).toMatchObject({ mediaItemId: 7, batchId: 'batch-7', status: 'cancelled' })
+    })
+
     it('should remove a queued task', () => {
       const taskId = service.addTask({ type: 'library-scan', label: 'Test' })
 

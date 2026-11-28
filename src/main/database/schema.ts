@@ -686,7 +686,7 @@ CREATE INDEX IF NOT EXISTS idx_exclusions_type_key ON exclusions(exclusion_type,
 -- TASK QUEUE HISTORY
 -- ============================================================================
 
--- Pending queue snapshot: written on shutdown, read and cleared on next startup
+-- Pending queue snapshot: persisted with its paused state throughout execution
 CREATE TABLE IF NOT EXISTS pending_tasks (
   position   INTEGER PRIMARY KEY,  -- preserves original queue order
   task_id    TEXT    NOT NULL,
@@ -706,6 +706,8 @@ CREATE TABLE IF NOT EXISTS task_history (
   label TEXT NOT NULL,
   source_id TEXT,
   library_id TEXT,
+  media_item_id INTEGER,
+  batch_id TEXT,
   status TEXT NOT NULL CHECK(status IN ('completed', 'partial', 'failed', 'cancelled', 'interrupted')),
   error TEXT,
   result TEXT,

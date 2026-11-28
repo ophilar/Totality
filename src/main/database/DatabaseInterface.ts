@@ -255,7 +255,7 @@ export interface DatabaseServiceInterface {
   clearTaskHistory(): void
   clearActivityLog(entryType?: string): void
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  savePendingTasks(tasks: any[]): void
+  savePendingTasks(tasks: any[], paused: boolean): void
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getPendingTasks(): any[]
   clearPendingTasks(): void
