@@ -15,6 +15,7 @@ import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { PathUtils } from '@main/services/utils/PathUtils'
 import { GpuDetector, type GpuInfo } from '@main/services/utils/GpuDetector'
 import { TranscodeCommandFactory } from './transcoding/TranscodeCommandFactory'
+import type { TranscodeOptions } from './transcoding/types'
 import { validateHdrTranscode } from './transcoding/HdrTranscodingPolicy'
 import { buildTranscodingCapabilities, ENCODER_PROBES, getHardwareEncoder, TranscodingCapabilities } from './TranscodingCapabilities'
 import type { FileAnalysisResult } from './MediaFileAnalyzer'
@@ -29,7 +30,7 @@ import { OptimizationCandidateService, type OptimizationCandidateReason } from '
 import type { MediaSourceTier } from './transcoding/TrashSourceClassifier'
 import { buildCandidateLadder, candidateDeviceKey, candidateFamilyKey, candidateEncodingKey, nextCandidateSearch, getNonDominatedMeasuredCandidates, selectMeasuredCandidate, MeasuredQualityError, MAX_MEASURED_CANDIDATES_PER_PRESET, MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, SHOW_PREFLIGHT_SETTING_PREFIX, MEASUREMENT_SETTING_PREFIX, scopedCalibrationEntries, type CachedMeasurement, type CandidateEncodingParameters, type OptimizationQualityProfile, type OptimizationCalibrationEntry } from './MeasuredOptimizationPolicy'
 import { readOptimizationCalibrationProfile, writeOptimizationCalibrationProfile } from './OptimizationCalibrationProfile'
-import { buildTargetTranscodePlan, validateTargetTranscodeBitrate, type TargetTranscodePlan } from './transcoding/TargetTranscodePlan'
+import { buildTargetTranscodePlan, validateTargetTranscodeBitrate } from './transcoding/TargetTranscodePlan'
 import type { MeasuredCandidate, MeasuredCandidateSample } from './MeasuredOptimizationPolicy'
 import { ChildProcessMeasurementRunner, MeasuredOptimizationService, VMAF_MODEL_VERSION, type MeasurementSourcePreparation } from './MeasuredOptimizationService'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
@@ -53,42 +54,7 @@ export class TranscodeError extends Error {
   }
 }
 
-export interface TranscodeOptions {
-  playbackPolicy?: 'allow-transcoding' | 'avoid-video-transcoding' | 'direct-play'
-  targetProfileMode?: 'advisory'
-  targetCodec?: OptimizationVideoCodec
-  streamSelection?: StreamSelectionPolicy
-  outputMode?: 'copy' | 'quarantine-replace' | 'replace'
-  tempDirectory?: string
-  priority?: 'low' | 'normal' | 'high'
-  useGpu?: boolean
-  encoder?: string
-  crf?: number
-  preset?: string
-  customArgs?: string
-  gpuId?: string
-  gpuDeviceSelector?: GpuInfo['encoderDeviceSelector']
-  transcodingEngine?: 'ffmpeg'
-  targetSize?: string
-  maxOutputBytes?: number
-  optimizationMode?: 'smart' | 'remux_only' | 'transcode'
-  qualityProfile?: 'transparent' | 'balanced' | 'maximum_savings'
-  encoderPolicy?: 'automatic' | 'hardware' | 'software' | 'compare'
-  targetProfileId?: string | null
-  targetContainer?: 'mkv' | 'mp4'
-  targetContainerSelection?: 'automatic' | 'user-selected'
-  targetAudioCodec?: 'aac' | 'ac3' | 'eac3'
-  audioConversions?: Array<{ sourceIndex: number; codec: string; bitrateKbps: number }>
-  /** Internal: the measurement candidate decodes an FFV1 lossless reference. */
-  measurementReferenceInput?: boolean
-  targetHdrFormat?: 'SDR' | 'HDR10'
-  targetConversion?: TargetTranscodePlan
-  /** Internal calibration control; normal optimization uses the configured sample duration. */
-  measurementSampleDurationSeconds?: number
-  /** Internal calibration control; normal optimization uses the configured search budget. */
-  measurementCandidateBudget?: number
-  measurementSamplePositions?: readonly number[]
-}
+export type { TranscodeOptions } from './transcoding/types'
 
 function resolveOutputExtension(filePath: string, options: TranscodeOptions): string {
   const container = options.targetConversion?.container ?? options.targetContainer

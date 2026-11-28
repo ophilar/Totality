@@ -1,6 +1,6 @@
 
 import type { FileAnalysisResult } from '../MediaFileAnalyzer'
-import type { TranscodeOptions } from '../TranscodingService'
+import type { TranscodeOptions } from './types'
 import type { PlaybackTargetProfile } from '@main/types/playbackTarget'
 import { getPlaybackTargetContainers } from '@main/types/playbackTarget'
 import { buildStreamSelectionPlan } from './StreamSelectionPlan'
@@ -95,8 +95,8 @@ export function buildTargetTranscodePlan(analysis: FileAnalysisResult, profile: 
   return { container, width, height, bitDepth, profile: outputProfile, level, hdrFormat, videoFilter, inputArgs: convertHdr ? ['-init_hw_device', 'vulkan=target', '-filter_hw_device', 'target'] : [], maximumVideoBitrate, audio, changes }
 }
 
-export function applyTargetTranscodePlan(args: string[], options: { targetConversion?: unknown; targetCodec?: 'av1' | 'hevc'; encoder?: string }): void {
-  const plan = options.targetConversion as TargetTranscodePlan | undefined
+export function applyTargetTranscodePlan(args: string[], options: Pick<TranscodeOptions, 'targetConversion' | 'targetCodec' | 'encoder'>): void {
+  const plan = options.targetConversion
   if (!plan) return
   // Target conversion uses software decoding before explicit filter/encoder transfers.
   for (const flag of ['-hwaccel', '-hwaccel_output_format', '-hwaccel_device', '-extra_hw_frames', ...(options.encoder?.startsWith('qsv') ? [] : ['-init_hw_device']), '-filter_hw_device', '-vf', '-maxrate', '-bufsize', '-pix_fmt']) {

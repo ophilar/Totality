@@ -123,7 +123,7 @@ export function selectSubtitleStreamIndexes(
 }
 
 export function buildStreamSelectionPlan(analysis: FileAnalysisResult, options: TranscodeOptions): StreamSelectionPlan {
-  const policy = options.streamSelection as StreamSelectionPolicy | undefined
+  const policy = options.streamSelection
   const policyAudio = policy ? resolvePolicyIndexes(analysis, policy) : undefined
   const audioStreamIndexes = selectIndexes(analysis.audioTracks, policyAudio, 'Audio')
 
@@ -136,7 +136,7 @@ export function buildStreamSelectionPlan(analysis: FileAnalysisResult, options: 
   }
 
   const subtitleStreamIndexes = selectIndexes(analysis.subtitleTracks, subtitleCandidates, 'Subtitle')
-  const requestedDefault: number | null | 'preserve' | 'none' | undefined = policy ? resolvePolicySubtitle(policy, analysis, subtitleStreamIndexes) : undefined
+  const requestedDefault = policy ? resolvePolicySubtitle(policy, analysis, subtitleStreamIndexes) : undefined
   if (typeof requestedDefault === 'number' && !subtitleStreamIndexes.includes(requestedDefault)) {
     throw new Error(`Subtitle stream ${requestedDefault} is not selected`)
   }
@@ -144,7 +144,7 @@ export function buildStreamSelectionPlan(analysis: FileAnalysisResult, options: 
   return {
     audioStreamIndexes,
     subtitleStreamIndexes,
-    defaultSubtitle: requestedDefault === undefined ? 'preserve' : requestedDefault === null ? 'none' : requestedDefault
+    defaultSubtitle: requestedDefault ?? 'preserve'
   }
 }
 

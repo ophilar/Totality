@@ -19,7 +19,7 @@ export function validateHdrTranscode(analysis: FileAnalysisResult, options: Tran
 
 export function buildHdrMetadataArgs(analysis: FileAnalysisResult, options: TranscodeOptions = {}): string[] {
   validateHdrTranscode(analysis, options)
-  const targetConversion = options.targetConversion as { hdrFormat?: string } | undefined
+  const targetConversion = options.targetConversion
   if (targetConversion) {
     if ((!analysis.video?.hdrFormat || analysis.video.hdrFormat === 'SDR') && targetConversion.hdrFormat === 'SDR') return []
     const sdr = targetConversion.hdrFormat === 'SDR'
