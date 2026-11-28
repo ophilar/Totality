@@ -37,6 +37,7 @@ import { buildValidatedCalibrationEntries, selectCalibrationRepresentatives, OPT
 import type { OptimizationCandidateScanSummary, ShowTranscodeRequest, ShowTranscodePreflight, ShowTranscodeEpisodeCheckpoint } from './TranscodingService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { normalizeVideoCodec } from './MediaNormalizer'
+import { playbackProfileSupportsOptimizationCodec } from './transcoding/OptimizationCodecPolicy'
 import { analyzeAlbumQuality } from './MusicQualityAnalyzer'
 import { getArtistAlbumsCombined } from './utils/musicUtils'
 import type {
@@ -981,14 +982,18 @@ export class TaskQueueService {
       onProgress({ phase: 'inventory', current: libraries.length, total: libraries.length, currentItem: source.source_id })
     }
     const mediaItems = libraries.flatMap(library => getDatabase().getMediaItems({ sourceId: library.sourceId, libraryId: library.libraryId }).filter(item => item.file_path))
-    const targetProfileId = await getDatabase().getSetting(SETTING_KEYS.optimization_default_target_profile_id)
+    const playbackProfiles = (await getDatabase().playbackTargetProfiles.list()).sort((a, b) => a.id.localeCompare(b.id))
+    const playbackContexts = [
+      { targetProfileId: null, playbackPolicy: 'allow-transcoding' as const, profile: undefined },
+      ...playbackProfiles.flatMap(profile => (['allow-transcoding', 'avoid-video-transcoding', 'direct-play'] as const).map(playbackPolicy => ({ targetProfileId: profile.id, playbackPolicy, profile }))),
+    ]
     const taskOptions = task.options as { includeAv1?: unknown } | undefined
     const includeAv1 = taskOptions?.includeAv1 === true
     getLoggingService().info('[OptimizationCalibration]', 'Calibration started', {
       taskId: task.id,
       libraryCount: libraries.length,
       mediaItemCount: mediaItems.length,
-      targetProfileId: targetProfileId ?? null,
+      playbackContexts: playbackContexts.map(({ targetProfileId, playbackPolicy }) => ({ targetProfileId, playbackPolicy })),
       stages: includeAv1 ? ['h264-to-hevc', 'hevc-to-av1'] : ['h264-to-hevc'],
     })
     const measureRepresentatives = async (items: typeof mediaItems, targetCodec: 'hevc' | 'av1', stage: string): Promise<void> => {
@@ -1008,18 +1013,20 @@ export class TaskQueueService {
         representativeCount: representatives.length,
         representativesPerGroup: APP_CONFIG.transcoding.calibrationRepresentativesPerGroup,
       })
-      const candidates: Array<{ encoderPolicy: 'automatic' }> = [{ encoderPolicy: 'automatic' }]
+      const contexts = playbackContexts.filter(context => context.playbackPolicy === 'allow-transcoding' || playbackProfileSupportsOptimizationCodec(targetCodec, context.profile?.definition.video.codecs))
+      const jobs = representatives.flatMap(representative => contexts.map(context => ({ ...representative, context }))).map((job, index) => ({ ...job, index }))
+      let completedRepresentatives = 0
       let nextRepresentativeIndex = 0
       let checkpointWrite = Promise.resolve()
       const saveCheckpoint = async (): Promise<void> => {
         checkpointWrite = checkpointWrite.then(() => getDatabase().setSetting(checkpointKey, JSON.stringify(measurements)))
         await checkpointWrite
       }
-      const processRepresentative = async ({ item, groupKey, role }: typeof representatives[number]): Promise<void> => {
-        for (const candidate of candidates) {
+      const processRepresentative = async ({ item, groupKey, role, context, index }: typeof jobs[number]): Promise<void> => {
           signal.throwIfAborted()
-          const measurementKeyPrefix = `${stage}:${groupKey}:${role}:${item.id}`
-          onProgress({ phase: stage, current: measurements.length, total: representatives.length * candidates.length, currentItem: item.title })
+          const contextKey = JSON.stringify([context.targetProfileId, context.playbackPolicy])
+          const measurementKeyPrefix = JSON.stringify([stage, groupKey, contextKey, role, item.id])
+          onProgress({ phase: stage, current: completedRepresentatives, total: jobs.length, currentItem: item.title })
           let measuredCandidates: MeasuredCandidate[] = []
           let calibrationScopeKey: string | undefined
           let preflightValidated = false
@@ -1036,10 +1043,10 @@ export class TaskQueueService {
                 optimizationMode: 'transcode',
                 targetCodec,
                 qualityProfile: 'balanced',
-                encoderPolicy: candidate.encoderPolicy,
-                targetProfileId,
+                encoderPolicy: 'automatic',
+                targetProfileId: context.targetProfileId,
                 targetContainerSelection: 'automatic',
-                playbackPolicy: targetProfileId ? 'avoid-video-transcoding' : 'allow-transcoding',
+                playbackPolicy: context.playbackPolicy,
                 transcodingEngine: 'ffmpeg',
                 outputMode: 'copy',
               },
@@ -1048,7 +1055,7 @@ export class TaskQueueService {
               beginCommit: () => undefined,
               waitUntilRunning: async () => { signal.throwIfAborted() },
               update: update => onProgress({ phase: update.phase ?? stage, current: update.progress?.current, total: update.progress?.total, currentItem: item.title }),
-              preflightId: `calibration_${task.id}_${item.id}`,
+              preflightId: `calibration_${task.id}_${stage}_${index}`,
               batchId: `calibration_${task.id}`,
               calibration: true,
               onMeasuredCandidates: async (candidates, complete, scopeKey, maximumRate, encoderRateLimit) => {
@@ -1069,21 +1076,21 @@ export class TaskQueueService {
           }
           if (calibrationScopeKey) {
             for (const measuredCandidate of measuredCandidates) {
-              measurements.push({ key: `${measurementKeyPrefix}:${JSON.stringify([measuredCandidate.encoder, measuredCandidate.gpuId ?? null, measuredCandidate.preset, measuredCandidate.quality])}`, stage, role, groupKey, scopeKey: calibrationScopeKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'measured', preflightValidated, maximumOutputBytesPerSecond, rateLimit, reason: failureReason, measuredCandidate, encoder: measuredCandidate.encoder, gpuId: measuredCandidate.gpuId, preset: measuredCandidate.preset, crf: measuredCandidate.quality })
+              measurements.push({ key: `${measurementKeyPrefix}:${JSON.stringify([measuredCandidate.encoder, measuredCandidate.gpuId ?? null, measuredCandidate.preset, measuredCandidate.quality])}`, stage, role, groupKey, contextKey, scopeKey: calibrationScopeKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'measured', preflightValidated, maximumOutputBytesPerSecond, rateLimit, reason: failureReason, measuredCandidate, encoder: measuredCandidate.encoder, gpuId: measuredCandidate.gpuId, preset: measuredCandidate.preset, crf: measuredCandidate.quality })
             }
           }
           if (failureReason !== undefined) {
-            measurements.push({ key: `${measurementKeyPrefix}:${candidate.encoderPolicy}`, stage, role, groupKey, scopeKey: calibrationScopeKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'unvalidated', reason: failureReason })
+            measurements.push({ key: measurementKeyPrefix, stage, role, groupKey, contextKey, scopeKey: calibrationScopeKey, mediaItemId: item.id, sourceCodec: item.video_codec, hdrFormat: item.hdr_format ?? 'SDR', targetCodec, status: 'unvalidated', reason: failureReason })
           }
           await saveCheckpoint()
-        }
+          completedRepresentatives++
       }
-      const workerCount = Math.min(APP_CONFIG.transcoding.calibrationRepresentativeConcurrency, representatives.length)
+      const workerCount = Math.min(APP_CONFIG.transcoding.calibrationRepresentativeConcurrency, jobs.length)
       const results = await Promise.allSettled(Array.from({ length: workerCount }, async () => {
         while (true) {
           signal.throwIfAborted()
           const index = nextRepresentativeIndex++
-          const representative = representatives[index]
+          const representative = jobs[index]
           if (!representative) return
           await processRepresentative(representative)
         }
@@ -1117,8 +1124,8 @@ export class TaskQueueService {
         measuredFormats.add(`${item.video_codec}:${formatKey}`)
       }
     }
-    const failedGroups = new Set(measurements.filter(measurement => measurement.status === 'unvalidated' && measurement.role !== 'unvalidated').map(measurement => JSON.stringify([measurement.stage, measurement.groupKey])))
-    const evidence = measurements.filter(measurement => measurement.status === 'measured' && !failedGroups.has(JSON.stringify([measurement.stage, measurement.groupKey]))) as unknown as CalibrationCandidateEvidence[]
+    const failedGroups = new Set(measurements.filter(measurement => measurement.status === 'unvalidated' && measurement.role !== 'unvalidated').map(measurement => JSON.stringify([measurement.stage, measurement.groupKey, measurement.contextKey])))
+    const evidence = measurements.filter(measurement => measurement.status === 'measured' && !failedGroups.has(JSON.stringify([measurement.stage, measurement.groupKey, measurement.contextKey]))) as unknown as CalibrationCandidateEvidence[]
     const entries = buildValidatedCalibrationEntries(evidence, new Date().toISOString())
     const observedScopes = new Set(evidence.map(entry => entry.scopeKey))
     const validatedScopes = new Set(entries.map(entry => entry.scopeKey))
