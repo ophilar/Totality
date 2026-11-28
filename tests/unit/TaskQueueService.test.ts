@@ -95,6 +95,29 @@ describe('TaskQueueService', () => {
       expect(totalTasks).toBe(3)
     })
 
+    it('rejects an optimization batch in full if any media item already has a queued job', () => {
+      service.addTask({ type: 'transcode', mediaItemId: 2, label: 'Existing' })
+      expect(() => service.addTasks([{ type: 'transcode', mediaItemId: 1, label: 'New' }, { type: 'transcode', mediaItemId: 2, label: 'Conflict' }])).toThrow('already queued')
+      expect(service.getQueueState().queue.map(task => task.mediaItemId)).toEqual([2])
+      expect(() => service.addTasks([{ type: 'transcode', mediaItemId: 3, label: 'A' }, { type: 'transcode', mediaItemId: 3, label: 'B' }])).toThrow('already queued')
+      expect(service.getQueueState().queue.map(task => task.mediaItemId)).toEqual([2])
+    })
+
+    it('rejects an optimization batch in full when it exceeds queue capacity', () => {
+      const definitions: TaskDefinition[] = Array.from({ length: 51 }, (_, index) => ({ type: 'transcode', mediaItemId: index + 1, label: 'Film' }))
+      expect(() => service.addTasks(definitions)).toThrow('Insufficient queue capacity')
+      expect(service.getQueueState().queue).toEqual([])
+    })
+
+    it('preserves every queued task when a reorder contains duplicate or missing IDs', () => {
+      const first = service.addTask({ type: 'source-scan', sourceId: 'a', label: 'A' })
+      const second = service.addTask({ type: 'source-scan', sourceId: 'b', label: 'B' })
+      expect(() => service.reorderQueue([first, first])).toThrow('each queued task exactly once')
+      expect(service.getQueueState().queue.map(task => task.id)).toEqual([first, second])
+      service.reorderQueue([second, first])
+      expect(service.getQueueState().queue.map(task => task.id)).toEqual([second, first])
+    })
+
     it('should remove a queued task', () => {
       const taskId = service.addTask({ type: 'library-scan', label: 'Test' })
 

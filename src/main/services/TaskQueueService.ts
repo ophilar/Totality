@@ -182,6 +182,18 @@ export class TaskQueueService {
    * Add multiple tasks to the queue
    */
   addTasks(definitions: TaskDefinition[]): string[] {
+    if (definitions.some(definition => definition.type === 'transcode')) {
+      if (definitions.some(definition => definition.type !== 'transcode')) throw new Error('Optimization batches must contain only transcode tasks')
+      // Validate the whole batch before the first enqueue: deduplication must not
+      // substitute a different approved plan or leave a partially admitted batch.
+      if (this.queue.length + definitions.length > TaskQueueService.MAX_QUEUE_DEPTH) throw new Error('Insufficient queue capacity for the entire optimization batch')
+      const occupied = new Set(this.getTasks().filter(task => task.type === 'transcode').map(task => task.mediaItemId))
+      for (const definition of definitions) {
+        if (definition.mediaItemId === undefined || !Number.isSafeInteger(definition.mediaItemId) || definition.mediaItemId <= 0) throw new Error('Optimization task requires a media item identity')
+        if (occupied.has(definition.mediaItemId)) throw new Error(`An optimization is already queued for media item ${definition.mediaItemId}`)
+        occupied.add(definition.mediaItemId)
+      }
+    }
     return definitions.map(def => this.addTask(def))
   }
 
@@ -222,16 +234,11 @@ export class TaskQueueService {
    * Reorder the queue
    */
   reorderQueue(taskIds: string[]): void {
-    const reordered = taskIds
-      .map(id => this.queue.find(t => t.id === id))
-      .filter((t): t is QueuedTask => t !== undefined)
-
-    // Only reorder if all IDs matched
-    if (reordered.length === this.queue.length) {
-      this.queue = reordered
-      console.log(`[TaskQueue] Queue reordered`)
-      this.emitQueueUpdate()
-    }
+    const byId = new Map(this.queue.map(task => [task.id, task]))
+    if (taskIds.length !== this.queue.length || new Set(taskIds).size !== taskIds.length || taskIds.some(id => !byId.has(id))) throw new Error('Queue reorder must contain each queued task exactly once')
+    this.queue = taskIds.map(id => byId.get(id)!)
+    console.log(`[TaskQueue] Queue reordered`)
+    this.emitQueueUpdate()
   }
 
   /**

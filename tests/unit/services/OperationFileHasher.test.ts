@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 import { OperationFileHasher } from '@main/services/transcoding/OperationFileHasher'
 
 describe('per-operation hash scheduling', () => {
@@ -35,6 +39,26 @@ describe('per-operation hash scheduling', () => {
     expect(await hasher.hash('/movie', 'first-identity')).toBe('digest-A')
     expect(await hasher.hash('/movie', 'new-identity')).toBe('digest-B')
     expect(digest).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not reuse a digest after replacing file contents and detects changes during hashing', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'totality-hash-'))
+    const file = join(root, 'sample')
+    try {
+      await writeFile(file, 'first')
+      const hasher = new OperationFileHasher(async path => createHash('sha256').update(await readFile(path)).digest('hex'), 1)
+      const first = await hasher.hashStable(file)
+      await writeFile(file, 'second-content')
+      expect(await hasher.hashStable(file)).not.toBe(first)
+      const changing = new OperationFileHasher(async path => {
+        const bytes = await readFile(path)
+        await writeFile(path, 'changed-during-read')
+        return createHash('sha256').update(bytes).digest('hex')
+      }, 1)
+      await expect(changing.hashStable(file)).rejects.toThrow('File changed during hashing')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   it('rejects nonpositive and nonintegral concurrency', () => {

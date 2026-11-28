@@ -764,14 +764,7 @@ export class TranscodingService {
     const sourceHasher = new OperationFileHasher(sha256File, APP_CONFIG.transcoding.measuredSampleCache.maxConcurrentHashReads)
     // The hash is reused only inside this preflight, keyed by complete file identity.
     // Recheck identity on every reuse; queue/execute still require fresh verification.
-    const hashSource = async (filePath: string): Promise<string> => {
-      const before = await fs.stat(filePath)
-      const digest = await sourceHasher.hash(filePath, JSON.stringify([filePath, fileIdentity(before)]))
-      if (!matchesFileIdentity(before, await fs.stat(filePath))) {
-        throw new Error('Source file changed during preflight hashing; retry after it settles')
-      }
-      return digest
-    }
+    const hashSource = (filePath: string) => sourceHasher.hashStable(filePath)
 
     let completedEpisodes = 0
     let completedInspections = 0
@@ -1132,7 +1125,7 @@ export class TranscodingService {
                   })
                   if (rewrittenPath !== undefined) savedHashes.delete(rewrittenPath)
                   const hashSnapshot = new OperationFileHasher(sha256File, APP_CONFIG.transcoding.measuredSampleCache.maxConcurrentHashReads)
-                  const getSampleHash = (samplePath: string) => savedHashes.get(samplePath) ?? hashSnapshot.hash(samplePath)
+                  const getSampleHash = (samplePath: string) => savedHashes.get(samplePath) ?? hashSnapshot.hashStable(samplePath)
                   const completedPaths = new Set(candidates.flatMap(candidate => candidate.samplePaths ?? []))
                   const pendingSamples = samples.filter(sample => !completedPaths.has(sample.samplePath))
                   const checkpoint = { preflightId, mediaItemId, cacheKey: measurementCacheKey, candidates: candidates.length, pendingSamples: pendingSamples.length, complete }
@@ -1533,11 +1526,11 @@ export class TranscodingService {
       if (stat.size !== episode.sourceSize || Math.abs(stat.mtimeMs - episode.sourceMtimeMs) > 1000) {
         throw new Error(`Source file changed after reviewing ${episode.label}; run preflight again`)
       }
-      if (await hasher.hash(item.file_path!) !== episode.sourceSha256 || !matchesFileIdentity(fileIdentity(stat), await fs.stat(item.file_path!))) throw new Error(`Source file contents changed after reviewing ${episode.label}; run preflight again`)
+      if (await hasher.hashStable(item.file_path!, fileIdentity(stat)) !== episode.sourceSha256) throw new Error(`Source file contents changed after reviewing ${episode.label}; run preflight again`)
       if (episode.targetProfile && JSON.stringify(await getDatabase().playbackTargetProfiles.get(episode.targetProfile.id)) !== JSON.stringify(episode.targetProfile)) throw new Error('Playback profile changed after review; run preflight again')
       if (episode.decisionStatus === 'sample_required') {
         const representative = this.getReviewedSampleGroup(preflight.result, episode)!.representative
-        const hashes = await Promise.all(representative.samplePaths!.map(sample => hasher.hash(sample)))
+        const hashes = await Promise.all(representative.samplePaths!.map(sample => hasher.hashStable(sample)))
         if (hashes.some((hash, index) => hash !== representative.sampleHashes![index])) throw new Error('Reviewed samples changed; run preflight again')
       }
     }
@@ -3124,7 +3117,7 @@ export class TranscodingService {
       // Each cache validation reads current bytes afresh. Shared paths are
       // hashed once, but concurrent disk reads are bounded for slow NAS volumes.
       const hasher = new OperationFileHasher(sha256File, APP_CONFIG.transcoding.measuredSampleCache.maxConcurrentHashReads)
-      const hashOnce = (filePath: string) => hasher.hash(filePath)
+      const hashOnce = (filePath: string) => hasher.hashStable(filePath)
       const actualHashes = await Promise.all(cached.candidates.map(candidate => Promise.all((candidate.samplePaths ?? []).map(hashOnce))))
       if (actualHashes.some((hashes, candidateIndex) => hashes.some((hash, index) => hash !== cached.sampleHashes[candidateIndex][index]))) throw new Error('Cached sample content changed')
       const actualPartialHashes = await Promise.all(cached.partialSamples.map(sample => hashOnce(sample.samplePath)))
