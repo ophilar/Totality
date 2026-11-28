@@ -53,3 +53,19 @@ npm run electron:dev
 Use the installed repository dependencies and the supported FFmpeg/FFprobe toolchain. Record OS, GPU/device fingerprint, FFmpeg and measurement fingerprints, playback profile, source/library scope, sample settings, candidate sequence, measured quality, savings and timing. Do not transcode/replace source media merely to calibrate. Exercise the existing calibration task with an empty active profile, then compare fresh preflights on matching and nonmatching scopes. Confirm rejection gates and real target playback. Cancel and terminate/restart Electron before publication and after publication; inspect the active JSON and verify the recovered task's behavior. Include a failing holdout, empty inventory and incompatible target. Record coverage and failures, open narrowly scoped defects if reproduced, and rerun invalidated checks. Preserve the existing safe-operation and historical-report acceptance work.
 
 At this checkpoint no new automated-test or runtime/device evidence has been obtained for C1–C3. GitHub source inspection and branch readback are the only verified evidence; prior test results on other revisions do not transfer. Product acceptance is open. No release or upstream merge is implied.
+
+
+## 2026-11-28 — Pareto calibration revision (approved)
+
+Supersedes balanced-only calibration and independent holdout searches above. Baseline `d751cdb53ab8b51719088af2703a7a77a4603114`; prior source audit establishes defects, not runtime reproduction. User requires all quality profiles as choice points on a common measured Pareto frontier.
+
+Design: measure the same configured candidate catalogue on distinct training and holdout titles, with full quality metrics rather than profile-specific early rejection. For each context and candidate, require complete evidence on every selected representative in that context, including independent training and holdout titles. Aggregate rates and quality conservatively across titles, retain non-dominated choices, and choose the smallest validated rate satisfying each profile's gates. The profile is a search prior, never permission to activate an unmeasured output. Use the existing metric/encoder pipeline; do not create another optimizer. Explicit encoder policies filter the shared catalogue by verified encoder/device/preset. Calibration must not publish production reviews or overwrite library quality scores.
+
+| Unit | Dependency | Acceptance | State |
+| --- | --- | --- | --- |
+| P1: shared context and Pareto policy | audit | full candidate evidence, independent holdouts, per-profile frontier choices | planned |
+| P2: measurement integration | P1 | identical calibration catalogue across titles, all verified GPU/software encoders, isolation, honest failures, partial diagnostics | planned |
+| P3: production consumers | P1/P2 | profile-aware priors, direct parameter integration, complete cache identity and playback evidence, cleanup and diagnostics | planned |
+| P4: verification | P1–P3 | tests, typecheck/lint, real hardware/library, activation and quality/savings benchmark | pending |
+
+Tradeoff: evaluating the configured finite catalogue costs more than the former two-probe search; do not silently reduce coverage. Preserve bounded adaptive production search. Exact context matching may leave sparse cohorts unvalidated; report this rather than borrowing incompatible results. Historical job size estimation must be scoped or explicitly unavailable, not presented as validated calibration. Existing 0.4/0.5 history and runtime tasks remain intact.
