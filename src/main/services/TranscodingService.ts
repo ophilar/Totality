@@ -412,7 +412,6 @@ export class TranscodingService {
   private capabilitiesPromise: Promise<TranscodingCapabilities> | null = null
   private capabilitiesCachedAt = 0
   private analysisCache = new ValidatedFileAnalysisCache<Awaited<ReturnType<ReturnType<typeof getMediaFileAnalyzer>['analyzeFile']>>>()
-  private showPreflights = new Map<string, { request: ShowTranscodeRequest; result: ShowTranscodePreflight }>()
   private measuredOptimizationService = new MeasuredOptimizationService()
   private optimizationCandidateService = new OptimizationCandidateService()
   private activePreflights = 0
@@ -430,7 +429,6 @@ export class TranscodingService {
     this.capabilitiesPromise = null
     this.capabilitiesCachedAt = 0
     this.analysisCache.clear()
-    this.showPreflights.clear()
     getLoggingService().debug('[TranscodingService]', 'TranscodingService invalidated caches')
   }
 
@@ -656,7 +654,7 @@ export class TranscodingService {
 
   async cleanupMeasuredSamples(): Promise<void> {
     if (this.activePreflights > 0 || this.activeJobs.size > 0) throw new Error('Optimization artifacts cannot be cleaned while an optimization review or execution is running')
-    const activeOptimizationTask = getTaskQueueService().getTasks().find(task => task.type === 'optimization-preflight' || task.type === 'optimization-calibration')
+    const activeOptimizationTask = getTaskQueueService().getTasks().find(task => task.type === 'optimization-preflight' || task.type === 'optimization-calibration' || task.type === TaskType.Transcode)
     if (activeOptimizationTask) throw new Error(`Optimization artifacts cannot be cleaned while ${activeOptimizationTask.label.toLowerCase()} is running`)
     if (this.sampleCachePrunePromise) await this.sampleCachePrunePromise
     const db = getDatabase()
@@ -693,7 +691,6 @@ export class TranscodingService {
     const artifactSettings = Object.keys(settings).filter(key => artifactSettingPrefixes.some(prefix => key.startsWith(prefix)))
     for (const key of artifactSettings) await db.deleteSetting(key)
     await this.saveOptimizationCalibration([])
-    this.showPreflights.clear()
     this.sampleCacheUsers.clear()
     this.sampleCacheLastPrunedAt = 0
     getLoggingService().info('[TVOptimization]', 'Optimization artifacts cleaned', {
@@ -1439,7 +1436,6 @@ export class TranscodingService {
     await operation?.waitUntilRunning()
       operation?.signal.throwIfAborted()
     operation?.beginCommit()
-    this.retainPreflight(preflightId, { request, result })
     await getDatabase().setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ request, result }))
     const measuredResults = results.filter(plan => plan.sourceAnalysis && (plan.samplingRole || plan.decisionStatus === 'quality_threshold_unmet' || plan.decisionStatus === 'measurement_failed' || plan.decisionStatus === 'incompatible'))
     for (const plan of measuredResults) {
@@ -1487,31 +1483,12 @@ export class TranscodingService {
       episodes: [{ mediaItemId, label: item.title, compatible: true, hdrFormat: analysis.video?.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256: fingerprint, operations: ['stream_pruning'], decisionStatus: 'actionable', evidenceStatus: 'measured', confidence: 'high', savingsBasis: `retained audio streams: ${retainedAudioIndexes.join(', ')}`, adviceReason: 'Review explicit retained audio streams before queueing.', options, sourceAnalysis: analysis, audioPlan: getPlannedAudioStreams(analysis, buildStreamSelectionPlan(analysis, options)) }],
     }
     const request: ShowTranscodeRequest = { mediaItemId, sourceId: item.source_id, libraryId: item.library_id, options }
-    this.retainPreflight(id, { request, result })
     await getDatabase().setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${id}`, JSON.stringify({ request, result }))
     return result
   }
 
-  /** Retains a small hot set; authoritative reviews are persisted in the database. */
-  private retainPreflight(id: string, value: { request: ShowTranscodeRequest; result: ShowTranscodePreflight }): void {
-    this.showPreflights.delete(id)
-    this.showPreflights.set(id, value)
-    while (this.showPreflights.size > 32) this.showPreflights.delete(this.showPreflights.keys().next().value!)
-  }
-
   async queueShowTranscode(preflightId: string): Promise<{ batchId: string; queuedMediaItemIds: number[]; queuedTaskIds: string[] }> {
-    let preflight = this.showPreflights.get(preflightId)
-    if (!preflight) {
-      const saved = await getDatabase().getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
-      if (saved) {
-        try {
-          preflight = JSON.parse(saved) as { request: ShowTranscodeRequest; result: ShowTranscodePreflight }
-        } catch {
-          throw new Error(`Stored show transcode preflight ${preflightId} is invalid; run preflight again`)
-        }
-      }
-    }
-    if (!preflight) throw new Error('Show transcode preflight was not found')
+    const preflight = await this.requireSavedReview(preflightId)
     if ((preflight.result.measurementVersion !== MEASUREMENT_VERSION || preflight.result.searchVersion !== OPTIMIZATION_SEARCH_VERSION) && preflight.result.episodes.some(episode => episode.params?.measuredCandidate)) throw new Error('Measurement or search policy changed; run preflight again before queuing this plan')
     const retryableMediaItemIds = preflight.result.queuedAt
       ? (() => {
@@ -1532,11 +1509,7 @@ export class TranscodingService {
       const currentFingerprint = this.getCapabilitySnapshotFingerprint(await this.getCapabilities())
       if (currentFingerprint !== preflight.result.capabilityFingerprint) throw new Error('Hardware capabilities changed after review; run preflight again')
     }
-    const currentSampleApprovals = this.withCurrentSampleApprovals(preflight.result)
-    const requiredSampleGroupIds = [...this.getSampleGroupFingerprints(preflight.result).keys()]
-    if (requiredSampleGroupIds.some(groupId => !currentSampleApprovals.approvedSampleGroupIds?.includes(groupId))) {
-      throw new Error('Review and approve every measured sample group before queueing this plan')
-    }
+    this.assertSampleApprovals(preflight.result)
     const queueableEpisodes = preflight.result.episodes.filter(episode =>
       episode.compatible && (episode.decisionStatus === 'actionable' || (episode.decisionStatus === 'sample_required' && preflight?.result.userApproved === true)) &&
       (retryableMediaItemIds === undefined || retryableMediaItemIds.has(episode.mediaItemId))
@@ -1545,15 +1518,24 @@ export class TranscodingService {
       throw new Error('No episodes have sufficient evidence for a safe optimization action.')
     }
     if (preflight.result.userApproved && preflight.result.approvalFingerprint !== this.preflightFingerprint(preflight.result)) throw new Error('Approved show plan changed; run preflight again')
+    const hasher = new OperationFileHasher(sha256File, APP_CONFIG.transcoding.measuredSampleCache.maxConcurrentHashReads)
+    const occupied = new Set(getTaskQueueService().getTasks().filter(task => task.type === TaskType.Transcode).map(task => task.mediaItemId))
     for (const episode of queueableEpisodes) {
+      if (occupied.has(episode.mediaItemId)) throw new Error(`An optimization is already queued for ${episode.label}`)
       if (!episode.sourceSha256) throw new Error(`Reviewed plan for ${episode.label} has no source fingerprint; run preflight again`)
       const item = await this.assertAuthorizedItem(episode.mediaItemId)
+      if (item.source_id !== preflight.request.sourceId || preflight.request.libraryId !== undefined && item.library_id !== preflight.request.libraryId) throw new Error('Media item no longer belongs to the reviewed source and library')
       const stat = await fs.stat(item.file_path!)
       if (stat.size !== episode.sourceSize || Math.abs(stat.mtimeMs - episode.sourceMtimeMs) > 1000) {
         throw new Error(`Source file changed after reviewing ${episode.label}; run preflight again`)
       }
+      if (await hasher.hash(item.file_path!) !== episode.sourceSha256 || !matchesFileIdentity(fileIdentity(stat), await fs.stat(item.file_path!))) throw new Error(`Source file contents changed after reviewing ${episode.label}; run preflight again`)
       if (episode.targetProfile && JSON.stringify(await getDatabase().playbackTargetProfiles.get(episode.targetProfile.id)) !== JSON.stringify(episode.targetProfile)) throw new Error('Playback profile changed after review; run preflight again')
-      if (episode.samplePaths && (await Promise.all(episode.samplePaths.map(sha256File))).some((hash, index) => hash !== episode.sampleHashes![index])) throw new Error('Reviewed samples changed; run preflight again')
+      if (episode.decisionStatus === 'sample_required') {
+        const representative = this.getReviewedSampleGroup(preflight.result, episode)!.representative
+        const hashes = await Promise.all(representative.samplePaths!.map(sample => hasher.hash(sample)))
+        if (hashes.some((hash, index) => hash !== representative.sampleHashes![index])) throw new Error('Reviewed samples changed; run preflight again')
+      }
     }
     const tasks = queueableEpisodes.map(episode => ({
       type: TaskType.Transcode,
@@ -1562,7 +1544,7 @@ export class TranscodingService {
       batchId: preflight.result.batchId,
       sourceId: preflight.request.sourceId,
       libraryId: preflight.request.libraryId,
-      options: { ...episode.options, queuePayload: { batchId: preflight.result.batchId, preflightId, sourceSize: episode.sourceSize, sourceMtimeMs: episode.sourceMtimeMs, sourceSha256: episode.sourceSha256, params: episode.params, sourceAnalysis: episode.sourceAnalysis, targetProfile: episode.targetProfile, samplePaths: episode.samplePaths, sampleRepresentativeMediaItemId: episode.sampleRepresentativeMediaItemId ?? episode.mediaItemId, capabilityFingerprint: preflight.result.capabilityFingerprint } }
+      options: this.reviewedExecutionOptions(preflight.result, episode)
     }))
     getLoggingService().info('[TVOptimization]', `Queue requested: preflight=${preflightId}, batch=${preflight.result.batchId}, eligibleEpisodes=${queueableEpisodes.length}, userApproved=${preflight.result.userApproved}`)
     const taskIds = await getTaskQueueService().addTasks(tasks)
@@ -1573,10 +1555,21 @@ export class TranscodingService {
       queuedMediaItemIds: [...new Set([...(preflight.result.queuedMediaItemIds ?? []), ...queueableEpisodes.map(episode => episode.mediaItemId)])],
       queuedTaskIds: [...new Set([...(preflight.result.queuedTaskIds ?? []), ...taskIds])],
     }
-    this.retainPreflight(preflightId, { ...preflight, result: queued })
     await getDatabase().setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ ...preflight, result: queued }))
     getLoggingService().info('[TVOptimization]', `Queue completed: preflight=${preflightId}, batch=${preflight.result.batchId}, queuedMediaItems=${queueableEpisodes.length}`)
     return { batchId: preflight.result.batchId, queuedMediaItemIds: queueableEpisodes.map(episode => episode.mediaItemId), queuedTaskIds: taskIds }
+  }
+
+  private reviewedExecutionOptions(result: ShowTranscodePreflight, episode: ShowTranscodePreflight['episodes'][number]): TranscodeOptions & { queuePayload: QueuedTranscodePayload } {
+    return { ...episode.options, queuePayload: { batchId: result.batchId, preflightId: result.preflightId, sourceSize: episode.sourceSize, sourceMtimeMs: episode.sourceMtimeMs, sourceSha256: episode.sourceSha256, params: episode.params, sourceAnalysis: episode.sourceAnalysis, targetProfile: episode.targetProfile, samplePaths: episode.samplePaths, sampleRepresentativeMediaItemId: episode.sampleRepresentativeMediaItemId ?? episode.mediaItemId, capabilityFingerprint: result.capabilityFingerprint } }
+  }
+
+  private async requireSavedReview(preflightId: string): Promise<{ request: ShowTranscodeRequest; result: ShowTranscodePreflight }> {
+    const raw = await getDatabase().getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
+    if (!raw) throw new Error('Show transcode preflight was not found')
+    const review = JSON.parse(raw) as { request: ShowTranscodeRequest; result: ShowTranscodePreflight }
+    if (review.result.preflightId !== preflightId) throw new Error('Saved review identity does not match the requested preflight')
+    return review
   }
 
   async getShowPreflight(preflightId: string): Promise<{ request: ShowTranscodeRequest; result: ShowTranscodePreflight } | undefined> {
@@ -1586,33 +1579,33 @@ export class TranscodingService {
     return { ...preflight, result: this.withCurrentSampleApprovals(preflight.result) }
   }
 
+  private getReviewedSampleGroup(result: ShowTranscodePreflight, episode: ShowTranscodePreflight['episodes'][number]) {
+    const representativeId = episode.sampleRepresentativeMediaItemId ?? episode.mediaItemId
+    const representative = result.episodes.find(plan => plan.mediaItemId === representativeId)
+    if (!representative?.params?.measuredCandidate || !representative.samplePaths?.length || representative.sampleHashes?.length !== representative.samplePaths.length || representative.sampleHashes.some(hash => !hash)) return undefined
+    return { representative, id: JSON.stringify([representativeId, representative.sampleHashes]) }
+  }
+
+  private assertSampleApprovals(result: ShowTranscodePreflight): void {
+    for (const episode of result.episodes) {
+      if (episode.compatible && episode.decisionStatus === 'sample_required' && (!episode.params?.measuredCandidate || !this.getReviewedSampleGroup(result, episode))) throw new Error('A measured episode has no complete representative sample evidence; run preflight again')
+    }
+    const approved = new Set(this.withCurrentSampleApprovals(result).approvedSampleGroupIds)
+    if ([...this.getSampleGroupFingerprints(result).keys()].some(id => !approved.has(id))) throw new Error('Review and approve every measured sample group before proceeding')
+  }
+
   private getSampleGroupFingerprints(result: ShowTranscodePreflight): Map<string, string> {
     const groups = new Map<string, ShowTranscodePreflight['episodes']>()
     for (const episode of result.episodes) {
-      if (episode.decisionStatus !== 'sample_required' || !episode.params?.measuredCandidate || !episode.samplePaths?.length) continue
-      const representativeId = episode.sampleRepresentativeMediaItemId ?? episode.mediaItemId
-      const groupId = JSON.stringify([representativeId, episode.sampleHashes ?? []])
-      groups.set(groupId, [...(groups.get(groupId) ?? []), episode])
+      if (episode.decisionStatus !== 'sample_required' || !episode.params?.measuredCandidate) continue
+      const group = this.getReviewedSampleGroup(result, episode)
+      if (group) groups.set(group.id, [...(groups.get(group.id) ?? []), episode])
     }
     return new Map([...groups].map(([groupId, episodes]) => {
       const fingerprintContent = [...episodes].sort((left, right) => left.mediaItemId - right.mediaItemId).map(episode => ({
         mediaItemId: episode.mediaItemId,
         sourceSha256: episode.sourceSha256,
-        params: episode.params && {
-          encoder: episode.params.encoder,
-          crf: episode.params.crf,
-          preset: episode.params.preset,
-          measuredCandidate: episode.params.measuredCandidate && {
-            encoder: episode.params.measuredCandidate.encoder,
-            preset: episode.params.measuredCandidate.preset,
-            quality: episode.params.measuredCandidate.quality,
-            outputBytes: episode.params.measuredCandidate.outputBytes,
-            sampledDurationSeconds: episode.params.measuredCandidate.sampledDurationSeconds,
-            vmafMean: episode.params.measuredCandidate.vmafMean,
-            vmafP5: episode.params.measuredCandidate.vmafP5,
-            cambiMean: episode.params.measuredCandidate.cambiMean,
-          },
-        },
+        params: episode.params,
         options: episode.options,
         targetProfile: episode.targetProfile,
         operations: episode.operations,
@@ -1629,12 +1622,7 @@ export class TranscodingService {
   }
 
   async setShowSampleApproval(preflightId: string, groupId: string, approved: boolean): Promise<string[]> {
-    let preflight = this.showPreflights.get(preflightId)
-    if (!preflight) {
-      const saved = await getDatabase().getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
-      if (saved) preflight = JSON.parse(saved) as { request: ShowTranscodeRequest; result: ShowTranscodePreflight }
-    }
-    if (!preflight) throw new Error('Show transcode preflight was not found')
+    const preflight = await this.requireSavedReview(preflightId)
     const fingerprint = this.getSampleGroupFingerprints(preflight.result).get(groupId)
     if (!fingerprint) throw new Error('The sample group is no longer part of this review')
     const sampleGroupApprovalFingerprints = { ...preflight.result.sampleGroupApprovalFingerprints }
@@ -1646,14 +1634,13 @@ export class TranscodingService {
       delete result.approvedAt
       delete result.approvalFingerprint
     }
-    this.retainPreflight(preflightId, { ...preflight, result })
     await getDatabase().setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ ...preflight, result }))
     getLoggingService().info('[TVOptimization]', 'Sample group approval updated', {
       event: approved ? 'sample-group.approved' : 'sample-group.approval-revoked',
       preflightId,
       batchId: result.batchId,
       groupId,
-      memberMediaItemIds: result.episodes.filter(episode => JSON.stringify([episode.sampleRepresentativeMediaItemId ?? episode.mediaItemId, episode.sampleHashes ?? []]) === groupId).map(episode => episode.mediaItemId),
+      memberMediaItemIds: result.episodes.filter(episode => this.getReviewedSampleGroup(result, episode)?.id === groupId).map(episode => episode.mediaItemId),
     })
     return this.withCurrentSampleApprovals(result).approvedSampleGroupIds ?? []
   }
@@ -2378,8 +2365,18 @@ export class TranscodingService {
         const currentFingerprint = this.getCapabilitySnapshotFingerprint(await this.getCapabilities())
         if (currentFingerprint !== queuePayload.capabilityFingerprint) throw new Error('Hardware capabilities changed after review; run preflight again')
       }
-      if (!queuePayload && (options.optimizationMode === 'transcode' || options.optimizationMode === 'smart')) throw new Error('Optimization execution requires a reviewed library preflight')
+      if (queuePayload) {
+        if (!queuePayload.preflightId) throw new Error('Optimization execution requires a saved review identity')
+        const review = await this.requireSavedReview(queuePayload.preflightId)
+        const episode = review.result.episodes.find(plan => plan.mediaItemId === mediaItemId)
+        if (item.source_id !== review.request.sourceId || review.request.libraryId !== undefined && item.library_id !== review.request.libraryId || !episode?.compatible || !['actionable', 'sample_required'].includes(episode.decisionStatus ?? '') || !episode.sourceSha256 || JSON.stringify(this.reviewedExecutionOptions(review.result, episode)) !== JSON.stringify(options)) throw new Error('Queued optimization no longer matches its saved reviewed plan')
+        if (episode.decisionStatus === 'sample_required') {
+          if (review.result.measurementVersion !== MEASUREMENT_VERSION || review.result.searchVersion !== OPTIMIZATION_SEARCH_VERSION || review.result.userApproved !== true || review.result.approvalFingerprint !== this.preflightFingerprint(review.result)) throw new Error('Measured optimization approval is stale; run preflight again')
+          this.assertSampleApprovals(review.result)
+        }
+      } else if (options.optimizationMode === 'transcode' || options.optimizationMode === 'smart') throw new Error('Optimization execution requires a reviewed library preflight')
       const params = queuePayload?.params ?? await this.getTranscodeParameters(inputPath, options)
+      if (params.encoder !== 'copy' && (!queuePayload?.params?.measuredCandidate || !queuePayload.preflightId)) throw new Error('Video encoding requires an approved measured library preflight')
       const sourceAnalysis = queuePayload?.sourceAnalysis ?? await getMediaFileAnalyzer().analyzeFile(inputPath)
       const encoderProfile = `${params.encoder}:${params.preset}:${params.crf}`
       const measured = params.measuredCandidate
@@ -3055,6 +3052,7 @@ export class TranscodingService {
   }
 
   async discardShowPreflight(preflightId: string): Promise<void> {
+    if (getTaskQueueService().getTasks().some(task => (task.options as { queuePayload?: QueuedTranscodePayload } | undefined)?.queuePayload?.preflightId === preflightId)) throw new Error('Cannot discard a review with queued or running optimization jobs')
     const raw = await getDatabase().getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
     if (raw) {
       const preflight = JSON.parse(raw) as { result: ShowTranscodePreflight }
@@ -3064,7 +3062,6 @@ export class TranscodingService {
     const directory = path.resolve(root, preflightId)
     if (path.dirname(directory) !== root) throw new Error('Invalid preflight sample directory')
     await fs.rm(directory, { recursive: true, force: true })
-    this.showPreflights.delete(preflightId)
     await getDatabase().deleteSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
     getLoggingService().info('[TVOptimization]', `Preflight discarded: preflight=${preflightId}`)
   }
@@ -3155,20 +3152,12 @@ export class TranscodingService {
   }
 
   async approveShowTranscode(preflightId: string): Promise<ShowTranscodePreflight> {
-    let preflight = this.showPreflights.get(preflightId)
-    if (!preflight) {
-      const saved = await getDatabase().getSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`)
-      if (saved) preflight = JSON.parse(saved) as { request: ShowTranscodeRequest; result: ShowTranscodePreflight }
-    }
-    if (!preflight) throw new Error('Show transcode preflight was not found')
+    let preflight = await this.requireSavedReview(preflightId)
     if ((preflight.result.measurementVersion !== MEASUREMENT_VERSION || preflight.result.searchVersion !== OPTIMIZATION_SEARCH_VERSION) && preflight.result.episodes.some(episode => episode.params?.measuredCandidate)) throw new Error('Measurement or search policy changed; run preflight again before approving this plan')
     preflight = { ...preflight, result: this.withCurrentSampleApprovals(preflight.result) }
-    const requiredSampleGroupIds = [...this.getSampleGroupFingerprints(preflight.result).keys()]
-    const approvedSampleGroupIds = new Set(this.withCurrentSampleApprovals(preflight.result).approvedSampleGroupIds)
-    if (requiredSampleGroupIds.some(groupId => !approvedSampleGroupIds.has(groupId))) throw new Error('Review and approve every measured sample group before approving this plan')
+    this.assertSampleApprovals(preflight.result)
     const approved = { ...preflight.result, userApproved: true, approvedAt: new Date().toISOString(), approvalFingerprint: this.preflightFingerprint(preflight.result) }
     getLoggingService().info('[TVOptimization]', `Preflight approved: preflight=${preflightId}, batch=${approved.batchId}, sampleRequiredEpisodes=${approved.episodes.filter(episode => episode.compatible && episode.decisionStatus === 'sample_required').length}`)
-    this.retainPreflight(preflightId, { ...preflight, result: approved })
     await getDatabase().setSetting(`${SHOW_PREFLIGHT_SETTING_PREFIX}${preflightId}`, JSON.stringify({ ...preflight, result: approved }))
     return approved
   }

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import fs from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { getTranscodingService } from '../../../../src/main/services/TranscodingService'
 import { PreflightShowTranscodeSchema } from '../../../../src/main/validation/schemas'
@@ -19,7 +20,7 @@ const mockAddTasks = vi.fn()
 const mockGetQueueState = vi.fn()
 vi.mock('../../../../src/main/services/TaskQueueService', () => ({
   getTaskQueueService: () => ({
-    getTasks: vi.fn().mockResolvedValue([]),
+    getTasks: vi.fn().mockReturnValue([]),
     getQueueState: mockGetQueueState,
     addTasks: mockAddTasks,
   })
@@ -166,6 +167,23 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     await expect(service.approveShowTranscode('sample-review')).resolves.toMatchObject({ userApproved: true, approvedSampleGroupIds: [groupId] })
   })
 
+  it('binds representative approval to projected members and rejects orphaned projections', async () => {
+    const service = getTranscodingService()
+    const candidate = { encoder: 'qsv_h265', preset: 'medium', quality: 18, outputBytes: 100, sampledDurationSeconds: 30, vmafMean: 96, vmafP5: 93, cambiMean: 0 }
+    const representative = { mediaItemId: 101, compatible: true, decisionStatus: 'sample_required', samplePaths: ['sample.mkv'], sampleHashes: ['sample-hash'], params: { measuredCandidate: candidate } }
+    const projected = { mediaItemId: 102, compatible: true, decisionStatus: 'sample_required', sampleRepresentativeMediaItemId: 101, sourceSha256: 'projected-source', params: { measuredCandidate: candidate } }
+    const review = { request: { sourceId: 'src1' }, result: { preflightId: 'projection-review', batchId: 'projection-batch', measurementVersion: MEASUREMENT_VERSION, searchVersion: OPTIMIZATION_SEARCH_VERSION, episodes: [representative, projected] } }
+    mockDb.getSetting.mockResolvedValue(JSON.stringify(review))
+    await service.setShowSampleApproval('projection-review', JSON.stringify([101, ['sample-hash']]), true)
+    const approved = JSON.parse(mockDb.setSetting.mock.calls.at(-1)![1])
+    approved.result.episodes[1].sourceSha256 = 'changed-source'
+    mockDb.getSetting.mockResolvedValue(JSON.stringify(approved))
+    await expect(service.approveShowTranscode('projection-review')).rejects.toThrow('Review and approve every measured sample group')
+    approved.result.episodes = [projected]
+    mockDb.getSetting.mockResolvedValue(JSON.stringify(approved))
+    await expect(service.approveShowTranscode('projection-review')).rejects.toThrow('no complete representative sample evidence')
+  })
+
   it('preflights a single movie without requiring a series identity', async () => {
     const transcodingService = getTranscodingService()
     mockDb.getMediaItem.mockReturnValue({
@@ -236,7 +254,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     const sourcePath = path.resolve('src/main/services/TranscodingService.ts')
     const sourceStat = await fs.stat(sourcePath)
     mockDb.getMediaItem.mockImplementation((id: number) => ({
-      id, title: `Show S01E0${id - 100}`, source_id: 'src1', file_path: sourcePath,
+      id, title: `Show S01E0${id - 100}`, source_id: 'src1', library_id: 'lib1', file_path: sourcePath,
     }))
     mockDb.getMediaSource.mockReturnValue({ connection_config: JSON.stringify({ folderPath: path.dirname(sourcePath) }) })
     mockAddTasks.mockImplementation((tasks: unknown[]) => tasks.map((_, index) => `task-${index}`))
@@ -255,7 +273,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
             decisionStatus: 'actionable',
             sourceSize: sourceStat.size,
             sourceMtimeMs: sourceStat.mtimeMs,
-            sourceSha256: 'a'.repeat(64),
+            sourceSha256: createHash('sha256').update(await fs.readFile(sourcePath)).digest('hex'),
             options: { crf: 20 },
             targetProfile: { id: 'prof-1', name: 'Profile 1' },
           },
@@ -266,7 +284,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
             decisionStatus: 'actionable',
             sourceSize: sourceStat.size,
             sourceMtimeMs: sourceStat.mtimeMs,
-            sourceSha256: 'a'.repeat(64),
+            sourceSha256: createHash('sha256').update(await fs.readFile(sourcePath)).digest('hex'),
             options: { crf: 20 },
             targetProfile: { id: 'prof-1', name: 'Profile 1' },
           }
@@ -274,6 +292,13 @@ describe('ShowOptimizationQueueAndPersistence', () => {
       }
     }))
 
+    const saved = JSON.parse(await mockDb.getSetting())
+    saved.result.episodes[0].sourceSha256 = 'a'.repeat(64)
+    mockDb.getSetting.mockResolvedValue(JSON.stringify(saved))
+    await expect(transcodingService.queueShowTranscode(preflightId)).rejects.toThrow('Source file contents changed')
+    expect(mockAddTasks).not.toHaveBeenCalled()
+    saved.result.episodes[0].sourceSha256 = createHash('sha256').update(await fs.readFile(sourcePath)).digest('hex')
+    mockDb.getSetting.mockResolvedValue(JSON.stringify(saved))
     const result = await transcodingService.queueShowTranscode(preflightId)
     expect(result.batchId).toBe('batch_valid')
     expect(result.queuedMediaItemIds).toEqual([101, 102])
@@ -294,7 +319,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     const preflightId = 'retry_preflight_1'
     const sourcePath = path.resolve('src/main/services/TranscodingService.ts')
     const sourceStat = await fs.stat(sourcePath)
-    mockDb.getMediaItem.mockImplementation((id: number) => ({ id, title: `Episode ${id}`, source_id: 'src1', file_path: sourcePath }))
+    mockDb.getMediaItem.mockImplementation((id: number) => ({ id, title: `Episode ${id}`, source_id: 'src1', library_id: 'lib1', file_path: sourcePath }))
     mockDb.getMediaSource.mockReturnValue({ connection_config: JSON.stringify({ folderPath: path.dirname(sourcePath) }) })
     mockAddTasks.mockReturnValue(['retry-task-102'])
     mockGetQueueState.mockReturnValue({
@@ -306,6 +331,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
         { id: 'task-102', type: 'transcode', label: 'Episode 102', mediaItemId: 102, batchId: 'batch_retry', status: 'failed', createdAt: '2026-01-01T00:00:01.000Z' },
       ],
     })
+    const sourceHash = createHash('sha256').update(await fs.readFile(sourcePath)).digest('hex')
     const episode = (mediaItemId: number) => ({
       mediaItemId,
       label: `Episode ${mediaItemId}`,
@@ -313,7 +339,7 @@ describe('ShowOptimizationQueueAndPersistence', () => {
       decisionStatus: 'actionable',
       sourceSize: sourceStat.size,
       sourceMtimeMs: sourceStat.mtimeMs,
-      sourceSha256: 'a'.repeat(64),
+      sourceSha256: sourceHash,
       options: { crf: 20 },
     })
     mockDb.getSetting.mockResolvedValue(JSON.stringify({
