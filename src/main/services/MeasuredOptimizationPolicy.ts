@@ -323,3 +323,8 @@ function evaluateMeasuredCandidates(profile: OptimizationQualityProfile, candida
     return { candidate, passed: failedGates.length === 0, qualityPassed, failedGates }
   })
 }
+
+/** Returns whether a measured candidate has complete, quality-passing, playback-compatible evidence. */
+export function isMeasuredCandidateValidForCalibration(candidate: MeasuredCandidate): boolean {
+  return evaluateMeasuredCandidates('balanced', [candidate])[0].passed
+}

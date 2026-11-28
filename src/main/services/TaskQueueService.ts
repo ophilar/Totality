@@ -33,7 +33,7 @@ import { getWishlistCompletionService } from './WishlistCompletionService'
 import { getTMDBService } from './TMDBService'
 import { getTranscodingService } from './TranscodingService'
 import { getLoggingService } from './LoggingService'
-import type { OptimizationCalibrationEntry, MeasuredCandidate } from './MeasuredOptimizationPolicy'
+import { isMeasuredCandidateValidForCalibration, type OptimizationCalibrationEntry, type MeasuredCandidate } from './MeasuredOptimizationPolicy'
 import type { OptimizationCandidateScanSummary, ShowTranscodeRequest, ShowTranscodePreflight, ShowTranscodeEpisodeCheckpoint } from './TranscodingService'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { normalizeVideoCodec } from './MediaNormalizer'
@@ -1114,8 +1114,12 @@ export class TaskQueueService {
       const candidate = measurement.measuredCandidate as { encoder?: unknown; gpuId?: unknown; preset?: unknown; quality?: unknown } | undefined
       return `${measurement.stage}:${measurement.groupKey}:${String(candidate?.encoder ?? measurement.encoder ?? '')}:${String(candidate?.gpuId ?? measurement.gpuId ?? '')}:${String(candidate?.preset ?? measurement.preset ?? '')}:${String(candidate?.quality ?? measurement.crf ?? '')}`
     }
-    const validatedCandidates = new Set(measurements.filter(measurement => measurement.role === 'holdout' && measurement.status === 'measured').map(candidateKey))
-    const entries: OptimizationCalibrationEntry[] = measurements.filter(measurement => measurement.role === 'calibration' && measurement.status === 'measured' && validatedCandidates.has(candidateKey(measurement))).flatMap(measurement => {
+    const isValidMeasurement = (measurement: Record<string, unknown>): boolean => {
+      const candidate = measurement.measuredCandidate as MeasuredCandidate | undefined
+      return measurement.status === 'measured' && candidate !== undefined && isMeasuredCandidateValidForCalibration(candidate)
+    }
+    const validatedCandidates = new Set(measurements.filter(measurement => measurement.role === 'holdout' && isValidMeasurement(measurement)).map(candidateKey))
+    const entries: OptimizationCalibrationEntry[] = measurements.filter(measurement => measurement.role === 'calibration' && isValidMeasurement(measurement) && validatedCandidates.has(candidateKey(measurement))).flatMap(measurement => {
       const candidate = measurement.measuredCandidate as { encoder?: unknown; gpuId?: unknown; preset?: unknown; outputBytes?: unknown; sampledDurationSeconds?: unknown; quality?: unknown } | undefined
       if (!candidate || typeof measurement.sourceCodec !== 'string' || !measurement.sourceCodec || typeof candidate.outputBytes !== 'number' || typeof candidate.sampledDurationSeconds !== 'number' || typeof candidate.quality !== 'number') return []
       return [{ sourceCodec: measurement.sourceCodec, targetCodec: measurement.targetCodec as 'hevc' | 'av1', encoder: String(candidate.encoder ?? measurement.encoder ?? ''), gpuId: typeof candidate.gpuId === 'string' ? candidate.gpuId : typeof measurement.gpuId === 'string' ? measurement.gpuId : undefined, preset: String(candidate.preset ?? measurement.preset ?? ''), quality: candidate.quality, outputBytes: candidate.outputBytes, sampledDurationSeconds: candidate.sampledDurationSeconds, measuredAt: new Date().toISOString() }]

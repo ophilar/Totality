@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCandidateLadder, findLongestContinuousLowVmafRun, getImpossibleQualityReason, getNonDominatedMeasuredCandidates, isValidOptimizationCalibrationEntry, nextCandidateSearch, selectMeasuredCandidate, type CandidateEncodingParameters, type MeasuredCandidate } from '@main/services/MeasuredOptimizationPolicy'
+import { buildCandidateLadder, findLongestContinuousLowVmafRun, getImpossibleQualityReason, getNonDominatedMeasuredCandidates, isMeasuredCandidateValidForCalibration, isValidOptimizationCalibrationEntry, nextCandidateSearch, selectMeasuredCandidate, type CandidateEncodingParameters, type MeasuredCandidate } from '@main/services/MeasuredOptimizationPolicy'
 
 describe('selectMeasuredCandidate', () => {
   const candidate = (overrides: Partial<MeasuredCandidate>): MeasuredCandidate => ({
@@ -27,6 +27,13 @@ describe('selectMeasuredCandidate', () => {
   it('does not claim a recommendation when measured quality gates fail', () => {
     expect(() => selectMeasuredCandidate('transparent', [candidate({ vmafMean: 94, vmafP5: 90 })]))
       .toThrow('No measured candidate satisfies the transparent quality and playback requirements')
+  })
+
+  it('accepts calibration evidence only when quality, completeness and playback pass', () => {
+    expect(isMeasuredCandidateValidForCalibration(candidate({}))).toBe(true)
+    expect(isMeasuredCandidateValidForCalibration(candidate({ vmafP5: 91 }))).toBe(false)
+    expect(isMeasuredCandidateValidForCalibration(candidate({ incompleteMeasurement: true }))).toBe(false)
+    expect(isMeasuredCandidateValidForCalibration(candidate({ playbackBlockers: ['incompatible'] }))).toBe(false)
   })
 
   it('builds candidates only for the explicitly selected encoder policy', () => {
