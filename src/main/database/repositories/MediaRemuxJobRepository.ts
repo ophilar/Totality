@@ -187,21 +187,4 @@ export class MediaRemuxJobRepository {
     return rows.map(toCamelCaseJob)
   }
 
-  async getCalibratedOutputBytes(sourceSize: number, operationKind: string, encoderProfile: string): Promise<number | null> {
-    const rows = this.db().prepare(`
-      SELECT source_size, actual_output_bytes
-      FROM media_optimization_jobs
-      WHERE operation_kind = ? AND status = 'promoted' AND encoder_profile = ? AND actual_output_bytes IS NOT NULL
-    `).all(operationKind, encoderProfile) as Array<{ source_size: number; actual_output_bytes: number | null }>
-
-    if (rows.length < 5) return null
-    const ratios = rows
-      .filter(row => row.source_size > 0 && row.actual_output_bytes != null && row.actual_output_bytes > 0)
-      .map(row => (row.actual_output_bytes as number) / row.source_size)
-      .sort((left, right) => left - right)
-    if (ratios.length < 5) return null
-    const middle = Math.floor(ratios.length / 2)
-    const ratio = ratios.length % 2 === 1 ? ratios[middle] : (ratios[middle - 1] + ratios[middle]) / 2
-    return Math.round(sourceSize * ratio)
-  }
 }

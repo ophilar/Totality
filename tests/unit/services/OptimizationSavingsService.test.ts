@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildOptimizationSavingsBreakdown, calculateBitrateSavingsBytes, calculateBytesAtBitrateKbps, projectMeasuredSavingsBytes, projectSavingsRate, sumMeasuredStreamBytes } from '@main/services/OptimizationSavingsService'
+import { buildOptimizationSavingsBreakdown, calculateBitrateSavingsBytes, calculateBytesAtBitrateKbps, projectMeasuredOutputBytes, projectMeasuredSavingsBytes, projectSavingsRate, sumMeasuredStreamBytes } from '@main/services/OptimizationSavingsService'
 
 describe('shared savings calculations', () => {
   it('converts bitrate and duration to bytes consistently', () => {
@@ -160,4 +160,10 @@ describe('buildOptimizationSavingsBreakdown', () => {
     expect(result.totalEstimatedSavingsBytes).toBe(200)
     expect(result.coverage).toBe('complete')
   })
+})
+
+it('uses the same measured-output projection for job and savings estimates', () => {
+  expect(projectMeasuredOutputBytes(60, 150, 30)).toBe(300)
+  expect(projectMeasuredSavingsBytes(500, 60, 150, 30)).toBe(200)
+  expect(() => projectMeasuredOutputBytes(60, 150, 0)).toThrow('valid bytes and durations')
 })

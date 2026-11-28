@@ -50,9 +50,13 @@ export function sumMeasuredStreamBytes(streamBytes: Readonly<Record<number, numb
   return total
 }
 
+export function projectMeasuredOutputBytes(durationSeconds: number, sampleOutputBytes: number, sampleDurationSeconds: number): number {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0 || !Number.isFinite(sampleOutputBytes) || sampleOutputBytes < 0 || !Number.isFinite(sampleDurationSeconds) || sampleDurationSeconds <= 0) throw new Error('Measured output projection requires valid bytes and durations')
+  return Math.round(sampleOutputBytes / sampleDurationSeconds * durationSeconds)
+}
+
 export function projectMeasuredSavingsBytes(sourceBytes: number, durationSeconds: number, sampleOutputBytes: number, sampleDurationSeconds: number): number {
-  const projectedOutputBytes = Math.round((sampleOutputBytes / sampleDurationSeconds) * durationSeconds)
-  return Math.min(sourceBytes, Math.max(0, sourceBytes - projectedOutputBytes))
+  return Math.min(sourceBytes, Math.max(0, sourceBytes - projectMeasuredOutputBytes(durationSeconds, sampleOutputBytes, sampleDurationSeconds)))
 }
 
 export function projectSavingsRate(calibratedSourceBytes: number, calibratedSavingsBytes: number, targetSourceBytes: number): number {

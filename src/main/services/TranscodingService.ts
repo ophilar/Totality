@@ -36,7 +36,7 @@ import { ChildProcessMeasurementRunner, MeasuredOptimizationService, VMAF_MODEL_
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { evaluatePlaybackTarget, getPlaybackTargetContainers, recommendPlaybackTargetContainer, type PlaybackTargetEvaluation, type PlaybackTargetProfile } from '@main/types/playbackTarget'
 import { getTaskQueueService } from './TaskQueueService'
-import { buildOptimizationSavingsBreakdown, calculateBitrateSavingsBytes, projectMeasuredSavingsBytes, sumMeasuredStreamBytes, type OptimizationSavingsCoverage, type OptimizationSavingsOperation } from './OptimizationSavingsService'
+import { buildOptimizationSavingsBreakdown, calculateBitrateSavingsBytes, projectMeasuredOutputBytes, projectMeasuredSavingsBytes, sumMeasuredStreamBytes, type OptimizationSavingsCoverage, type OptimizationSavingsOperation } from './OptimizationSavingsService'
 import { normalizeAudioCodec, normalizeVideoCodec } from './MediaNormalizer'
 import { DEFAULT_OPTIMIZATION_VIDEO_CODEC, getOptimizationVideoCodec, type OptimizationVideoCodec } from './transcoding/OptimizationCodecPolicy'
 import { isMeasuredSoftwareEncoder, measuredOptimizationEncoderSpec, verifiedOptimizationDevices } from './transcoding/OptimizationEncoderPolicy'
@@ -2440,7 +2440,7 @@ export class TranscodingService {
       const encoderProfile = `${params.encoder}:${params.preset}:${params.crf}`
       const measured = params.measuredCandidate
       const predictedOutputBytes = measured && sourceAnalysis.durationMs && !measured.incompleteMeasurement
-        ? Math.round((measured.outputBytes / measured.sampledDurationSeconds + plannedNonVideoBytesPerSecond(sourceAnalysis, options)) * sourceAnalysis.durationMs / 1000)
+        ? projectMeasuredOutputBytes(sourceAnalysis.durationMs / 1000, measured.outputBytes + plannedNonVideoBytesPerSecond(sourceAnalysis, options) * measured.sampledDurationSeconds, measured.sampledDurationSeconds)
         : null
       optimizationJobId = await db.mediaRemuxJobs.create({
         mediaItemId,
