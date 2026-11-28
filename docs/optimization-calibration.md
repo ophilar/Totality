@@ -12,3 +12,44 @@ Starting recalibration publishes an empty profile before inventory. The complete
 - Check empty inventory, failed probes, cancellation and process interruption before and after profile publication; inspect JSON and restart the task.
 - Verify real playback target, GPU encoding and output quality on representative files. Record device, library, candidate outcomes and timings.
 - Status: implementation and regression tests authored; real-library/GPU execution, interruption recovery and test execution remain pending.
+
+
+## Living implementation and acceptance plan — 2026-11-28
+
+Objective: address all six user-reported calibration gaps on `0.9.0`, preserving measured quality and playback safety. Baseline: `62fd2830d073dfb3dd9a19f3e19df09214a571f0`. Scope: measured optimization policy, calibration queue, transcoding integration, configuration, profile persistence and tests. Release, unrelated maintenance and changes to media files are outside this task.
+
+| Work unit | Dependencies | Acceptance | Evidence / state |
+| --- | --- | --- | --- |
+| C1: representative selection and activation invalidation | Baseline inspection | Reversed inventory produces identical distinct-title selection; old priors inactive before inventory, including empty/failed runs | [f477491](https://github.com/ophilar/Totality/commit/f4774913776e7bd4efb3cba6d3d83821432d5c11), source-reconciled |
+| C2: scoped search prior and JSON ownership | C1 | Exact context matches change first probe under bounded search; mismatches use ordinary search; current-file gates remain decisive; changes invalidate search cache identity | [cbcd823](https://github.com/ophilar/Totality/commit/cbcd82395234a8ccc6d846a168c8e5f7cf7d26b2), source-reconciled |
+| C3: holdout veto and profile publication | C2 | Independent passing holdout required; matching observed failure vetoes; staged files never become active | [5ca0e84](https://github.com/ophilar/Totality/commit/5ca0e8436b8f40a41662d83ce3db0d12f452ff55), source-reconciled |
+| C4: executable verification | C1–C3 | Targeted regressions, typecheck, lint and full suite pass at exact revision | Pending |
+| C5: runtime acceptance | C4 | Real Electron, target playback, GPU/software encode, interruption/restart and matched baseline comparison | Pending; [#164](https://github.com/ophilar/Totality/issues/164), [#165](https://github.com/ophilar/Totality/issues/165) remain open |
+
+### Decisions and risks
+
+- Reject historical output-size tie-breaking: use calibration to initialize the bounded search, never to override measured output-quality or playback gates. The effect on actual selected quality, storage savings and elapsed time is a hypothesis until measured.
+- Reject reuse of unscoped database records and resume from unverifiable calibration checkpoints. A resumed calibration remeasures. This deliberately trades additional encoding work for evidence validity; old database records are not authoritative.
+- Use production sample windows to make scope comparison exact. Retain the configured two-candidate calibration budget. Its adequacy, the fraction of scopes receiving an eligible prior, and calibration cost require runtime evidence.
+- Quality domains and gates are packaged policy; learned entries are user-data JSON. They are distinct owners, not two writable sources of the same parameters. Profile activation is a flushed temporary write and rename, not proof of power-loss durability.
+- Current calibration is balanced/automatic and the configured playback policy; it does not train all quality profiles or playback modes. A different profile must not borrow the evidence.
+- Review finding corrected in C3: a representative preflight failure could discard completed rejection evidence. Incomplete or unavailable holdouts may still reduce coverage; report them separately and do not imply exhaustive generalization.
+
+### Exact restart
+
+On the supported local Totality checkout, update `0.9.0` and record the actual revision. Run:
+
+```sh
+git switch 0.9.0
+git pull --ff-only
+git rev-parse HEAD
+npx vitest run tests/unit/services/MeasuredOptimizationPolicy.test.ts tests/unit/services/OptimizationCalibrationProfile.test.ts
+npm run typecheck
+npm run lint
+npm run test:run
+npm run electron:dev
+```
+
+Use the installed repository dependencies and the supported FFmpeg/FFprobe toolchain. Record OS, GPU/device fingerprint, FFmpeg and measurement fingerprints, playback profile, source/library scope, sample settings, candidate sequence, measured quality, savings and timing. Do not transcode/replace source media merely to calibrate. Exercise the existing calibration task with an empty active profile, then compare fresh preflights on matching and nonmatching scopes. Confirm rejection gates and real target playback. Cancel and terminate/restart Electron before publication and after publication; inspect the active JSON and verify the recovered task's behavior. Include a failing holdout, empty inventory and incompatible target. Record coverage and failures, open narrowly scoped defects if reproduced, and rerun invalidated checks. Preserve the existing safe-operation and historical-report acceptance work.
+
+At this checkpoint no new automated-test or runtime/device evidence has been obtained for C1–C3. GitHub source inspection and branch readback are the only verified evidence; prior test results on other revisions do not transfer. Product acceptance is open. No release or upstream merge is implied.
