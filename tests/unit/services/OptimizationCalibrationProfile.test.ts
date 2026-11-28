@@ -10,7 +10,7 @@ describe('optimization calibration profile persistence', () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'optimization-calibration-'))
     const profilePath = path.join(directory, 'optimization-profile.json')
     const entry: OptimizationCalibrationEntry = {
-      scopeKey: 'source/library/SDR', sourceCodec: 'H.264', targetCodec: 'hevc', encoder: 'x265',
+      scopeKey: 'source/library/SDR', qualityProfile: 'balanced', sourceCodec: 'H.264', targetCodec: 'hevc', encoder: 'x265',
       preset: 'medium', quality: 22, outputBytes: 100, sampledDurationSeconds: 30,
       measuredAt: new Date().toISOString(),
     }

@@ -7,17 +7,19 @@ import type { MediaItem } from '@main/types/database'
 
 export type OptimizationQualityProfile = 'transparent' | 'balanced' | 'maximum_savings'
 
-export const MEASUREMENT_VERSION = 17
-export const OPTIMIZATION_SEARCH_VERSION = 6
+export const MEASUREMENT_VERSION = 18
+export const OPTIMIZATION_SEARCH_VERSION = 7
 /** Hard bound on expensive full-sample evaluations in each encoder/preset domain. */
 export const MAX_MEASURED_CANDIDATES_PER_PRESET = 5
 export const VMAF_LOW_PERCENTILE = 0.05
 export const SHOW_PREFLIGHT_SETTING_PREFIX = 'transcoding.preflight.'
 export const MEASUREMENT_SETTING_PREFIX = 'transcoding.measurement.'
-export const OPTIMIZATION_CALIBRATION_VERSION = 2
+export const OPTIMIZATION_CALIBRATION_VERSION = 3
+export const OPTIMIZATION_QUALITY_PROFILES = ['transparent', 'balanced', 'maximum_savings'] as const
 export interface OptimizationCalibrationEntry {
   /** Serialized measurement context; exact equality is required before using this search prior. */
   scopeKey: string
+  qualityProfile: OptimizationQualityProfile
   sourceCodec: string
   targetCodec: OptimizationVideoCodec
   encoder: string
@@ -38,6 +40,7 @@ export function isValidOptimizationCalibrationEntry(value: unknown): value is Op
   if (!value || typeof value !== 'object') return false
   const entry = value as Partial<OptimizationCalibrationEntry>
   return typeof entry.scopeKey === 'string' && entry.scopeKey.length > 0 &&
+    OPTIMIZATION_QUALITY_PROFILES.includes(entry.qualityProfile!) &&
     typeof entry.sourceCodec === 'string' && entry.sourceCodec.length > 0 &&
     (entry.targetCodec === 'hevc' || entry.targetCodec === 'av1') &&
     typeof entry.encoder === 'string' && entry.encoder.length > 0 &&
@@ -60,29 +63,60 @@ export interface CalibrationCandidateEvidence {
   mediaItemId?: number
   measuredCandidate: MeasuredCandidate
   preflightValidated: boolean
+  maximumOutputBytesPerSecond: number
 }
 
-/** A failed holdout vetoes matching training evidence, even if another holdout passed. */
+function groupCalibrationEvidence<T, K>(values: T[], key: (value: T) => K): Map<K, T[]> {
+  const groups = new Map<K, T[]>()
+  for (const value of values) {
+    const identity = key(value)
+    const group = groups.get(identity) ?? []
+    group.push(value)
+    groups.set(identity, group)
+  }
+  return groups
+}
+
+/** Shared measured frontier: a candidate must be evaluated on every title in its context. */
 export function buildValidatedCalibrationEntries(evidence: CalibrationCandidateEvidence[], measuredAt: string): OptimizationCalibrationEntry[] {
-  const key = (entry: CalibrationCandidateEvidence) => {
-    const { encoder, gpuId, preset, quality } = entry.measuredCandidate
-    return JSON.stringify([entry.scopeKey, encoder, gpuId ?? null, preset, quality])
+  const contexts = groupCalibrationEvidence(evidence, entry => entry.scopeKey)
+  const result: OptimizationCalibrationEntry[] = []
+  for (const [scopeKey, observations] of [...contexts].sort(([a], [b]) => a.localeCompare(b))) {
+    const training = new Set(observations.filter(entry => entry.role === 'calibration').map(entry => entry.mediaItemId))
+    const holdouts = new Set(observations.filter(entry => entry.role === 'holdout').map(entry => entry.mediaItemId))
+    if (training.size < 2 || !holdouts.size || training.has(undefined) || holdouts.has(undefined) || [...training].some(id => holdouts.has(id))) continue
+    const expected = training.size + holdouts.size
+    const candidates = groupCalibrationEvidence(observations, ({ measuredCandidate: candidate }) => JSON.stringify([candidate.encoder, candidate.gpuId ?? null, candidate.preset, candidate.quality]))
+    const aggregated: MeasuredCandidate[] = []
+    for (const group of candidates.values()) {
+      if (group.length !== expected || new Set(group.map(entry => entry.mediaItemId)).size !== expected ||
+        group.some(entry => !entry.preflightValidated || !Number.isFinite(entry.maximumOutputBytesPerSecond) ||
+          !isMeasuredCandidateValidForCalibration(entry.measuredCandidate, 'maximum_savings') ||
+          entry.measuredCandidate.outputBytes / entry.measuredCandidate.sampledDurationSeconds >= entry.maximumOutputBytesPerSecond)) continue
+      const samples = group.map(entry => entry.measuredCandidate)
+      aggregated.push({
+        encoder: samples[0].encoder, gpuId: samples[0].gpuId, preset: samples[0].preset, quality: samples[0].quality,
+        outputBytes: Math.max(...samples.map(sample => sample.outputBytes / sample.sampledDurationSeconds)),
+        sampledDurationSeconds: 1,
+        vmafMean: Math.min(...samples.map(sample => sample.vmafMean)),
+        vmafP5: Math.min(...samples.map(sample => sample.vmafP5)),
+        cambiMean: Math.max(...samples.map(sample => sample.cambiMean)),
+        encodingDurationMs: samples.every(sample => sample.encodingDurationMs !== undefined)
+          ? Math.max(...samples.map(sample => sample.encodingDurationMs! / sample.sampledDurationSeconds)) : undefined,
+      })
+    }
+    const families = groupCalibrationEvidence(aggregated, candidate => JSON.stringify([candidate.encoder, candidate.gpuId ?? null, candidate.preset]))
+    for (const qualityProfile of OPTIMIZATION_QUALITY_PROFILES) {
+      for (const family of families.values()) {
+        for (const candidate of getNonDominatedMeasuredCandidates(qualityProfile, family)) {
+          const { encoder, gpuId, preset, quality, outputBytes, sampledDurationSeconds } = candidate
+          result.push({ scopeKey, qualityProfile, sourceCodec: observations[0].sourceCodec, targetCodec: observations[0].targetCodec,
+            encoder, gpuId, preset, quality, outputBytes, sampledDurationSeconds, measuredAt })
+        }
+      }
+    }
   }
-  const valid = (entry: CalibrationCandidateEvidence) =>
-    entry.mediaItemId !== undefined && entry.preflightValidated && isMeasuredCandidateValidForCalibration(entry.measuredCandidate)
-  const holdouts = new Map<string, CalibrationCandidateEvidence[]>()
-  for (const entry of evidence.filter(entry => entry.role === 'holdout')) {
-    const identity = key(entry)
-    const group = holdouts.get(identity) ?? []
-    group.push(entry)
-    holdouts.set(identity, group)
-  }
-  return evidence.filter(entry => entry.role === 'calibration' && valid(entry)).flatMap(entry => {
-    const matching = holdouts.get(key(entry)) ?? []
-    if (!matching.some(holdout => holdout.mediaItemId !== entry.mediaItemId && valid(holdout)) || matching.some(holdout => !valid(holdout))) return []
-    const { encoder, gpuId, preset, quality, outputBytes, sampledDurationSeconds } = entry.measuredCandidate
-    return [{ scopeKey: entry.scopeKey, sourceCodec: entry.sourceCodec, targetCodec: entry.targetCodec, encoder, gpuId, preset, quality, outputBytes, sampledDurationSeconds, measuredAt }]
-  })
+  return result.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
 }
 
 export interface ContinuousLowVmafRun {
@@ -201,7 +235,7 @@ export function nextCandidateSearch(
       if (measured.length >= maxCandidatesPerPreset) continue
       if (measured.length === 0) {
         const prior = calibrationEntries.filter(entry =>
-          entry.encoder === presetCandidate.encoder && entry.gpuId === presetCandidate.gpuId &&
+          entry.qualityProfile === profile && entry.encoder === presetCandidate.encoder && entry.gpuId === presetCandidate.gpuId &&
           entry.preset === presetCandidate.preset && Number.isInteger(entry.quality) &&
           entry.quality >= qualities[0] && entry.quality <= qualities[qualities.length - 1]
         ).sort((left, right) => left.outputBytes / left.sampledDurationSeconds - right.outputBytes / right.sampledDurationSeconds || right.quality - left.quality)[0]
@@ -251,7 +285,7 @@ export function buildCandidateLadder(targetCodec: OptimizationVideoCodec, encode
   const softwareEncoder = getOptimizationVideoCodec(targetCodec).softwareEncoder
   const hardware = hardwareEncoder ?? ''
   const encoders = encoderPolicy === 'hardware' ? [{ encoder: hardware, gpuId: undefined }] : encoderPolicy === 'software' ? [{ encoder: softwareEncoder, gpuId: undefined }] : encoderPolicy === 'automatic' ? (hardwareCandidates?.length ? hardwareCandidates : [{ encoder: hardware || softwareEncoder, gpuId: undefined }]) : [{ encoder: hardware, gpuId: undefined }, { encoder: softwareEncoder, gpuId: undefined }]
-  if (encoders.some(encoder => !encoder)) throw new Error('A verified hardware encoder is required for hardware candidate measurement')
+  if (encoders.some(candidate => !candidate.encoder)) throw new Error('A verified hardware encoder is required for hardware candidate measurement')
   return encoders.flatMap(({ encoder, gpuId }) => {
     const policy = measuredOptimizationEncoderSpec(encoder, targetCodec)
     const presets = policy.presets
@@ -300,8 +334,7 @@ export function selectCalibrationRepresentatives<T extends Pick<MediaItem, 'id' 
   if (!count) return []
   const indices = count === 1 ? [Math.floor((ordered.length - 1) / 2)] :
     Array.from({ length: count }, (_, index) => Math.round(index * (ordered.length - 1) / (count - 1)))
-  const calibrationIndex = Math.floor((count - 1) / 2)
-  return indices.map((index, position) => ({ item: ordered[index], role: position === calibrationIndex ? 'calibration' : 'holdout' }))
+  return indices.map((index, position) => ({ item: ordered[index], role: position % 2 === 0 ? 'calibration' : 'holdout' }))
 }
 
 export function getImpossibleQualityReason(
@@ -381,6 +414,7 @@ function evaluateMeasuredCandidates(profile: OptimizationQualityProfile, candida
   const gates = QUALITY_GATES[profile]
   return candidates.map(candidate => {
     const failedGates = [
+      ...(!Number.isFinite(candidate.outputBytes) || candidate.outputBytes <= 0 || !Number.isFinite(candidate.sampledDurationSeconds) || candidate.sampledDurationSeconds <= 0 || !Number.isFinite(candidate.vmafMean) || !Number.isFinite(candidate.vmafP5) || !Number.isFinite(candidate.cambiMean) ? ['Incomplete numeric measurement'] : []),
       ...(candidate.qualityRejectedReason ? [candidate.qualityRejectedReason] : []),
       ...(candidate.vmafMean >= gates.vmafMean ? [] : [`VMAF mean < ${gates.vmafMean}`]),
       ...(candidate.vmafP5 >= gates.vmafP5 ? [] : [`VMAF p5 < ${gates.vmafP5}`]),
@@ -394,9 +428,9 @@ function evaluateMeasuredCandidates(profile: OptimizationQualityProfile, candida
 }
 
 /** Returns whether a measured candidate has complete, quality-passing, playback-compatible evidence. */
-export function isMeasuredCandidateValidForCalibration(candidate: MeasuredCandidate): boolean {
+export function isMeasuredCandidateValidForCalibration(candidate: MeasuredCandidate, profile: OptimizationQualityProfile = 'balanced'): boolean {
   return Number.isFinite(candidate.outputBytes) && candidate.outputBytes > 0 &&
     Number.isFinite(candidate.sampledDurationSeconds) && candidate.sampledDurationSeconds > 0 &&
     Number.isFinite(candidate.vmafMean) && Number.isFinite(candidate.vmafP5) && Number.isFinite(candidate.cambiMean) &&
-    evaluateMeasuredCandidates('balanced', [candidate])[0].passed
+    evaluateMeasuredCandidates(profile, [candidate])[0].passed
 }

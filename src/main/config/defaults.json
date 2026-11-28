@@ -169,7 +169,6 @@
     "sampleDurationSeconds": 30,
     "calibrationRepresentativesPerGroup": 4,
     "calibrationRepresentativeConcurrency": 2,
-    "calibrationCandidateBudget": 2,
     "measuredSampleCache": {
       "maxBytes": 5368709120,
       "maxAgeMs": 2592000000,

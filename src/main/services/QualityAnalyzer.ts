@@ -18,7 +18,7 @@ import { buildStreamSelectionPlan } from './transcoding/StreamSelectionPlan'
 import { normalizeVideoCodec } from '@main/services/MediaNormalizer'
 import { getVideoResolutionTier } from './VideoResolutionTier'
 import { AudioCodecRanker } from './AudioCodecRanker'
-import { MEASUREMENT_VERSION, MEASUREMENT_SETTING_PREFIX, MeasuredQualityError, selectMeasuredCandidate, type CachedMeasurement } from './MeasuredOptimizationPolicy'
+import { MEASUREMENT_VERSION, OPTIMIZATION_SEARCH_VERSION, MEASUREMENT_SETTING_PREFIX, MeasuredQualityError, selectMeasuredCandidate, type CachedMeasurement } from './MeasuredOptimizationPolicy'
 import { projectMeasuredSavingsBytes } from './OptimizationSavingsService'
 import { fileIdentity, matchesFileIdentity, type FileIdentity } from './utils/FileIdentity'
 
@@ -399,7 +399,7 @@ export class QualityAnalyzer {
       const raw = await getDatabase().getSetting(`${MEASUREMENT_SETTING_PREFIX}${measurement.cacheKey}`)
       if (raw) {
         const cached = parsePersistedJson<CachedMeasurement>(raw, `optimization measurement ${measurement.cacheKey}`)
-        if (cached.version === MEASUREMENT_VERSION && cached.complete && cached.cacheKey === measurement.cacheKey) {
+        if (cached.version === MEASUREMENT_VERSION && cached.searchVersion === OPTIMIZATION_SEARCH_VERSION && cached.complete && cached.cacheKey === measurement.cacheKey) {
           const source = await stat(mediaItem.file_path)
           if (measurement.sourceSize === source.size && measurement.sourceMtimeMs === source.mtimeMs &&
               matchesFileIdentity(measurementAnalysis.fileAnalysisFingerprint, source)) {

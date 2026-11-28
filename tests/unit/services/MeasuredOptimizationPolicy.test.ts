@@ -70,7 +70,7 @@ describe('selectMeasuredCandidate', () => {
   it('uses scoped calibration to change the first measured quality while preserving final measurement authority', () => {
     const domain = [10, 14, 18, 24, 30].map(quality => ({ encoder: 'nvenc_h265', gpuId: 'nvidia', preset: 'p6', quality }))
     const entry = {
-      scopeKey: 'library-A/HDR10/profile-1', sourceCodec: 'H.264', targetCodec: 'hevc' as const,
+      scopeKey: 'library-A/HDR10/profile-1', qualityProfile: 'balanced' as const, sourceCodec: 'H.264', targetCodec: 'hevc' as const,
       ...domain[3], outputBytes: 80, sampledDurationSeconds: 30, measuredAt: new Date().toISOString(),
     }
     expect(nextCandidateSearch(domain, [], 'balanced')).toEqual([domain[2]])
@@ -82,26 +82,34 @@ describe('selectMeasuredCandidate', () => {
     expect(selectMeasuredCandidate('balanced', [rejected, accepted])).toBe(accepted)
   })
 
-  it('requires an independent passing holdout and vetoes a completed failed holdout in the same scope', () => {
-    const training: CalibrationCandidateEvidence = {
-      scopeKey: 'scope-a', sourceCodec: 'H.264', targetCodec: 'hevc', role: 'calibration',
-      mediaItemId: 1, measuredCandidate: candidate({}), preflightValidated: true,
-    }
-    const holdout: CalibrationCandidateEvidence = { ...training, role: 'holdout', mediaItemId: 2 }
-    const failed: CalibrationCandidateEvidence = {
-      ...holdout, mediaItemId: 3, preflightValidated: false, measuredCandidate: candidate({ vmafP5: 80 }),
-    }
+  it('learns profile choices from the same independently validated frontier', () => {
+    const candidates = [
+      candidate({ quality: 18, outputBytes: 90, vmafMean: 97, vmafP5: 95 }),
+      candidate({ quality: 22, outputBytes: 80, vmafMean: 95, vmafP5: 92 }),
+      candidate({ quality: 26, outputBytes: 70, vmafMean: 93, vmafP5: 88 }),
+    ]
+    const evidence: CalibrationCandidateEvidence[] = [1, 2, 3, 4].flatMap(mediaItemId =>
+      candidates.map(measuredCandidate => ({
+        scopeKey: 'scope-a', sourceCodec: 'H.264', targetCodec: 'hevc', role: mediaItemId <= 2 ? 'calibration' : 'holdout',
+        mediaItemId, measuredCandidate, preflightValidated: true, maximumOutputBytesPerSecond: 10,
+      })))
     const timestamp = new Date().toISOString()
-    expect(buildValidatedCalibrationEntries([training], timestamp)).toEqual([])
-    expect(buildValidatedCalibrationEntries([training, { ...holdout, mediaItemId: 1 }], timestamp)).toEqual([])
-    expect(buildValidatedCalibrationEntries([training, holdout], timestamp)).toHaveLength(1)
-    expect(buildValidatedCalibrationEntries([training, holdout, failed], timestamp)).toEqual([])
-    expect(buildValidatedCalibrationEntries([training, holdout, { ...failed, scopeKey: 'scope-b' }], timestamp)).toHaveLength(1)
+    const entries = buildValidatedCalibrationEntries(evidence, timestamp)
+    const domain = candidates.map(({ encoder, preset, quality }) => ({ encoder, preset, quality }))
+    for (const [profile, quality] of [['transparent', 18], ['balanced', 22], ['maximum_savings', 26]] as const) {
+      expect(nextCandidateSearch(domain, [], profile, 5, entries)[0].quality).toBe(quality)
+    }
+    expect(buildValidatedCalibrationEntries(evidence.filter(entry => entry.mediaItemId < 3), timestamp)).toEqual([])
+    const missing = evidence.filter(entry => !(entry.mediaItemId === 4 && entry.measuredCandidate.quality === 26))
+    expect(buildValidatedCalibrationEntries(missing, timestamp).some(entry => entry.quality === 26)).toBe(false)
+    const failed = evidence.map(entry => entry.mediaItemId === 4 && entry.measuredCandidate.quality === 26
+      ? { ...entry, measuredCandidate: { ...entry.measuredCandidate, playbackBlockers: ['incompatible'] } } : entry)
+    expect(buildValidatedCalibrationEntries(failed, timestamp).some(entry => entry.quality === 26)).toBe(false)
   })
 
   it('validates persisted calibration entries without accepting incomplete evidence', () => {
     expect(isValidOptimizationCalibrationEntry({
-      scopeKey: 'library-A/SDR/profile-1', sourceCodec: 'H.264', targetCodec: 'hevc', encoder: 'x265', preset: 'medium', quality: 22,
+      scopeKey: 'library-A/SDR/profile-1', qualityProfile: 'balanced', sourceCodec: 'H.264', targetCodec: 'hevc', encoder: 'x265', preset: 'medium', quality: 22,
       outputBytes: 100, sampledDurationSeconds: 30, measuredAt: new Date().toISOString(),
     })).toBe(true)
     expect(isValidOptimizationCalibrationEntry({ sourceCodec: 'H.264', targetCodec: 'hevc' })).toBe(false)
@@ -274,6 +282,6 @@ describe('selectCalibrationRepresentatives', () => {
     expect(new Set(result.map(entry => entry.item.series_identity_key)).size).toBe(4)
     expect(result[0].item.id).toBe(1)
     expect(result.at(-1)?.item.id).toBe(6)
-    expect(result.filter(entry => entry.role === 'calibration')).toHaveLength(1)
+    expect(result.filter(entry => entry.role === 'calibration')).toHaveLength(2)
   })
 })
