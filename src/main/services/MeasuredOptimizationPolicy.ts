@@ -403,7 +403,7 @@ export function selectMeasuredCandidate(
     .filter(evaluation => evaluation.passed)
     .map(evaluation => evaluation.candidate)
     .filter(candidate => maximumOutputBytesPerSecond === undefined || candidate.outputBytes / candidate.sampledDurationSeconds < maximumOutputBytesPerSecond)
-    .sort((left, right) => left.outputBytes - right.outputBytes || (left.encodingDurationMs ?? Number.POSITIVE_INFINITY) - (right.encodingDurationMs ?? Number.POSITIVE_INFINITY))
+    .sort((left, right) => left.outputBytes / left.sampledDurationSeconds - right.outputBytes / right.sampledDurationSeconds || (left.encodingDurationMs ?? Number.POSITIVE_INFINITY) / left.sampledDurationSeconds - (right.encodingDurationMs ?? Number.POSITIVE_INFINITY) / right.sampledDurationSeconds)
   const selected = eligible[0]
   if (!selected) {
     const reports = evaluations.map(({ candidate, failedGates }) =>
@@ -429,14 +429,14 @@ export function getNonDominatedMeasuredCandidates(
     .map(evaluation => evaluation.candidate)
     .filter(candidate => maximumOutputBytesPerSecond === undefined || candidate.outputBytes / candidate.sampledDurationSeconds < maximumOutputBytesPerSecond)
   return eligible.filter(candidate => !eligible.some(other => other !== candidate &&
-    other.outputBytes <= candidate.outputBytes &&
+    other.outputBytes / other.sampledDurationSeconds <= candidate.outputBytes / candidate.sampledDurationSeconds &&
     other.vmafMean >= candidate.vmafMean &&
     other.vmafP5 >= candidate.vmafP5 &&
     other.cambiMean <= candidate.cambiMean &&
-    (other.encodingDurationMs === undefined || candidate.encodingDurationMs === undefined || other.encodingDurationMs <= candidate.encodingDurationMs) &&
-    (other.outputBytes < candidate.outputBytes || other.vmafMean > candidate.vmafMean || other.vmafP5 > candidate.vmafP5 || other.cambiMean < candidate.cambiMean ||
-      other.encodingDurationMs !== undefined && candidate.encodingDurationMs !== undefined && other.encodingDurationMs < candidate.encodingDurationMs)
-  )).sort((left, right) => left.outputBytes - right.outputBytes)
+    (candidate.encodingDurationMs === undefined || other.encodingDurationMs !== undefined && other.encodingDurationMs / other.sampledDurationSeconds <= candidate.encodingDurationMs / candidate.sampledDurationSeconds) &&
+    (other.outputBytes / other.sampledDurationSeconds < candidate.outputBytes / candidate.sampledDurationSeconds || other.vmafMean > candidate.vmafMean || other.vmafP5 > candidate.vmafP5 || other.cambiMean < candidate.cambiMean ||
+      other.encodingDurationMs !== undefined && candidate.encodingDurationMs !== undefined && other.encodingDurationMs / other.sampledDurationSeconds < candidate.encodingDurationMs / candidate.sampledDurationSeconds)
+  )).sort((left, right) => left.outputBytes / left.sampledDurationSeconds - right.outputBytes / right.sampledDurationSeconds)
 }
 
 function evaluateMeasuredCandidates(profile: OptimizationQualityProfile, candidates: MeasuredCandidate[]): MeasuredCandidateEvaluation[] {

@@ -128,6 +128,13 @@ describe('selectMeasuredCandidate', () => {
     expect(() => selectMeasuredCandidate('balanced', candidates, 3)).toThrowError(expect.objectContaining({ decisionStatus: 'no_positive_savings' }))
   })
 
+  it('compares equivalent rates instead of absolute bytes across unequal sample durations', () => {
+    const short = candidate({ outputBytes: 60, sampledDurationSeconds: 10, encodingDurationMs: 1000 })
+    const long = candidate({ outputBytes: 90, sampledDurationSeconds: 30, encodingDurationMs: 1500 })
+    expect(selectMeasuredCandidate('balanced', [short, long])).toBe(long)
+    expect(getNonDominatedMeasuredCandidates('balanced', [short, long])).toEqual([long])
+  })
+
   it('retains non-dominated measured choices across size, quality, and encode time', () => {
     const smaller = candidate({ outputBytes: 80, encodingDurationMs: 1200 })
     const higherFidelity = candidate({ outputBytes: 100, vmafMean: 98, vmafP5: 96, encodingDurationMs: 1800 })

@@ -46,6 +46,8 @@ export interface MeasuredSampleRequest {
   previouslyMeasuredSamples?: MeasuredCandidateSample[]
   onSampleMeasured?: (sample: MeasuredCandidateSample) => Promise<void>
   onCandidateMeasured?: (candidates: MeasuredCandidate[], complete: boolean) => Promise<void>
+  /** Calibration consumes statistics only; samples may be released after each candidate. */
+  retainSamples?: boolean
   candidates: Array<MeasuredCandidate & { ffmpegArgs: string[] }>
   sampleDurationSeconds?: number
   samplePositions?: readonly number[]
@@ -535,7 +537,7 @@ export class MeasuredOptimizationService {
             }
             measuredSamples.push(sample)
             await request.onSampleMeasured?.(structuredClone(sample))
-            if (request.onSampleMeasured) retainedPaths.add(outputPath)
+            if (request.onSampleMeasured && request.retainSamples !== false) retainedPaths.add(outputPath)
             if (!screeningOnly) await fs.unlink(logPath)
           }
           candidateSamples.push(sample)
@@ -554,9 +556,15 @@ export class MeasuredOptimizationService {
         const banding = candidateSamples.flatMap(sample => sample.cambiScores)
         if (!scores.length || scores.some(score => !Number.isFinite(score)) || banding.some(score => !Number.isFinite(score))) throw new Error('Measured frame scores are incomplete')
         scores.sort((a, b) => a - b)
-        measured.push({ incompleteMeasurement: candidateSamples.reduce((sum, sample) => sum + sample.vmafScores.length, 0) < referenceSamples.reduce((sum, sample) => sum + sample.frames, 0), qualityRejectedReason, encoder: candidate.encoder, gpuId: candidate.gpuId, quality: candidate.quality, preset: candidate.preset, outputBytes: candidateSamples.reduce((sum, sample) => sum + sample.outputBytes, 0), sampledDurationSeconds: candidateSamples.reduce((sum, sample) => sum + sample.sampledDurationSeconds, 0), encodingDurationMs: candidateSamples.reduce((sum, sample) => sum + sample.encodingDurationMs, 0), vmafMean: scores.reduce((a, b) => a + b, 0) / scores.length, vmafP5: scores[Math.floor(scores.length * VMAF_LOW_PERCENTILE)], cambiMean: banding.reduce((sum, score) => sum + score, 0) / banding.length, sourceSelfVmaf: candidateSamples.reduce((sum, sample) => sum + sample.sourceSelfVmaf, 0) / candidateSamples.length, sourceCambiMean: candidateSamples.reduce((sum, sample) => sum + sample.sourceCambiMean, 0) / candidateSamples.length, samplePaths: candidateSamples.map(sample => sample.samplePath), playbackBlockers: [...playbackBlockers] })
+        measured.push({ incompleteMeasurement: candidateSamples.reduce((sum, sample) => sum + sample.vmafScores.length, 0) < referenceSamples.reduce((sum, sample) => sum + sample.frames, 0), qualityRejectedReason, encoder: candidate.encoder, gpuId: candidate.gpuId, quality: candidate.quality, preset: candidate.preset, outputBytes: candidateSamples.reduce((sum, sample) => sum + sample.outputBytes, 0), sampledDurationSeconds: candidateSamples.reduce((sum, sample) => sum + sample.sampledDurationSeconds, 0), encodingDurationMs: candidateSamples.reduce((sum, sample) => sum + sample.encodingDurationMs, 0), vmafMean: scores.reduce((a, b) => a + b, 0) / scores.length, vmafP5: scores[Math.floor(scores.length * VMAF_LOW_PERCENTILE)], cambiMean: banding.reduce((sum, score) => sum + score, 0) / banding.length, sourceSelfVmaf: candidateSamples.reduce((sum, sample) => sum + sample.sourceSelfVmaf, 0) / candidateSamples.length, sourceCambiMean: candidateSamples.reduce((sum, sample) => sum + sample.sourceCambiMean, 0) / candidateSamples.length, samplePaths: request.retainSamples === false ? undefined : candidateSamples.map(sample => sample.samplePath), playbackBlockers: [...playbackBlockers] })
         await request.onCandidateMeasured?.(structuredClone(measured), measured.length === request.candidates.length)
-        if (request.onCandidateMeasured) for (const sample of candidateSamples) retainedPaths.add(sample.samplePath)
+        if (request.retainSamples === false) {
+          for (const sample of candidateSamples) {
+            await fs.rm(sample.samplePath, { force: true })
+            retainedPaths.delete(sample.samplePath)
+            ownedPaths.delete(sample.samplePath)
+          }
+        } else if (request.onCandidateMeasured) for (const sample of candidateSamples) retainedPaths.add(sample.samplePath)
       }
       if (!request.onCandidateMeasured) for (const candidate of measured) for (const samplePath of candidate.samplePaths ?? []) retainedPaths.add(samplePath)
       result = { candidates: measured, vmafAvailable: true, cambiAvailable: true }

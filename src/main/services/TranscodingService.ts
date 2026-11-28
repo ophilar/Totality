@@ -1067,6 +1067,9 @@ export class TranscodingService {
           targetHdrFormat: options.targetHdrFormat,
           targetProfileMode: options.targetProfileMode,
           measurementCandidateBudget: options.measurementCandidateBudget,
+          targetContainer: options.targetContainer,
+          streamSelection: options.streamSelection,
+          audioConversions: options.targetConversion?.audio ?? options.audioConversions,
           videoTransformation: options.targetConversion && {
             width: options.targetConversion.width,
             height: options.targetConversion.height,
@@ -1085,6 +1088,7 @@ export class TranscodingService {
         const measurementCacheKey = shouldEncode
           ? createHash('sha256').update(JSON.stringify({
               version: MEASUREMENT_VERSION,
+              searchVersion: OPTIMIZATION_SEARCH_VERSION,
               sourceSha256,
               sourceId: episode.source_id,
               libraryId: episode.library_id,
@@ -1152,6 +1156,7 @@ export class TranscodingService {
                 let partialSamples = cachedMeasurement?.partialSamples ?? []
                 let sourcePreparation = cachedMeasurement?.sourcePreparation ?? { samples: [] }
                 const persistMeasurement = async (candidates: MeasuredCandidate[], complete: boolean, samples: MeasuredCandidateSample[], rewrittenPath?: string) => {
+                  if (operation?.calibration) return
                   const savedHashes = new Map<string, string>()
                   cachedMeasurement?.candidates.forEach((candidate, candidateIndex) => {
                     candidate.samplePaths?.forEach((samplePath, index) => {
@@ -1181,7 +1186,7 @@ export class TranscodingService {
                     partialSampleHashes: await Promise.all(pendingSamples.map(sample => getSampleHash(sample.samplePath))),
                   }
                   getLoggingService().debug('[TVOptimization]', 'Writing measurement checkpoint', checkpoint)
-                  if (!operation?.calibration) await getDatabase().setSetting(`${MEASUREMENT_SETTING_PREFIX}${measurementCacheKey}`, JSON.stringify(cacheRecord))
+                  await getDatabase().setSetting(`${MEASUREMENT_SETTING_PREFIX}${measurementCacheKey}`, JSON.stringify(cacheRecord))
                   getLoggingService().debug('[TVOptimization]', 'Measurement checkpoint saved', checkpoint)
                   cachedMeasurement = cacheRecord
                   measurementCacheStored = true
@@ -1198,7 +1203,7 @@ export class TranscodingService {
                   async (candidates, complete, calibrationScopeKey, maximumRate, rateLimit) => {
                     await operation?.onMeasuredCandidates?.(candidates, complete, calibrationScopeKey, maximumRate, rateLimit)
                     await persistMeasurement(candidates, complete, partialSamples)
-                    getLoggingService().info('[TVOptimization]', `Measured candidates cached: mediaItem=${episode.id}, cacheKey=${measurementCacheKey}, candidates=${candidates.length}`)
+                    if (!operation?.calibration) getLoggingService().info('[TVOptimization]', `Measured candidates cached: mediaItem=${episode.id}, cacheKey=${measurementCacheKey}, candidates=${candidates.length}`)
                   },
                   cachedMeasurement?.candidates,
                   false,
@@ -1239,7 +1244,7 @@ export class TranscodingService {
                 if (!isCompatibleWithPlaybackPolicy(options.playbackPolicy ?? 'allow-transcoding', targetCompatibility)) throw new Error(`Measured sample is incompatible: ${Object.values(targetCompatibility.findings).filter(finding => finding.status === 'incompatible').map(finding => finding.rule).join('; ')}`)
               }
             }
-            if (!reusableRepresentativePlan && !measurementCacheHit && !measurementCacheStored) {
+            if (!operation?.calibration && !reusableRepresentativePlan && !measurementCacheHit && !measurementCacheStored) {
               throw new Error(`Measured candidates were not cached for ${formatMediaDisplayName(episode, request.seriesTitle)}`)
             }
           }
@@ -1274,7 +1279,7 @@ export class TranscodingService {
             reason: 'The tested encodes that meet the selected quality requirement do not project storage savings. Other encoders or settings may differ.',
           }
         }
-        if (targetCompatibility && !isCompatibleWithPlaybackPolicy(options.playbackPolicy ?? 'allow-transcoding', targetCompatibility)) throw new Error('Selected streams are incompatible with the playback policy')
+        if (!operation?.calibration && targetCompatibility && !isCompatibleWithPlaybackPolicy(options.playbackPolicy ?? 'allow-transcoding', targetCompatibility)) throw new Error('Selected streams are incompatible with the playback policy')
         const plannedSavingsOperations: OptimizationSavingsOperation[] = [
           ...(shouldEncode ? ['video_transcode' as const] : []),
           ...(audioStreamsChanged ? ['audio_pruning' as const] : []),
@@ -2982,13 +2987,14 @@ export class TranscodingService {
             referenceInputArgs: options.targetConversion?.inputArgs,
             sourcePreparation,
             onSourcePrepared: async preparation => onSourcePrepared?.(preparation),
-            qualityProfile: searchContext?.calibration ? undefined : options.qualityProfile,
+            qualityProfile: searchContext?.calibration ? 'maximum_savings' : options.qualityProfile,
+            retainSamples: !searchContext?.calibration,
             candidates,
             signal,
             onProgress,
             validateSample,
             previouslyMeasuredSamples: measuredSamples,
-            onSampleMeasured: async sample => {
+            onSampleMeasured: searchContext?.calibration ? undefined : async sample => {
               measuredSamples = [...measuredSamples.filter(existing => existing.encoder !== sample.encoder || existing.gpuId !== sample.gpuId || existing.preset !== sample.preset || existing.quality !== sample.quality || existing.sampleIndex !== sample.sampleIndex), sample]
               await onMeasuredSample?.(sample)
             },
@@ -3097,7 +3103,6 @@ export class TranscodingService {
       })
       if (!onMeasuredCandidates) await fs.rm(outputDirectory, { recursive: true, force: true })
       throw error
-    } finally {
     }
   }
 
