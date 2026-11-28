@@ -765,7 +765,7 @@ export class TranscodingService {
     const sourceHasher = new OperationFileHasher(sha256File, APP_CONFIG.transcoding.measuredSampleCache.maxConcurrentHashReads)
     // The hash is reused only inside this preflight, keyed by complete file identity.
     // Recheck identity on every reuse; queue/execute still require fresh verification.
-    const hashSource = (filePath: string) => sourceHasher.hashStable(filePath)
+    const hashSource = (filePath: string, expected: Stats) => sourceHasher.hashStable(filePath, fileIdentity(expected))
 
     let completedEpisodes = 0
     let completedInspections = 0
@@ -814,7 +814,8 @@ export class TranscodingService {
         const { analysis } = await getQualityAnalyzer().analyzeMediaItemFileEvidence(episode, operation?.signal, operation?.calibration || operation?.parameterPreview ? { persist: false } : {})
         const video = analysis.video
         operation?.signal.throwIfAborted()
-        if (!analysis.success || analysis.filePath !== episode.file_path || analysis.fileSizeBytes !== stat.size || !video) {
+        if (!analysis.success || !PathUtils.arePathsEqual(analysis.filePath, episode.file_path) || analysis.fileSizeBytes !== stat.size || !video ||
+            !matchesFileIdentity(analysis.fileAnalysisFingerprint, stat) || !matchesFileIdentity(stat, await fs.stat(episode.file_path))) {
           throw new Error(`File analysis is incomplete or stale for "${formatMediaDisplayName(episode, request.seriesTitle)}"`)
         }
         this.analysisCache.set(episode.file_path, stat, analysis)
@@ -1010,7 +1011,7 @@ export class TranscodingService {
         const audioPruningSavings = sumMeasuredStreamBytes(analysis.streamBytes, removedAudioTracks.map(track => track.index))
         const subtitlePruningSavings = sumMeasuredStreamBytes(analysis.streamBytes, removedSubtitleTracks.map(track => track.index))
         await operation?.waitUntilRunning()
-        const sourceSha256 = await hashSource(episode.file_path)
+        const sourceSha256 = await hashSource(episode.file_path, stat)
         reviewedSourceSha256 = sourceSha256
         const measurementOptions = {
           targetCodec: options.targetCodec,
@@ -1078,6 +1079,7 @@ export class TranscodingService {
           }
         }
         let params: TranscodingParams
+        let verifiedSampleHashes: string[] | undefined
         let targetCompatibility = sourceCompatibility
         let measurementCacheHit = false
         let measurementCacheStored = false
@@ -1195,12 +1197,22 @@ export class TranscodingService {
               ? { ...reusableRepresentativePlan.params!.measuredCandidate!, samplePaths: undefined }
               : (options as TranscodeOptions & { measuredCandidate?: MeasuredCandidate }).measuredCandidate
             const samplePaths = params.measuredCandidate!.samplePaths ?? []
+            const cachedCandidateIndex = cachedMeasurement?.candidates.findIndex(candidate => candidateEncodingKey(candidate) === candidateEncodingKey(params.measuredCandidate!) && JSON.stringify(candidate.samplePaths) === JSON.stringify(samplePaths)) ?? -1
+            if (!operation?.calibration && !reusableRepresentativePlan && (!cachedMeasurement?.complete || cachedCandidateIndex < 0 || !samplePaths.length || cachedMeasurement.sampleHashes[cachedCandidateIndex]?.length !== samplePaths.length)) {
+              throw new Error('Selected sample has no complete cached measurement identity')
+            }
+            if (samplePaths.length) verifiedSampleHashes = []
             for (let sampleIndex = 0; sampleIndex < samplePaths.length; sampleIndex++) {
               const samplePath = samplePaths[sampleIndex]
               await operation?.waitUntilRunning()
               publishPreflightProgress(episode, `Verifying measured sample ${sampleIndex + 1} of ${samplePaths.length}`)
               operation?.signal.throwIfAborted()
+              const sampleIdentity = fileIdentity(await fs.stat(samplePath))
+              const sampleHash = await sourceHasher.hashStable(samplePath, sampleIdentity)
+              if (cachedMeasurement?.sampleHashes[cachedCandidateIndex]?.[sampleIndex] !== sampleHash) throw new Error('Selected sample bytes no longer match measured evidence')
               const sample = await getMediaFileAnalyzer().analyzeCompleteFile(samplePath, { scanBitrate: true, detectVolume: false, signal: operation?.signal })
+              if (!matchesFileIdentity(sampleIdentity, await fs.stat(samplePath))) throw new Error('Selected sample changed during playback validation')
+              verifiedSampleHashes!.push(sampleHash)
               this.verifyPlannedVideo(sample, options)
               if (targetProfile) {
                 targetCompatibility = evaluatePlaybackTarget(targetProfile, this.withPlannedSampleStreams(analysis, sample, options))
@@ -1221,6 +1233,8 @@ export class TranscodingService {
             else this.sampleCacheUsers.set(measurementCacheKey, users - 1)
           }
         }
+        // Bind all source measurements to the file inspected at the start, not a replacement.
+        if (!matchesFileIdentity(stat, await fs.stat(episode.file_path))) throw new Error('Source file changed during preflight; review it again')
         const measuredPlanSavingsBytes = shouldEncode
           ? projectMeasuredSavingsBytes(
               stat.size, analysis.durationMs! / 1000,
@@ -1238,7 +1252,7 @@ export class TranscodingService {
             evidenceStatus: 'estimated', confidence: 'medium', savingsCoverage: 'complete', savingsBasis: 'video_sample_encode',
             samplingRole: reusableRepresentativePlan ? 'projected' : 'measured',
             samplePaths: params.measuredCandidate?.samplePaths,
-            sampleHashes: params.measuredCandidate?.samplePaths ? await Promise.all(params.measuredCandidate.samplePaths.map(sha256File)) : undefined,
+            sampleHashes: verifiedSampleHashes,
             reason: 'The tested encodes that meet the selected quality requirement do not project storage savings. Other encoders or settings may differ.',
           }
         }
@@ -1292,7 +1306,7 @@ export class TranscodingService {
           samplingRole: shouldEncode ? reusableRepresentativePlan ? 'projected' : 'measured' : undefined,
           sampleRepresentativeMediaItemId: reusableRepresentativePlan?.mediaItemId,
           sampleRepresentativeLabel: reusableRepresentativePlan?.label,
-          samplePaths, sampleHashes: samplePaths ? await Promise.all(samplePaths.map(sha256File)) : undefined, changes: [...(options.targetConversion?.changes ?? []), ...audioConversions.map(track => `Convert audio stream ${track.sourceIndex} to ${track.codec.toUpperCase()} at ${track.bitrateKbps} kbps`), ...(removedSubtitleTracks.length ? [`Remove ${removedSubtitleTracks.length} subtitle stream${removedSubtitleTracks.length === 1 ? '' : 's'} excluded by the selected language policy`] : [])],
+          samplePaths, sampleHashes: verifiedSampleHashes, changes: [...(options.targetConversion?.changes ?? []), ...audioConversions.map(track => `Convert audio stream ${track.sourceIndex} to ${track.codec.toUpperCase()} at ${track.bitrateKbps} kbps`), ...(removedSubtitleTracks.length ? [`Remove ${removedSubtitleTracks.length} subtitle stream${removedSubtitleTracks.length === 1 ? '' : 's'} excluded by the selected language policy`] : [])],
           measuredParameters: { encoder: params.encoder, crf: params.crf, preset: params.preset, gpuId: options.gpuId },
         }
       } catch (error) {
@@ -1334,12 +1348,13 @@ export class TranscodingService {
           const saved = await operation.loadEpisodeCheckpoint(episode.id)
           if (saved && saved.optionsFingerprint === optionsFingerprint && saved.capabilityFingerprint === capabilityFingerprint && saved.plan.sourceSha256 &&
             saved.plan.sourceSize === prepared.stat.size && saved.plan.sourceMtimeMs === prepared.stat.mtimeMs &&
+            matchesFileIdentity(saved.plan.sourceAnalysis?.fileAnalysisFingerprint, prepared.stat) &&
             JSON.stringify(saved.plan.targetProfile) === JSON.stringify(targetProfile)) {
-            const sourceHash = await hashSource(episode.file_path!)
+            const sourceHash = await hashSource(episode.file_path!, prepared.stat)
             const samples = saved.plan.samplePaths ?? []
             let sampleHashes: string[] = []
             try {
-              sampleHashes = samples.length ? await Promise.all(samples.map(sha256File)) : []
+              sampleHashes = samples.length ? await Promise.all(samples.map(sample => sourceHasher.hashStable(sample))) : []
             } catch (error) {
               if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
               getLoggingService().warn('[TVOptimization]', `Discarding preflight checkpoint with missing sample: mediaItem=${episode.id}`)
@@ -1457,24 +1472,23 @@ export class TranscodingService {
   }
 
   async preflightRemux(mediaItemId: number): Promise<ShowTranscodePreflight> {
-    const item = await getDatabase().media.getItemById(mediaItemId)
-    if (!item?.source_id || !item.library_id) throw new Error('Media item has no local source and library identity')
-    await this.assertAuthorizedItem(mediaItemId)
+    const item = await this.assertAuthorizedItem(mediaItemId)
+    if (!item.source_id || !item.library_id) throw new Error('Media item has no local source and library identity')
     const file = item.file_path
     if (!file) throw new Error('Media item has no local file path')
     const stat = await fs.stat(file)
     if (!item.deep_analysis) throw new Error('Persisted file analysis is missing; analyze the item before stream pruning')
     const analysis = JSON.parse(item.deep_analysis) as FileAnalysisResult
-    if (!analysis.success || analysis.filePath !== file || analysis.fileSizeBytes !== stat.size || !analysis.audioTracks.length) throw new Error('Persisted file analysis is stale; analyze the item before stream pruning')
+    if (!analysis.success || !PathUtils.arePathsEqual(analysis.filePath, file) || analysis.fileSizeBytes !== stat.size || !matchesFileIdentity(analysis.fileAnalysisFingerprint, stat) || !analysis.audioTracks.length) throw new Error('Persisted file analysis is stale; analyze the item before stream pruning')
     const retained = analysis.audioTracks.filter(track => track.isDefault || track.isCommentary || track.isAudioDescription || track.isAccessibility || track.hasObjectAudio).map(track => track.index)
     if (retained.length === 0) throw new Error('No audio stream is safe to retain automatically; choose retained streams in the review plan.')
     if (retained.length === analysis.audioTracks.length) throw new Error('No safe stream pruning operation is available; every audio stream must be retained')
     const streamSelection: StreamSelectionPolicy = { audio: 'explicit', audioIndexes: retained, subtitle: 'all' }
     // The preflight stores the explicit retained stream indexes as reviewed evidence.
     const retainedAudioIndexes = retained
-    const options: TranscodeOptions = { optimizationMode: 'remux_only', targetCodec: (analysis.video?.codec || 'h264') as TranscodeOptions['targetCodec'], outputMode: 'quarantine-replace', useGpu: false, gpuId: '', encoder: 'copy', preset: '', customArgs: '', transcodingEngine: 'ffmpeg', targetSize: '', streamSelection }
+    const options: TranscodeOptions = { optimizationMode: 'remux_only', outputMode: 'quarantine-replace', useGpu: false, gpuId: '', encoder: 'copy', preset: '', customArgs: '', transcodingEngine: 'ffmpeg', targetSize: '', streamSelection }
     const id = `remux_${Date.now()}_${randomUUID()}`
-    const fingerprint = await sha256File(file)
+    const fingerprint = await new OperationFileHasher(sha256File, APP_CONFIG.transcoding.measuredSampleCache.maxConcurrentHashReads).hashStable(file, fileIdentity(stat))
     const result: ShowTranscodePreflight = {
       preflightId: id,
       batchId: id,

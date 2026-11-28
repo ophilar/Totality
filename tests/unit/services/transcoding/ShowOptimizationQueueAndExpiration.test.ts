@@ -184,6 +184,21 @@ describe('ShowOptimizationQueueAndPersistence', () => {
     await expect(service.approveShowTranscode('projection-review')).rejects.toThrow('no complete representative sample evidence')
   })
 
+  it('rejects stale same-size file analysis in the explicit stream-pruning review', async () => {
+    const service = getTranscodingService()
+    const file = path.resolve('src/main/services/TranscodingService.ts')
+    const source = await fs.stat(file)
+    const fingerprint = { size: source.size, mtimeMs: source.mtimeMs, ctimeMs: source.ctimeMs, ino: source.ino }
+    const analysis = { success: true, filePath: file, fileSizeBytes: source.size, fileAnalysisFingerprint: { ...fingerprint, ctimeMs: source.ctimeMs - 1 }, audioTracks: [{ index: 1, isDefault: true }, { index: 2 }], subtitleTracks: [] }
+    const item = { id: 101, title: 'Film', source_id: 'src1', library_id: 'lib1', file_path: file, deep_analysis: JSON.stringify(analysis) }
+    mockDb.getMediaItem.mockReturnValue(item)
+    mockDb.getMediaSource.mockReturnValue({ connection_config: JSON.stringify({ folderPath: path.dirname(file) }) })
+    await expect(service.preflightRemux(101)).rejects.toThrow('Persisted file analysis is stale')
+    expect(mockDb.setSetting).not.toHaveBeenCalled()
+    item.deep_analysis = JSON.stringify({ ...analysis, fileAnalysisFingerprint: fingerprint })
+    await expect(service.preflightRemux(101)).resolves.toMatchObject({ episodes: [{ mediaItemId: 101, decisionStatus: 'actionable', sourceSha256: createHash('sha256').update(await fs.readFile(file)).digest('hex') }] })
+  })
+
   it('preflights a single movie without requiring a series identity', async () => {
     const transcodingService = getTranscodingService()
     mockDb.getMediaItem.mockReturnValue({
